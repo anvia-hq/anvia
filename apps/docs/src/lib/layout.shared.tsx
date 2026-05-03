@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { ChevronDown } from "lucide-react";
 
@@ -29,13 +30,13 @@ function ResourcesDropdown() {
       </button>
       <div className="invisible absolute left-0 top-full z-50 min-w-44 border border-white/10 bg-[#050505] p-1 opacity-0 shadow-xl shadow-black/30 transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
         {resourceLinks.map((item) => (
-          <a
+          <Link
             className="block px-3 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
-            href={item.url}
             key={item.url}
+            to={item.url}
           >
             {item.text}
-          </a>
+          </Link>
         ))}
       </div>
     </li>

@@ -1,4 +1,4 @@
-import { notFound, useLocation } from "@tanstack/react-router";
+import { Link, notFound, useLocation } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import browserCollections from "collections/browser";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
@@ -102,9 +102,9 @@ function DocsSectionTabs() {
         const active = pathname === section.href || pathname.startsWith(`${section.href}/`);
 
         return (
-          <a aria-current={active ? "page" : undefined} href={section.href} key={section.href}>
+          <Link aria-current={active ? "page" : undefined} key={section.href} to={section.href}>
             {section.title}
-          </a>
+          </Link>
         );
       })}
     </nav>

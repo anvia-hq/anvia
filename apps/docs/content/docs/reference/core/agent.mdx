@@ -1,0 +1,308 @@
+---
+title: Agent
+description: Agent runtime, builders, prompt requests, hooks, and run events.
+---
+
+Import from `@anvia/core` or `@anvia/core/agent`.
+
+## Agent
+
+```ts
+class Agent<M extends CompletionModel = CompletionModel> {
+  readonly id: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly model: M;
+  readonly instructions?: string;
+  readonly staticContext: Document[];
+  readonly temperature?: number;
+  readonly maxTokens?: number;
+  readonly additionalParams?: JsonValue;
+  readonly toolSet: ToolSet;
+  readonly toolChoice?: ToolChoice;
+  readonly defaultMaxTurns?: number;
+  readonly hook?: PromptHook;
+  readonly outputSchema?: JsonObject;
+  readonly observers: AgentObserverRegistration[];
+  readonly dynamicContexts: DynamicContextRegistration[];
+  readonly dynamicTools: DynamicToolRegistration[];
+
+  constructor(options: AgentOptions<M>);
+  prompt(prompt: string | Message): PromptRequest<M>;
+  asTool(options: AgentToolOptions): Tool<{ prompt: string }, string>;
+  getTool(toolName: string): Tool | undefined;
+  callTool(toolName: string, args: string): Promise<string>;
+}
+```
+
+Purpose: immutable runnable agent configuration around one completion model.
+
+Return behavior: `prompt(...)` creates a mutable `PromptRequest`; `asTool(...)` exposes the agent as a tool that returns the nested agent output string.
+
+Notable errors: the constructor throws `TypeError` when `id` is not a non-empty string. `asTool(...)` forwards errors from the nested prompt run.
+
+## AgentOptions
+
+```ts
+type AgentOptions<M extends CompletionModel = CompletionModel> = {
+  id: string;
+  name?: string;
+  description?: string;
+  model: M;
+  instructions?: string;
+  staticContext?: Document[];
+  temperature?: number;
+  maxTokens?: number;
+  additionalParams?: JsonValue;
+  toolSet?: ToolSet;
+  toolChoice?: ToolChoice;
+  defaultMaxTurns?: number;
+  hook?: PromptHook;
+  outputSchema?: JsonObject;
+  observers?: AgentObserverRegistration[];
+  dynamicContexts?: DynamicContextRegistration[];
+  dynamicTools?: DynamicToolRegistration[];
+};
+```
+
+Purpose: constructor contract for `Agent`. Prefer `AgentBuilder` for application code.
+
+Return behavior: used only as input to `new Agent(...)`.
+
+Notable errors: invalid `id` is rejected by the `Agent` constructor.
+
+## AgentBuilder
+
+```ts
+class AgentBuilder<M extends CompletionModel = CompletionModel> {
+  constructor(agentId: string, completionModel: M);
+  name(name: string): this;
+  description(description: string): this;
+  instructions(instructions: string): this;
+  context(text: string, id?: string): this;
+  dynamicContext<T>(index: VectorSearchIndex<T>, options: DynamicContextOptions<T>): this;
+  dynamicTools(index: VectorSearchIndex<ToolSearchDocument>, options: DynamicToolOptions): this;
+  tool(tool: Tool): this;
+  tools(tools: Tool[]): this;
+  useToolSet(toolSet: ToolSet): this;
+  mcp(servers: McpServer[]): this;
+  skills(skillSet: SkillSet): this;
+  temperature(temperature: number): this;
+  maxTokens(maxTokens: number): this;
+  additionalParams(params: JsonValue): this;
+  toolChoice(toolChoice: ToolChoice): this;
+  defaultMaxTurns(defaultMaxTurns: number): this;
+  hook(hook: PromptHook): this;
+  observe(observer: AgentObserver, options?: ObserveOptions): this;
+  outputSchema(schema: ZodSchema): this;
+  build(): Agent<M>;
+}
+```
+
+Purpose: fluent builder for agent configuration.
+
+Return behavior: all mutator methods return `this`; `build()` returns an `Agent`.
+
+Notable errors: the constructor rejects an empty agent id. `outputSchema(...)` can throw if the schema cannot be converted to provider JSON schema.
+
+## Dynamic Tools
+
+```ts
+type DynamicToolOptions = {
+  topK: number;
+  threshold?: number;
+  filter?: VectorFilter;
+};
+
+type DynamicToolRegistration = {
+  index: VectorSearchIndex<ToolSearchDocument>;
+  options: DynamicToolOptions;
+};
+```
+
+Purpose: retrieve relevant tool definitions before each model turn.
+
+Return behavior: static tools are always sent; matching dynamic tools are added after static tools and deduped by name.
+
+Notable errors: errors from the vector index surface before the model request is sent.
+
+## PromptRequest
+
+```ts
+class PromptRequest<M extends CompletionModel = CompletionModel> {
+  static fromAgent<M extends CompletionModel>(
+    agent: Agent<M>,
+    prompt: string | Message,
+  ): PromptRequest<M>;
+
+  withHistory(history: Message[]): this;
+  maxTurns(maxTurns: number): this;
+  requestHook(hook: PromptHook): this;
+  withToolConcurrency(concurrency: number): this;
+  withTrace(trace: AgentTraceOptions): this;
+  send(): Promise<PromptResponse>;
+  stream(): AsyncIterable<AgentStreamEvent>;
+  readableStream(options?: ReadableStreamOptions): ReadableStream<AgentStreamEvent>;
+}
+```
+
+Purpose: per-run request state for an agent prompt.
+
+Return behavior: `send()` resolves a final `PromptResponse`; `stream()` yields run events and ends with a `final` event; `readableStream()` wraps the stream in a web stream.
+
+Notable errors: throws `MaxTurnsError` when the tool loop exceeds the configured turn limit, `PromptCancelledError` when a hook terminates the run, and a plain `Error` when streaming is requested for a non-streaming model.
+
+## PromptResponse
+
+```ts
+type PromptResponse = {
+  output: string;
+  usage: Usage;
+  messages: Message[];
+  trace?: AgentTraceInfo;
+};
+```
+
+Purpose: final non-streaming agent result.
+
+Return behavior: `messages` contains the new run messages, not the full prior history unless history was manually included.
+
+Notable errors: none directly.
+
+## AgentStreamEvent
+
+```ts
+type AgentStreamEvent =
+  | { type: "turn_start"; turn: number; prompt: Message; history: Message[] }
+  | { type: "text_delta"; turn: number; delta: string }
+  | { type: "reasoning_delta"; turn: number; delta: string; id?: string; contentType?: "text" | "summary" | "encrypted" | "redacted"; signature?: string }
+  | { type: "tool_call"; turn: number; toolCall: ToolCall }
+  | { type: "tool_result"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; args: string; result: string }
+  | { type: "turn_end"; turn: number; response: CompletionResponse }
+  | { type: "final"; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo }
+  | { type: "error"; error: unknown };
+```
+
+Purpose: streaming event union for observing agent execution.
+
+Return behavior: emitted by `PromptRequest.stream()` and `readableStream()`.
+
+Notable errors: terminal failures are yielded as `{ type: "error" }` and also originate from the same conditions as `send()`.
+
+## Hooks
+
+```ts
+type HookAction = { type: "continue" } | { type: "terminate"; reason: string };
+type ToolCallHookAction =
+  | { type: "continue" }
+  | { type: "skip"; reason: string }
+  | { type: "terminate"; reason: string };
+
+type RunControl = {
+  continue(): HookAction;
+  cancel(reason: string): HookAction;
+};
+
+type ToolCallControl = {
+  run(): ToolCallHookAction;
+  skip(reason: string): ToolCallHookAction;
+  cancel(reason: string): ToolCallHookAction;
+};
+
+type HookResult = HookAction | undefined;
+type ToolCallHookResult = ToolCallHookAction | undefined;
+
+type CompletionCallHookArgs = {
+  prompt: Message;
+  history: Message[];
+  run: RunControl;
+};
+
+type CompletionResponseHookArgs<RawResponse = unknown> = {
+  prompt: Message;
+  response: CompletionResponse<RawResponse>;
+  run: RunControl;
+};
+
+type ToolHookArgs = {
+  toolName: string;
+  toolCallId?: string;
+  internalCallId: string;
+  args: string;
+};
+
+type ToolCallHookArgs = ToolHookArgs & {
+  tool: ToolCallControl;
+};
+
+type ToolResultHookArgs = ToolHookArgs & {
+  result: string;
+  run: RunControl;
+};
+
+const runControl: RunControl;
+const toolCallControl: ToolCallControl;
+
+function createHook<RawResponse = unknown>(hook: PromptHook<RawResponse>): PromptHook<RawResponse>;
+function cancelPrompt(reason: string): HookAction;
+function skipTool(reason: string): ToolCallHookAction;
+```
+
+Purpose: intercept completion calls, completion responses, tool calls, and tool results.
+
+Return behavior: callback controls such as `tool.run()`, `tool.skip(...)`, `tool.cancel(...)`, `run.continue()`, and `run.cancel(...)` create actions consumed by `PromptRequest`. The low-level `cancelPrompt(...)` and `skipTool(...)` helpers are also available.
+
+Notable errors: a terminating hook produces `PromptCancelledError`.
+
+## Error Classes
+
+```ts
+class MaxTurnsError extends Error {
+  readonly maxTurns: number;
+  readonly chatHistory: Message[];
+  readonly prompt: Message;
+}
+
+class PromptCancelledError extends Error {
+  readonly chatHistory: Message[];
+  readonly reason: string;
+}
+```
+
+Purpose: typed agent-run failures.
+
+Return behavior: thrown by `PromptRequest`.
+
+Notable errors: these are the notable agent errors.
+
+## Constants and Small Types
+
+```ts
+const DEFAULT_MAX_TURNS = 20;
+
+type AgentToolOptions = {
+  name: string;
+  description?: string;
+  maxTurns?: number;
+};
+
+type DynamicContextOptions<T = unknown> = {
+  topK: number;
+  threshold?: number;
+  filter?: VectorFilter;
+  format?: (result: VectorSearchResult<T>) => Document;
+};
+
+type DynamicContextRegistration<T = unknown> = {
+  index: VectorSearchIndex<T>;
+  options: DynamicContextOptions<T>;
+};
+```
+
+Purpose: defaults and supporting agent configuration types.
+
+Return behavior: used as builder or constructor inputs.
+
+Notable errors: none directly.
+
+For workflow guidance, see [Creating Agents](/docs/guides/agents/creating-agents).

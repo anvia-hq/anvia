@@ -1,0 +1,15 @@
+{
+  "title": "Integrations",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "index",
+    "chroma",
+    "qdrant",
+    "pgvector",
+    "fastembed",
+    "transformers",
+    "langfuse",
+    "otel"
+  ]
+}

@@ -1,0 +1,84 @@
+---
+title: Tool Errors
+description: Handle validation failures and runtime tool errors.
+---
+
+Anvia distinguishes tool lookup, JSON parsing, and tool execution failures.
+
+## Error Types
+
+| Error | When it happens |
+| --- | --- |
+| `ToolNotFoundError` | A requested tool name is not registered |
+| `ToolJsonError` | Tool arguments are not valid JSON |
+| `ToolCallError` | Input validation, handler execution, or output validation fails |
+
+## Direct Tool Set Calls
+
+When you call a `ToolSet` directly, catch tool errors at the call boundary.
+
+```ts
+import { ToolCallError, ToolJsonError, ToolNotFoundError } from "@anvia/core";
+
+try {
+  const result = await toolSet.call("lookup_order", rawArgs);
+  return result;
+} catch (error) {
+  if (error instanceof ToolJsonError) {
+    return "Invalid tool arguments.";
+  }
+
+  if (error instanceof ToolNotFoundError) {
+    return `Unknown tool: ${error.toolName}`;
+  }
+
+  if (error instanceof ToolCallError) {
+    logger.warn(error, "tool call failed");
+    return "Tool failed.";
+  }
+
+  throw error;
+}
+```
+
+## Agent Runs
+
+During agent runs, Anvia catches tool execution errors and sends the error string back as the tool result. The model can then recover, ask for clarification, or explain that the action failed.
+
+Use clear expected return values for product states the model can handle.
+
+```ts
+return {
+  found: false,
+  reason: "Order does not exist.",
+};
+```
+
+Throw for unexpected failures.
+
+```ts
+throw new Error("Order service unavailable.");
+```
+
+## Validation Errors
+
+Input and output validation failures are wrapped as `ToolCallError`.
+
+```ts
+const updatePlan = createTool({
+  name: "update_plan",
+  description: "Update a customer's plan.",
+  input: z.object({
+    customerId: z.string(),
+    plan: z.enum(["free", "pro", "enterprise"]),
+  }),
+  output: z.object({
+    updated: z.boolean(),
+  }),
+  async execute(input) {
+    return billing.updatePlan(input);
+  },
+});
+```
+
+Use schema constraints to catch bad model arguments before side effects happen.

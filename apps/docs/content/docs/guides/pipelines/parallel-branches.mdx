@@ -1,0 +1,59 @@
+---
+title: Parallel Branches
+description: Run named branches concurrently inside a pipeline.
+---
+
+Use `.parallel(...)` when independent work can run from the same input. Each branch is a pipeline operation, and the output is an object keyed by branch name.
+
+## 1. Create Branches
+
+```ts
+const summaryBranch = new PipelineBuilder<string>()
+  .step((ticket) => `Summarize:\n\n${ticket}`)
+  .prompt(summarizer)
+  .build();
+
+const priorityBranch = new PipelineBuilder<string>()
+  .step((ticket) => `Classify priority:\n\n${ticket}`)
+  .prompt(priorityAgent)
+  .build();
+```
+
+## 2. Run Them in Parallel
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .parallel({
+    summary: summaryBranch,
+    priority: priorityBranch,
+  })
+  .build();
+```
+
+## 3. Read the Branch Output
+
+```ts
+const result = await pipeline.run("Checkout is down for enterprise users.");
+
+console.log(result.summary);
+console.log(result.priority);
+```
+
+The branch names become the output keys.
+
+## 4. Continue After Branching
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .parallel({
+    summary: summaryBranch,
+    priority: priorityBranch,
+  })
+  .step((result) => ({
+    title: result.summary.slice(0, 80),
+    priority: result.priority,
+  }))
+  .build();
+```
+
+Use parallel branches for independent checks. If one stage depends on another stage's output, keep it linear.

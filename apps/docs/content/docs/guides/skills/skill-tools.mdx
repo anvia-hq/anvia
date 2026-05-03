@@ -1,0 +1,75 @@
+---
+title: Skill Tools
+description: Expose skill-backed tools to agents.
+---
+
+When `loadSkills(...)` finds skills, Anvia creates four tools and includes them in `skillSet.tools`.
+
+## Generated Tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get_skill_instructions` | Load the full `SKILL.md` body for one skill |
+| `get_skill_reference` | Read a file from the skill's `references/` folder |
+| `get_skill_script` | Read a file from the skill's `scripts/` folder |
+| `run_skill_script` | Execute a script from the skill's `scripts/` folder |
+
+## 1. Register Tools Through AgentBuilder
+
+```ts
+const agent = new AgentBuilder("assistant", model)
+  .skills(skillSet)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+This is the normal path. `.skills(skillSet)` adds both instructions and tools.
+
+## 2. Call Skill Tools Directly
+
+Direct calls are useful in tests and admin workflows.
+
+```ts
+import { ToolSet } from "@anvia/core";
+
+const toolSet = new ToolSet().addTools(skillSet.tools);
+
+const instructions = await toolSet.call(
+  "get_skill_instructions",
+  JSON.stringify({ skillName: "code-review" }),
+);
+```
+
+## 3. Read a Reference File
+
+```ts
+const checklist = await toolSet.call(
+  "get_skill_reference",
+  JSON.stringify({
+    skillName: "code-review",
+    referencePath: "checklist.md",
+  }),
+);
+```
+
+Only files listed under the skill's `references/` directory can be read.
+
+## 4. Run a Script
+
+```ts
+const result = await toolSet.call(
+  "run_skill_script",
+  JSON.stringify({
+    skillName: "code-review",
+    scriptPath: "lint.sh",
+    args: ["packages/core/src"],
+    timeoutMs: 30_000,
+  }),
+);
+```
+
+Scripts run with a timeout and return formatted stdout and stderr. Failed scripts throw tool errors.
+
+## Security Boundary
+
+Skill tools reject absolute paths and path traversal. Still, treat scripts as application-owned code: review them, keep them narrow, and avoid passing secrets unless the script explicitly needs them.

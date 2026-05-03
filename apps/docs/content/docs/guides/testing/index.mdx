@@ -1,0 +1,32 @@
+---
+title: Testing
+description: Test Anvia workflows without hiding application policy.
+---
+
+Anvia workflows are easiest to test when product code keeps clear boundaries: tools own side effects, agents own model behavior, pipelines own workflow shape, and the application wrapper owns persistence, logging, and error handling.
+
+Use focused tests at each boundary before adding broad provider integration tests.
+
+## Testing Map
+
+| Boundary | What to test | Page |
+| --- | --- | --- |
+| Tools | input validation, expected product states, permission failures, output shape | [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines) |
+| Pipelines | deterministic step output, composition, batch behavior, concurrency limits | [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines) |
+| Agent wrappers | history persistence, trace metadata, usage records, runtime limits, known errors | [Agents and Retrieval](/docs/guides/testing/agents-and-retrieval) |
+| Retrieval | embedding selectors, metadata filters, result ordering, dynamic context formatting | [Agents and Retrieval](/docs/guides/testing/agents-and-retrieval) |
+| Evals | repeatable quality checks for functions, agents, and traced workflows | [Evals](/docs/guides/testing/evals) |
+| Studio | registration, HTTP run shape, sessions, traces, approvals, questions | [Studio and Providers](/docs/guides/testing/studio-and-providers) |
+| Providers | one narrow happy path per provider and the behavior your workflow depends on | [Studio and Providers](/docs/guides/testing/studio-and-providers) |
+
+## Practical Rule
+
+Most application correctness should be covered before a provider call is made. Use provider tests to verify integration behavior, not every branch of product policy.
+
+## Start Here
+
+1. Test tools and deterministic pipeline steps first.
+2. Test application wrappers around agents.
+3. Test retrieval filters without a model.
+4. Use Studio `.fetch(...)` for local runtime wiring.
+5. Keep provider integration tests narrow and explicit.

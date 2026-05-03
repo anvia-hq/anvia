@@ -1,0 +1,63 @@
+---
+title: Transcription
+description: Provider-neutral audio transcription model contracts and request builders.
+---
+
+Import from `@anvia/core` or `@anvia/core/transcription`.
+
+## TranscriptionModel
+
+```ts
+interface TranscriptionModel<RawResponse = unknown> {
+  readonly provider?: string;
+  readonly defaultModel?: string;
+  transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<RawResponse>>;
+}
+```
+
+Purpose: provider-neutral audio transcription contract.
+
+Return behavior: providers return normalized `text` and the provider response as `rawResponse`.
+
+## Request Builder
+
+```ts
+type TranscriptionRequest = {
+  data: Uint8Array;
+  filename: string;
+  language?: string;
+  prompt?: string;
+  temperature?: number;
+  additionalParams?: JsonValue;
+};
+
+type TranscriptionResponse<RawResponse = unknown> = {
+  text: string;
+  rawResponse: RawResponse;
+};
+
+class TranscriptionRequestBuilder<Model extends TranscriptionModel = TranscriptionModel> {
+  data(data: Uint8Array | ArrayBuffer): this;
+  filename(filename: string): this;
+  language(language: string): this;
+  prompt(prompt: string): this;
+  temperature(temperature: number): this;
+  additionalParams(additionalParams: JsonValue): this;
+  build(): TranscriptionRequest;
+  send(): Promise<TranscriptionResponse>;
+}
+
+const response = await transcriptionRequest(model)
+  .data(audioBytes)
+  .filename("meeting.mp3")
+  .language("en")
+  .prompt("Transcribe exactly.")
+  .temperature(0)
+  .send();
+```
+
+Purpose: Chainable builder for transcription requests.
+
+Defaults: `filename: "file"` and empty data.
+
+Notable errors: `.build()` and `.send()` throw when data is empty. V1 does not include a filesystem `loadFile()` helper; callers pass bytes.

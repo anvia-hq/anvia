@@ -1,0 +1,66 @@
+---
+title: Run Requests
+description: Send one-off or session-backed agent runs through Studio.
+---
+
+Run requests use the same agent runtime as `agent.prompt(...).send()`, with Studio-specific wiring for sessions, traces, approvals, and questions.
+
+## Request Shape
+
+```ts
+type AgentRunRequest = {
+  message: string | Message;
+  history?: Message[];
+  sessionId?: string;
+  stream?: boolean;
+  maxTurns?: number;
+  toolConcurrency?: number;
+  metadata?: JsonObject;
+  trace?: AgentTraceOptions;
+};
+```
+
+Use `history` for one-off calls. Use `sessionId` when Studio should load and persist conversation history.
+
+## Non-Streaming Run
+
+```bash
+curl -X POST http://localhost:4021/agents/support-operations/runs \
+  -H 'content-type: application/json' \
+  -d '{
+    "message": "Summarize order ORD-1001.",
+    "maxTurns": 3,
+    "trace": {
+      "name": "manual-test",
+      "userId": "dev_1",
+      "tags": ["studio"]
+    }
+  }'
+```
+
+The response is a prompt response.
+
+```json
+{
+  "output": "Order ORD-1001 is blocked while allocation is pending.",
+  "messages": [],
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "totalTokens": 0
+  }
+}
+```
+
+## Session-Backed Run
+
+```bash
+curl -X POST http://localhost:4021/agents/support-operations/runs \
+  -H 'content-type: application/json' \
+  -d '{
+    "sessionId": "session_123",
+    "message": "Continue from the last order update."
+  }'
+```
+
+Studio verifies that the session belongs to the requested agent before running.

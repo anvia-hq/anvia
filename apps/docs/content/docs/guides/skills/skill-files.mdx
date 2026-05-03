@@ -1,0 +1,81 @@
+---
+title: Skill Files
+description: Structure local skill folders and SKILL.md files.
+---
+
+Every local skill is a directory with a required `SKILL.md` file and optional `references/` and `scripts/` folders.
+
+## 1. Write SKILL.md
+
+```md
+---
+name: code-review
+description: Review code for correctness and maintainability.
+---
+
+# Code Review
+
+Prioritize correctness, regressions, missing tests, and risky behavior.
+Return findings with file and line references when possible.
+```
+
+The frontmatter is required.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `name` | yes | lowercase letters, numbers, and hyphens only |
+| `description` | yes | short summary shown in the skill list |
+| `license` | no | optional metadata |
+| `metadata` | no | optional object for your application |
+
+## 2. Match the Directory Name
+
+```txt
+skills/
+  code-review/
+    SKILL.md
+```
+
+The directory must be named `code-review` when `SKILL.md` uses `name: code-review`.
+
+## 3. Add Reference Files
+
+```txt
+skills/
+  code-review/
+    references/
+      checklist.md
+      style-guide.md
+```
+
+Reference files are read-only context the agent can load with `get_skill_reference`.
+
+## 4. Add Scripts
+
+```txt
+skills/
+  code-review/
+    scripts/
+      lint.sh
+```
+
+Scripts are executable helpers the agent can run with `run_skill_script`.
+
+```sh
+chmod +x skills/code-review/scripts/lint.sh
+```
+
+Keep scripts narrow and deterministic. They run from the skill directory and receive string arguments.
+
+## Validation Rules
+
+Anvia validates skill files while loading:
+
+| Rule | Failure |
+| --- | --- |
+| Missing frontmatter | `SkillValidationError` |
+| Invalid name | `SkillValidationError` |
+| Directory name does not match skill name | `SkillValidationError` |
+| Missing description | `SkillValidationError` |
+
+Next, load the directory with [Skill Loading](/docs/guides/skills/skill-loading).

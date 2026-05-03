@@ -1,0 +1,51 @@
+---
+title: Readable Streams
+description: Expose streaming output through Web ReadableStream APIs.
+---
+
+Use `readableStream()` or `toReadableStream(...)` when an HTTP route should return newline-delimited JSON events.
+
+## 1. Stream an Agent Request
+
+```ts
+const stream = agent.prompt("Draft a reply.").readableStream();
+```
+
+`readableStream()` converts the agent stream into a `ReadableStream<Uint8Array>`.
+
+## 2. Return It From an HTTP Route
+
+```ts
+return new Response(agent.prompt("Draft a reply.").readableStream(), {
+  headers: {
+    "Content-Type": "application/x-ndjson",
+  },
+});
+```
+
+Each line is one JSON event.
+
+```jsonl
+{"type":"text_delta","turn":1,"delta":"Hello"}
+{"type":"final","output":"Hello","usage":{"totalTokens":12}}
+```
+
+## 3. Convert Any Async Iterable
+
+```ts
+import { toReadableStream } from "@anvia/core";
+
+const stream = toReadableStream(agent.prompt("Draft a reply.").stream());
+```
+
+Use this helper when you already have an async iterable of events.
+
+## 4. Handle Stream Errors
+
+If iteration fails, Anvia emits one final JSON line with `type: "error"` and then closes the stream.
+
+```jsonl
+{"type":"error","error":{"name":"Error","message":"provider failed"}}
+```
+
+Clients should handle both `final` and `error` events.

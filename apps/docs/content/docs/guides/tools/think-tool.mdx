@@ -1,0 +1,56 @@
+---
+title: Think Tool
+description: Add explicit reasoning checkpoints to agent workflows.
+---
+
+`createThinkTool(...)` creates a small tool that records a thought and returns it. It does not read data, store memory, or change external state.
+
+Use it when you want the model to create an explicit checkpoint during a complex tool workflow.
+
+## Add the Default Think Tool
+
+```ts
+import { AgentBuilder, createThinkTool } from "@anvia/core";
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Use the think tool before taking multi-step actions.")
+  .tool(createThinkTool())
+  .tool(lookupOrder)
+  .tool(createRefund)
+  .defaultMaxTurns(5)
+  .build();
+```
+
+The default tool is named `think`.
+
+## Override Name or Description
+
+```ts
+const planTool = createThinkTool({
+  name: "plan",
+  description: "Record a short plan before using another tool.",
+});
+```
+
+Use a custom name when `think` conflicts with another tool or when you want a more domain-specific instruction.
+
+## Behavior
+
+The tool accepts one field:
+
+```ts
+{
+  thought: "Check the order status before creating a refund."
+}
+```
+
+It returns the same string as the tool result. That result becomes part of the agent's tool-call history.
+
+## When Not To Use It
+
+Do not add a think tool to every agent by default. Prefer it when:
+
+- the workflow has several tool calls
+- you want an explicit planning checkpoint
+- the provider does not already expose useful reasoning events
+- you can tolerate another tool turn

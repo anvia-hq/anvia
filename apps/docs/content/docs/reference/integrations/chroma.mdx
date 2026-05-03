@@ -1,0 +1,73 @@
+---
+title: Chroma
+description: Public exports from @anvia/chroma.
+---
+
+Import from `@anvia/chroma`.
+
+## ChromaVectorStoreConnectOptions
+
+```ts
+type ChromaVectorStoreConnectOptions = {
+  client?: ChromaClientLike;
+  collectionName: string;
+  createIfMissing?: boolean;
+  metadata?: Record<string, unknown>;
+  configuration?: Record<string, unknown>;
+};
+```
+
+Purpose: connection options for a Chroma collection.
+
+Return behavior: consumed by `ChromaVectorStore.connect(...)`.
+
+Notable errors: missing collections reject when `createIfMissing` is `false`.
+
+Design note: `connect(...)` performs async collection lookup or creation before returning a store. This keeps constructors synchronous and side-effect free while making connection and configuration failures happen before ingestion or search.
+
+## ChromaVectorStore
+
+```ts
+class ChromaVectorStore<T, Metadata extends VectorMetadata = VectorMetadata> {
+  static connect<T, Metadata extends VectorMetadata = VectorMetadata>(
+    options: ChromaVectorStoreConnectOptions,
+  ): Promise<ChromaVectorStore<T, Metadata>>;
+  upsertDocuments(documents: Array<EmbeddedDocument<T, Metadata>>): Promise<void>;
+  index(model: EmbeddingModel): ChromaVectorIndex<T, Metadata>;
+}
+```
+
+Purpose: Chroma-backed document storage.
+
+Return behavior: `connect(...)` resolves a store; `index(...)` binds it to an embedding model.
+
+Notable errors: connection and upsert calls reject on Chroma errors; `upsertDocuments(...)` throws when a document has no embeddings.
+
+## ChromaVectorIndex
+
+```ts
+class ChromaVectorIndex<T, Metadata extends VectorMetadata = VectorMetadata>
+  implements VectorSearchIndex<T, Metadata> {
+  search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
+  searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>>;
+  asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown>;
+}
+```
+
+Purpose: query-time Chroma search adapter.
+
+Return behavior: embeds the query, calls Chroma, deduplicates multi-embedding document IDs, and returns normalized results.
+
+Notable errors: embedding or Chroma query failures reject.
+
+## filterToChromaWhere
+
+```ts
+function filterToChromaWhere(filter: VectorFilter | undefined): unknown;
+```
+
+Purpose: convert Anvia vector filters to Chroma `where` filters.
+
+Return behavior: returns `undefined` when no filter is supplied.
+
+Notable errors: none directly.

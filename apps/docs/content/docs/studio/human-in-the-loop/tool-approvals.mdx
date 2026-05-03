@@ -1,0 +1,100 @@
+---
+title: Tool Approvals
+description: Use Studio to approve protected tool calls.
+---
+
+Studio can handle tool approvals from passive tool metadata. Core still runs tools normally; Studio installs a per-run request hook that interprets the metadata, creates an approval, and waits for a human decision.
+
+## 1. Add Approval Metadata
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { Studio } from "@anvia/studio";
+import { z } from "zod";
+
+const refundOrder = createTool({
+  name: "refund_order",
+  description: "Issue a customer refund.",
+  input: z.object({
+    orderId: z.string(),
+    amount: z.number().positive(),
+    reason: z.string(),
+  }),
+  output: z.object({
+    refundId: z.string(),
+    status: z.enum(["issued"]),
+  }),
+  approval: {
+    when: ({ args }) => args.amount > 100,
+    reason: ({ args }) => `Review refund of $${args.amount} for ${args.orderId}.`,
+    rejectMessage: "Refund rejected in Anvia Studio.",
+  },
+  async execute({ orderId }) {
+    return {
+      refundId: `rf_${orderId.toLowerCase()}`,
+      status: "issued" as const,
+    };
+  },
+});
+
+const client = new OpenAIClient({ apiKey });
+const model = client.completionModel("gpt-5");
+
+const agent = new AgentBuilder("support-operations", model)
+  .instructions("Look up order state before refunding. Keep the final answer short.")
+  .tool(refundOrder)
+  .defaultMaxTurns(3)
+  .build();
+
+new Studio([agent]).start({ port: 4021 });
+```
+
+`approval.when(...)` receives parsed tool arguments. Return `true` when Studio should ask for approval, and `false` when the tool can run immediately.
+
+## 2. Start a Streaming Run
+
+Approvals are most useful with streaming because the pending approval event can reach the UI while the run waits.
+
+```bash
+curl -N -X POST http://localhost:4021/agents/support-operations/runs \
+  -H 'content-type: application/json' \
+  -d '{"message":"Refund order ORD-1001 for 25 dollars.","stream":true}'
+```
+
+When the model calls `refund_order`, Studio emits a `tool_approval_request` event and keeps the tool paused.
+
+## 3. Approve or Reject
+
+```bash
+curl http://localhost:4021/approvals?status=pending
+```
+
+```bash
+curl -X POST http://localhost:4021/approvals/approval_123/decision \
+  -H 'content-type: application/json' \
+  -d '{"approved":true,"reason":"Support lead approved."}'
+```
+
+Reject with `approved: false`.
+
+```bash
+curl -X POST http://localhost:4021/approvals/approval_123/decision \
+  -H 'content-type: application/json' \
+  -d '{"approved":false,"reason":"Amount needs finance review."}'
+```
+
+## Approval Flow
+
+1. The model requests a tool call.
+2. Studio finds approval metadata on the tool.
+3. `approval.when(...)` returns `true`.
+4. Studio creates a pending approval.
+5. A human approves or rejects it in the UI or API.
+6. Anvia either runs the tool or sends the rejection message back to the model.
+
+Use tool approval for side effects such as refunds, account changes, deletes, external messages, and workflow transitions.
+
+## Advanced Control
+
+Core hooks remain the escape hatch. If your app needs a custom approval service, conditional policy outside the tool, or a different human-feedback flow, use an `onToolCall` request hook and return `tool.run()`, `tool.skip(...)`, or `tool.cancel(...)`.

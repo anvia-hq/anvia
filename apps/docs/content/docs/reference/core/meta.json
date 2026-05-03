@@ -1,0 +1,25 @@
+{
+  "title": "Core",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "index",
+    "agent",
+    "completion",
+    "image-generation",
+    "audio-generation",
+    "transcription",
+    "tools",
+    "pipeline",
+    "extractor",
+    "evals",
+    "loaders",
+    "embeddings",
+    "vector-store",
+    "mcp",
+    "observability",
+    "skills",
+    "streaming",
+    "schema"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "title": "Human in the Loop",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["index", "approval-settings", "tool-approval", "ask-question", "approval-handlers"]
+}

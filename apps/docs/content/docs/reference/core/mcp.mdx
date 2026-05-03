@@ -1,0 +1,95 @@
+---
+title: MCP
+description: MCP connection helpers and normalized server/tool contracts.
+---
+
+Import from `@anvia/core` or `@anvia/core/mcp`.
+
+## connectMcp
+
+```ts
+function connectMcp(connection: McpConnection): Promise<McpServer>;
+```
+
+Purpose: connect to an MCP server and adapt its listed tools into Anvia tools.
+
+Return behavior: resolves an `McpServer` with `tools` and `close()`.
+
+Notable errors: rejects when the connection fails, tool listing fails, or the MCP SDK throws.
+
+## mcp
+
+```ts
+const mcp: {
+  stdio(options: McpStdioOptions): McpConnection;
+  http(options: McpHttpOptions): McpConnection;
+};
+```
+
+Purpose: factories for stdio and streamable HTTP MCP connections.
+
+Return behavior: returns lazy connection objects; network or process work starts when `connectMcp(...)` calls `connect()`.
+
+Notable errors: connection errors are raised during `connect()`.
+
+## MCP Types
+
+```ts
+type McpToolDefinition = {
+  name: string;
+  description?: string;
+  inputSchema: JsonObject;
+};
+
+type McpToolCallContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+  | { type: "resource"; resource: { uri: string; text: string; mimeType?: string } | { uri: string; blob: string; mimeType?: string } };
+
+type McpToolCallResult =
+  | { content: McpToolCallContent[]; isError?: boolean }
+  | { toolResult: unknown };
+```
+
+Purpose: normalized subset of MCP tool metadata and results.
+
+Return behavior: used by MCP clients and adapters.
+
+Notable errors: none directly.
+
+## Client and Server Types
+
+```ts
+type McpClient = {
+  listTools(): Promise<{ tools: McpToolDefinition[] }>;
+  callTool(params: { name: string; arguments?: Record<string, unknown> }): Promise<McpToolCallResult>;
+  close(): Promise<void>;
+};
+
+type McpConnection = {
+  readonly name: string;
+  connect(): Promise<McpClient>;
+};
+
+type McpServer = {
+  readonly name: string;
+  readonly tools: Tool[];
+  close(): Promise<void>;
+};
+
+type McpStdioOptions = StdioServerParameters & { name: string };
+
+type McpHttpOptions = {
+  name: string;
+  url: string | URL;
+  transport?: StreamableHTTPClientTransportOptions;
+};
+```
+
+Purpose: connection and lifecycle contracts.
+
+Return behavior: `McpServer.close()` closes the underlying client.
+
+Notable errors: `close()` may reject when the underlying client rejects.
+
+For workflow guidance, see [MCP Connections](/docs/guides/mcp/connections).

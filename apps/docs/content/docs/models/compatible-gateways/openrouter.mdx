@@ -1,0 +1,112 @@
+---
+title: OpenRouter
+description: Use OpenRouter as an OpenAI-compatible gateway and inspect available models.
+---
+
+OpenRouter exposes an OpenAI-compatible API at `https://openrouter.ai/api/v1`. In Anvia, use `OpenAIClient` with that `baseUrl`, then pass OpenRouter model ids to `completionModel(...)`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+
+const model = client.completionModel("openai/gpt-4o");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+`baseUrl` makes Anvia use the OpenAI-compatible chat completion adapter. The model id is the OpenRouter id, not an Anvia-specific alias.
+
+## Get the Model List
+
+OpenRouter's models API returns the model ids and metadata you can use when choosing a model.
+
+```ts
+const response = await fetch("https://openrouter.ai/api/v1/models", {
+  headers: {
+    Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`OpenRouter models request failed: ${response.status}`);
+}
+
+const body = (await response.json()) as {
+  data: Array<{
+    id: string;
+    name: string;
+    context_length?: number;
+    supported_parameters?: string[];
+    architecture?: {
+      input_modalities?: string[];
+      output_modalities?: string[];
+    };
+  }>;
+};
+
+const textModels = body.data
+  .filter((model) => model.architecture?.output_modalities?.includes("text") ?? true)
+  .map((model) => ({
+    id: model.id,
+    name: model.name,
+    contextLength: model.context_length,
+    supportsTools: model.supported_parameters?.includes("tools") ?? false,
+  }));
+
+console.table(textModels.slice(0, 20));
+```
+
+Use the `id` field directly:
+
+```ts
+const model = client.completionModel("anthropic/claude-3.5-sonnet");
+```
+
+## Filter Models
+
+OpenRouter supports query parameters on the models endpoint. Use them when your UI or configuration screen only needs models with specific capabilities.
+
+```ts
+const response = await fetch(
+  "https://openrouter.ai/api/v1/models?supported_parameters=tools",
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    },
+  },
+);
+```
+
+You can also filter by output modality:
+
+```ts
+const response = await fetch(
+  "https://openrouter.ai/api/v1/models?output_modalities=text",
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    },
+  },
+);
+```
+
+## Notes
+
+- OpenRouter API keys are passed as bearer tokens.
+- Optional OpenRouter headers such as `HTTP-Referer` and `X-Title` are for app attribution on OpenRouter. Add them in your own HTTP layer or OpenAI SDK client when needed.
+- Model capabilities still vary by upstream model and route. Check OpenRouter model metadata before enabling tools, reasoning, structured output, images, or other model-specific behavior.
+
+For OpenRouter's current API details, see the [OpenRouter quickstart](https://openrouter.ai/docs/) and [models API reference](https://openrouter.ai/docs/api/api-reference/models/get-models).

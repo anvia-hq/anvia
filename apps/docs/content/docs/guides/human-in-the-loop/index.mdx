@@ -1,0 +1,111 @@
+---
+title: Human in the Loop
+description: Choose where human approval and feedback belong.
+---
+
+Human-in-the-loop means the agent run waits for a person before continuing. Use it for approvals, operator feedback, missing context, escalation decisions, outbound messages, refunds, account changes, deletes, and other workflows where the model should not decide alone.
+
+Anvia keeps the core execution model small: tools run, hooks can run/skip/cancel, and awaited promises pause the run. Studio adds a zero-config UI layer for common approval and question flows.
+
+## Choose a Pattern
+
+| Pattern | Best for | Where it lives |
+| --- | --- | --- |
+| [Approval settings in tools](/docs/guides/human-in-the-loop/approval-settings) | Studio approval UI with no custom hook | Tool metadata |
+| [Approval by hooks](/docs/guides/human-in-the-loop/tool-approval) | Custom policy, custom UI, or request-specific rules | `onToolCall(...)` |
+| [Ask question tools](/docs/guides/human-in-the-loop/ask-question) | Missing user input while a run is active | Normal tools |
+| [Approval runtimes](/docs/guides/human-in-the-loop/approval-handlers) | Databases, queues, notifications, audit logs, optional timeouts | Your app |
+
+## Studio Approval Metadata
+
+Put approval policy next to the side-effect tool when you want Studio to handle the approval UI.
+
+```ts
+const refundOrder = createTool({
+  name: "refund_order",
+  description: "Issue a customer refund.",
+  input: z.object({
+    orderId: z.string(),
+    amount: z.number().positive(),
+  }),
+  approval: {
+    when: ({ args }) => args.amount > 100,
+    reason: ({ args }) => `Review refund of $${args.amount} for ${args.orderId}.`,
+    rejectMessage: "Refund was not approved.",
+  },
+  async execute({ orderId, amount }) {
+    return refunds.create(orderId, amount);
+  },
+});
+
+new Studio([agent]).start();
+```
+
+Core stores this metadata but does not enforce it. Studio reads it and installs a per-run request hook that waits for a decision.
+
+## Hook Approval
+
+Use a hook when approval is not a property of the tool itself, or when your app already owns the approval workflow.
+
+```ts
+const approvalHook = createHook({
+  async onToolCall({ toolName, args, tool }) {
+    if (toolName !== "refund_order") {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      toolName,
+      args,
+      reason: "Refunds require staff approval.",
+    });
+
+    return approved ? tool.run() : tool.skip("Refund was not approved.");
+  },
+});
+
+await agent.prompt("Refund order A-100.").requestHook(approvalHook).send();
+```
+
+The model sees skipped tools as tool results, so write rejection messages as text the model can use in its final answer.
+
+## Ask for Feedback
+
+Use a normal tool when the model needs information from a person. Studio recognizes `ask_question` and renders a compact question UI.
+
+```ts
+const askQuestion = createTool({
+  name: "ask_question",
+  description: "Ask the human operator one or more follow-up questions.",
+  input: z.object({
+    questions: z.array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        choices: z.array(z.object({
+          label: z.string(),
+          value: z.string(),
+        })).min(1),
+      }),
+    ),
+  }),
+  async execute() {
+    return { answers: [] };
+  },
+});
+```
+
+Outside Studio, implement `ask_question` by awaiting your app UI, queue, or websocket and returning the answer as the tool result.
+
+## What Anvia Owns
+
+| Anvia owns | Your app owns |
+| --- | --- |
+| detecting the tool call | choosing which tools need approval |
+| awaiting hook and tool promises | showing UI, sending notifications, or waiting on a queue |
+| running the tool after `tool.run()` | deciding who can approve |
+| returning `tool.skip(...)` text to the model | storing audit records |
+
+## Timeouts
+
+Timeouts are optional. If a hook, tool, or Studio question waits forever, the run waits forever. Add a timeout in your runtime when the caller needs bounded latency.

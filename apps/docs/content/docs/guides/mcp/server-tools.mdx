@@ -1,0 +1,83 @@
+---
+title: Server Tools
+description: Expose MCP server tools to Anvia agents.
+---
+
+`connectMcp(...)` lists tools from the MCP server and converts them into Anvia tools.
+
+## Register Stdio MCP Tools
+
+Use stdio when your app starts and owns the MCP server process.
+
+```ts
+const mathServer = await connectMcp(
+  mcp.stdio({
+    name: "math",
+    command: "node",
+    args: ["./mcp-math-server.js"],
+  }),
+);
+
+const agent = new AgentBuilder("calculator", model)
+  .instructions("Use math tools for arithmetic.")
+  .mcp([mathServer])
+  .defaultMaxTurns(3)
+  .build();
+```
+
+The model sees the MCP tools in the same tool list as local Anvia tools.
+
+## Register HTTP MCP Tools
+
+Use HTTP when the MCP server is remote or managed outside your process.
+
+```ts
+const docsServer = await connectMcp(
+  mcp.http({
+    name: "docs",
+    url: "https://mcp.example.com/mcp",
+  }),
+);
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Use docs tools when product documentation is needed.")
+  .mcp([docsServer])
+  .defaultMaxTurns(3)
+  .build();
+```
+
+The agent registration is the same for stdio and HTTP. The connection shape is the only difference.
+
+## Mix Local and MCP Tools
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .tool(lookupOrder)
+  .mcp([docsServer])
+  .defaultMaxTurns(4)
+  .build();
+```
+
+Use local tools for application-owned behavior. Use MCP tools for capabilities owned by external servers.
+
+## Inspect Tools
+
+```ts
+for (const tool of docsServer.tools) {
+  console.log(await tool.definition(""));
+}
+```
+
+Each MCP tool has a name, description, and JSON Schema input definition from the MCP server.
+
+## Tool Calls
+
+When the model calls an MCP tool, Anvia forwards JSON object arguments to the MCP client.
+
+```ts
+await docsServer.tools[0]?.call({
+  query: "agent history",
+});
+```
+
+During agent runs, Anvia handles this call automatically and sends the normalized result back to the model.

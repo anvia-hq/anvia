@@ -1,0 +1,48 @@
+---
+title: Human Questions
+description: Answer pending ask_question requests through Studio.
+---
+
+Studio can pause a run when an agent calls the `ask_question` tool. The pending question can be answered from the Studio UI or HTTP API, then the run continues with the supplied answers.
+
+Human questions are most useful with streaming runs, because the `tool_question_request` event reaches the caller while the run is waiting.
+
+## Streaming Event
+
+```json
+{"type":"tool_question_request","question":{"id":"question_123","status":"pending"}}
+```
+
+After an answer is submitted, Studio emits a result event.
+
+```json
+{"type":"tool_question_result","question":{"id":"question_123","status":"answered"}}
+```
+
+## List Pending Questions
+
+```bash
+curl http://localhost:4021/questions?status=pending
+```
+
+`status` accepts `pending` or `resolved`. `runId`, `agentId`, and `sessionId` can filter the list.
+
+## Answer a Question
+
+Answer with one entry per prompt.
+
+```bash
+curl -X POST http://localhost:4021/questions/question_123/answer \
+  -H 'content-type: application/json' \
+  -d '{
+    "answers": [
+      {
+        "questionId": "priority",
+        "answer": "High",
+        "choice": "high"
+      }
+    ]
+  }'
+```
+
+The runtime returns the answers to the model as the result of the intercepted `ask_question` tool call.

@@ -1,0 +1,104 @@
+---
+title: Studio Traces
+description: Trace types, trace store contracts, and StudioTraceObserver.
+---
+
+Import from `@anvia/studio`.
+
+## Trace Types
+
+```ts
+type StudioTraceStatus = "running" | "success" | "error";
+type StudioTraceObservationKind = "generation" | "tool";
+
+type StudioTraceObservation = {
+  id: string;
+  kind: StudioTraceObservationKind;
+  name: string;
+  status: StudioTraceStatus;
+  turn: number;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  input?: JsonValue;
+  output?: JsonValue;
+  error?: JsonValue;
+  metadata?: JsonObject;
+};
+
+type StudioTraceSummary = {
+  id: string;
+  sessionId: string;
+  name?: string;
+  status: StudioTraceStatus;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  output?: string;
+  error?: JsonValue;
+  usage?: Usage;
+  metadata?: JsonObject;
+  observationCount: number;
+};
+
+type StudioTrace = StudioTraceSummary & {
+  trace?: AgentTraceInfo;
+  input?: JsonValue;
+  observations: StudioTraceObservation[];
+};
+```
+
+Purpose: Studio-native trace persistence and UI contracts.
+
+Return behavior: trace stores return summaries for lists and full traces for detail.
+
+Notable errors: none directly.
+
+## Trace Store Types
+
+```ts
+type StudioTraceListOptions = {
+  limit: number;
+  agentId?: string;
+  sessionId?: string;
+  status?: StudioTraceStatus;
+};
+
+type StudioSessionTraceListOptions = {
+  sessionId: string;
+  limit: number;
+};
+
+type StudioTraceStore = {
+  readonly kind?: string;
+  listTraces?(options: StudioTraceListOptions): StudioTraceSummary[] | Promise<StudioTraceSummary[]>;
+  listSessionTraces(options: StudioSessionTraceListOptions): StudioTraceSummary[] | Promise<StudioTraceSummary[]>;
+  getTrace(id: string): StudioTrace | undefined | Promise<StudioTrace | undefined>;
+  saveTrace(trace: StudioTrace): StudioTrace | Promise<StudioTrace>;
+};
+```
+
+Purpose: persistence adapter for Studio traces.
+
+Return behavior: methods may be sync or async.
+
+Notable errors: persistence failures should throw or reject.
+
+## StudioTraceObserver
+
+```ts
+type StudioTraceObserverOptions = {
+  store: StudioTraceStore | (() => StudioTraceStore | undefined) | undefined;
+};
+
+class StudioTraceObserver implements AgentObserver {
+  constructor(options: StudioTraceObserverOptions);
+  startRun(args: AgentRunStartArgs): AgentRunObserver;
+}
+```
+
+Purpose: converts agent observer events into `StudioTrace` records.
+
+Return behavior: `startRun(...)` returns an `AgentRunObserver`; traces are saved when the run ends or errors.
+
+Notable errors: save failures reject observer lifecycle methods and can fail the run when observer errors are configured to fail.

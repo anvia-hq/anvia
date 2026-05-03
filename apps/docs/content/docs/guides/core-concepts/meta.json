@@ -1,0 +1,15 @@
+{
+  "title": "SDK Fundamentals",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "runtime-boundaries",
+    "clients-and-models",
+    "messages-and-history",
+    "attachments",
+    "prompt-requests",
+    "prompt-responses",
+    "errors",
+    "package-exports"
+  ]
+}

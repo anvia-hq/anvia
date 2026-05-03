@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
+  },
+  "include": [
+    "01_basics/**/*.ts",
+    "02_tools/**/*.ts",
+    "03_structured_output/**/*.ts",
+    "04_providers_and_multimodal/**/*.ts",
+    "05_pipelines/**/*.ts",
+    "06_retrieval/**/*.ts",
+    "07_multi_agent/**/*.ts",
+    "08_evals/**/*.ts",
+    "09_studio/**/*.ts",
+    "10_integrations/**/*.ts"
+  ]
+}

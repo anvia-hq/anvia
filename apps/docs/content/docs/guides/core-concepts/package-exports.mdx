@@ -1,0 +1,63 @@
+---
+title: Import Paths
+description: Find the public entrypoints exposed by @anvia/core.
+---
+
+The easiest import path is the root package:
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+```
+
+The root export includes the core public SDK. Use it for most applications and examples.
+
+Studio is a separate package:
+
+```ts
+import { Studio } from "@anvia/studio";
+```
+
+Use Studio when you want the local playground, sessions, approval UI, and trace browser around built agents.
+
+## Focused Subpath Exports
+
+Anvia also exposes focused subpaths when you want narrower imports.
+
+| Export | Use for |
+| --- | --- |
+| `@anvia/core/agent` | Agents, agent builders, prompt requests, hooks, and agent errors |
+| `@anvia/core/completion` | Completion request types, messages, content helpers, and usage |
+| `@anvia/core/embeddings` | Embedding interfaces and shared embedding types |
+| `@anvia/core/evals` | Eval suites, built-in metrics, agent eval targets, and reporters |
+| `@anvia/core/extractor` | Structured extraction builders and runtime |
+| `@anvia/core/mcp` | MCP connections, tool adapters, and result handling |
+| `@anvia/core/observability` | Observers, trace groups, and runtime observation types |
+| `@anvia/core/pipeline` | Pipeline builders and pipeline execution |
+| `@anvia/core/skills` | Local skill loading, skill instructions, and skill tools |
+| `@anvia/core/streaming` | Streaming helpers such as readable stream adapters |
+| `@anvia/core/tool` | Tool creation, tool sets, tool registries, and tool errors |
+| `@anvia/core/vector-store` | Vector store interfaces, filters, and local indexes |
+
+## Root Import Example
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+```
+
+Root imports are clear for small apps, examples, and docs.
+
+## Subpath Import Example
+
+```ts
+import { AgentBuilder } from "@anvia/core/agent";
+import { OpenAIClient } from "@anvia/openai";
+import { createTool } from "@anvia/core/tool";
+```
+
+Subpath imports can make ownership clearer in larger codebases, especially when one module should only work with tools, providers, or completion message types.
+
+## Recommendation
+
+Start with root imports while learning. Move to subpath imports when a file has a narrow responsibility or when your project style prefers explicit module boundaries.

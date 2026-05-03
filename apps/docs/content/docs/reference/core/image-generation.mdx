@@ -1,0 +1,65 @@
+---
+title: Image Generation
+description: Provider-neutral image generation model contracts and request builders.
+---
+
+Import from `@anvia/core` or `@anvia/core/image-generation`.
+
+## ImageGenerationModel
+
+```ts
+interface ImageGenerationModel<RawResponse = unknown> {
+  readonly provider?: string;
+  readonly defaultModel?: string;
+  imageGeneration(request: ImageGenerationRequest): Promise<ImageGenerationResponse<RawResponse>>;
+}
+```
+
+Purpose: provider-neutral image generation contract.
+
+Return behavior: providers return the first image as `image`, all images as `images`, optional `mediaType`, and the provider response as `rawResponse`.
+
+## Request Builder
+
+```ts
+type ImageGenerationRequest = {
+  prompt: string;
+  width: number;
+  height: number;
+  additionalParams?: JsonValue;
+};
+
+type GeneratedImage = {
+  data: Uint8Array;
+  mediaType?: string;
+};
+
+type ImageGenerationResponse<RawResponse = unknown> = {
+  image: Uint8Array;
+  images: GeneratedImage[];
+  mediaType?: string;
+  rawResponse: RawResponse;
+};
+
+class ImageGenerationRequestBuilder<Model extends ImageGenerationModel = ImageGenerationModel> {
+  prompt(prompt: string): this;
+  width(width: number): this;
+  height(height: number): this;
+  additionalParams(additionalParams: JsonValue): this;
+  build(): ImageGenerationRequest;
+  send(): Promise<ImageGenerationResponse>;
+}
+
+const response = await imageGenerationRequest(model)
+  .prompt("A product diagram")
+  .width(1024)
+  .height(1024)
+  .additionalParams({ output_format: "png" })
+  .send();
+```
+
+Purpose: Chainable builder for image generation requests.
+
+Defaults: `prompt: ""`, `width: 1024`, and `height: 1024`.
+
+Notable errors: provider adapters may reject when the provider response contains no image bytes.

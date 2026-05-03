@@ -1,0 +1,106 @@
+---
+title: Mistral Provider
+description: Public exports from @anvia/mistral.
+---
+
+Import from `@anvia/mistral`.
+
+## MistralClient
+
+```ts
+type MistralClientOptions = {
+  apiKey?: string;
+  serverURL?: string;
+  client?: Mistral;
+};
+
+class MistralClient {
+  readonly client: Mistral;
+  constructor(options?: MistralClientOptions);
+  completionModel(model?: string): MistralCompletionModel;
+  embeddingModel(model?: string, options?: MistralEmbeddingModelOptions): MistralEmbeddingModel;
+}
+```
+
+Purpose: factory for Mistral completion and embedding models.
+
+Return behavior: creates or uses a Mistral SDK client, then returns normalized Anvia model adapters.
+
+Notable errors: constructor throws when neither `client` nor `apiKey` is supplied.
+
+## MistralCompletionModel
+
+```ts
+class MistralCompletionModel implements StreamingCompletionModel {
+  constructor(client: Mistral, defaultModel?: string);
+  completion(request: CompletionRequest): Promise<CompletionResponse>;
+  streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
+}
+```
+
+Purpose: adapter for Mistral chat completions.
+
+Return behavior: returns normalized completion responses and stream events.
+
+Notable errors: rejects unsupported image inputs and document file inputs before provider calls; rejects or yields Mistral SDK/provider errors for transport failures.
+
+## MistralEmbeddingModel
+
+```ts
+type MistralEmbeddingModelOptions = {
+  dimensions?: number;
+  maxBatchSize?: number;
+};
+
+class MistralEmbeddingModel implements EmbeddingModel {
+  readonly dimensions?: number;
+  readonly maxBatchSize: number;
+  constructor(client: Mistral, model: string, options?: MistralEmbeddingModelOptions);
+  embedTexts(texts: string[]): Promise<Embedding[]>;
+}
+```
+
+Purpose: Mistral embedding adapter.
+
+Return behavior: returns one `Embedding` per input text.
+
+Notable errors: rejects on Mistral SDK errors or mismatched embedding counts.
+
+## mistral Namespace
+
+```ts
+namespace mistral {
+  MistralClient;
+  MistralCompletionModel;
+  MistralEmbeddingModel;
+  toMistralChatParams;
+  fromMistralChatResponse;
+  fromMistralChatStreamChunk;
+  mistralMessageHelpers;
+}
+```
+
+Purpose: namespaced access to the same public Mistral exports.
+
+Return behavior: export namespace only.
+
+Notable errors: none directly.
+
+## Mapping Helpers
+
+```ts
+function toMistralChatParams(defaultModel: string, request: CompletionRequest): unknown;
+function fromMistralChatResponse(response: unknown): CompletionResponse;
+function fromMistralChatStreamChunk(chunk: unknown): CompletionStreamEvent[];
+
+const mistralMessageHelpers: {
+  messageToMistralMessages(message: Message): unknown[];
+  toolDefinitionToMistral(tool: ToolDefinition): unknown;
+};
+```
+
+Purpose: low-level request and response mappers used by `MistralCompletionModel`.
+
+Return behavior: exported for tests, custom adapters, and compatibility layers that need the same normalized mapping.
+
+Notable errors: malformed provider payloads can produce empty normalized content or throw while parsing tool arguments.

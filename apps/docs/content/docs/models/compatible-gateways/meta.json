@@ -1,0 +1,15 @@
+{
+  "title": "Compatible Gateways",
+  "defaultOpen": true,
+  "collapsible": true,
+  "pages": [
+    "openrouter",
+    "minimax",
+    "moonshot-ai",
+    "novita-ai",
+    "nvidia-nim",
+    "ollama",
+    "ollama-cloud",
+    "opencode"
+  ]
+}

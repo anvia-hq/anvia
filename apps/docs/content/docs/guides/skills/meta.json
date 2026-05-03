@@ -1,0 +1,6 @@
+{
+  "title": "Skills",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["local-skills", "skill-files", "skill-loading", "skill-instructions", "skill-tools"]
+}

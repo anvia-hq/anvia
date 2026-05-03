@@ -1,0 +1,84 @@
+---
+title: Skills
+description: Skill loading, local skill discovery, validation, and generated skill tools.
+---
+
+Import from `@anvia/core` or `@anvia/core/skills`.
+
+## Skill Types
+
+```ts
+type Skill = {
+  readonly name: string;
+  readonly description: string;
+  readonly instructions: string;
+  readonly directory: string;
+  readonly references: string[];
+  readonly scripts: string[];
+  readonly license?: string;
+  readonly metadata?: Record<string, unknown>;
+};
+
+type SkillLoader = {
+  load(): Promise<Skill[]>;
+};
+
+type SkillSet = {
+  readonly skills: Skill[];
+  readonly tools: Tool[];
+  readonly instructions: string;
+};
+```
+
+Purpose: loaded skill metadata and instruction/tool bundle.
+
+Return behavior: `SkillSet` is consumed by `AgentBuilder.skills(...)`.
+
+Notable errors: loaders can reject.
+
+## loadSkills
+
+```ts
+function loadSkills(loaders: SkillLoader | SkillLoader[]): Promise<SkillSet>;
+```
+
+Purpose: load one or more skill sources, merge by skill name, generate instructions, and create skill tools.
+
+Return behavior: later loaders override earlier skills with the same name.
+
+Notable errors: rejects with loader errors or `SkillValidationError` from local loaders.
+
+## skill.local
+
+```ts
+const skill: {
+  local(path: string): SkillLoader;
+};
+```
+
+Purpose: create a loader for one skill directory or a directory containing multiple skill directories.
+
+Return behavior: `load()` discovers `SKILL.md`, `references/`, and `scripts/`.
+
+Notable errors: throws `SkillValidationError` for invalid frontmatter, invalid names, missing descriptions, or directory/name mismatches.
+
+## Validation Types
+
+```ts
+type SkillValidationIssue = {
+  path: string;
+  message: string;
+};
+
+class SkillValidationError extends Error {
+  readonly issues: SkillValidationIssue[];
+}
+```
+
+Purpose: structured local skill validation failures.
+
+Return behavior: thrown by local loading.
+
+Notable errors: this is the notable skills error.
+
+For workflow guidance, see [Skill Files](/docs/guides/skills/skill-files).

@@ -1,0 +1,40 @@
+{
+  "name": "anvia-cli-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "anvia-cli-agent": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.tsx",
+    "build": "tsup src/cli.tsx --format esm --platform node --target node20 --sourcemap --clean --out-dir dist && chmod +x dist/cli.js",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.0.4",
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/openai": "workspace:*",
+    "dotenv": "^17.4.2",
+    "ink": "^7.0.1",
+    "ink-markdown": "^1.0.4",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
+    "react": "^19.2.5",
+    "zod": "^4.4.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.14",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

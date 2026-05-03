@@ -1,0 +1,17 @@
+{
+  "title": "Agents",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "creating-agents",
+    "agent-instructions",
+    "runtime-context",
+    "agent-configuration",
+    "agent-tools",
+    "agent-history",
+    "multi-agent-workflows",
+    "run-lifecycle",
+    "runtime-hooks",
+    "run-limits"
+  ]
+}

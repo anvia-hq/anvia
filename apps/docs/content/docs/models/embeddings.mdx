@@ -1,0 +1,29 @@
+---
+title: Embeddings
+description: Configure embedding models for retrieval and vector search.
+---
+
+Embedding models convert text into vectors. In Anvia, they are separate from completion models so retrieval code can swap providers without changing agent logic.
+
+```ts
+import { OpenAIClient } from "@anvia/openai";
+
+const openai = new OpenAIClient({ apiKey });
+const embeddings = openai.embeddingModel("text-embedding-3-small");
+
+const result = await embeddings.embedTexts(["Anvia carries structured context."]);
+```
+
+## Provider Support
+
+| Provider package | Embedding support |
+| --- | --- |
+| `@anvia/openai` | OpenAI and OpenAI-compatible embedding endpoints |
+| `@anvia/gemini` | Gemini embedding models |
+| `@anvia/mistral` | Mistral embedding models |
+| `@anvia/fastembed` | Local FastEmbed embeddings |
+| `@anvia/transformers` | Local Transformers embeddings |
+
+Use embeddings with [Vector Stores](/docs/guides/retrieval/vector-stores) for retrieval workflows.
+
+Keep the embedding model used for indexing and searching consistent. If one workflow embeds documents with one provider and searches with another, vector dimensions and similarity behavior may not match.

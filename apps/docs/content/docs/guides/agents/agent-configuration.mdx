@@ -1,0 +1,86 @@
+---
+title: Configure Defaults
+description: Configure agent identity, request defaults, tools, and model behavior.
+---
+
+Agent configuration is split between build-time defaults and request-time overrides. Put stable behavior on the agent. Put user-specific history, trace metadata, request hooks, and one-off limits on the prompt request.
+
+## Identity
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .name("Support Agent")
+  .description("Answers customer support questions.")
+  .build();
+```
+
+Use the id for logs, traces, metrics, and references from other workflows. Use `name` and `description` for human-facing surfaces.
+
+## Model Defaults
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .temperature(0.2)
+  .maxTokens(800)
+  .additionalParams({
+    reasoning: { effort: "low" },
+  })
+  .build();
+```
+
+`temperature` and `maxTokens` are normalized request options. Use `additionalParams(...)` for provider-specific fields that Anvia should pass through.
+
+For provider setup, model creation, embedding models, and provider-specific capabilities, see [Models](/docs/models).
+
+## Tool Behavior
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .tool(lookupOrder)
+  .toolChoice("auto")
+  .defaultMaxTurns(3)
+  .build();
+```
+
+`defaultMaxTurns(...)` controls the model-tool loop. Start low: one model call, one tool call, and one final model call is usually enough for a simple tool workflow.
+
+`toolChoice(...)` accepts:
+
+| Value | Meaning |
+| --- | --- |
+| `"auto"` | The model may call a tool |
+| `"required"` | The model should call a tool |
+| `"none"` | The model should not call tools |
+| `{ type: "function", name }` | Prefer a specific tool |
+
+## Request Overrides
+
+Use request-level methods when the setting belongs to one prompt.
+
+```ts
+const response = await agent
+  .prompt(userInput)
+  .withHistory(history)
+  .maxTurns(1)
+  .withTrace({ name: "support-chat", userId })
+  .send();
+```
+
+Request options do not mutate the agent. Reuse the same agent across requests.
+
+## Production Shape
+
+Create agents once near application startup or dependency wiring.
+
+```ts
+const client = new OpenAIClient({ apiKey });
+const model = client.completionModel("gpt-5");
+
+export const supportAgent = new AgentBuilder("support", model)
+  .instructions("Answer support questions using the available tools.")
+  .tool(lookupOrder)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+Avoid creating provider clients, models, and agents inside every request handler unless the configuration truly changes per request.

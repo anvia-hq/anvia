@@ -1,0 +1,70 @@
+---
+title: Tracing
+description: Trace Anvia runs through observability integrations.
+---
+
+Tracing is built on the observer interface. A tracing integration observes runs, model generations, tool calls, errors, usage, and trace metadata.
+
+## 1. Attach a Tracing Observer
+
+```ts
+const tracing = createTracingObserver();
+
+const agent = new AgentBuilder("support", model)
+  .observe(tracing)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+Tracing observers use the same `.observe(...)` API as logging observers.
+
+## 2. Pass Trace Metadata
+
+```ts
+const response = await agent
+  .prompt("Summarize ticket TICKET-1001.")
+  .withTrace({
+    name: "support-ticket-summary",
+    userId: user.id,
+    sessionId: session.id,
+    metadata: { ticketId: "TICKET-1001" },
+    tags: ["support"],
+    version: "2026-05-01",
+  })
+  .send();
+```
+
+## 3. Capture the Returned Trace
+
+```ts
+console.log(response.trace?.traceId);
+console.log(response.trace?.observationId);
+```
+
+Use these ids to link product logs, support tickets, evaluation scores, or later runs.
+
+## 4. Flush on Shutdown
+
+Long-lived tracing integrations may buffer telemetry.
+
+```ts
+await tracing.flush?.();
+await tracing.shutdown?.();
+```
+
+Call `flush()` before process exit when you need pending events delivered. Call `shutdown()` during application shutdown.
+
+## 5. Use the Langfuse Adapter
+
+Anvia ships Langfuse support as a separate package:
+
+```ts
+import { langfuse } from "@anvia/langfuse";
+
+const tracing = langfuse.create({
+  publicKey,
+  secretKey,
+});
+```
+
+Continue with [Langfuse](/docs/guides/observability/langfuse) for the complete setup.

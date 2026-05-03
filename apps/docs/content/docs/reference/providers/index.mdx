@@ -1,0 +1,19 @@
+---
+title: Provider Reference
+description: Public provider adapter exports.
+---
+
+Provider packages adapt external model SDKs into Anvia completion and embedding interfaces.
+
+## Packages
+
+| Package | Main exports |
+| --- | --- |
+| `@anvia/openai` | `OpenAIClient`, OpenAI Responses/chat completion models, embedding models |
+| `@anvia/anthropic` | `AnthropicClient`, Anthropic messages model |
+| `@anvia/gemini` | `GeminiClient`, Gemini completion and embedding models |
+| `@anvia/mistral` | `MistralClient`, Mistral completion and embedding models |
+
+Provider clients only use explicit constructor values. They do not read environment variables and do not expose `.fromEnv()`.
+
+For model-focused usage, see [Models](/docs/models).

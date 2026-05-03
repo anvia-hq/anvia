@@ -1,0 +1,125 @@
+---
+title: OpenAI Provider
+description: Public exports from @anvia/openai.
+---
+
+Import from `@anvia/openai`.
+
+## OpenAIClient
+
+```ts
+type OpenAIClientOptions = {
+  apiKey?: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+  completionApi?: "responses" | "chat";
+  client?: OpenAI;
+};
+
+class OpenAIClient {
+  readonly client: OpenAI;
+  constructor(options?: OpenAIClientOptions);
+  completionModel(model?: string): StreamingCompletionModel;
+  embeddingModel(model?: string, options?: ProviderEmbeddingModelOptions): OpenAIEmbeddingModel;
+  imageGenerationModel(model?: string): OpenAIImageGenerationModel;
+  audioGenerationModel(model?: string): OpenAIAudioGenerationModel;
+  transcriptionModel(model?: string): OpenAITranscriptionModel;
+}
+```
+
+Purpose: factory for OpenAI completion, embedding, image generation, audio generation, and transcription models.
+
+Return behavior: `completionModel(...)` returns a streaming model backed by Responses API by default or chat completions when `completionApi: "chat"` is set.
+
+Notable errors: constructor throws when neither `client` nor `apiKey` is supplied.
+
+## Multimodal Models
+
+```ts
+class OpenAIImageGenerationModel implements ImageGenerationModel {}
+class OpenAIAudioGenerationModel implements AudioGenerationModel {}
+class OpenAITranscriptionModel implements TranscriptionModel {}
+```
+
+Purpose: OpenAI adapters for `@anvia/core` image generation, text-to-speech, and transcription.
+
+Return behavior: image generation maps base64 image outputs to `Uint8Array`; audio generation maps speech responses to `Uint8Array`; transcription returns normalized text.
+
+Notable errors: rejects on OpenAI SDK errors or when image/transcription responses do not contain expected content.
+
+Model constants: `GPT_IMAGE_1`, `GPT_IMAGE_2`, `DALL_E_2`, `DALL_E_3`, `TTS_1`, `TTS_1_HD`, and `WHISPER_1`.
+
+## OpenAIEmbeddingModel
+
+```ts
+type ProviderEmbeddingModelOptions = {
+  dimensions?: number;
+  user?: string;
+  maxBatchSize?: number;
+};
+
+class OpenAIEmbeddingModel implements EmbeddingModel {
+  readonly dimensions?: number;
+  readonly maxBatchSize: number;
+  constructor(client: OpenAI, model: string, options?: ProviderEmbeddingModelOptions);
+  embedTexts(texts: string[]): Promise<Embedding[]>;
+}
+```
+
+Purpose: OpenAI embedding adapter.
+
+Return behavior: returns one `Embedding` per input text.
+
+Notable errors: rejects on OpenAI SDK errors or mismatched embedding counts.
+
+## OpenAIResponsesCompletionModel
+
+```ts
+class OpenAIResponsesCompletionModel implements StreamingCompletionModel {
+  constructor(client: OpenAI, defaultModel?: string);
+  completion(request: CompletionRequest): Promise<CompletionResponse>;
+  streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
+}
+```
+
+Purpose: completion adapter for OpenAI Responses API.
+
+Return behavior: non-streaming calls return normalized `CompletionResponse`; streaming calls yield normalized completion events.
+
+Notable errors: rejects or yields errors from OpenAI Responses API calls.
+
+## OpenAIChatCompletionModel
+
+```ts
+class OpenAIChatCompletionModel implements StreamingCompletionModel {
+  constructor(client: OpenAI, defaultModel?: string);
+  completion(request: CompletionRequest): Promise<CompletionResponse>;
+  streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
+}
+```
+
+Purpose: chat-completions adapter used by `OpenAIClient` when `completionApi: "chat"` is set or a custom `baseUrl` is provided.
+
+Return behavior: maps Anvia requests to chat completion params and maps responses back to Anvia content.
+
+Notable errors: rejects or yields provider SDK errors.
+
+## Helper Namespaces
+
+```ts
+namespace openai {
+  OpenAIClient;
+  OpenAIEmbeddingModel;
+  OpenAIImageGenerationModel;
+  OpenAIAudioGenerationModel;
+  OpenAITranscriptionModel;
+  OpenAIResponsesCompletionModel;
+  OpenAIChatCompletionModel;
+}
+```
+
+Purpose: namespaced access to the same public model/client exports.
+
+Return behavior: export namespaces only.
+
+Notable errors: none directly.

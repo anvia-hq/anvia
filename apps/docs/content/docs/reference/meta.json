@@ -1,0 +1,7 @@
+{
+  "title": "Reference",
+  "description": "Public API",
+  "icon": "CodeXml",
+  "root": true,
+  "pages": ["index", "api-coverage", "core", "providers", "integrations", "studio"]
+}

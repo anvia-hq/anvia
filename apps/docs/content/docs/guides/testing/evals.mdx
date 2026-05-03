@@ -1,0 +1,101 @@
+---
+title: Evals
+description: Run repeatable checks against functions, agents, and traced workflows.
+---
+
+Use evals when you want a repeatable signal for agent or workflow behavior. The eval runner lives in `@anvia/core`; integrations such as Langfuse can report scores without becoming part of the core runtime.
+
+## Run a Suite
+
+An eval suite has cases, a target, metrics, and optional reporters.
+
+```ts
+import { contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
+
+const result = await runEvalSuite({
+  name: "support-answer-quality",
+  cases: [
+    {
+      id: "refund-window",
+      input: "When can I request a refund?",
+      expected: "Refunds are available for 30 days.",
+    },
+  ],
+  target: async (input) => answerSupportQuestion(input),
+  metrics: [
+    contains({ expected: "30 days" }),
+    exactMatch({
+      name: "not_blank",
+      actual: ({ output }) => output.trim().length > 0,
+      expected: true,
+    }),
+  ],
+});
+
+console.log(result.passed, result.failed, result.invalid);
+```
+
+`runEvalSuite(...)` returns ordered case results. If the target throws, each metric for that case is marked invalid.
+
+## Evaluate Agents
+
+Wrap an agent with `agentEvalTarget(...)` when the target should call `agent.prompt(...).send()`.
+
+```ts
+import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
+
+const result = await runEvalSuite({
+  name: "support-agent-regression",
+  cases: [{ id: "refund-window", input: "How long are refunds available?", expected: "30 days" }],
+  target: agentEvalTarget(agent),
+  metrics: [contains()],
+});
+```
+
+By default, string metrics evaluate the prompt response output. You can pass selectors when your target returns a custom object.
+
+## Built-in Metrics
+
+| Metric | Use it for |
+| --- | --- |
+| `exactMatch(...)` | deterministic strings, booleans, or JSON-shaped values |
+| `contains(...)` | required phrases or regular expressions |
+| `semanticSimilarity(...)` | embedding-based answer similarity |
+| `llmJudge(...)` | schema-shaped LLM judgments with a pass predicate |
+| `llmScore(...)` | 0 to 1 LLM scoring with feedback and a threshold |
+
+## Report to Langfuse
+
+Use `createLangfuseEvalReporter(...)` from `@anvia/langfuse` when you want metric outcomes sent as Langfuse scores.
+
+```ts
+import { createLangfuseEvalReporter, langfuse } from "@anvia/langfuse";
+
+const tracing = langfuse.create({ publicKey, secretKey, baseUrl });
+
+await runEvalSuite({
+  name: "support-agent-regression",
+  cases,
+  target: agentEvalTarget(agent),
+  metrics: [contains()],
+  reporters: [createLangfuseEvalReporter(tracing)],
+});
+```
+
+The reporter reads trace IDs from a prompt response trace or from case metadata:
+
+```ts
+{
+  id: "refund-window",
+  input: "How long are refunds available?",
+  expected: "30 days",
+  metadata: {
+    traceId: "trace-id",
+    observationId: "observation-id",
+  },
+}
+```
+
+Invalid outcomes are skipped by default. Pass `{ publishInvalid: true }` if invalid outcomes should publish as score `0`.
+
+For runnable examples, see `examples/cookbook/08_evals` for deterministic, semantic, custom, agent, and LLM judge/score evals. Langfuse reporting remains in `examples/cookbook/10_integrations/04-langfuse-eval-reporting.ts`.

@@ -1,0 +1,88 @@
+---
+title: Agent Output
+description: Use schemas directly on agent responses.
+---
+
+Use agent output schemas when the agent's final answer should follow a JSON-shaped contract.
+
+## 1. Define the Response Shape
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
+
+const classificationSchema = z.object({
+  category: z.enum(["billing", "technical", "account"]),
+  confidence: z.number(),
+});
+```
+
+## 2. Attach It to the Agent
+
+```ts
+const agent = new AgentBuilder("classifier", model)
+  .instructions("Classify support messages.")
+  .outputSchema(classificationSchema)
+  .build();
+```
+
+## 3. Send the Prompt
+
+```ts
+const response = await agent
+  .prompt("I cannot update my payment method.")
+  .send();
+```
+
+`response.output` is the final assistant text. When your application needs typed data, parse and validate it at the boundary.
+
+```ts
+const data = classificationSchema.parse(JSON.parse(response.output));
+
+console.log(data.category);
+```
+
+## Keep the Prompt Direct
+
+Structured output works best when the instruction names the expected object.
+
+```ts
+const agent = new AgentBuilder("lead-qualifier", model)
+  .instructions("Return only the lead qualification object.")
+  .outputSchema(
+    z.object({
+      qualified: z.boolean(),
+      companySize: z.string().optional(),
+      reason: z.string(),
+    }),
+  )
+  .build();
+```
+
+Avoid asking for both a long explanation and a strict object in the same agent. If you need both, include fields for both.
+
+## With Tools
+
+Structured output can be combined with tools. The agent may call tools first, then return the final schema-shaped answer.
+
+```ts
+const agent = new AgentBuilder("order-status", model)
+  .instructions("Look up the order, then return the status object.")
+  .tool(lookupOrder)
+  .defaultMaxTurns(3)
+  .outputSchema(
+    z.object({
+      orderId: z.string(),
+      status: z.string(),
+      customerMessage: z.string(),
+    }),
+  )
+  .build();
+```
+
+## When to Use Agent Output
+
+Use this when the agent is already doing the reasoning and should return a structured final answer. Use an [Extractor](/docs/guides/structured-output/extractors) when the job is only to convert existing text into data.

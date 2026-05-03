@@ -1,0 +1,77 @@
+# Anvia Cookbook
+
+The cookbook is the runnable learning path for the Anvia SDK. Each section adds one SDK concept at a time, moving from core agent calls to tools, structured output, pipelines, retrieval, multimodal APIs, multi-agent workflows, evals, Studio, and external integrations.
+
+Run examples from the repository root:
+
+```sh
+pnpm cookbook:basics:01
+```
+
+Or from this directory:
+
+```sh
+pnpm basics:01
+```
+
+Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `cookbook:pipeline:04`, `cookbook:rag:05`, and `cookbook:multimodal:03` remain as aliases.
+
+## Learning Path
+
+| Section | Focus |
+| --- | --- |
+| `01_basics` | First text calls, chat history, static context, streaming, and `ReadableStream` output. |
+| `02_tools` | Tool schemas, streamed tool events, hooks, concurrency, conditional tools, think tools, application state, history with tools, guarded tools, and dynamic tool selection. |
+| `03_structured_output` | Schema-first extraction, agent output schemas, context, retries, and extraction with prior messages. |
+| `04_providers_and_multimodal` | Provider adapters, model capabilities, reasoning streams, image/PDF attachments, image generation, audio generation, and transcription. |
+| `05_pipelines` | Step transforms, async steps, composition, named parallel branches, batching, agents, extractors, and richer workflows. |
+| `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document loaders, vector stores, and embedding provider variants. |
+| `07_multi_agent` | Agents as tools and pipeline-backed parallel specialists. |
+| `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, and LLM judge/score. |
+| `09_studio` | Single-agent and multi-agent Studio runners, tool approvals, human feedback, and Knowledge inspection. |
+| `10_integrations` | MCP tools, local skills, Langfuse tracing, and Langfuse eval reporting. |
+
+## Environment
+
+Create a repository-root `.env` for examples that call provider APIs:
+
+```sh
+OPENROUTER_API_KEY=...
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+MISTRAL_API_KEY=...
+LANGFUSE_PUBLIC_KEY=...
+LANGFUSE_SECRET_KEY=...
+LANGFUSE_BASE_URL=...
+DATABASE_URL=...
+```
+
+Not every example needs every variable. Pure pipeline, dynamic tool, and core eval examples run without provider credentials.
+
+## External Services and Side Effects
+
+- Chroma, Qdrant, and pgvector examples use `compose.cookbook.yml` from the cookbook directory:
+
+  ```sh
+  docker compose -f examples/cookbook/compose.cookbook.yml up -d
+  pnpm cookbook:retrieval:05
+  pnpm cookbook:retrieval:06
+  pnpm cookbook:retrieval:07
+  pnpm cookbook:retrieval:08
+  ```
+
+- `retrieval:08` uses the compose pgvector connection by default. Set `DATABASE_URL` to point it at another Postgres database.
+- Langfuse examples need Langfuse credentials and live in `10_integrations`.
+- Studio examples start a local HTTP server and write Studio state under `.anvia-studio`.
+- Tool history and loader examples write sample files under `.memory`.
+- Image and audio generation examples write generated media files in the current working directory.
+- `providers:09` uses the bundled `assets/audio/voice.wav` sample by default. Set `ANVIA_AUDIO_FILE` to transcribe a different local audio file.
+
+## Representative No-Network Checks
+
+```sh
+pnpm --filter cookbook typecheck
+pnpm --filter cookbook pipelines:01
+pnpm --filter cookbook tools:09
+pnpm --filter cookbook evals:01
+```

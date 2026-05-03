@@ -1,0 +1,81 @@
+---
+title: Errors and Reconnects
+description: Handle MCP startup, runtime, and transport failures.
+---
+
+MCP failures can happen while connecting, listing tools, calling tools, or closing the transport.
+
+## Connect Errors
+
+`connectMcp(...)` connects and lists tools immediately.
+
+```ts
+try {
+  const docsServer = await connectMcp(
+    mcp.http({
+      name: "docs",
+      url: "https://mcp.example.com/mcp",
+    }),
+  );
+} catch (error) {
+  logger.error(error, "failed to connect MCP server");
+}
+```
+
+If startup requires that server, fail fast. If the server is optional, build the agent without it and retry in the background.
+
+## Tool Call Errors
+
+MCP tool errors are treated like tool errors. The model receives the failure text and can continue the run.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .mcp([docsServer])
+  .defaultMaxTurns(3)
+  .build();
+```
+
+Keep turn limits low so a failing MCP tool cannot create an unbounded retry loop.
+
+## Reconnect Shape
+
+Anvia does not manage reconnects for you. Own that in your application registry.
+
+```ts
+import type { McpConnection, McpServer } from "@anvia/core";
+
+type McpRegistry = {
+  get(name: string): McpServer | undefined;
+  add(server: McpServer): void;
+};
+
+async function reconnect(connection: McpConnection, registry: McpRegistry) {
+  const previous = registry.get(connection.name);
+  await previous?.close();
+
+  const next = await connectMcp(connection);
+  registry.add(next);
+}
+```
+
+After reconnecting, build new agents or update the `ToolSet` used by your agents.
+
+## Cleanup
+
+Always close long-lived MCP servers during shutdown.
+
+```ts
+await registry.closeAll();
+```
+
+For request-scoped connections, use `try/finally`.
+
+```ts
+const server = await connectMcp(connection);
+
+try {
+  return await runAgent(server);
+} finally {
+  await server.close();
+}
+```

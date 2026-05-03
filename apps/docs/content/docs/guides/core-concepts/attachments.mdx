@@ -1,0 +1,99 @@
+---
+title: Attachments
+description: Send images and documents through Anvia messages when the provider model supports them.
+---
+
+Attachments are rich content parts inside a user message. Use them when the model should inspect an image, PDF, text document, or provider-supported file input as part of the prompt.
+
+Provider support varies. Check the model before building a workflow that depends on images or documents.
+
+## 1. Send an Image
+
+```ts
+import { AgentBuilder, Message, UserContent } from "@anvia/core";
+
+const agent = new AgentBuilder("visual-support", model)
+  .instructions("Inspect screenshots and answer with concrete UI observations.")
+  .build();
+
+const response = await agent
+  .prompt(
+    Message.user([
+      UserContent.text("What error state is visible in this screenshot?"),
+      UserContent.imageUrl("https://example.com/screenshot.png", {
+        detail: "auto",
+      }),
+    ]),
+  )
+  .send();
+```
+
+Use `imageBase64(...)` when your application already has the image bytes:
+
+```ts
+Message.user([
+  UserContent.text("Read the label in this image."),
+  UserContent.imageBase64(base64Image, "image/png"),
+]);
+```
+
+## 2. Send a Document
+
+```ts
+import { Message, UserContent } from "@anvia/core";
+
+await agent
+  .prompt(
+    Message.user([
+      UserContent.text("Summarize the attached report."),
+      UserContent.documentUrl("https://example.com/report.pdf", "application/pdf", {
+        filename: "report.pdf",
+      }),
+    ]),
+  )
+  .send();
+```
+
+Use `documentBase64(...)` for application-owned files and `documentText(...)` for plain text content that should be treated as part of the message.
+
+## 3. Persist Attachment History
+
+Conversation history is still a plain `Message[]`:
+
+```ts
+const history = await conversations.loadMessages(conversationId);
+
+const response = await agent
+  .prompt(currentMessage)
+  .withHistory(history)
+  .send();
+
+await conversations.saveMessages(conversationId, [
+  ...history,
+  ...response.messages,
+]);
+```
+
+Store only attachment data your product is allowed to retain. For large files, consider storing durable file references in your application and reconstructing supported message content at request time.
+
+## 4. Choose Attachments or Retrieval
+
+| Use attachments when | Use retrieval when |
+| --- | --- |
+| The file is part of the current user request | The model needs a searchable knowledge base |
+| The provider model can inspect the file directly | You need tenant filters, freshness, or ranking |
+| The file is small enough for the prompt budget | The source corpus is large or reused often |
+
+For large document collections, preprocess text into embeddings and use [RAG Context](/docs/guides/retrieval/rag-context).
+
+## 5. Provider Notes
+
+| Provider | Current guidance |
+| --- | --- |
+| OpenAI | Use provider models that support the attachment type you send |
+| Anthropic | Attachment support depends on the selected model and provider SDK mapping |
+| Gemini | Supports image and document attachments; selected model limits still apply |
+| Mistral | Current Anvia Mistral support intentionally rejects image and document file attachments |
+| Compatible providers | Treat support as endpoint-specific, even when the API shape is compatible |
+
+Unsupported attachments usually fail as provider validation errors. Handle them at the same application boundary where you handle model configuration or request failures.

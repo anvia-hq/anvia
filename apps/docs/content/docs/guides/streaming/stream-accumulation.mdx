@@ -1,0 +1,65 @@
+---
+title: Stream Accumulation
+description: Collect streamed chunks into final agent responses.
+---
+
+Anvia streams deltas while also accumulating the final assistant message, tool calls, usage, and history.
+
+## 1. Render Deltas Immediately
+
+```ts
+let text = "";
+
+for await (const event of agent.prompt("Write a reply.").stream()) {
+  if (event.type === "text_delta") {
+    text += event.delta;
+    render(text);
+  }
+}
+```
+
+Use deltas for live UI updates.
+
+## 2. Use the Final Event for State
+
+```ts
+for await (const event of agent.prompt("Write a reply.").stream()) {
+  if (event.type === "final") {
+    await saveMessages(event.messages);
+    await saveUsage(event.usage);
+  }
+}
+```
+
+Use the final event for durable application state. It contains the completed output and the message history created by the run.
+
+## 3. Tool Calls Are Accumulated Across Deltas
+
+Providers can stream tool call names and arguments in chunks. Anvia buffers those chunks and emits a normalized `tool_call` event when the call is complete.
+
+```ts
+for await (const event of agent.prompt("Add 2 and 5.").stream()) {
+  if (event.type === "tool_call") {
+    console.log(event.toolCall.function.name);
+    console.log(event.toolCall.function.arguments);
+  }
+}
+```
+
+After tool execution, Anvia emits `tool_result` and continues the run with the next model turn.
+
+## 4. Reasoning Deltas Are Preserved
+
+When a provider exposes reasoning deltas, Anvia streams them as `reasoning_delta` events and includes the accumulated reasoning content in the final assistant message. Providers can mark deltas with `contentType: "summary"`, `"text"`, `"encrypted"`, or `"redacted"`; plain deltas still work as legacy reasoning text.
+
+```ts
+for await (const event of agent.prompt("Think through this.").stream()) {
+  if (event.type === "reasoning_delta") {
+    if (event.contentType === undefined || event.contentType === "summary") {
+      debugPanel.append(event.delta);
+    }
+  }
+}
+```
+
+Keep user-facing UI focused on `text_delta` unless your product intentionally exposes reasoning content.

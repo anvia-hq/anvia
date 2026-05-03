@@ -1,0 +1,144 @@
+---
+title: Approval Runtimes
+description: Build the userland system that resolves approvals.
+---
+
+Approval runtimes are userland code. A hook can call a database, wait on a queue, show a UI, notify reviewers, apply permission checks, or enforce timeout policy before it returns a tool action.
+
+Studio gives you a local approval UI. Build your own runtime when approval needs to integrate with product permissions, Slack, ticketing systems, audit logs, or production queues.
+
+## Runtime Shape
+
+```ts
+const approvals = {
+  async waitForDecision(request: {
+    toolName: string;
+    args: string;
+    reason?: string;
+  }): Promise<boolean> {
+    const approval = await db.approval.create({
+      data: {
+        toolName: request.toolName,
+        args: request.args,
+        reason: request.reason,
+        status: "pending",
+      },
+    });
+
+    await notifyReviewers({ approvalId: approval.id });
+
+    const decision = await waitUntilResolved(approval.id);
+
+    return decision.status === "approved";
+  },
+};
+```
+
+Anvia does not define this object. It is your app boundary for approval state, notifications, optional timeouts, and audit records.
+
+## Use It from a Hook
+
+```ts
+const approvalHook = createHook({
+  async onToolCall({ toolName, args, tool }) {
+    if (toolName !== "refund_order") {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      toolName,
+      args,
+      reason: "Refunds require staff approval.",
+    });
+
+    return approved
+      ? tool.run()
+      : tool.skip("Refund was not approved.");
+  },
+});
+```
+
+## Store Review State
+
+Persist enough data to explain what happened later.
+
+```ts
+type ApprovalRecord = {
+  id: string;
+  runId: string;
+  agentId: string;
+  toolName: string;
+  args: string;
+  reason?: string;
+  status: "pending" | "approved" | "rejected" | "timed_out";
+  requestedAt: string;
+  resolvedAt?: string;
+  reviewerId?: string;
+  decisionReason?: string;
+};
+```
+
+The model prompt is not an audit log. Store tool arguments, reviewer identity, decision reason, and timestamps in your application database.
+
+## Notify Reviewers
+
+Your runtime can notify one or more review surfaces.
+
+```ts
+async function waitForDecision(request: ApprovalRequest): Promise<boolean> {
+  const approval = await approvals.create(request);
+
+  await Promise.all([
+    slack.sendApprovalMessage(approval),
+    adminEvents.publish("approval.created", approval),
+  ]);
+
+  const decision = await approvals.waitUntilResolved(approval.id);
+  return decision.status === "approved";
+}
+```
+
+The hook does not care whether the decision came from Studio, your app, Slack, email, or a queue worker. It only awaits a boolean or a richer decision object.
+
+## Optional Timeouts
+
+Timeouts are not required by Anvia. If the approval promise never resolves, the agent run keeps waiting. Use a timeout when the caller needs bounded latency, especially in production HTTP requests, queues, or UIs.
+
+```ts
+const approved = await Promise.race([
+  approvals.waitForDecision({
+    toolName,
+    args,
+    reason: "Refunds require staff approval.",
+  }),
+  sleep(60_000).then(() => false),
+]);
+
+return approved
+  ? tool.run()
+  : tool.skip("No reviewer approved this action in time.");
+```
+
+Use clear messages because the model sees them as the skipped tool result.
+
+## Rich Decisions
+
+Return more than a boolean when the final tool result should include reviewer context.
+
+```ts
+const decision = await approvals.waitForDecision({
+  toolName,
+  args,
+  reason: "Refunds require staff approval.",
+});
+
+if (decision.status === "approved") {
+  return tool.run();
+}
+
+return tool.skip(
+  decision.reason ?? "The reviewer rejected this action.",
+);
+```
+
+Keep the skipped message concise. It becomes the tool result the model uses to produce the final response.

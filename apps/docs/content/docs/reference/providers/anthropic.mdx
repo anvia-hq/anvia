@@ -1,0 +1,59 @@
+---
+title: Anthropic Provider
+description: Public exports from @anvia/anthropic.
+---
+
+Import from `@anvia/anthropic`.
+
+## AnthropicClient
+
+```ts
+type AnthropicClientOptions = {
+  apiKey?: string;
+  baseUrl?: string;
+  client?: Anthropic;
+};
+
+class AnthropicClient {
+  readonly client: Anthropic;
+  constructor(options?: AnthropicClientOptions);
+  completionModel(model?: string): AnthropicCompletionModel;
+}
+```
+
+Purpose: factory for Anthropic completion models.
+
+Return behavior: `completionModel(...)` returns a streaming Anvia completion model.
+
+Notable errors: constructor throws when neither `client` nor `apiKey` is supplied.
+
+## AnthropicCompletionModel
+
+```ts
+class AnthropicCompletionModel implements StreamingCompletionModel {
+  constructor(client: Anthropic, defaultModel?: string);
+  completion(request: CompletionRequest): Promise<CompletionResponse>;
+  streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
+}
+```
+
+Purpose: adapter for Anthropic Messages API.
+
+Return behavior: maps Anvia completion requests to Anthropic params and returns normalized responses/events.
+
+Notable errors: rejects or yields SDK/provider errors.
+
+## Helper Namespaces
+
+```ts
+namespace anthropic {
+  AnthropicClient;
+  AnthropicCompletionModel;
+}
+```
+
+Purpose: namespaced access to the same public model/client exports.
+
+Return behavior: export namespaces only.
+
+Notable errors: none directly.

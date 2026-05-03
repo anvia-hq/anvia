@@ -1,0 +1,167 @@
+---
+title: Studio Types
+description: Studio config, agent config, capabilities, and error response contracts.
+---
+
+Import from `@anvia/studio`.
+
+## Config Types
+
+```ts
+type StudioCapability =
+  | "agents"
+  | "approvals"
+  | "knowledge"
+  | "observability"
+  | "sessions"
+  | "traces";
+
+type StudioAgent = {
+  id: string;
+  agent: Agent;
+  name?: string;
+  description?: string;
+  quickPrompts?: string[];
+  metadata?: JsonObject;
+};
+
+type StudioAgentConfig = {
+  id: string;
+  name?: string;
+  description?: string;
+  quickPrompts: string[];
+  metadata?: JsonObject;
+};
+
+type StudioCapabilityConfig = {
+  enabled: boolean;
+  reason?: string;
+};
+
+type StudioConfig = {
+  id: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  agents: StudioAgentConfig[];
+  chat: { quickPrompts: Record<string, string[]> };
+  capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
+  unsupportedCapabilities: StudioCapability[];
+};
+```
+
+Purpose: configuration returned by Studio runtime and HTTP config endpoints.
+
+Return behavior: `Studio.config()` returns `StudioConfig`.
+
+Notable errors: none directly.
+
+## Run Types
+
+```ts
+type AgentRunRequest = {
+  message: string | Message;
+  history?: Message[];
+  sessionId?: string;
+  stream?: boolean;
+  maxTurns?: number;
+  toolConcurrency?: number;
+  metadata?: JsonObject;
+  trace?: AgentTraceOptions;
+};
+
+type AgentRunResponse = PromptResponse;
+
+type AgentRunStreamEvent =
+  | AgentStreamEvent
+  | StudioToolApprovalRequestEvent
+  | StudioToolApprovalResultEvent
+  | StudioToolQuestionRequestEvent
+  | StudioToolQuestionResultEvent;
+```
+
+Purpose: HTTP request and response contracts for Studio agent runs.
+
+Return behavior: non-streaming runs return `AgentRunResponse`; streaming runs emit newline-delimited `AgentRunStreamEvent` values.
+
+Notable errors: invalid run request bodies return `bad_request`; unsupported stores or capabilities return `unsupported_capability`.
+
+## Knowledge Types
+
+```ts
+type StudioKnowledgeSourceKind = "static_context" | "dynamic_context" | "dynamic_tools";
+
+type StudioKnowledgeSourceSummary = {
+  kind: StudioKnowledgeSourceKind;
+  count: number;
+};
+
+type StudioStaticKnowledgeDocument = {
+  id: string;
+  text: string;
+  additionalProps?: JsonObject;
+};
+
+type StudioKnowledgeEvidenceDocument = {
+  id?: string;
+  text?: string;
+  additionalProps?: JsonObject;
+};
+
+type StudioKnowledgeEvidence = {
+  traceId: string;
+  sessionId: string;
+  observationId: string;
+  observationName: string;
+  turn: number;
+  startedAt: string;
+  query?: string;
+  documentCount: number;
+  toolCount: number;
+  documents: StudioKnowledgeEvidenceDocument[];
+  tools: string[];
+};
+
+type StudioAgentKnowledgeConfig = {
+  agentId: string;
+  agentName?: string;
+  sources: StudioKnowledgeSourceSummary[];
+  staticContext: StudioStaticKnowledgeDocument[];
+};
+
+type StudioKnowledgeSummary = {
+  agents: StudioAgentKnowledgeConfig[];
+  evidence: StudioKnowledgeEvidence[];
+};
+```
+
+Purpose: summarize each agent's inspectable static context, dynamic context, dynamic tools, and recent trace evidence.
+
+Return behavior: returned by `GET /knowledge`.
+
+Notable errors: invalid `limit` query values return `bad_request`.
+
+## Error Types
+
+```ts
+type StudioErrorCode =
+  | "bad_request"
+  | "conflict"
+  | "not_found"
+  | "unsupported_capability"
+  | "internal_error";
+
+type StudioErrorResponse = {
+  error: {
+    code: StudioErrorCode;
+    message: string;
+    details?: JsonValue;
+  };
+};
+```
+
+Purpose: normalized Studio HTTP error shape.
+
+Return behavior: returned by API routes on request or runtime failures.
+
+Notable errors: `internal_error` responses serialize thrown errors into `details` when available.

@@ -1,0 +1,93 @@
+---
+title: Langfuse
+description: Public exports from @anvia/langfuse.
+---
+
+Import from `@anvia/langfuse`.
+
+## LangfuseTracingOptions
+
+```ts
+type LangfuseTracingOptions = {
+  publicKey?: string;
+  secretKey?: string;
+  baseUrl?: string;
+  environment?: string;
+  release?: string;
+};
+```
+
+Purpose: configure Langfuse tracing and scoring.
+
+Return behavior: consumed by `langfuse.create(...)`.
+
+Notable errors: scoring requires both `publicKey` and `secretKey`.
+
+## LangfuseTracing
+
+```ts
+type LangfuseTracing = AgentObserver & {
+  flush(): Promise<void>;
+  shutdown(): Promise<void>;
+  score(args: LangfuseScoreArgs): Promise<void>;
+};
+```
+
+Purpose: Agent observer with Langfuse lifecycle and scoring methods.
+
+Return behavior: can be passed to `AgentBuilder.observe(...)`.
+
+Notable errors: `score(...)` throws without a trace id or credentials and rejects on Langfuse API failures.
+
+## LangfuseScoreArgs
+
+```ts
+type LangfuseScoreArgs = {
+  traceId?: string;
+  observationId?: string;
+  name: string;
+  value: number;
+  comment?: string;
+  metadata?: Record<string, JsonValue | undefined>;
+};
+```
+
+Purpose: submit Langfuse scores for a trace or observation.
+
+Return behavior: consumed by `LangfuseTracing.score(...)`.
+
+Notable errors: score submission requires a trace id and Langfuse credentials.
+
+## langfuse
+
+```ts
+const langfuse: {
+  create(options?: LangfuseTracingOptions): LangfuseTracing;
+};
+```
+
+Purpose: factory for Langfuse tracing observers.
+
+Return behavior: starts an OpenTelemetry SDK with a Langfuse span processor and returns an observer.
+
+Notable errors: construction or later flush/shutdown can fail through OpenTelemetry or Langfuse dependencies.
+
+## Eval Reporter
+
+```ts
+type LangfuseEvalReporterOptions = {
+  publishInvalid?: boolean;
+  strict?: boolean;
+};
+
+function createLangfuseEvalReporter<Input = unknown, Output = unknown, Expected = unknown>(
+  tracing: Pick<LangfuseTracing, "score">,
+  options?: LangfuseEvalReporterOptions,
+): EvalReporter<Input, Output, Expected>;
+```
+
+Purpose: bridge core eval metric results to Langfuse scores.
+
+Return behavior: returns an `EvalReporter` for `runEvalSuite(...)`. Invalid outcomes are skipped unless `publishInvalid` is true.
+
+Notable errors: with `strict: true`, missing trace ids reject the reporter call; scoring errors reject through the supplied tracing object.

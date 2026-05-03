@@ -1,0 +1,171 @@
+@import url("https://fonts.googleapis.com/css2?family=Krona+One&display=swap");
+@import "tailwindcss";
+@import "fumadocs-ui/css/black.css";
+@import "fumadocs-ui/css/preset.css";
+
+:root {
+  --fd-layout-width: 100vw;
+}
+
+.dark {
+  --color-fd-background: hsl(0 0% 2%);
+  --color-fd-foreground: hsl(0 0% 91%);
+  --color-fd-muted: hsl(0 0% 7%);
+  --color-fd-muted-foreground: hsl(0 0% 58%);
+  --color-fd-popover: hsl(0 0% 5%);
+  --color-fd-popover-foreground: hsl(0 0% 88%);
+  --color-fd-card: hsl(0 0% 4.5%);
+  --color-fd-card-foreground: hsl(0 0% 92%);
+  --color-fd-border: hsl(0 0% 100% / 5%);
+  --color-fd-primary: hsl(68 100% 56%);
+  --color-fd-primary-foreground: hsl(0 0% 4%);
+  --color-fd-secondary: hsl(0 0% 6.5%);
+  --color-fd-secondary-foreground: hsl(0 0% 88%);
+  --color-fd-accent: hsl(0 0% 100% / 5%);
+  --color-fd-accent-foreground: hsl(0 0% 92%);
+  --color-fd-ring: hsl(162 52% 58%);
+}
+
+html {
+  color-scheme: dark;
+  background: hsl(0 0% 2%);
+}
+
+body {
+  min-height: 100vh;
+  background: hsl(0 0% 2%);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::selection {
+  background: hsl(68 100% 56% / 28%);
+}
+
+.dark .shiki span[style*="--shiki-dark:#A7F3D0"],
+.dark .shiki span[style*="--shiki-dark: #A7F3D0"],
+.dark .shiki span[style*="--shiki-dark:#B8F7D0"],
+.dark .shiki span[style*="--shiki-dark: #B8F7D0"],
+.dark .shiki span[style*="--shiki-dark:#a7f3d0"],
+.dark .shiki span[style*="--shiki-dark: #a7f3d0"],
+.dark .shiki span[style*="--shiki-dark:#b8f7d0"],
+.dark .shiki span[style*="--shiki-dark: #b8f7d0"] {
+  /* biome-ignore lint/complexity/noImportantStyles: Shiki writes token colors inline, so this override must beat inline styles. */
+  --shiki-dark: #eaff73 !important;
+  /* biome-ignore lint/complexity/noImportantStyles: Shiki writes token colors inline, so this override must beat inline styles. */
+  color: #eaff73 !important;
+}
+
+.anvia-landing :is(h1, h2, h3, h4, h5, h6) {
+  font-family: "Krona One", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+}
+
+.anvia-wordmark {
+  font-family: "Krona One", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.04em;
+}
+
+#nd-nav {
+  --fd-layout-width: 80rem;
+}
+
+#nd-nav > div {
+  background: hsl(0 0% 2% / 94%);
+  border-color: hsl(0 0% 100% / 10%);
+  backdrop-filter: blur(14px);
+}
+
+#nd-nav nav {
+  max-width: 80rem;
+  border-inline: 1px solid hsl(0 0% 100% / 10%);
+}
+
+#nd-nav [data-search-full],
+#nd-nav [data-search-full] kbd {
+  border-radius: 0;
+}
+
+#nd-docs-layout.docs-with-section-tabs {
+  --fd-header-height: 5.25rem;
+}
+
+.docs-layout-header {
+  position: sticky;
+  top: var(--fd-docs-row-1);
+  z-index: 30;
+  grid-area: header;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  border-bottom: 1px solid hsl(0 0% 100% / 14%);
+  background: hsl(0 0% 2% / 94%);
+  padding: 1rem 2rem 0;
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 -1px 0 hsl(0 0% 0% / 65%);
+}
+
+.docs-mobile-header {
+  display: none;
+}
+
+.docs-section-tabs {
+  display: flex;
+  gap: 2rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0;
+}
+
+.docs-section-tabs a {
+  flex: 0 0 auto;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 0.625rem;
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-decoration: none;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.docs-section-tabs a:hover {
+  color: var(--color-fd-accent-foreground);
+}
+
+.docs-section-tabs a[aria-current="page"] {
+  border-color: var(--color-fd-primary);
+  color: var(--color-fd-primary);
+}
+
+#nd-page > div:has(> a[href^="/docs/"]) > a {
+  border-color: transparent;
+  background: var(--color-fd-card);
+}
+
+#nd-page > div:has(> a[href^="/docs/"]) > a:hover {
+  background: var(--color-fd-accent);
+}
+
+@media (max-width: 767px) {
+  #nd-docs-layout.docs-with-section-tabs {
+    --fd-header-height: 7.25rem;
+  }
+
+  .docs-layout-header {
+    padding: 0 1rem;
+  }
+
+  .docs-mobile-header {
+    display: flex;
+    min-height: 3.5rem;
+    align-items: center;
+  }
+
+  .docs-section-tabs {
+    gap: 1.25rem;
+  }
+}

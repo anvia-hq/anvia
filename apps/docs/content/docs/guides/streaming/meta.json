@@ -1,0 +1,6 @@
+{
+  "title": "Streaming",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["streaming-events", "readable-streams", "stream-accumulation"]
+}

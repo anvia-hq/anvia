@@ -1,0 +1,141 @@
+---
+title: Vector Store
+description: In-memory vector store, vector filters, search requests, and search tools.
+---
+
+Import from `@anvia/core` or `@anvia/core/vector-store`.
+
+## VectorFilter and vectorFilter
+
+```ts
+type VectorFilter =
+  | { type: "eq"; key: string; value: VectorMetadataValue }
+  | { type: "gt"; key: string; value: VectorMetadataValue }
+  | { type: "lt"; key: string; value: VectorMetadataValue }
+  | { type: "and"; filters: [VectorFilter, VectorFilter] }
+  | { type: "or"; filters: [VectorFilter, VectorFilter] };
+
+const vectorFilter: {
+  eq(key: string, value: VectorMetadataValue): VectorFilter;
+  gt(key: string, value: VectorMetadataValue): VectorFilter;
+  lt(key: string, value: VectorMetadataValue): VectorFilter;
+  and(left: VectorFilter, right: VectorFilter): VectorFilter;
+  or(left: VectorFilter, right: VectorFilter): VectorFilter;
+};
+```
+
+Purpose: composable metadata filters for vector search.
+
+Return behavior: factory methods return serializable filter objects.
+
+Notable errors: unsupported metadata comparison types do not match results.
+
+## Search Types
+
+```ts
+type IndexStrategy = { type: "bruteForce" } | { type: "lsh"; numTables: number; numHyperplanes: number; seed?: number };
+
+type VectorSearchRequest = {
+  query: string;
+  topK: number;
+  threshold?: number;
+  filter?: VectorFilter;
+};
+
+type VectorSearchResult<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = {
+  score: number;
+  id: string;
+  document: T;
+  metadata?: Metadata;
+};
+
+type VectorSearchToolOptions = {
+  name: string;
+  description?: string;
+  topK?: number;
+  threshold?: number;
+  filter?: VectorFilter;
+};
+```
+
+Purpose: vector indexing, search, and tool option contracts.
+
+Return behavior: used as inputs and outputs by vector indexes.
+
+Notable errors: invalid `topK` values are normalized by concrete indexes.
+
+`VectorStore` classes own documents. `VectorSearchIndex` is the query-time interface bound to an embedding model. `IndexStrategy` configures local candidate selection for the in-memory store.
+
+## VectorSearchIndex
+
+```ts
+interface VectorSearchIndex<T = unknown, Metadata extends VectorMetadata = VectorMetadata> {
+  search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
+  searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>>;
+  asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown>;
+}
+```
+
+Purpose: search interface shared by in-memory and integration-backed vector stores.
+
+Return behavior: `searchIds(...)` strips documents and metadata; `asTool(...)` wraps search as a tool.
+
+Notable errors: model or store failures reject the returned promises.
+
+## InMemoryVectorStore
+
+```ts
+class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMetadata> {
+  constructor(options?: { index?: IndexStrategy });
+  static fromDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
+    documents: Array<EmbeddedDocument<T, Metadata>>,
+    options?: { index?: IndexStrategy },
+  ): InMemoryVectorStore<T, Metadata>;
+  addDocuments(documents: Array<EmbeddedDocument<T, Metadata>>): this;
+  get(id: string): EmbeddedDocument<T, Metadata> | undefined;
+  values(): Array<EmbeddedDocument<T, Metadata>>;
+  len(): number;
+  isEmpty(): boolean;
+  index(model: EmbeddingModel): InMemoryVectorIndex<T, Metadata>;
+}
+```
+
+Purpose: local vector document store with brute force or LSH candidate selection.
+
+Return behavior: `index(...)` binds the store to an embedding model for searching.
+
+Notable errors: LSH index setup can fail if vectors have inconsistent dimensions.
+
+## InMemoryVectorIndex
+
+```ts
+class InMemoryVectorIndex<T, Metadata extends VectorMetadata = VectorMetadata>
+  implements VectorSearchIndex<T, Metadata> {
+  search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
+  searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>>;
+  asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown>;
+}
+```
+
+Purpose: query-time embedding and scoring over an `InMemoryVectorStore`.
+
+Return behavior: returns top results sorted by descending cosine score.
+
+Notable errors: embedding model failures reject search calls.
+
+## createVectorSearchTool
+
+```ts
+function createVectorSearchTool<T, Metadata extends VectorMetadata>(
+  index: VectorSearchIndex<T, Metadata>,
+  options: VectorSearchToolOptions,
+): Tool<{ query: string; topK?: number }, Array<VectorSearchResult<T, Metadata>>>;
+```
+
+Purpose: expose any vector index as an agent tool.
+
+Return behavior: returns a typed tool whose output is vector search results.
+
+Notable errors: tool execution rejects when search rejects.
+
+For workflow guidance, see [Vector Stores](/docs/guides/retrieval/vector-stores).

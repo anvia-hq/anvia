@@ -1,0 +1,75 @@
+---
+title: Pipeline
+description: Typed pipeline composition and batch execution.
+---
+
+Import from `@anvia/core` or `@anvia/core/pipeline`.
+
+## PipelineOp
+
+```ts
+interface PipelineOp<Input = unknown, Output = unknown> {
+  run(input: Input): Output | Promise<Output>;
+}
+```
+
+Purpose: minimal interface for anything runnable as a pipeline stage.
+
+Return behavior: returns or resolves one output for one input.
+
+Notable errors: implementations can throw arbitrary errors.
+
+## PipelineBatchOptions
+
+```ts
+interface PipelineBatchOptions {
+  concurrency: number;
+}
+```
+
+Purpose: controls bounded parallelism for `Pipeline.batch(...)`.
+
+Return behavior: used as input.
+
+Notable errors: invalid values are normalized to at least `1`.
+
+## Pipeline
+
+```ts
+class Pipeline<Input, Output> implements PipelineOp<Input, Awaited<Output>> {
+  run(input: Input): Promise<Awaited<Output>>;
+  batch<I extends Iterable<Input>>(
+    inputs: I,
+    options: PipelineBatchOptions,
+  ): Promise<Array<Awaited<Output>>>;
+}
+```
+
+Purpose: runnable pipeline returned by `PipelineBuilder.build()`.
+
+Return behavior: `run(...)` resolves the final stage output; `batch(...)` preserves input order.
+
+Notable errors: forwards stage errors.
+
+## PipelineBuilder
+
+```ts
+class PipelineBuilder<Input, Output = Input> {
+  step<Next>(fn: (input: Awaited<Output>) => Next | Promise<Next>): PipelineBuilder<Input, Awaited<Next>>;
+  use<Next>(op: PipelineOp<Awaited<Output>, Next>): PipelineBuilder<Input, Awaited<Next>>;
+  parallel<Branches extends Record<string, PipelineOp<Awaited<Output>, unknown>>>(
+    branches: Branches,
+  ): PipelineBuilder<Input, ParallelOutput<Branches>>;
+  prompt(agent: Agent<CompletionModel>): PipelineBuilder<Input, string>;
+  extract<T>(extractor: Extractor<T, CompletionModel>): PipelineBuilder<Input, T>;
+  build(): Pipeline<Input, Awaited<Output>>;
+}
+```
+
+Purpose: typed composition of transform functions, operations, agents, and extractors.
+
+Return behavior: each composition method returns a new builder with the inferred output type.
+
+Notable errors: forwards errors from transform functions, nested operations, agents, or extractors.
+
+For workflow guidance, see [Pipeline Builder](/docs/guides/pipelines/pipeline-builder).

@@ -1,0 +1,168 @@
+---
+title: Approval by Hooks
+description: Await custom approval logic before selected tool calls execute.
+---
+
+Use `onToolCall(...)` when approval is runtime behavior rather than tool metadata. A hook can call your database, queue, websocket, permissions service, or internal admin UI before it returns `tool.run()`, `tool.skip(...)`, or `tool.cancel(...)`.
+
+This is the advanced escape hatch. For Studio-managed approval UI, start with [approval settings](/docs/guides/human-in-the-loop/approval-settings).
+
+## Require Approval for One Tool
+
+```ts
+import { createHook } from "@anvia/core";
+
+const approvalHook = createHook({
+  async onToolCall({ toolName, args, tool }) {
+    if (toolName !== "refund_order") {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      toolName,
+      args,
+      reason: `Review refund request: ${args}`,
+    });
+
+    return approved
+      ? tool.run()
+      : tool.skip("Refund was not approved.");
+  },
+});
+```
+
+The `args` value is the JSON string Anvia will send to the tool. Use it to show reviewers exactly what the model is trying to do.
+
+## Attach the Hook
+
+Attach the hook to one request when approval rules are request-specific.
+
+```ts
+const response = await agent
+  .prompt("Refund order A-100.")
+  .requestHook(approvalHook)
+  .send();
+```
+
+Attach the hook to the agent when the rule should apply to every request.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .tool(refundOrder)
+  .hook(approvalHook)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+## Require Approval by Tool Name
+
+Keep the approval rule explicit.
+
+```ts
+const sensitiveTools = new Set(["refund_order", "cancel_subscription"]);
+
+const approvalHook = createHook({
+  async onToolCall({ toolName, args, tool }) {
+    if (!sensitiveTools.has(toolName)) {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      toolName,
+      args,
+      reason: `${toolName} requires human review.`,
+    });
+
+    return approved
+      ? tool.run()
+      : tool.skip(`${toolName} was not approved.`);
+  },
+});
+```
+
+Use normal tool execution for safe read-only tools such as lookup or search.
+
+## Require Approval by Argument
+
+Parse the pending tool arguments when only some calls need review.
+
+```ts
+import { createHook, parseToolArgs } from "@anvia/core";
+
+const approvalHook = createHook({
+  async onToolCall({ toolName, args, tool }) {
+    if (toolName !== "issue_refund") {
+      return tool.run();
+    }
+
+    const parsed = parseToolArgs(args);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("amount" in parsed) ||
+      typeof parsed.amount !== "number"
+    ) {
+      return tool.cancel("Invalid refund request.");
+    }
+
+    if (parsed.amount <= 100) {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      toolName,
+      args,
+      reason: `Refund amount is $${parsed.amount}.`,
+    });
+
+    return approved ? tool.run() : tool.skip("Refund was not approved.");
+  },
+});
+```
+
+Use `tool.cancel(...)` for malformed or unsafe runs that should stop immediately. Use `tool.skip(...)` when the model can continue with a tool result message.
+
+## Request Hook vs Agent Hook
+
+Use `.requestHook(...)` when approval rules are specific to one prompt request.
+
+```ts
+await agent
+  .prompt("Refund order A-100.")
+  .requestHook(approvalHook)
+  .send();
+```
+
+Use `.hook(...)` when the rule is a stable part of the agent.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .tool(refundOrder)
+  .hook(approvalHook)
+  .build();
+```
+
+## Rejected Approval
+
+When approval is rejected, skip the tool with a clear message.
+
+```ts
+return tool.skip("The reviewer rejected this action.");
+```
+
+The model receives this text as the tool result, then it can produce a final answer.
+
+## Timeout Policy
+
+Anvia does not require a timeout. If the awaited approval promise never resolves, the run waits. Add a timeout in your app when the caller needs bounded latency.
+
+```ts
+const approved = await Promise.race([
+  approvals.waitForDecision({ toolName, args }),
+  sleep(60_000).then(() => false),
+]);
+
+return approved
+  ? tool.run()
+  : tool.skip("No reviewer approved this action in time.");
+```

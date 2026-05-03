@@ -1,0 +1,50 @@
+---
+title: Persist Conversations
+description: Store and replay Anvia message history across prompt runs.
+---
+
+Use this path when an agent needs to remember previous turns.
+
+## Goal
+
+By the end, you should know:
+
+- the `Message[]` history shape
+- how to pass history into a prompt
+- how to append `response.messages`
+- where tool calls and tool results appear in history
+
+## Path
+
+1. Read [Messages and History](/docs/guides/core-concepts/messages-and-history) to understand the raw `Message[]` shape.
+2. Read [Prompt Responses](/docs/guides/core-concepts/prompt-responses) to understand `response.messages`.
+3. Read [Agent History](/docs/guides/agents/agent-history) for agent-specific history examples.
+4. Read [Messages and History](/docs/guides/core-concepts/messages-and-history) if your history includes attachments or rich content.
+
+## Minimal Shape
+
+```ts
+const history = await conversations.loadMessages(conversationId);
+
+const response = await agent
+  .prompt(userInput)
+  .withHistory(history)
+  .send();
+
+await conversations.saveMessages(conversationId, [
+  ...history,
+  ...response.messages,
+]);
+```
+
+## Key Rule
+
+`response.messages` is only the new part of the run. Append it to the history you loaded if you want a full transcript.
+
+## Add Next
+
+| Need | Read |
+| --- | --- |
+| Tool-call history | [Messages and History](/docs/guides/core-concepts/messages-and-history) |
+| Streaming conversation UI | [Readable Streams](/docs/guides/streaming/readable-streams) |
+| Long-term knowledge | [Add Retrieval](/docs/guides/learning-paths/add-retrieval) |

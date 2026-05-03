@@ -1,0 +1,192 @@
+---
+title: Tools
+description: Tool definitions, tool sets, serialization, and tool errors.
+---
+
+Import from `@anvia/core` or `@anvia/core/tool`.
+
+## Tool
+
+```ts
+interface Tool<Args = unknown, Output = unknown> {
+  readonly name: string;
+  readonly approval?: ToolApprovalPolicy<Args>;
+  definition(prompt: string): ToolDefinition | Promise<ToolDefinition>;
+  call(args: Args): Output | Promise<Output>;
+  parseApprovalArgs?(args: unknown): Args;
+}
+
+type AnyTool = Omit<Tool<unknown, unknown>, "approval"> & {
+  readonly approval?: unknown;
+};
+```
+
+Purpose: normalized callable tool contract.
+
+Return behavior: `definition(...)` exposes provider JSON schema; `call(...)` executes local logic. Approval metadata is passive and is not included in provider tool definitions.
+
+Notable errors: tool implementations can throw arbitrary errors.
+
+## createTool and CreateToolOptions
+
+```ts
+type CreateToolOptions<InputSchema extends ZodSchema, OutputSchema extends ZodSchema | undefined = undefined> = {
+  name: string;
+  description: string;
+  input: InputSchema;
+  output?: OutputSchema;
+  approval?: ToolApprovalPolicy<z.output<InputSchema>>;
+  execute(args: z.output<InputSchema>): unknown | Promise<unknown>;
+};
+
+function createTool<InputSchema extends ZodSchema, OutputSchema extends ZodSchema | undefined = undefined>(
+  options: CreateToolOptions<InputSchema, OutputSchema>,
+): Tool<z.output<InputSchema>, ToolOutput<OutputSchema>>;
+```
+
+Purpose: create a typed tool from Zod input and optional output schemas.
+
+Return behavior: parses arguments before execution and parses output when an output schema is supplied.
+
+Notable errors: input or output validation errors throw from `call(...)`; schema conversion can throw during creation.
+
+## ToolApprovalPolicy
+
+```ts
+type ToolApprovalContext<Args = unknown> = {
+  toolName: string;
+  args: Args;
+  rawArgs: string;
+  toolCallId?: string;
+  internalCallId: string;
+  run: ToolApprovalRunContext;
+};
+
+type ToolApprovalRunContext = {
+  agentId: string;
+  runId: string;
+  sessionId?: string;
+  metadata?: JsonObject;
+};
+
+type ToolApprovalPolicy<Args = unknown> = {
+  when(ctx: ToolApprovalContext<Args>): boolean | Promise<boolean>;
+  reason?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
+  rejectMessage?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
+};
+```
+
+Purpose: attach portable approval metadata to a tool for runtimes such as Studio.
+
+Return behavior: core stores this metadata only. Core prompt execution ignores it unless a hook or runtime interprets it.
+
+Notable errors: runtime-specific approval evaluators can surface errors thrown by `when(...)`, `reason(...)`, or `rejectMessage(...)`.
+
+## ToolSet
+
+```ts
+class ToolSet {
+  static fromTools(tools: Tool[]): ToolSet;
+  addTool(tool: Tool): this;
+  addTools(tools: Tool[] | ToolSet): this;
+  deleteTool(toolName: string): boolean;
+  contains(toolName: string): boolean;
+  get(toolName: string): Tool | undefined;
+  values(): Tool[];
+  getToolDefinitions(prompt?: string): Promise<ToolDefinition[]>;
+  call(toolName: string, args: string): Promise<string>;
+}
+```
+
+Purpose: storage and execution boundary for concrete tool implementations.
+
+Return behavior: `call(...)` parses JSON args, executes the matching tool, and serializes the output as a string.
+
+Notable errors: throws `ToolNotFoundError`, `ToolJsonError`, or `ToolCallError`.
+
+## Dynamic Tool Selection
+
+```ts
+type ToolSearchDocument = {
+  toolName: string;
+  definition: ToolDefinition;
+  text: string;
+  metadata?: VectorMetadata;
+};
+
+type EmbedToolsOptions = {
+  content?: (tool: Tool, definition: ToolDefinition) => string | string[];
+  metadata?: (tool: Tool, definition: ToolDefinition) => VectorMetadata | undefined;
+  concurrency?: number;
+};
+
+interface DynamicToolIndex extends VectorSearchIndex<ToolSearchDocument> {
+  readonly toolSet: ToolSet;
+}
+
+function embedTools(model: EmbeddingModel, tools: Tool[] | ToolSet, options?: EmbedToolsOptions): Promise<EmbeddedDocument<ToolSearchDocument>[]>;
+
+function createToolIndex(model: EmbeddingModel, tools: Tool[] | ToolSet, options?: EmbedToolsOptions): Promise<DynamicToolIndex>;
+
+function isDynamicToolIndex(value: unknown): value is DynamicToolIndex;
+```
+
+Purpose: build a searchable index of tool capabilities for `AgentBuilder.dynamicTools(...)`.
+
+Return behavior: `embedTools(...)` returns embedded tool records; `createToolIndex(...)` returns an in-memory vector index that also carries the executable `ToolSet`; `isDynamicToolIndex(...)` checks for that `ToolSet` marker.
+
+Notable errors: tool definition or embedding failures reject the returned promise.
+
+## createThinkTool
+
+```ts
+type CreateThinkToolOptions = {
+  name?: string;
+  description?: string;
+};
+
+function createThinkTool(options?: CreateThinkToolOptions): Tool<{ thought: string }, string>;
+```
+
+Purpose: create a built-in private reasoning tool that echoes a thought string.
+
+Return behavior: returns a tool named `think` unless overridden.
+
+Notable errors: validation errors can occur if the model calls it with invalid arguments.
+
+## Serialization Helpers
+
+```ts
+function serializeToolOutput(output: unknown): string;
+function parseToolArgs(args: string): JsonValue;
+```
+
+Purpose: convert tool outputs and model-supplied argument strings.
+
+Return behavior: `parseToolArgs("")` returns `{}`; `serializeToolOutput(...)` returns strings unchanged and JSON-stringifies other values.
+
+Notable errors: `parseToolArgs(...)` throws `SyntaxError` for invalid JSON.
+
+## Error Classes
+
+```ts
+class ToolCallError extends Error {
+  readonly cause?: unknown;
+}
+
+class ToolNotFoundError extends Error {
+  readonly toolName: string;
+}
+
+class ToolJsonError extends Error {
+  readonly cause?: unknown;
+}
+```
+
+Purpose: typed failures from `ToolSet.call(...)`.
+
+Return behavior: thrown errors.
+
+Notable errors: these are the notable tool errors.
+
+For workflow guidance, see [Creating Tools](/docs/guides/tools/creating-tools).

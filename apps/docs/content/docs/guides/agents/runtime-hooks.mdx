@@ -1,0 +1,107 @@
+---
+title: Runtime Hooks
+description: Observe and customize agent runtime behavior with hooks.
+---
+
+Hooks run inside a prompt request and can inspect or alter runtime behavior. Use observers for telemetry. Use hooks for guardrails, approval checks, skipped tools, and cancellation.
+
+## Create a Hook
+
+```ts
+import { createHook } from "@anvia/core";
+
+const hook = createHook({
+  onCompletionCall({ prompt, history }) {
+    console.log("model_call", { role: prompt.role, history: history.length });
+  },
+  onCompletionResponse({ response }) {
+    console.log("model_response", response.usage.totalTokens);
+  },
+  onToolCall({ toolName, args }) {
+    console.log("tool_call", { toolName, args });
+  },
+  onToolResult({ toolName, result }) {
+    console.log("tool_result", { toolName, result });
+  },
+});
+
+const agent = new AgentBuilder("support", model).hook(hook).build();
+```
+
+Register an agent hook with `.hook(...)`, or set a hook for one prompt request with `.requestHook(...)`. A request hook replaces the agent hook for that request.
+
+## Control a Tool Call
+
+`onToolCall(...)` receives a `tool` control helper.
+
+```ts
+const hook = createHook({
+  onToolCall({ toolName, tool }) {
+    if (toolName === "lookup_order" && maintenanceMode) {
+      return tool.skip("Order lookup is temporarily unavailable.");
+    }
+
+    return tool.run();
+  },
+});
+```
+
+`tool.run()` executes the tool. `tool.skip(...)` does not execute the tool; the message becomes the tool result sent back to the model.
+
+## Await Human Approval
+
+Approval is application code awaited inside the hook.
+
+```ts
+const hook = createHook({
+  async onToolCall({ toolName, args, tool }) {
+    if (toolName !== "refund_order") {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      toolName,
+      args,
+      reason: "Refunds require staff approval.",
+    });
+
+    return approved ? tool.run() : tool.skip("Refund was not approved.");
+  },
+});
+```
+
+Anvia does not own the approval UI, database, queue, or notification system. Your hook can await any runtime your app provides.
+
+Timeouts are optional. If the awaited approval never resolves, the agent run keeps waiting; add a timeout in your app code when the caller needs bounded latency.
+
+## Cancel a Prompt
+
+Completion and result hooks receive a `run` helper.
+
+```ts
+const hook = createHook({
+  onCompletionCall({ prompt, run }) {
+    if (containsBlockedContent(prompt)) {
+      return run.cancel("Prompt blocked by policy.");
+    }
+
+    return run.continue();
+  },
+});
+```
+
+Tool-call hooks can also cancel the whole run.
+
+```ts
+const hook = createHook({
+  onToolCall({ toolName, tool }) {
+    if (toolName === "delete_account") {
+      return tool.cancel("Account deletion is blocked.");
+    }
+
+    return tool.run();
+  },
+});
+```
+
+Cancellation throws `PromptCancelledError`. Catch it at the application boundary when you want to return a user-facing message.

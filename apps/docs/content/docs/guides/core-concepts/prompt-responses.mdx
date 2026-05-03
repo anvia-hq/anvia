@@ -1,0 +1,91 @@
+---
+title: Prompt Responses
+description: Understand the response returned by agent prompt runs.
+---
+
+`send()` returns a `PromptResponse`.
+
+```ts
+const response = await agent.prompt("Explain cache invalidation.").send();
+
+console.log(response.output);
+console.log(response.usage.totalTokens);
+```
+
+## Response Shape
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `output` | `string` | Text extracted from the final assistant message |
+| `usage` | `Usage` | Aggregated token usage across model calls |
+| `messages` | `Message[]` | New messages created during this prompt run |
+| `trace` | `AgentTraceInfo | undefined` | Trace metadata when tracing is enabled |
+
+## Output
+
+`output` is the convenient text result:
+
+```ts
+const response = await agent.prompt("Write a concise summary.").send();
+
+return response.output;
+```
+
+Use `output` when your workflow expects normal assistant text. Use structured output or extractors when your workflow needs schema-shaped data.
+
+## Usage
+
+Usage is normalized across providers:
+
+```ts
+console.log(response.usage.inputTokens);
+console.log(response.usage.outputTokens);
+console.log(response.usage.totalTokens);
+console.log(response.usage.cachedInputTokens);
+```
+
+Use usage data for logs, analytics, budgets, and rate-limit decisions.
+
+## Messages
+
+`messages` contains only the new messages created during this prompt run:
+
+```ts
+const history = await conversations.loadMessages(conversationId);
+
+const response = await agent
+  .prompt(userInput)
+  .withHistory(history)
+  .send();
+
+await conversations.saveMessages(conversationId, [
+  ...history,
+  ...response.messages,
+]);
+```
+
+If the agent called tools, `messages` can include:
+
+- the user prompt
+- assistant tool calls
+- tool result messages
+- the final assistant message
+
+## Trace
+
+`trace` is present when tracing is enabled for the run:
+
+```ts
+const response = await agent
+  .prompt("Run the traced workflow.")
+  .withTrace({ name: "support-check" })
+  .send();
+
+console.log(response.trace);
+```
+
+Use observers and tracing when you need to inspect runs, generations, tool calls, and usage.
+
+## Next
+
+Read [Errors and Cancellation](/docs/guides/core-concepts/errors) to understand common failure modes and runtime limits.

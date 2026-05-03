@@ -1,0 +1,62 @@
+---
+title: Runtime Context
+description: Add static and dynamic facts to agent runs.
+---
+
+Context provides facts the agent should use while answering.
+
+## Static Context
+
+Use `.context(...)` for short facts that should be included with every request.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use the support policy when answering.")
+  .context("Password reset links expire after 30 minutes.", "password-policy")
+  .context("Priority support is available for enterprise plans.", "priority-support")
+  .build();
+```
+
+Static context is a poor fit for large or frequently changing knowledge bases. Use retrieval for that.
+
+## Dynamic Context
+
+Use `.dynamicContext(...)` when the relevant facts depend on the prompt.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use retrieved context when it is relevant.")
+  .dynamicContext(supportDocsIndex, {
+    topK: 3,
+    format: (result) => ({
+      id: result.id,
+      text: `${result.document.title}\n${result.document.body}`,
+    }),
+  })
+  .build();
+```
+
+Anvia searches dynamic context at prompt time and adds matching documents to the completion request.
+
+## What Goes Where
+
+| Put it in | When |
+| --- | --- |
+| Instructions | It is a behavioral rule |
+| Static context | It is short and applies to every prompt |
+| Dynamic context | It is searched or changes often |
+| Tools | The agent must read or change application state |
+| History | It comes from the conversation |
+
+## Keep Context Small
+
+Prefer specific context over broad dumps.
+
+```ts
+const agent = new AgentBuilder("billing", model)
+  .instructions("Answer only billing questions.")
+  .context("Invoices are generated on the first day of each month.", "invoice-cycle")
+  .build();
+```
+
+Large context makes answers slower, more expensive, and harder to debug. If a document can be searched, put it behind retrieval instead.

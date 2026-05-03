@@ -1,0 +1,102 @@
+{
+  "name": "@anvia/core",
+  "version": "0.1.0",
+  "description": "Core runtime primitives for context-aware Anvia agents.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js"
+    },
+    "./audio-generation": {
+      "types": "./dist/audio-generation/index.d.ts",
+      "import": "./dist/audio-generation/index.js"
+    },
+    "./completion": {
+      "types": "./dist/completion/index.d.ts",
+      "import": "./dist/completion/index.js"
+    },
+    "./embeddings": {
+      "types": "./dist/embeddings/index.d.ts",
+      "import": "./dist/embeddings/index.js"
+    },
+    "./evals": {
+      "types": "./dist/evals/index.d.ts",
+      "import": "./dist/evals/index.js"
+    },
+    "./loaders": {
+      "types": "./dist/loaders/index.d.ts",
+      "import": "./dist/loaders/index.js"
+    },
+    "./extractor": {
+      "types": "./dist/extractor/index.d.ts",
+      "import": "./dist/extractor/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js"
+    },
+    "./observability": {
+      "types": "./dist/observability/index.d.ts",
+      "import": "./dist/observability/index.js"
+    },
+    "./pipeline": {
+      "types": "./dist/pipeline/index.d.ts",
+      "import": "./dist/pipeline/index.js"
+    },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "import": "./dist/skills/index.js"
+    },
+    "./streaming": {
+      "types": "./dist/streaming/index.d.ts",
+      "import": "./dist/streaming/index.js"
+    },
+    "./image-generation": {
+      "types": "./dist/image-generation/index.d.ts",
+      "import": "./dist/image-generation/index.js"
+    },
+    "./tool": {
+      "types": "./dist/tool/index.d.ts",
+      "import": "./dist/tool/index.js"
+    },
+    "./transcription": {
+      "types": "./dist/transcription/index.d.ts",
+      "import": "./dist/transcription/index.js"
+    },
+    "./vector-store": {
+      "types": "./dist/vector-store/index.d.ts",
+      "import": "./dist/vector-store/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/agent/index.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/mcp/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "pdfjs-dist": "^5.7.284",
+    "tinyglobby": "^0.2.16",
+    "yaml": "^2.8.4",
+    "zod": "^4.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

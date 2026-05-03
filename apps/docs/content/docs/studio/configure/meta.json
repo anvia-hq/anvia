@@ -1,0 +1,6 @@
+{
+  "title": "Configure Studio",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["serve-options", "quick-prompts", "storage-and-persistence", "capabilities"]
+}

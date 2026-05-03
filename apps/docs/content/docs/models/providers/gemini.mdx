@@ -1,0 +1,53 @@
+---
+title: Google Gemini
+description: Use Gemini API and Vertex AI models with Anvia.
+---
+
+Use `@anvia/gemini` for Gemini API and Vertex AI completion and embedding models.
+
+## Gemini API
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { GeminiClient } from "@anvia/gemini";
+
+const client = new GeminiClient({ apiKey });
+const model = client.completionModel("gemini-2.5-flash");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+```
+
+## Vertex AI
+
+```ts
+const client = new GeminiClient({
+  vertexai: true,
+  project,
+  location,
+});
+```
+
+Anvia does not read Google environment variables. Pass values from your application configuration.
+
+## Embedding Model
+
+```ts
+const embeddings = client.embeddingModel("gemini-embedding-001", {
+  taskType: "RETRIEVAL_DOCUMENT",
+  dimensions: 768,
+});
+```
+
+Use embedding models for document preprocessing and retrieval.
+
+## Capabilities
+
+| Capability | Example |
+| --- | --- |
+| Completion | `client.completionModel("gemini-2.5-flash")` |
+| Embeddings | `client.embeddingModel("gemini-embedding-001")` |
+| Vertex AI | `new GeminiClient({ vertexai: true, project, location })` |
+
+Gemini v1 support covers text completions, image and document input, tools, structured output, streaming, Gemini embeddings, and Vertex AI client construction.

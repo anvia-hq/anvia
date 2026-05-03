@@ -1,0 +1,13 @@
+{
+  "title": "MCP",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "connections",
+    "connection-registry",
+    "server-tools",
+    "tool-adapters",
+    "result-handling",
+    "errors-and-reconnects"
+  ]
+}

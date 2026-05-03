@@ -1,0 +1,59 @@
+---
+title: Output Validation
+description: Validate and trust structured model output.
+---
+
+Structured output should become trusted application data only after validation. Anvia gives you two validation points: provider-side schema guidance and local Zod parsing.
+
+## 1. Validate Extractor Results
+
+Extractors validate submitted data before returning it.
+
+```ts
+const ticket = await extractor.extract("Urgent checkout failure from Acme.");
+
+// ticket already passed the extractor schema.
+console.log(ticket.priority);
+```
+
+If the model submits invalid data, the extractor can retry when configured with `retries(...)`.
+
+## 2. Validate Agent Output Locally
+
+Agent output schemas constrain the provider request, but your app should still parse the final text.
+
+```ts
+const response = await agent.prompt("Classify this billing issue.").send();
+const data = classificationSchema.parse(JSON.parse(response.output));
+```
+
+Keep parsing near the boundary where text becomes application data.
+
+## 3. Validate Tool Results
+
+Tool output schemas validate values before they are sent back to the model.
+
+```ts
+const lookupOrder = createTool({
+  name: "lookup_order",
+  description: "Look up an order by id.",
+  input: z.object({ orderId: z.string() }),
+  output: z.object({
+    orderId: z.string(),
+    status: z.string(),
+  }),
+  async execute({ orderId }) {
+    return orders.find(orderId);
+  },
+});
+```
+
+## 4. Decide the Failure Policy
+
+| Workflow | Common Policy |
+| --- | --- |
+| Extractors | retry once or twice, then fail the request |
+| Agent output | parse once, then ask the user or retry the agent |
+| Tool output | throw and let the agent receive the tool error |
+
+Next, read [Failure Handling](/docs/guides/structured-output/failure-handling) for concrete recovery patterns.

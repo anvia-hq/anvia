@@ -1,0 +1,37 @@
+---
+title: Streaming
+description: Convert async iterables into web ReadableStream instances.
+---
+
+Import from `@anvia/core` or `@anvia/core/streaming`.
+
+## ReadableStreamOptions
+
+```ts
+type ReadableStreamOptions = {
+  signal?: AbortSignal;
+};
+```
+
+Purpose: cancellation options for stream conversion.
+
+Return behavior: passed to `toReadableStream(...)`.
+
+Notable errors: aborting the signal cancels the stream.
+
+## toReadableStream
+
+```ts
+function toReadableStream<T>(
+  iterable: AsyncIterable<T>,
+  options?: ReadableStreamOptions,
+): ReadableStream<T>;
+```
+
+Purpose: expose async iterables through the standard web stream interface.
+
+Return behavior: pulls values from the iterable and enqueues them in a `ReadableStream`.
+
+Notable errors: errors thrown by the async iterable error the stream.
+
+For workflow guidance, see [Readable Streams](/docs/guides/streaming/readable-streams).

@@ -1,0 +1,142 @@
+---
+title: "Example: Research Pipeline"
+description: Fetch web data, summarize it, and extract a structured research report.
+---
+
+This example shows a common pipeline shape:
+
+1. get data from the internet
+2. format the evidence for a model
+3. summarize the evidence with an agent
+4. extract structured fields from the summary
+
+The internet access is ordinary application code. Anvia owns the workflow shape; your app owns how search, scraping, permissions, rate limits, and caching work.
+
+## 1. Define the Research Shape
+
+```ts
+import { AgentBuilder, ExtractorBuilder, PipelineBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+type WebResult = {
+  title: string;
+  url: string;
+  snippet: string;
+};
+
+type ResearchPacket = {
+  query: string;
+  results: WebResult[];
+};
+
+const researchReportSchema = z.object({
+  topic: z.string(),
+  summary: z.string(),
+  keyFindings: z.array(
+    z.object({
+      finding: z.string(),
+      sourceUrls: z.array(z.string().url()),
+    }),
+  ),
+  risks: z.array(z.string()),
+  followUpQuestions: z.array(z.string()),
+});
+```
+
+The pipeline starts with a plain `string` query, then turns it into a `ResearchPacket`, then into model text, then into structured schema data.
+
+## 2. Add Internet Access
+
+```ts
+async function searchWeb(query: string): Promise<WebResult[]> {
+  const response = await fetch(
+    `https://api.example.com/search?q=${encodeURIComponent(query)}`,
+  );
+
+  if (!response.ok) {
+    throw new Error(`Search failed: ${response.status}`);
+  }
+
+  const body = (await response.json()) as { results: WebResult[] };
+  return body.results.slice(0, 5);
+}
+```
+
+Replace `searchWeb(...)` with your actual web search provider, crawler, internal search service, or retrieval layer. Keep this code outside the agent so it is testable and permissioned by your application.
+
+## 3. Build the Agent and Extractor
+
+```ts
+const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
+
+const summarizer = new AgentBuilder("research-summarizer", model)
+  .instructions(
+    [
+      "Summarize the research packet using only the provided sources.",
+      "Mention source URLs when making concrete claims.",
+      "Call out uncertainty or missing evidence.",
+      "Return visible final text, not only reasoning.",
+    ].join("\n"),
+  )
+  .build();
+
+const reportExtractor = new ExtractorBuilder(model, researchReportSchema)
+  .instructions("Extract a concise structured research report from the summary.")
+  .retries(1)
+  .build();
+```
+
+The summarizer creates readable synthesis. The extractor turns that synthesis into application data.
+
+## 4. Compose the Pipeline
+
+```ts
+const researchPipeline = new PipelineBuilder<string>()
+  .step(async (query): Promise<ResearchPacket> => ({
+    query,
+    results: await searchWeb(query),
+  }))
+  .step(({ query, results }) =>
+    [
+      `Research question: ${query}`,
+      "",
+      "Sources:",
+      ...results.map((result, index) =>
+        [
+          `[${index + 1}] ${result.title}`,
+          `URL: ${result.url}`,
+          `Snippet: ${result.snippet}`,
+        ].join("\n"),
+      ),
+    ].join("\n\n"),
+  )
+  .prompt(summarizer)
+  .extract(reportExtractor)
+  .build();
+```
+
+The formatting step before `.prompt(...)` is important. `.prompt(...)` sends `String(input)` to the agent, so object values should be converted into intentional prompt text first.
+
+## 5. Run It
+
+```ts
+const report = await researchPipeline.run(
+  "Recent examples of AI agents in browser automation",
+);
+
+console.log(report.summary);
+console.log(report.keyFindings);
+```
+
+The result is typed from `researchReportSchema`, so application code can store, render, validate, or route the research report without parsing free-form text.
+
+## Production Notes
+
+For production research pipelines:
+
+- cache search results when possible
+- store source URLs with the extracted report
+- catch search failures inside a step if partial results are acceptable
+- keep side-effecting fetch, crawl, or scrape logic outside the agent prompt
+- prefer small result sets first, then add batching or parallel branches when needed

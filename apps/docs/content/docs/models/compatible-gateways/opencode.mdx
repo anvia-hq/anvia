@@ -1,0 +1,74 @@
+---
+title: OpenCode
+description: Use OpenCode Go and OpenCode Zen compatible endpoints with Anvia.
+---
+
+OpenCode documents provider entries for OpenCode Go and OpenCode Zen. Treat them as OpenAI-compatible gateway-style endpoints when your OpenCode account exposes an API key and base URL.
+
+## OpenCode Go
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://opencode.ai/zen/go/v1",
+  apiKey: process.env.OPENCODE_API_KEY,
+});
+
+const model = client.completionModel("opencode-go");
+
+const agent = new AgentBuilder("coding-assistant", model)
+  .instructions("Answer coding questions with concise, concrete steps.")
+  .build();
+
+const response = await agent.prompt("Explain this TypeScript error.").send();
+
+console.log(response.output);
+```
+
+## OpenCode Zen
+
+```ts
+const client = new OpenAIClient({
+  baseUrl: "https://opencode.ai/zen/v1",
+  apiKey: process.env.OPENCODE_API_KEY,
+});
+
+const model = client.completionModel("opencode-zen");
+```
+
+## Get the Model List
+
+If your OpenCode endpoint exposes an OpenAI-compatible model list, query `/models` from the configured base URL.
+
+```ts
+const baseUrl = "https://opencode.ai/zen/go/v1";
+
+const response = await fetch(`${baseUrl}/models`, {
+  headers: {
+    Authorization: `Bearer ${process.env.OPENCODE_API_KEY}`,
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`OpenCode models request failed: ${response.status}`);
+}
+
+const body = (await response.json()) as {
+  data: Array<{
+    id: string;
+    object?: string;
+    owned_by?: string;
+  }>;
+};
+
+console.table(body.data.map((model) => ({ id: model.id, owner: model.owned_by })));
+```
+
+## Notes
+
+- OpenCode Go and OpenCode Zen are OpenCode-specific provider entries. Keep them on one page unless you need separate setup flows.
+- Verify the exact base URL and model ids in your OpenCode account before deploying.
+
+For current OpenCode provider details, see the [OpenCode providers documentation](https://opencode.ai/docs/providers/).

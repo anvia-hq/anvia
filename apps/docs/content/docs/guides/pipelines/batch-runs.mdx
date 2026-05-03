@@ -1,0 +1,58 @@
+---
+title: Batch Runs
+description: Run a pipeline across many inputs.
+---
+
+Use `batch(...)` when the same pipeline should process many inputs with a concurrency limit.
+
+## 1. Build a Normal Pipeline
+
+```ts
+const normalizeTicket = new PipelineBuilder<string>()
+  .step((ticket) => ticket.trim())
+  .step((ticket) => ticket.replace(/\s+/g, " "))
+  .build();
+```
+
+## 2. Run Many Inputs
+
+```ts
+const results = await normalizeTicket.batch(
+  [
+    " checkout   failed ",
+    " cannot update card ",
+    " password reset issue ",
+  ],
+  { concurrency: 2 },
+);
+```
+
+Results preserve input order.
+
+```ts
+console.log(results[0]); // "checkout failed"
+```
+
+## 3. Pick a Concurrency Limit
+
+| Pipeline Work | Starting Concurrency |
+| --- | --- |
+| CPU-light transforms | `4` to `16` |
+| Provider calls | `2` to `5` |
+| Database or API writes | match your service limits |
+
+## 4. Handle Failures at the Batch Boundary
+
+If any item throws, the batch rejects.
+
+```ts
+try {
+  const results = await pipeline.batch(tickets, { concurrency: 3 });
+  return results;
+} catch (error) {
+  logger.error(error, "ticket batch failed");
+  throw error;
+}
+```
+
+For per-item recovery, catch inside a step and return an explicit success or failure object.

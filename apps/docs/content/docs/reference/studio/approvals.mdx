@@ -1,0 +1,161 @@
+---
+title: Studio Approvals
+description: Studio tool approval and question contracts, records, transcript values, and events.
+---
+
+Import from `@anvia/studio`.
+
+## Approval Types
+
+```ts
+type StudioToolApprovalDecision = {
+  approved: boolean;
+  reason?: string;
+};
+
+type StudioToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out";
+```
+
+Purpose: Studio-owned approval contracts for HTTP decisions, records, and UI state.
+
+Return behavior: type-only exports.
+
+Notable errors: none directly.
+
+## StudioToolApproval
+
+```ts
+type StudioToolApproval = {
+  id: string;
+  runId: string;
+  agentId: string;
+  sessionId?: string;
+  toolName: string;
+  callId?: string;
+  internalCallId: string;
+  args: string;
+  status: StudioToolApprovalStatus;
+  requestedAt: string;
+  resolvedAt?: string;
+  reason?: string;
+};
+```
+
+Purpose: persisted approval request/result record for Studio.
+
+Return behavior: returned by approval routes and stream events.
+
+Notable errors: none directly.
+
+## Transcript and Stream Events
+
+```ts
+type StudioToolApprovalTranscript = {
+  id: string;
+  status: StudioToolApprovalStatus;
+  requestedAt: string;
+  resolvedAt?: string;
+  reason?: string;
+};
+
+type StudioToolApprovalRequestEvent = {
+  type: "tool_approval_request";
+  approval: StudioToolApproval;
+};
+
+type StudioToolApprovalResultEvent = {
+  type: "tool_approval_result";
+  approval: StudioToolApproval;
+};
+```
+
+Purpose: represent approval state in transcripts and run streams.
+
+Return behavior: events are included in `AgentRunStreamEvent`.
+
+Notable errors: invalid approval decisions return Studio HTTP errors from approval routes.
+
+## Question Types
+
+```ts
+type StudioToolQuestionChoice = {
+  label: string;
+  value: string;
+};
+
+type StudioToolQuestionPrompt = {
+  id: string;
+  question: string;
+  choices: StudioToolQuestionChoice[];
+};
+
+type StudioToolQuestionAnswer = {
+  questionId: string;
+  answer: string;
+  choice?: string;
+  custom?: boolean;
+};
+
+type StudioToolQuestionStatus = "pending" | "answered";
+```
+
+Purpose: represent a human question requested by a tool such as `ask_question`.
+
+Return behavior: type-only exports used by Studio question records, transcripts, and stream events.
+
+Notable errors: invalid answers return Studio HTTP errors from question routes.
+
+## StudioToolQuestion
+
+```ts
+type StudioToolQuestion = {
+  id: string;
+  runId: string;
+  agentId: string;
+  sessionId?: string;
+  toolName: string;
+  callId?: string;
+  internalCallId: string;
+  args: string;
+  questions: StudioToolQuestionPrompt[];
+  status: StudioToolQuestionStatus;
+  requestedAt: string;
+  answeredAt?: string;
+  answers?: StudioToolQuestionAnswer[];
+};
+```
+
+Purpose: persisted question request/result record for Studio.
+
+Return behavior: returned by question routes and stream events.
+
+Notable errors: none directly.
+
+## Question Transcript and Stream Events
+
+```ts
+type StudioToolQuestionTranscript = {
+  id: string;
+  status: StudioToolQuestionStatus;
+  requestedAt: string;
+  answeredAt?: string;
+  questions: StudioToolQuestionPrompt[];
+  answers?: StudioToolQuestionAnswer[];
+};
+
+type StudioToolQuestionRequestEvent = {
+  type: "tool_question_request";
+  question: StudioToolQuestion;
+};
+
+type StudioToolQuestionResultEvent = {
+  type: "tool_question_result";
+  question: StudioToolQuestion;
+};
+```
+
+Purpose: represent pending and answered human questions in transcripts and run streams.
+
+Return behavior: events are included in `AgentRunStreamEvent`.
+
+Notable errors: unanswered questions keep the run waiting until a Studio answer route resolves them.

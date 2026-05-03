@@ -1,0 +1,56 @@
+---
+title: Extractor Steps
+description: Parse pipeline output with schema-first extractors.
+---
+
+Use `.extract(extractor)` when a pipeline stage should convert the current text into typed data.
+
+## 1. Build the Extractor
+
+```ts
+import { ExtractorBuilder, PipelineBuilder } from "@anvia/core";
+import { z } from "zod";
+
+const triageSchema = z.object({
+  priority: z.enum(["low", "medium", "high"]),
+  summary: z.string(),
+});
+
+const extractor = new ExtractorBuilder(model, triageSchema)
+  .instructions("Extract triage fields from the support summary.")
+  .retries(1)
+  .build();
+```
+
+## 2. Extract Inside the Pipeline
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .step((ticket) => `Summarize this ticket:\n\n${ticket}`)
+  .prompt(summarizer)
+  .extract(extractor)
+  .build();
+```
+
+The output type is now the schema data.
+
+```ts
+const triage = await pipeline.run("Checkout is down for enterprise users.");
+
+console.log(triage.priority);
+```
+
+## 3. Add Application Logic After Extraction
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .prompt(summarizer)
+  .extract(extractor)
+  .step((triage) => ({
+    ...triage,
+    route: triage.priority === "high" ? "incident" : "support",
+  }))
+  .build();
+```
+
+Use extractor steps after text generation and before business logic that needs structured fields.

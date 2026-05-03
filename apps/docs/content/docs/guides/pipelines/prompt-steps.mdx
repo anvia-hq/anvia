@@ -1,0 +1,52 @@
+---
+title: Prompt Steps
+description: Call agents from pipeline stages.
+---
+
+Use `.prompt(agent)` when a pipeline stage should send the current value to an agent and continue with the agent's text output.
+
+## 1. Build the Agent
+
+```ts
+const summarizer = new AgentBuilder("summarizer", model)
+  .instructions("Summarize support tickets in one paragraph.")
+  .build();
+```
+
+## 2. Prepare the Prompt
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .step((ticket) => `Summarize this support ticket:\n\n${ticket}`)
+  .prompt(summarizer)
+  .build();
+```
+
+`.prompt(...)` calls `agent.prompt(String(input)).send()` and passes `response.output` to the next stage.
+
+## 3. Continue After the Prompt
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .step((ticket) => `Summarize this support ticket:\n\n${ticket}`)
+  .prompt(summarizer)
+  .step((summary) => summary.trim())
+  .build();
+```
+
+Use a normal step before the prompt to format the input. Use a normal step after the prompt to clean or route the output.
+
+## 4. Keep Agent Instructions on the Agent
+
+Put stable behavior in the agent instructions, and put per-run data in the pipeline step.
+
+```ts
+const agent = new AgentBuilder("triage", model)
+  .instructions("Classify support urgency using the company policy.")
+  .build();
+
+const pipeline = new PipelineBuilder<string>()
+  .step((ticket) => `Ticket:\n${ticket}`)
+  .prompt(agent)
+  .build();
+```

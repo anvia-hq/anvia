@@ -1,0 +1,86 @@
+---
+title: Tool Sets
+description: Group and reuse tools across agents.
+---
+
+Use `ToolSet` when you want to group tools, inspect definitions, call tools directly, or share a collection across agents.
+
+## Create a Tool Set
+
+```ts
+import { ToolSet } from "@anvia/core";
+
+const supportTools = ToolSet.fromTools([
+  lookupOrder,
+  searchDocs,
+  createTicket,
+]);
+```
+
+## Register on an Agent
+
+Use `.useToolSet(...)` when the agent should read from a shared mutable tool set.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .useToolSet(supportTools)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+Later updates to the same `ToolSet` are visible to future prompt runs.
+
+```ts
+supportTools.addTool(refundOrder);
+```
+
+## Call a Tool Directly
+
+This is useful for tests and internal tooling.
+
+```ts
+const result = await supportTools.call(
+  "lookup_order",
+  JSON.stringify({ orderId: "A-100" }),
+);
+```
+
+`ToolSet.call(...)` parses the JSON string, validates input, runs the tool, validates output, and returns the serialized result.
+
+## Combine Tool Sets
+
+```ts
+const supportTools = ToolSet.fromTools([lookupOrder]);
+const billingTools = ToolSet.fromTools([lookupInvoice]);
+
+supportTools.addTools(billingTools);
+```
+
+When two tools have the same name, the later tool replaces the earlier one.
+
+## Inspect Definitions
+
+```ts
+const definitions = await supportTools.getToolDefinitions();
+```
+
+Definitions are the provider-facing tool schemas sent to completion models.
+
+## Select Tools Dynamically
+
+Use dynamic tools when a shared tool catalog is too large to send every turn.
+
+```ts
+const toolIndex = await createToolIndex(embeddings, supportTools, {
+  metadata: (tool) => ({ name: tool.name }),
+});
+
+const agent = new AgentBuilder("support", model)
+  .dynamicTools(toolIndex, {
+    topK: 6,
+    threshold: 0.7,
+  })
+  .build();
+```
+
+On each turn, Anvia searches the tool index with the prompt text and sends only matching dynamic tool definitions. Static tools registered with `.tools(...)`, `.tool(...)`, `.mcp(...)`, `.skills(...)`, or `.useToolSet(...)` are still sent every turn.

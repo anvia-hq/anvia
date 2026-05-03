@@ -1,0 +1,89 @@
+---
+title: Tool Handlers
+description: Implement side-effectful or data-fetching tool handlers.
+---
+
+The `execute(...)` function is the tool handler. It receives parsed input and may return a value or a promise.
+
+## Handler Signature
+
+```ts
+const lookupOrder = createTool({
+  name: "lookup_order",
+  description: "Look up an order by order id.",
+  input: z.object({ orderId: z.string() }),
+  output: z.object({ status: z.string() }),
+  async execute({ orderId }) {
+    return orders.findById(orderId);
+  },
+});
+```
+
+The handler receives `z.output<typeof input>`. The model never calls this function directly; Anvia validates and parses the model arguments first.
+
+## Capture App Dependencies
+
+Pass services into a factory when the tool needs application dependencies.
+
+```ts
+export function createOrderTools(services: {
+  orders: OrderRepository;
+  logger: Logger;
+}) {
+  return [
+    createTool({
+      name: "lookup_order",
+      description: "Look up an order by order id.",
+      input: z.object({ orderId: z.string() }),
+      async execute({ orderId }) {
+        services.logger.info({ orderId }, "lookup order");
+        return services.orders.findById(orderId);
+      },
+    }),
+  ];
+}
+```
+
+This keeps auth, tenancy, logging, and database access in your application code.
+
+## Return Product States
+
+Expected states should be normal return values.
+
+```ts
+const lookupOrder = createTool({
+  name: "lookup_order",
+  description: "Look up an order by order id.",
+  input: z.object({ orderId: z.string() }),
+  output: z.object({
+    found: z.boolean(),
+    status: z.string().optional(),
+  }),
+  async execute({ orderId }) {
+    const order = await orders.findById(orderId);
+    return order === undefined
+      ? { found: false }
+      : { found: true, status: order.status };
+  },
+});
+```
+
+Throw only when the workflow should be treated as failed or retried.
+
+## Side Effects
+
+Side-effect tools should be explicit and narrow.
+
+```ts
+const createRefund = createTool({
+  name: "create_refund",
+  description: "Create a refund for an eligible order.",
+  input: z.object({ orderId: z.string() }),
+  output: z.object({ refundId: z.string() }),
+  async execute({ orderId }) {
+    return refunds.create({ orderId });
+  },
+});
+```
+
+For user approval before execution, use [Human in the Loop](/docs/guides/human-in-the-loop).

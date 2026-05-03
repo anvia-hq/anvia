@@ -1,0 +1,63 @@
+---
+title: MiniMax
+description: Use MiniMax OpenAI-compatible models with Anvia.
+---
+
+MiniMax exposes OpenAI-compatible endpoints at `https://api.minimax.io/v1`. In Anvia, configure `OpenAIClient` with that `baseUrl`, then pass MiniMax model ids to `completionModel(...)`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.minimax.io/v1",
+  apiKey: process.env.MINIMAX_API_KEY,
+});
+
+const model = client.completionModel("MiniMax-M2.5");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+## Get the Model List
+
+MiniMax provides an OpenAI-compatible model list endpoint.
+
+```ts
+const response = await fetch("https://api.minimax.io/v1/models", {
+  headers: {
+    Authorization: `Bearer ${process.env.MINIMAX_API_KEY}`,
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`MiniMax models request failed: ${response.status}`);
+}
+
+const body = (await response.json()) as {
+  data: Array<{
+    id: string;
+    object?: string;
+    owned_by?: string;
+  }>;
+};
+
+console.table(body.data.map((model) => ({ id: model.id, owner: model.owned_by })));
+```
+
+Use the `id` field directly with `completionModel(...)`.
+
+## Notes
+
+- MiniMax also appears in some tools as MiniMax coding plans or alternate domains. Prefer the official API base URL for production docs unless your product explicitly supports a plan-specific endpoint.
+- Compatible endpoints can differ in reasoning metadata, tool behavior, streaming chunks, and rate limits. Test the specific model id before enabling advanced features.
+
+For current MiniMax API details, see the [MiniMax model list reference](https://platform.minimax.io/docs/api-reference/models/openai/list-models).

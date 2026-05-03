@@ -1,0 +1,13 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/ui/app/*"]
+    }
+  },
+  "include": ["src", "test", "vitest.config.ts", "tsup.config.ts", "vite.config.ts"]
+}

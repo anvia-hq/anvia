@@ -1,0 +1,75 @@
+---
+title: Studio Overview
+description: Use Anvia Studio to inspect and run agents during development.
+---
+
+Anvia Studio is a local UI and HTTP runtime for built agents. Use it when you want to try prompts, inspect tool calls, review traces, and approve protected tool actions without building your own internal console first.
+
+## The Primitive
+
+The primitive is `Studio`.
+
+```ts
+import { Studio } from "@anvia/studio";
+
+new Studio([agent]).start();
+```
+
+`Studio` does three things:
+
+| Primitive | What it does |
+| --- | --- |
+| `new Studio([agent])` | Registers one or more built Anvia agents |
+| `.start(...)` | Starts the local HTTP runtime and bundled Studio UI |
+| `.fetch(request)` | Lets tests or another runtime call the same Studio API without opening a port |
+
+Studio also exposes development surfaces around the runtime:
+
+| Surface | What it helps inspect |
+| --- | --- |
+| Agents | Registered agents, names, descriptions, and quick prompts |
+| Runs | One-off prompts, streaming output, max turns, tool concurrency, and trace options |
+| Sessions | Persisted local conversation history and transcripts |
+| Traces | Model generations, tool spans, usage, errors, and run metadata |
+| Human in the loop | Tool approvals and `ask_question` requests |
+| Knowledge | Static context, dynamic context, dynamic tools, and recent retrieval evidence |
+
+## What To Do First
+
+1. Build an agent with `AgentBuilder`.
+2. Register the built agent with `new Studio([agent])`.
+3. Start Studio on a local port.
+4. Open the Studio UI and send a prompt.
+5. Add tools, approval hooks, sessions, and traces as the workflow becomes more realistic.
+
+## Minimal Shape
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { Studio } from "@anvia/studio";
+
+const client = new OpenAIClient({ apiKey });
+const model = client.completionModel("gpt-5");
+
+const agent = new AgentBuilder("support", model)
+  .name("Support")
+  .description("Answers short support questions.")
+  .instructions("Keep answers concise and ask for missing order ids.")
+  .build();
+
+new Studio([agent]).start({ port: 4021 });
+```
+
+Open `http://localhost:4021/playground`.
+
+## When To Use Studio
+
+| Use Studio when | Keep using the SDK directly when |
+| --- | --- |
+| You want a local playground for agents | You are shipping your product runtime |
+| You need to inspect messages, tools, and traces | You only need one scripted call |
+| You want human approval flows during development | Your app already owns the full UI |
+| You want persisted local sessions | You have production conversation storage |
+
+Studio is a development and internal-operations surface. Your application still owns product auth, user permissions, storage policy, and production UI.

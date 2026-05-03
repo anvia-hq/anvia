@@ -1,0 +1,50 @@
+---
+title: Quick Prompts
+description: Add reusable prompt shortcuts to Studio agents.
+---
+
+Quick prompts are predefined messages shown by Studio for a registered agent. Use them for repeatable test cases, demos, and regression checks while tuning instructions or tools.
+
+```ts
+new Studio([supportAgent, engineeringAgent], {
+  quickPrompts: {
+    "support-triage": ["Summarize TICKET-1001 for the support lead."],
+    "engineering-triage": ["Prepare diagnostics for a webhook retry incident."],
+  },
+}).start({ port: 4021 });
+```
+
+Quick prompts are keyed by Studio agent id. For agents registered from `AgentBuilder`, that id comes from the builder id.
+
+```ts
+const supportAgent = new AgentBuilder("support-triage", model)
+  .instructions("Summarize support tickets.")
+  .build();
+```
+
+## Inspect Quick Prompts
+
+```bash
+curl http://localhost:4021/config
+```
+
+```json
+{
+  "chat": {
+    "quickPrompts": {
+      "support-triage": [
+        "Summarize TICKET-1001 for the support lead."
+      ]
+    }
+  }
+}
+```
+
+## Guidance
+
+| Use quick prompts for | Avoid using them for |
+| --- | --- |
+| Common smoke tests | Secrets or real customer data |
+| Demo scenarios | Production prompt routing |
+| Repro cases for bugs | Long fixture files |
+| Comparing instruction changes | Replacing automated tests |

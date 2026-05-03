@@ -1,0 +1,105 @@
+---
+title: Prompt Requests
+description: Learn how agent prompts become normalized model requests.
+---
+
+Prompt requests are the boundary between your application and an agent run.
+
+Most workflows start with:
+
+```ts
+const response = await agent.prompt("Summarize this support ticket.").send();
+```
+
+That line creates a `PromptRequest`, builds a normalized completion request, sends it to the model, handles tools if needed, and returns a final prompt response.
+
+## 1. Start With a Prompt
+
+The simplest prompt is a string:
+
+```ts
+await agent.prompt("Write a short onboarding checklist.").send();
+```
+
+Use a structured `Message` when you need explicit content parts:
+
+```ts
+import { Message, UserContent } from "@anvia/core";
+
+await agent
+  .prompt(
+    Message.user([
+      UserContent.text("Inspect this screenshot."),
+      UserContent.imageUrl("https://example.com/screenshot.png", {
+        detail: "auto",
+      }),
+    ]),
+  )
+  .send();
+```
+
+Provider support for images and documents depends on the provider model you choose.
+
+## 2. Add History When Needed
+
+```ts
+const history = await conversations.loadMessages(conversationId);
+
+const response = await agent
+  .prompt(userInput)
+  .withHistory(history)
+  .send();
+```
+
+History is not global state inside Anvia. You load it from your application and pass it into the request.
+
+## 3. Override Runtime Options Per Prompt
+
+Prompt requests can override run behavior without rebuilding the agent:
+
+```ts
+const response = await agent
+  .prompt("Check this order.")
+  .maxTurns(2)
+  .withToolConcurrency(2)
+  .send();
+```
+
+Use this when one request needs a tighter turn limit, different tool concurrency, approval handling, hooks, or tracing.
+
+## 4. Request Flow
+
+When you call `send()`, Anvia builds a normalized completion request in this order:
+
+1. Start with the current prompt.
+2. Add any history from `.withHistory(...)`.
+3. Add agent instructions.
+4. Add static context from `.context(...)`.
+5. Fetch dynamic context if retrieval is configured.
+6. Add tool definitions from tools, skills, and MCP servers.
+7. Add runtime settings such as temperature, max tokens, tool choice, and output schema.
+8. Send the request to the completion model.
+
+The model response can include text, reasoning, and tool calls. If tool calls are present, Anvia executes the tools and loops until the model returns final text or the turn limit is reached.
+
+## 5. Stream Instead of Waiting
+
+Use `stream()` when the UI or job runner needs incremental events:
+
+```ts
+for await (const event of agent.prompt("Draft a launch checklist.").stream()) {
+  if (event.type === "text_delta") {
+    process.stdout.write(event.delta);
+  }
+
+  if (event.type === "final") {
+    console.log(event.output);
+  }
+}
+```
+
+Streaming emits normalized events for text deltas, reasoning deltas, tool calls, tool results, turn boundaries, final output, and errors.
+
+## Next
+
+Read [Messages and History](/docs/guides/core-concepts/messages-and-history) to understand the `Message[]` shape used by prompts, history, and responses.

@@ -1,0 +1,16 @@
+{
+  "title": "Learning Paths",
+  "icon": "Route",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "build-an-agent",
+    "add-tools",
+    "persist-conversations",
+    "return-structured-output",
+    "build-a-pipeline",
+    "add-retrieval",
+    "add-observability",
+    "prepare-for-production"
+  ]
+}

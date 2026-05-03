@@ -1,0 +1,77 @@
+---
+title: Extractor
+description: Structured extraction helpers built on agents and tools.
+---
+
+Import from `@anvia/core` or `@anvia/core/extractor`.
+
+## ExtractionResponse
+
+```ts
+type ExtractionResponse<T> = {
+  data: T;
+  usage: Usage;
+  messages: Message[];
+};
+```
+
+Purpose: extraction result with usage and generated messages.
+
+Return behavior: returned by `Extractor.extractWithUsage(...)`.
+
+Notable errors: none directly.
+
+## Extractor
+
+```ts
+class Extractor<T, M extends CompletionModel = CompletionModel> {
+  extract(text: string | Message): Promise<T>;
+  extractWithUsage(text: string | Message): Promise<ExtractionResponse<T>>;
+  extractWithHistory(text: string | Message, history: Message[]): Promise<T>;
+  getInner(): Agent<M>;
+}
+```
+
+Purpose: run a model with a required `submit` tool and parse the submitted arguments against a schema.
+
+Return behavior: `extract(...)` resolves schema-typed data; `getInner()` returns the underlying agent.
+
+Notable errors: throws `ExtractionError` when the model does not submit data, schema validation fails across all retries, or the model call fails.
+
+## ExtractorBuilder
+
+```ts
+class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
+  constructor(model: M, schema: ZodSchema<T>);
+  instructions(instructions: string): this;
+  context(text: string, id?: string): this;
+  temperature(temperature: number): this;
+  maxTokens(maxTokens: number): this;
+  additionalParams(params: JsonValue): this;
+  toolChoice(toolChoice: ToolChoice): this;
+  retries(retries: number): this;
+  build(): Extractor<T, M>;
+}
+```
+
+Purpose: configure an extractor around a completion model and Zod schema.
+
+Return behavior: mutators return `this`; `build()` returns an `Extractor`.
+
+Notable errors: schema conversion can throw; extraction errors are raised by the built extractor.
+
+## ExtractionError
+
+```ts
+class ExtractionError extends Error {
+  readonly cause?: unknown;
+}
+```
+
+Purpose: wraps extraction failures.
+
+Return behavior: thrown by extraction methods.
+
+Notable errors: this is the notable extractor error.
+
+For workflow guidance, see [Extractors](/docs/guides/structured-output/extractors).

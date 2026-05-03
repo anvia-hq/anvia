@@ -1,0 +1,47 @@
+---
+title: Comparison
+description: When to use Anvia, Mastra, OpenAI Agents SDK, and other TypeScript AI frameworks.
+icon: Scale
+---
+
+There is no single best TypeScript agent SDK. The right choice depends on how much framework surface you want, whether your application should own infrastructure decisions, and whether you want provider-neutral or provider-native agent primitives.
+
+## Short Version
+
+Use Anvia when you are building AI features inside an existing TypeScript application and want the application to stay in control. Anvia is a small provider-agnostic runtime: you create clients, models, tools, agents, extractors, and pipelines as ordinary TypeScript objects, then pass them into your routes, jobs, tests, or local Studio runtime. Your app owns persistence, auth, permission policy, queues, deployment, and side effects.
+
+Use Mastra when you want a broader TypeScript agent framework with more built-in product surface. Mastra is a better fit if you want framework-managed memory, workflows, evals, scorers, observability, Studio, and platform or deployment concepts in one integrated stack. It gives you more out of the box, with more framework shape.
+
+Use OpenAI Agents SDK when your application is centered on OpenAI's agent runtime and you want first-class OpenAI primitives. It is a better fit if you want OpenAI-native handoffs, guardrails, sessions, tracing, realtime or voice agents, hosted tools, and tighter integration with OpenAI's eval, fine-tuning, and tracing ecosystem.
+
+## Comparison
+
+| Choose | Best when | Tradeoff |
+| --- | --- | --- |
+| Anvia | You want provider-neutral AI features inside your own TypeScript app | You own more infrastructure decisions |
+| Mastra | You want a batteries-included TypeScript agent framework or platform | You adopt more framework conventions |
+| OpenAI Agents SDK | You want OpenAI-native agent primitives and ecosystem integration | Your design follows OpenAI's runtime model more closely |
+| Vercel AI SDK | You want streaming, model routing, tool calling, and React or Next.js UI primitives | You compose more of the agent runtime yourself |
+| LangChain.js / LangGraph.js | You need graph orchestration, many integrations, or complex stateful workflows | You adopt a larger abstraction model |
+| LlamaIndex.TS | Your core problem is retrieval, document workflows, or data agents | It is more data and RAG centered than general app-runtime centered |
+| Google ADK / Genkit | You want Google ecosystem agent tooling, flows, evals, plugins, or deployment paths | Your architecture follows more Google-oriented conventions |
+| VoltAgent | You want a TypeScript agent framework with observability, evals, guardrails, and platform surface | You adopt more framework or platform structure |
+| Claude Agent SDK | You want Claude-native agent infrastructure | Your design follows Anthropic's runtime model more closely |
+
+## Where Anvia Fits
+
+Anvia is not trying to be the biggest framework or the most OpenAI-native SDK. It is for teams that want provider-neutral AI building blocks with clear TypeScript boundaries and application-owned infrastructure.
+
+Choose Anvia when you want:
+
+- built agents, tools, extractors, and pipelines as ordinary TypeScript objects
+- provider-neutral model adapters across OpenAI, OpenAI-compatible APIs, Anthropic, Gemini, and local embeddings
+- application-owned storage, auth, permission policy, approval operations, queues, deployment, and side effects
+- typed tools, structured extraction, streaming, retrieval, tracing hooks, and local Studio testing without adopting a full platform
+- a small core that can grow through optional integrations
+
+Choose another SDK or framework when its center of gravity matches your product better. If you want a full platform, use a full platform. If you want OpenAI-native or Claude-native agent behavior, use the provider-native SDK. If you want graph orchestration, document-first RAG, or React streaming primitives, use the tools built around those jobs.
+
+## Next
+
+Read [Design Philosophy](/docs/guides/design-philosophy) to see why Anvia is shaped around application-owned objects instead of a framework-owned runtime.

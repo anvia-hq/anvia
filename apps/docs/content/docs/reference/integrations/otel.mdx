@@ -1,0 +1,49 @@
+---
+title: OpenTelemetry
+description: Public exports from @anvia/otel.
+---
+
+Import from `@anvia/otel`.
+
+## OtelTracingOptions
+
+```ts
+type OtelTracingOptions = {
+  tracer?: Tracer;
+  tracerName?: string;
+  tracerVersion?: string;
+  serviceName?: string;
+};
+```
+
+Purpose: configure the OpenTelemetry tracer used by the adapter.
+
+Return behavior: consumed by `otel.create(...)`.
+
+Notable behavior: when `tracer` is omitted, the adapter calls `trace.getTracer(tracerName ?? "@anvia/otel", tracerVersion)`.
+
+## OtelTracing
+
+```ts
+type OtelTracing = AgentObserver;
+```
+
+Purpose: Agent observer that emits OpenTelemetry spans.
+
+Return behavior: can be passed to `AgentBuilder.observe(...)`.
+
+Notable behavior: the adapter does not start, flush, or shut down an OpenTelemetry SDK.
+
+## otel
+
+```ts
+const otel: {
+  create(options?: OtelTracingOptions): OtelTracing;
+};
+```
+
+Purpose: factory for OpenTelemetry tracing observers.
+
+Return behavior: creates an observer that emits root run spans, generation spans, and tool spans through the configured tracer.
+
+Notable behavior: if an Anvia trace contains a valid 32-character hex `traceId`, the root span is parented under a synthetic remote parent so emitted spans join that trace.

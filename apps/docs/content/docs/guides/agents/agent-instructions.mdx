@@ -1,0 +1,22 @@
+---
+title: Agent Instructions
+description: Shape durable agent behavior with instructions.
+---
+
+Instructions describe how the agent should behave.
+
+## Instructions
+
+Use `.instructions(...)` for stable behavior that should apply to every prompt.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer in a concise, friendly tone.")
+  .instructions("Ask for missing details before guessing.")
+  .instructions("Do not invent order status. Use tools when order data is needed.")
+  .build();
+```
+
+Multiple instruction blocks are joined together. Keep each block focused so it is easy to move, remove, or test.
+
+For facts the agent should use while answering, read [Runtime Context](/docs/guides/agents/runtime-context).

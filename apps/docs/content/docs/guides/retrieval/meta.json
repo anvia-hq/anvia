@@ -1,0 +1,13 @@
+{
+  "title": "Retrieval",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "embeddings",
+    "embed-documents",
+    "vector-stores",
+    "rag-context",
+    "metadata-filters",
+    "lsh"
+  ]
+}

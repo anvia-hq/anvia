@@ -1,0 +1,99 @@
+---
+title: Approval Settings
+description: Put passive approval policy on a tool for Studio to interpret.
+---
+
+Use tool approval settings when a side-effect tool should usually require review in Studio. The policy stays next to the tool definition, so users can move between Studio and their own frontend/backend without changing the tool contract.
+
+Core only stores this metadata. Studio interprets it by installing a per-run request hook.
+
+## Protect a Tool
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { Studio } from "@anvia/studio";
+import { z } from "zod";
+
+const issueRefund = createTool({
+  name: "issue_refund",
+  description: "Issue a customer refund.",
+  input: z.object({
+    orderId: z.string(),
+    amount: z.number().positive(),
+    reason: z.string(),
+  }),
+  output: z.object({
+    refundId: z.string(),
+    status: z.enum(["issued"]),
+  }),
+  approval: {
+    when: ({ args }) => args.amount > 100,
+    reason: ({ args }) => `Review refund of $${args.amount} for ${args.orderId}.`,
+    rejectMessage: "Refund was not approved.",
+  },
+  async execute({ orderId }) {
+    return {
+      refundId: `rf_${orderId.toLowerCase()}`,
+      status: "issued" as const,
+    };
+  },
+});
+
+const agent = new AgentBuilder("support", model)
+  .tool(issueRefund)
+  .defaultMaxTurns(3)
+  .build();
+
+new Studio([agent]).start();
+```
+
+When the model calls `issue_refund`, Studio evaluates `approval.when(...)`. If it returns `true`, Studio creates a pending approval. If the reviewer approves, Studio runs the tool. If the reviewer rejects, Studio skips the tool and returns the rejection message to the model.
+
+## Approval Context
+
+```ts
+type ToolApprovalContext<TArgs> = {
+  toolName: string;
+  args: TArgs;
+  rawArgs: string;
+  toolCallId?: string;
+  internalCallId: string;
+  run: {
+    agentId: string;
+    runId: string;
+    sessionId?: string;
+    metadata?: JsonObject;
+  };
+};
+```
+
+`args` is parsed with the tool input schema. Use it for conditional policy.
+
+```ts
+approval: {
+  when: ({ args, run }) =>
+    args.amount > 100 || run.metadata?.environment === "production",
+}
+```
+
+## Dynamic Reasons
+
+Use `reason` to show reviewers what they are deciding.
+
+```ts
+approval: {
+  when: ({ args }) => args.amount > 100,
+  reason: ({ args }) =>
+    `Approve ${args.reason} refund of $${args.amount} for ${args.orderId}.`,
+  rejectMessage: ({ args }) =>
+    `Refund ${args.orderId} was not approved.`,
+}
+```
+
+`reason` and `rejectMessage` may be strings or async functions.
+
+## When to Use Hooks Instead
+
+Use [approval by hooks](/docs/guides/human-in-the-loop/tool-approval) when approval depends on request-local state, app permissions, external policy services, or a frontend/backend approval flow that is not tied to one tool definition.
+
+Agent hooks run before Studio approval metadata. If an agent hook returns `tool.skip(...)` or `tool.cancel(...)`, Studio does not ask for approval.

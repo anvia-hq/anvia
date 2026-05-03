@@ -1,0 +1,78 @@
+---
+title: Models
+description: Choose and configure completion and embedding models for Anvia agents.
+---
+
+Anvia treats models as capabilities. A completion model can answer prompts and call tools. An embedding model can turn text into vectors for retrieval.
+
+Provider clients create those capabilities, then agents, extractors, pipelines, and retrieval code consume them through provider-neutral interfaces.
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const openai = new OpenAIClient({ apiKey });
+const model = openai.completionModel("gpt-5");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer clearly and ask for missing details.")
+  .build();
+```
+
+## Model Categories
+
+| Category | Use it for |
+| --- | --- |
+| Completion | Agents, extractors, prompt steps, streaming, and tool calls |
+| Embeddings | Retrieval, document search, semantic routing, and vector stores |
+| Compatible gateways | OpenAI-compatible gateways, hosted model APIs, and local model backends |
+| Compatible providers | OpenAI-compatible APIs through `OpenAIClient({ baseUrl, apiKey })` |
+| Vertex AI | Gemini through `GeminiClient({ vertexai: true, project, location })` |
+
+## Completion Capabilities
+
+Completion models expose `provider`, `defaultModel`, and `capabilities`. Anvia uses those capabilities to reject unsupported requests before making provider calls.
+
+Core capability checks cover the normalized Anvia surface: streaming, tools, tool choice, image input, document file input, output schemas, and reasoning events. They do not guarantee that every upstream model name supports every feature, and they do not validate provider-specific `additionalParams`.
+
+## Configuration Boundary
+
+Provider clients only use explicit constructor values. They do not read environment variables directly.
+
+Load credentials through your application configuration layer, then pass them into the client once:
+
+```ts
+const client = new OpenAIClient({
+  apiKey: config.openai.apiKey,
+  baseUrl: config.openai.baseUrl,
+});
+```
+
+Create clients and models once per application runtime when practical. Agents, extractors, pipelines, and retrieval code can reuse the model instances.
+
+## Compatible Gateways
+
+| Gateway | Page |
+| --- | --- |
+| OpenRouter | [OpenRouter](/docs/models/compatible-gateways/openrouter) |
+| MiniMax | [MiniMax](/docs/models/compatible-gateways/minimax) |
+| Moonshot AI | [Moonshot AI](/docs/models/compatible-gateways/moonshot-ai) |
+| Novita AI | [Novita AI](/docs/models/compatible-gateways/novita-ai) |
+| NVIDIA NIM | [NVIDIA NIM](/docs/models/compatible-gateways/nvidia-nim) |
+| Ollama | [Ollama](/docs/models/compatible-gateways/ollama) |
+| Ollama Cloud | [Ollama Cloud](/docs/models/compatible-gateways/ollama-cloud) |
+| OpenCode | [OpenCode](/docs/models/compatible-gateways/opencode) |
+
+Use compatible gateways when a service exposes an OpenAI-compatible API shape. In Anvia, these endpoints use `OpenAIClient({ baseUrl, apiKey })`.
+
+## Providers
+
+| Provider | Page |
+| --- | --- |
+| OpenAI | [OpenAI Models](/docs/models/providers/openai) |
+| Anthropic | [Anthropic Models](/docs/models/providers/anthropic) |
+| Google Gemini | [Google Gemini Models](/docs/models/providers/gemini) |
+| Mistral | [Mistral Models](/docs/models/providers/mistral) |
+| Compatible providers | [Compatible Provider Models](/docs/models/providers/compatible-providers) |
+
+Provider support varies for attachments, tool behavior, streaming metadata, structured output, and provider-specific parameters. Anvia normalizes the SDK surface and validates known adapter capabilities, but it does not make every provider model identical.

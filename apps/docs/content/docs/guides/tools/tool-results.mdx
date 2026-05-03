@@ -1,0 +1,81 @@
+---
+title: Tool Results
+description: Return tool output the model and application can consume.
+---
+
+Tool results are serialized before they are sent back to the model.
+
+## String Results
+
+Strings are returned as-is.
+
+```ts
+const echo = createTool({
+  name: "echo",
+  description: "Echo a message.",
+  input: z.object({ value: z.string() }),
+  output: z.string(),
+  execute: ({ value }) => value,
+});
+```
+
+The model receives the plain string.
+
+## Object Results
+
+Objects are JSON serialized.
+
+```ts
+const lookupOrder = createTool({
+  name: "lookup_order",
+  description: "Look up an order.",
+  input: z.object({ orderId: z.string() }),
+  output: z.object({
+    orderId: z.string(),
+    status: z.string(),
+  }),
+  execute: ({ orderId }) => ({
+    orderId,
+    status: "shipped",
+  }),
+});
+```
+
+The model receives:
+
+```json
+{"orderId":"A-100","status":"shipped"}
+```
+
+## Result Messages
+
+During an agent run, tool results are appended as tool messages.
+
+```ts
+{
+  role: "tool",
+  content: [
+    {
+      type: "tool_result",
+      id: "call_1",
+      content: [{ type: "text", text: "{\"status\":\"shipped\"}" }]
+    }
+  ]
+}
+```
+
+You usually do not construct this message yourself. Store `response.messages` if you need conversation history.
+
+## Display Values
+
+Return values should be useful to the model, not necessarily formatted for your UI.
+
+```ts
+return {
+  status: "shipped",
+  carrier: "DHL",
+  trackingNumber: "123",
+};
+```
+
+Format UI-specific text outside the tool when possible. That keeps the tool reusable across agents, pipelines, and tests.

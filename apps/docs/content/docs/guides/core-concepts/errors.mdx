@@ -1,0 +1,145 @@
+---
+title: Errors and Cancellation
+description: Understand common SDK error types, cancellation, and runtime limits.
+---
+
+Anvia errors usually fall into one of five groups:
+
+1. invalid setup
+2. schema validation
+3. provider failures
+4. tool failures
+5. agent runtime limits
+
+Handle them at the boundary where your application can make the right product decision.
+
+## Invalid Setup
+
+Provider clients validate required configuration. Pass credentials explicitly when constructing clients.
+
+```ts
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://openrouter.ai/api/v1",
+  apiKey,
+});
+```
+
+If a required credential is missing, fail early during startup or dependency creation instead of waiting for the first user request.
+
+## Schema Validation
+
+Tools validate input with Zod before running `execute`.
+
+```ts
+import { createTool } from "@anvia/core";
+import { z } from "zod";
+
+const lookupOrder = createTool({
+  name: "lookup_order",
+  description: "Look up an order.",
+  input: z.object({
+    orderId: z.string(),
+  }),
+  async execute({ orderId }) {
+    return { orderId, status: "shipped" };
+  },
+});
+```
+
+If the model calls the tool with invalid arguments, Zod throws. Treat this as a model/tool boundary failure. Log the tool name, validated schema, and raw arguments when possible.
+
+## Provider Failures
+
+Provider SDKs can throw for network errors, authentication errors, rate limits, unsupported attachments, or provider-specific validation.
+
+Keep provider retries and fallback policy in application code:
+
+```ts
+try {
+  const response = await agent.prompt("Summarize this ticket.").send();
+  return response.output;
+} catch (error) {
+  reportAgentError(error);
+  throw error;
+}
+```
+
+## Tool Failures
+
+Tool `execute` functions are your application code. They can fail because of permissions, missing records, unavailable services, or unexpected input.
+
+Prefer explicit tool results for expected product states:
+
+```ts
+async execute({ orderId }) {
+  const order = await findOrder(orderId);
+
+  if (order === undefined) {
+    return { status: "not_found" };
+  }
+
+  return { status: order.status };
+}
+```
+
+Throw only when the workflow should fail or be retried.
+
+## Agent Runtime Limits
+
+Anvia agents use turn limits to prevent unbounded tool loops. If the model keeps requesting tools past the configured limit, the prompt fails with `MaxTurnsError`.
+
+```ts
+import { AgentBuilder, MaxTurnsError } from "@anvia/core";
+
+const agent = new AgentBuilder("support", model)
+  .tool(lookupOrder)
+  .defaultMaxTurns(3)
+  .build();
+
+try {
+  await agent.prompt("Check this order.").send();
+} catch (error) {
+  if (error instanceof MaxTurnsError) {
+    console.error("Agent exceeded the configured turn limit.");
+  }
+}
+```
+
+Start with low turn limits. Increase them only when the workflow requires multiple tool calls.
+
+## Prompt Cancellation
+
+Hooks and approval runtimes can cancel a prompt. Catch cancellation at the same boundary where you would handle a user-denied action or interrupted workflow.
+
+```ts
+import { PromptCancelledError } from "@anvia/core";
+
+try {
+  await agent.prompt("Run the guarded workflow.").send();
+} catch (error) {
+  if (error instanceof PromptCancelledError) {
+    return "The request was cancelled.";
+  }
+
+  throw error;
+}
+```
+
+## Practical Handling Pattern
+
+Use a small wrapper around agent calls:
+
+```ts
+export async function runSupportAgent(prompt: string) {
+  try {
+    return await supportAgent.prompt(prompt).send();
+  } catch (error) {
+    logAgentFailure(error);
+    throw error;
+  }
+}
+```
+
+Inside the wrapper, classify known SDK errors, attach request metadata, and preserve the original error for debugging.

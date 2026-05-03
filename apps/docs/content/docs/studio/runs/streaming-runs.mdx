@@ -1,0 +1,51 @@
+---
+title: Streaming Runs
+description: Stream Studio run events as newline-delimited JSON.
+---
+
+Set `stream: true` to receive newline-delimited JSON events from a run.
+
+```bash
+curl -N -X POST http://localhost:4021/agents/support-operations/runs \
+  -H 'content-type: application/json' \
+  -d '{"message":"Summarize order ORD-1001.","stream":true}'
+```
+
+Studio returns `application/x-ndjson`.
+
+```json
+{"type":"turn_start","turn":1}
+{"type":"text_delta","turn":1,"delta":"Order ORD-1001"}
+{"type":"turn_end","turn":1}
+{"type":"final","output":"Order ORD-1001 is blocked.","messages":[]}
+```
+
+## Runtime Events
+
+Studio can add human-in-the-loop events to the same stream.
+
+```json
+{"type":"tool_approval_request","approval":{"id":"approval_123","status":"pending"}}
+{"type":"tool_approval_result","approval":{"id":"approval_123","status":"approved"}}
+```
+
+```json
+{"type":"tool_question_request","question":{"id":"question_123","status":"pending"}}
+{"type":"tool_question_result","question":{"id":"question_123","status":"answered"}}
+```
+
+Streaming is the best mode for approvals and questions because the run can pause while the UI or API resolves the pending human action.
+
+## Persisting Streaming Runs
+
+When `sessionId` is present, Studio persists the transcript after the final event.
+
+```bash
+curl -N -X POST http://localhost:4021/agents/support-operations/runs \
+  -H 'content-type: application/json' \
+  -d '{
+    "sessionId": "session_123",
+    "message": "Check order ORD-1001.",
+    "stream": true
+  }'
+```

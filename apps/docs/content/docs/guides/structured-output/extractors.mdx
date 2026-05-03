@@ -1,0 +1,58 @@
+---
+title: Extractors
+description: Extract typed data from model responses.
+---
+
+Extractors are the easiest path when you have text and want validated data back. Internally, Anvia builds an agent with a required `submit` tool from your schema.
+
+## 1. Create the Schema
+
+```ts
+import { ExtractorBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
+
+const ticketSchema = z.object({
+  customer: z.string(),
+  priority: z.enum(["low", "medium", "high"]),
+  summary: z.string(),
+});
+```
+
+## 2. Build the Extractor
+
+```ts
+const extractor = new ExtractorBuilder(model, ticketSchema)
+  .instructions("Extract support ticket fields.")
+  .retries(1)
+  .build();
+```
+
+Use `retries(...)` when invalid or missing structured data should be retried before failing.
+
+## 3. Extract Data
+
+```ts
+const ticket = await extractor.extract(`
+  Acme Co. reports checkout failures for all enterprise users.
+  The issue is urgent and blocking revenue.
+`);
+
+console.log(ticket.priority);
+```
+
+## 4. Keep Usage and Messages When Needed
+
+```ts
+const result = await extractor.extractWithUsage("Ada reports a billing issue.");
+
+console.log(result.data);
+console.log(result.usage.totalTokens);
+console.log(result.messages);
+```
+
+Use `extractWithHistory(...)` when extraction should consider previous messages.
+
+Next, read [Output Validation](/docs/guides/structured-output/output-validation) to understand where validation happens.

@@ -1,0 +1,37 @@
+{
+  "name": "@anvia/pgvector",
+  "version": "0.1.0",
+  "description": "Postgres pgvector store adapter for Anvia.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "pg": "^8.20.0",
+    "pgvector": "^0.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/pg": "^8.15.6",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

@@ -1,0 +1,139 @@
+---
+title: Prepare for Production
+description: Review practical checks before shipping Anvia workflows.
+---
+
+Use this path when an Anvia workflow is moving from a prototype into product code.
+
+## Goal
+
+By the end, you should have reviewed:
+
+- provider configuration
+- tool permissions
+- history persistence
+- turn limits
+- structured output validation
+- retries and error handling
+- logging and traces
+
+## Checklist
+
+| Area | Check |
+| --- | --- |
+| Providers | Create clients and models once, configure keys through your normal secret system |
+| Tools | Enforce auth and permissions inside tool code |
+| History | Persist `Message[]` and append `response.messages` |
+| Turn limits | Keep limits low enough to prevent unbounded tool loops |
+| Structured output | Validate output before using it in product workflows |
+| Retrieval | Filter by tenant, user, or document ownership when needed |
+| Observability | Log run metadata, usage, tool calls, errors, and trace ids |
+| Errors | Classify setup, provider, validation, tool, and runtime-limit failures |
+| Testing | Cover tools, deterministic pipeline steps, retrieval filters, and Studio routes before broad provider tests |
+
+## Path
+
+1. Read [How Anvia Works](/docs/guides/core-concepts/runtime-boundaries) to confirm ownership is clear.
+2. Read [Errors and Cancellation](/docs/guides/core-concepts/errors) to plan failure handling.
+3. Read [Human in the Loop](/docs/guides/human-in-the-loop) for guarded actions.
+4. Read [Messages and History](/docs/guides/core-concepts/messages-and-history) for persistence shape.
+5. Read [Output Validation](/docs/guides/structured-output/output-validation) for typed workflows.
+6. Read [Observers](/docs/guides/observability/observers) for runtime visibility.
+7. Read [Testing](/docs/guides/testing) for verification boundaries.
+
+## Practical Rule
+
+Keep product-critical decisions in your application code. Use Anvia to coordinate prompts, tools, context, retrieval, output shape, and observability around those decisions.
+
+## Deployment Shape
+
+Create provider clients, models, and long-lived agents at application startup when possible. Keep per-request data in the prompt request:
+
+| Startup-owned | Request-owned |
+| --- | --- |
+| provider clients and model instances | user input and message history |
+| reusable agents, tools, and pipelines | trace metadata and session ids |
+| durable stores and connection registries | request-specific turn limits and hooks |
+
+If a workflow runs in a queue or background worker, pass the same explicit inputs you would pass in an HTTP route: current message, stored history, product metadata, and any request-local authorization context.
+
+## Usage and Rate Limits
+
+Use `response.usage` and trace metadata to build product-level controls:
+
+```ts
+await usageEvents.record({
+  userId: options.userId,
+  inputTokens: response.usage.inputTokens,
+  outputTokens: response.usage.outputTokens,
+  totalTokens: response.usage.totalTokens,
+  traceId: response.trace?.traceId,
+});
+```
+
+Keep retry policy in application code. Provider failures, rate limits, and tool failures need different product decisions, so do not hide them behind a generic retry loop.
+
+## Runtime Wrapper Shape
+
+Put agent calls behind a small application-owned wrapper so logging, history, trace metadata, and error handling are consistent.
+
+```ts
+import {
+  MaxTurnsError,
+  PromptCancelledError,
+  type Agent,
+  type Message,
+} from "@anvia/core";
+
+type RunSupportAgentOptions = {
+  userId: string;
+  conversationId: string;
+  input: string;
+  history: Message[];
+};
+
+export async function runSupportAgent(
+  agent: Agent,
+  options: RunSupportAgentOptions,
+) {
+  try {
+    const response = await agent
+      .prompt(options.input)
+      .withHistory(options.history)
+      .withTrace({
+        name: "support-agent",
+        userId: options.userId,
+        sessionId: options.conversationId,
+      })
+      .maxTurns(3)
+      .send();
+
+    await conversations.saveMessages(options.conversationId, [
+      ...options.history,
+      ...response.messages,
+    ]);
+
+    await usageEvents.record({
+      userId: options.userId,
+      totalTokens: response.usage.totalTokens,
+      traceId: response.trace?.traceId,
+    });
+
+    return response.output;
+  } catch (error) {
+    if (error instanceof MaxTurnsError) {
+      await incidents.record("support-agent-max-turns", error);
+      return "The support workflow could not finish safely.";
+    }
+
+    if (error instanceof PromptCancelledError) {
+      return "The support request was cancelled.";
+    }
+
+    await incidents.record("support-agent-failed", error);
+    throw error;
+  }
+}
+```
+
+Keep the wrapper small. It should coordinate application policy around the agent, not hide all SDK concepts from the rest of the codebase.

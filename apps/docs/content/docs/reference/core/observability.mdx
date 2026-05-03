@@ -1,0 +1,142 @@
+---
+title: Observability
+description: Observer interfaces, trace options, and generation/tool events.
+---
+
+Import from `@anvia/core` or `@anvia/core/observability`.
+
+## Trace Types
+
+```ts
+type AgentTraceInfo = {
+  traceId?: string;
+  observationId?: string;
+};
+
+type AgentTraceOptions = {
+  name?: string;
+  userId?: string;
+  sessionId?: string;
+  metadata?: JsonObject;
+  tags?: string[];
+  version?: string;
+  traceId?: string;
+  failOnObserverError?: boolean;
+};
+```
+
+Purpose: trace identity and metadata passed into runs.
+
+Return behavior: trace info can appear on prompt responses and final stream events.
+
+Notable errors: none directly.
+
+## Run Observer Types
+
+```ts
+type AgentRunStartArgs = {
+  agentName?: string;
+  agentDescription?: string;
+  instructions?: string;
+  trace?: AgentTraceOptions;
+  prompt: Message;
+  history: Message[];
+  maxTurns: number;
+};
+
+type AgentRunEndArgs = {
+  output: string;
+  usage: Usage;
+  messages: Message[];
+};
+
+type AgentRunErrorArgs = { error: unknown; usage: Usage; messages: Message[] };
+
+interface AgentRunObserver {
+  readonly trace?: AgentTraceInfo;
+  startGeneration?(
+    args: AgentGenerationStartArgs,
+  ): AgentGenerationObserver | undefined | Promise<AgentGenerationObserver | undefined>;
+  startTool?(
+    args: AgentToolStartArgs,
+  ): AgentToolObserver | undefined | Promise<AgentToolObserver | undefined>;
+  end(args: AgentRunEndArgs): void | Promise<void>;
+  error?(args: AgentRunErrorArgs): void | Promise<void>;
+}
+```
+
+Purpose: observe one agent run.
+
+Return behavior: created by `AgentObserver.startRun(...)`.
+
+Notable errors: observer errors are ignored unless `failOnObserverError` is enabled.
+
+## Generation and Tool Observer Types
+
+```ts
+type AgentGenerationStartArgs = { turn: number; request: CompletionRequest };
+type AgentGenerationEndArgs<RawResponse = unknown> = {
+  turn: number;
+  response: CompletionResponse<RawResponse>;
+  firstDeltaMs?: number;
+};
+type AgentGenerationErrorArgs = { turn: number; error: unknown };
+
+interface AgentGenerationObserver {
+  end(args: AgentGenerationEndArgs): void | Promise<void>;
+  error?(args: AgentGenerationErrorArgs): void | Promise<void>;
+}
+
+type AgentToolStartArgs = {
+  turn: number;
+  toolCall: ToolCall;
+  toolName: string;
+  args: string;
+  internalCallId: string;
+  toolCallId?: string;
+};
+type AgentToolEndArgs = AgentToolStartArgs & { result: string; skipped: boolean };
+type AgentToolErrorArgs = AgentToolStartArgs & { error: unknown };
+
+interface AgentToolObserver {
+  end(args: AgentToolEndArgs): void | Promise<void>;
+  error?(args: AgentToolErrorArgs): void | Promise<void>;
+}
+```
+
+Purpose: observe model calls and tool calls inside a run.
+
+Return behavior: called by the agent runtime as events complete or fail.
+
+Notable errors: observer errors follow the registration error policy.
+
+## AgentObserver and Registration
+
+```ts
+interface AgentObserver {
+  startRun(
+    args: AgentRunStartArgs,
+  ): AgentRunObserver | undefined | Promise<AgentRunObserver | undefined>;
+  flush?(): void | Promise<void>;
+  shutdown?(): void | Promise<void>;
+}
+
+type AgentObserverRegistration = {
+  observer: AgentObserver;
+  failOnObserverError?: boolean;
+};
+
+type ObserveOptions = {
+  failOnObserverError?: boolean;
+};
+
+function createObserver(observer: AgentObserver): AgentObserver;
+```
+
+Purpose: top-level observer plugin contract.
+
+Return behavior: `createObserver(...)` returns the observer unchanged, mainly for typing.
+
+Notable errors: observer errors are ignored unless `failOnObserverError` is enabled.
+
+For workflow guidance, see [Tracing](/docs/guides/observability/tracing).

@@ -1,0 +1,56 @@
+---
+title: Agents in Pipelines
+description: Use agents as pipeline stages.
+---
+
+Agents fit best in pipelines when a stage needs model reasoning, tools, retrieval, or instructions. Keep the orchestration in the pipeline and the model behavior on the agent.
+
+## 1. Build a Focused Agent
+
+```ts
+const triageAgent = new AgentBuilder("triage", model)
+  .instructions("Classify the urgency of support tickets.")
+  .defaultMaxTurns(2)
+  .build();
+```
+
+## 2. Format the Prompt in a Step
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .step((ticket) => `Classify this ticket:\n\n${ticket}`)
+  .prompt(triageAgent)
+  .build();
+```
+
+The pipeline owns the changing input. The agent owns the stable instructions.
+
+## 3. Use Agent Tools Normally
+
+```ts
+const supportAgent = new AgentBuilder("support", model)
+  .instructions("Look up account details before answering account questions.")
+  .tool(lookupAccount)
+  .defaultMaxTurns(3)
+  .build();
+
+const pipeline = new PipelineBuilder<string>()
+  .step((ticket) => `Answer this support ticket:\n\n${ticket}`)
+  .prompt(supportAgent)
+  .build();
+```
+
+The agent can call tools during the prompt step. The pipeline receives the final agent output.
+
+## 4. Use Separate Agents for Separate Jobs
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .parallel({
+    customerReply: new PipelineBuilder<string>().prompt(replyAgent).build(),
+    internalSummary: new PipelineBuilder<string>().prompt(summaryAgent).build(),
+  })
+  .build();
+```
+
+Separate agents make instructions, tools, and traces easier to reason about.

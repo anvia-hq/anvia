@@ -1,0 +1,75 @@
+---
+title: Result Handling
+description: Normalize and consume MCP tool results.
+---
+
+Anvia normalizes MCP tool results into strings before sending them back to the model.
+
+## Text Results
+
+MCP text content is joined together.
+
+```ts
+{
+  content: [
+    { type: "text", text: "First line." },
+    { type: "text", text: "Second line." }
+  ]
+}
+```
+
+The model receives:
+
+```txt
+First line.Second line.
+```
+
+If you need separators, return them from the MCP server as part of the text.
+
+## Structured Results
+
+Some MCP servers return `toolResult`. Anvia serializes it like normal tool output.
+
+```ts
+{
+  toolResult: {
+    status: "ok",
+    count: 3
+  }
+}
+```
+
+The model receives:
+
+```json
+{"status":"ok","count":3}
+```
+
+## Images and Resources
+
+Image content becomes a data URL.
+
+```txt
+data:image/png;base64,...
+```
+
+Resource content becomes:
+
+```txt
+data:text/plain;file:///tmp/report.txt:contents
+```
+
+Use these result types only when the downstream model and provider can handle the content meaningfully.
+
+## MCP Error Results
+
+If the MCP server returns `isError: true`, Anvia throws using the text content as the error message.
+
+```ts
+{
+  isError: true,
+  content: [{ type: "text", text: "Access denied." }]
+}
+```
+
+During an agent run, tool errors are returned to the model as tool result text, the same as local tool errors.

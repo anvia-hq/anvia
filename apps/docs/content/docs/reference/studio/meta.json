@@ -1,0 +1,6 @@
+{
+  "title": "Studio",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["index", "runtime", "sessions", "traces", "approvals", "stores", "types"]
+}

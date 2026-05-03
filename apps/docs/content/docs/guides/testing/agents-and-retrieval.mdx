@@ -1,0 +1,75 @@
+---
+title: Agents and Retrieval
+description: Test agent wrappers, history handling, and retrieval boundaries.
+---
+
+Agent tests should focus on the application boundary around the agent. Retrieval tests should focus on indexing and filtering behavior before the model sees context.
+
+## Test Agent Wrappers
+
+Put product policy around agent calls in a small wrapper. Then test that wrapper owns history, trace metadata, usage records, and error handling:
+
+```ts
+export async function runSupportAgent(
+  agent: Agent,
+  conversationId: string,
+  input: string,
+  history: Message[],
+) {
+  const response = await agent
+    .prompt(input)
+    .withHistory(history)
+    .withTrace({ name: "support-agent" })
+    .maxTurns(3)
+    .send();
+
+  await conversations.saveMessages(conversationId, [
+    ...history,
+    ...response.messages,
+  ]);
+
+  return response.output;
+}
+```
+
+In tests, use a controlled model implementation or a narrow integration test against a provider. Keep broad provider calls out of fast unit tests.
+
+## Test Known Runtime Errors
+
+Application wrappers should classify known SDK errors where the product can make a decision:
+
+| Error | What to check |
+| --- | --- |
+| `MaxTurnsError` | the wrapper records the failure and returns or throws the intended product response |
+| `PromptCancelledError` | the wrapper treats cancellation like an interrupted or denied workflow |
+| provider errors | the wrapper logs request metadata and preserves the original error |
+| tool errors | expected product states are returned; unexpected failures are surfaced |
+
+## Test Retrieval Boundaries
+
+Retrieval tests should cover:
+
+| Boundary | What to check |
+| --- | --- |
+| Embedding preprocessing | IDs, metadata, chunking, and content selectors |
+| Filters | Tenant, user, document status, and product scopes |
+| Search output | Result order, score thresholds, and empty states |
+| Dynamic context | Formatting and prompt budget behavior |
+
+Security-sensitive filters belong in application code. Test them without a model.
+
+## Test Dynamic Context Formatting
+
+When retrieval is attached as dynamic context, test the formatter separately:
+
+```ts
+const formatted = formatSupportDoc({
+  title: "Refund policy",
+  body: "Refunds are available within 30 days.",
+});
+
+expect(formatted).toContain("Refund policy");
+expect(formatted).toContain("30 days");
+```
+
+The model should receive only the context shape your product intends to expose.

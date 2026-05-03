@@ -1,0 +1,49 @@
+---
+title: Capabilities
+description: Read which Studio features are enabled for the current runtime.
+---
+
+Studio reports runtime capabilities from `/config`. The UI uses this shape to decide which surfaces should be available.
+
+```bash
+curl http://localhost:4021/config
+```
+
+```json
+{
+  "id": "anvia-studio",
+  "agents": [],
+  "chat": {
+    "quickPrompts": {}
+  },
+  "capabilities": {
+    "agents": { "enabled": true },
+    "sessions": { "enabled": true },
+    "traces": { "enabled": true }
+  },
+  "unsupportedCapabilities": []
+}
+```
+
+## Capability List
+
+| Capability | Enabled when |
+| --- | --- |
+| `agents` | Always enabled |
+| `sessions` | Session storage is available |
+| `traces` | Trace storage is available |
+| `observability` | At least one registered agent has observers |
+| `approvals` | At least one registered agent has a tool with approval metadata |
+| `knowledge` | At least one registered agent has static context, dynamic context, or dynamic tools |
+
+## Unsupported Capabilities
+
+If a capability is unavailable, Studio lists it in `unsupportedCapabilities`. Requests to unsupported routes return an `unsupported_capability` error.
+
+```json
+{
+  "unsupportedCapabilities": ["sessions", "traces"]
+}
+```
+
+Most applications should inspect `/config` before building custom tooling around optional Studio surfaces.

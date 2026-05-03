@@ -1,0 +1,14 @@
+{
+  "title": "Tools",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "creating-tools",
+    "tool-schemas",
+    "tool-handlers",
+    "tool-results",
+    "tool-sets",
+    "think-tool",
+    "tool-errors"
+  ]
+}

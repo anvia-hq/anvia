@@ -1,0 +1,51 @@
+---
+title: Storage and Persistence
+description: Understand Studio's local SQLite storage for sessions and traces.
+---
+
+Studio creates a local SQLite store by default. It stores sessions, transcript entries, and traces for local inspection.
+
+## Default Path
+
+By default, Studio writes to:
+
+```txt
+.anvia-studio/anvia-studio.sqlite
+```
+
+Set `ANVIA_STUDIO_DB` when you want a specific file.
+
+```bash
+ANVIA_STUDIO_DB=.data/studio.sqlite pnpm tsx studio.ts
+```
+
+`AION_STUDIO_DB` is also read as a compatibility fallback.
+
+## What Gets Stored
+
+| Data | Purpose |
+| --- | --- |
+| Sessions | Local conversations for one registered agent |
+| Messages | Runtime history used when continuing a session |
+| Transcript entries | UI-friendly messages, reasoning, tool calls, approvals, and questions |
+| Traces | Generation and tool observations captured during runs |
+
+## Sessions and Traces
+
+When storage is available, Studio enables both `sessions` and `traces` capabilities. Runs with a `sessionId` load the stored messages as history and append the final messages after the run completes.
+
+```bash
+curl http://localhost:4021/config
+```
+
+```json
+{
+  "capabilities": {
+    "sessions": { "enabled": true },
+    "traces": { "enabled": true }
+  },
+  "unsupportedCapabilities": []
+}
+```
+
+Use [`Sessions`](/docs/studio/runs/sessions) and [`Traces`](/docs/studio/runs/traces) for the runtime workflow.

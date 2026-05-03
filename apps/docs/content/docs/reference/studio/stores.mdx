@@ -1,0 +1,39 @@
+---
+title: Studio Stores
+description: Store bundle types and SQLite session/trace store.
+---
+
+Import from `@anvia/studio`.
+
+## Store Bundle Types
+
+```ts
+type StudioStores = {
+  sessions?: StudioSessionStore | false;
+  traces?: StudioTraceStore;
+};
+```
+
+Purpose: optional persistence stores for Studio sessions and traces.
+
+Return behavior: `false` disables sessions; omitted traces disable trace routes unless the session store also implements `StudioTraceStore`.
+
+Notable errors: none directly.
+
+## SQLite Store
+
+```ts
+type SqliteSessionStoreOptions = {
+  path?: string;
+};
+
+function createSqliteSessionStore(
+  options?: SqliteSessionStoreOptions,
+): StudioSessionStore & StudioTraceStore;
+```
+
+Purpose: create a SQLite-backed session and trace store.
+
+Return behavior: defaults to in-memory SQLite when `path` is omitted.
+
+Notable errors: throws when `node:sqlite` is unavailable, the database cannot open, or SQLite operations fail.

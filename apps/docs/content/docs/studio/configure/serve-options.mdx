@@ -1,0 +1,44 @@
+---
+title: Serve Options
+description: Configure the local Studio server port, host, and startup logs.
+---
+
+Call `.start(...)` to serve the Studio UI and HTTP API.
+
+```ts
+new Studio([agent]).start({
+  port: 4021,
+  hostname: "localhost",
+  log: true,
+});
+```
+
+## Options
+
+| Option | Type | Default |
+| --- | --- | --- |
+| `port` | `number` | `RUNNER_PORT`, then `4021` |
+| `hostname` | `string` | Hono's default host binding |
+| `log` | `boolean` | `true` |
+
+When logging is enabled, Studio prints the local URL.
+
+```txt
+Studio UI: http://localhost:4021/playground
+```
+
+If you omit `port`, Studio reads `RUNNER_PORT` first and falls back to `4021`.
+
+```bash
+RUNNER_PORT=4040 pnpm tsx studio.ts
+```
+
+Use `.close()` when tests or scripts need to stop the server explicitly.
+
+```ts
+const studio = new Studio([agent]).start({ port: 4021 });
+
+// ...
+
+studio.close();
+```

@@ -1,0 +1,75 @@
+---
+title: Multiple Agents
+description: Register several agents in one Studio runtime.
+---
+
+Register multiple agents when you want one playground for several roles.
+
+## Example
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { Studio } from "@anvia/studio";
+
+const client = new OpenAIClient({ apiKey });
+const model = client.completionModel("gpt-5");
+
+const supportAgent = new AgentBuilder("support-triage", model)
+  .name("Support Triage")
+  .description("Summarizes customer-facing support tickets.")
+  .instructions("Return concise support summaries and next actions.")
+  .build();
+
+const engineeringAgent = new AgentBuilder("engineering-triage", model)
+  .name("Engineering Triage")
+  .description("Turns incidents into engineering diagnostics.")
+  .instructions("Return concrete diagnostics, owners, and unknowns.")
+  .build();
+
+const commsAgent = new AgentBuilder("customer-comms", model)
+  .name("Customer Comms")
+  .description("Drafts customer updates for incidents.")
+  .instructions("Avoid unverified root-cause claims.")
+  .build();
+
+new Studio([supportAgent, engineeringAgent, commsAgent]).start({
+  port: 4021,
+});
+```
+
+Studio uses the agent id from `AgentBuilder`. If two agents share the same id, Studio makes the later ids unique by adding a suffix.
+
+## Check Agents
+
+```bash
+curl http://localhost:4021/agents
+```
+
+```json
+{
+  "agents": [
+    {
+      "id": "support-triage",
+      "name": "Support Triage",
+      "quickPrompts": ["Summarize TICKET-1001 for the support lead."]
+    }
+  ]
+}
+```
+
+## Add Quick Prompts
+
+Quick prompts make multi-agent playgrounds easier to test repeatedly.
+
+```ts
+new Studio([supportAgent, engineeringAgent, commsAgent], {
+  quickPrompts: {
+    "support-triage": ["Summarize TICKET-1001 for the support lead."],
+    "engineering-triage": ["Prepare diagnostics for a webhook retry incident."],
+    "customer-comms": ["Draft a customer update for a degraded webhook incident."],
+  },
+}).start({ port: 4021 });
+```
+
+See [`Quick Prompts`](/docs/studio/configure/quick-prompts) for the focused configuration guide.

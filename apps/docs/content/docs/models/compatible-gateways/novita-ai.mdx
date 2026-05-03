@@ -1,0 +1,61 @@
+---
+title: Novita AI
+description: Use Novita AI's OpenAI-compatible LLM endpoint with Anvia.
+---
+
+Novita AI exposes OpenAI-compatible LLM endpoints under `https://api.novita.ai/openai`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.novita.ai/openai",
+  apiKey: process.env.NOVITA_API_KEY,
+});
+
+const model = client.completionModel("meta-llama/llama-3.1-8b-instruct");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+## Get the Model List
+
+Novita AI documents model listing as part of its OpenAI-compatible LLM API.
+
+```ts
+const response = await fetch("https://api.novita.ai/openai/models", {
+  headers: {
+    Authorization: `Bearer ${process.env.NOVITA_API_KEY}`,
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`Novita AI models request failed: ${response.status}`);
+}
+
+const body = (await response.json()) as {
+  data: Array<{
+    id: string;
+    object?: string;
+    owned_by?: string;
+  }>;
+};
+
+console.table(body.data.map((model) => ({ id: model.id, owner: model.owned_by })));
+```
+
+## Notes
+
+- Novita AI also offers image, audio, and video APIs. This page focuses only on the OpenAI-compatible LLM endpoint used by `OpenAIClient`.
+- Check the specific model for tool calling, structured output, streaming, and multimodal support before enabling those features.
+
+For current Novita AI API details, see the [Novita API reference](https://novita.ai/docs/api-reference) and [LLM API introduction](https://novita.ai/docs/api-reference/model-apis-introduction).

@@ -1,0 +1,79 @@
+---
+title: pgvector
+description: Public exports from @anvia/pgvector.
+---
+
+Import from `@anvia/pgvector`.
+
+## PgVectorStoreConnectOptions
+
+```ts
+type PgVectorDistance = "cosine" | "l2" | "innerProduct";
+
+type PgVectorStoreConnectOptions = {
+  client?: PgClientLike;
+  connectionString?: string;
+  tableName: string;
+  vectorSize: number;
+  createIfMissing?: boolean;
+  distance?: PgVectorDistance;
+};
+```
+
+Purpose: connection options for a Postgres table backed by the pgvector extension.
+
+Return behavior: consumed by `PgVectorStore.connect(...)`.
+
+Notable errors: missing tables reject when `createIfMissing` is `false`; table creation requires `vectorSize`; metadata keys starting with `__anvia_` are reserved.
+
+Design note: `connect(...)` performs async extension setup, table creation or validation, and vector dimension validation before returning a store. This keeps constructors synchronous and side-effect free while making connection and configuration failures happen before ingestion or search.
+
+## PgVectorStore
+
+```ts
+class PgVectorStore<T, Metadata extends VectorMetadata = VectorMetadata> {
+  static connect<T, Metadata extends VectorMetadata = VectorMetadata>(
+    options: PgVectorStoreConnectOptions,
+  ): Promise<PgVectorStore<T, Metadata>>;
+  upsertDocuments(documents: Array<EmbeddedDocument<T, Metadata>>): Promise<void>;
+  index(model: EmbeddingModel): PgVectorIndex<T, Metadata>;
+}
+```
+
+Purpose: Postgres pgvector-backed document storage.
+
+Return behavior: `connect(...)` resolves a store; `index(...)` binds it to an embedding model.
+
+Notable errors: connection and upsert calls reject on Postgres errors; `upsertDocuments(...)` throws when a document has no embeddings or metadata uses reserved `__anvia_*` keys.
+
+## PgVectorIndex
+
+```ts
+class PgVectorIndex<T, Metadata extends VectorMetadata = VectorMetadata>
+  implements VectorSearchIndex<T, Metadata> {
+  search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
+  searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>>;
+  asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown>;
+}
+```
+
+Purpose: query-time pgvector search adapter.
+
+Return behavior: embeds the query, runs a parameterized vector search query, deduplicates multi-embedding document IDs, and returns normalized results.
+
+Notable errors: embedding or Postgres query failures reject.
+
+## filterToPgVectorWhere
+
+```ts
+function filterToPgVectorWhere(
+  filter: VectorFilter | undefined,
+  startIndex?: number,
+): { sql: string; values: unknown[] } | undefined;
+```
+
+Purpose: convert Anvia vector filters to parameterized SQL over the `metadata jsonb` column.
+
+Return behavior: returns `undefined` when no filter is supplied.
+
+Notable errors: `gt` and `lt` filters require numeric metadata values.

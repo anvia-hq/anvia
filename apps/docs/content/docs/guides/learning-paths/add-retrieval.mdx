@@ -1,0 +1,137 @@
+---
+title: Add Retrieval
+description: Add embeddings, vector search, and dynamic context to agent workflows.
+---
+
+Use this path when an agent needs searchable knowledge that should not be placed directly in static context.
+
+## Goal
+
+By the end, you should know how to:
+
+- choose an embedding model
+- embed documents
+- store vectors
+- filter results
+- attach retrieved context to an agent run
+
+## Path
+
+1. Read [Embeddings](/docs/guides/retrieval/embeddings) to choose an embedding model.
+2. Read [Embed Documents](/docs/guides/retrieval/embed-documents) to convert text into vectors.
+3. Read [Vector Stores](/docs/guides/retrieval/vector-stores) to store and search embeddings.
+4. Read [RAG Context](/docs/guides/retrieval/rag-context) to attach retrieved documents to an agent.
+5. Read [Metadata Filters](/docs/guides/retrieval/metadata-filters) when retrieval should respect tenant, user, or document filters.
+6. Read [LSH](/docs/guides/retrieval/lsh) when local search needs candidate narrowing.
+
+## Static Context vs Retrieval
+
+| Use static context when | Use retrieval when |
+| --- | --- |
+| The text is short | The knowledge base is large |
+| The same fact applies to every prompt | The relevant facts depend on the prompt |
+| The content changes rarely | The content is searched, filtered, or refreshed |
+
+## Retrieval Flow
+
+Think about retrieval in two phases:
+
+| Phase | What happens |
+| --- | --- |
+| Preprocess | Load documents, normalize or chunk text, create embeddings, and build an index. |
+| Retrieve | Search the index for the current prompt and pass the matches into the agent run. |
+
+## 1. Preprocess Documents
+
+Run preprocessing before the user prompt. In a real app, this usually belongs in a build step, startup task, admin action, or background ingestion job.
+
+```ts
+import { InMemoryVectorStore, embedDocuments } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({ apiKey });
+const embeddings = client.embeddingModel("text-embedding-3-small");
+
+const documents = [
+  {
+    id: "password-reset",
+    title: "Password reset policy",
+    body: "Password reset links expire after 30 minutes.",
+  },
+  {
+    id: "priority-support",
+    title: "Priority support",
+    body: "Enterprise customers receive priority support.",
+  },
+];
+
+const preprocessed = documents.map((doc) => ({
+  ...doc,
+  title: doc.title.trim(),
+  body: doc.body.replace(/\s+/g, " ").trim(),
+}));
+
+const embedded = await embedDocuments(embeddings, preprocessed, {
+  id: (doc) => doc.id,
+  content: (doc) => `${doc.title}\n${doc.body}`,
+  metadata: (doc) => ({ title: doc.title }),
+});
+
+export const supportDocs = InMemoryVectorStore.fromDocuments(embedded);
+export const supportDocsIndex = supportDocs.index(embeddings);
+```
+
+For production, store the embedded documents in a durable vector store instead of rebuilding the index on every request.
+
+## 2. Retrieve During a Prompt
+
+Use the preprocessed index at runtime. The agent receives only the matches for the current prompt.
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { supportDocsIndex } from "./support-docs";
+
+const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Use retrieved context when answering.")
+  .dynamicContext(supportDocsIndex, {
+    topK: 2,
+    format: (result) => ({
+      id: result.id,
+      text: `${result.document.title}\n${result.document.body}`,
+    }),
+  })
+  .build();
+
+const response = await agent.prompt("How long does a reset link last?").send();
+
+console.log(response.output);
+```
+
+## Search Tool Shape
+
+Use the same preprocessed index as a tool when the model should decide when to search.
+
+```ts
+const searchDocs = supportDocsIndex.asTool({
+  name: "search_docs",
+  description: "Search support documentation.",
+  topK: 3,
+});
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Search docs before answering policy questions.")
+  .tool(searchDocs)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+## Add Next
+
+| Need | Read |
+| --- | --- |
+| Local vector search | [LSH](/docs/guides/retrieval/lsh) |
+| Provider embeddings | [Provider Clients and Models](/docs/guides/core-concepts/clients-and-models) |
+| Tracing retrieval workflows | [Add Observability](/docs/guides/learning-paths/add-observability) |

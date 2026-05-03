@@ -1,0 +1,13 @@
+{
+  "title": "Structured Output",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": [
+    "schemas",
+    "zod-schema",
+    "agent-output",
+    "extractors",
+    "output-validation",
+    "failure-handling"
+  ]
+}

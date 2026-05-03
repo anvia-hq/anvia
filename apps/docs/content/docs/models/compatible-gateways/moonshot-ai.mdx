@@ -1,0 +1,61 @@
+---
+title: Moonshot AI
+description: Use Moonshot AI and Kimi models through the OpenAI-compatible API.
+---
+
+Moonshot AI's Kimi API exposes OpenAI-compatible chat endpoints at `https://api.moonshot.ai/v1`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.moonshot.ai/v1",
+  apiKey: process.env.MOONSHOT_API_KEY,
+});
+
+const model = client.completionModel("kimi-k2");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+## Get the Model List
+
+If your Moonshot account exposes the OpenAI-compatible models endpoint, you can read available model ids from `/models`.
+
+```ts
+const response = await fetch("https://api.moonshot.ai/v1/models", {
+  headers: {
+    Authorization: `Bearer ${process.env.MOONSHOT_API_KEY}`,
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`Moonshot models request failed: ${response.status}`);
+}
+
+const body = (await response.json()) as {
+  data: Array<{
+    id: string;
+    object?: string;
+    owned_by?: string;
+  }>;
+};
+
+console.table(body.data.map((model) => ({ id: model.id, owner: model.owned_by })));
+```
+
+## Notes
+
+- Kimi-specific options may need to be passed through provider-specific request fields. Keep those options close to the workflow that needs them.
+- OpenAI compatibility covers the transport shape, not identical behavior across all models.
+
+For current Moonshot API details, see the [Kimi API overview](https://platform.kimi.ai/docs/api/overview).

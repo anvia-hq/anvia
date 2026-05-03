@@ -1,0 +1,38 @@
+{
+  "name": "docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "cf-typegen": "wrangler types",
+    "deploy": "pnpm run build && wrangler deploy",
+    "dev": "vite dev",
+    "preview": "vite preview",
+    "typecheck": "fumadocs-mdx && tsr generate && tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.168.26",
+    "@tanstack/react-start": "^1.167.52",
+    "fumadocs-core": "^16.8.5",
+    "fumadocs-mdx": "^14.3.2",
+    "fumadocs-ui": "^16.8.5",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.35.0",
+    "@tailwindcss/vite": "^4.2.4",
+    "@tanstack/router-cli": "^1.166.38",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.10",
+    "wrangler": "^4.87.0"
+  }
+}

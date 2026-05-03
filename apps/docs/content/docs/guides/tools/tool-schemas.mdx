@@ -1,0 +1,83 @@
+---
+title: Tool Schemas
+description: Validate tool input and output with schemas.
+---
+
+Anvia tools use Zod schemas for runtime validation and provider tool definitions.
+
+## Input Schema
+
+```ts
+const lookupCustomer = createTool({
+  name: "lookup_customer",
+  description: "Look up a customer by email.",
+  input: z.object({
+    email: z.string().email().describe("The customer email address."),
+  }),
+  async execute({ email }) {
+    return customers.findByEmail(email);
+  },
+});
+```
+
+The input schema is converted into JSON Schema and advertised to the model.
+
+## Output Schema
+
+```ts
+const lookupCustomer = createTool({
+  name: "lookup_customer",
+  description: "Look up a customer by email.",
+  input: z.object({
+    email: z.string().email(),
+  }),
+  output: z.object({
+    id: z.string(),
+    plan: z.enum(["free", "pro", "enterprise"]),
+  }),
+  async execute({ email }) {
+    return customers.findByEmail(email);
+  },
+});
+```
+
+If `output` is provided, Anvia validates the handler result before serializing it for the model.
+
+## Schema Metadata
+
+Use `.describe(...)` to make tool arguments clearer to the model.
+
+```ts
+const createTicket = createTool({
+  name: "create_ticket",
+  description: "Create a support ticket.",
+  input: z.object({
+    title: z.string().describe("Short issue summary."),
+    priority: z.enum(["low", "medium", "high"]).describe("Customer-visible priority."),
+  }),
+  output: z.object({
+    ticketId: z.string(),
+  }),
+  async execute(input) {
+    return tickets.create(input);
+  },
+});
+```
+
+Prefer small schemas. If a tool needs many fields, consider splitting the workflow into smaller tools or using a structured output step before the tool call.
+
+## Validation Failures
+
+Invalid input or output becomes a tool call error.
+
+```ts
+try {
+  await toolSet.call("lookup_customer", JSON.stringify({ email: "not-an-email" }));
+} catch (error) {
+  if (error instanceof ToolCallError) {
+    logger.warn(error, "tool validation failed");
+  }
+}
+```
+
+In normal agent runs, Anvia catches tool execution errors and sends the error string back as the tool result so the model can recover or explain the failure.

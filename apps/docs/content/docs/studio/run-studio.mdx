@@ -1,0 +1,96 @@
+---
+title: Run Studio
+description: Start the Studio UI and HTTP runtime from built agents.
+---
+
+Start with a normal Anvia agent. Studio does not define agent behavior. It only runs and inspects agents you already built.
+
+## 1. Install the Studio Package
+
+```bash
+pnpm add @anvia/core @anvia/openai @anvia/studio
+```
+
+## 2. Create a Studio Entry File
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { Studio } from "@anvia/studio";
+import { z } from "zod";
+
+const client = new OpenAIClient({ apiKey });
+const model = client.completionModel("gpt-5");
+
+const getOrder = createTool({
+  name: "get_order",
+  description: "Read an order summary from application state.",
+  input: z.object({
+    id: z.string().describe("The order id to read."),
+  }),
+  output: z.object({
+    id: z.string(),
+    status: z.enum(["processing", "blocked", "shipped"]),
+    notes: z.string(),
+  }),
+  async execute({ id }) {
+    return {
+      id,
+      status: "blocked" as const,
+      notes: "Payment review is complete, but allocation is still pending.",
+    };
+  },
+});
+
+const agent = new AgentBuilder("support-operations", model)
+  .name("Support Operations")
+  .description("Answers operational support questions.")
+  .instructions("Use tools for private order data. Keep answers concise.")
+  .tool(getOrder)
+  .defaultMaxTurns(3)
+  .build();
+
+new Studio([agent]).start({ port: 4021 });
+```
+
+## 3. Start It
+
+```bash
+pnpm tsx studio.ts
+```
+
+Open `http://localhost:4021/playground`.
+
+If you omit the port, Studio uses `RUNNER_PORT` and then falls back to `4021`.
+
+## 4. Check the Runtime
+
+```bash
+curl http://localhost:4021/health
+```
+
+```json
+{
+  "status": "ok",
+  "runner": {
+    "id": "anvia-studio"
+  }
+}
+```
+
+## 5. Run Through the API
+
+```bash
+curl -X POST http://localhost:4021/agents/support-operations/runs \
+  -H 'content-type: application/json' \
+  -d '{"message":"What is happening with order ORD-1001?"}'
+```
+
+Studio returns the same kind of prompt response as `agent.prompt(...).send()`.
+
+## Development Loop
+
+1. Edit the agent, tools, instructions, or hooks.
+2. Restart the Studio entry file.
+3. Try prompts in the playground.
+4. Inspect tool calls, output, sessions, and traces.

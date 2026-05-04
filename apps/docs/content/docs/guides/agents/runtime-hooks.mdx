@@ -3,7 +3,7 @@ title: Runtime Hooks
 description: Observe and customize agent runtime behavior with hooks.
 ---
 
-Hooks run inside a prompt request and can inspect or alter runtime behavior. Use observers for telemetry. Use hooks for guardrails, approval checks, skipped tools, and cancellation.
+Hooks run inside a prompt request and can inspect or alter runtime behavior. Use observers for telemetry. Use hooks for guardrails, approval checks, skipped tools, and cancellation. Use [tool middleware](/docs/guides/tools/tool-middleware) when you need to transform tool result text before the model receives it.
 
 ## Create a Hook
 
@@ -47,6 +47,8 @@ const hook = createHook({
 ```
 
 `tool.run()` executes the tool. `tool.skip(...)` does not execute the tool; the message becomes the tool result sent back to the model.
+
+Tool result middleware runs after this decision produces a result string and before `onToolResult(...)` observes it.
 
 ## Await Human Approval
 

@@ -10,6 +10,7 @@ import {
   connectMcp,
   createHook,
   createTool,
+  createToolMiddleware,
   type McpClient,
   type McpConnection,
   type McpServer,
@@ -213,6 +214,35 @@ describe("MCP tools", () => {
           type: "tool_result",
           id: "call_1",
           content: [{ type: "text", text: "7" }],
+        },
+      ]),
+    );
+  });
+
+  it("applies tool result middleware to MCP tools", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .mcp([fakeMcpServer()])
+      .toolMiddleware(
+        createToolMiddleware({
+          onResult({ result }) {
+            return `mcp:${result}`;
+          },
+        }),
+      )
+      .build();
+
+    await expect(agent.prompt("add").send()).resolves.toMatchObject({ output: "done" });
+
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "mcp:7" }],
         },
       ]),
     );

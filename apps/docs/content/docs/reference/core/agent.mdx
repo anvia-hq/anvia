@@ -26,6 +26,7 @@ class Agent<M extends CompletionModel = CompletionModel> {
   readonly observers: AgentObserverRegistration[];
   readonly dynamicContexts: DynamicContextRegistration[];
   readonly dynamicTools: DynamicToolRegistration[];
+  readonly toolMiddlewares: ToolMiddleware[];
   readonly memory?: MemoryRegistration;
 
   constructor(options: AgentOptions<M>);
@@ -64,6 +65,7 @@ type AgentOptions<M extends CompletionModel = CompletionModel> = {
   observers?: AgentObserverRegistration[];
   dynamicContexts?: DynamicContextRegistration[];
   dynamicTools?: DynamicToolRegistration[];
+  toolMiddlewares?: ToolMiddleware[];
   memory?: MemoryRegistration;
 };
 ```
@@ -96,6 +98,8 @@ class AgentBuilder<M extends CompletionModel = CompletionModel> {
   toolChoice(toolChoice: ToolChoice): this;
   defaultMaxTurns(defaultMaxTurns: number): this;
   hook(hook: PromptHook): this;
+  toolMiddleware(middleware: ToolMiddleware): this;
+  toolMiddlewares(middlewares: ToolMiddleware[]): this;
   observe(observer: AgentObserver, options?: ObserveOptions): this;
   memory(store: MemoryStore, options?: MemoryOptions): this;
   outputSchema(schema: ZodSchema): this;
@@ -195,6 +199,8 @@ class PromptRequest<M extends CompletionModel = CompletionModel> {
   maxTurns(maxTurns: number): this;
   requestHook(hook: PromptHook): this;
   withToolConcurrency(concurrency: number): this;
+  withToolMiddleware(middleware: ToolMiddleware): this;
+  withToolMiddlewares(middlewares: ToolMiddleware[]): this;
   withTrace(trace: AgentTraceOptions): this;
   send(): Promise<PromptResponse>;
   stream(): AsyncIterable<AgentStreamEvent>;

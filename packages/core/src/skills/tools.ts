@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import { type AnyTool, createTool } from "../tool";
+import { markSkillTool } from "../tool/skill-tool-marker";
 import type { Skill } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -12,48 +13,56 @@ export function createSkillTools(skills: Skill[]): AnyTool[] {
   const registry = new SkillRegistry(skills);
 
   return [
-    createTool({
-      name: "get_skill_instructions",
-      description: "Load the full SKILL.md instructions for an Agent Skill.",
-      input: z.object({
-        skillName: z.string().describe("The name of the skill to load."),
+    markSkillTool(
+      createTool({
+        name: "get_skill_instructions",
+        description: "Load the full SKILL.md instructions for an Agent Skill.",
+        input: z.object({
+          skillName: z.string().describe("The name of the skill to load."),
+        }),
+        output: z.string(),
+        execute: ({ skillName }) => registry.get(skillName).instructions,
       }),
-      output: z.string(),
-      execute: ({ skillName }) => registry.get(skillName).instructions,
-    }),
-    createTool({
-      name: "get_skill_reference",
-      description: "Read a reference file from an Agent Skill.",
-      input: z.object({
-        skillName: z.string().describe("The name of the skill."),
-        referencePath: z.string().describe("A path listed in the skill references."),
+    ),
+    markSkillTool(
+      createTool({
+        name: "get_skill_reference",
+        description: "Read a reference file from an Agent Skill.",
+        input: z.object({
+          skillName: z.string().describe("The name of the skill."),
+          referencePath: z.string().describe("A path listed in the skill references."),
+        }),
+        output: z.string(),
+        execute: ({ skillName, referencePath }) => registry.readReference(skillName, referencePath),
       }),
-      output: z.string(),
-      execute: ({ skillName, referencePath }) => registry.readReference(skillName, referencePath),
-    }),
-    createTool({
-      name: "get_skill_script",
-      description: "Read a script file from an Agent Skill.",
-      input: z.object({
-        skillName: z.string().describe("The name of the skill."),
-        scriptPath: z.string().describe("A path listed in the skill scripts."),
+    ),
+    markSkillTool(
+      createTool({
+        name: "get_skill_script",
+        description: "Read a script file from an Agent Skill.",
+        input: z.object({
+          skillName: z.string().describe("The name of the skill."),
+          scriptPath: z.string().describe("A path listed in the skill scripts."),
+        }),
+        output: z.string(),
+        execute: ({ skillName, scriptPath }) => registry.readScript(skillName, scriptPath),
       }),
-      output: z.string(),
-      execute: ({ skillName, scriptPath }) => registry.readScript(skillName, scriptPath),
-    }),
-    createTool({
-      name: "run_skill_script",
-      description: "Execute a script from an Agent Skill with optional arguments.",
-      input: z.object({
-        skillName: z.string().describe("The name of the skill."),
-        scriptPath: z.string().describe("A path listed in the skill scripts."),
-        args: z.array(z.string()).optional().describe("Arguments passed to the script."),
-        timeoutMs: z.number().int().positive().optional().describe("Execution timeout in ms."),
+    ),
+    markSkillTool(
+      createTool({
+        name: "run_skill_script",
+        description: "Execute a script from an Agent Skill with optional arguments.",
+        input: z.object({
+          skillName: z.string().describe("The name of the skill."),
+          scriptPath: z.string().describe("A path listed in the skill scripts."),
+          args: z.array(z.string()).optional().describe("Arguments passed to the script."),
+          timeoutMs: z.number().int().positive().optional().describe("Execution timeout in ms."),
+        }),
+        output: z.string(),
+        execute: ({ skillName, scriptPath, args = [], timeoutMs = DEFAULT_TIMEOUT_MS }) =>
+          registry.runScript(skillName, scriptPath, args, timeoutMs),
       }),
-      output: z.string(),
-      execute: ({ skillName, scriptPath, args = [], timeoutMs = DEFAULT_TIMEOUT_MS }) =>
-        registry.runScript(skillName, scriptPath, args, timeoutMs),
-    }),
+    ),
   ];
 }
 

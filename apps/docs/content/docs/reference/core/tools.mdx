@@ -82,6 +82,32 @@ Return behavior: core stores this metadata only. Core prompt execution ignores i
 
 Notable errors: runtime-specific approval evaluators can surface errors thrown by `when(...)`, `reason(...)`, or `rejectMessage(...)`.
 
+## ToolMiddleware
+
+```ts
+type ToolResultMiddlewareArgs = {
+  toolName: string;
+  args: string;
+  result: string;
+  originalResult: string;
+  turn: number;
+  toolCallId?: string;
+  internalCallId: string;
+};
+
+interface ToolMiddleware {
+  onResult?(args: ToolResultMiddlewareArgs): string | undefined | Promise<string | undefined>;
+}
+
+function createToolMiddleware(middleware: ToolMiddleware): ToolMiddleware;
+```
+
+Purpose: transform serialized tool results during agent runs before the model, stream events, hooks, observers, and messages receive the result.
+
+Return behavior: returning a string replaces the current result; returning `undefined` keeps it. Multiple middleware callbacks run in registration order. Skill runtime tools are excluded.
+
+Notable errors: errors thrown by middleware surface as prompt run errors.
+
 ## ToolSet
 
 ```ts

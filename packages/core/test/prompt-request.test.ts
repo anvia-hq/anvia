@@ -9,6 +9,7 @@ import {
   cancelPrompt,
   createHook,
   createTool,
+  createToolMiddleware,
   MaxTurnsError,
   Message,
   PromptCancelledError,
@@ -124,6 +125,89 @@ describe("PromptRequest", () => {
     const finalToolMessage = model.requests[1]?.chatHistory.at(-1);
     expect(finalToolMessage?.role).toBe("tool");
     expect(finalToolMessage?.role === "tool" ? finalToolMessage.content : []).toHaveLength(2);
+  });
+
+  it("runs tool result middleware before hooks and the next model turn", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }, "fc_1")]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const events: string[] = [];
+    const outputGate = createToolMiddleware({
+      onResult({ toolName, result, originalResult, toolCallId }) {
+        events.push(`${toolName}:${toolCallId}:${originalResult}`);
+        return `stored:${result}`;
+      },
+    });
+    const hook = createHook({
+      onToolResult({ result }) {
+        events.push(`hook:${result}`);
+      },
+    });
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(addTool)
+      .toolMiddleware(outputGate)
+      .hook(hook)
+      .build();
+
+    await expect(agent.prompt("add").send()).resolves.toMatchObject({ output: "done" });
+
+    expect(events).toEqual(["add:fc_1:7", "hook:stored:7"]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          callId: "fc_1",
+          content: [{ type: "text", text: "stored:7" }],
+        },
+      ]),
+    );
+  });
+
+  it("composes agent and request tool result middleware in order", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const events: string[] = [];
+    const keep = createToolMiddleware({
+      onResult({ result, originalResult }) {
+        events.push(`keep:${result}:${originalResult}`);
+        return undefined;
+      },
+    });
+    const agentAppend = createToolMiddleware({
+      onResult({ result, originalResult }) {
+        events.push(`agent:${result}:${originalResult}`);
+        return `${result}:agent`;
+      },
+    });
+    const requestAppend = createToolMiddleware({
+      onResult({ result, originalResult }) {
+        events.push(`request:${result}:${originalResult}`);
+        return `${result}:request`;
+      },
+    });
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(addTool)
+      .toolMiddlewares([keep, agentAppend])
+      .build();
+
+    await expect(
+      agent.prompt("add").withToolMiddleware(requestAppend).send(),
+    ).resolves.toMatchObject({ output: "done" });
+
+    expect(events).toEqual(["keep:7:7", "agent:7:7", "request:7:agent:7"]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "7:agent:request" }],
+        },
+      ]),
+    );
   });
 
   it("runs object-shaped hooks and continues when callbacks return nothing", async () => {

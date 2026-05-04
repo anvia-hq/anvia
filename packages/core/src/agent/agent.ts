@@ -11,6 +11,8 @@ import type { MemoryRegistration, SessionOptions } from "../memory";
 import type { AgentObserverRegistration } from "../observability";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
+import type { ToolMiddleware } from "../tool/middleware";
+import { isSkillTool } from "../tool/skill-tool-marker";
 import type { AnyTool, Tool } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
@@ -35,6 +37,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   observers?: AgentObserverRegistration[] | undefined;
   dynamicContexts?: DynamicContextRegistration[] | undefined;
   dynamicTools?: DynamicToolRegistration[] | undefined;
+  toolMiddlewares?: ToolMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;
 };
 
@@ -87,6 +90,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
   readonly observers: AgentObserverRegistration[];
   readonly dynamicContexts: DynamicContextRegistration[];
   readonly dynamicTools: DynamicToolRegistration[];
+  readonly toolMiddlewares: ToolMiddleware[];
   readonly memory: MemoryRegistration | undefined;
 
   constructor(options: AgentOptions<M>) {
@@ -107,6 +111,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     this.observers = options.observers ?? [];
     this.dynamicContexts = options.dynamicContexts ?? [];
     this.dynamicTools = options.dynamicTools ?? [];
+    this.toolMiddlewares = options.toolMiddlewares ?? [];
     this.memory = options.memory;
   }
 
@@ -180,6 +185,10 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     }
 
     return this.toolSet.call(toolName, args);
+  }
+
+  shouldApplyToolMiddleware(toolName: string): boolean {
+    return !isSkillTool(this.getTool(toolName));
   }
 }
 

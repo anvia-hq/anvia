@@ -8,6 +8,7 @@ import {
   type CompletionResponse,
   type CompletionStreamEvent,
   createTool,
+  createToolMiddleware,
   Message,
   type StreamingCompletionModel,
   toReadableStream,
@@ -146,6 +147,50 @@ describe("PromptRequest streaming", () => {
     );
     expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("streams transformed tool results from middleware", async () => {
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        },
+      ],
+      [{ type: "text_delta", delta: "done" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(addTool)
+      .toolMiddleware(
+        createToolMiddleware({
+          onResult({ result }) {
+            return `stored:${result}`;
+          },
+        }),
+      )
+      .build();
+
+    const events = await collect(agent.prompt("add").stream());
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        turn: 1,
+        toolName: "add",
+        result: "stored:7",
+      }),
+    );
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "stored:7" }],
+        },
+      ]),
+    );
   });
 
   it("streams concurrent tool results as each tool finishes", async () => {

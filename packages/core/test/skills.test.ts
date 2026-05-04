@@ -10,7 +10,9 @@ import {
   type CompletionResponse,
   type CompletionStreamEvent,
   createHook,
+  createToolMiddleware,
   loadSkills,
+  Message,
   SkillValidationError,
   type StreamingCompletionModel,
   skill,
@@ -266,6 +268,102 @@ describe("skills", () => {
       "call:get_skill_instructions",
       "result:get_skill_instructions:# Review\nUse direct feedback.",
     ]);
+  });
+
+  it("does not apply tool result middleware to skill tools added with skills", async () => {
+    const root = await tempRoot();
+    await writeSkill(root, "review", {
+      description: "Review things.",
+      body: "# Review\nUse direct feedback.",
+    });
+    const skillSet = await loadSkills(skill.local(root));
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "get_skill_instructions", { skillName: "review" }),
+      ]),
+      response([AssistantContent.text("loaded")]),
+    ]);
+    const events: string[] = [];
+    const agent = new AgentBuilder("test-agent", model)
+      .skills(skillSet)
+      .toolMiddleware(
+        createToolMiddleware({
+          onResult({ result }) {
+            events.push(`middleware:${result}`);
+            return "middleware changed result";
+          },
+        }),
+      )
+      .hook(
+        createHook({
+          onToolResult({ result }) {
+            events.push(`hook:${result}`);
+          },
+        }),
+      )
+      .defaultMaxTurns(1)
+      .build();
+
+    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+
+    expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "# Review\nUse direct feedback." }],
+        },
+      ]),
+    );
+  });
+
+  it("does not apply tool result middleware to skill tools added manually", async () => {
+    const root = await tempRoot();
+    await writeSkill(root, "review", {
+      description: "Review things.",
+      body: "# Review\nUse direct feedback.",
+    });
+    const skillSet = await loadSkills(skill.local(root));
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "get_skill_instructions", { skillName: "review" }),
+      ]),
+      response([AssistantContent.text("loaded")]),
+    ]);
+    const events: string[] = [];
+    const agent = new AgentBuilder("test-agent", model)
+      .tools(skillSet.tools)
+      .toolMiddleware(
+        createToolMiddleware({
+          onResult({ result }) {
+            events.push(`middleware:${result}`);
+            return "middleware changed result";
+          },
+        }),
+      )
+      .hook(
+        createHook({
+          onToolResult({ result }) {
+            events.push(`hook:${result}`);
+          },
+        }),
+      )
+      .defaultMaxTurns(1)
+      .build();
+
+    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+
+    expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "# Review\nUse direct feedback." }],
+        },
+      ]),
+    );
   });
 
   it("adds skill tools to streaming runs", async () => {

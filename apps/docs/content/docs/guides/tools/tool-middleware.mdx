@@ -1,0 +1,70 @@
+---
+title: Tool Middleware
+description: Transform tool results before they are returned to the model.
+---
+
+Tool result middleware runs after a tool produces its serialized string result and before that result is sent back to the model. Use it for output gates, redaction, compression, or file references when a tool result is too large.
+
+## Create Middleware
+
+```ts
+import { createToolMiddleware } from "@anvia/core";
+
+const outputGate = createToolMiddleware({
+  async onResult({ toolName, result, internalCallId }) {
+    if (result.length <= 1_000) {
+      return undefined;
+    }
+
+    const path = await files.write({
+      name: `${toolName}-${internalCallId}.txt`,
+      content: result,
+    });
+
+    return JSON.stringify({
+      type: "file_reference",
+      reason: "tool_output_too_large",
+      chars: result.length,
+      path,
+    });
+  },
+});
+```
+
+Return a string to replace the current tool result. Return `undefined` to keep the current result.
+
+## Register On An Agent
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .tools([lookupOrder, exportReport])
+  .toolMiddleware(outputGate)
+  .build();
+```
+
+Middleware applies to tool results from local tools, MCP tools, dynamic tools, vector search tools, and agents exposed with `agent.asTool(...)`.
+
+## Register For One Request
+
+```ts
+const response = await agent
+  .prompt("Summarize the large report.")
+  .withToolMiddleware(outputGate)
+  .send();
+```
+
+Use request middleware when one caller needs stricter output policy than the agent default.
+
+## Compose Middleware
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .toolMiddlewares([redactSecrets, outputGate])
+  .build();
+```
+
+Middleware runs in registration order. Agent middleware runs before request middleware. Each middleware receives the latest `result` and the unchanged `originalResult`.
+
+## Skill Tools
+
+Skill runtime tools are excluded from tool result middleware. Their behavior is owned by the skills runtime, including loading instructions, reading references, and running skill scripts.

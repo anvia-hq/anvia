@@ -5,6 +5,8 @@ description: Return tool output the model and application can consume.
 
 Tool results are serialized before they are sent back to the model.
 
+Use [tool middleware](/docs/guides/tools/tool-middleware) when an agent should transform serialized tool results, such as replacing large outputs with file references.
+
 ## String Results
 
 Strings are returned as-is.

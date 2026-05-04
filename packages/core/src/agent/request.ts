@@ -22,6 +22,7 @@ import {
 } from "../observability/group";
 import type { AgentTraceInfo, AgentTraceOptions } from "../observability/types";
 import { toReadableStream } from "../streaming";
+import type { ToolMiddleware, ToolResultMiddlewareArgs } from "../tool/middleware";
 import type { Agent } from "./agent";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
 import type { PromptHook, ToolHookArgs } from "./hooks";
@@ -93,6 +94,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   private activeHook: PromptHook | undefined;
   private concurrency = 1;
   private traceOptions: AgentTraceOptions | undefined;
+  private requestToolMiddlewares: ToolMiddleware[] = [];
 
   private constructor(
     private readonly agent: Agent<M>,
@@ -126,6 +128,16 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
   withToolConcurrency(concurrency: number): this {
     this.concurrency = Math.max(1, concurrency);
+    return this;
+  }
+
+  withToolMiddleware(middleware: ToolMiddleware): this {
+    this.requestToolMiddlewares.push(middleware);
+    return this;
+  }
+
+  withToolMiddlewares(middlewares: ToolMiddleware[]): this {
+    this.requestToolMiddlewares.push(...middlewares);
     return this;
   }
 
@@ -455,6 +467,15 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         }
       }
 
+      if (this.agent.shouldApplyToolMiddleware(toolCall.function.name)) {
+        output = await this.runToolResultMiddlewares({
+          ...hookArgs,
+          result: output,
+          originalResult: output,
+          turn: observation?.turn ?? 0,
+        });
+      }
+
       const resultAction = await this.activeHook?.onToolResult?.({
         ...hookArgs,
         result: output,
@@ -486,6 +507,20 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       onResult?.(resultPayload);
       return ToolContent.toolResult(toolCall.id, output, toolCall.callId);
     });
+  }
+
+  private async runToolResultMiddlewares(args: ToolResultMiddlewareArgs): Promise<string> {
+    let result = args.result;
+    for (const middleware of [...this.agent.toolMiddlewares, ...this.requestToolMiddlewares]) {
+      const replacement = await middleware.onResult?.({
+        ...args,
+        result,
+      });
+      if (replacement !== undefined) {
+        result = replacement;
+      }
+    }
+    return result;
   }
 
   private async startRunObservers(): Promise<ActiveAgentRunObservers> {

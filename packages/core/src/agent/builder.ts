@@ -10,6 +10,7 @@ import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from ".
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { SkillSet } from "../skills";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
+import type { ToolMiddleware } from "../tool/middleware";
 import type { AnyTool } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
@@ -39,6 +40,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private observerRegistrations: AgentObserverRegistration[] = [];
   private dynamicContextRegistrations: DynamicContextRegistration[] = [];
   private dynamicToolRegistrations: DynamicToolRegistration[] = [];
+  private middlewareRegistrations: ToolMiddleware[] = [];
   private memoryRegistration: MemoryRegistration | undefined;
   private activeToolSet = new ToolSet();
 
@@ -142,6 +144,16 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
+  toolMiddleware(middleware: ToolMiddleware): this {
+    this.middlewareRegistrations.push(middleware);
+    return this;
+  }
+
+  toolMiddlewares(middlewares: ToolMiddleware[]): this {
+    this.middlewareRegistrations.push(...middlewares);
+    return this;
+  }
+
   observe(observer: AgentObserver, options: ObserveOptions = {}): this {
     this.observerRegistrations.push({
       observer,
@@ -182,6 +194,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       observers: this.observerRegistrations,
       dynamicContexts: this.dynamicContextRegistrations,
       dynamicTools: this.dynamicToolRegistrations,
+      toolMiddlewares: this.middlewareRegistrations,
       memory: this.memoryRegistration,
     });
   }

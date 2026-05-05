@@ -1,6 +1,6 @@
 {
   "name": "@anvia/core",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Core runtime primitives for context-aware Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -95,7 +95,7 @@
     "pdfjs-dist": "^5.7.284",
     "tinyglobby": "^0.2.16",
     "yaml": "^2.8.4",
-    "zod": "^4.4.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

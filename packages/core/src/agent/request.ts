@@ -483,6 +483,18 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         );
         throw this.cancelled(newMessages, callAction.reason);
       }
+      if (callAction?.type === "approval_request") {
+        const reason = `Tool approval was requested for ${toolCall.function.name}, but no approval handler is installed.`;
+        await this.recordToolError(
+          toolObservers,
+          observation?.turn,
+          toolCall,
+          internalCallId,
+          args,
+          reason,
+        );
+        throw this.cancelled(newMessages, reason);
+      }
 
       let output: string;
       let skipped = false;

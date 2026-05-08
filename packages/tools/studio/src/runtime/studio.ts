@@ -29,7 +29,11 @@ import {
   resolveStudioUiOptions,
   studioUiEntryPath,
 } from "../ui/routes";
-import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
+import {
+  createApprovalRuntime,
+  registerApprovalRoutes,
+  type StudioApprovalHook,
+} from "./approvals";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { createQuestionRuntime, registerQuestionRoutes } from "./questions";
 import {
@@ -170,6 +174,7 @@ function agentMetadata(agent: Agent): JsonObject {
     dynamicContextCount: agent.dynamicContexts.length,
     dynamicToolCount: agent.dynamicTools.length,
     hasOutputSchema: agent.outputSchema !== undefined,
+    hasHook: agent.hook !== undefined,
     observerCount: agent.observers.length,
     approvalToolCount: agent.toolSet.values().filter((tool) => tool.approval !== undefined).length,
   };
@@ -502,6 +507,9 @@ function composeHooks(
       if (firstAction?.type === "skip" || firstAction?.type === "terminate") {
         return firstAction;
       }
+      if (firstAction?.type === "approval_request") {
+        return (await approvalRequestHandler(second)?.(args, firstAction)) ?? firstAction;
+      }
       const secondAction = await second.onToolCall?.(args);
       return secondAction ?? firstAction ?? undefined;
     },
@@ -512,4 +520,13 @@ function composeHooks(
         : ((await second.onToolResult?.(args)) ?? undefined);
     },
   });
+}
+
+function approvalRequestHandler(
+  hook: PromptHook,
+): StudioApprovalHook["handleApprovalRequest"] | undefined {
+  const candidate = hook as Partial<StudioApprovalHook>;
+  return typeof candidate.handleApprovalRequest === "function"
+    ? candidate.handleApprovalRequest
+    : undefined;
 }

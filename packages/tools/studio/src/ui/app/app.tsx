@@ -74,6 +74,27 @@ function applyDarkTheme(): void {
   document.documentElement.classList.add("dark");
 }
 
+async function responseErrorMessage(response: Response, label: string): Promise<string> {
+  let detail = "";
+  try {
+    const body = (await response.json()) as unknown;
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "object" &&
+      body.error !== null &&
+      "message" in body.error &&
+      typeof body.error.message === "string"
+    ) {
+      detail = `: ${body.error.message}`;
+    }
+  } catch {
+    // Ignore non-JSON error bodies.
+  }
+  return `${label} with HTTP ${response.status}${detail}`;
+}
+
 export function StudioConsole() {
   const initialLocation = pageLocationFromLocation();
   const [config, setConfig] = useState<StudioConfig | undefined>();
@@ -158,13 +179,14 @@ export function StudioConsole() {
   }, [loadAllSessions]);
 
   async function createSession(title: string): Promise<StudioSessionSummary> {
+    const agentId = selectedAgent?.id ?? selectedAgentId;
     const response = await fetch("/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        agentId: selectedAgentId,
+        agentId,
         title,
         metadata: {
           source: "anvia-studio",
@@ -172,7 +194,7 @@ export function StudioConsole() {
       }),
     });
     if (!response.ok) {
-      throw new Error(`Session create failed with HTTP ${response.status}`);
+      throw new Error(await responseErrorMessage(response, "Session create failed"));
     }
     const session = (await response.json()) as StudioSessionSummary;
     setSelectedSessionId(session.id);
@@ -473,7 +495,8 @@ export function StudioConsole() {
 
   async function runPrompt(text: string) {
     const trimmed = text.trim();
-    if (trimmed.length === 0 || selectedAgentId.length === 0 || runState === "running") {
+    const agentId = selectedAgent?.id ?? selectedAgentId;
+    if (trimmed.length === 0 || agentId.length === 0 || runState === "running") {
       return;
     }
 
@@ -493,7 +516,7 @@ export function StudioConsole() {
           ? (await createSession(titleFromText(trimmed))).id
           : selectedSessionId;
       const history = sessionsEnabled ? undefined : toHistory(messages);
-      const response = await fetch(`/agents/${encodeURIComponent(selectedAgentId)}/runs`, {
+      const response = await fetch(`/agents/${encodeURIComponent(agentId)}/runs`, {
         method: "POST",
         headers: {
           "content-type": "application/json",

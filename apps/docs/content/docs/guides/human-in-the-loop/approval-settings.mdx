@@ -94,6 +94,6 @@ approval: {
 
 ## When to Use Hooks Instead
 
-Use [approval by hooks](/docs/guides/human-in-the-loop/tool-approval) when approval depends on request-local state, app permissions, external policy services, or a frontend/backend approval flow that is not tied to one tool definition.
+Use [approval by hooks](/docs/guides/human-in-the-loop/tool-approval) when approval depends on request-local state, app permissions, external policy services, or policy that is not tied to one tool definition.
 
-Agent hooks run before Studio approval metadata. If an agent hook returns `tool.skip(...)` or `tool.cancel(...)`, Studio does not ask for approval.
+Agent hooks run before Studio approval metadata. If an agent hook returns `tool.skip(...)` or `tool.cancel(...)`, Studio does not ask for approval. If it returns `tool.requestApproval(...)`, Studio handles that approval request directly.

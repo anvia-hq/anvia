@@ -3,7 +3,7 @@ title: Tool Approvals
 description: Use Studio to approve protected tool calls.
 ---
 
-Studio can handle tool approvals from passive tool metadata. Core still runs tools normally; Studio installs a per-run request hook that interprets the metadata, creates an approval, and waits for a human decision.
+Studio can handle tool approvals from passive tool metadata or `tool.requestApproval(...)` in runtime hooks. Core still runs tools normally; Studio installs a per-run request hook that creates approvals and waits for human decisions.
 
 ## 1. Add Approval Metadata
 
@@ -84,11 +84,34 @@ curl -X POST http://localhost:4021/approvals/approval_123/decision \
   -d '{"approved":false,"reason":"Amount needs finance review."}'
 ```
 
+## Hook-Based Approval
+
+Use a hook when the approval rule depends on request-local state or crosses multiple tools.
+
+```ts
+import { createHook } from "@anvia/core";
+
+const approvalHook = createHook({
+  onToolCall({ toolName, tool }) {
+    if (toolName !== "refund_order") {
+      return tool.run();
+    }
+
+    return tool.requestApproval({
+      reason: "Review this refund before it is issued.",
+      rejectMessage: "Refund rejected in Anvia Studio.",
+    });
+  },
+});
+```
+
+Attach the hook to the agent with `.hook(approvalHook)` or to one run with `.requestHook(approvalHook)`. Studio emits the same approval request and result events for hook-based approvals.
+
 ## Approval Flow
 
 1. The model requests a tool call.
-2. Studio finds approval metadata on the tool.
-3. `approval.when(...)` returns `true`.
+2. Studio finds approval metadata on the tool or receives `tool.requestApproval(...)` from a hook.
+3. The metadata policy or hook request says approval is required.
 4. Studio creates a pending approval.
 5. A human approves or rejects it in the UI or API.
 6. Anvia either runs the tool or sends the rejection message back to the model.
@@ -97,4 +120,4 @@ Use tool approval for side effects such as refunds, account changes, deletes, ex
 
 ## Advanced Control
 
-Core hooks remain the escape hatch. If your app needs a custom approval service, conditional policy outside the tool, or a different human-feedback flow, use an `onToolCall` request hook and return `tool.run()`, `tool.skip(...)`, or `tool.cancel(...)`.
+If your app owns a custom approval service outside Studio, use an `onToolCall` request hook and return `tool.run()` or `tool.skip(...)` after your service resolves.

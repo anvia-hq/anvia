@@ -296,10 +296,16 @@ Notable errors: terminal failures are yielded as `{ type: "error" }` and also or
 
 ```ts
 type HookAction = { type: "continue" } | { type: "terminate"; reason: string };
+type ToolApprovalRequestOptions = {
+  reason?: string;
+  rejectMessage?: string;
+};
+
 type ToolCallHookAction =
   | { type: "continue" }
   | { type: "skip"; reason: string }
-  | { type: "terminate"; reason: string };
+  | { type: "terminate"; reason: string }
+  | ({ type: "approval_request" } & ToolApprovalRequestOptions);
 
 type RunControl = {
   continue(): HookAction;
@@ -310,6 +316,7 @@ type ToolCallControl = {
   run(): ToolCallHookAction;
   skip(reason: string): ToolCallHookAction;
   cancel(reason: string): ToolCallHookAction;
+  requestApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
 };
 
 type HookResult = HookAction | undefined;
@@ -349,13 +356,14 @@ const toolCallControl: ToolCallControl;
 function createHook<RawResponse = unknown>(hook: PromptHook<RawResponse>): PromptHook<RawResponse>;
 function cancelPrompt(reason: string): HookAction;
 function skipTool(reason: string): ToolCallHookAction;
+function requestToolApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
 ```
 
 Purpose: intercept completion calls, completion responses, tool calls, and tool results.
 
-Return behavior: callback controls such as `tool.run()`, `tool.skip(...)`, `tool.cancel(...)`, `run.continue()`, and `run.cancel(...)` create actions consumed by `PromptRequest`. The low-level `cancelPrompt(...)` and `skipTool(...)` helpers are also available.
+Return behavior: callback controls such as `tool.run()`, `tool.skip(...)`, `tool.cancel(...)`, `tool.requestApproval(...)`, `run.continue()`, and `run.cancel(...)` create actions consumed by `PromptRequest`. The low-level `cancelPrompt(...)`, `skipTool(...)`, and `requestToolApproval(...)` helpers are also available.
 
-Notable errors: a terminating hook produces `PromptCancelledError`.
+Notable errors: a terminating hook produces `PromptCancelledError`. If `tool.requestApproval(...)` reaches core without Studio or another approval handler, the request cancels with `PromptCancelledError`.
 
 ## Error Classes
 

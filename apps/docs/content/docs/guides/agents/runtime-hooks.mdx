@@ -46,33 +46,30 @@ const hook = createHook({
 });
 ```
 
-`tool.run()` executes the tool. `tool.skip(...)` does not execute the tool; the message becomes the tool result sent back to the model.
+`tool.run()` executes the tool. `tool.skip(...)` does not execute the tool; the message becomes the tool result sent back to the model. `tool.requestApproval(...)` asks an approval-capable runtime such as Studio to pause the tool call for a human decision.
 
 Tool result middleware runs after this decision produces a result string and before `onToolResult(...)` observes it.
 
 ## Await Human Approval
 
-Approval is application code awaited inside the hook.
+Approval can be requested from inside the hook. Studio handles this action automatically when the agent is run through Studio.
 
 ```ts
 const hook = createHook({
-  async onToolCall({ toolName, args, tool }) {
+  onToolCall({ toolName, tool }) {
     if (toolName !== "refund_order") {
       return tool.run();
     }
 
-    const approved = await approvals.waitForDecision({
-      toolName,
-      args,
+    return tool.requestApproval({
       reason: "Refunds require staff approval.",
+      rejectMessage: "Refund was not approved.",
     });
-
-    return approved ? tool.run() : tool.skip("Refund was not approved.");
   },
 });
 ```
 
-Anvia does not own the approval UI, database, queue, or notification system. Your hook can await any runtime your app provides.
+Without Studio or another approval handler, `tool.requestApproval(...)` cancels clearly instead of running the tool. If your application owns a custom approval system, you can still await it in the hook and return `tool.run()` or `tool.skip(...)` yourself.
 
 Timeouts are optional. If the awaited approval never resolves, the agent run keeps waiting; add a timeout in your app code when the caller needs bounded latency.
 

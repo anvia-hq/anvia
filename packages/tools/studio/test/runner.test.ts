@@ -850,6 +850,192 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("handles hook-based approval requests in streaming runs", async () => {
+    let executed = false;
+    const refundTool = {
+      name: "issue_refund",
+      definition() {
+        return {
+          name: "issue_refund",
+          description: "Issue a customer refund",
+          parameters: {
+            type: "object",
+            properties: {
+              orderId: { type: "string" },
+              amount: { type: "number" },
+            },
+            required: ["orderId", "amount"],
+          },
+        };
+      },
+      call(args) {
+        executed = true;
+        return `Refunded ${args.amount} for ${args.orderId}`;
+      },
+    } satisfies Tool<{ orderId: string; amount: number }, string>;
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "issue_refund",
+          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
+        },
+      ],
+      [{ type: "text_delta", delta: "Refund complete" }],
+    ]);
+    const agent = new AgentBuilder("support", model)
+      .tool(refundTool)
+      .hook(
+        createHook({
+          onToolCall({ toolName, tool }) {
+            if (toolName === "issue_refund") {
+              return tool.requestApproval({
+                reason: "Review refund before issuing it.",
+                rejectMessage: "Rejected by hook.",
+              });
+            }
+            return tool.run();
+          },
+        }),
+      )
+      .defaultMaxTurns(2)
+      .build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "refund", stream: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const reader = createJsonlReader(res);
+    let approvalId = "";
+    while (approvalId.length === 0) {
+      const event = await withTimeout(reader.read(), 1_000);
+      if ((event as { type?: string }).type === "tool_approval_request") {
+        const approval = (event as { approval: { id: string; reason?: string } }).approval;
+        approvalId = approval.id;
+        expect(approval.reason).toBe("Review refund before issuing it.");
+      }
+    }
+    expect(executed).toBe(false);
+
+    const decision = await runner.fetch(
+      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ approved: true }),
+      }),
+    );
+    expect(decision.status).toBe(200);
+
+    const remaining = await readRemainingJsonl(reader);
+    expect(executed).toBe(true);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({
+        type: "tool_approval_result",
+        approval: expect.objectContaining({ id: approvalId, status: "approved" }),
+      }),
+    );
+    expect(remaining).toContainEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        result: "Refunded 25 for ORD-1",
+      }),
+    );
+  });
+
+  it("skips rejected hook-based approval requests with the reject message", async () => {
+    let executed = false;
+    const refundTool = {
+      name: "issue_refund",
+      definition() {
+        return {
+          name: "issue_refund",
+          description: "Issue a customer refund",
+          parameters: {
+            type: "object",
+            properties: {
+              orderId: { type: "string" },
+              amount: { type: "number" },
+            },
+            required: ["orderId", "amount"],
+          },
+        };
+      },
+      call() {
+        executed = true;
+        return "should not run";
+      },
+    } satisfies Tool<{ orderId: string; amount: number }, string>;
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "issue_refund",
+          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
+        },
+      ],
+      [{ type: "text_delta", delta: "Refund denied" }],
+    ]);
+    const agent = new AgentBuilder("support", model)
+      .tool(refundTool)
+      .hook(
+        createHook({
+          onToolCall({ tool }) {
+            return tool.requestApproval({
+              reason: "Review refund before issuing it.",
+              rejectMessage: "Rejected by hook.",
+            });
+          },
+        }),
+      )
+      .defaultMaxTurns(2)
+      .build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "refund", stream: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const reader = createJsonlReader(res);
+    let approvalId = "";
+    while (approvalId.length === 0) {
+      const event = await withTimeout(reader.read(), 1_000);
+      if ((event as { type?: string }).type === "tool_approval_request") {
+        approvalId = (event as { approval: { id: string } }).approval.id;
+      }
+    }
+
+    const decision = await runner.fetch(
+      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ approved: false }),
+      }),
+    );
+    expect(decision.status).toBe(200);
+
+    const remaining = await readRemainingJsonl(reader);
+    expect(executed).toBe(false);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        result: "Rejected by hook.",
+      }),
+    );
+  });
+
   it("pauses ask_question tool calls until Studio receives answers", async () => {
     const model = new StreamingQueueModel([
       [
@@ -1239,6 +1425,15 @@ describe("Anvia studio", () => {
   it("marks approvals enabled when a registered agent protects tools", () => {
     const agent = new AgentBuilder("support", new QueueModel([]))
       .tool(createRefundTool(() => "ok"))
+      .build();
+    const runner = new Studio([agent]);
+
+    expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
+  });
+
+  it("marks approvals enabled when a registered agent has hooks", () => {
+    const agent = new AgentBuilder("support", new QueueModel([]))
+      .hook(createHook({ onToolCall: ({ tool }) => tool.requestApproval() }))
       .build();
     const runner = new Studio([agent]);
 

@@ -162,7 +162,13 @@ export function capabilityConfig(
   if (agents.some((agent) => agent.agent.observers.length > 0)) {
     capabilities.observability = { enabled: true };
   }
-  if (agents.some((agent) => agent.agent.toolSet.values().some((tool) => tool.approval))) {
+  if (
+    agents.some(
+      (agent) =>
+        agent.agent.hook !== undefined ||
+        agent.agent.toolSet.values().some((tool) => tool.approval),
+    )
+  ) {
     capabilities.approvals = { enabled: true };
   }
   if (

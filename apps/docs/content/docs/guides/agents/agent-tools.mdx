@@ -83,24 +83,21 @@ const response = await agent.prompt("Where is order A-100?").maxTurns(3).send();
 
 ## Require Approval
 
-Use hook-based tool approval when a tool should not run until your app approves it.
+Use hook-based tool approval when a tool should not run until an approval-capable runtime approves it.
 
 ```ts
 import { createHook } from "@anvia/core";
 
 const approvalHook = createHook({
-  async onToolCall({ toolName, args, tool }) {
+  onToolCall({ toolName, tool }) {
     if (toolName !== "refund_order") {
       return tool.run();
     }
 
-    const approved = await approvals.waitForDecision({
-      toolName,
-      args,
+    return tool.requestApproval({
       reason: "Refunds require staff approval.",
+      rejectMessage: "Refund was not approved.",
     });
-
-    return approved ? tool.run() : tool.skip("Refund was not approved.");
   },
 });
 
@@ -109,5 +106,7 @@ const response = await agent
   .requestHook(approvalHook)
   .send();
 ```
+
+Studio handles `tool.requestApproval(...)` automatically. Without an approval handler, core cancels clearly instead of running the guarded tool.
 
 For the full approval flow, read [Human in the Loop](/docs/guides/human-in-the-loop).

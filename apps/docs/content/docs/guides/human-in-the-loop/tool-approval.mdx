@@ -3,11 +3,9 @@ title: Approval by Hooks
 description: Await custom approval logic before selected tool calls execute.
 ---
 
-Use `onToolCall(...)` when approval is runtime behavior rather than tool metadata. A hook can call your database, queue, websocket, permissions service, or internal admin UI before it returns `tool.run()`, `tool.skip(...)`, or `tool.cancel(...)`.
+Use `onToolCall(...)` when approval is runtime behavior rather than tool metadata. A hook can request approval before it returns `tool.run()`, `tool.skip(...)`, or `tool.cancel(...)`.
 
-This is the advanced escape hatch. For Studio-managed approval UI, start with [approval settings](/docs/guides/human-in-the-loop/approval-settings).
-
-The examples use `approvalRuntime` as an application-owned object. Do not import it from Anvia. Build it in your app, then call it from the hook. For the runtime shape, read [Approval Runtimes](/docs/guides/human-in-the-loop/approval-handlers).
+Studio handles `tool.requestApproval(...)` automatically. Without Studio or another approval handler, the run cancels clearly instead of executing the guarded tool.
 
 ## Require Approval for One Tool
 
@@ -15,25 +13,20 @@ The examples use `approvalRuntime` as an application-owned object. Do not import
 import { createHook } from "@anvia/core";
 
 const approvalHook = createHook({
-  async onToolCall({ toolName, args, tool }) {
+  onToolCall({ toolName, tool }) {
     if (toolName !== "refund_order") {
       return tool.run();
     }
 
-    const approved = await approvalRuntime.waitForDecision({
-      toolName,
-      args,
-      reason: `Review refund request: ${args}`,
+    return tool.requestApproval({
+      reason: "Review this refund request.",
+      rejectMessage: "Refund was not approved.",
     });
-
-    return approved
-      ? tool.run()
-      : tool.skip("Refund was not approved.");
   },
 });
 ```
 
-The `args` value is the JSON string Anvia will send to the tool. Use it to show reviewers exactly what the model is trying to do.
+Use the `args` value when the reviewer needs to see exactly what the model is trying to do.
 
 ## Attach the Hook
 
@@ -64,20 +57,15 @@ Keep the approval rule explicit.
 const sensitiveTools = new Set(["refund_order", "cancel_subscription"]);
 
 const approvalHook = createHook({
-  async onToolCall({ toolName, args, tool }) {
+  onToolCall({ toolName, tool }) {
     if (!sensitiveTools.has(toolName)) {
       return tool.run();
     }
 
-    const approved = await approvalRuntime.waitForDecision({
-      toolName,
-      args,
+    return tool.requestApproval({
       reason: `${toolName} requires human review.`,
+      rejectMessage: `${toolName} was not approved.`,
     });
-
-    return approved
-      ? tool.run()
-      : tool.skip(`${toolName} was not approved.`);
   },
 });
 ```
@@ -92,7 +80,7 @@ Parse the pending tool arguments when only some calls need review.
 import { createHook, parseToolArgs } from "@anvia/core";
 
 const approvalHook = createHook({
-  async onToolCall({ toolName, args, tool }) {
+  onToolCall({ toolName, args, tool }) {
     if (toolName !== "issue_refund") {
       return tool.run();
     }
@@ -111,13 +99,10 @@ const approvalHook = createHook({
       return tool.run();
     }
 
-    const approved = await approvalRuntime.waitForDecision({
-      toolName,
-      args,
+    return tool.requestApproval({
       reason: `Refund amount is $${parsed.amount}.`,
+      rejectMessage: "Refund was not approved.",
     });
-
-    return approved ? tool.run() : tool.skip("Refund was not approved.");
   },
 });
 ```
@@ -146,17 +131,20 @@ const agent = new AgentBuilder("support", model)
 
 ## Rejected Approval
 
-When approval is rejected, skip the tool with a clear message.
+When approval is rejected, Studio sends the configured rejection message back to the model as the tool result.
 
 ```ts
-return tool.skip("The reviewer rejected this action.");
+return tool.requestApproval({
+  reason: "Review this action.",
+  rejectMessage: "The reviewer rejected this action.",
+});
 ```
 
 The model receives this text as the tool result, then it can produce a final answer.
 
 ## Timeout Policy
 
-Anvia does not require a timeout. If the awaited approval promise never resolves, the run waits. Add a timeout in your app when the caller needs bounded latency.
+Anvia does not require a timeout. Studio approval waits until a reviewer approves or rejects. If your application owns a custom approval system, add a timeout in that app code when the caller needs bounded latency.
 
 ```ts
 const approved = await Promise.race([

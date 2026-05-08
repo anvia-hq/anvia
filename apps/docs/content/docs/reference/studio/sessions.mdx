@@ -146,6 +146,6 @@ type StudioSessionStore = MemoryStore & {
 
 Purpose: persistence adapter for Studio sessions.
 
-Return behavior: methods may be sync or async. Because the store extends `MemoryStore`, it also loads, appends, and clears model transcript messages for Studio-backed sessions.
+Return behavior: methods may be sync or async. Because the store extends `MemoryStore`, it also loads, appends, and clears model messages for Studio-backed sessions.
 
 Notable errors: persistence failures should throw or reject.

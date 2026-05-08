@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,11 +21,17 @@ import {
   type StreamingCompletionModel,
   skipTool,
   type Tool,
+  ToolContent,
   Usage,
+  UserContent,
 } from "@anvia/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Studio } from "../src/index";
 import { createSqliteSessionStore } from "../src/sqlite";
+
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof import("node:sqlite");
 
 class QueueModel {
   readonly provider = "test";
@@ -1878,6 +1885,97 @@ describe("Anvia studio", () => {
       messages: [],
       transcript: [],
     });
+  });
+
+  it("persists session messages and parts in normalized SQLite tables", async () => {
+    const path = join(studioDbDir ?? tmpdir(), "normalized.sqlite");
+    const store = createSqliteSessionStore({ path });
+    store.createSession({ id: "session_1", agentId: "support" });
+
+    const messages = [
+      Message.system("Use project policy."),
+      Message.user([
+        UserContent.text("hi"),
+        UserContent.imageUrl("https://example.test/image.png", { detail: "high" }),
+        UserContent.documentUrl("https://example.test/file.pdf", "application/pdf", {
+          filename: "file.pdf",
+        }),
+      ]),
+      Message.assistant(
+        [
+          AssistantContent.text("hello"),
+          AssistantContent.reasoning("thinking", "reasoning_1"),
+          AssistantContent.toolCall("tool_1", "lookup", { query: "x" }, "call_1"),
+          AssistantContent.imageBase64("abc123", "image/png"),
+        ],
+        "assistant_message_1",
+      ),
+      Message.tool(
+        ToolContent.toolResult(
+          "tool_1",
+          [
+            { type: "text", text: "lookup result" },
+            { type: "image", data: "abc123", mediaType: "image/png" },
+          ],
+          "call_1",
+        ),
+      ),
+    ];
+
+    await store.append({
+      context: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: messages.slice(0, 2),
+    });
+    await store.append({
+      context: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 2,
+      messages: messages.slice(2),
+    });
+
+    const db = new DatabaseSync(path);
+    const messageCount = db
+      .prepare("SELECT COUNT(*) AS count FROM runner_session_messages")
+      .get() as { count: number };
+    const partCount = db
+      .prepare("SELECT COUNT(*) AS count FROM runner_session_message_parts")
+      .get() as { count: number };
+    expect(messageCount.count).toBe(4);
+    expect(partCount.count).toBe(9);
+    db.close();
+
+    const reloaded = createSqliteSessionStore({ path });
+    await expect(reloaded.load({ sessionId: "session_1" })).resolves.toEqual(messages);
+    expect(await reloaded.getSession("session_1")).toMatchObject({
+      id: "session_1",
+      messageCount: 4,
+      messages,
+    });
+  });
+
+  it("rejects legacy SQLite session schemas with messages_json", () => {
+    const path = join(studioDbDir ?? tmpdir(), "legacy.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec(`
+      CREATE TABLE runner_sessions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        title TEXT,
+        metadata_json TEXT,
+        messages_json TEXT NOT NULL,
+        transcript_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+    `);
+    db.close();
+
+    const store = createSqliteSessionStore({ path });
+    expect(() => store.createSession({ id: "session_1", agentId: "support" })).toThrow(
+      "legacy messages_json schema",
+    );
   });
 
   it("lists global runner traces with filters", async () => {

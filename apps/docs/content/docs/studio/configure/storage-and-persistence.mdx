@@ -3,7 +3,7 @@ title: Storage and Persistence
 description: Understand Studio's local SQLite storage for sessions and traces.
 ---
 
-Studio creates a local SQLite store by default. It stores sessions, transcript entries, and traces for local inspection.
+Studio creates a local SQLite store by default. It stores sessions, runtime messages, transcript entries, and traces for local inspection.
 
 ## Default Path
 
@@ -26,8 +26,8 @@ ANVIA_STUDIO_DB=.data/studio.sqlite pnpm tsx studio.ts
 | Data | Purpose |
 | --- | --- |
 | Sessions | Local conversations for one registered agent |
-| Messages | Runtime history used when continuing a session |
-| Transcript entries | UI-friendly messages, reasoning, tool calls, approvals, and questions |
+| Messages | Runtime history used when continuing a session, stored as message and message-part rows |
+| Transcript entries | UI-friendly run output with messages, reasoning, tool calls, approvals, and questions |
 | Traces | Generation and tool observations captured during runs |
 
 ## Sessions and Traces

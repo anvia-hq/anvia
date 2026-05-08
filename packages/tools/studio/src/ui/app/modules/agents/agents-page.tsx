@@ -3,58 +3,50 @@ import { Badge } from "../../components/ui/badge";
 import { cn } from "../../lib/utils";
 
 export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgentId: string }) {
-  const quickPromptCount = props.agents.reduce(
-    (total, agent) => total + agent.quickPrompts.length,
-    0,
-  );
-  const selectedAgent =
-    props.agents.find((agent) => agent.id === props.selectedAgentId) ?? props.agents[0];
-
   return (
-    <section className="min-h-0 overflow-auto bg-background/45" aria-label="Agents">
-      <div className="mx-auto grid max-w-[1500px] gap-6 px-6 py-6">
-        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-6 border-b border-border/80 pb-6 max-lg:grid-cols-1">
-          <div className="grid min-w-0 gap-3">
+    <section
+      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
+      aria-label="Agents"
+    >
+      <header className="border-b border-border/80 bg-background/70 px-6 py-5 backdrop-blur">
+        <div className="mx-auto grid max-w-[1500px] grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
+          <div className="grid min-w-0 gap-2">
             <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
               Studio registry
             </div>
-            <div className="grid gap-2">
-              <h1 className="m-0 text-3xl font-semibold leading-none tracking-tight text-foreground">
-                Agent control surface
-              </h1>
-              <p className="m-0 max-w-[68ch] text-sm leading-6 text-muted-foreground">
-                Review registered agents, operational prompts, and runtime metadata without the
-                table squeeze.
-              </p>
-            </div>
+            <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
+              Studio
+            </h1>
+            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
+              Registered agents, operational prompts, and runtime metadata for Studio agents.
+            </p>
           </div>
-          <div className="grid grid-cols-3 border border-border/80 bg-card/45 max-sm:grid-cols-1">
-            <Metric label="agents" value={props.agents.length} />
-            <Metric label="prompts" value={quickPromptCount} />
-            <Metric label="selected" value={selectedAgent?.name ?? selectedAgent?.id ?? "none"} />
-          </div>
-        </header>
+        </div>
+      </header>
 
-        {props.agents.length === 0 ? (
-          <div className="grid min-h-80 place-items-center border border-dashed border-border/80 bg-card/35 px-6 text-center">
-            <div className="grid max-w-md gap-2">
-              <h2 className="m-0 text-base font-semibold text-foreground">No agents</h2>
-              <p className="m-0 text-sm leading-6 text-muted-foreground">
-                Studio has no registered agents to inspect.
-              </p>
+      <div className="min-h-0 overflow-auto px-6 py-6">
+        <div className="mx-auto grid max-w-[1500px] gap-4">
+          {props.agents.length === 0 ? (
+            <div className="grid min-h-80 place-items-center border border-dashed border-border/80 bg-card/35 px-6 text-center">
+              <div className="grid max-w-md gap-2">
+                <h2 className="m-0 text-base font-semibold text-foreground">No agents</h2>
+                <p className="m-0 text-sm leading-6 text-muted-foreground">
+                  Studio has no registered agents to inspect.
+                </p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {props.agents.map((agent) => (
-              <AgentDossier
-                agent={agent}
-                active={agent.id === props.selectedAgentId}
-                key={agent.id}
-              />
-            ))}
-          </div>
-        )}
+          ) : (
+            <div className="grid gap-4">
+              {props.agents.map((agent) => (
+                <AgentDossier
+                  agent={agent}
+                  active={agent.id === props.selectedAgentId}
+                  key={agent.id}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -158,17 +150,6 @@ function AgentDossier(props: { agent: StudioConfig["agents"][number]; active: bo
         </section>
       </div>
     </article>
-  );
-}
-
-function Metric(props: { label: string; value: string | number }) {
-  return (
-    <div className="grid min-w-0 gap-1 border-r border-border/80 px-4 py-3 last:border-r-0 max-sm:border-b max-sm:border-r-0 max-sm:last:border-b-0">
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-        {props.label}
-      </span>
-      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{props.value}</span>
-    </div>
   );
 }
 

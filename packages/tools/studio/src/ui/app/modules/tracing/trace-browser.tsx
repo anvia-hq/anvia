@@ -1,7 +1,6 @@
 import { ArrowLeft, Bot, Cpu, GitBranch, Route, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { StudioConfig, StudioTrace } from "../../../../types";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ScrollArea } from "../../components/ui/scroll-area";
@@ -518,87 +517,127 @@ function TraceDetailPane(props: {
   const selected = selectedTraceDetail(props.trace, props.turns, props.activeKey);
   return (
     <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-auto bg-background/45"
+      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background"
       aria-label="Trace detail"
     >
-      <header className="grid gap-3 border-b border-border/80 bg-card/55 px-5 py-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            className={cn(
-              "grid h-6 w-6 shrink-0 place-items-center rounded-sm bg-transparent [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:opacity-100",
-              traceToneIconClass(selected.tone),
+      <header className="border-b border-border/80 bg-card/45 px-6 py-5">
+        <div className="grid min-w-0 gap-5">
+          <div className="flex min-w-0 items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                className={cn(
+                  "grid h-8 w-8 shrink-0 place-items-center bg-primary text-primary-foreground [&_svg]:h-4 [&_svg]:w-4 [&_svg]:opacity-100",
+                  selected.tone !== "trace" && "bg-muted text-foreground",
+                  traceToneIconClass(selected.tone),
+                )}
+              >
+                <TraceToneIcon tone={selected.tone} />
+              </span>
+              <div className="grid min-w-0 gap-1">
+                <h2 className="m-0 min-w-0 truncate text-2xl font-semibold leading-none tracking-[-0.01em] text-foreground">
+                  {selected.title}
+                </h2>
+                <div className="font-mono text-xs font-medium text-muted-foreground">
+                  {selected.startedAt}
+                </div>
+              </div>
+            </div>
+            {selected.usage.length > 0 ? (
+              <div className="shrink-0 font-mono text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {selected.usage}
+              </div>
+            ) : null}
+          </div>
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px overflow-hidden border border-border/80 bg-border/80">
+            <TraceMetric label="Duration" value={formatDuration(selected.durationMs)} />
+            {selected.firstDeltaMs === undefined ? null : (
+              <TraceMetric label="First delta" value={formatDuration(selected.firstDeltaMs)} />
             )}
-          >
-            <TraceToneIcon tone={selected.tone} />
-          </span>
-          <h2 className="m-0 min-w-0 truncate text-xl font-semibold leading-tight text-foreground">
-            {selected.title}
-          </h2>
-        </div>
-        <div className="text-sm font-medium text-muted-foreground">{selected.startedAt}</div>
-        <div className="flex flex-wrap gap-2">
-          <Badge>Duration: {formatDuration(selected.durationMs)}</Badge>
-          {selected.firstDeltaMs === undefined ? null : (
-            <Badge>First delta: {formatDuration(selected.firstDeltaMs)}</Badge>
-          )}
-          <Button
-            className="h-auto min-h-0 max-w-full rounded-sm border border-border bg-muted px-2 py-1 font-mono text-xs font-semibold text-foreground hover:bg-accent hover:text-accent-foreground"
-            type="button"
-            variant="ghost"
-            onClick={() => props.onShowSessionTraces(props.trace.sessionId)}
-          >
-            <span className="font-sans">SessionID:</span>
-            <span className="min-w-0 truncate">{props.trace.sessionId}</span>
-          </Button>
-          {selected.usage.length > 0 ? <Badge>{selected.usage}</Badge> : null}
+            <button
+              className="grid min-w-0 gap-1 bg-background px-4 py-3 text-left transition duration-200 hover:bg-accent hover:text-accent-foreground"
+              type="button"
+              onClick={() => props.onShowSessionTraces(props.trace.sessionId)}
+            >
+              <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Session
+              </span>
+              <span className="min-w-0 truncate font-mono text-sm font-semibold text-current">
+                {props.trace.sessionId}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
-      <div className="grid min-w-0 content-start gap-4 p-4">
-        {selected.input === undefined ? null : (
-          <TraceDataSection title="Input" value={selected.input} />
-        )}
-        {selected.output === undefined ? null : (
-          <TraceDataSection title="Output" value={selected.output} tone="success" />
-        )}
-        {selected.error === undefined ? null : (
-          <TraceDataSection title="Error" value={selected.error} tone="error" />
-        )}
-        <TraceDataSection title="Metadata" value={selected.metadata} />
+      <div className="min-w-0 overflow-auto">
+        <div className="grid min-w-0 max-w-6xl content-start gap-6 p-6">
+          {selected.input === undefined ? null : (
+            <TraceDataSection title="Input" value={selected.input} />
+          )}
+          {selected.output === undefined ? null : (
+            <TraceDataSection title="Output" value={selected.output} tone="success" />
+          )}
+          {selected.error === undefined ? null : (
+            <TraceDataSection title="Error" value={selected.error} tone="error" />
+          )}
+          <TraceDataSection title="Metadata" value={selected.metadata} compact />
+        </div>
       </div>
     </section>
   );
 }
 
-function TraceDataSection(props: { title: string; value: unknown; tone?: "success" | "error" }) {
+function TraceMetric(props: { label: string; value: string }) {
+  return (
+    <div className="grid min-w-0 gap-1 bg-background px-4 py-3">
+      <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {props.label}
+      </span>
+      <span className="min-w-0 truncate font-mono text-sm font-semibold text-foreground">
+        {props.value}
+      </span>
+    </div>
+  );
+}
+
+function TraceDataSection(props: {
+  title: string;
+  value: unknown;
+  tone?: "success" | "error";
+  compact?: boolean;
+}) {
   const rows = plainTraceValue(props.title, props.value);
   return (
-    <section className="grid min-w-0 gap-2">
-      <h3 className="m-0 text-base font-semibold leading-tight text-foreground">{props.title}</h3>
-      <div
-        className={cn(
-          "overflow-hidden rounded-sm border border-border/80 bg-card/90 shadow-sm",
-          props.tone === "success" && "border-primary/40 bg-primary/10",
-          props.tone === "error" && "border-destructive/40 bg-destructive/10",
-        )}
-      >
+    <section className="grid min-w-0 gap-3">
+      <div className="flex items-center gap-3">
+        <h3 className="m-0 text-lg font-semibold leading-tight text-foreground">{props.title}</h3>
+        <span className="h-px flex-1 bg-border/80" aria-hidden="true" />
+      </div>
+      <div className="grid min-w-0 gap-3">
         {rows.map((item) => (
-          <div
-            className="grid gap-2 border-b border-border px-3 py-3 last:border-b-0"
+          <article
+            className={cn(
+              "grid min-w-0 gap-3 bg-card/65 px-4 py-4",
+              props.compact &&
+                "grid-cols-[150px_minmax(0,1fr)] items-start gap-4 max-lg:grid-cols-1",
+              props.tone === "success" && "bg-primary/[0.08]",
+              props.tone === "error" && "bg-destructive/10",
+            )}
             key={`${item.label}-${item.text}`}
           >
-            <span className="text-xs font-semibold uppercase text-muted-foreground">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               {item.label}
             </span>
             <p
               className={cn(
-                "m-0 whitespace-pre-wrap text-sm leading-6 text-foreground [overflow-wrap:anywhere]",
+                "m-0 whitespace-pre-wrap text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]",
+                props.compact && "font-mono text-[13px] leading-6",
                 props.tone === "success" && "text-primary",
                 props.tone === "error" && "text-destructive",
               )}
             >
               {item.text}
             </p>
-          </div>
+          </article>
         ))}
       </div>
     </section>

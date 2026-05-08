@@ -1,0 +1,74 @@
+---
+title: 03 Route Handler
+description: Return a non-streaming Anvia response from a Next.js App Router route.
+---
+
+Use a route handler when your UI or another service should call the agent over HTTP.
+
+## 1. Create `app/api/support/route.ts`
+
+```ts
+import { supportAgent } from "@/app/ai/support-agent";
+
+export const runtime = "nodejs";
+
+type SupportRequest = {
+  message?: string;
+};
+
+export async function POST(request: Request): Promise<Response> {
+  const body = (await request.json()) as SupportRequest;
+  const message = body.message?.trim();
+
+  if (!message) {
+    return Response.json(
+      { error: { code: "bad_request", message: "message is required" } },
+      { status: 400 },
+    );
+  }
+
+  const response = await supportAgent.prompt(message).send();
+
+  return Response.json({
+    output: response.output,
+    usage: response.usage,
+    messages: response.messages,
+  });
+}
+```
+
+## 2. Call The Route
+
+```ts
+const response = await fetch("/api/support", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    message: "How long does a password reset link last?",
+  }),
+});
+
+const data = await response.json();
+console.log(data.output);
+```
+
+## 3. Keep Errors Structured
+
+Validate the request before calling the model. Provider and tool failures should return an application-owned error shape, not raw stack traces.
+
+```ts
+try {
+  const response = await supportAgent.prompt(message).send();
+  return Response.json({ output: response.output });
+} catch (error) {
+  console.error(error);
+  return Response.json(
+    { error: { code: "agent_failed", message: "The agent run failed." } },
+    { status: 500 },
+  );
+}
+```
+
+## Next
+
+Return live run events in [Streaming](/docs/frameworks/nextjs/04-streaming). For response fields, read [Prompt Responses](/docs/guides/sdk-fundamentals/prompt-responses).

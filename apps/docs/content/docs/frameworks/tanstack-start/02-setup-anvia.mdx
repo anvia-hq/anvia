@@ -1,0 +1,76 @@
+---
+title: 02 Setup Anvia
+description: Create a reusable Anvia agent module for TanStack Start.
+---
+
+Create clients, models, and shared tools in a server-side module. Import this module only from server routes, server functions, loaders, or tests.
+
+## 1. Create `src/ai/support-agent.ts`
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+
+const client = new OpenAIClient({ apiKey });
+export const model = client.completionModel("gpt-5.5");
+
+const lookupPolicy = createTool({
+  name: "lookup_policy",
+  description: "Look up a short support policy by key.",
+  input: z.object({
+    key: z.enum(["password_reset", "priority_support"]),
+  }),
+  output: z.object({
+    text: z.string(),
+  }),
+  async execute({ key }) {
+    const policies = {
+      password_reset: "Password reset links expire after 30 minutes.",
+      priority_support: "Enterprise customers receive priority support.",
+    };
+
+    return { text: policies[key] };
+  },
+});
+
+export const supportAgent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly. Use tools for policy facts.")
+  .tool(lookupPolicy)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+## 2. Optional Server Function Wrapper
+
+Use `createServerFn(...)` when app code wants a typed server call instead of calling a raw HTTP route.
+
+```ts
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { supportAgent } from "./support-agent";
+
+const SupportInput = z.object({
+  message: z.string().min(1),
+});
+
+export const askSupport = createServerFn({ method: "POST" })
+  .inputValidator(SupportInput)
+  .handler(async ({ data }) => {
+    const response = await supportAgent.prompt(data.message).send();
+    return {
+      output: response.output,
+      usage: response.usage,
+    };
+  });
+```
+
+## Next
+
+Expose the agent through a server route in [Route Handler](/docs/frameworks/tanstack-start/03-route-handler). Related guides: [Creating Agents](/docs/guides/agents/creating-agents), [Tools](/docs/guides/tools/creating-tools), and [Provider Clients](/docs/guides/sdk-fundamentals/clients-and-models).

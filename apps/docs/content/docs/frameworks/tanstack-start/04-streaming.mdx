@@ -1,0 +1,72 @@
+---
+title: 04 Streaming
+description: Stream Anvia run events from a TanStack Start server route.
+---
+
+Use a server route for streaming because it gives direct access to `Response`.
+
+## 1. Add `POST` Streaming Handler
+
+```ts
+import { createFileRoute } from "@tanstack/react-router";
+import { supportAgent } from "~/ai/support-agent";
+
+type SupportStreamRequest = {
+  message?: string;
+};
+
+export const Route = createFileRoute("/api/support/stream")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const body = (await request.json()) as SupportStreamRequest;
+        const message = body.message?.trim();
+
+        if (!message) {
+          return Response.json(
+            { error: { code: "bad_request", message: "message is required" } },
+            { status: 400 },
+          );
+        }
+
+        return new Response(supportAgent.prompt(message).readableStream(), {
+          headers: {
+            "Content-Type": "application/x-ndjson",
+            "Cache-Control": "no-cache",
+          },
+        });
+      },
+    },
+  },
+});
+```
+
+## 2. Consume Stream Lines
+
+```ts
+const response = await fetch("/api/support/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "Draft a support reply." }),
+});
+
+const reader = response.body?.getReader();
+const decoder = new TextDecoder();
+
+while (reader) {
+  const next = await reader.read();
+  if (next.done) break;
+
+  for (const line of decoder.decode(next.value).split("\n")) {
+    if (line.trim()) console.log(JSON.parse(line));
+  }
+}
+```
+
+## 3. Persist After `final`
+
+Do not save partial text deltas as conversation history. Save the final output or use Anvia memory/event storage.
+
+## Next
+
+Add authorization and retrieval in [Tools and Context](/docs/frameworks/tanstack-start/05-tools-and-context). Related guides: [Readable Streams](/docs/guides/streaming/readable-streams) and [Streaming Events](/docs/guides/streaming/streaming-events).

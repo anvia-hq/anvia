@@ -9,8 +9,10 @@ Studio gives you a local approval UI. Build your own runtime when approval needs
 
 ## Runtime Shape
 
+`approvalRuntime` is a name for your own application object. Do not import it from Anvia; create it next to your database, queue, notification, or admin UI code.
+
 ```ts
-const approvals = {
+const approvalRuntime = {
   async waitForDecision(request: {
     toolName: string;
     args: string;
@@ -45,7 +47,7 @@ const approvalHook = createHook({
       return tool.run();
     }
 
-    const approved = await approvals.waitForDecision({
+    const approved = await approvalRuntime.waitForDecision({
       toolName,
       args,
       reason: "Refunds require staff approval.",
@@ -86,17 +88,19 @@ Your runtime can notify one or more review surfaces.
 
 ```ts
 async function waitForDecision(request: ApprovalRequest): Promise<boolean> {
-  const approval = await approvals.create(request);
+  const approval = await approvalStore.create(request);
 
   await Promise.all([
     slack.sendApprovalMessage(approval),
     adminEvents.publish("approval.created", approval),
   ]);
 
-  const decision = await approvals.waitUntilResolved(approval.id);
+  const decision = await approvalStore.waitUntilResolved(approval.id);
   return decision.status === "approved";
 }
 ```
+
+`approvalStore` is also your code. It can be a Prisma model wrapper, SQL repository, queue-backed service, or any persistence layer your application already uses.
 
 The hook does not care whether the decision came from Studio, your app, Slack, email, or a queue worker. It only awaits a boolean or a richer decision object.
 
@@ -106,7 +110,7 @@ Timeouts are not required by Anvia. If the approval promise never resolves, the 
 
 ```ts
 const approved = await Promise.race([
-  approvals.waitForDecision({
+  approvalRuntime.waitForDecision({
     toolName,
     args,
     reason: "Refunds require staff approval.",
@@ -126,7 +130,7 @@ Use clear messages because the model sees them as the skipped tool result.
 Return more than a boolean when the final tool result should include reviewer context.
 
 ```ts
-const decision = await approvals.waitForDecision({
+const decision = await approvalRuntime.waitForDecision({
   toolName,
   args,
   reason: "Refunds require staff approval.",

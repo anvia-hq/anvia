@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 const githubUrl = "https://github.com/anvia-hq/anvia";
 const resourceLinks = [
   { text: "Docs", url: "/docs/guides" },
+  { text: "Frameworks", url: "/docs/frameworks" },
   { text: "Studio", url: "/docs/studio/overview" },
   { text: "Reference", url: "/docs/reference" },
   { text: "Models", url: "/docs/models" },

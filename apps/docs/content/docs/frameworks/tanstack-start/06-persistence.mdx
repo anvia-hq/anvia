@@ -1,0 +1,56 @@
+---
+title: 06 Persistence
+description: Store TanStack Start conversation history with app storage or Anvia memory.
+---
+
+Persist conversation state in server code. Client components should call server routes or server functions.
+
+## 1. Explicit Transcript Storage
+
+```ts
+import { Message } from "@anvia/core";
+import { supportAgent } from "~/ai/support-agent";
+import { conversations } from "~/db/conversations";
+
+export async function runSupportTurn(input: {
+  conversationId: string;
+  message: string;
+}) {
+  const history = await conversations.loadMessages(input.conversationId);
+  const response = await supportAgent
+    .prompt([...history, Message.user(input.message)])
+    .send();
+
+  await conversations.saveMessages(input.conversationId, [
+    ...history,
+    ...response.messages,
+  ]);
+
+  return response;
+}
+```
+
+Call this helper from a server route or `createServerFn(...)`.
+
+## 2. Agent Memory
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .memory(memoryStore, { savePolicy: "message" })
+  .build();
+
+const response = await agent
+  .session(conversationId, { userId })
+  .prompt(message)
+  .send();
+```
+
+Use memory when the route should not load and append messages manually.
+
+## 3. Streaming Persistence
+
+For streaming routes, wait for the terminal event in the client or use memory on the agent. Use an event store when you need replayable runtime events.
+
+## Next
+
+Review deployment checks in [Deploy](/docs/frameworks/tanstack-start/07-deploy). Related guides: [Memory](/docs/guides/memory), [Raw SQL](/docs/guides/memory/raw-sql), and [Event Store](/docs/guides/agents/event-store).

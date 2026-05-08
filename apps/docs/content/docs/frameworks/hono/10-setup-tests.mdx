@@ -1,0 +1,94 @@
+---
+title: 10 Setup Tests
+description: Test Hono Anvia routes, validation, streams, and Studio wiring.
+---
+
+Hono apps are straightforward to test because `app.request(...)` exercises the same route stack without starting a server.
+
+## 1. Install Test Tools
+
+```sh
+pnpm add -D vitest
+```
+
+## 2. Test JSON Validation
+
+```ts
+import { describe, expect, it } from "vitest";
+import { app } from "../src/app";
+
+describe("POST /api/support", () => {
+  it("rejects invalid JSON bodies", async () => {
+    const response = await app.request("/api/support", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "user_123",
+      },
+      body: JSON.stringify({ message: "" }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+});
+```
+
+`zValidator("json", schema)` handles the validation failure before the agent runs.
+
+## 3. Test The Happy Path
+
+Mock the agent module for route tests so provider calls stay out of unit tests.
+
+```ts
+import { vi } from "vitest";
+
+vi.mock("../src/ai/support-agent", () => ({
+  supportAgent: {
+    prompt: () => ({
+      send: async () => ({ output: "Hello", usage: { totalTokens: 4 }, messages: [] }),
+    }),
+  },
+}));
+```
+
+Then call the route with `app.request(...)` and assert the JSON body.
+
+## 4. Test Streaming Headers
+
+```ts
+const response = await app.request("/api/support/stream", {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    "x-user-id": "user_123",
+  },
+  body: JSON.stringify({ message: "Hello" }),
+});
+
+expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+```
+
+Mock `readableStream()` with a small `ReadableStream` that emits one final event.
+
+## 5. Test Studio Without a Port
+
+```ts
+import { Studio } from "@anvia/studio";
+import { supportAgent } from "../src/ai/support-agent";
+
+const studio = new Studio([supportAgent]);
+
+const response = await studio.fetch(
+  new Request("http://studio.test/agents/support/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello" }),
+  }),
+);
+
+expect(response.status).toBe(200);
+```
+
+## Next
+
+Related guides: [Testing](/docs/guides/testing), [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines), and [Studio and Providers](/docs/guides/testing/studio-and-providers).

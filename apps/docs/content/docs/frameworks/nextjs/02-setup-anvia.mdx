@@ -1,0 +1,69 @@
+---
+title: 02 Setup Anvia
+description: Create a reusable Anvia agent module for Next.js routes.
+---
+
+Create provider clients, models, and ordinary tools outside the route handler when their configuration is shared by every request.
+
+## 1. Create `app/ai/support-agent.ts`
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+
+const client = new OpenAIClient({ apiKey });
+export const model = client.completionModel("gpt-5.5");
+
+const lookupPolicy = createTool({
+  name: "lookup_policy",
+  description: "Look up a short support policy by key.",
+  input: z.object({
+    key: z.enum(["password_reset", "priority_support"]),
+  }),
+  output: z.object({
+    text: z.string(),
+  }),
+  async execute({ key }) {
+    const policies = {
+      password_reset: "Password reset links expire after 30 minutes.",
+      priority_support: "Enterprise customers receive priority support.",
+    };
+
+    return { text: policies[key] };
+  },
+});
+
+export const supportAgent = new AgentBuilder("support", model)
+  .name("Support Agent")
+  .description("Answers support questions from the product app.")
+  .instructions("Answer clearly. Use tools when a policy detail is needed.")
+  .tool(lookupPolicy)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+## 2. Keep The Agent Server-Side
+
+Import `supportAgent` from route handlers, server actions, background jobs, or tests. Do not import it into client components.
+
+## 3. Add More Providers Later
+
+The route code does not change when you swap the provider module:
+
+```ts
+import { AnthropicClient } from "@anvia/anthropic";
+
+const client = new AnthropicClient({ apiKey });
+const model = client.completionModel("claude-opus-4-6");
+```
+
+## Next
+
+Expose the agent through a JSON endpoint in [Route Handler](/docs/frameworks/nextjs/03-route-handler). For deeper agent configuration, read [Creating Agents](/docs/guides/agents/creating-agents) and [Tools](/docs/guides/tools/creating-tools).

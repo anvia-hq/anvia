@@ -1,0 +1,67 @@
+---
+title: 04 Streaming
+description: Stream Anvia run events from a Next.js route handler.
+---
+
+Anvia exposes a Web `ReadableStream`, so Next.js route handlers can return it directly.
+
+## 1. Create `app/api/support/stream/route.ts`
+
+```ts
+import { supportAgent } from "@/app/ai/support-agent";
+
+export const runtime = "nodejs";
+
+type SupportStreamRequest = {
+  message?: string;
+};
+
+export async function POST(request: Request): Promise<Response> {
+  const body = (await request.json()) as SupportStreamRequest;
+  const message = body.message?.trim();
+
+  if (!message) {
+    return Response.json(
+      { error: { code: "bad_request", message: "message is required" } },
+      { status: 400 },
+    );
+  }
+
+  return new Response(supportAgent.prompt(message).readableStream(), {
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+```
+
+## 2. Consume Events
+
+```ts
+const response = await fetch("/api/support/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "Draft a refund reply." }),
+});
+
+const reader = response.body?.getReader();
+const decoder = new TextDecoder();
+
+while (reader) {
+  const next = await reader.read();
+  if (next.done) break;
+
+  for (const line of decoder.decode(next.value).split("\n")) {
+    if (line.trim()) console.log(JSON.parse(line));
+  }
+}
+```
+
+## 3. Handle Terminal Events
+
+The stream ends with either a `final` event or an `error` event. Store final output only after you receive the terminal event.
+
+## Next
+
+Add request-local authorization and retrieval in [Tools and Context](/docs/frameworks/nextjs/05-tools-and-context). For stream details, read [Readable Streams](/docs/guides/streaming/readable-streams) and [Streaming Events](/docs/guides/streaming/streaming-events).

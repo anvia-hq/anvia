@@ -12,6 +12,7 @@ import { source } from "@/lib/source";
 
 const docsSections = [
   { title: "Docs", href: "/docs/guides" },
+  { title: "Frameworks", href: "/docs/frameworks" },
   { title: "Models", href: "/docs/models" },
   { title: "Studio", href: "/docs/studio/overview" },
   { title: "Reference", href: "/docs/reference" },

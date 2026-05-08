@@ -79,6 +79,7 @@
     "studio:04": "tsx -r dotenv/config 09_studio/04-ask-question.ts dotenv_config_path=../../.env",
     "studio:05": "tsx -r dotenv/config 09_studio/05-knowledge-inspector.ts dotenv_config_path=../../.env",
     "studio:06": "tsx -r dotenv/config 09_studio/06-subagents.ts dotenv_config_path=../../.env",
+    "studio:07": "tsx -r dotenv/config 09_studio/07-pipeline-inspector.ts dotenv_config_path=../../.env",
     "integrations": "tsx -r dotenv/config 10_integrations/01-mcp-tools.ts dotenv_config_path=../../.env",
     "integrations:01": "tsx -r dotenv/config 10_integrations/01-mcp-tools.ts dotenv_config_path=../../.env",
     "integrations:02": "tsx -r dotenv/config 10_integrations/02-local-skills.ts dotenv_config_path=../../.env",
@@ -158,7 +159,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.216.0",
     "@opentelemetry/sdk-node": "^0.216.0",
     "dotenv": "^17.4.2",
-    "zod": "^4.4.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

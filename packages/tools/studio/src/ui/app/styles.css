@@ -6,39 +6,39 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: hsl(0 0% 99%);
-  --foreground: hsl(0 0% 4%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(0 0% 4%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(0 0% 4%);
-  --primary: hsl(72 72% 28%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(0 0% 95%);
-  --secondary-foreground: hsl(0 0% 7%);
-  --muted: hsl(0 0% 96%);
-  --muted-foreground: hsl(0 0% 34%);
-  --accent: hsl(68 100% 56% / 26%);
-  --accent-foreground: hsl(0 0% 4%);
-  --destructive: hsl(0 74% 47%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 0% / 12%);
-  --input: hsl(0 0% 0% / 16%);
+  --background: hsl(0 0% 2%);
+  --foreground: hsl(0 0% 91%);
+  --card: hsl(0 0% 4.5%);
+  --card-foreground: hsl(0 0% 92%);
+  --popover: hsl(0 0% 5%);
+  --popover-foreground: hsl(0 0% 88%);
+  --primary: hsl(68 100% 56%);
+  --primary-foreground: hsl(0 0% 4%);
+  --secondary: hsl(0 0% 6.5%);
+  --secondary-foreground: hsl(0 0% 88%);
+  --muted: hsl(0 0% 7%);
+  --muted-foreground: hsl(0 0% 58%);
+  --accent: hsl(0 0% 100% / 5%);
+  --accent-foreground: hsl(0 0% 92%);
+  --destructive: hsl(4 70% 62%);
+  --destructive-foreground: hsl(0 0% 4%);
+  --border: hsl(0 0% 100% / 5%);
+  --input: hsl(0 0% 100% / 10%);
   --ring: hsl(162 52% 58%);
-  --chart-1: hsl(72 72% 28%);
-  --chart-2: hsl(199 74% 60%);
-  --chart-3: hsl(267 72% 68%);
-  --chart-4: hsl(36 84% 62%);
-  --chart-5: hsl(0 74% 65%);
-  --sidebar: hsl(0 0% 97%);
-  --sidebar-foreground: hsl(0 0% 4%);
+  --chart-1: hsl(68 100% 56%);
+  --chart-2: hsl(162 52% 58%);
+  --chart-3: hsl(0 0% 58%);
+  --chart-4: hsl(0 0% 88%);
+  --chart-5: hsl(4 70% 62%);
+  --sidebar: hsl(0 0% 2%);
+  --sidebar-foreground: hsl(0 0% 91%);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: hsl(68 100% 56% / 30%);
-  --sidebar-accent-foreground: hsl(72 72% 22%);
+  --sidebar-accent: hsl(0 0% 100% / 5%);
+  --sidebar-accent-foreground: hsl(68 100% 56%);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
-  --font-sans: -apple-system, BlinkMacSystemFont, Inter, ui-sans-serif, sans-serif, system-ui;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: Geist Mono, ui-monospace, monospace;
   --radius: 0.25rem;
@@ -47,15 +47,15 @@
   --shadow-blur: 3px;
   --shadow-spread: 0px;
   --shadow-opacity: 0.1;
-  --shadow-color: hsl(0 0% 0%);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow-color: hsl(216 20% 15%);
+  --shadow-2xs: 0 1px 2px 0px hsl(216 20% 15% / 0.05);
+  --shadow-xs: 0 1px 3px 0px hsl(216 20% 15% / 0.06);
+  --shadow-sm: 0 1px 2px hsl(216 20% 15% / 0.08), 0 8px 18px -18px hsl(216 20% 15% / 0.26);
+  --shadow: 0 1px 2px hsl(216 20% 15% / 0.1), 0 14px 34px -26px hsl(216 20% 15% / 0.34);
+  --shadow-md: 0 2px 4px hsl(216 20% 15% / 0.12), 0 20px 44px -30px hsl(216 20% 15% / 0.42);
+  --shadow-lg: 0 3px 8px hsl(216 20% 15% / 0.16), 0 28px 64px -38px hsl(216 20% 15% / 0.5);
+  --shadow-xl: 0 4px 12px hsl(216 20% 15% / 0.2), 0 34px 86px -44px hsl(216 20% 15% / 0.56);
+  --shadow-2xl: 0 10px 32px hsl(216 20% 15% / 0.28), 0 48px 120px -56px hsl(216 20% 15% / 0.68);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 }
@@ -75,25 +75,25 @@
   --muted-foreground: hsl(0 0% 58%);
   --accent: hsl(0 0% 100% / 5%);
   --accent-foreground: hsl(0 0% 92%);
-  --destructive: hsl(0 74% 65%);
+  --destructive: hsl(4 70% 62%);
   --destructive-foreground: hsl(0 0% 4%);
   --border: hsl(0 0% 100% / 5%);
   --input: hsl(0 0% 100% / 10%);
   --ring: hsl(162 52% 58%);
   --chart-1: hsl(68 100% 56%);
-  --chart-2: hsl(199 74% 60%);
-  --chart-3: hsl(267 72% 68%);
-  --chart-4: hsl(36 84% 62%);
-  --chart-5: hsl(0 74% 65%);
+  --chart-2: hsl(162 52% 58%);
+  --chart-3: hsl(0 0% 58%);
+  --chart-4: hsl(0 0% 88%);
+  --chart-5: hsl(4 70% 62%);
   --sidebar: hsl(0 0% 2%);
   --sidebar-foreground: hsl(0 0% 91%);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: hsl(68 100% 56% / 11%);
+  --sidebar-accent: hsl(0 0% 100% / 5%);
   --sidebar-accent-foreground: hsl(68 100% 56%);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
-  --font-sans: -apple-system, BlinkMacSystemFont, Inter, ui-sans-serif, sans-serif, system-ui;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: Geist Mono, ui-monospace, monospace;
   --radius: 0.25rem;
@@ -102,15 +102,15 @@
   --shadow-blur: 3px;
   --shadow-spread: 0px;
   --shadow-opacity: 0.1;
-  --shadow-color: hsl(0 0% 0%);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --shadow-color: hsl(216 30% 3%);
+  --shadow-2xs: 0 1px 2px 0px hsl(216 30% 3% / 0.25);
+  --shadow-xs: 0 1px 3px 0px hsl(216 30% 3% / 0.28);
+  --shadow-sm: 0 1px 2px hsl(216 30% 3% / 0.36), 0 10px 24px -20px hsl(216 30% 3% / 0.7);
+  --shadow: 0 1px 2px hsl(216 30% 3% / 0.42), 0 20px 54px -34px hsl(216 30% 3% / 0.86);
+  --shadow-md: 0 2px 6px hsl(216 30% 3% / 0.48), 0 28px 70px -42px hsl(216 30% 3% / 0.9);
+  --shadow-lg: 0 4px 10px hsl(216 30% 3% / 0.54), 0 36px 90px -48px hsl(216 30% 3% / 0.94);
+  --shadow-xl: 0 8px 18px hsl(216 30% 3% / 0.62), 0 44px 110px -54px hsl(216 30% 3% / 0.98);
+  --shadow-2xl: 0 14px 44px hsl(216 30% 3% / 0.72), 0 60px 140px -64px hsl(216 30% 3% / 1);
 }
 
 @theme inline {
@@ -175,6 +175,8 @@
     font-size: 16px;
     color-scheme: light;
     background: var(--background);
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   html.dark {
@@ -183,9 +185,46 @@
 
   body {
     @apply bg-background text-foreground;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
     min-width: 320px;
     margin: 0;
+    background:
+      radial-gradient(circle at 20% -10%, hsl(68 100% 56% / 7%), transparent 30rem),
+      radial-gradient(circle at 88% 8%, hsl(204 46% 61% / 5%), transparent 28rem), var(--background);
+    font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+    text-rendering: geometricPrecision;
+  }
+
+  body::before {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    content: "";
+    opacity: 0.22;
+    background-image:
+      linear-gradient(hsl(210 18% 91% / 0.032) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(210 18% 91% / 0.024) 1px, transparent 1px),
+      radial-gradient(circle at 25% 15%, hsl(68 100% 56% / 0.07), transparent 18rem);
+    background-size:
+      84px 84px,
+      84px 84px,
+      auto;
+    mask-image: linear-gradient(to bottom, black, transparent 88%);
+  }
+
+  #anvia-ui {
+    isolation: isolate;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   ::selection {
@@ -234,6 +273,11 @@
     letter-spacing: -0.04em;
   }
 
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
   *::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -259,5 +303,16 @@
   .xterm .xterm-viewport::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+
+  .pipeline-flow .react-flow__edge.pipeline-flow-edge .react-flow__edge-path {
+    stroke: var(--primary);
+    stroke-width: 1.6;
+    opacity: 0.78;
+  }
+
+  .pipeline-flow .react-flow__edges marker path {
+    fill: var(--primary);
+    stroke: var(--primary);
   }
 }

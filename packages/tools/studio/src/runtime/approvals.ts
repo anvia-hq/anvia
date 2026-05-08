@@ -4,6 +4,9 @@ import type {
   PromptHook,
   ToolApprovalContext,
   ToolApprovalPolicy,
+  ToolApprovalRequestOptions,
+  ToolCallHookAction,
+  ToolCallHookArgs,
 } from "@anvia/core";
 import { createHook, parseToolArgs } from "@anvia/core";
 import type { Context, Hono } from "hono";
@@ -42,7 +45,7 @@ type ApprovalRequest = {
 
 export type ApprovalRuntime = {
   approvals: Map<string, PendingApproval | StudioToolApproval>;
-  createHook(context: ApprovalHookContext): PromptHook;
+  createHook(context: ApprovalHookContext): StudioApprovalHook;
   list(options: ApprovalListOptions): StudioToolApproval[];
   decide(
     id: string,
@@ -55,6 +58,13 @@ type ApprovalListOptions = {
   runId?: string;
   agentId?: string;
   sessionId?: string;
+};
+
+export type StudioApprovalHook = PromptHook & {
+  handleApprovalRequest(
+    args: ToolCallHookArgs,
+    request: ToolApprovalRequestOptions,
+  ): Promise<ToolCallHookAction>;
 };
 
 export function registerApprovalRoutes(app: Hono, approvals: ApprovalRuntime): void {
@@ -147,51 +157,74 @@ export function createApprovalRuntime(): ApprovalRuntime {
   return {
     approvals,
     createHook(context) {
-      return createHook({
-        async onToolCall({ toolName, toolCallId, internalCallId, args, tool: control }) {
-          const registeredTool = context.getTool(toolName);
-          if (registeredTool?.approval === undefined) {
-            return control.run();
-          }
-          const approval = registeredTool.approval as ToolApprovalPolicy<unknown>;
+      const handleApprovalRequest: StudioApprovalHook["handleApprovalRequest"] = async (
+        { toolName, toolCallId, internalCallId, args, tool: control },
+        request,
+      ) => {
+        const decision = await requestApproval(approvals, context, {
+          toolName,
+          ...(toolCallId === undefined ? {} : { toolCallId }),
+          internalCallId,
+          args,
+          ...(request.reason === undefined ? {} : { reason: request.reason }),
+          ...(request.rejectMessage === undefined ? {} : { rejectMessage: request.rejectMessage }),
+        });
 
-          const rawParsedArgs = parseToolArgs(args);
-          const parsedArgs = registeredTool.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
-          const approvalContext = {
-            toolName,
-            args: parsedArgs,
-            rawArgs: args,
-            ...(toolCallId === undefined ? {} : { toolCallId }),
-            internalCallId,
-            run: {
-              agentId: context.agentId,
-              runId: context.runId,
-              ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
-              ...(context.metadata === undefined ? {} : { metadata: context.metadata }),
-            },
-          };
+        return decision.approved
+          ? control.run()
+          : control.skip(decision.reason ?? request.rejectMessage ?? "Rejected in Anvia Studio.");
+      };
+      return {
+        ...createHook({
+          async onToolCall({ toolName, toolCallId, internalCallId, args, tool: control }) {
+            const registeredTool = context.getTool(toolName);
+            if (registeredTool?.approval === undefined) {
+              return control.run();
+            }
+            const approval = registeredTool.approval as ToolApprovalPolicy<unknown>;
 
-          const required = await approval.when(approvalContext);
-          if (!required) {
-            return control.run();
-          }
+            const rawParsedArgs = parseToolArgs(args);
+            const parsedArgs = registeredTool.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
+            const approvalContext = {
+              toolName,
+              args: parsedArgs,
+              rawArgs: args,
+              ...(toolCallId === undefined ? {} : { toolCallId }),
+              internalCallId,
+              run: {
+                agentId: context.agentId,
+                runId: context.runId,
+                ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
+                ...(context.metadata === undefined ? {} : { metadata: context.metadata }),
+              },
+            };
 
-          const reason = await resolveApprovalText(approval.reason, approvalContext);
-          const rejectMessage = await resolveApprovalText(approval.rejectMessage, approvalContext);
-          const decision = await requestApproval(approvals, context, {
-            toolName,
-            ...(toolCallId === undefined ? {} : { toolCallId }),
-            internalCallId,
-            args,
-            ...(reason === undefined ? {} : { reason }),
-            ...(rejectMessage === undefined ? {} : { rejectMessage }),
-          });
+            const required = await approval.when(approvalContext);
+            if (!required) {
+              return control.run();
+            }
 
-          return decision.approved
-            ? control.run()
-            : control.skip(decision.reason ?? rejectMessage ?? "Rejected in Anvia Studio.");
-        },
-      });
+            const reason = await resolveApprovalText(approval.reason, approvalContext);
+            const rejectMessage = await resolveApprovalText(
+              approval.rejectMessage,
+              approvalContext,
+            );
+            const decision = await requestApproval(approvals, context, {
+              toolName,
+              ...(toolCallId === undefined ? {} : { toolCallId }),
+              internalCallId,
+              args,
+              ...(reason === undefined ? {} : { reason }),
+              ...(rejectMessage === undefined ? {} : { rejectMessage }),
+            });
+
+            return decision.approved
+              ? control.run()
+              : control.skip(decision.reason ?? rejectMessage ?? "Rejected in Anvia Studio.");
+          },
+        }),
+        handleApprovalRequest,
+      };
     },
     list(options) {
       return [...approvals.values()]

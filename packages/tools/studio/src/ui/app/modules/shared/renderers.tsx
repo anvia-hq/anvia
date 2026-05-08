@@ -7,12 +7,12 @@ import { isRecord } from "./object";
 
 export function MarkdownText(props: { text: string }) {
   return (
-    <div className="prose prose-sm max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-sm prose-code:border prose-code:border-border prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.92em] prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-sm prose-pre:border prose-pre:border-border prose-pre:bg-card prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current">
+    <div className="prose prose-sm max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-sm prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.92em] prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-sm prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current">
       <ReactMarkdown
         components={{
           table({ children }) {
             return (
-              <div className="my-4 min-w-0 overflow-hidden rounded-sm border border-border bg-card">
+              <div className="my-4 min-w-0 overflow-hidden rounded-sm border border-border/80 bg-card/90 shadow-sm">
                 <div className="min-w-0 overflow-x-auto">
                   <table className="m-0 w-full min-w-130 border-separate border-spacing-0 text-left text-sm">
                     {children}
@@ -63,9 +63,9 @@ export function ToolPayload(props: { title: string; value: string }) {
   const display = toolPayloadDisplay(props.value);
 
   return (
-    <section className="overflow-hidden rounded-sm border border-border bg-background">
-      <div className="flex min-h-9 items-center gap-3 border-b border-border px-3">
-        <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+    <section className="overflow-hidden rounded-sm border border-border/80 bg-background/70">
+      <div className="flex min-h-9 items-center gap-3 border-b border-border/80 bg-muted/20 px-3">
+        <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           {props.title}
         </div>
       </div>

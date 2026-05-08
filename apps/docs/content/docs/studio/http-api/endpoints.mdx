@@ -13,9 +13,16 @@ Studio exposes the same runtime used by the bundled UI as an HTTP API.
 | `/config` | `GET` | Read agents, quick prompts, and enabled capabilities |
 | `/agents` | `GET` | List registered agents |
 | `/agents/:agentId` | `GET` | Read one agent config |
+| `/agents/:agentId/tools` | `GET` | Inspect registered tool metadata for one agent |
+| `/agents/:agentId/mcps` | `GET` | Inspect registered MCP server and tool metadata for one agent |
 | `/agents/:agentId/runs` | `POST` | Run an agent |
+| `/pipelines` | `GET` | List registered pipelines |
+| `/pipelines/:pipelineId` | `GET` | Read pipeline metadata and graph |
+| `/pipelines/:pipelineId/runs` | `POST` | Run a pipeline with JSON input |
+| `/pipelines/:pipelineId/logs` | `GET` | Read metadata-only pipeline audit logs |
 | `/sessions` | `GET`, `POST` | List or create sessions |
 | `/sessions/:sessionId` | `GET`, `DELETE` | Read or delete a session |
+| `/sessions/:sessionId/logs` | `GET` | Read metadata-only session audit logs |
 | `/sessions/:sessionId/traces` | `GET` | List traces for a session |
 | `/traces` | `GET` | List traces |
 | `/traces/:traceId` | `GET` | Read one trace |

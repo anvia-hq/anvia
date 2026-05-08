@@ -7,6 +7,8 @@ import type {
   JsonValue,
   MemoryStore,
   Message,
+  Pipeline,
+  PipelineGraph,
   PromptResponse,
   Usage,
 } from "@anvia/core";
@@ -16,8 +18,11 @@ export type StudioCapability =
   | "agents"
   | "approvals"
   | "knowledge"
+  | "mcps"
   | "observability"
+  | "pipelines"
   | "sessions"
+  | "tools"
   | "traces";
 
 export type StudioAgent = {
@@ -29,12 +34,38 @@ export type StudioAgent = {
   metadata?: JsonObject;
 };
 
+export type StudioTarget = Agent | Pipeline<unknown, unknown>;
+
 export type StudioAgentConfig = {
   id: string;
   name?: string;
   description?: string;
   quickPrompts: string[];
   metadata?: JsonObject;
+};
+
+export type StudioPipeline = {
+  id: string;
+  pipeline: Pipeline<unknown, unknown>;
+  name?: string;
+  description?: string;
+  metadata?: JsonObject;
+};
+
+export type StudioPipelineConfig = {
+  id: string;
+  name?: string;
+  description?: string;
+  metadata?: JsonObject;
+  stageCount: number;
+  edgeCount: number;
+  hasParallelStages: boolean;
+  agentCount: number;
+  extractorCount: number;
+};
+
+export type StudioPipelineDetail = StudioPipelineConfig & {
+  graph: PipelineGraph;
 };
 
 export type StudioCapabilityConfig = {
@@ -48,11 +79,53 @@ export type StudioConfig = {
   description?: string;
   version?: string;
   agents: StudioAgentConfig[];
+  pipelines: StudioPipelineConfig[];
   chat: {
     quickPrompts: Record<string, string[]>;
   };
   capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
   unsupportedCapabilities: StudioCapability[];
+};
+
+export type StudioAgentToolSource = "static" | "dynamic";
+
+export type StudioAgentToolApprovalMetadata = {
+  required: boolean;
+  reason?: string;
+  rejectMessage?: string;
+};
+
+export type StudioAgentToolMetadata = {
+  agentId: string;
+  name: string;
+  description: string;
+  parameters: JsonObject;
+  source: StudioAgentToolSource;
+  approval: StudioAgentToolApprovalMetadata;
+};
+
+export type StudioAgentToolsSummary = {
+  agentId: string;
+  tools: StudioAgentToolMetadata[];
+};
+
+export type StudioAgentMcpToolMetadata = {
+  name: string;
+  description: string;
+  parameters: JsonObject;
+  source: StudioAgentToolSource;
+};
+
+export type StudioAgentMcpServerMetadata = {
+  agentId: string;
+  name: string;
+  toolCount: number;
+  tools: StudioAgentMcpToolMetadata[];
+};
+
+export type StudioAgentMcpsSummary = {
+  agentId: string;
+  servers: StudioAgentMcpServerMetadata[];
 };
 
 export type StudioTranscriptChatEntry = {
@@ -149,6 +222,48 @@ export type StudioSessionRunTranscriptInput = {
   error?: JsonValue;
 };
 
+export type StudioSessionLogLevel = "debug" | "info" | "warn" | "error";
+
+export type StudioSessionLogCategory =
+  | "session"
+  | "run"
+  | "memory"
+  | "prompt"
+  | "model"
+  | "tool"
+  | "approval"
+  | "question"
+  | "api";
+
+export type StudioSessionLogEntry = {
+  id: string;
+  sessionId: string;
+  runId?: string;
+  sequence: number;
+  timestamp: string;
+  level: StudioSessionLogLevel;
+  category: StudioSessionLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+export type StudioSessionLogAppendInput = {
+  sessionId: string;
+  runId?: string;
+  level: StudioSessionLogLevel;
+  category: StudioSessionLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+export type StudioSessionLogListOptions = {
+  sessionId: string;
+  limit: number;
+  after?: number;
+};
+
 export type StudioSessionStore = MemoryStore & {
   readonly kind?: string;
   listSessions(
@@ -161,6 +276,12 @@ export type StudioSessionStore = MemoryStore & {
   saveSessionRunTranscript(
     input: StudioSessionRunTranscriptInput,
   ): StudioSession | undefined | Promise<StudioSession | undefined>;
+  appendSessionLog?(
+    input: StudioSessionLogAppendInput,
+  ): StudioSessionLogEntry | Promise<StudioSessionLogEntry>;
+  listSessionLogs?(
+    options: StudioSessionLogListOptions,
+  ): StudioSessionLogEntry[] | Promise<StudioSessionLogEntry[]>;
   deleteSession?(id: string): boolean | Promise<boolean>;
 };
 
@@ -277,6 +398,7 @@ export type StudioKnowledgeSummary = {
 export type StudioStores = {
   sessions?: StudioSessionStore | false;
   traces?: StudioTraceStore;
+  pipelineLogs?: StudioPipelineLogStore | false;
 };
 
 export type StudioUiOptions = {
@@ -393,6 +515,84 @@ export type StudioToolQuestionResultEvent = {
   question: StudioToolQuestion;
 };
 
+export type StudioSessionLogEvent = {
+  type: "session_log";
+  log: StudioSessionLogEntry;
+};
+
+export type StudioPipelineLogLevel = "debug" | "info" | "warn" | "error";
+
+export type StudioPipelineLogCategory =
+  | "pipeline"
+  | "run"
+  | "stage"
+  | "parallel"
+  | "agent"
+  | "extractor"
+  | "api";
+
+export type StudioPipelineLogEntry = {
+  id: string;
+  pipelineId: string;
+  runId?: string;
+  sequence: number;
+  timestamp: string;
+  level: StudioPipelineLogLevel;
+  category: StudioPipelineLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+export type StudioPipelineLogAppendInput = {
+  pipelineId: string;
+  runId?: string;
+  level: StudioPipelineLogLevel;
+  category: StudioPipelineLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+export type StudioPipelineLogListOptions = {
+  pipelineId: string;
+  limit: number;
+  after?: number;
+};
+
+export type StudioPipelineLogStore = {
+  appendPipelineLog(
+    input: StudioPipelineLogAppendInput,
+  ): StudioPipelineLogEntry | Promise<StudioPipelineLogEntry>;
+  listPipelineLogs(
+    options: StudioPipelineLogListOptions,
+  ): StudioPipelineLogEntry[] | Promise<StudioPipelineLogEntry[]>;
+};
+
+export type StudioPipelineLogEvent = {
+  type: "pipeline_log";
+  log: StudioPipelineLogEntry;
+};
+
+export type StudioPipelineFinalEvent = {
+  type: "pipeline_final";
+  runId: string;
+  pipelineId: string;
+  output: JsonValue;
+};
+
+export type StudioPipelineRunRequest = {
+  input: JsonValue;
+  stream?: boolean;
+  metadata?: JsonObject;
+};
+
+export type StudioPipelineRunResponse = {
+  runId: string;
+  pipelineId: string;
+  output: JsonValue;
+};
+
 export type AgentRunRequest = {
   message: string | Message;
   history?: Message[];
@@ -411,7 +611,10 @@ export type AgentRunStreamEvent =
   | StudioToolApprovalRequestEvent
   | StudioToolApprovalResultEvent
   | StudioToolQuestionRequestEvent
-  | StudioToolQuestionResultEvent;
+  | StudioToolQuestionResultEvent
+  | StudioSessionLogEvent
+  | StudioPipelineLogEvent
+  | StudioPipelineFinalEvent;
 
 export type StudioErrorCode =
   | "bad_request"

@@ -161,6 +161,75 @@ describe("PipelineBuilder", () => {
     await expect(op.run(5)).resolves.toBe(15);
   });
 
+  it("exposes an automatic graph", () => {
+    const model = new QueueModel([response([AssistantContent.text("answer")])]);
+    const agent = new AgentBuilder("support", model).name("Support").build();
+    const op = new PipelineBuilder<string>({
+      id: "ticket_triage",
+      name: "Ticket triage",
+      description: "Prepare a support answer.",
+      metadata: { owner: "support" },
+    })
+      .step((value) => value.trim())
+      .parallel({
+        upper: new PipelineBuilder<string>().step((value) => value.toUpperCase()).build(),
+        length: new PipelineBuilder<string>().step((value) => value.length).build(),
+      })
+      .prompt(agent)
+      .build();
+
+    expect(op.graph()).toMatchObject({
+      id: "ticket_triage",
+      name: "Ticket triage",
+      description: "Prepare a support answer.",
+      metadata: { owner: "support" },
+      nodes: [
+        { id: "input", kind: "input", label: "Input" },
+        { kind: "step", label: "Step 1" },
+        { kind: "parallel", label: "2 parallel branches" },
+        { kind: "branch", label: "upper", branchKey: "upper" },
+        { kind: "branch", label: "length", branchKey: "length" },
+        { kind: "agent", label: "Support", agentId: "support", agentName: "Support" },
+        { id: "output", kind: "output", label: "Output" },
+      ],
+    });
+    expect(op.graph().edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "input", target: "step_1" }),
+        expect.objectContaining({ source: "step_1", target: "parallel_2" }),
+        expect.objectContaining({ source: "parallel_2", target: "branch_3" }),
+        expect.objectContaining({ source: "parallel_2", target: "branch_4" }),
+        expect.objectContaining({ source: "branch_3", target: "agent_5" }),
+        expect.objectContaining({ source: "branch_4", target: "agent_5" }),
+        expect.objectContaining({ source: "agent_5", target: "output" }),
+      ]),
+    );
+  });
+
+  it("emits pipeline stage run events without changing output", async () => {
+    const events: string[] = [];
+    const op = new PipelineBuilder<number>()
+      .step((value) => value + 1)
+      .step((value) => value * 2)
+      .build();
+
+    await expect(
+      op.run(2, {
+        observer: {
+          onEvent(event) {
+            events.push(`${event.type}:${event.node.id}`);
+          },
+        },
+      }),
+    ).resolves.toBe(6);
+    expect(events).toEqual([
+      "stage_started:step_1",
+      "stage_completed:step_1",
+      "stage_started:step_2",
+      "stage_completed:step_2",
+    ]);
+  });
+
   it("does not expose the old helper-first methods at type level", () => {
     const builder = new PipelineBuilder<number>();
     const op = builder.step((value) => value + 1).build();

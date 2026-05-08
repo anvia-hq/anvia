@@ -17,7 +17,15 @@ export type TraceObservationItem = StudioTrace["observations"][number];
 export type RunState = "idle" | "running";
 export type SessionLoadState = "idle" | "loading";
 export type TraceLoadState = "idle" | "loading";
-export type ActivePage = "playground" | "tracing" | "sessions" | "agents" | "knowledge";
+export type ActivePage =
+  | "playground"
+  | "tracing"
+  | "sessions"
+  | "agents"
+  | "tools"
+  | "mcps"
+  | "pipelines"
+  | "knowledge";
 export type TraceStatusFilter = "all" | StudioTrace["status"];
 export type TraceInspectorKey = "trace" | "agent" | `turn:${number}` | `observation:${string}`;
 export type PageLocation = {

@@ -1,4 +1,4 @@
-import { ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowUp, ExternalLink, Plus, Trash2 } from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -9,9 +9,14 @@ import {
 } from "react";
 import type {
   AgentRunStreamEvent,
+  StudioAgentMcpsSummary,
+  StudioAgentToolsSummary,
   StudioConfig,
   StudioKnowledgeSummary,
+  StudioPipelineDetail,
+  StudioPipelineLogEntry,
   StudioSession,
+  StudioSessionLogEntry,
   StudioSessionSummary,
   StudioTrace,
   StudioTraceSummary,
@@ -29,7 +34,10 @@ import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
 import { AgentsPage } from "./modules/agents/agents-page";
 import { KnowledgePage } from "./modules/knowledge/knowledge-page";
+import { McpsPage } from "./modules/mcps/mcps-page";
+import { PipelinesPage } from "./modules/pipelines/pipelines-page";
 import { TranscriptItem } from "./modules/playground/transcript-item";
+import { SessionLogsPanel } from "./modules/session-logs/session-logs-panel";
 import { DeleteSessionDialog, SessionsPage } from "./modules/sessions/sessions-page";
 import {
   errorMessage,
@@ -68,21 +76,51 @@ import type {
   TranscriptEntry,
 } from "./modules/shared/types";
 import { NavButton } from "./modules/shell/nav-button";
+import { ToolsPage } from "./modules/tools/tools-page";
 import { TraceBrowser } from "./modules/tracing/trace-browser";
 
 function applyDarkTheme(): void {
   document.documentElement.classList.add("dark");
 }
 
+async function responseErrorMessage(response: Response, label: string): Promise<string> {
+  let detail = "";
+  try {
+    const body = (await response.json()) as unknown;
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "object" &&
+      body.error !== null &&
+      "message" in body.error &&
+      typeof body.error.message === "string"
+    ) {
+      detail = `: ${body.error.message}`;
+    }
+  } catch {
+    // Ignore non-JSON error bodies.
+  }
+  return `${label} with HTTP ${response.status}${detail}`;
+}
+
 export function StudioConsole() {
   const initialLocation = pageLocationFromLocation();
   const [config, setConfig] = useState<StudioConfig | undefined>();
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [mcpsAgentId, setMcpsAgentId] = useState("");
+  const [toolsAgentId, setToolsAgentId] = useState("");
+  const [selectedPipelineId, setSelectedPipelineId] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [allSessions, setAllSessions] = useState<StudioSessionSummary[]>([]);
   const [traces, setTraces] = useState<StudioTrace[]>([]);
+  const [sessionLogs, setSessionLogs] = useState<StudioSessionLogEntry[]>([]);
+  const [pipelineDetail, setPipelineDetail] = useState<StudioPipelineDetail | undefined>();
+  const [pipelineLogs, setPipelineLogs] = useState<StudioPipelineLogEntry[]>([]);
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
   const [prompt, setPrompt] = useState("");
+  const [pipelineRunInput, setPipelineRunInput] = useState('"Hello from Studio"');
+  const [pipelineRunOutput, setPipelineRunOutput] = useState("");
   const [activePage, setActivePage] = useState<ActivePage>(() => initialLocation.page);
   const [selectedTraceId, setSelectedTraceId] = useState(() => initialLocation.traceId ?? "");
   const [traceSessionDetailId, setTraceSessionDetailId] = useState<string | undefined>(
@@ -95,9 +133,19 @@ export function StudioConsole() {
   const [decidingApprovals, setDecidingApprovals] = useState<Set<string>>(() => new Set());
   const [answeringQuestions, setAnsweringQuestions] = useState<Set<string>>(() => new Set());
   const [sessionLoadState, setSessionLoadState] = useState<SessionLoadState>("idle");
+  const [sessionLogLoadState, setSessionLogLoadState] = useState<SessionLoadState>("idle");
   const [traceLoadState, setTraceLoadState] = useState<TraceLoadState>("idle");
   const [knowledge, setKnowledge] = useState<StudioKnowledgeSummary | undefined>();
   const [knowledgeLoadState, setKnowledgeLoadState] = useState<"idle" | "loading">("idle");
+  const [mcps, setMcps] = useState<StudioAgentMcpsSummary | undefined>();
+  const [mcpsLoadState, setMcpsLoadState] = useState<"idle" | "loading">("idle");
+  const [tools, setTools] = useState<StudioAgentToolsSummary | undefined>();
+  const [toolsLoadState, setToolsLoadState] = useState<"idle" | "loading">("idle");
+  const [pipelineDetailLoadState, setPipelineDetailLoadState] = useState<"idle" | "loading">(
+    "idle",
+  );
+  const [pipelineLogLoadState, setPipelineLogLoadState] = useState<"idle" | "loading">("idle");
+  const [pipelineRunState, setPipelineRunState] = useState<RunState>("idle");
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadConfig = useCallback(async () => {
@@ -116,6 +164,9 @@ export function StudioConsole() {
       const nextConfig = (await response.json()) as StudioConfig;
       setConfig(nextConfig);
       setSelectedAgentId((current) => current || nextConfig.agents[0]?.id || "");
+      setMcpsAgentId((current) => current || nextConfig.agents[0]?.id || "");
+      setToolsAgentId((current) => current || nextConfig.agents[0]?.id || "");
+      setSelectedPipelineId((current) => current || nextConfig.pipelines[0]?.id || "");
       setStatus("Connected");
     } catch (loadError) {
       setError(errorMessage(loadError));
@@ -130,6 +181,9 @@ export function StudioConsole() {
   const sessionsEnabled = config?.capabilities.sessions?.enabled === true;
   const tracesEnabled = config?.capabilities.traces?.enabled === true;
   const knowledgeEnabled = config?.capabilities.knowledge?.enabled === true;
+  const mcpsEnabled = config?.capabilities.mcps?.enabled === true;
+  const toolsEnabled = config?.capabilities.tools?.enabled === true;
+  const pipelinesEnabled = config?.capabilities.pipelines?.enabled === true;
 
   useEffect(() => {
     applyDarkTheme();
@@ -157,14 +211,43 @@ export function StudioConsole() {
     void loadAllSessions();
   }, [loadAllSessions]);
 
+  const loadSessionLogs = useCallback(
+    async (sessionId: string): Promise<StudioSessionLogEntry[]> => {
+      if (!sessionsEnabled) {
+        setSessionLogs([]);
+        return [];
+      }
+
+      setSessionLogLoadState("loading");
+      try {
+        const params = new URLSearchParams({ limit: "1000" });
+        const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}/logs?${params}`);
+        if (!response.ok) {
+          throw new Error(`Session logs failed with HTTP ${response.status}`);
+        }
+        const body = (await response.json()) as { logs: StudioSessionLogEntry[] };
+        setSessionLogs(body.logs);
+        return body.logs;
+      } catch (loadError) {
+        setError(errorMessage(loadError));
+        setSessionLogs([]);
+        return [];
+      } finally {
+        setSessionLogLoadState("idle");
+      }
+    },
+    [sessionsEnabled],
+  );
+
   async function createSession(title: string): Promise<StudioSessionSummary> {
+    const agentId = selectedAgent?.id ?? selectedAgentId;
     const response = await fetch("/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        agentId: selectedAgentId,
+        agentId,
         title,
         metadata: {
           source: "anvia-studio",
@@ -172,12 +255,13 @@ export function StudioConsole() {
       }),
     });
     if (!response.ok) {
-      throw new Error(`Session create failed with HTTP ${response.status}`);
+      throw new Error(await responseErrorMessage(response, "Session create failed"));
     }
     const session = (await response.json()) as StudioSessionSummary;
     setSelectedSessionId(session.id);
     setAllSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
     updateSessionPath(session.id);
+    await loadSessionLogs(session.id);
     return session;
   }
 
@@ -320,6 +404,132 @@ export function StudioConsole() {
     }
   }, [activePage, loadKnowledge]);
 
+  const loadMcps = useCallback(
+    async (agentId: string) => {
+      if (!mcpsEnabled || agentId.length === 0) {
+        setMcps(undefined);
+        return;
+      }
+
+      setMcpsLoadState("loading");
+      try {
+        const response = await fetch(`/agents/${encodeURIComponent(agentId)}/mcps`);
+        if (!response.ok) {
+          throw new Error(`MCPs failed with HTTP ${response.status}`);
+        }
+        setMcps((await response.json()) as StudioAgentMcpsSummary);
+      } catch (loadError) {
+        setError(errorMessage(loadError));
+        setMcps(undefined);
+      } finally {
+        setMcpsLoadState("idle");
+      }
+    },
+    [mcpsEnabled],
+  );
+
+  useEffect(() => {
+    if (activePage === "mcps") {
+      void loadMcps(mcpsAgentId || selectedAgentId);
+    }
+  }, [activePage, loadMcps, mcpsAgentId, selectedAgentId]);
+
+  const loadTools = useCallback(
+    async (agentId: string) => {
+      if (!toolsEnabled || agentId.length === 0) {
+        setTools(undefined);
+        return;
+      }
+
+      setToolsLoadState("loading");
+      try {
+        const response = await fetch(`/agents/${encodeURIComponent(agentId)}/tools`);
+        if (!response.ok) {
+          throw new Error(`Tools failed with HTTP ${response.status}`);
+        }
+        setTools((await response.json()) as StudioAgentToolsSummary);
+      } catch (loadError) {
+        setError(errorMessage(loadError));
+        setTools(undefined);
+      } finally {
+        setToolsLoadState("idle");
+      }
+    },
+    [toolsEnabled],
+  );
+
+  useEffect(() => {
+    if (activePage === "tools") {
+      void loadTools(toolsAgentId || selectedAgentId);
+    }
+  }, [activePage, loadTools, selectedAgentId, toolsAgentId]);
+
+  const loadPipelineLogs = useCallback(
+    async (pipelineId: string): Promise<StudioPipelineLogEntry[]> => {
+      if (!pipelinesEnabled || pipelineId.length === 0) {
+        setPipelineLogs([]);
+        return [];
+      }
+
+      setPipelineLogLoadState("loading");
+      try {
+        const params = new URLSearchParams({ limit: "1000" });
+        const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}/logs?${params}`);
+        if (!response.ok) {
+          throw new Error(`Pipeline logs failed with HTTP ${response.status}`);
+        }
+        const body = (await response.json()) as { logs: StudioPipelineLogEntry[] };
+        setPipelineLogs(body.logs);
+        return body.logs;
+      } catch (loadError) {
+        setError(errorMessage(loadError));
+        setPipelineLogs([]);
+        return [];
+      } finally {
+        setPipelineLogLoadState("idle");
+      }
+    },
+    [pipelinesEnabled],
+  );
+
+  const loadPipeline = useCallback(
+    async (pipelineId: string) => {
+      if (!pipelinesEnabled || pipelineId.length === 0) {
+        setPipelineDetail(undefined);
+        setPipelineLogs([]);
+        return;
+      }
+
+      setPipelineDetailLoadState("loading");
+      setError("");
+      try {
+        const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}`);
+        if (!response.ok) {
+          throw new Error(`Pipeline load failed with HTTP ${response.status}`);
+        }
+        setSelectedPipelineId(pipelineId);
+        setPipelineDetail((await response.json()) as StudioPipelineDetail);
+        await loadPipelineLogs(pipelineId);
+      } catch (loadError) {
+        setError(errorMessage(loadError));
+        setPipelineDetail(undefined);
+      } finally {
+        setPipelineDetailLoadState("idle");
+      }
+    },
+    [loadPipelineLogs, pipelinesEnabled],
+  );
+
+  useEffect(() => {
+    if (activePage !== "pipelines") {
+      return;
+    }
+    const pipelineId = selectedPipelineId || config?.pipelines[0]?.id || "";
+    if (pipelineId.length > 0) {
+      void loadPipeline(pipelineId);
+    }
+  }, [activePage, config?.pipelines, loadPipeline, selectedPipelineId]);
+
   const loadSession = useCallback(
     async (sessionId: string, options: { updatePath?: boolean } = {}) => {
       if (runState === "running") {
@@ -334,7 +544,10 @@ export function StudioConsole() {
           throw new Error(`Session load failed with HTTP ${response.status}`);
         }
         const session = (await response.json()) as StudioSession;
-        const traceSummaries = await loadSessionTraceSummaries(session.id);
+        const [traceSummaries] = await Promise.all([
+          loadSessionTraceSummaries(session.id),
+          loadSessionLogs(session.id),
+        ]);
         setTranscriptSequence(nextSequence(session.transcript));
         setSelectedAgentId(session.agentId);
         setSelectedSessionId(session.id);
@@ -350,7 +563,7 @@ export function StudioConsole() {
         setSessionLoadState("idle");
       }
     },
-    [runState, loadSessionTraceSummaries],
+    [runState, loadSessionTraceSummaries, loadSessionLogs],
   );
 
   const startNewChat = useCallback(
@@ -360,6 +573,7 @@ export function StudioConsole() {
       }
       resetTranscriptSequence();
       setSelectedSessionId("");
+      setSessionLogs([]);
       setMessages([]);
       setPrompt("");
       setActivePage("playground");
@@ -381,6 +595,7 @@ export function StudioConsole() {
       setSelectedAgentId(agentId);
       resetTranscriptSequence();
       setSelectedSessionId("");
+      setSessionLogs([]);
       setMessages([]);
       setPrompt("");
       setActivePage("playground");
@@ -410,6 +625,7 @@ export function StudioConsole() {
       if (selectedSessionId === session.id) {
         resetTranscriptSequence();
         setSelectedSessionId("");
+        setSessionLogs([]);
         setMessages([]);
         setPrompt("");
         if (activePage === "playground") {
@@ -473,7 +689,8 @@ export function StudioConsole() {
 
   async function runPrompt(text: string) {
     const trimmed = text.trim();
-    if (trimmed.length === 0 || selectedAgentId.length === 0 || runState === "running") {
+    const agentId = selectedAgent?.id ?? selectedAgentId;
+    if (trimmed.length === 0 || agentId.length === 0 || runState === "running") {
       return;
     }
 
@@ -493,7 +710,7 @@ export function StudioConsole() {
           ? (await createSession(titleFromText(trimmed))).id
           : selectedSessionId;
       const history = sessionsEnabled ? undefined : toHistory(messages);
-      const response = await fetch(`/agents/${encodeURIComponent(selectedAgentId)}/runs`, {
+      const response = await fetch(`/agents/${encodeURIComponent(agentId)}/runs`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -525,7 +742,10 @@ export function StudioConsole() {
       await loadAllSessions();
       if (sessionId.length > 0) {
         setSelectedSessionId(sessionId);
-        const traceSummaries = await loadSessionTraceSummaries(sessionId);
+        const [traceSummaries] = await Promise.all([
+          loadSessionTraceSummaries(sessionId),
+          loadSessionLogs(sessionId),
+        ]);
         setMessages((current) => enrichTranscriptWithTraceIds(current, traceSummaries));
       }
       setStatus("Connected");
@@ -535,6 +755,66 @@ export function StudioConsole() {
       appendAssistantText(`\n${message}`);
     } finally {
       setRunState("idle");
+    }
+  }
+
+  async function runPipeline() {
+    const pipelineId = selectedPipelineId || config?.pipelines[0]?.id || "";
+    if (pipelineId.length === 0 || pipelineRunState === "running") {
+      return;
+    }
+
+    let input: unknown;
+    try {
+      input = JSON.parse(pipelineRunInput);
+    } catch {
+      setError("Pipeline input must be valid JSON");
+      return;
+    }
+
+    setPipelineRunState("running");
+    setPipelineRunOutput("");
+    setError("");
+    try {
+      const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}/runs`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          input,
+          stream: true,
+          metadata: {
+            source: "anvia-studio",
+          },
+        }),
+      });
+
+      if (!response.ok || response.body === null) {
+        throw new Error(await responseErrorMessage(response, "Pipeline run failed"));
+      }
+
+      await readJsonl(response.body, async (event) => {
+        if (isPipelineLogEvent(event)) {
+          appendPipelineLogEntry(event.log);
+          await nextPaint();
+          return;
+        }
+        if (isPipelineFinalEvent(event)) {
+          setPipelineRunOutput(JSON.stringify(event.output, null, 2));
+          await nextPaint();
+          return;
+        }
+        if (isErrorStreamEvent(event)) {
+          throw new Error(JSON.stringify(event.error));
+        }
+      });
+      await loadPipelineLogs(pipelineId);
+      setStatus("Connected");
+    } catch (runError) {
+      setError(errorMessage(runError));
+    } finally {
+      setPipelineRunState("idle");
     }
   }
 
@@ -584,6 +864,10 @@ export function StudioConsole() {
       updateToolQuestion(event.question);
       return true;
     }
+    if (event.type === "session_log") {
+      appendSessionLogEntry(event.log);
+      return true;
+    }
     if (event.type === "final" && event.trace?.traceId !== undefined) {
       assignAssistantTraceId(event.trace.traceId);
       return true;
@@ -592,6 +876,24 @@ export function StudioConsole() {
       setError(JSON.stringify(event.error));
     }
     return false;
+  }
+
+  function appendSessionLogEntry(log: StudioSessionLogEntry) {
+    setSessionLogs((current) => {
+      if (current.some((item) => item.id === log.id)) {
+        return current;
+      }
+      return [...current, log].sort((left, right) => left.sequence - right.sequence);
+    });
+  }
+
+  function appendPipelineLogEntry(log: StudioPipelineLogEntry) {
+    setPipelineLogs((current) => {
+      if (current.some((item) => item.id === log.id)) {
+        return current;
+      }
+      return [...current, log].sort((left, right) => left.sequence - right.sequence);
+    });
   }
 
   function appendAssistantText(delta: string) {
@@ -996,6 +1298,7 @@ export function StudioConsole() {
   }
 
   const agents = config?.agents ?? [];
+  const pipelines = config?.pipelines ?? [];
   const selectedAgent =
     agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? undefined;
   const selectedAgentQuickPrompts = selectedAgent?.quickPrompts ?? [];
@@ -1003,6 +1306,13 @@ export function StudioConsole() {
 
   function navigatePage(page: ActivePage) {
     setActivePage(page);
+    if (page === "pipelines") {
+      const pipelineId = selectedPipelineId || pipelines[0]?.id || "";
+      if (pipelineId.length > 0) {
+        setSelectedPipelineId(pipelineId);
+        void loadPipeline(pipelineId);
+      }
+    }
     if (page === "tracing") {
       setSelectedTraceId("");
       setTraceSessionDetailId(undefined);
@@ -1030,24 +1340,34 @@ export function StudioConsole() {
   }
 
   return (
-    <div className="grid min-h-screen overflow-hidden bg-background text-foreground lg:grid-cols-[224px_minmax(0,1fr)]">
-      <aside className="flex min-h-screen flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-        <div className="flex h-20 items-center border-b border-sidebar-border px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <img className="h-11 w-11 shrink-0 object-contain" src={logoSrc} alt="" />
-            <span className="grid min-w-0">
-              <span className="anvia-wordmark truncate text-2xl font-semibold tracking-normal text-sidebar-foreground">
-                Anvia
+    <div className="grid min-h-[100dvh] overflow-hidden bg-background text-foreground lg:grid-cols-[228px_minmax(0,1fr)]">
+      <aside className="flex min-h-[100dvh] flex-col border-r border-sidebar-border bg-sidebar/95 text-sidebar-foreground shadow-xl shadow-black/20">
+        <div className="flex h-15 items-center border-b border-sidebar-border/80 px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <img className="h-7 w-7 shrink-0 object-contain" src={logoSrc} alt="" />
+            <span className="min-w-0 truncate">
+              <span className="anvia-wordmark text-[1.08rem] font-semibold tracking-normal text-sidebar-foreground">
+                Anvia Studio
               </span>
             </span>
           </div>
         </div>
-        <nav className="grid gap-1 border-b border-sidebar-border px-3 py-3" aria-label="Main">
+        <nav className="grid gap-1 border-b border-sidebar-border/80 px-3 py-3" aria-label="Main">
+          <div className="px-2 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Workspace
+          </div>
           <NavButton
             active={activePage === "playground"}
             icon="message"
             label="Chat"
             onClick={() => navigatePage("playground")}
+          />
+          <NavButton
+            active={activePage === "pipelines"}
+            icon="workflow"
+            label="Pipelines"
+            disabled={!pipelinesEnabled}
+            onClick={() => navigatePage("pipelines")}
           />
           <NavButton
             active={activePage === "sessions"}
@@ -1062,12 +1382,27 @@ export function StudioConsole() {
             onClick={() => navigatePage("tracing")}
           />
         </nav>
-        <nav className="grid gap-1 border-b border-sidebar-border px-3 py-3" aria-label="Studio">
+        <nav className="grid gap-1 border-b border-sidebar-border/80 px-3 py-3" aria-label="Studio">
+          <div className="px-2 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Inspect
+          </div>
           <NavButton
             active={activePage === "agents"}
             icon="bot"
             label="Studio"
             onClick={() => navigatePage("agents")}
+          />
+          <NavButton
+            active={activePage === "tools"}
+            icon="wrench"
+            label="Tools"
+            onClick={() => navigatePage("tools")}
+          />
+          <NavButton
+            active={activePage === "mcps"}
+            icon="plug"
+            label="MCPs"
+            onClick={() => navigatePage("mcps")}
           />
           <NavButton
             active={activePage === "knowledge"}
@@ -1076,20 +1411,65 @@ export function StudioConsole() {
             onClick={() => navigatePage("knowledge")}
           />
         </nav>
-        <div className="mt-auto border-t border-sidebar-border p-4">
-          <span className="flex min-w-0 items-center gap-2 truncate font-mono text-[11px] font-semibold text-primary">
-            <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-55" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-            </span>
+        <nav
+          className="grid min-h-0 gap-1 overflow-auto border-b border-sidebar-border/80 px-3 py-3"
+          aria-label="Recent sessions"
+        >
+          <div className="px-2 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Recent
+          </div>
+          {allSessions.slice(0, 8).map((session) => (
+            <div
+              className={cn(
+                "group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_24px] items-center gap-1 rounded-sm border border-transparent pr-1 transition duration-200 hover:border-sidebar-border hover:bg-sidebar-accent",
+                session.id === selectedSessionId && "border-sidebar-border bg-sidebar-accent",
+              )}
+              key={session.id}
+            >
+              <Button
+                className={cn(
+                  "grid h-auto min-h-8 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-1 text-left text-sidebar-foreground/72 shadow-none hover:bg-transparent hover:text-sidebar-foreground",
+                  session.id === selectedSessionId && "text-sidebar-accent-foreground",
+                )}
+                type="button"
+                variant="ghost"
+                onClick={() => void loadSession(session.id)}
+              >
+                <span className="min-w-0 truncate text-xs font-medium">
+                  {session.title ?? "Untitled chat"}
+                </span>
+                <time className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
+                  {formatRelativeTime(session.updatedAt)}
+                </time>
+              </Button>
+              <Button
+                aria-label={`Delete ${session.title ?? "Untitled chat"}`}
+                className="h-6 min-h-6 w-6 border-0 bg-transparent p-0 text-muted-foreground opacity-55 shadow-none hover:bg-transparent hover:text-destructive hover:opacity-100 group-hover:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
+                size="icon"
+                type="button"
+                variant="ghost"
+                disabled={runState === "running"}
+                onClick={() => setDeleteCandidate(session)}
+              >
+                <Trash2 aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
+        </nav>
+        <div className="mt-auto border-t border-sidebar-border/80 px-3 py-3">
+          <nav className="grid gap-1" aria-label="Anvia links">
+            <SidebarLink href="https://anvia.dev/docs" label="Anvia Docs" />
+            <SidebarLink href="https://anvia.dev" label="Anvia Web" />
+          </nav>
+          <span className="sr-only" aria-live="polite">
             {status}
           </span>
         </div>
       </aside>
 
-      <main className="grid h-screen min-w-0 grid-rows-[42px_minmax(0,1fr)] overflow-hidden bg-background">
-        <header className="grid min-h-10 border-b border-border bg-background">
-          <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5">
+      <main className="grid h-[100dvh] min-w-0 grid-rows-[52px_minmax(0,1fr)] overflow-hidden bg-background/80">
+        <header className="grid min-h-13 border-b border-border/80 bg-background/88 backdrop-blur">
+          <div className="grid min-h-13 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-6">
             <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
               <span className="text-primary">
                 {activePage === "playground" ? "Agents" : "Studio"}
@@ -1101,15 +1481,7 @@ export function StudioConsole() {
             </div>
             <div className="flex items-center gap-1">
               <Button
-                className="h-7 min-h-7 border-transparent bg-transparent px-3 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                type="button"
-                variant="secondary"
-                onClick={() => navigatePage("agents")}
-              >
-                See config
-              </Button>
-              <Button
-                className="h-7 min-h-7 border-transparent bg-transparent px-3 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="h-8 min-h-8 border-transparent bg-transparent px-3 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                 type="button"
                 variant="secondary"
                 onClick={() => navigatePage("sessions")}
@@ -1117,7 +1489,7 @@ export function StudioConsole() {
                 Sessions
               </Button>
               <Button
-                className="h-7 min-h-7 gap-1.5 rounded-sm border-0 bg-primary px-3 font-mono text-xs text-primary-foreground hover:bg-primary/90"
+                className="h-8 min-h-8 gap-1.5 rounded-sm border-0 bg-primary px-3 font-mono text-xs text-primary-foreground hover:bg-primary/90"
                 type="button"
                 onClick={() => startNewChat()}
               >
@@ -1129,13 +1501,22 @@ export function StudioConsole() {
         </header>
 
         {activePage === "playground" ? (
-          <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_310px] overflow-hidden bg-background max-xl:grid-cols-1">
-            <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
-              <section className="min-h-0 overflow-auto px-6 py-5">
-                <div className="mx-auto grid min-h-full w-full max-w-210 content-start items-start gap-5 pb-6">
+          <section className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
+            <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+              <section className="min-h-0 overflow-auto px-6 py-6">
+                <div className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8">
                   {!hasMessages ? (
-                    <div className="grid min-h-80 place-items-center text-sm font-medium text-muted-foreground">
-                      No messages
+                    <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
+                      <div className="grid max-w-xl gap-4 text-center">
+                        <div className="mx-auto h-px w-28 bg-primary/45" />
+                        <h1 className="m-0 text-4xl font-semibold leading-tight text-foreground text-balance">
+                          What should this agent work on?
+                        </h1>
+                        <p className="m-0 text-base leading-7 text-muted-foreground text-pretty">
+                          Choose a prompt below or write a task. Studio will stream the response,
+                          tool calls, approvals, and trace data here.
+                        </p>
+                      </div>
                     </div>
                   ) : null}
                   {messages.map((message) => (
@@ -1156,17 +1537,17 @@ export function StudioConsole() {
                 </div>
               </section>
               <form
-                className="grid gap-2 bg-background px-6 pb-5"
+                className="grid gap-3 bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pb-6 pt-2"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void runPrompt(prompt);
                 }}
               >
                 {hasMessages || selectedAgentQuickPrompts.length === 0 ? null : (
-                  <div className="mx-auto grid w-full max-w-210 grid-cols-3 gap-2 max-md:grid-cols-1">
+                  <div className="mx-auto grid w-full max-w-235 grid-cols-3 gap-2 max-md:grid-cols-1">
                     {selectedAgentQuickPrompts.map((quickPrompt) => (
                       <Button
-                        className="h-auto min-h-14 justify-start whitespace-normal rounded-sm border border-border bg-card px-3 py-2 text-left text-sm font-medium leading-5 text-foreground hover:border-primary/45 hover:bg-primary/10 hover:text-primary"
+                        className="h-auto min-h-16 justify-start whitespace-normal rounded-sm border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-primary/45 hover:bg-primary/10 hover:text-primary"
                         type="button"
                         variant="ghost"
                         disabled={runState === "running" || selectedAgentId.length === 0}
@@ -1180,9 +1561,9 @@ export function StudioConsole() {
                     ))}
                   </div>
                 )}
-                <div className="mx-auto grid w-full max-w-210 gap-2 rounded-lg border border-border bg-card p-2.5 shadow-xl focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
+                <div className="mx-auto grid w-full max-w-235 gap-2 rounded-md border border-border/80 bg-card/95 p-2.5 shadow-xl shadow-black/35 backdrop-blur focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
                   <Textarea
-                    className="min-h-14 min-w-0 resize-none rounded-md border-0 bg-transparent px-3 py-3 text-sm text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
+                    className="min-h-16 min-w-0 resize-none rounded-sm border-0 bg-transparent px-3 py-3 text-[15px] leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
                     ref={promptRef}
                     rows={1}
                     value={prompt}
@@ -1194,7 +1575,7 @@ export function StudioConsole() {
                     <div className="flex min-w-0 items-center gap-2">
                       <Button
                         aria-label="Attach context"
-                        className="h-8 min-h-8 w-8 rounded-full border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        className="h-8 min-h-8 w-8 rounded-sm border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                         size="icon"
                         type="button"
                         variant="secondary"
@@ -1211,7 +1592,7 @@ export function StudioConsole() {
                         >
                           <SelectTrigger
                             aria-label="Select agent"
-                            className="hidden h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground sm:flex"
+                            className="hidden h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:flex"
                           >
                             <SelectValue placeholder="Agent" />
                           </SelectTrigger>
@@ -1230,7 +1611,7 @@ export function StudioConsole() {
                       )}
                       <Button
                         aria-label={runState === "running" ? "Running" : "Send message"}
-                        className="h-9 min-h-9 w-9 rounded-sm border-primary bg-primary text-primary-foreground hover:bg-primary/90 dark:hover:bg-[#eaff73]"
+                        className="h-9 min-h-9 w-9 rounded-sm border-primary bg-primary text-primary-foreground hover:bg-primary/90"
                         size="icon"
                         type="submit"
                         disabled={runState === "running" || selectedAgentId.length === 0}
@@ -1242,47 +1623,11 @@ export function StudioConsole() {
                 </div>
               </form>
             </div>
-            <aside className="min-h-0 overflow-auto border-l border-border px-3 py-5 max-xl:hidden">
-              <div className="grid gap-1">
-                {allSessions.slice(0, 12).map((session) => (
-                  <div
-                    className={cn(
-                      "group grid min-h-10 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-l border-transparent bg-transparent px-3 py-1 text-left hover:bg-accent",
-                      session.id === selectedSessionId &&
-                        "border-primary bg-accent text-accent-foreground",
-                    )}
-                    key={session.id}
-                  >
-                    <Button
-                      className="h-auto min-h-0 min-w-0 justify-start rounded-none border-0 bg-transparent p-0 text-left text-inherit hover:bg-transparent hover:text-inherit"
-                      type="button"
-                      variant="ghost"
-                      onClick={() => void loadSession(session.id)}
-                    >
-                      <span className="min-w-0 truncate text-sm font-medium">
-                        {session.title ?? "Untitled chat"}
-                      </span>
-                    </Button>
-                    <time className="self-center justify-self-end font-mono text-xs font-medium tabular-nums text-muted-foreground">
-                      {formatRelativeTime(session.updatedAt)}
-                    </time>
-                    <Button
-                      aria-label={`Delete ${session.title ?? "Untitled chat"}`}
-                      className="h-7 min-h-7 w-7 border-0 bg-transparent p-0 text-muted-foreground opacity-70 hover:bg-transparent hover:text-destructive hover:opacity-100 focus-visible:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                      size="icon"
-                      type="button"
-                      variant="ghost"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setDeleteCandidate(session);
-                      }}
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </aside>
+            <SessionLogsPanel
+              logs={sessionLogs}
+              selectedSessionId={selectedSessionId}
+              loading={sessionLogLoadState === "loading"}
+            />
           </section>
         ) : null}
 
@@ -1317,6 +1662,56 @@ export function StudioConsole() {
           <AgentsPage agents={agents} selectedAgentId={selectedAgentId} />
         ) : null}
 
+        {activePage === "tools" ? (
+          <ToolsPage
+            agents={agents}
+            selectedAgentId={toolsAgentId || selectedAgent?.id || selectedAgentId}
+            summary={tools}
+            enabled={toolsEnabled}
+            loading={toolsLoadState === "loading"}
+            onSelectAgent={(agentId) => {
+              setToolsAgentId(agentId);
+              void loadTools(agentId);
+            }}
+          />
+        ) : null}
+
+        {activePage === "pipelines" ? (
+          <PipelinesPage
+            pipelines={pipelines}
+            selectedPipelineId={selectedPipelineId}
+            detail={pipelineDetail}
+            logs={pipelineLogs}
+            enabled={pipelinesEnabled}
+            detailLoading={pipelineDetailLoadState === "loading"}
+            logsLoading={pipelineLogLoadState === "loading"}
+            runState={pipelineRunState}
+            runInput={pipelineRunInput}
+            runOutput={pipelineRunOutput}
+            onSelectPipeline={(pipelineId) => {
+              setSelectedPipelineId(pipelineId);
+              setPipelineRunOutput("");
+              void loadPipeline(pipelineId);
+            }}
+            onRunInputChange={setPipelineRunInput}
+            onRun={() => void runPipeline()}
+          />
+        ) : null}
+
+        {activePage === "mcps" ? (
+          <McpsPage
+            agents={agents}
+            selectedAgentId={mcpsAgentId || selectedAgent?.id || selectedAgentId}
+            summary={mcps}
+            enabled={mcpsEnabled}
+            loading={mcpsLoadState === "loading"}
+            onSelectAgent={(agentId) => {
+              setMcpsAgentId(agentId);
+              void loadMcps(agentId);
+            }}
+          />
+        ) : null}
+
         {activePage === "knowledge" ? (
           <KnowledgePage
             enabled={knowledgeEnabled}
@@ -1338,6 +1733,45 @@ export function StudioConsole() {
       />
     </div>
   );
+}
+
+function SidebarLink(props: { href: string; label: string }) {
+  return (
+    <a
+      className="flex h-8 min-h-8 items-center justify-between rounded-sm border border-transparent px-2 font-mono text-[11px] font-semibold text-sidebar-foreground/62 transition duration-200 hover:border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
+      href={props.href}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <span>{props.label}</span>
+      <ExternalLink aria-hidden="true" className="h-3 w-3 text-muted-foreground" />
+    </a>
+  );
+}
+
+function isPipelineLogEvent(event: unknown): event is {
+  type: "pipeline_log";
+  log: StudioPipelineLogEntry;
+} {
+  return isRecord(event) && event.type === "pipeline_log" && isRecord(event.log);
+}
+
+function isPipelineFinalEvent(event: unknown): event is {
+  type: "pipeline_final";
+  output: unknown;
+} {
+  return isRecord(event) && event.type === "pipeline_final" && "output" in event;
+}
+
+function isErrorStreamEvent(event: unknown): event is {
+  type: "error";
+  error: unknown;
+} {
+  return isRecord(event) && event.type === "error";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function enrichTranscriptWithTraceIds(

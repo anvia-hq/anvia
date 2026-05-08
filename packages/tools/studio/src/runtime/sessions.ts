@@ -1,6 +1,7 @@
 import type { JsonObject } from "@anvia/core";
 import type { Context, Hono } from "hono";
 import type { StudioAgent, StudioSessionStore, StudioTraceStore } from "../types";
+import { appendSessionLog, sessionCreatedLog } from "./session-logs";
 import {
   errorResponse,
   isJsonObject,
@@ -51,6 +52,7 @@ export function registerSessionRoutes(
       ...(body.title === undefined ? {} : { title: body.title }),
       ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
     });
+    await appendSessionLog(props.sessionStore, sessionCreatedLog(session));
     return c.json(session, 201);
   });
 
@@ -60,6 +62,43 @@ export function registerSessionRoutes(
       return errorResponse(c, 404, "not_found", "Session not found");
     }
     return c.json(session);
+  });
+
+  app.get("/sessions/:sessionId/logs", async (c) => {
+    const sessionId = c.req.param("sessionId");
+    const session = await props.sessionStore.getSession(sessionId);
+    if (session === undefined) {
+      return errorResponse(c, 404, "not_found", "Session not found");
+    }
+    if (props.sessionStore.listSessionLogs === undefined) {
+      return errorResponse(
+        c,
+        501,
+        "unsupported_capability",
+        'Capability "sessions.logs" is not implemented by this runner',
+        { capability: "sessions", operation: "logs" },
+      );
+    }
+
+    const limit = parseSessionLogLimit(c.req.query("limit"));
+    if (limit === undefined) {
+      return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
+    }
+    const after = parseSessionLogAfter(c.req.query("after"));
+    if (after === false) {
+      return errorResponse(c, 400, "bad_request", "after must be a non-negative integer");
+    }
+
+    const logs = await props.sessionStore.listSessionLogs({
+      sessionId,
+      limit,
+      ...(after === undefined ? {} : { after }),
+    });
+    const last = logs.at(-1);
+    return c.json({
+      logs,
+      ...(logs.length === limit && last !== undefined ? { nextCursor: last.sequence } : {}),
+    });
   });
 
   app.delete("/sessions/:sessionId", async (c) => {
@@ -98,6 +137,28 @@ export function registerSessionRoutes(
     const traces = await props.traceStore.listSessionTraces({ sessionId, limit });
     return c.json({ traces });
   });
+}
+
+function parseSessionLogLimit(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim().length === 0) {
+    return 200;
+  }
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit <= 0) {
+    return undefined;
+  }
+  return Math.min(limit, 1000);
+}
+
+function parseSessionLogAfter(value: string | undefined): number | undefined | false {
+  if (value === undefined || value.trim().length === 0) {
+    return undefined;
+  }
+  const after = Number(value);
+  if (!Number.isInteger(after) || after < 0) {
+    return false;
+  }
+  return after;
 }
 
 async function parseCreateSessionRequest(c: Context): Promise<

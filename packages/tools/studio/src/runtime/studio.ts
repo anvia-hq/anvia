@@ -5,6 +5,7 @@ import {
   type HookAction,
   type JsonObject,
   Message,
+  Pipeline,
   type PromptHook,
   resolveMemoryOptions,
   type ToolCallHookAction,
@@ -19,8 +20,10 @@ import type {
   StudioAgent,
   StudioConfig,
   StudioOptions,
+  StudioPipeline,
   StudioServeOptions,
   StudioSessionStore,
+  StudioTarget,
   StudioTraceStore,
 } from "../types";
 import {
@@ -29,8 +32,14 @@ import {
   resolveStudioUiOptions,
   studioUiEntryPath,
 } from "../ui/routes";
-import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
+import {
+  createApprovalRuntime,
+  registerApprovalRoutes,
+  type StudioApprovalHook,
+} from "./approvals";
 import { registerKnowledgeRoutes } from "./knowledge";
+import { registerMcpRoutes } from "./mcps";
+import { registerPipelineRoutes } from "./pipelines";
 import { createQuestionRuntime, registerQuestionRoutes } from "./questions";
 import {
   AsyncEventQueue,
@@ -42,12 +51,23 @@ import {
   traceForRun,
   transcriptFromMessages,
 } from "./runs";
+import {
+  appendSessionLog,
+  memoryLoadedLog,
+  memorySavedLog,
+  runCompletedLog,
+  runFailedLog,
+  runReceivedLog,
+  runStartedLog,
+  streamSessionRunLogs,
+} from "./session-logs";
 import { registerSessionRoutes } from "./sessions";
 import {
   agentConfig,
   buildConfig,
   errorResponse,
   normalizeAgents,
+  normalizePipelines,
   resolveStores,
   runnerId,
   type StudioRuntimeOptions,
@@ -55,6 +75,7 @@ import {
   unsupportedCapabilities,
   unsupportedCapability,
 } from "./shared";
+import { registerToolRoutes } from "./tools";
 import { registerTraceRoutes } from "./trace-routes";
 
 type StudioApp = AnviaStudio & {
@@ -68,8 +89,8 @@ export class Studio implements AnviaStudio {
   private server: ReturnType<typeof serve> | undefined;
   private sigintHandler: (() => void) | undefined;
 
-  constructor(agents: Agent[] = [], options: StudioOptions = {}) {
-    this.options = studioOptionsFromAgents(agents, options);
+  constructor(targets: StudioTarget[] = [], options: StudioOptions = {}) {
+    this.options = studioOptionsFromTargets(targets, options);
     this.studio = createStudioApp(this.options);
   }
 
@@ -133,9 +154,17 @@ export class Studio implements AnviaStudio {
   }
 }
 
-function studioOptionsFromAgents(agents: Agent[], options: StudioOptions): StudioRuntimeOptions {
+function studioOptionsFromTargets(
+  targets: StudioTarget[],
+  options: StudioOptions,
+): StudioRuntimeOptions {
+  const agents = targets.filter((target): target is Agent => target instanceof Agent);
+  const pipelines = targets.filter(
+    (target): target is Pipeline<unknown, unknown> => target instanceof Pipeline,
+  );
   return {
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
+    pipelines: inferStudioPipelines(pipelines),
   };
 }
 
@@ -148,6 +177,20 @@ function inferStudioAgents(agents: Agent[], quickPrompts: Record<string, string[
       agent,
       quickPrompts: quickPrompts[id] ?? [],
       metadata: agentMetadata(agent),
+    };
+  });
+}
+
+function inferStudioPipelines(pipelines: Array<Pipeline<unknown, unknown>>): StudioPipeline[] {
+  const ids = new Set<string>();
+  return pipelines.map((pipeline) => {
+    const id = uniqueAgentId(pipeline.id || "pipeline", ids);
+    return {
+      id,
+      pipeline,
+      ...(pipeline.name === undefined ? {} : { name: pipeline.name }),
+      ...(pipeline.description === undefined ? {} : { description: pipeline.description }),
+      ...(pipeline.metadata === undefined ? {} : { metadata: pipeline.metadata }),
     };
   });
 }
@@ -170,6 +213,7 @@ function agentMetadata(agent: Agent): JsonObject {
     dynamicContextCount: agent.dynamicContexts.length,
     dynamicToolCount: agent.dynamicTools.length,
     hasOutputSchema: agent.outputSchema !== undefined,
+    hasHook: agent.hook !== undefined,
     observerCount: agent.observers.length,
     approvalToolCount: agent.toolSet.values().filter((tool) => tool.approval !== undefined).length,
   };
@@ -180,7 +224,9 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const agents = normalizeAgents(options.agents)
     .map((agent) => withStudioSessionMemory(agent, stores.sessions))
     .map((agent) => withStudioTraceObserver(agent, stores.traces));
+  const pipelines = normalizePipelines(options.pipelines);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
+  const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
   const approvalRuntime = createApprovalRuntime();
   const questionRuntime = createQuestionRuntime();
   const app = new HonoApp();
@@ -205,7 +251,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     }),
   );
 
-  app.get("/config", (c) => c.json(buildConfig(options, agents, stores)));
+  app.get("/config", (c) => c.json(buildConfig(options, agents, pipelines, stores)));
 
   app.get("/agents", (c) => c.json({ agents: agents.map(agentConfig) }));
 
@@ -218,11 +264,18 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     return c.json(agentConfig(agent));
   });
 
+  registerMcpRoutes(app, { agentMap });
+  registerToolRoutes(app, { agentMap });
   registerApprovalRoutes(app, approvalRuntime);
   registerQuestionRoutes(app, questionRuntime);
   registerKnowledgeRoutes(app, {
     agents,
     ...(stores.traces === undefined ? {} : { traceStore: stores.traces }),
+  });
+  registerPipelineRoutes(app, {
+    pipelines,
+    pipelineMap,
+    ...(stores.pipelineLogs === undefined ? {} : { store: stores.pipelineLogs }),
   });
 
   app.post("/agents/:agentId/runs", async (c) => {
@@ -251,6 +304,23 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     }
 
     const runId = globalThis.crypto.randomUUID();
+    const runStartedAt = Date.now();
+    if (session !== undefined) {
+      await appendSessionLog(
+        stores.sessions,
+        runReceivedLog({
+          sessionId: session.id,
+          runId,
+          agentId,
+          message: body.message,
+          stream: body.stream === true,
+          ...(body.maxTurns === undefined ? {} : { maxTurns: body.maxTurns }),
+          ...(body.toolConcurrency === undefined ? {} : { toolConcurrency: body.toolConcurrency }),
+          hasTrace: body.trace !== undefined,
+          ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+        }),
+      );
+    }
     const memoryMetadata = {
       agentId,
       ...(body.metadata ?? {}),
@@ -306,7 +376,13 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
         session === undefined || stores.sessions === undefined
           ? runStream
           : persistStreamingSessionTranscript({
-              stream: runStream,
+              stream: streamSessionRunLogs({
+                stream: runStream,
+                store: stores.sessions,
+                session,
+                runId,
+                startedAt: runStartedAt,
+              }),
               store: stores.sessions,
               session,
               message: body.message,
@@ -316,6 +392,10 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     }
 
     try {
+      if (session !== undefined) {
+        await appendSessionLog(stores.sessions, runStartedLog(session, runId));
+        await appendSessionLog(stores.sessions, memoryLoadedLog(session, runId));
+      }
       const effectiveHook = composeHooks(
         composeHooks(
           agent.agent.hook,
@@ -346,6 +426,25 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
           transcript: transcriptFromMessages(response.messages),
           status: "success",
         });
+        await appendSessionLog(
+          stores.sessions,
+          runCompletedLog({
+            sessionId: session.id,
+            runId,
+            durationMs: Date.now() - runStartedAt,
+            usage: response.usage,
+            output: response.output,
+            messageCount: response.messages.length,
+          }),
+        );
+        await appendSessionLog(
+          stores.sessions,
+          memorySavedLog({
+            sessionId: session.id,
+            runId,
+            messageCount: response.messages.length,
+          }),
+        );
       }
       return c.json(response);
     } catch (error) {
@@ -362,6 +461,10 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
           status: "error",
           error: serializeError(error),
         });
+        await appendSessionLog(
+          stores.sessions,
+          runFailedLog(session.id, runId, error, runStartedAt),
+        );
       }
       return errorResponse(c, 500, "internal_error", "Agent run failed", serializeError(error));
     }
@@ -390,7 +493,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       return app.fetch(request);
     },
     config(): StudioConfig {
-      return buildConfig(options, agents, stores);
+      return buildConfig(options, agents, pipelines, stores);
     },
     close() {},
     ...(stores.sessions === undefined ? {} : { sessionStore: stores.sessions }),
@@ -502,6 +605,9 @@ function composeHooks(
       if (firstAction?.type === "skip" || firstAction?.type === "terminate") {
         return firstAction;
       }
+      if (firstAction?.type === "approval_request") {
+        return (await approvalRequestHandler(second)?.(args, firstAction)) ?? firstAction;
+      }
       const secondAction = await second.onToolCall?.(args);
       return secondAction ?? firstAction ?? undefined;
     },
@@ -512,4 +618,13 @@ function composeHooks(
         : ((await second.onToolResult?.(args)) ?? undefined);
     },
   });
+}
+
+function approvalRequestHandler(
+  hook: PromptHook,
+): StudioApprovalHook["handleApprovalRequest"] | undefined {
+  const candidate = hook as Partial<StudioApprovalHook>;
+  return typeof candidate.handleApprovalRequest === "function"
+    ? candidate.handleApprovalRequest
+    : undefined;
 }

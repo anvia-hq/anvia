@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,21 +11,30 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
+  connectMcp,
   createHook,
   createToolIndex,
   type Embedding,
   type EmbeddingModel,
   embedDocuments,
   InMemoryVectorStore,
+  type McpClient,
   Message,
+  PipelineBuilder,
   type StreamingCompletionModel,
   skipTool,
   type Tool,
+  ToolContent,
   Usage,
+  UserContent,
 } from "@anvia/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Studio } from "../src/index";
 import { createSqliteSessionStore } from "../src/sqlite";
+
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof import("node:sqlite");
 
 class QueueModel {
   readonly provider = "test";
@@ -359,6 +369,129 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("registers pipelines separately from agents", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([])).name("Support").build();
+    const pipeline = new PipelineBuilder<string>({
+      id: "ticket-pipeline",
+      name: "Ticket Pipeline",
+      description: "Prepare support tickets",
+      metadata: { owner: "support" },
+    })
+      .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
+      .step((input) => input.toUpperCase(), { id: "classify", name: "Classify" })
+      .build();
+    const runner = new Studio([agent, pipeline]);
+
+    expect(runner.config()).toMatchObject({
+      agents: [{ id: "support" }],
+      pipelines: [
+        {
+          id: "ticket-pipeline",
+          name: "Ticket Pipeline",
+          description: "Prepare support tickets",
+          metadata: { owner: "support" },
+          stageCount: 2,
+          edgeCount: 3,
+          hasParallelStages: false,
+        },
+      ],
+      capabilities: {
+        pipelines: { enabled: true },
+      },
+    });
+
+    const list = await runner.fetch(new Request("http://runner.test/pipelines"));
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      pipelines: [{ id: "ticket-pipeline", stageCount: 2 }],
+    });
+
+    const detail = await runner.fetch(new Request("http://runner.test/pipelines/ticket-pipeline"));
+    expect(detail.status).toBe(200);
+    await expect(detail.json()).resolves.toMatchObject({
+      id: "ticket-pipeline",
+      graph: {
+        id: "ticket-pipeline",
+        nodes: [
+          { id: "input", kind: "input" },
+          { id: "normalize", kind: "step", label: "Normalize" },
+          { id: "classify", kind: "step", label: "Classify" },
+          { id: "output", kind: "output" },
+        ],
+      },
+    });
+  });
+
+  it("runs pipelines over HTTP and persists metadata-only pipeline logs", async () => {
+    const pipeline = new PipelineBuilder<string>({ id: "audit-pipeline" })
+      .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
+      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
+      .build();
+    const runner = new Studio([pipeline]);
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/pipelines/audit-pipeline/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: " raw secret payload ", stream: true }),
+      }),
+    );
+
+    expect(run.status).toBe(200);
+    const events = await readJsonl(run);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "pipeline_log",
+        log: expect.objectContaining({ event: "pipeline.run_started" }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "pipeline_log",
+        log: expect.objectContaining({ event: "step.started" }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "pipeline_final",
+        output: { reply: "RAW SECRET PAYLOAD" },
+      }),
+    );
+
+    const firstPage = await runner.fetch(
+      new Request("http://runner.test/pipelines/audit-pipeline/logs?limit=2"),
+    );
+    expect(firstPage.status).toBe(200);
+    const firstBody = (await firstPage.json()) as {
+      logs: Array<{ event: string; sequence: number; metadata?: unknown }>;
+      nextCursor?: number;
+    };
+    expect(firstBody.logs).toHaveLength(2);
+    expect(firstBody.logs[0]).toMatchObject({
+      event: "pipeline.run_received",
+      sequence: 0,
+    });
+    expect(firstBody.logs[1]).toMatchObject({
+      event: "pipeline.run_started",
+      sequence: 1,
+    });
+    expect(firstBody.nextCursor).toBe(1);
+
+    const nextPage = await runner.fetch(
+      new Request(`http://runner.test/pipelines/audit-pipeline/logs?after=${firstBody.nextCursor}`),
+    );
+    expect(nextPage.status).toBe(200);
+    const nextBody = (await nextPage.json()) as {
+      logs: Array<{ event: string; sequence: number; metadata?: unknown }>;
+    };
+    expect(nextBody.logs[0]).toMatchObject({ event: "step.started", sequence: 2 });
+    expect(nextBody.logs.map((log) => log.event)).toContain("pipeline.run_completed");
+
+    const serializedLogs = JSON.stringify([...firstBody.logs, ...nextBody.logs]);
+    expect(serializedLogs).not.toContain("raw secret payload");
+    expect(serializedLogs).not.toContain("RAW SECRET PAYLOAD");
+  });
+
   it("starts a served single-agent runner from a built agent", async () => {
     const agent = new AgentBuilder(
       "support",
@@ -509,6 +642,110 @@ describe("Anvia studio", () => {
         name: "lookup_policy",
       }),
     ]);
+  });
+
+  it("exposes tool metadata for registered agents", async () => {
+    const embeddings = new KeywordEmbeddingModel();
+    const index = await createToolIndex(embeddings, [lookupPolicyTool]);
+    const refundTool = createRefundTool(() => "ok");
+    const agent = new AgentBuilder("support", new QueueModel([]))
+      .tool(addTool)
+      .tool(refundTool)
+      .dynamicTools(index, { topK: 1 })
+      .build();
+    const runner = new Studio([agent]);
+
+    expect(runner.config().capabilities.tools).toEqual({ enabled: true });
+
+    const res = await runner.fetch(new Request("http://runner.test/agents/support/tools"));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      agentId: "support",
+      tools: [
+        expect.objectContaining({
+          agentId: "support",
+          name: "add",
+          description: "Add numbers",
+          source: "static",
+          approval: { required: false },
+          parameters: expect.objectContaining({ type: "object" }),
+        }),
+        expect.objectContaining({
+          agentId: "support",
+          name: "issue_refund",
+          source: "static",
+          approval: { required: true, rejectMessage: "Rejected by test." },
+        }),
+        expect.objectContaining({
+          agentId: "support",
+          name: "lookup_policy",
+          description: "Look up policy documents",
+          source: "dynamic",
+          approval: { required: false },
+        }),
+      ],
+    });
+  });
+
+  it("exposes MCP server metadata for registered agents", async () => {
+    const mcpClient: McpClient = {
+      async listTools() {
+        return {
+          tools: [
+            {
+              name: "lookup_policy",
+              description: "Look up policy documents",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  query: { type: "string" },
+                },
+                required: ["query"],
+              },
+            },
+          ],
+        };
+      },
+      async callTool() {
+        return { content: [{ type: "text", text: "policy" }] };
+      },
+      async close() {},
+    };
+    const mcpServer = await connectMcp({
+      name: "policies",
+      connect: async () => mcpClient,
+    });
+    const agent = new AgentBuilder("support", new QueueModel([])).mcp([mcpServer]).build();
+    const runner = new Studio([agent]);
+
+    expect(runner.config().capabilities.mcps).toEqual({ enabled: true });
+
+    const res = await runner.fetch(new Request("http://runner.test/agents/support/mcps"));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      agentId: "support",
+      servers: [
+        {
+          agentId: "support",
+          name: "policies",
+          toolCount: 1,
+          tools: [
+            {
+              name: "lookup_policy",
+              description: "Look up policy documents",
+              source: "static",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: { type: "string" },
+                },
+                required: ["query"],
+              },
+            },
+          ],
+        },
+      ],
+    });
   });
 
   it("reports knowledge capability and exposes the knowledge inspector route", async () => {
@@ -841,6 +1078,192 @@ describe("Anvia studio", () => {
         { kind: "message", role: "assistant", text: "Refund denied" },
       ],
     });
+  });
+
+  it("handles hook-based approval requests in streaming runs", async () => {
+    let executed = false;
+    const refundTool = {
+      name: "issue_refund",
+      definition() {
+        return {
+          name: "issue_refund",
+          description: "Issue a customer refund",
+          parameters: {
+            type: "object",
+            properties: {
+              orderId: { type: "string" },
+              amount: { type: "number" },
+            },
+            required: ["orderId", "amount"],
+          },
+        };
+      },
+      call(args) {
+        executed = true;
+        return `Refunded ${args.amount} for ${args.orderId}`;
+      },
+    } satisfies Tool<{ orderId: string; amount: number }, string>;
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "issue_refund",
+          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
+        },
+      ],
+      [{ type: "text_delta", delta: "Refund complete" }],
+    ]);
+    const agent = new AgentBuilder("support", model)
+      .tool(refundTool)
+      .hook(
+        createHook({
+          onToolCall({ toolName, tool }) {
+            if (toolName === "issue_refund") {
+              return tool.requestApproval({
+                reason: "Review refund before issuing it.",
+                rejectMessage: "Rejected by hook.",
+              });
+            }
+            return tool.run();
+          },
+        }),
+      )
+      .defaultMaxTurns(2)
+      .build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "refund", stream: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const reader = createJsonlReader(res);
+    let approvalId = "";
+    while (approvalId.length === 0) {
+      const event = await withTimeout(reader.read(), 1_000);
+      if ((event as { type?: string }).type === "tool_approval_request") {
+        const approval = (event as { approval: { id: string; reason?: string } }).approval;
+        approvalId = approval.id;
+        expect(approval.reason).toBe("Review refund before issuing it.");
+      }
+    }
+    expect(executed).toBe(false);
+
+    const decision = await runner.fetch(
+      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ approved: true }),
+      }),
+    );
+    expect(decision.status).toBe(200);
+
+    const remaining = await readRemainingJsonl(reader);
+    expect(executed).toBe(true);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({
+        type: "tool_approval_result",
+        approval: expect.objectContaining({ id: approvalId, status: "approved" }),
+      }),
+    );
+    expect(remaining).toContainEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        result: "Refunded 25 for ORD-1",
+      }),
+    );
+  });
+
+  it("skips rejected hook-based approval requests with the reject message", async () => {
+    let executed = false;
+    const refundTool = {
+      name: "issue_refund",
+      definition() {
+        return {
+          name: "issue_refund",
+          description: "Issue a customer refund",
+          parameters: {
+            type: "object",
+            properties: {
+              orderId: { type: "string" },
+              amount: { type: "number" },
+            },
+            required: ["orderId", "amount"],
+          },
+        };
+      },
+      call() {
+        executed = true;
+        return "should not run";
+      },
+    } satisfies Tool<{ orderId: string; amount: number }, string>;
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "issue_refund",
+          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
+        },
+      ],
+      [{ type: "text_delta", delta: "Refund denied" }],
+    ]);
+    const agent = new AgentBuilder("support", model)
+      .tool(refundTool)
+      .hook(
+        createHook({
+          onToolCall({ tool }) {
+            return tool.requestApproval({
+              reason: "Review refund before issuing it.",
+              rejectMessage: "Rejected by hook.",
+            });
+          },
+        }),
+      )
+      .defaultMaxTurns(2)
+      .build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "refund", stream: true }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const reader = createJsonlReader(res);
+    let approvalId = "";
+    while (approvalId.length === 0) {
+      const event = await withTimeout(reader.read(), 1_000);
+      if ((event as { type?: string }).type === "tool_approval_request") {
+        approvalId = (event as { approval: { id: string } }).approval.id;
+      }
+    }
+
+    const decision = await runner.fetch(
+      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ approved: false }),
+      }),
+    );
+    expect(decision.status).toBe(200);
+
+    const remaining = await readRemainingJsonl(reader);
+    expect(executed).toBe(false);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        result: "Rejected by hook.",
+      }),
+    );
   });
 
   it("pauses ask_question tool calls until Studio receives answers", async () => {
@@ -1238,6 +1661,15 @@ describe("Anvia studio", () => {
     expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
   });
 
+  it("marks approvals enabled when a registered agent has hooks", () => {
+    const agent = new AgentBuilder("support", new QueueModel([]))
+      .hook(createHook({ onToolCall: ({ tool }) => tool.requestApproval() }))
+      .build();
+    const runner = new Studio([agent]);
+
+    expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
+  });
+
   it("serves the runner UI shell routes", async () => {
     const runner = new Studio();
 
@@ -1267,6 +1699,9 @@ describe("Anvia studio", () => {
       "/ui/tracing/sessions/session_1",
       "/ui/sessions",
       "/ui/agents",
+      "/ui/tools",
+      "/ui/pipelines",
+      "/ui/mcps",
       "/ui/knowledge",
     ]) {
       const routeShell = await runner.fetch(new Request(`http://runner.test${path}`));
@@ -1398,6 +1833,84 @@ describe("Anvia studio", () => {
         { entryId: 1, kind: "message", role: "assistant", text: "hello" },
       ],
     });
+  });
+
+  it("streams and persists metadata-only session audit logs", async () => {
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "safe answer" }]]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId: "support", title: "secret title" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "my raw secret prompt",
+          sessionId: session.id,
+          stream: true,
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(200);
+    const events = await readJsonl(run);
+    const streamedLogs = events.filter(
+      (event): event is { type: "session_log"; log: { event: string; sequence: number } } =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "session_log",
+    );
+    expect(streamedLogs).toContainEqual(
+      expect.objectContaining({ log: expect.objectContaining({ event: "run.started" }) }),
+    );
+    expect(streamedLogs).toContainEqual(
+      expect.objectContaining({ log: expect.objectContaining({ event: "memory.loaded" }) }),
+    );
+    expect(streamedLogs).toContainEqual(
+      expect.objectContaining({ log: expect.objectContaining({ event: "prompt.prepared" }) }),
+    );
+    expect(streamedLogs).toContainEqual(
+      expect.objectContaining({ log: expect.objectContaining({ event: "run.completed" }) }),
+    );
+    expect(streamedLogs).toContainEqual(
+      expect.objectContaining({ log: expect.objectContaining({ event: "memory.saved" }) }),
+    );
+
+    const firstPage = await runner.fetch(
+      new Request(`http://runner.test/sessions/${session.id}/logs?limit=2`),
+    );
+    expect(firstPage.status).toBe(200);
+    const firstBody = (await firstPage.json()) as {
+      logs: Array<{ event: string; sequence: number; metadata?: unknown }>;
+      nextCursor?: number;
+    };
+    expect(firstBody.logs).toHaveLength(2);
+    expect(firstBody.logs[0]).toMatchObject({ event: "session.created", sequence: 0 });
+    expect(firstBody.nextCursor).toBe(1);
+
+    const nextPage = await runner.fetch(
+      new Request(`http://runner.test/sessions/${session.id}/logs?after=${firstBody.nextCursor}`),
+    );
+    const nextBody = (await nextPage.json()) as {
+      logs: Array<{ event: string; sequence: number; metadata?: unknown }>;
+    };
+    expect(nextBody.logs[0]).toMatchObject({ event: "run.started", sequence: 2 });
+    expect(nextBody.logs.map((log) => log.event)).toContain("run.completed");
+
+    const serializedLogs = JSON.stringify([...firstBody.logs, ...nextBody.logs]);
+    expect(serializedLogs).not.toContain("my raw secret prompt");
+    expect(serializedLogs).not.toContain("secret title");
+    expect(serializedLogs).not.toContain("safe answer");
   });
 
   it("persists streaming subagent activity in tool transcript entries", async () => {
@@ -1878,6 +2391,133 @@ describe("Anvia studio", () => {
       messages: [],
       transcript: [],
     });
+  });
+
+  it("persists session messages and parts in normalized SQLite tables", async () => {
+    const path = join(studioDbDir ?? tmpdir(), "normalized.sqlite");
+    const store = createSqliteSessionStore({ path });
+    store.createSession({ id: "session_1", agentId: "support" });
+
+    const messages = [
+      Message.system("Use project policy."),
+      Message.user([
+        UserContent.text("hi"),
+        UserContent.imageUrl("https://example.test/image.png", { detail: "high" }),
+        UserContent.documentUrl("https://example.test/file.pdf", "application/pdf", {
+          filename: "file.pdf",
+        }),
+      ]),
+      Message.assistant(
+        [
+          AssistantContent.text("hello"),
+          AssistantContent.reasoning("thinking", "reasoning_1"),
+          AssistantContent.toolCall("tool_1", "lookup", { query: "x" }, "call_1"),
+          AssistantContent.imageBase64("abc123", "image/png"),
+        ],
+        "assistant_message_1",
+      ),
+      Message.tool(
+        ToolContent.toolResult(
+          "tool_1",
+          [
+            { type: "text", text: "lookup result" },
+            { type: "image", data: "abc123", mediaType: "image/png" },
+          ],
+          "call_1",
+        ),
+      ),
+    ];
+
+    await store.append({
+      context: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: messages.slice(0, 2),
+    });
+    await store.append({
+      context: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 2,
+      messages: messages.slice(2),
+    });
+
+    const db = new DatabaseSync(path);
+    const messageCount = db
+      .prepare("SELECT COUNT(*) AS count FROM runner_session_messages")
+      .get() as { count: number };
+    const partCount = db
+      .prepare("SELECT COUNT(*) AS count FROM runner_session_message_parts")
+      .get() as { count: number };
+    expect(messageCount.count).toBe(4);
+    expect(partCount.count).toBe(9);
+    db.close();
+
+    const reloaded = createSqliteSessionStore({ path });
+    await expect(reloaded.load({ sessionId: "session_1" })).resolves.toEqual(messages);
+    expect(await reloaded.getSession("session_1")).toMatchObject({
+      id: "session_1",
+      messageCount: 4,
+      messages,
+    });
+  });
+
+  it("persists session audit logs with monotonic sequence and deletes them with sessions", async () => {
+    const store = createSqliteSessionStore({ path: ":memory:" });
+    store.createSession({ id: "session_1", agentId: "support" });
+
+    const first = await store.appendSessionLog?.({
+      sessionId: "session_1",
+      level: "info",
+      category: "session",
+      event: "session.created",
+      message: "Session created",
+      metadata: { agentId: "support" },
+    });
+    const second = await store.appendSessionLog?.({
+      sessionId: "session_1",
+      runId: "run_1",
+      level: "debug",
+      category: "memory",
+      event: "memory.loaded",
+      message: "Session memory loaded",
+      metadata: { messageCount: 0 },
+    });
+
+    expect(first).toMatchObject({ sequence: 0, event: "session.created" });
+    expect(second).toMatchObject({ sequence: 1, event: "memory.loaded", runId: "run_1" });
+    expect(await store.listSessionLogs?.({ sessionId: "session_1", limit: 10 })).toEqual([
+      expect.objectContaining({ sequence: 0 }),
+      expect.objectContaining({ sequence: 1 }),
+    ]);
+    expect(await store.listSessionLogs?.({ sessionId: "session_1", limit: 10, after: 0 })).toEqual([
+      expect.objectContaining({ sequence: 1 }),
+    ]);
+
+    expect(await store.deleteSession?.("session_1")).toBe(true);
+    expect(await store.listSessionLogs?.({ sessionId: "session_1", limit: 10 })).toEqual([]);
+  });
+
+  it("rejects legacy SQLite session schemas with messages_json", () => {
+    const path = join(studioDbDir ?? tmpdir(), "legacy.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec(`
+      CREATE TABLE runner_sessions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        title TEXT,
+        metadata_json TEXT,
+        messages_json TEXT NOT NULL,
+        transcript_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+    `);
+    db.close();
+
+    const store = createSqliteSessionStore({ path });
+    expect(() => store.createSession({ id: "session_1", agentId: "support" })).toThrow(
+      "legacy messages_json schema",
+    );
   });
 
   it("lists global runner traces with filters", async () => {

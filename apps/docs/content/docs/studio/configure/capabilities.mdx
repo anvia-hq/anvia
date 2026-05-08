@@ -13,6 +13,7 @@ curl http://localhost:4021/config
 {
   "id": "anvia-studio",
   "agents": [],
+  "pipelines": [],
   "chat": {
     "quickPrompts": {}
   },
@@ -32,8 +33,11 @@ curl http://localhost:4021/config
 | `agents` | Always enabled |
 | `sessions` | Session storage is available |
 | `traces` | Trace storage is available |
+| `tools` | At least one registered agent has static tools or dynamic tool indexes |
+| `mcps` | At least one registered agent has tools registered from an MCP server |
+| `pipelines` | At least one pipeline is registered |
 | `observability` | At least one registered agent has observers |
-| `approvals` | At least one registered agent has a tool with approval metadata |
+| `approvals` | At least one registered agent has a tool with approval metadata or a runtime hook |
 | `knowledge` | At least one registered agent has static context, dynamic context, or dynamic tools |
 
 ## Unsupported Capabilities

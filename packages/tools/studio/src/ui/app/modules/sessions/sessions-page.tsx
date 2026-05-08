@@ -33,8 +33,8 @@ export function SessionsPage(props: {
 
   return (
     <section className="grid min-h-0 w-full overflow-auto" aria-label="Sessions">
-      <div className="min-w-225 border-b border-border bg-card">
-        <div className="grid min-h-10 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b border-border px-5 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+      <div className="min-w-225 border-b border-border/80 bg-card/80 shadow-sm">
+        <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b border-border/80 bg-card/95 px-6 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
           <span>Session</span>
           <span>Agent</span>
           <span>Messages</span>
@@ -52,13 +52,14 @@ export function SessionsPage(props: {
         {props.sessions.map((session) => (
           <div
             className={cn(
-              "grid min-h-14 w-full min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b border-border px-5 text-left text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              session.id === props.selectedSessionId && "bg-primary/10 text-primary",
+              "grid min-h-14 w-full min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b border-border/75 px-6 text-left text-muted-foreground transition duration-200 hover:border-primary/20 hover:bg-accent/80 hover:text-accent-foreground",
+              session.id === props.selectedSessionId &&
+                "border-l border-l-primary bg-primary/10 text-primary",
             )}
             key={session.id}
           >
             <Button
-              className="col-span-4 grid h-full min-h-14 min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px] items-center justify-start gap-4 rounded-none border-0 bg-transparent p-0 text-left text-inherit hover:bg-transparent hover:text-inherit"
+              className="col-span-4 grid h-full min-h-14 min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px] items-center justify-start gap-4 rounded-none border-0 bg-transparent p-0 text-left text-inherit shadow-none hover:bg-transparent hover:text-inherit"
               type="button"
               variant="ghost"
               onClick={() => props.onOpenSession(session.id)}

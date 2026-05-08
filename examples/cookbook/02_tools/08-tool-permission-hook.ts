@@ -47,13 +47,16 @@ const deleteAccountTool = createTool({
 
 const permissionHook = createHook({
   onToolCall({ toolName, tool }) {
-    // Hooks can allow, skip, or terminate tool calls before execution.
+    // Hooks can allow, skip, request approval, or terminate tool calls before execution.
     if (toolName === "read_payroll") {
       return tool.skip("Payroll data is restricted. Summarize that access was denied.");
     }
 
     if (toolName === "delete_account") {
-      return tool.cancel("Account deletion requires explicit human approval.");
+      return tool.requestApproval({
+        reason: "Account deletion requires explicit human approval.",
+        rejectMessage: "Account deletion was not approved.",
+      });
     }
 
     return tool.run();
@@ -85,6 +88,7 @@ try {
   console.log(response.output);
 } catch (error) {
   if (error instanceof PromptCancelledError) {
+    // Without Studio or another approval handler, requestApproval cancels clearly.
     console.log("prompt cancelled:", error.reason);
   } else {
     throw error;

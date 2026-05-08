@@ -25,8 +25,8 @@ export function KnowledgePage(props: {
   const evidence = props.summary?.evidence ?? [];
 
   return (
-    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background">
-      <header className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-5">
+    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/45">
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-border/80 bg-card/70 px-6 shadow-sm">
         <div className="min-w-0">
           <h1 className="m-0 text-sm font-semibold text-foreground">Knowledge</h1>
           <p className="m-0 text-xs font-medium text-muted-foreground">
@@ -43,16 +43,16 @@ export function KnowledgePage(props: {
           Refresh
         </Button>
       </header>
-      <div className="min-h-0 overflow-auto p-5">
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+      <div className="min-h-0 overflow-auto p-6">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
           <section className="grid min-w-0 content-start gap-3" aria-label="Agent knowledge">
             {props.loading && agents.length === 0 ? <MutedRow text="Loading knowledge" /> : null}
             {!props.loading && agents.length === 0 ? (
               <MutedRow text="No knowledge sources" />
             ) : null}
             {agents.map((agent) => (
-              <Card className="overflow-hidden rounded-sm" key={agent.agentId}>
-                <div className="grid gap-1 border-b border-border px-4 py-3">
+              <Card className="overflow-hidden rounded-sm bg-card/90" key={agent.agentId}>
+                <div className="grid gap-1 border-b border-border/80 px-4 py-3">
                   <strong className="truncate text-sm font-semibold text-foreground">
                     {agent.agentName ?? agent.agentId}
                   </strong>
@@ -60,7 +60,7 @@ export function KnowledgePage(props: {
                     {agent.agentId}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-2 border-b border-border px-4 py-3">
+                <div className="flex flex-wrap gap-2 border-b border-border/80 bg-muted/20 px-4 py-3">
                   {agent.sources.map((source) => (
                     <Badge className="rounded-sm" key={source.kind}>
                       {source.kind.replaceAll("_", " ")}: {source.count}
@@ -73,7 +73,7 @@ export function KnowledgePage(props: {
                   ) : (
                     agent.staticContext.map((document) => (
                       <div
-                        className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0"
+                        className="grid gap-2 border-b border-border/75 px-4 py-3.5 last:border-b-0"
                         key={document.id}
                       >
                         <span className="font-mono text-xs font-semibold text-muted-foreground">
@@ -99,10 +99,10 @@ export function KnowledgePage(props: {
             {evidence.length === 0 ? <MutedRow text="No retrieved context captured yet" /> : null}
             {evidence.map((item) => (
               <Card
-                className="overflow-hidden rounded-sm"
+                className="overflow-hidden rounded-sm bg-card/90"
                 key={`${item.traceId}:${item.observationId}`}
               >
-                <div className="grid gap-1 border-b border-border px-4 py-3">
+                <div className="grid gap-1 border-b border-border/80 px-4 py-3">
                   <strong className="truncate text-sm font-semibold text-foreground">
                     {item.observationName}
                   </strong>
@@ -115,7 +115,7 @@ export function KnowledgePage(props: {
                     {item.traceId}
                   </Button>
                 </div>
-                <div className="flex flex-wrap gap-2 border-b border-border px-4 py-3">
+                <div className="flex flex-wrap gap-2 border-b border-border/80 bg-muted/20 px-4 py-3">
                   <Badge>Turn {item.turn}</Badge>
                   <Badge>{item.documentCount} docs</Badge>
                   <Badge>{item.toolCount} tools</Badge>

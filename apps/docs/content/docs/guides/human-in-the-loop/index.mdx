@@ -5,14 +5,14 @@ description: Choose where human approval and feedback belong.
 
 Human-in-the-loop means the agent run waits for a person before continuing. Use it for approvals, operator feedback, missing context, escalation decisions, outbound messages, refunds, account changes, deletes, and other workflows where the model should not decide alone.
 
-Anvia keeps the core execution model small: tools run, hooks can run/skip/cancel, and awaited promises pause the run. Studio adds a zero-config UI layer for common approval and question flows.
+Anvia keeps the core execution model small: tools run, hooks can run/skip/cancel/request approval, and awaited promises pause the run. Studio adds a zero-config UI layer for common approval and question flows.
 
 ## Choose a Pattern
 
 | Pattern | Best for | Where it lives |
 | --- | --- | --- |
 | [Approval settings in tools](/docs/guides/human-in-the-loop/approval-settings) | Studio approval UI with no custom hook | Tool metadata |
-| [Approval by hooks](/docs/guides/human-in-the-loop/tool-approval) | Custom policy, custom UI, or request-specific rules | `onToolCall(...)` |
+| [Approval by hooks](/docs/guides/human-in-the-loop/tool-approval) | Dynamic policy or request-specific rules | `onToolCall(...)` |
 | [Ask question tools](/docs/guides/human-in-the-loop/ask-question) | Missing user input while a run is active | Normal tools |
 | [Approval runtimes](/docs/guides/human-in-the-loop/approval-handlers) | Databases, queues, notifications, audit logs, optional timeouts | Your app |
 
@@ -45,24 +45,19 @@ Core stores this metadata but does not enforce it. Studio reads it and installs 
 
 ## Hook Approval
 
-Use a hook when approval is not a property of the tool itself, or when your app already owns the approval workflow.
-
-In this example, `approvalRuntime` is your application object. It is not exported by Anvia; create it with your database, queue, or reviewer UI. See [Approval Runtimes](/docs/guides/human-in-the-loop/approval-handlers).
+Use a hook when approval is not a property of the tool itself. Studio handles `tool.requestApproval(...)` with the same approval UI and API used for tool metadata.
 
 ```ts
 const approvalHook = createHook({
-  async onToolCall({ toolName, args, tool }) {
+  onToolCall({ toolName, tool }) {
     if (toolName !== "refund_order") {
       return tool.run();
     }
 
-    const approved = await approvalRuntime.waitForDecision({
-      toolName,
-      args,
+    return tool.requestApproval({
       reason: "Refunds require staff approval.",
+      rejectMessage: "Refund was not approved.",
     });
-
-    return approved ? tool.run() : tool.skip("Refund was not approved.");
   },
 });
 

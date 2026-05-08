@@ -1,10 +1,16 @@
 import type { CompletionResponse, Message } from "../completion/index";
 
 export type HookAction = { type: "continue" } | { type: "terminate"; reason: string };
+export type ToolApprovalRequestOptions = {
+  reason?: string;
+  rejectMessage?: string;
+};
+
 export type ToolCallHookAction =
   | { type: "continue" }
   | { type: "skip"; reason: string }
-  | { type: "terminate"; reason: string };
+  | { type: "terminate"; reason: string }
+  | ({ type: "approval_request" } & ToolApprovalRequestOptions);
 
 export type RunControl = {
   continue(): HookAction;
@@ -15,6 +21,7 @@ export type ToolCallControl = {
   run(): ToolCallHookAction;
   skip(reason: string): ToolCallHookAction;
   cancel(reason: string): ToolCallHookAction;
+  requestApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
 };
 
 export type HookResult = HookAction | undefined;
@@ -69,6 +76,14 @@ export function skipTool(reason: string): ToolCallHookAction {
   return { type: "skip", reason };
 }
 
+export function requestToolApproval(options: ToolApprovalRequestOptions = {}): ToolCallHookAction {
+  return {
+    type: "approval_request",
+    ...(options.reason === undefined ? {} : { reason: options.reason }),
+    ...(options.rejectMessage === undefined ? {} : { rejectMessage: options.rejectMessage }),
+  };
+}
+
 export const runControl: RunControl = {
   continue() {
     return { type: "continue" };
@@ -87,6 +102,9 @@ export const toolCallControl: ToolCallControl = {
   },
   cancel(reason: string) {
     return { type: "terminate", reason };
+  },
+  requestApproval(options) {
+    return requestToolApproval(options);
   },
 };
 

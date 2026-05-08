@@ -13,6 +13,7 @@ import {
   MaxTurnsError,
   Message,
   PromptCancelledError,
+  requestToolApproval,
   Usage,
 } from "../src/index";
 
@@ -325,6 +326,37 @@ describe("PromptRequest", () => {
     expect(model.requests).toHaveLength(1);
   });
 
+  it("cancels clearly when a tool call hook requests approval without a handler", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({}),
+      output: z.string(),
+      execute() {
+        executed = true;
+        return "should not run";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("should not be requested")]),
+    ]);
+    const hook = createHook({
+      onToolCall({ tool }) {
+        return tool.requestApproval({ reason: "Guarded action." });
+      },
+    });
+    const agent = new AgentBuilder("test-agent", model).tool(guardedTool).hook(hook).build();
+
+    await expect(agent.prompt("run guarded").send()).rejects.toMatchObject({
+      name: "PromptCancelledError",
+      reason: "Tool approval was requested for guarded, but no approval handler is installed.",
+    });
+    expect(executed).toBe(false);
+    expect(model.requests).toHaveLength(1);
+  });
+
   it("executes a tool after async approval-style hook allows it", async () => {
     let executed = false;
     const guardedTool = createTool({
@@ -421,6 +453,10 @@ describe("PromptRequest", () => {
 
   it("keeps low-level hook action helpers available", () => {
     expect(cancelPrompt("blocked")).toEqual({ type: "terminate", reason: "blocked" });
+    expect(requestToolApproval({ reason: "review" })).toEqual({
+      type: "approval_request",
+      reason: "review",
+    });
   });
 
   it("uses requestHook for one request instead of the agent hook", async () => {

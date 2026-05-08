@@ -9,7 +9,7 @@ Import from `@anvia/studio`.
 
 ```ts
 class Studio implements AnviaStudio {
-  constructor(agents?: Agent[], options?: StudioOptions);
+  constructor(targets?: StudioTarget[], options?: StudioOptions);
   get app(): Hono;
   fetch(request: Request): Response | Promise<Response>;
   config(): StudioConfig;
@@ -21,7 +21,7 @@ class Studio implements AnviaStudio {
 
 Purpose: local Studio HTTP runtime and UI/API host.
 
-Return behavior: `start(...)` starts an HTTP server and returns `this`; `fetch(...)` delegates to the Hono app.
+Return behavior: pass built agents, built pipelines, or both in the first array. `start(...)` starts an HTTP server and returns `this`; `fetch(...)` delegates to the Hono app.
 
 Notable errors: server startup can fail when the port is unavailable; route handlers return structured `StudioErrorResponse` values for request errors.
 
@@ -48,6 +48,8 @@ Notable errors: none directly.
 type StudioOptions = {
   quickPrompts?: Record<string, string[]>;
 };
+
+type StudioTarget = Agent | Pipeline<unknown, unknown>;
 
 type StudioServeOptions = {
   port?: number;

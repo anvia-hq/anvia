@@ -14,7 +14,7 @@ export function SelectTrigger({
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        "flex h-9 w-full items-center justify-between rounded-sm border border-input bg-card px-3 text-sm text-foreground outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-9 w-full items-center justify-between rounded-sm border border-input bg-card/90 px-3 text-sm text-foreground outline-none shadow-inner shadow-black/10 transition duration-200 hover:border-primary/35 focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}
@@ -38,7 +38,7 @@ export function SelectContent({
       <SelectPrimitive.Content
         position={position}
         className={cn(
-          "z-50 max-h-80 min-w-[8rem] overflow-hidden rounded-sm border border-border bg-popover text-popover-foreground shadow-xl shadow-black/30",
+          "z-50 max-h-80 min-w-[8rem] overflow-hidden rounded-sm border border-border/90 bg-popover/98 text-popover-foreground shadow-xl shadow-black/45 backdrop-blur",
           className,
         )}
         {...props}
@@ -57,7 +57,7 @@ export function SelectItem({
   return (
     <SelectPrimitive.Item
       className={cn(
-        "relative flex min-h-8 cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
+        "relative flex min-h-8 cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
         className,
       )}
       {...props}

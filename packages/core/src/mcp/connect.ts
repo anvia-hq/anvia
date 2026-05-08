@@ -7,7 +7,7 @@ export async function connectMcp(connection: McpConnection): Promise<McpServer> 
 
   return {
     name: connection.name,
-    tools: tools.map((tool) => createMcpTool(tool, client)),
+    tools: tools.map((tool) => createMcpTool(tool, client, connection.name)),
     close: () => client.close(),
   };
 }

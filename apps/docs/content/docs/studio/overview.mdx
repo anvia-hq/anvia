@@ -19,7 +19,7 @@ new Studio([agent]).start();
 
 | Primitive | What it does |
 | --- | --- |
-| `new Studio([agent])` | Registers one or more built Anvia agents |
+| `new Studio([agent, pipeline])` | Registers built Anvia agents and pipelines |
 | `.start(...)` | Starts the local HTTP runtime and bundled Studio UI |
 | `.fetch(request)` | Lets tests or another runtime call the same Studio API without opening a port |
 
@@ -28,6 +28,7 @@ Studio also exposes development surfaces around the runtime:
 | Surface | What it helps inspect |
 | --- | --- |
 | Agents | Registered agents, names, descriptions, and quick prompts |
+| Pipelines | Registered pipeline graphs, stage status, JSON test runs, and pipeline logs |
 | Runs | One-off prompts, streaming output, max turns, tool concurrency, and trace options |
 | Sessions | Persisted local conversation history and transcripts |
 | Traces | Model generations, tool spans, usage, errors, and run metadata |

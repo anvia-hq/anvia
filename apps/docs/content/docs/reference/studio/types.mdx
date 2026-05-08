@@ -12,8 +12,11 @@ type StudioCapability =
   | "agents"
   | "approvals"
   | "knowledge"
+  | "mcps"
   | "observability"
+  | "pipelines"
   | "sessions"
+  | "tools"
   | "traces";
 
 type StudioAgent = {
@@ -33,6 +36,32 @@ type StudioAgentConfig = {
   metadata?: JsonObject;
 };
 
+type StudioTarget = Agent | Pipeline<unknown, unknown>;
+
+type StudioPipeline = {
+  id: string;
+  pipeline: Pipeline<unknown, unknown>;
+  name?: string;
+  description?: string;
+  metadata?: JsonObject;
+};
+
+type StudioPipelineConfig = {
+  id: string;
+  name?: string;
+  description?: string;
+  metadata?: JsonObject;
+  stageCount: number;
+  edgeCount: number;
+  hasParallelStages: boolean;
+  agentCount: number;
+  extractorCount: number;
+};
+
+type StudioPipelineDetail = StudioPipelineConfig & {
+  graph: PipelineGraph;
+};
+
 type StudioCapabilityConfig = {
   enabled: boolean;
   reason?: string;
@@ -44,6 +73,7 @@ type StudioConfig = {
   description?: string;
   version?: string;
   agents: StudioAgentConfig[];
+  pipelines: StudioPipelineConfig[];
   chat: { quickPrompts: Record<string, string[]> };
   capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
   unsupportedCapabilities: StudioCapability[];
@@ -52,9 +82,62 @@ type StudioConfig = {
 
 Purpose: configuration returned by Studio runtime and HTTP config endpoints.
 
-Return behavior: `Studio.config()` returns `StudioConfig`.
+Return behavior: `Studio.config()` returns `StudioConfig`. Pipelines are top-level Studio targets beside agents.
 
 Notable errors: none directly.
+
+## Tool Metadata Types
+
+```ts
+type StudioAgentToolSource = "static" | "dynamic";
+
+type StudioAgentToolApprovalMetadata = {
+  required: boolean;
+  reason?: string;
+  rejectMessage?: string;
+};
+
+type StudioAgentToolMetadata = {
+  agentId: string;
+  name: string;
+  description: string;
+  parameters: JsonObject;
+  source: StudioAgentToolSource;
+  approval: StudioAgentToolApprovalMetadata;
+};
+
+type StudioAgentToolsSummary = {
+  agentId: string;
+  tools: StudioAgentToolMetadata[];
+};
+
+type StudioAgentMcpToolMetadata = {
+  name: string;
+  description: string;
+  parameters: JsonObject;
+  source: StudioAgentToolSource;
+};
+
+type StudioAgentMcpServerMetadata = {
+  agentId: string;
+  name: string;
+  toolCount: number;
+  tools: StudioAgentMcpToolMetadata[];
+};
+
+type StudioAgentMcpsSummary = {
+  agentId: string;
+  servers: StudioAgentMcpServerMetadata[];
+};
+```
+
+Purpose: metadata returned by `GET /agents/:agentId/tools` and used by the Studio Tools inspector.
+
+Return behavior: static tools come from `agent.toolSet`; dynamic tools are listed when the dynamic tool index exposes its underlying `ToolSet`.
+
+Notable errors: unknown agents return `not_found`.
+
+`GET /agents/:agentId/mcps` returns the MCP subset grouped by server name. MCP metadata is available for tools registered through `.mcp(...)`.
 
 ## Run Types
 
@@ -77,14 +160,91 @@ type AgentRunStreamEvent =
   | StudioToolApprovalRequestEvent
   | StudioToolApprovalResultEvent
   | StudioToolQuestionRequestEvent
-  | StudioToolQuestionResultEvent;
+  | StudioToolQuestionResultEvent
+  | StudioSessionLogEvent
+  | StudioPipelineLogEvent
+  | StudioPipelineFinalEvent;
 ```
 
 Purpose: HTTP request and response contracts for Studio agent runs.
 
-Return behavior: non-streaming runs return `AgentRunResponse`; streaming runs emit newline-delimited `AgentRunStreamEvent` values.
+Return behavior: non-streaming agent runs return `AgentRunResponse`; streaming agent runs emit newline-delimited `AgentRunStreamEvent` values. `session_log` and `pipeline_log` events are Studio-owned metadata-only runtime logs.
 
 Notable errors: invalid run request bodies return `bad_request`; unsupported stores or capabilities return `unsupported_capability`.
+
+## Pipeline Run Types
+
+```ts
+type StudioPipelineLogLevel = "debug" | "info" | "warn" | "error";
+
+type StudioPipelineLogCategory =
+  | "pipeline"
+  | "run"
+  | "stage"
+  | "parallel"
+  | "agent"
+  | "extractor"
+  | "api";
+
+type StudioPipelineLogEntry = {
+  id: string;
+  pipelineId: string;
+  runId?: string;
+  sequence: number;
+  timestamp: string;
+  level: StudioPipelineLogLevel;
+  category: StudioPipelineLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+type StudioPipelineLogAppendInput = {
+  pipelineId: string;
+  runId?: string;
+  level: StudioPipelineLogLevel;
+  category: StudioPipelineLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+type StudioPipelineLogListOptions = {
+  pipelineId: string;
+  limit: number;
+  after?: number;
+};
+
+type StudioPipelineLogEvent = {
+  type: "pipeline_log";
+  log: StudioPipelineLogEntry;
+};
+
+type StudioPipelineFinalEvent = {
+  type: "pipeline_final";
+  runId: string;
+  pipelineId: string;
+  output: JsonValue;
+};
+
+type StudioPipelineRunRequest = {
+  input: JsonValue;
+  stream?: boolean;
+  metadata?: JsonObject;
+};
+
+type StudioPipelineRunResponse = {
+  runId: string;
+  pipelineId: string;
+  output: JsonValue;
+};
+```
+
+Purpose: HTTP request, response, stream, and persisted log contracts for Studio pipeline runs.
+
+Return behavior: non-streaming pipeline runs return `StudioPipelineRunResponse`; streaming runs emit `pipeline_log` events and one `pipeline_final` event.
+
+Notable errors: Studio HTTP pipeline inputs must be JSON-compatible. Use direct `pipeline.run(...)` for non-JSON inputs.
 
 ## Knowledge Types
 

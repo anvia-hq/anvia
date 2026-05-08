@@ -10,16 +10,21 @@ import type {
   StudioConfig,
   StudioErrorCode,
   StudioErrorResponse,
+  StudioPipeline,
+  StudioPipelineConfig,
+  StudioPipelineLogStore,
   StudioSessionStore,
   StudioStores,
   StudioTraceStatus,
   StudioTraceStore,
   StudioUiOptions,
 } from "../types";
+import { agentHasMcpTools } from "./tool-metadata";
 
 export type ResolvedStores = {
   sessions?: StudioSessionStore;
   traces?: StudioTraceStore;
+  pipelineLogs?: StudioPipelineLogStore;
 };
 
 export type StudioRuntimeOptions = {
@@ -28,6 +33,7 @@ export type StudioRuntimeOptions = {
   description?: string;
   version?: string;
   agents: StudioAgent[];
+  pipelines: StudioPipeline[];
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
 };
@@ -40,9 +46,11 @@ export function resolveStores(options: StudioRuntimeOptions): ResolvedStores {
   const defaultStore = createSqliteSessionStore({ path: defaultPath });
   const sessions = resolveSessionStore(options, defaultStore);
   const traces = resolveTraceStore(options, sessions, defaultStore);
+  const pipelineLogs = resolvePipelineLogStore(options, sessions, defaultStore);
   return {
     ...(sessions === undefined ? {} : { sessions }),
     ...(traces === undefined ? {} : { traces }),
+    ...(pipelineLogs === undefined ? {} : { pipelineLogs }),
   };
 }
 
@@ -77,12 +85,39 @@ function resolveTraceStore(
   return defaultStore;
 }
 
+function resolvePipelineLogStore(
+  options: StudioRuntimeOptions,
+  sessionStore: StudioSessionStore | undefined,
+  defaultStore: StudioPipelineLogStore,
+): StudioPipelineLogStore | undefined {
+  if (options.stores?.pipelineLogs === false) {
+    return undefined;
+  }
+  if (options.stores?.pipelineLogs !== undefined) {
+    return options.stores.pipelineLogs;
+  }
+  if (sessionStore !== undefined && isPipelineLogStore(sessionStore)) {
+    return sessionStore;
+  }
+  return defaultStore;
+}
+
 function isTraceStore(store: StudioSessionStore): store is StudioSessionStore & StudioTraceStore {
   const candidate = store as Partial<StudioTraceStore>;
   return (
     typeof candidate.listSessionTraces === "function" &&
     typeof candidate.getTrace === "function" &&
     typeof candidate.saveTrace === "function"
+  );
+}
+
+function isPipelineLogStore(
+  store: StudioSessionStore,
+): store is StudioSessionStore & StudioPipelineLogStore {
+  const candidate = store as Partial<StudioPipelineLogStore>;
+  return (
+    typeof candidate.appendPipelineLog === "function" &&
+    typeof candidate.listPipelineLogs === "function"
   );
 }
 
@@ -108,9 +143,25 @@ export function normalizeAgents(agents: StudioAgent[]): StudioAgent[] {
   });
 }
 
+export function normalizePipelines(pipelines: StudioPipeline[]): StudioPipeline[] {
+  const ids = new Set<string>();
+  return pipelines.map((pipeline) => {
+    const id = pipeline.id.trim();
+    if (id.length === 0) {
+      throw new Error("Studio pipeline id cannot be empty");
+    }
+    if (ids.has(id)) {
+      throw new Error(`Duplicate Studio pipeline id: ${id}`);
+    }
+    ids.add(id);
+    return { ...pipeline, id };
+  });
+}
+
 export function buildConfig(
   options: StudioRuntimeOptions,
   agents: StudioAgent[],
+  pipelines: StudioPipeline[],
   stores: ResolvedStores,
 ): StudioConfig {
   return {
@@ -119,10 +170,11 @@ export function buildConfig(
     ...(options.description === undefined ? {} : { description: options.description }),
     ...(options.version === undefined ? {} : { version: options.version }),
     agents: agents.map(agentConfig),
+    pipelines: pipelines.map(pipelineConfig),
     chat: {
       quickPrompts: Object.fromEntries(agents.map((agent) => [agent.id, agent.quickPrompts ?? []])),
     },
-    capabilities: capabilityConfig(options, agents, stores),
+    capabilities: capabilityConfig(options, agents, pipelines, stores),
     unsupportedCapabilities: unsupportedCapabilities(stores),
   };
 }
@@ -143,9 +195,26 @@ export function agentConfig(agent: StudioAgent): StudioAgentConfig {
   };
 }
 
+export function pipelineConfig(pipeline: StudioPipeline): StudioPipelineConfig {
+  const graph = pipeline.pipeline.graph();
+  const stageNodes = graph.nodes.filter((node) => node.kind !== "input" && node.kind !== "output");
+  return {
+    id: pipeline.id,
+    ...(pipeline.name === undefined ? {} : { name: pipeline.name }),
+    ...(pipeline.description === undefined ? {} : { description: pipeline.description }),
+    ...(pipeline.metadata === undefined ? {} : { metadata: pipeline.metadata }),
+    stageCount: stageNodes.length,
+    edgeCount: graph.edges.length,
+    hasParallelStages: graph.nodes.some((node) => node.kind === "parallel"),
+    agentCount: graph.nodes.filter((node) => node.kind === "agent").length,
+    extractorCount: graph.nodes.filter((node) => node.kind === "extractor").length,
+  };
+}
+
 export function capabilityConfig(
   _options: StudioRuntimeOptions,
   agents: StudioAgent[],
+  pipelines: StudioPipeline[],
   stores: ResolvedStores,
 ): Partial<Record<StudioCapability, StudioCapabilityConfig>> {
   const capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>> = {
@@ -158,11 +227,30 @@ export function capabilityConfig(
   if (stores.traces !== undefined) {
     capabilities.traces = { enabled: true };
   }
+  if (pipelines.length > 0) {
+    capabilities.pipelines = { enabled: true };
+  }
+  if (
+    agents.some(
+      (agent) => agent.agent.toolSet.values().length > 0 || agent.agent.dynamicTools.length > 0,
+    )
+  ) {
+    capabilities.tools = { enabled: true };
+  }
+  if (agents.some(agentHasMcpTools)) {
+    capabilities.mcps = { enabled: true };
+  }
 
   if (agents.some((agent) => agent.agent.observers.length > 0)) {
     capabilities.observability = { enabled: true };
   }
-  if (agents.some((agent) => agent.agent.toolSet.values().some((tool) => tool.approval))) {
+  if (
+    agents.some(
+      (agent) =>
+        agent.agent.hook !== undefined ||
+        agent.agent.toolSet.values().some((tool) => tool.approval),
+    )
+  ) {
     capabilities.approvals = { enabled: true };
   }
   if (

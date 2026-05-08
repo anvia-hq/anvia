@@ -11,9 +11,16 @@ import type {
   Message,
 } from "@anvia/core";
 import type {
+  StudioPipelineLogAppendInput,
+  StudioPipelineLogEntry,
+  StudioPipelineLogListOptions,
+  StudioPipelineLogStore,
   StudioSession,
   StudioSessionCreateInput,
   StudioSessionListOptions,
+  StudioSessionLogAppendInput,
+  StudioSessionLogEntry,
+  StudioSessionLogListOptions,
   StudioSessionRunStatus,
   StudioSessionRunTranscriptInput,
   StudioSessionStore,
@@ -39,10 +46,37 @@ type SessionRow = {
   agent_id: string;
   title: string | null;
   metadata_json: string | null;
-  messages_json: string;
-  transcript_json: string;
   created_at: string;
   updated_at: string;
+};
+
+type SessionSummaryRow = SessionRow & {
+  message_count: number;
+};
+
+type MessageRow = {
+  session_id: string;
+  message_index: number;
+  role: Message["role"];
+  message_id: string | null;
+  created_at: string;
+};
+
+type MessagePartRow = {
+  session_id: string;
+  message_index: number;
+  part_index: number;
+  type: string;
+  part_json: string;
+};
+
+type StoredMessagePart = {
+  type: string;
+  value: unknown;
+};
+
+type TableInfoRow = {
+  name: string;
 };
 
 type TraceRow = {
@@ -73,13 +107,39 @@ type SessionRunRow = {
   updated_at: string;
 };
 
+type SessionLogRow = {
+  id: string;
+  session_id: string;
+  run_id: string | null;
+  sequence: number;
+  timestamp: string;
+  level: StudioSessionLogEntry["level"];
+  category: StudioSessionLogEntry["category"];
+  event: string;
+  message: string;
+  metadata_json: string | null;
+};
+
+type PipelineLogRow = {
+  id: string;
+  pipeline_id: string;
+  run_id: string | null;
+  sequence: number;
+  timestamp: string;
+  level: StudioPipelineLogEntry["level"];
+  category: StudioPipelineLogEntry["category"];
+  event: string;
+  message: string;
+  metadata_json: string | null;
+};
+
 export function createSqliteSessionStore(
   options: SqliteSessionStoreOptions = {},
-): StudioSessionStore & StudioTraceStore {
+): StudioSessionStore & StudioTraceStore & StudioPipelineLogStore {
   return new SqliteSessionStore(options.path ?? ":memory:");
 }
 
-class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
+class SqliteSessionStore implements StudioSessionStore, StudioTraceStore, StudioPipelineLogStore {
   readonly kind = "sqlite";
   private db: DatabaseSyncType | undefined;
 
@@ -87,19 +147,22 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
 
   listSessions(options: StudioSessionListOptions): StudioSessionSummary[] {
     const db = this.database();
-    const agentClause = options.agentId === undefined ? "" : "WHERE agent_id = $agentId";
+    const agentClause = options.agentId === undefined ? "" : "WHERE s.agent_id = $agentId";
     const rows = db
       .prepare(
-        `SELECT id, agent_id, title, metadata_json, messages_json, transcript_json, created_at, updated_at
-         FROM runner_sessions
+        `SELECT s.id, s.agent_id, s.title, s.metadata_json, s.created_at, s.updated_at,
+                COUNT(m.message_index) AS message_count
+         FROM runner_sessions s
+         LEFT JOIN runner_session_messages m ON m.session_id = s.id
          ${agentClause}
-         ORDER BY updated_at DESC
+         GROUP BY s.id, s.agent_id, s.title, s.metadata_json, s.created_at, s.updated_at
+         ORDER BY s.updated_at DESC
          LIMIT $limit`,
       )
       .all({
         $agentId: options.agentId ?? null,
         $limit: options.limit,
-      }) as SessionRow[];
+      }) as SessionSummaryRow[];
 
     return rows.map(toSessionSummary);
   }
@@ -113,11 +176,9 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
         agent_id,
         title,
         metadata_json,
-        messages_json,
-        transcript_json,
         created_at,
         updated_at
-      ) VALUES ($id, $agentId, $title, $metadata, '[]', '[]', $now, $now)`,
+      ) VALUES ($id, $agentId, $title, $metadata, $now, $now)`,
     ).run({
       $id: input.id,
       $agentId: input.agentId,
@@ -140,7 +201,9 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
   getSession(id: string): StudioSession | undefined {
     const row = this.getSessionRow(id);
 
-    return row === undefined ? undefined : toSession(row, this.listSessionRunRows(id));
+    return row === undefined
+      ? undefined
+      : toSession(row, this.listSessionMessages(id), this.listSessionRunRows(id));
   }
 
   load(context: MemoryContext): Promise<Message[]> {
@@ -155,7 +218,7 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
       db.exec("BEGIN IMMEDIATE");
       const row = db
         .prepare(
-          `SELECT id, agent_id, title, metadata_json, messages_json, transcript_json, created_at, updated_at
+          `SELECT id, agent_id, title, metadata_json, created_at, updated_at
            FROM runner_sessions
            WHERE id = $id`,
         )
@@ -166,18 +229,16 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
         return Promise.resolve();
       }
 
-      const current = toSession(row);
-      const messages = [...current.messages, ...input.messages];
       const updatedAt = new Date().toISOString();
+      const nextIndex = this.nextMessageIndex(input.context.sessionId);
 
+      this.insertMessages(input.context.sessionId, input.messages, nextIndex, updatedAt);
       db.prepare(
         `UPDATE runner_sessions
-         SET messages_json = $messages,
-             updated_at = $updatedAt
+         SET updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
         $id: input.context.sessionId,
-        $messages: JSON.stringify(messages),
         $updatedAt: updatedAt,
       });
       db.exec("COMMIT");
@@ -198,13 +259,14 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
       db.exec("BEGIN IMMEDIATE");
       db.prepare(
         `UPDATE runner_sessions
-         SET messages_json = '[]',
-             transcript_json = '[]',
-             updated_at = $updatedAt
+         SET updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
         $id: context.sessionId,
         $updatedAt: updatedAt,
+      });
+      db.prepare("DELETE FROM runner_session_messages WHERE session_id = $id").run({
+        $id: context.sessionId,
       });
       db.prepare("DELETE FROM runner_session_runs WHERE session_id = $id").run({
         $id: context.sessionId,
@@ -247,7 +309,11 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
         db.exec("ROLLBACK");
         return undefined;
       }
-      const current = toSession(row, this.listSessionRunRows(input.id));
+      const current = toSession(
+        row,
+        this.listSessionMessages(input.id),
+        this.listSessionRunRows(input.id),
+      );
       const title = current.title ?? input.title;
 
       db.prepare(
@@ -308,6 +374,188 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
     }
   }
 
+  appendSessionLog(input: StudioSessionLogAppendInput): StudioSessionLogEntry {
+    const db = this.database();
+    const now = new Date().toISOString();
+
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      const row = this.getSessionRow(input.sessionId);
+      if (row === undefined) {
+        throw new Error("Session not found");
+      }
+      const sequence = this.nextSessionLogSequence(input.sessionId);
+      const entry: StudioSessionLogEntry = {
+        id: globalThis.crypto.randomUUID(),
+        sessionId: input.sessionId,
+        ...(input.runId === undefined ? {} : { runId: input.runId }),
+        sequence,
+        timestamp: now,
+        level: input.level,
+        category: input.category,
+        event: input.event,
+        message: input.message,
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      };
+
+      db.prepare(
+        `INSERT INTO runner_session_logs (
+          id,
+          session_id,
+          run_id,
+          sequence,
+          timestamp,
+          level,
+          category,
+          event,
+          message,
+          metadata_json
+        ) VALUES (
+          $id,
+          $sessionId,
+          $runId,
+          $sequence,
+          $timestamp,
+          $level,
+          $category,
+          $event,
+          $message,
+          $metadata
+        )`,
+      ).run({
+        $id: entry.id,
+        $sessionId: entry.sessionId,
+        $runId: entry.runId ?? null,
+        $sequence: entry.sequence,
+        $timestamp: entry.timestamp,
+        $level: entry.level,
+        $category: entry.category,
+        $event: entry.event,
+        $message: entry.message,
+        $metadata: entry.metadata === undefined ? null : JSON.stringify(entry.metadata),
+      });
+
+      db.exec("COMMIT");
+      return entry;
+    } catch (error) {
+      if (db.isTransaction) {
+        db.exec("ROLLBACK");
+      }
+      throw error;
+    }
+  }
+
+  listSessionLogs(options: StudioSessionLogListOptions): StudioSessionLogEntry[] {
+    const db = this.database();
+    const afterClause = options.after === undefined ? "" : "AND sequence > $after";
+    const rows = db
+      .prepare(
+        `SELECT id, session_id, run_id, sequence, timestamp, level, category, event, message,
+                metadata_json
+         FROM runner_session_logs
+         WHERE session_id = $sessionId
+         ${afterClause}
+         ORDER BY sequence ASC
+         LIMIT $limit`,
+      )
+      .all({
+        $sessionId: options.sessionId,
+        $after: options.after ?? null,
+        $limit: options.limit,
+      }) as SessionLogRow[];
+
+    return rows.map(toSessionLog);
+  }
+
+  appendPipelineLog(input: StudioPipelineLogAppendInput): StudioPipelineLogEntry {
+    const db = this.database();
+    const now = new Date().toISOString();
+
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      const sequence = this.nextPipelineLogSequence(input.pipelineId);
+      const entry: StudioPipelineLogEntry = {
+        id: globalThis.crypto.randomUUID(),
+        pipelineId: input.pipelineId,
+        ...(input.runId === undefined ? {} : { runId: input.runId }),
+        sequence,
+        timestamp: now,
+        level: input.level,
+        category: input.category,
+        event: input.event,
+        message: input.message,
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      };
+
+      db.prepare(
+        `INSERT INTO runner_pipeline_logs (
+          id,
+          pipeline_id,
+          run_id,
+          sequence,
+          timestamp,
+          level,
+          category,
+          event,
+          message,
+          metadata_json
+        ) VALUES (
+          $id,
+          $pipelineId,
+          $runId,
+          $sequence,
+          $timestamp,
+          $level,
+          $category,
+          $event,
+          $message,
+          $metadata
+        )`,
+      ).run({
+        $id: entry.id,
+        $pipelineId: entry.pipelineId,
+        $runId: entry.runId ?? null,
+        $sequence: entry.sequence,
+        $timestamp: entry.timestamp,
+        $level: entry.level,
+        $category: entry.category,
+        $event: entry.event,
+        $message: entry.message,
+        $metadata: entry.metadata === undefined ? null : JSON.stringify(entry.metadata),
+      });
+
+      db.exec("COMMIT");
+      return entry;
+    } catch (error) {
+      if (db.isTransaction) {
+        db.exec("ROLLBACK");
+      }
+      throw error;
+    }
+  }
+
+  listPipelineLogs(options: StudioPipelineLogListOptions): StudioPipelineLogEntry[] {
+    const db = this.database();
+    const afterClause = options.after === undefined ? "" : "AND sequence > $after";
+    const rows = db
+      .prepare(
+        `SELECT id, pipeline_id, run_id, sequence, timestamp, level, category, event, message,
+                metadata_json
+         FROM runner_pipeline_logs
+         WHERE pipeline_id = $pipelineId
+         ${afterClause}
+         ORDER BY sequence ASC
+         LIMIT $limit`,
+      )
+      .all({
+        $pipelineId: options.pipelineId,
+        $after: options.after ?? null,
+        $limit: options.limit,
+      }) as PipelineLogRow[];
+
+    return rows.map(toPipelineLog);
+  }
+
   deleteSession(id: string): boolean {
     const db = this.database();
 
@@ -315,6 +563,7 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
       db.exec("BEGIN IMMEDIATE");
       db.prepare("DELETE FROM runner_traces WHERE session_id = $id").run({ $id: id });
       db.prepare("DELETE FROM runner_session_runs WHERE session_id = $id").run({ $id: id });
+      db.prepare("DELETE FROM runner_session_logs WHERE session_id = $id").run({ $id: id });
       const result = db.prepare("DELETE FROM runner_sessions WHERE id = $id").run({ $id: id }) as {
         changes: number | bigint;
       };
@@ -484,18 +733,41 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
     db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
+    `);
+    guardAgainstLegacySessionSchema(db);
+    db.exec(`
       CREATE TABLE IF NOT EXISTS runner_sessions (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL,
         title TEXT,
         metadata_json TEXT,
-        messages_json TEXT NOT NULL,
-        transcript_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       ) STRICT;
       CREATE INDEX IF NOT EXISTS runner_sessions_agent_updated_idx
         ON runner_sessions(agent_id, updated_at DESC);
+      CREATE TABLE IF NOT EXISTS runner_session_messages (
+        session_id TEXT NOT NULL,
+        message_index INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        message_id TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(session_id, message_index),
+        FOREIGN KEY(session_id) REFERENCES runner_sessions(id) ON DELETE CASCADE
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS runner_session_messages_session_idx
+        ON runner_session_messages(session_id, message_index ASC);
+      CREATE TABLE IF NOT EXISTS runner_session_message_parts (
+        session_id TEXT NOT NULL,
+        message_index INTEGER NOT NULL,
+        part_index INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        part_json TEXT NOT NULL,
+        PRIMARY KEY(session_id, message_index, part_index),
+        FOREIGN KEY(session_id, message_index)
+          REFERENCES runner_session_messages(session_id, message_index)
+          ON DELETE CASCADE
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS runner_session_runs (
         run_id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -509,6 +781,37 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS runner_session_runs_session_created_idx
         ON runner_session_runs(session_id, created_at ASC);
+      CREATE TABLE IF NOT EXISTS runner_session_logs (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        run_id TEXT,
+        sequence INTEGER NOT NULL,
+        timestamp TEXT NOT NULL,
+        level TEXT NOT NULL,
+        category TEXT NOT NULL,
+        event TEXT NOT NULL,
+        message TEXT NOT NULL,
+        metadata_json TEXT,
+        UNIQUE(session_id, sequence),
+        FOREIGN KEY(session_id) REFERENCES runner_sessions(id) ON DELETE CASCADE
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS runner_session_logs_session_sequence_idx
+        ON runner_session_logs(session_id, sequence ASC);
+      CREATE TABLE IF NOT EXISTS runner_pipeline_logs (
+        id TEXT PRIMARY KEY,
+        pipeline_id TEXT NOT NULL,
+        run_id TEXT,
+        sequence INTEGER NOT NULL,
+        timestamp TEXT NOT NULL,
+        level TEXT NOT NULL,
+        category TEXT NOT NULL,
+        event TEXT NOT NULL,
+        message TEXT NOT NULL,
+        metadata_json TEXT,
+        UNIQUE(pipeline_id, sequence)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS runner_pipeline_logs_pipeline_sequence_idx
+        ON runner_pipeline_logs(pipeline_id, sequence ASC);
       CREATE TABLE IF NOT EXISTS runner_traces (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -536,7 +839,7 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
   private getSessionRow(id: string): SessionRow | undefined {
     return this.database()
       .prepare(
-        `SELECT id, agent_id, title, metadata_json, messages_json, transcript_json, created_at, updated_at
+        `SELECT id, agent_id, title, metadata_json, created_at, updated_at
          FROM runner_sessions
          WHERE id = $id`,
       )
@@ -563,23 +866,141 @@ class SqliteSessionStore implements StudioSessionStore, StudioTraceStore {
       )
       .all({ $sessionId: sessionId }) as SessionRunRow[];
   }
+
+  private nextSessionLogSequence(sessionId: string): number {
+    const row = this.database()
+      .prepare(
+        `SELECT COALESCE(MAX(sequence) + 1, 0) AS next_sequence
+         FROM runner_session_logs
+         WHERE session_id = $sessionId`,
+      )
+      .get({ $sessionId: sessionId }) as { next_sequence: number };
+    return row.next_sequence;
+  }
+
+  private nextPipelineLogSequence(pipelineId: string): number {
+    const row = this.database()
+      .prepare(
+        `SELECT COALESCE(MAX(sequence) + 1, 0) AS next_sequence
+         FROM runner_pipeline_logs
+         WHERE pipeline_id = $pipelineId`,
+      )
+      .get({ $pipelineId: pipelineId }) as { next_sequence: number };
+    return row.next_sequence;
+  }
+
+  private listSessionMessages(sessionId: string): Message[] {
+    const db = this.database();
+    const messageRows = db
+      .prepare(
+        `SELECT session_id, message_index, role, message_id, created_at
+         FROM runner_session_messages
+         WHERE session_id = $sessionId
+         ORDER BY message_index ASC`,
+      )
+      .all({ $sessionId: sessionId }) as MessageRow[];
+
+    if (messageRows.length === 0) {
+      return [];
+    }
+
+    const partRows = db
+      .prepare(
+        `SELECT session_id, message_index, part_index, type, part_json
+         FROM runner_session_message_parts
+         WHERE session_id = $sessionId
+         ORDER BY message_index ASC, part_index ASC`,
+      )
+      .all({ $sessionId: sessionId }) as MessagePartRow[];
+    const partsByMessage = new Map<number, MessagePartRow[]>();
+    for (const partRow of partRows) {
+      const parts = partsByMessage.get(partRow.message_index) ?? [];
+      parts.push(partRow);
+      partsByMessage.set(partRow.message_index, parts);
+    }
+
+    return messageRows.map((row) =>
+      messageFromRows(row, partsByMessage.get(row.message_index) ?? []),
+    );
+  }
+
+  private nextMessageIndex(sessionId: string): number {
+    const row = this.database()
+      .prepare(
+        `SELECT COALESCE(MAX(message_index) + 1, 0) AS next_index
+         FROM runner_session_messages
+         WHERE session_id = $sessionId`,
+      )
+      .get({ $sessionId: sessionId }) as { next_index: number };
+    return row.next_index;
+  }
+
+  private insertMessages(
+    sessionId: string,
+    messages: Message[],
+    startIndex: number,
+    createdAt: string,
+  ): void {
+    const db = this.database();
+    const insertMessage = db.prepare(
+      `INSERT INTO runner_session_messages (
+        session_id,
+        message_index,
+        role,
+        message_id,
+        created_at
+      ) VALUES ($sessionId, $messageIndex, $role, $messageId, $createdAt)`,
+    );
+    const insertPart = db.prepare(
+      `INSERT INTO runner_session_message_parts (
+        session_id,
+        message_index,
+        part_index,
+        type,
+        part_json
+      ) VALUES ($sessionId, $messageIndex, $partIndex, $type, $partJson)`,
+    );
+
+    messages.forEach((message, messageOffset) => {
+      const messageIndex = startIndex + messageOffset;
+      insertMessage.run({
+        $sessionId: sessionId,
+        $messageIndex: messageIndex,
+        $role: message.role,
+        $messageId: message.role === "assistant" ? (message.id ?? null) : null,
+        $createdAt: createdAt,
+      });
+
+      messageParts(message).forEach((part, partIndex) => {
+        insertPart.run({
+          $sessionId: sessionId,
+          $messageIndex: messageIndex,
+          $partIndex: partIndex,
+          $type: part.type,
+          $partJson: JSON.stringify(part.value),
+        });
+      });
+    });
+  }
 }
 
-function toSession(row: SessionRow, runRows: SessionRunRow[] = []): StudioSession {
-  const summary = toSessionSummary(row);
-  const legacyTranscript = parseJsonArray<StudioTranscriptEntry>(row.transcript_json);
+function toSession(
+  row: SessionRow,
+  messages: Message[],
+  runRows: SessionRunRow[] = [],
+): StudioSession {
+  const summary = toSessionSummary({ ...row, message_count: messages.length });
   const runTranscript = runRows.flatMap((runRow) =>
     parseJsonArray<StudioTranscriptEntry>(runRow.transcript_json),
   );
   return {
     ...summary,
-    messages: parseJsonArray<Message>(row.messages_json),
-    transcript: renumberTranscript([...legacyTranscript, ...runTranscript]),
+    messages,
+    transcript: renumberTranscript(runTranscript),
   };
 }
 
-function toSessionSummary(row: SessionRow): StudioSessionSummary {
-  const messages = parseJsonArray<Message>(row.messages_json);
+function toSessionSummary(row: SessionSummaryRow): StudioSessionSummary {
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
   return {
     id: row.id,
@@ -587,9 +1008,105 @@ function toSessionSummary(row: SessionRow): StudioSessionSummary {
     ...(row.title === null ? {} : { title: row.title }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    messageCount: messages.length,
+    messageCount: row.message_count,
     ...(metadata === undefined ? {} : { metadata }),
   };
+}
+
+function toSessionLog(row: SessionLogRow): StudioSessionLogEntry {
+  const metadata = parseJsonValue<JsonObject>(row.metadata_json);
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    ...(row.run_id === null ? {} : { runId: row.run_id }),
+    sequence: row.sequence,
+    timestamp: row.timestamp,
+    level: row.level,
+    category: row.category,
+    event: row.event,
+    message: row.message,
+    ...(metadata === undefined ? {} : { metadata }),
+  };
+}
+
+function toPipelineLog(row: PipelineLogRow): StudioPipelineLogEntry {
+  const metadata = parseJsonValue<JsonObject>(row.metadata_json);
+  return {
+    id: row.id,
+    pipelineId: row.pipeline_id,
+    ...(row.run_id === null ? {} : { runId: row.run_id }),
+    sequence: row.sequence,
+    timestamp: row.timestamp,
+    level: row.level,
+    category: row.category,
+    event: row.event,
+    message: row.message,
+    ...(metadata === undefined ? {} : { metadata }),
+  };
+}
+
+function messageParts(message: Message): StoredMessagePart[] {
+  if (message.role === "system") {
+    return [{ type: "text", value: { type: "text", text: message.content } }];
+  }
+
+  return message.content.map((content) => ({
+    type: content.type,
+    value: content,
+  }));
+}
+
+function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
+  const parts = partRows.map((partRow) => JSON.parse(partRow.part_json) as unknown);
+
+  if (row.role === "system") {
+    return { role: "system", content: systemContentFromParts(parts) };
+  }
+  if (row.role === "user") {
+    return {
+      role: "user",
+      content: parts as Extract<Message, { role: "user" }>["content"],
+    };
+  }
+  if (row.role === "assistant") {
+    return {
+      role: "assistant",
+      ...(row.message_id === null ? {} : { id: row.message_id }),
+      content: parts as Extract<Message, { role: "assistant" }>["content"],
+    };
+  }
+  if (row.role === "tool") {
+    return {
+      role: "tool",
+      content: parts as Extract<Message, { role: "tool" }>["content"],
+    };
+  }
+
+  throw new Error(`Unsupported stored message role: ${row.role}`);
+}
+
+function systemContentFromParts(parts: unknown[]): string {
+  const first = parts[0];
+  if (
+    typeof first === "object" &&
+    first !== null &&
+    "type" in first &&
+    first.type === "text" &&
+    "text" in first &&
+    typeof first.text === "string"
+  ) {
+    return first.text;
+  }
+  return "";
+}
+
+function guardAgainstLegacySessionSchema(db: DatabaseSyncType): void {
+  const columns = db.prepare("PRAGMA table_info('runner_sessions')").all() as TableInfoRow[];
+  if (columns.some((column) => column.name === "messages_json")) {
+    throw new Error(
+      "Existing Studio SQLite DB uses the legacy messages_json schema. Delete or recreate the Studio SQLite DB to use normalized session messages.",
+    );
+  }
 }
 
 function toTrace(row: TraceRow): StudioTrace {

@@ -121,11 +121,58 @@ type StudioSessionRunTranscriptInput = {
   status: StudioSessionRunStatus;
   error?: JsonValue;
 };
+
+type StudioSessionLogLevel = "debug" | "info" | "warn" | "error";
+
+type StudioSessionLogCategory =
+  | "session"
+  | "run"
+  | "memory"
+  | "prompt"
+  | "model"
+  | "tool"
+  | "approval"
+  | "question"
+  | "api";
+
+type StudioSessionLogEntry = {
+  id: string;
+  sessionId: string;
+  runId?: string;
+  sequence: number;
+  timestamp: string;
+  level: StudioSessionLogLevel;
+  category: StudioSessionLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+type StudioSessionLogAppendInput = {
+  sessionId: string;
+  runId?: string;
+  level: StudioSessionLogLevel;
+  category: StudioSessionLogCategory;
+  event: string;
+  message: string;
+  metadata?: JsonObject;
+};
+
+type StudioSessionLogListOptions = {
+  sessionId: string;
+  limit: number;
+  after?: number;
+};
+
+type StudioSessionLogEvent = {
+  type: "session_log";
+  log: StudioSessionLogEntry;
+};
 ```
 
 Purpose: arguments for session store methods.
 
-Return behavior: used by `StudioSessionStore`.
+Return behavior: used by `StudioSessionStore` and streaming session log events.
 
 Notable errors: store implementations may reject invalid or conflicting inputs.
 
@@ -140,12 +187,14 @@ type StudioSessionStore = MemoryStore & {
   saveSessionRunTranscript(
     input: StudioSessionRunTranscriptInput,
   ): StudioSession | undefined | Promise<StudioSession | undefined>;
+  appendSessionLog?(input: StudioSessionLogAppendInput): StudioSessionLogEntry | Promise<StudioSessionLogEntry>;
+  listSessionLogs?(options: StudioSessionLogListOptions): StudioSessionLogEntry[] | Promise<StudioSessionLogEntry[]>;
   deleteSession?(id: string): boolean | Promise<boolean>;
 };
 ```
 
 Purpose: persistence adapter for Studio sessions.
 
-Return behavior: methods may be sync or async. Because the store extends `MemoryStore`, it also loads, appends, and clears model transcript messages for Studio-backed sessions.
+Return behavior: methods may be sync or async. Because the store extends `MemoryStore`, it also loads, appends, and clears model messages for Studio-backed sessions. Log methods are optional for custom stores; the default SQLite store implements them.
 
 Notable errors: persistence failures should throw or reject.

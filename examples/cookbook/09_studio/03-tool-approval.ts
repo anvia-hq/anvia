@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { AgentBuilder, createHook } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -58,6 +58,36 @@ const issueRefund = createTool({
   }),
 });
 
+const cancelOrder = createTool({
+  name: "cancel_order",
+  description: "Cancel an order before fulfillment. This is guarded by a hook approval.",
+  input: z.object({
+    orderId: z.string().describe("The order id to cancel."),
+    reason: z.string().describe("The reason to record with the cancellation."),
+  }),
+  output: z.object({
+    orderId: z.string(),
+    status: z.enum(["cancelled"]),
+  }),
+  execute: ({ orderId }) => ({
+    orderId,
+    status: "cancelled" as const,
+  }),
+});
+
+const approvalHook = createHook({
+  onToolCall({ toolName, args, tool }) {
+    if (toolName === "cancel_order") {
+      return tool.requestApproval({
+        reason: `Review order cancellation request: ${args}`,
+        rejectMessage: "Order cancellation rejected in Anvia Studio.",
+      });
+    }
+
+    return tool.run();
+  },
+});
+
 const agentModel = client.completionModel("deepseek/deepseek-v4-pro");
 const agent = new AgentBuilder("studio-support-operations", agentModel)
   .name("Studio Support Operations")
@@ -65,11 +95,12 @@ const agent = new AgentBuilder("studio-support-operations", agentModel)
   .instructions(
     [
       "Use tools for private order data and refund operations.",
-      "Look up an order before issuing a refund.",
-      "Keep responses short and mention whether the refund was issued or denied.",
+      "Look up an order before issuing a refund or cancellation.",
+      "Keep responses short and mention whether the guarded action was issued, cancelled, or denied.",
     ].join("\n"),
   )
-  .tools([getOrder, issueRefund])
+  .tools([getOrder, issueRefund, cancelOrder])
+  .hook(approvalHook)
   .defaultMaxTurns(5)
   .build();
 

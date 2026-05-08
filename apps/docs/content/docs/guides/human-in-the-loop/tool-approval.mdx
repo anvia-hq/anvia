@@ -7,6 +7,8 @@ Use `onToolCall(...)` when approval is runtime behavior rather than tool metadat
 
 This is the advanced escape hatch. For Studio-managed approval UI, start with [approval settings](/docs/guides/human-in-the-loop/approval-settings).
 
+The examples use `approvalRuntime` as an application-owned object. Do not import it from Anvia. Build it in your app, then call it from the hook. For the runtime shape, read [Approval Runtimes](/docs/guides/human-in-the-loop/approval-handlers).
+
 ## Require Approval for One Tool
 
 ```ts
@@ -18,7 +20,7 @@ const approvalHook = createHook({
       return tool.run();
     }
 
-    const approved = await approvals.waitForDecision({
+    const approved = await approvalRuntime.waitForDecision({
       toolName,
       args,
       reason: `Review refund request: ${args}`,
@@ -67,7 +69,7 @@ const approvalHook = createHook({
       return tool.run();
     }
 
-    const approved = await approvals.waitForDecision({
+    const approved = await approvalRuntime.waitForDecision({
       toolName,
       args,
       reason: `${toolName} requires human review.`,
@@ -109,7 +111,7 @@ const approvalHook = createHook({
       return tool.run();
     }
 
-    const approved = await approvals.waitForDecision({
+    const approved = await approvalRuntime.waitForDecision({
       toolName,
       args,
       reason: `Refund amount is $${parsed.amount}.`,
@@ -158,7 +160,7 @@ Anvia does not require a timeout. If the awaited approval promise never resolves
 
 ```ts
 const approved = await Promise.race([
-  approvals.waitForDecision({ toolName, args }),
+  approvalRuntime.waitForDecision({ toolName, args }),
   sleep(60_000).then(() => false),
 ]);
 

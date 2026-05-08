@@ -1,0 +1,48 @@
+---
+title: 08 Troubleshooting
+description: Fix common SvelteKit and Anvia integration failures.
+---
+
+Most failures come from importing server code into the browser, missing env vars, or buffered streams.
+
+## `OPENAI_API_KEY is required`
+
+Use `$env/static/private` in server-only modules. Do not read provider keys in `+page.svelte` or `+page.ts`.
+
+```ts
+import { OPENAI_API_KEY } from "$env/static/private";
+```
+
+## `Cannot import server-only module into client code`
+
+Move Anvia imports into `src/lib/server/...` and call them from `+server.ts`.
+
+## Route Body Parsing Fails
+
+Validate unknown JSON before calling the agent:
+
+```ts
+const parsed = SupportRequest.safeParse(await request.json());
+
+if (!parsed.success) {
+  return Response.json({ error: { code: "bad_request" } }, { status: 400 });
+}
+```
+
+## Stream Does Not Flush
+
+Check the adapter and hosting platform. Return a `Response` with `application/x-ndjson` and avoid wrapping the stream in `json(...)`.
+
+```ts
+return new Response(agent.prompt(message).readableStream(), {
+  headers: { "Content-Type": "application/x-ndjson" },
+});
+```
+
+## Provider Failures
+
+Catch provider errors at the route boundary, log the internal detail, and return a stable application error.
+
+## Next
+
+Add reviewer workflows in [Human in the Loop](/docs/frameworks/sveltekit/09-human-in-the-loop). Related guides: [Tool Errors](/docs/guides/tools/tool-errors), [Readable Streams](/docs/guides/streaming/readable-streams), and [Tracing](/docs/guides/observability/tracing).

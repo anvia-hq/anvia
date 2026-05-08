@@ -1,0 +1,75 @@
+---
+title: 03 Route Handler
+description: Return a non-streaming Anvia response from a NestJS controller.
+---
+
+NestJS controllers are the HTTP boundary. Validate request bodies before calling the Anvia service.
+
+## 1. Create `src/support/support.controller.ts`
+
+```ts
+import { BadRequestException, Body, Controller, Post } from "@nestjs/common";
+import { z } from "zod";
+import { SupportAgentService } from "../ai/support-agent.service";
+
+const SupportRequest = z.object({
+  message: z.string().trim().min(1, "message is required"),
+});
+
+@Controller("api/support")
+export class SupportController {
+  constructor(private readonly supportAgent: SupportAgentService) {}
+
+  @Post()
+  async prompt(@Body() body: unknown) {
+    const parsed = SupportRequest.safeParse(body);
+
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message);
+    }
+
+    const response = await this.supportAgent.runSupport(parsed.data.message);
+
+    return {
+      output: response.output,
+      usage: response.usage,
+      messages: response.messages,
+    };
+  }
+}
+```
+
+## 2. Register The Controller
+
+```ts
+import { Module } from "@nestjs/common";
+import { AnviaModule } from "../ai/anvia.module";
+import { SupportController } from "./support.controller";
+
+@Module({
+  imports: [AnviaModule],
+  controllers: [SupportController],
+})
+export class SupportModule {}
+```
+
+## 3. Call The Route
+
+```ts
+const response = await fetch("http://localhost:3000/api/support", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "How long does a reset link last?" }),
+});
+
+const data = await response.json();
+console.log(data.output);
+```
+
+## 4. Keep Errors Structured
+
+Use Nest exceptions or filters for application error shapes. Do not return raw provider stack traces.
+
+## Next
+
+Return live run events in [Streaming](/docs/frameworks/nestjs/04-streaming). For response fields, read [Prompt Responses](/docs/guides/sdk-fundamentals/prompt-responses).

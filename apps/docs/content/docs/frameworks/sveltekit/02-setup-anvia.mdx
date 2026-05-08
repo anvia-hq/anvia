@@ -1,0 +1,65 @@
+---
+title: 02 Setup Anvia
+description: Create a reusable Anvia agent module for SvelteKit.
+---
+
+Create provider clients and shared agents in `src/lib/server`. SvelteKit keeps this code out of browser bundles.
+
+## 1. Create `src/lib/server/ai/support-agent.ts`
+
+```ts
+import { OPENAI_API_KEY } from "$env/static/private";
+import { AgentBuilder, createTool } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+if (!OPENAI_API_KEY) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+
+const client = new OpenAIClient({ apiKey: OPENAI_API_KEY });
+export const model = client.completionModel("gpt-5.5");
+
+const lookupPolicy = createTool({
+  name: "lookup_policy",
+  description: "Look up a support policy by key.",
+  input: z.object({
+    key: z.enum(["password_reset", "priority_support"]),
+  }),
+  output: z.object({
+    text: z.string(),
+  }),
+  async execute({ key }) {
+    const policies = {
+      password_reset: "Password reset links expire after 30 minutes.",
+      priority_support: "Enterprise customers receive priority support.",
+    };
+
+    return { text: policies[key] };
+  },
+});
+
+export const supportAgent = new AgentBuilder("support", model)
+  .name("Support Agent")
+  .instructions("Answer clearly. Use tools when policy detail is needed.")
+  .tool(lookupPolicy)
+  .defaultMaxTurns(3)
+  .build();
+```
+
+## 2. Keep Agents Server-Side
+
+Import `supportAgent` only from `+server.ts`, server actions, hooks, jobs, or tests. Do not import it from `+page.svelte`.
+
+## 3. Swap Providers Without Rewriting Routes
+
+```ts
+import { AnthropicClient } from "@anvia/anthropic";
+
+const client = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY });
+const model = client.completionModel("claude-opus-4-6");
+```
+
+## Next
+
+Expose the agent in [Route Handler](/docs/frameworks/sveltekit/03-route-handler). Related guides: [Creating Agents](/docs/guides/agents/creating-agents) and [Tools](/docs/guides/tools/creating-tools).

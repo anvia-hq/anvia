@@ -1,0 +1,52 @@
+---
+title: Portkey
+description: Use Portkey's AI Gateway with Anvia through OpenAI-compatible endpoints.
+---
+
+Portkey exposes an OpenAI-compatible gateway at `https://api.portkey.ai/v1`. In Anvia, configure `OpenAIClient` with Portkey's base URL and pass Portkey headers through `headers`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.portkey.ai/v1",
+  apiKey: process.env.OPENAI_API_KEY,
+  headers: {
+    "x-portkey-api-key": process.env.PORTKEY_API_KEY ?? "",
+    "x-portkey-provider": "openai",
+  },
+});
+
+const model = client.completionModel("gpt-5-mini");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+For saved Portkey providers, use the provider slug header, such as `x-portkey-provider: @openai-prod`, instead of passing a raw upstream provider key.
+
+## Get the Model List
+
+If your Portkey provider or config exposes model listing for the selected route, `listModels()` calls Portkey's configured `/models` endpoint.
+
+```ts
+const models = await client.listModels();
+
+console.table(models.data.map((model) => ({ id: model.id, owner: model.ownedBy })));
+```
+
+## Notes
+
+- Portkey supports provider headers, virtual providers, configs, retries, caching, and observability. Keep those choices in your application configuration.
+- The `apiKey` value is forwarded as the OpenAI SDK authorization header. For provider slugs stored in Portkey, use the provider slug headers documented by Portkey.
+- Model capabilities still depend on the upstream provider and Portkey route.
+
+For current Portkey details, see the [Portkey AI Gateway guide](https://portkey.ai/docs/guides/getting-started/getting-started-with-ai-gateway) and [headers reference](https://portkey.ai/docs/api-reference/inference-api/headers).

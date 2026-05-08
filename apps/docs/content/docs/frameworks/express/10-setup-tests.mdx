@@ -1,0 +1,78 @@
+---
+title: 10 Setup Tests
+description: Test Express Anvia routes, streams, and provider boundaries.
+---
+
+Use route tests with mocked agents. Keep provider calls behind explicit integration tests.
+
+## 1. Install Test Tools
+
+```sh
+pnpm add -D vitest supertest @types/supertest
+```
+
+## 2. Test The JSON Route
+
+```ts
+import request from "supertest";
+import { describe, expect, it, vi } from "vitest";
+import { app } from "../src/app";
+
+vi.mock("../src/ai/support-agent", () => ({
+  supportAgent: {
+    prompt: () => ({
+      send: async () => ({
+        output: "Reset links expire after 30 minutes.",
+        usage: { totalTokens: 12 },
+        messages: [],
+      }),
+    }),
+  },
+}));
+
+describe("POST /api/support", () => {
+  it("returns the agent output", async () => {
+    const response = await request(app)
+      .post("/api/support")
+      .send({ message: "How long does a reset link last?" })
+      .expect(200);
+
+    expect(response.body.output).toBe("Reset links expire after 30 minutes.");
+  });
+});
+```
+
+## 3. Test The Stream Route
+
+```ts
+const response = await request(app)
+  .post("/api/support/stream")
+  .send({ message: "Hello" })
+  .expect(200);
+
+expect(response.headers["content-type"]).toContain("application/x-ndjson");
+```
+
+Mock `readableStream()` with a small `ReadableStream` that emits one `final` event.
+
+## 4. Test Studio Without A Port
+
+```ts
+import { Studio } from "@anvia/studio";
+import { supportAgent } from "../src/ai/support-agent";
+
+const studio = new Studio([supportAgent]);
+const response = await studio.fetch(
+  new Request("http://studio.test/agents/support/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello" }),
+  }),
+);
+
+expect(response.status).toBe(200);
+```
+
+## Next
+
+Related guides: [Testing](/docs/guides/testing), [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines), and [Studio and Providers](/docs/guides/testing/studio-and-providers).

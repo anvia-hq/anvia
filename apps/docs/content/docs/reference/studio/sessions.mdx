@@ -30,9 +30,34 @@ type StudioTranscriptToolEntry = {
   callId?: string;
   args?: string;
   result?: string;
+  childEvents?: StudioTranscriptChildAgentEvent[];
   approval?: StudioToolApprovalTranscript;
   question?: StudioToolQuestionTranscript;
 };
+
+type StudioTranscriptChildAgentEvent =
+  | {
+      kind: "message";
+      agentId: string;
+      agentName?: string;
+      text: string;
+    }
+  | {
+      kind: "reasoning";
+      agentId: string;
+      agentName?: string;
+      reasoningId?: string;
+      text: string;
+    }
+  | {
+      kind: "tool";
+      agentId: string;
+      agentName?: string;
+      toolName: string;
+      callId?: string;
+      args?: string;
+      result?: string;
+    };
 
 type StudioTranscriptEntry =
   | StudioTranscriptChatEntry
@@ -86,11 +111,15 @@ type StudioSessionListOptions = {
   limit: number;
 };
 
-type StudioSessionAppendInput = {
+type StudioSessionRunStatus = "running" | "success" | "error";
+
+type StudioSessionRunTranscriptInput = {
   id: string;
+  runId: string;
   title?: string;
-  messages: Message[];
   transcript: StudioTranscriptEntry[];
+  status: StudioSessionRunStatus;
+  error?: JsonValue;
 };
 ```
 
@@ -103,18 +132,20 @@ Notable errors: store implementations may reject invalid or conflicting inputs.
 ## StudioSessionStore
 
 ```ts
-type StudioSessionStore = {
+type StudioSessionStore = MemoryStore & {
   readonly kind?: string;
   listSessions(options: StudioSessionListOptions): StudioSessionSummary[] | Promise<StudioSessionSummary[]>;
   createSession(input: StudioSessionCreateInput): StudioSessionSummary | Promise<StudioSessionSummary>;
   getSession(id: string): StudioSession | undefined | Promise<StudioSession | undefined>;
-  appendSessionRun(input: StudioSessionAppendInput): StudioSession | undefined | Promise<StudioSession | undefined>;
+  saveSessionRunTranscript(
+    input: StudioSessionRunTranscriptInput,
+  ): StudioSession | undefined | Promise<StudioSession | undefined>;
   deleteSession?(id: string): boolean | Promise<boolean>;
 };
 ```
 
 Purpose: persistence adapter for Studio sessions.
 
-Return behavior: methods may be sync or async.
+Return behavior: methods may be sync or async. Because the store extends `MemoryStore`, it also loads, appends, and clears model transcript messages for Studio-backed sessions.
 
 Notable errors: persistence failures should throw or reject.

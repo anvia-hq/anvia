@@ -1,0 +1,57 @@
+---
+title: 01 Prep
+description: Prepare a NestJS app for Anvia modules and controllers.
+---
+
+Use this path when Anvia runs inside a NestJS backend with modules, dependency injection, and controllers.
+
+## 1. Create A NestJS Project
+
+```sh
+pnpm dlx @nestjs/cli new anvia-nestjs
+cd anvia-nestjs
+```
+
+Use TypeScript and the default Express HTTP adapter unless your app already uses Fastify.
+
+## 2. Install Anvia
+
+```sh
+pnpm add @anvia/core @anvia/openai zod
+pnpm add -D @types/express
+```
+
+Install other providers when needed:
+
+```sh
+pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+```
+
+## 3. Add Environment Variables
+
+```txt
+OPENAI_API_KEY=sk_...
+```
+
+Read secrets through your config layer or `process.env`:
+
+```ts
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+```
+
+## 4. Choose Module Boundaries
+
+| File | Purpose |
+| --- | --- |
+| `src/ai/anvia.module.ts` | Nest module for Anvia providers |
+| `src/ai/support-agent.service.ts` | Provider client, model, tools, and agent methods |
+| `src/support/support.controller.ts` | HTTP prompt and stream endpoints |
+| `src/approvals/approval-runtime.service.ts` | User-owned approval runtime |
+
+## Next
+
+Build the injectable service in [Setup Anvia](/docs/frameworks/nestjs/02-setup-anvia). Read [Runtime Boundaries](/docs/guides/sdk-fundamentals/runtime-boundaries) before wiring Anvia into Nest modules.

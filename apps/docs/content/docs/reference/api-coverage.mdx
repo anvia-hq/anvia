@@ -1,126 +1,60 @@
 ---
 title: API Coverage
-description: Public package export coverage checked against reference docs.
+description: Automated public export coverage for reference docs.
 ---
 
-This page records the package export coverage audit used to keep reference docs aligned with `packages`.
+This page records the coverage policy that keeps handwritten reference pages aligned with public package exports.
 
 ## Scope
 
-The audit treats each symbol exported from package entrypoints in `package.json#exports` as a public primitive. Internal source-file exports are outside this checklist unless they are re-exported by a package entrypoint.
+The coverage check treats every package entry in `package.json#exports` as a public import path. It uses the TypeScript compiler to enumerate symbols exported from those entrypoints, then verifies that the mapped reference docs mention each import path and exported symbol.
 
-| Package | Public primitives | Reference coverage |
-| --- | ---: | --- |
-| `@anvia/core` | 222 | [Core](/docs/reference/core) |
-| `@anvia/openai` | 17 | [OpenAI Provider](/docs/reference/providers/openai) |
-| `@anvia/gemini` | 13 | [Gemini Provider](/docs/reference/providers/gemini) |
-| `@anvia/anthropic` | 4 | [Anthropic Provider](/docs/reference/providers/anthropic) |
-| `@anvia/mistral` | 10 | [Mistral Provider](/docs/reference/providers/mistral) |
-| `@anvia/fastembed` | 6 | [FastEmbed](/docs/reference/integrations/fastembed) |
-| `@anvia/transformers` | 6 | [Transformers](/docs/reference/integrations/transformers) |
-| `@anvia/chroma` | 4 | [Chroma](/docs/reference/integrations/chroma) |
-| `@anvia/pgvector` | 6 | [pgvector](/docs/reference/integrations/pgvector) |
-| `@anvia/qdrant` | 5 | [Qdrant](/docs/reference/integrations/qdrant) |
-| `@anvia/langfuse` | 6 | [Langfuse](/docs/reference/integrations/langfuse) |
-| `@anvia/otel` | 3 | [OpenTelemetry](/docs/reference/integrations/otel) |
-| `@anvia/studio` | 59 | [Studio](/docs/reference/studio) |
+Internal source-file exports are outside this check unless they are re-exported by a package entrypoint.
 
-## Result
+## Current Coverage
 
-The post-update scan reported `TOTAL_MISSING=0`: every public primitive from the package entrypoints is mentioned in its mapped reference docs.
+| Package | Public entrypoints | Public exports | Reference coverage |
+| --- | ---: | ---: | --- |
+| `@anvia/core` | 19 | 250 | [Core](/docs/reference/core) |
+| `@anvia/openai` | 1 | 17 | [OpenAI Provider](/docs/reference/providers/openai) |
+| `@anvia/gemini` | 1 | 13 | [Gemini Provider](/docs/reference/providers/gemini) |
+| `@anvia/anthropic` | 1 | 4 | [Anthropic Provider](/docs/reference/providers/anthropic) |
+| `@anvia/mistral` | 1 | 10 | [Mistral Provider](/docs/reference/providers/mistral) |
+| `@anvia/fastembed` | 1 | 6 | [FastEmbed](/docs/reference/integrations/fastembed) |
+| `@anvia/transformers` | 1 | 6 | [Transformers](/docs/reference/integrations/transformers) |
+| `@anvia/chroma` | 1 | 4 | [Chroma](/docs/reference/integrations/chroma) |
+| `@anvia/pgvector` | 1 | 6 | [pgvector](/docs/reference/integrations/pgvector) |
+| `@anvia/qdrant` | 1 | 5 | [Qdrant](/docs/reference/integrations/qdrant) |
+| `@anvia/langfuse` | 1 | 6 | [Langfuse](/docs/reference/integrations/langfuse) |
+| `@anvia/otel` | 1 | 3 | [OpenTelemetry](/docs/reference/integrations/otel) |
+| `@anvia/studio` | 1 | 61 | [Studio](/docs/reference/studio) |
+
+The check must report:
+
+```txt
+TOTAL_MISSING_ENTRYPOINTS=0 TOTAL_MISSING_EXPORTS=0
+```
 
 ## Re-run Check
 
-Run this from the repository root to regenerate the primitive coverage check:
+Run this from the repository root:
 
 ```bash
-node --input-type=module <<'NODE'
-import ts from "typescript";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-function walk(dir) {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    return statSync(path).isDirectory() ? walk(path) : [path];
-  });
-}
-
-const packageDocs = new Map([
-  ["@anvia/core", "apps/docs/content/docs/reference/core"],
-  ["@anvia/openai", "apps/docs/content/docs/reference/providers/openai.mdx"],
-  ["@anvia/gemini", "apps/docs/content/docs/reference/providers/gemini.mdx"],
-  ["@anvia/anthropic", "apps/docs/content/docs/reference/providers/anthropic.mdx"],
-  ["@anvia/mistral", "apps/docs/content/docs/reference/providers/mistral.mdx"],
-  ["@anvia/fastembed", "apps/docs/content/docs/reference/integrations/fastembed.mdx"],
-  ["@anvia/transformers", "apps/docs/content/docs/reference/integrations/transformers.mdx"],
-  ["@anvia/chroma", "apps/docs/content/docs/reference/integrations/chroma.mdx"],
-  ["@anvia/pgvector", "apps/docs/content/docs/reference/integrations/pgvector.mdx"],
-  ["@anvia/qdrant", "apps/docs/content/docs/reference/integrations/qdrant.mdx"],
-  ["@anvia/langfuse", "apps/docs/content/docs/reference/integrations/langfuse.mdx"],
-  ["@anvia/otel", "apps/docs/content/docs/reference/integrations/otel.mdx"],
-  ["@anvia/studio", "apps/docs/content/docs/reference/studio"],
-]);
-
-const packages = [
-  "packages/core",
-  "packages/providers/openai",
-  "packages/providers/gemini",
-  "packages/providers/anthropic",
-  "packages/providers/mistral",
-  "packages/embeddings/fastembed",
-  "packages/embeddings/transformers",
-  "packages/vector-stores/chroma",
-  "packages/vector-stores/pgvector",
-  "packages/vector-stores/qdrant",
-  "packages/observability/langfuse",
-  "packages/observability/otel",
-  "packages/tools/studio",
-];
-
-let totalMissing = 0;
-
-for (const packageDir of packages) {
-  const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-  const exportsMap = Object.entries(pkg.exports ?? { ".": { import: pkg.main } });
-  const publicExports = new Set();
-
-  for (const [, target] of exportsMap) {
-    const importPath = typeof target === "string" ? target : target.import;
-    const sourcePath = importPath.replace(/^\.\/dist\//, "src/").replace(/\.js$/, ".ts");
-    const file = join(packageDir, sourcePath);
-
-    if (!existsSync(file)) continue;
-
-    const program = ts.createProgram([file], {
-      module: ts.ModuleKind.ESNext,
-      target: ts.ScriptTarget.ES2022,
-      moduleResolution: ts.ModuleResolutionKind.Bundler,
-      skipLibCheck: true,
-    });
-    const checker = program.getTypeChecker();
-    const sourceFile = program.getSourceFile(file);
-    const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
-
-    for (const symbol of checker.getExportsOfModule(moduleSymbol)) {
-      publicExports.add(symbol.getName());
-    }
-  }
-
-  const docsPath = packageDocs.get(pkg.name);
-  const docsText = statSync(docsPath).isDirectory()
-    ? walk(docsPath)
-        .filter((file) => file.endsWith(".mdx"))
-        .map((file) => readFileSync(file, "utf8"))
-        .join("\n")
-    : readFileSync(docsPath, "utf8");
-
-  const missing = [...publicExports].sort().filter((name) => !docsText.includes(name));
-  totalMissing += missing.length;
-  console.log(`${pkg.name}: ${publicExports.size} exports, ${missing.length} not mentioned`);
-  if (missing.length > 0) console.log(`  ${missing.join(", ")}`);
-}
-
-console.log(`TOTAL_MISSING=${totalMissing}`);
-NODE
+pnpm docs:reference-check
 ```
+
+`pnpm docs:typecheck` also runs the same check before MDX generation and TypeScript validation.
+
+## Documentation Standard
+
+Each practical reference page should document the public surface with:
+
+| Requirement | Expected content |
+| --- | --- |
+| Import source | Package or subpath imports, such as `@anvia/core/memory` |
+| Signature | TypeScript class, function, interface, type, or constant shape |
+| Purpose | What the primitive owns or represents |
+| Return behavior | Resolved value, emitted events, side effects, or type-only behavior |
+| Notable errors | Validation, provider, transport, persistence, or capability failures |
+| Example | Minimal code showing ordinary use when the primitive is runtime-facing |
+| Related docs | Guides or cookbook entries for workflow-oriented usage |

@@ -1,0 +1,43 @@
+---
+title: 07 Deploy
+description: Deploy SvelteKit Anvia endpoints with the right runtime constraints.
+---
+
+Deployment depends on your SvelteKit adapter. Verify provider clients, vector stores, and observability packages against that runtime.
+
+## 1. Prefer Node For First Deploys
+
+Use a Node-compatible adapter when you need filesystem loaders, local embeddings, provider SDKs with Node dependencies, or long-running streams.
+
+```sh
+pnpm add -D @sveltejs/adapter-node
+```
+
+## 2. Configure Environment Variables
+
+Set secrets in your deployment platform:
+
+```txt
+OPENAI_API_KEY=sk_...
+ANVIA_STUDIO_TOKEN=...
+DATABASE_URL=...
+```
+
+Do not expose provider keys through public env prefixes.
+
+## 3. Streaming Checks
+
+Confirm your host supports unbuffered responses for `application/x-ndjson`. Some serverless platforms buffer responses unless streaming is explicitly enabled.
+
+## 4. Production Checklist
+
+| Check | Why |
+| --- | --- |
+| Node runtime verified | Provider and retrieval packages may require Node APIs |
+| Request timeout configured | Agent runs can be longer than simple CRUD requests |
+| Secrets scoped server-side | Provider keys must never reach the browser |
+| Error logs connected | Provider and tool failures need operational visibility |
+
+## Next
+
+Debug common failures in [Troubleshooting](/docs/frameworks/sveltekit/08-troubleshooting). Add telemetry with [Observability](/docs/guides/observability/tracing).

@@ -97,8 +97,12 @@ type AgentToolStartArgs = {
 };
 type AgentToolEndArgs = AgentToolStartArgs & { result: string; skipped: boolean };
 type AgentToolErrorArgs = AgentToolStartArgs & { error: unknown };
+type AgentToolStreamEventArgs = AgentToolStartArgs & {
+  event: ToolCallStreamEvent;
+};
 
 interface AgentToolObserver {
+  streamEvent?(args: AgentToolStreamEventArgs): void | Promise<void>;
   end(args: AgentToolEndArgs): void | Promise<void>;
   error?(args: AgentToolErrorArgs): void | Promise<void>;
 }
@@ -106,7 +110,7 @@ interface AgentToolObserver {
 
 Purpose: observe model calls and tool calls inside a run.
 
-Return behavior: called by the agent runtime as events complete or fail.
+Return behavior: called by the agent runtime as events stream, complete, or fail. `streamEvent(...)` receives nested child-agent stream events emitted by agent tools.
 
 Notable errors: observer errors follow the registration error policy.
 

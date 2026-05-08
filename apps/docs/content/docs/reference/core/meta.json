@@ -17,6 +17,7 @@
     "embeddings",
     "model-listing",
     "vector-store",
+    "memory",
     "mcp",
     "observability",
     "skills",

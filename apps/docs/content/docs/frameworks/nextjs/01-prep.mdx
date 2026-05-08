@@ -1,0 +1,61 @@
+---
+title: 01 Prep
+description: Prepare a Next.js App Router project for Anvia server routes.
+---
+
+Use this path when Anvia will run behind Next.js App Router route handlers.
+
+## 1. Create or Open an App Router Project
+
+```sh
+pnpm create next-app@latest anvia-next --ts --app
+cd anvia-next
+```
+
+If you already have a Next.js app, use the App Router `app/` directory. The route examples in this guide use `app/api/.../route.ts`.
+
+## 2. Install Anvia
+
+```sh
+pnpm add @anvia/core @anvia/openai zod
+```
+
+Install other provider packages when you need them:
+
+```sh
+pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+```
+
+## 3. Add Environment Variables
+
+Anvia clients use explicit constructor options and do not read environment variables by themselves.
+
+```txt
+OPENAI_API_KEY=sk_...
+```
+
+Read the value only in server-side files:
+
+```ts
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+```
+
+## 4. Choose Runtime Boundaries
+
+Keep these files server-only:
+
+| File | Purpose |
+| --- | --- |
+| `app/ai/support-agent.ts` | Provider client, model, tools, and reusable agent |
+| `app/api/support/route.ts` | Non-streaming prompt endpoint |
+| `app/api/support/stream/route.ts` | Streaming prompt endpoint |
+
+Next.js route handlers use the Web `Request` and `Response` APIs, so Anvia `readableStream()` can be returned directly.
+
+## Next
+
+Build the reusable agent in [Setup Anvia](/docs/frameworks/nextjs/02-setup-anvia). For the SDK model, read [How Anvia Works](/docs/guides/sdk-fundamentals/runtime-boundaries).

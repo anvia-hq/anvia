@@ -1,0 +1,49 @@
+---
+title: 06 Persistence
+description: Persist Express chat history through your app storage.
+---
+
+Express does not prescribe storage. Load existing messages before the run and store `response.messages` after success.
+
+## 1. Load The Session
+
+```ts
+const session = await db.chatSession.findUnique({
+  where: { id: req.params.sessionId, userId: req.user.id },
+  include: { messages: { orderBy: { createdAt: "asc" } } },
+});
+
+if (!session) {
+  return res.status(404).json({ error: { code: "not_found" } });
+}
+```
+
+## 2. Send With History
+
+```ts
+const response = await supportAgent
+  .prompt(message)
+  .messages(session.messages.map((item) => item.message))
+  .send();
+```
+
+## 3. Store New Messages
+
+```ts
+await db.chatMessage.createMany({
+  data: response.messages.map((message) => ({
+    sessionId: session.id,
+    message,
+  })),
+});
+```
+
+Keep persistence in your transaction boundary when the app needs message history and related business records to commit together.
+
+## 4. Use Memory Deliberately
+
+Use chat history for turn-by-turn continuity. Use Anvia memory when the model should recall durable facts across future sessions.
+
+## Next
+
+Prepare runtime constraints in [Deploy](/docs/frameworks/express/07-deploy). Related guides: [Memory](/docs/guides/memory), [Memory and Sessions](/docs/guides/sdk-fundamentals/memory-and-sessions), and [Agent History](/docs/guides/agents/agent-history).

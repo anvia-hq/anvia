@@ -1,0 +1,71 @@
+---
+title: 08 Troubleshooting
+description: Fix common Hono and Anvia route issues.
+---
+
+## Validation Returns 400
+
+The route uses `zValidator("json", schema)`, so the request body must match the Zod schema.
+
+```sh
+curl -X POST http://localhost:3000/api/support \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello"}'
+```
+
+## JSON Validation Fails
+
+Set the request header and send valid JSON:
+
+```txt
+Content-Type: application/json
+```
+
+Then read validated data with `c.req.valid("json")` inside the handler:
+
+```ts
+import { zValidator } from "@hono/zod-validator";
+import { z } from "zod";
+
+const SupportRequest = z.object({
+  message: z.string().trim().min(1, "message is required"),
+});
+
+app.post("/api/support", zValidator("json", SupportRequest), async (c) => {
+  const { message } = c.req.valid("json");
+  return c.json({ message });
+});
+```
+
+## Provider Key Is Missing
+
+Create the provider client only after checking the environment:
+
+```ts
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) throw new Error("OPENAI_API_KEY is required");
+```
+
+## Streaming Does Not Flush
+
+Return a Web `Response` with the Anvia stream and NDJSON content type:
+
+```ts
+return new Response(agent.prompt(message).readableStream(), {
+  headers: { "Content-Type": "application/x-ndjson" },
+});
+```
+
+Check adapter support, reverse proxy buffering, and route timeouts.
+
+## Tool Authorization Is Wrong
+
+Resolve the current user in middleware or the handler. Build scoped tools that close over that user, and never trust model-supplied identifiers for access control.
+
+## Studio Works But Hono Route Does Not
+
+Studio runs the same agent runtime but different HTTP routes. Compare the prompt input, session history, tools, and provider environment used by your Hono handler.
+
+## Next
+
+Revisit [Route Handler](/docs/frameworks/hono/03-route-handler), [Tools and Context](/docs/frameworks/hono/05-tools-and-context), and [Tool Errors](/docs/guides/tools/tool-errors).

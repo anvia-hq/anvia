@@ -1,0 +1,88 @@
+---
+title: 10 Setup Tests
+description: Test Next.js Anvia route handlers, streams, and Studio wiring.
+---
+
+Use tests to cover application routing and validation without turning every branch into a provider call.
+
+## 1. Install Test Tools
+
+```sh
+pnpm add -D vitest
+```
+
+## 2. Test The JSON Route
+
+Next.js route handlers are normal exported functions.
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+import { POST } from "@/app/api/support/route";
+
+vi.mock("@/app/ai/support-agent", () => ({
+  supportAgent: {
+    prompt: () => ({
+      send: async () => ({
+        output: "Reset links expire after 30 minutes.",
+        usage: { totalTokens: 12 },
+        messages: [],
+      }),
+    }),
+  },
+}));
+
+describe("POST /api/support", () => {
+  it("returns the agent output", async () => {
+    const response = await POST(
+      new Request("http://test.local/api/support", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "How long does a reset link last?" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      output: "Reset links expire after 30 minutes.",
+    });
+  });
+});
+```
+
+## 3. Test The Streaming Route
+
+```ts
+const response = await POST(
+  new Request("http://test.local/api/support/stream", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello" }),
+  }),
+);
+
+expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+```
+
+Mock `readableStream()` with a small `ReadableStream` that emits one `final` event.
+
+## 4. Test Studio Without a Port
+
+```ts
+import { Studio } from "@anvia/studio";
+import { supportAgent } from "@/app/ai/support-agent";
+
+const studio = new Studio([supportAgent]);
+const response = await studio.fetch(
+  new Request("http://studio.test/agents/support/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello" }),
+  }),
+);
+
+expect(response.status).toBe(200);
+```
+
+## Next
+
+Related guides: [Testing](/docs/guides/testing), [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines), and [Studio and Providers](/docs/guides/testing/studio-and-providers).

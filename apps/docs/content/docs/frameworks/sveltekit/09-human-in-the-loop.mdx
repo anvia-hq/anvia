@@ -1,0 +1,134 @@
+---
+title: 09 Human in the Loop
+description: Add approvals and reviewer decisions to SvelteKit Anvia endpoints.
+---
+
+SvelteKit can expose both the agent endpoint and reviewer decision endpoints. Anvia provides hooks; your app provides the approval runtime.
+
+## 1. Use Studio During Development
+
+```ts
+import { Studio } from "@anvia/studio";
+import { supportAgent } from "$lib/server/ai/support-agent";
+
+new Studio([supportAgent]).start({ port: 4021 });
+```
+
+Studio is useful locally. Production approval storage, reviewer permissions, and notifications belong to your app.
+
+## 2. Create A Hook
+
+```ts
+import { createHook } from "@anvia/core";
+import { approvalRuntime } from "$lib/server/approvals/runtime";
+
+export function createApprovalHook(input: { userId: string; approvalRunId: string }) {
+  return createHook({
+    async onToolCall({ toolName, args, tool }) {
+      if (toolName !== "refund_order") {
+        return tool.run();
+      }
+
+      const approved = await approvalRuntime.waitForDecision({
+        userId: input.userId,
+        approvalRunId: input.approvalRunId,
+        toolName,
+        args,
+      });
+
+      return approved ? tool.run() : tool.skip("Refund was not approved.");
+    },
+  });
+}
+```
+
+`approvalRuntime` is not an Anvia API. Create it next to your database, queue, notification, and reviewer UI code.
+
+## 3. Create The Approval Runtime
+
+```ts
+type ApprovalRequest = {
+  userId: string;
+  approvalRunId: string;
+  toolName: string;
+  args: string;
+};
+
+type ApprovalDecision = {
+  approved: boolean;
+  reason?: string;
+};
+
+export function createApprovalRuntime() {
+  const waiters = new Map<string, (decision: ApprovalDecision) => void>();
+
+  return {
+    async waitForDecision(request: ApprovalRequest): Promise<boolean> {
+      const approval = await db.approval.create({
+        data: { ...request, status: "pending" },
+      });
+
+      await notifyReviewers({ approvalId: approval.id });
+
+      const decision = await new Promise<ApprovalDecision>((resolve) => {
+        waiters.set(approval.id, resolve);
+      });
+
+      waiters.delete(approval.id);
+      return decision.approved;
+    },
+
+    async decide(input: { approvalId: string; approved: boolean; reason?: string }) {
+      await db.approval.update({
+        where: { id: input.approvalId },
+        data: {
+          status: input.approved ? "approved" : "rejected",
+          decisionReason: input.reason,
+          resolvedAt: new Date(),
+        },
+      });
+
+      waiters.get(input.approvalId)?.({
+        approved: input.approved,
+        reason: input.reason,
+      });
+    },
+  };
+}
+
+export const approvalRuntime = createApprovalRuntime();
+```
+
+The `Map` is only a local waiter. Use durable storage plus queue, pub/sub, websocket, or polling workers for production.
+
+## 4. Add Reviewer Routes
+
+```ts
+import { json, type RequestHandler } from "@sveltejs/kit";
+import { z } from "zod";
+import { approvalRuntime } from "$lib/server/approvals/runtime";
+
+const DecisionRequest = z.object({
+  approved: z.boolean(),
+  reason: z.string().optional(),
+});
+
+export const POST: RequestHandler = async ({ params, request, locals }) => {
+  if (!locals.userId) {
+    return json({ error: { code: "unauthorized" } }, { status: 401 });
+  }
+
+  const decision = DecisionRequest.parse(await request.json());
+
+  await approvalRuntime.decide({
+    approvalId: params.id,
+    ...decision,
+  });
+
+  return json({ ok: true });
+};
+```
+
+## Next
+
+Add SvelteKit tests in [Setup Tests](/docs/frameworks/sveltekit/10-setup-tests). Core concepts: [Human in the Loop](/docs/guides/human-in-the-loop), [Approval by Hooks](/docs/guides/human-in-the-loop/tool-approval), and [Approval Runtimes](/docs/guides/human-in-the-loop/approval-handlers).

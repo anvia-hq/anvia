@@ -1,0 +1,81 @@
+---
+title: 05 Tools and Context
+description: Scope Next.js request data before exposing tools and retrieval to Anvia.
+---
+
+If a tool needs the current user, build a request-scoped tool or agent factory. Keep provider clients and models reusable.
+
+## 1. Create a Scoped Agent Factory
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { z } from "zod";
+import { model } from "@/app/ai/support-agent";
+import { orders } from "@/app/db/orders";
+
+type SupportScope = {
+  userId: string;
+};
+
+export function createSupportAgent(scope: SupportScope) {
+  const lookupOrder = createTool({
+    name: "lookup_order",
+    description: "Look up one order owned by the current user.",
+    input: z.object({
+      orderId: z.string(),
+    }),
+    output: z.object({
+      status: z.string(),
+    }),
+    async execute({ orderId }) {
+      return orders.findForUser(scope.userId, orderId);
+    },
+  });
+
+  return new AgentBuilder("support", model)
+    .instructions("Use tools for account-specific data.")
+    .tool(lookupOrder)
+    .defaultMaxTurns(3)
+    .build();
+}
+```
+
+## 2. Resolve Auth In The Route
+
+```ts
+import { createSupportAgent } from "@/app/ai/create-support-agent";
+import { requireUser } from "@/app/auth";
+
+export async function POST(request: Request): Promise<Response> {
+  const user = await requireUser(request);
+  const { message } = (await request.json()) as { message?: string };
+
+  if (!message?.trim()) {
+    return Response.json({ error: "message is required" }, { status: 400 });
+  }
+
+  const agent = createSupportAgent({ userId: user.id });
+  const response = await agent.prompt(message).send();
+
+  return Response.json({ output: response.output });
+}
+```
+
+## 3. Add Retrieval Context
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use retrieved support docs when relevant.")
+  .dynamicContext(supportDocsIndex, {
+    topK: 3,
+    threshold: 0.7,
+  })
+  .tool(lookupOrder)
+  .build();
+```
+
+Build the retrieval index outside hot request paths. Use request-scoped tools for permissions and retrieval context for searchable knowledge.
+
+## Next
+
+Persist conversations in [Persistence](/docs/frameworks/nextjs/06-persistence). Related guides: [Runtime Context](/docs/guides/agents/runtime-context), [RAG Context](/docs/guides/retrieval/rag-context), and [Tool Handlers](/docs/guides/tools/tool-handlers).

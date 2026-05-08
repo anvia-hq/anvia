@@ -1,0 +1,49 @@
+---
+title: 08 Troubleshooting
+description: Fix common Fastify and Anvia integration failures.
+---
+
+Most Fastify issues come from missing body validation, plugin ordering, or streams being buffered by infrastructure.
+
+## Auth Is Not Available In Routes
+
+Register auth plugins before support routes:
+
+```ts
+await app.register(authPlugin);
+await app.register(supportRoutes, { prefix: "/api" });
+```
+
+## Validation Returns 500
+
+Validate unknown bodies with `safeParse` and return a 400 from the route.
+
+```ts
+const parsed = SupportRequest.safeParse(request.body);
+
+if (!parsed.success) {
+  return reply.status(400).send({ error: { code: "bad_request" } });
+}
+```
+
+## Stream Does Not Flush
+
+Set the NDJSON content type and check proxy buffering.
+
+```ts
+return reply
+  .header("Content-Type", "application/x-ndjson")
+  .send(agent.prompt(message).readableStream());
+```
+
+## Provider Failures Leak Details
+
+Install a Fastify error handler that logs internal details and returns a stable application error shape.
+
+## Long Runs Time Out
+
+Increase application, proxy, and platform timeouts. For reviewer waits, store approvals and resume through a decision endpoint.
+
+## Next
+
+Add reviewer workflows in [Human in the Loop](/docs/frameworks/fastify/09-human-in-the-loop). Related guides: [Tool Errors](/docs/guides/tools/tool-errors), [Readable Streams](/docs/guides/streaming/readable-streams), and [Tracing](/docs/guides/observability/tracing).

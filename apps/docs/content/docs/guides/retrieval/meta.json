@@ -4,6 +4,7 @@
   "collapsible": true,
   "pages": [
     "embeddings",
+    "loaders",
     "embed-documents",
     "vector-stores",
     "rag-context",

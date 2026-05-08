@@ -9,7 +9,8 @@
     "deploy": "pnpm run build && wrangler deploy",
     "dev": "vite dev",
     "preview": "vite preview",
-    "typecheck": "fumadocs-mdx && tsr generate && tsc --noEmit"
+    "reference-check": "node scripts/check-reference-coverage.mjs",
+    "typecheck": "pnpm run reference-check && fumadocs-mdx && tsr generate && tsc --noEmit"
   },
   "dependencies": {
     "@tanstack/react-router": "^1.168.26",

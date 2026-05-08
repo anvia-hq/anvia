@@ -1,0 +1,50 @@
+---
+title: Framework Guides
+description: Add Anvia agents to application frameworks without giving up your app boundaries.
+---
+
+These guides show how to move Anvia from a local script into real HTTP runtimes.
+
+Each framework follows the same path:
+
+| Step | Goal |
+| --- | --- |
+| 01 Prep | Create the project shape and install Anvia packages |
+| 02 Setup Anvia | Build provider clients, models, tools, and agents in server-side modules |
+| 03 Route Handler | Return a normal JSON response from a framework route |
+| 04 Streaming | Return newline-delimited stream events from the same agent |
+| 05 Tools and Context | Pass request-local auth, product data, and retrieval context safely |
+| 06 Persistence | Store conversation history through your application storage |
+| 07 Deploy | Check runtime, environment, and operational constraints |
+| 08 Troubleshooting | Fix common framework and provider failures |
+| 09 Human in the Loop | Add approvals, questions, and reviewer waits to framework routes |
+| 10 Setup Tests | Test route handlers, streams, Studio wiring, and provider boundaries |
+
+Start with the framework that owns your HTTP routes:
+
+| Framework | Start here | Route shape |
+| --- | --- | --- |
+| Next.js | [Next.js Prep](/docs/frameworks/nextjs/01-prep) | App Router `route.ts` handlers |
+| TanStack Start | [TanStack Start Prep](/docs/frameworks/tanstack-start/01-prep) | `createServerFn(...)` and server routes |
+| SvelteKit | [SvelteKit Prep](/docs/frameworks/sveltekit/01-prep) | `+server.ts` endpoint modules |
+| Hono | [Hono Prep](/docs/frameworks/hono/01-prep) | Plain Hono routes |
+| Express | [Express Prep](/docs/frameworks/express/01-prep) | Router middleware and handlers |
+| Fastify | [Fastify Prep](/docs/frameworks/fastify/01-prep) | Plugin routes and replies |
+| NestJS | [NestJS Prep](/docs/frameworks/nestjs/01-prep) | Modules, services, and controllers |
+
+The Anvia runtime shape stays the same across every framework:
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({ apiKey });
+const model = client.completionModel("gpt-5.5");
+
+export const supportAgent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .defaultMaxTurns(3)
+  .build();
+```
+
+For the underlying SDK concepts, read [How Anvia Works](/docs/guides/sdk-fundamentals/runtime-boundaries), [Creating Agents](/docs/guides/agents/creating-agents), [Tools](/docs/guides/tools/creating-tools), [Readable Streams](/docs/guides/streaming/readable-streams), and [Memory](/docs/guides/memory).

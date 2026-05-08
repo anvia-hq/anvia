@@ -1,0 +1,88 @@
+---
+title: 05 Tools and Context
+description: Scope TanStack Start request data before exposing tools and retrieval to Anvia.
+---
+
+Resolve auth and request data in the server route or server function. If a tool needs that data, create a scoped tool or agent for the request.
+
+## 1. Create a Scoped Agent Factory
+
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { z } from "zod";
+import { model } from "~/ai/support-agent";
+import { orders } from "~/db/orders";
+
+type SupportScope = {
+  userId: string;
+};
+
+export function createSupportAgent(scope: SupportScope) {
+  const lookupOrder = createTool({
+    name: "lookup_order",
+    description: "Look up one order owned by the current user.",
+    input: z.object({
+      orderId: z.string(),
+    }),
+    output: z.object({
+      status: z.string(),
+    }),
+    async execute({ orderId }) {
+      return orders.findForUser(scope.userId, orderId);
+    },
+  });
+
+  return new AgentBuilder("support", model)
+    .instructions("Use tools for account-specific data.")
+    .tool(lookupOrder)
+    .defaultMaxTurns(3)
+    .build();
+}
+```
+
+## 2. Use It From a Server Route
+
+```ts
+import { createFileRoute } from "@tanstack/react-router";
+import { requireUser } from "~/auth/server";
+import { createSupportAgent } from "~/ai/create-support-agent";
+
+export const Route = createFileRoute("/api/support")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const user = await requireUser(request);
+        const { message } = (await request.json()) as { message?: string };
+
+        if (!message?.trim()) {
+          return Response.json({ error: "message is required" }, { status: 400 });
+        }
+
+        const agent = createSupportAgent({ userId: user.id });
+        const response = await agent.prompt(message).send();
+
+        return Response.json({ output: response.output });
+      },
+    },
+  },
+});
+```
+
+## 3. Add Retrieval Context
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use retrieved support docs when relevant.")
+  .dynamicContext(supportDocsIndex, {
+    topK: 3,
+    threshold: 0.7,
+  })
+  .tool(lookupOrder)
+  .build();
+```
+
+Build retrieval indexes during ingestion, startup, or background work, not inside every route call.
+
+## Next
+
+Persist history in [Persistence](/docs/frameworks/tanstack-start/06-persistence). Related guides: [Runtime Context](/docs/guides/agents/runtime-context), [RAG Context](/docs/guides/retrieval/rag-context), and [Tool Handlers](/docs/guides/tools/tool-handlers).

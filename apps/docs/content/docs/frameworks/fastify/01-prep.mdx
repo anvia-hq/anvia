@@ -1,0 +1,57 @@
+---
+title: 01 Prep
+description: Prepare a Fastify app for Anvia routes.
+---
+
+Use this path when Anvia runs inside a Fastify API or plugin-based Node service.
+
+## 1. Create A Fastify Project
+
+```sh
+mkdir anvia-fastify
+cd anvia-fastify
+pnpm init
+pnpm add fastify fastify-plugin zod
+pnpm add -D tsx typescript @types/node
+```
+
+## 2. Install Anvia
+
+```sh
+pnpm add @anvia/core @anvia/openai
+```
+
+Install other provider packages when needed:
+
+```sh
+pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+```
+
+## 3. Add Environment Variables
+
+```txt
+OPENAI_API_KEY=sk_...
+```
+
+Read the value in server code:
+
+```ts
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+```
+
+## 4. Choose File Boundaries
+
+| File | Purpose |
+| --- | --- |
+| `src/ai/support-agent.ts` | Provider client, model, tools, and reusable agent |
+| `src/routes/support.ts` | Fastify plugin with prompt and stream routes |
+| `src/plugins/auth.ts` | Auth decoration and hooks |
+| `src/app.ts` | Fastify instance and plugin registration |
+
+## Next
+
+Build the reusable agent in [Setup Anvia](/docs/frameworks/fastify/02-setup-anvia). Read [Runtime Boundaries](/docs/guides/sdk-fundamentals/runtime-boundaries) for the SDK and application boundaries.

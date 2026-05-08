@@ -1,0 +1,45 @@
+---
+title: 07 Deploy
+description: Deploy NestJS Anvia modules in a Node runtime.
+---
+
+NestJS gives you a long-lived Node server by default. Size request timeouts and observability for model calls.
+
+## 1. Start The App
+
+```ts
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "./app.module";
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+
+void bootstrap();
+```
+
+## 2. Configure Environment Variables
+
+```txt
+OPENAI_API_KEY=sk_...
+DATABASE_URL=...
+ANVIA_STUDIO_TOKEN=...
+```
+
+## 3. Streaming Checks
+
+If you use the Express adapter, verify `res.setHeader(...)` and streaming through any reverse proxy. If you use the Fastify adapter, use Fastify-specific reply handling.
+
+## 4. Production Checklist
+
+| Check | Why |
+| --- | --- |
+| Config module validates secrets | Fail early when provider keys are missing |
+| Exception filters installed | Keep provider stack traces out of responses |
+| Route timeouts reviewed | Agent runs may take longer than CRUD routes |
+| Observability module enabled | Tool calls and provider failures need traces |
+
+## Next
+
+Debug common failures in [Troubleshooting](/docs/frameworks/nestjs/08-troubleshooting). Add telemetry with [Observability](/docs/guides/observability/tracing).

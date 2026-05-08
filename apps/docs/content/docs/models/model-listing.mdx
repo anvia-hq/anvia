@@ -64,6 +64,71 @@ The request goes to the configured gateway models endpoint, usually `GET {baseUr
 
 If the gateway does not expose a compatible model-list endpoint, `listModels()` rejects with `ModelListingError`.
 
+## Manual Model Lists
+
+You do not need `listModels()` to use a model. If your app already knows the allowed model ids, define a manual `ModelList` and pass those ids to the provider client.
+
+```ts
+import type { ModelList } from "@anvia/core/model-listing";
+import { OpenAIClient } from "@anvia/openai";
+
+const models: ModelList = {
+  data: [
+    {
+      id: "openai/gpt-5-mini",
+      name: "GPT-5 Mini",
+      ownedBy: "openai",
+      contextLength: 400_000,
+    },
+    {
+      id: "anthropic/claude-sonnet-4.6",
+      name: "Claude Sonnet 4.6",
+      ownedBy: "anthropic",
+      contextLength: 200_000,
+    },
+  ],
+};
+
+const client = new OpenAIClient({
+  baseUrl: process.env.OPENAI_COMPATIBLE_BASE_URL,
+  apiKey: process.env.OPENAI_COMPATIBLE_API_KEY,
+});
+
+const selectedModelId = models.data[0]?.id ?? "openai/gpt-5-mini";
+const model = client.completionModel(selectedModelId);
+```
+
+Use this pattern for configuration screens, private deployments, beta models, or gateways that do not expose `GET /models`.
+
+If you want a manually defined source to match the same shape as provider clients, implement `ModelListingClient`:
+
+```ts
+import type { ModelList, ModelListingClient } from "@anvia/core/model-listing";
+
+function staticModelListing(models: ModelList): ModelListingClient {
+  return {
+    async listModels() {
+      return models;
+    },
+  };
+}
+```
+
+You can also merge live provider data with manual entries:
+
+```ts
+const liveModels = await client.listModels().catch((): ModelList => ({ data: [] }));
+
+const mergedModels: ModelList = {
+  data: [
+    ...models.data,
+    ...liveModels.data.filter(
+      (liveModel) => !models.data.some((manualModel) => manualModel.id === liveModel.id),
+    ),
+  ],
+};
+```
+
 ## Unlisted Models
 
 You can still use a known beta or private model id directly:

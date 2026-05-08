@@ -1,0 +1,55 @@
+---
+title: 07 Deploy
+description: Check Hono runtime, environment, and operations before deploying Anvia routes.
+---
+
+## Runtime Checklist
+
+| Area | Check |
+| --- | --- |
+| Runtime | Provider SDKs and storage clients work in your chosen Hono adapter |
+| Secrets | Provider keys are server-only environment variables |
+| Streaming | Host and proxy do not buffer `application/x-ndjson` responses |
+| Timeouts | Request timeout covers model latency and tool calls |
+| Storage | Conversations, memory, retrieval indexes, and traces are durable |
+
+## Node Server Example
+
+```ts
+import { serve } from "@hono/node-server";
+import { app } from "./app";
+
+serve({
+  fetch: app.fetch,
+  hostname: "0.0.0.0",
+  port: Number(process.env.PORT ?? 3000),
+});
+```
+
+## Observability
+
+```ts
+const response = await supportAgent
+  .prompt(message)
+  .withTrace({
+    name: "hono-support-route",
+    userId,
+    sessionId: conversationId,
+    tags: ["hono"],
+  })
+  .send();
+```
+
+Attach observers for logs, metrics, Langfuse, or OpenTelemetry.
+
+## Deployment Smoke Test
+
+```sh
+curl -X POST "$APP_URL/api/support" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Say hello"}'
+```
+
+## Next
+
+Use [Troubleshooting](/docs/frameworks/hono/08-troubleshooting) for common failures. Related guides: [Observers](/docs/guides/observability/observers), [Langfuse](/docs/guides/observability/langfuse), and [OpenTelemetry](/docs/guides/observability/otel).

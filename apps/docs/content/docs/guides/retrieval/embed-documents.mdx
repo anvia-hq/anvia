@@ -5,6 +5,8 @@ description: Prepare and embed text documents for retrieval.
 
 Use `embedDocuments(...)` during preprocessing. This step should usually run before user requests: in a build step, admin action, startup task, or background ingestion job.
 
+If your source material starts as local files or PDFs, read [Loaders](/docs/guides/retrieval/loaders) first, then embed the loaded documents.
+
 ## 1. Prepare Documents
 
 ```ts
@@ -28,7 +30,7 @@ Normalize or chunk your source text before embedding it.
 
 ## 2. Load Local Files
 
-Use `@anvia/core/loaders` when ingestion starts from local text files or PDFs.
+Use `@anvia/core/loaders` when ingestion starts from local text files or PDFs. Loaders convert files, directories, globs, bytes, and PDFs into the `Document[]` shape that `embedDocuments(...)` expects.
 
 ```ts
 import { FileLoader, fileLoaderToDocuments } from "@anvia/core/loaders";
@@ -48,7 +50,7 @@ const pdfPages = await pdfPageLoaderToDocuments(
 );
 ```
 
-Anvia loaders do ingestion only. For text chunking beyond PDF pages, preprocess text in application code before calling `embedDocuments(...)`.
+Anvia loaders do ingestion only. For text chunking beyond PDF pages, preprocess text in application code before calling `embedDocuments(...)`. For the complete loader workflow, see [Loaders](/docs/guides/retrieval/loaders).
 
 ## 3. Embed With Selectors
 

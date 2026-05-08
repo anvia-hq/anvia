@@ -1,0 +1,81 @@
+---
+title: 10 Setup Tests
+description: Test NestJS Anvia controllers, services, streams, and provider boundaries.
+---
+
+Use Nest testing modules for controllers and services. Mock Anvia services in controller tests and provider clients in integration tests.
+
+## 1. Install Test Tools
+
+Nest projects usually include Jest. If you use Vitest, install the equivalent Nest test setup for your project.
+
+```sh
+pnpm add -D @nestjs/testing supertest @types/supertest
+```
+
+## 2. Test The Controller
+
+```ts
+import { Test } from "@nestjs/testing";
+import request from "supertest";
+import { SupportController } from "../src/support/support.controller";
+import { SupportAgentService } from "../src/ai/support-agent.service";
+
+describe("SupportController", () => {
+  it("returns the agent output", async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [SupportController],
+      providers: [
+        {
+          provide: SupportAgentService,
+          useValue: {
+            runSupport: async () => ({
+              output: "Reset links expire after 30 minutes.",
+              usage: { totalTokens: 12 },
+              messages: [],
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    const app = moduleRef.createNestApplication();
+    await app.init();
+
+    await request(app.getHttpServer())
+      .post("/api/support")
+      .send({ message: "How long does a reset link last?" })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.output).toBe("Reset links expire after 30 minutes.");
+      });
+  });
+});
+```
+
+Nest returns `201` for `POST` by default unless you set `@HttpCode(200)`.
+
+## 3. Test The Stream Method
+
+Mock `streamSupport()` with a small `ReadableStream` that emits one `final` event. Assert the controller sets `application/x-ndjson`.
+
+## 4. Test Studio Without A Port
+
+```ts
+import { Studio } from "@anvia/studio";
+
+const studio = new Studio([supportAgent]);
+const response = await studio.fetch(
+  new Request("http://studio.test/agents/support/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello" }),
+  }),
+);
+
+expect(response.status).toBe(200);
+```
+
+## Next
+
+Related guides: [Testing](/docs/guides/testing), [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines), and [Studio and Providers](/docs/guides/testing/studio-and-providers).

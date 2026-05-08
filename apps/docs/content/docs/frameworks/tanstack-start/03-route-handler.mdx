@@ -1,0 +1,74 @@
+---
+title: 03 Route Handler
+description: Return a non-streaming Anvia response from a TanStack Start server route.
+---
+
+TanStack Start server routes live in `src/routes` and can return Web `Response` objects.
+
+## 1. Create `src/routes/api/support.ts`
+
+```ts
+import { createFileRoute } from "@tanstack/react-router";
+import { supportAgent } from "~/ai/support-agent";
+
+type SupportRequest = {
+  message?: string;
+};
+
+export const Route = createFileRoute("/api/support")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const body = (await request.json()) as SupportRequest;
+        const message = body.message?.trim();
+
+        if (!message) {
+          return Response.json(
+            { error: { code: "bad_request", message: "message is required" } },
+            { status: 400 },
+          );
+        }
+
+        const response = await supportAgent.prompt(message).send();
+
+        return Response.json({
+          output: response.output,
+          usage: response.usage,
+          messages: response.messages,
+        });
+      },
+    },
+  },
+});
+```
+
+## 2. Call The Route
+
+```ts
+const response = await fetch("/api/support", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    message: "Can enterprise customers use priority support?",
+  }),
+});
+
+const data = await response.json();
+console.log(data.output);
+```
+
+## 3. Use Server Functions For App-Internal Calls
+
+If you created `askSupport`, app code can call the server function instead:
+
+```ts
+const result = await askSupport({
+  data: { message: "How long does a reset link last?" },
+});
+```
+
+Use the raw server route for external clients, webhooks, and streaming.
+
+## Next
+
+Return live Anvia events in [Streaming](/docs/frameworks/tanstack-start/04-streaming). For prompt response fields, read [Prompt Responses](/docs/guides/sdk-fundamentals/prompt-responses).

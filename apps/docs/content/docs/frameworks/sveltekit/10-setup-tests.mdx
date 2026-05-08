@@ -1,0 +1,94 @@
+---
+title: 10 Setup Tests
+description: Test SvelteKit Anvia endpoints, streams, and provider boundaries.
+---
+
+Test endpoint behavior with mocked agents. Keep provider integration tests separate and opt-in.
+
+## 1. Install Test Tools
+
+```sh
+pnpm add -D vitest
+```
+
+## 2. Test The JSON Endpoint
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+import { POST } from "./+server";
+
+vi.mock("$lib/server/ai/support-agent", () => ({
+  supportAgent: {
+    prompt: () => ({
+      send: async () => ({
+        output: "Reset links expire after 30 minutes.",
+        usage: { totalTokens: 12 },
+        messages: [],
+      }),
+    }),
+  },
+}));
+
+describe("POST /api/support", () => {
+  it("returns the agent output", async () => {
+    const response = await POST({
+      request: new Request("http://test.local/api/support", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "How long does a reset link last?" }),
+      }),
+      locals: {},
+      params: {},
+      url: new URL("http://test.local/api/support"),
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      output: "Reset links expire after 30 minutes.",
+    });
+  });
+});
+```
+
+## 3. Test The Stream Endpoint
+
+```ts
+const stream = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode('{"type":"final"}\n'));
+    controller.close();
+  },
+});
+
+vi.mock("$lib/server/ai/support-agent", () => ({
+  supportAgent: {
+    prompt: () => ({
+      readableStream: () => stream,
+    }),
+  },
+}));
+```
+
+Assert the endpoint returns `application/x-ndjson` and a readable body.
+
+## 4. Test Studio Without A Port
+
+```ts
+import { Studio } from "@anvia/studio";
+import { supportAgent } from "$lib/server/ai/support-agent";
+
+const studio = new Studio([supportAgent]);
+const response = await studio.fetch(
+  new Request("http://studio.test/agents/support/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "Hello" }),
+  }),
+);
+
+expect(response.status).toBe(200);
+```
+
+## Next
+
+Related guides: [Testing](/docs/guides/testing), [Tools and Pipelines](/docs/guides/testing/tools-and-pipelines), and [Studio and Providers](/docs/guides/testing/studio-and-providers).

@@ -1,0 +1,49 @@
+---
+title: 06 Persistence
+description: Persist Fastify chat history through your app storage.
+---
+
+Fastify gives you routing and lifecycle hooks. Your app owns session storage and message persistence.
+
+## 1. Load Existing Messages
+
+```ts
+const session = await db.chatSession.findUnique({
+  where: { id: request.params.sessionId, userId: request.user.id },
+  include: { messages: { orderBy: { createdAt: "asc" } } },
+});
+
+if (!session) {
+  return reply.status(404).send({ error: { code: "not_found" } });
+}
+```
+
+## 2. Send With History
+
+```ts
+const response = await supportAgent
+  .prompt(message)
+  .messages(session.messages.map((item) => item.message))
+  .send();
+```
+
+## 3. Store New Messages
+
+```ts
+await db.chatMessage.createMany({
+  data: response.messages.map((message) => ({
+    sessionId: session.id,
+    message,
+  })),
+});
+```
+
+Store messages only after the run succeeds. Use a transaction when message writes must commit with application state changes.
+
+## 4. Use Memory When The Model Should Remember
+
+Use chat history for conversation continuity. Use Anvia memory for durable facts that should be recalled across future runs.
+
+## Next
+
+Prepare runtime constraints in [Deploy](/docs/frameworks/fastify/07-deploy). Related guides: [Memory](/docs/guides/memory), [Memory and Sessions](/docs/guides/sdk-fundamentals/memory-and-sessions), and [Agent History](/docs/guides/agents/agent-history).

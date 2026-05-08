@@ -1,0 +1,57 @@
+---
+title: 01 Prep
+description: Prepare a SvelteKit app for Anvia server endpoints.
+---
+
+Use this path when Anvia runs behind SvelteKit endpoints, form actions, or server-only modules.
+
+## 1. Create A SvelteKit Project
+
+```sh
+pnpm create svelte@latest anvia-sveltekit
+cd anvia-sveltekit
+pnpm install
+```
+
+Choose TypeScript. Anvia code belongs in server-only files, not client components.
+
+## 2. Install Anvia
+
+```sh
+pnpm add @anvia/core @anvia/openai zod
+```
+
+Install other providers when needed:
+
+```sh
+pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+```
+
+## 3. Add Environment Variables
+
+```txt
+OPENAI_API_KEY=sk_...
+```
+
+Read secrets from `$env/static/private` inside server modules:
+
+```ts
+import { OPENAI_API_KEY } from "$env/static/private";
+
+if (!OPENAI_API_KEY) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+```
+
+## 4. Choose File Boundaries
+
+| File | Purpose |
+| --- | --- |
+| `src/lib/server/ai/support-agent.ts` | Provider client, model, tools, and reusable agent |
+| `src/routes/api/support/+server.ts` | JSON endpoint |
+| `src/routes/api/support/stream/+server.ts` | NDJSON stream endpoint |
+| `src/hooks.server.ts` | Auth and request-local `locals` |
+
+## Next
+
+Build the reusable agent in [Setup Anvia](/docs/frameworks/sveltekit/02-setup-anvia). Read [Runtime Boundaries](/docs/guides/sdk-fundamentals/runtime-boundaries) before importing Anvia into Svelte components.

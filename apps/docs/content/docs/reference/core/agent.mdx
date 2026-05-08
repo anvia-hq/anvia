@@ -178,8 +178,10 @@ interface AgentEventStore {
   clear?(runId: string): Promise<void>;
 }
 
+type AgentEventStoreInclude = "all" | "agent_tool_events";
+
 type AgentEventStoreOptions = {
-  include?: "all" | "agent_tool_events";
+  include?: AgentEventStoreInclude;
 };
 
 type AgentEventAppendInput = {
@@ -191,6 +193,10 @@ type AgentEventAppendInput = {
   toolCallId?: string;
   internalCallId?: string;
   event: unknown;
+};
+
+type AgentEventRecord = AgentEventAppendInput & {
+  createdAt?: Date;
 };
 ```
 

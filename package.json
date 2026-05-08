@@ -10,6 +10,7 @@
     "docs:deploy": "pnpm --filter docs run deploy",
     "docs:dev": "pnpm --filter docs dev",
     "docs:cf-typegen": "pnpm --filter docs cf-typegen",
+    "docs:reference-check": "pnpm --filter docs reference-check",
     "cookbook:basics": "pnpm --filter cookbook basics",
     "cookbook:basics:01": "pnpm --filter cookbook basics:01",
     "cookbook:basics:02": "pnpm --filter cookbook basics:02",

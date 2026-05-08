@@ -1,0 +1,49 @@
+---
+title: 06 Persistence
+description: Persist NestJS chat history through application services.
+---
+
+Use Nest services or repositories for session storage. Anvia should not own your database boundary.
+
+## 1. Load Existing Messages
+
+```ts
+const session = await this.chatSessions.findForUser({
+  sessionId: input.sessionId,
+  userId: input.userId,
+});
+
+if (!session) {
+  throw new NotFoundException("Session not found");
+}
+```
+
+## 2. Send With History
+
+```ts
+const response = await this.agent
+  .prompt(input.message)
+  .messages(session.messages.map((item) => item.message))
+  .send();
+```
+
+## 3. Store New Messages
+
+```ts
+await this.chatMessages.createMany(
+  response.messages.map((message) => ({
+    sessionId: session.id,
+    message,
+  })),
+);
+```
+
+Keep transaction ownership in your application services when message writes must commit with business records.
+
+## 4. Use Memory When The Model Should Remember
+
+Use chat history for the current conversation. Use Anvia memory for durable user or domain facts that should survive across sessions.
+
+## Next
+
+Prepare runtime constraints in [Deploy](/docs/frameworks/nestjs/07-deploy). Related guides: [Memory](/docs/guides/memory), [Memory and Sessions](/docs/guides/sdk-fundamentals/memory-and-sessions), and [Agent History](/docs/guides/agents/agent-history).

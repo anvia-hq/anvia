@@ -1,0 +1,66 @@
+---
+title: 03 Route Handler
+description: Return a non-streaming Anvia response from a Fastify route.
+---
+
+Fastify routes can live in plugins. Validate unknown bodies with `zod` before calling the agent.
+
+## 1. Create `src/routes/support.ts`
+
+```ts
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { supportAgent } from "../ai/support-agent";
+
+const SupportRequest = z.object({
+  message: z.string().trim().min(1, "message is required"),
+});
+
+export async function supportRoutes(app: FastifyInstance) {
+  app.post("/support", async (request, reply) => {
+    const parsed = SupportRequest.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.issues[0]?.message },
+      });
+    }
+
+    const response = await supportAgent.prompt(parsed.data.message).send();
+
+    return reply.send({
+      output: response.output,
+      usage: response.usage,
+      messages: response.messages,
+    });
+  });
+}
+```
+
+## 2. Register The Plugin
+
+```ts
+import Fastify from "fastify";
+import { supportRoutes } from "./routes/support";
+
+export const app = Fastify({ logger: true });
+
+await app.register(supportRoutes, { prefix: "/api" });
+```
+
+## 3. Call The Route
+
+```ts
+const response = await fetch("http://localhost:3000/api/support", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "How long does a reset link last?" }),
+});
+
+const data = await response.json();
+console.log(data.output);
+```
+
+## Next
+
+Return live run events in [Streaming](/docs/frameworks/fastify/04-streaming). For response fields, read [Prompt Responses](/docs/guides/sdk-fundamentals/prompt-responses).

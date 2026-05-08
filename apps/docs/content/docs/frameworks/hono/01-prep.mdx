@@ -1,0 +1,60 @@
+---
+title: 01 Prep
+description: Prepare a Hono app for Anvia HTTP routes.
+---
+
+Use this path when Anvia will run behind a plain Hono server or a framework that exposes Hono routes.
+
+## 1. Create a Hono Project
+
+```sh
+mkdir anvia-hono
+cd anvia-hono
+pnpm init
+pnpm add hono @hono/node-server
+pnpm add -D tsx typescript @types/node
+```
+
+## 2. Install Anvia
+
+```sh
+pnpm add @anvia/core @anvia/openai @hono/zod-validator zod
+```
+
+Install other provider packages when you need them:
+
+```sh
+pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+```
+
+## 3. Add Environment Variables
+
+Anvia clients use explicit constructor options.
+
+```txt
+OPENAI_API_KEY=sk_...
+```
+
+Read the value in server code:
+
+```ts
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("OPENAI_API_KEY is required");
+}
+```
+
+## 4. Choose File Boundaries
+
+| File | Purpose |
+| --- | --- |
+| `src/ai/support-agent.ts` | Provider client, model, tools, and reusable agent |
+| `src/app.ts` | Hono app and routes |
+| `src/server.ts` | Node server entry point |
+
+Hono handlers receive `c.req`, but they can also return standard Web `Response` objects. That makes Anvia streaming direct.
+
+## Next
+
+Build the reusable agent in [Setup Anvia](/docs/frameworks/hono/02-setup-anvia). Read [How Anvia Works](/docs/guides/sdk-fundamentals/runtime-boundaries) for the SDK boundaries.

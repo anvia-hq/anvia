@@ -1,0 +1,86 @@
+---
+title: 05 Tools and Context
+description: Pass Fastify auth, request data, and retrieval context into Anvia tools.
+---
+
+Use Fastify decorators or hooks for auth. Pass request-local data into Anvia at the route boundary.
+
+## 1. Add A User Decoration
+
+```ts
+import fp from "fastify-plugin";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    user?: { id: string };
+  }
+}
+
+export const authPlugin = fp(async (app) => {
+  app.addHook("preHandler", async (request, reply) => {
+    const user = await auth.userFromRequest(request);
+
+    if (!user) {
+      return reply.status(401).send({ error: { code: "unauthorized" } });
+    }
+
+    request.user = { id: user.id };
+  });
+});
+```
+
+## 2. Build Request-Local Tools
+
+```ts
+import { createTool } from "@anvia/core";
+import { z } from "zod";
+
+export function createAccountTool(input: { userId: string }) {
+  return createTool({
+    name: "get_account_status",
+    description: "Read the authenticated user's account status.",
+    input: z.object({}),
+    output: z.object({ plan: z.string(), openTickets: z.number() }),
+    async execute() {
+      return db.account.findStatus({ userId: input.userId });
+    },
+  });
+}
+```
+
+## 3. Attach Context In The Route
+
+```ts
+app.post("/support", async (request, reply) => {
+  const { message } = SupportRequest.parse(request.body);
+  const userId = request.user?.id;
+
+  if (!userId) {
+    return reply.status(401).send({ error: { code: "unauthorized" } });
+  }
+
+  const response = await supportAgent
+    .prompt(message)
+    .tool(createAccountTool({ userId }))
+    .context({ userId })
+    .send();
+
+  return reply.send({ output: response.output });
+});
+```
+
+## 4. Add Retrieval Context
+
+```ts
+const documents = await knowledge.search({
+  query: message,
+  filter: { userId: request.user.id },
+  limit: 5,
+});
+
+const response = await supportAgent.prompt(message).documents(documents).send();
+```
+
+## Next
+
+Persist history in [Persistence](/docs/frameworks/fastify/06-persistence). Related guides: [Runtime Context](/docs/guides/agents/runtime-context), [Tool Handlers](/docs/guides/tools/tool-handlers), and [RAG Context](/docs/guides/retrieval/rag-context).

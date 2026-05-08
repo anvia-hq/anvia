@@ -1,0 +1,50 @@
+---
+title: LangDB AI Gateway
+description: Use LangDB AI Gateway's OpenAI-compatible API with Anvia.
+---
+
+LangDB AI Gateway provides OpenAI-compatible APIs for routing to multiple LLM providers. The regional API base URL commonly includes your LangDB project id, such as `https://api.us-east-1.langdb.ai/{project_id}/v1`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const projectId = process.env.LANGDB_PROJECT_ID;
+
+const client = new OpenAIClient({
+  baseUrl: `https://api.us-east-1.langdb.ai/${projectId}/v1`,
+  apiKey: process.env.LANGDB_API_KEY,
+});
+
+const model = client.completionModel("anthropic/claude-sonnet-4");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+Use the model ids supported by your LangDB project and region.
+
+## Get the Model List
+
+If your LangDB project exposes model listing through its OpenAI-compatible API, `listModels()` calls the configured `/models` endpoint.
+
+```ts
+const models = await client.listModels();
+
+console.table(models.data.map((model) => ({ id: model.id, owner: model.ownedBy })));
+```
+
+## Notes
+
+- LangDB can also require project metadata headers depending on the API path and account setup. Keep those values in configuration and pass them with `headers` if needed.
+- Routing, tracing, guardrails, and model access are controlled by your LangDB project.
+- Confirm the region-specific base URL before deploying.
+
+For current LangDB details, see the [LangDB API guide](https://docs.langdb.ai/getting-started/working-with-api) and [AI Gateway API reference](https://docs.langdb.ai/api-reference/ai-gateway-api).

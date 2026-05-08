@@ -1,0 +1,78 @@
+---
+title: 03 Route Handler
+description: Return a non-streaming Anvia response from an Express route.
+---
+
+Use Express middleware for JSON parsing and route handlers for application-owned validation and error shapes.
+
+## 1. Create `src/routes/support.ts`
+
+```ts
+import { Router } from "express";
+import { z } from "zod";
+import { supportAgent } from "../ai/support-agent";
+
+const SupportRequest = z.object({
+  message: z.string().trim().min(1, "message is required"),
+});
+
+export const supportRouter = Router();
+
+supportRouter.post("/support", async (req, res, next) => {
+  try {
+    const parsed = SupportRequest.safeParse(req.body);
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: { code: "bad_request", message: parsed.error.issues[0]?.message },
+      });
+    }
+
+    const response = await supportAgent.prompt(parsed.data.message).send();
+
+    return res.json({
+      output: response.output,
+      usage: response.usage,
+      messages: response.messages,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+```
+
+## 2. Mount The Router
+
+```ts
+import express from "express";
+import { supportRouter } from "./routes/support";
+
+export const app = express();
+
+app.use(express.json({ limit: "1mb" }));
+app.use("/api", supportRouter);
+
+app.use((error: unknown, _req, res, _next) => {
+  console.error(error);
+  res.status(500).json({
+    error: { code: "agent_failed", message: "The agent run failed." },
+  });
+});
+```
+
+## 3. Call The Route
+
+```ts
+const response = await fetch("http://localhost:3000/api/support", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: "How long does a reset link last?" }),
+});
+
+const data = await response.json();
+console.log(data.output);
+```
+
+## Next
+
+Return live run events in [Streaming](/docs/frameworks/express/04-streaming). For response fields, read [Prompt Responses](/docs/guides/sdk-fundamentals/prompt-responses).

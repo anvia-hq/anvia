@@ -1,0 +1,90 @@
+---
+title: 05 Tools and Context
+description: Pass SvelteKit locals, auth, and retrieval context into Anvia tools.
+---
+
+Your app should own auth, database access, and retrieval. Pass only the request-local values a run needs.
+
+## 1. Add `locals` In `hooks.server.ts`
+
+```ts
+import type { Handle } from "@sveltejs/kit";
+
+export const handle: Handle = async ({ event, resolve }) => {
+  const session = await auth.getSession(event.request);
+  event.locals.userId = session?.user.id;
+  return resolve(event);
+};
+```
+
+Add local types in `src/app.d.ts`:
+
+```ts
+declare global {
+  namespace App {
+    interface Locals {
+      userId?: string;
+    }
+  }
+}
+```
+
+## 2. Build Request-Local Tools
+
+```ts
+import { createTool } from "@anvia/core";
+import { z } from "zod";
+
+export function createAccountTool(input: { userId: string }) {
+  return createTool({
+    name: "get_account_status",
+    description: "Read the authenticated user's account status.",
+    input: z.object({}),
+    output: z.object({ plan: z.string(), openTickets: z.number() }),
+    async execute() {
+      return db.account.findStatus({ userId: input.userId });
+    },
+  });
+}
+```
+
+## 3. Attach Context In The Endpoint
+
+```ts
+import { json, type RequestHandler } from "@sveltejs/kit";
+import { supportAgent } from "$lib/server/ai/support-agent";
+import { createAccountTool } from "$lib/server/ai/tools";
+
+export const POST: RequestHandler = async ({ request, locals }) => {
+  if (!locals.userId) {
+    return json({ error: { code: "unauthorized" } }, { status: 401 });
+  }
+
+  const { message } = await request.json();
+  const response = await supportAgent
+    .prompt(message)
+    .tool(createAccountTool({ userId: locals.userId }))
+    .context({ userId: locals.userId })
+    .send();
+
+  return json({ output: response.output });
+};
+```
+
+## 4. Add Retrieval Context
+
+Retrieve documents in application code, then pass them into the prompt or context. Keep vector-store credentials in server modules.
+
+```ts
+const documents = await knowledge.search({
+  query: message,
+  filter: { userId: locals.userId },
+  limit: 5,
+});
+
+const response = await supportAgent.prompt(message).documents(documents).send();
+```
+
+## Next
+
+Persist history in [Persistence](/docs/frameworks/sveltekit/06-persistence). Related guides: [Runtime Context](/docs/guides/agents/runtime-context), [Tool Handlers](/docs/guides/tools/tool-handlers), and [RAG Context](/docs/guides/retrieval/rag-context).

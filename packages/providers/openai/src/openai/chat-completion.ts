@@ -122,6 +122,11 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     choice.push(AssistantContent.text(message.content));
   }
 
+  const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
+  if (reasoning !== undefined && reasoning.length > 0) {
+    choice.push(AssistantContent.reasoning(reasoning));
+  }
+
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   for (const toolCall of toolCalls) {
     if (!isPlainObject(toolCall)) {
@@ -250,13 +255,17 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
+  const reasoning = message.content
+    .flatMap((content) => (content.type === "reasoning" ? [content.text] : []))
+    .filter((text) => text.length > 0)
+    .join("\n");
   if (message.content.some((content) => content.type === "image")) {
     throw new Error("OpenAI chat completions does not support image content in assistant history");
   }
   const toolCalls = message.content
     .filter((content) => content.type === "tool_call")
     .map((content) => ({
-      id: content.id,
+      id: content.callId ?? content.id,
       type: "function",
       function: {
         name: content.function.name,
@@ -269,6 +278,9 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   };
   if (text.length > 0) {
     chatMessage.content = text;
+  }
+  if (reasoning.length > 0) {
+    chatMessage.reasoning_content = reasoning;
   }
   if (toolCalls.length > 0) {
     chatMessage.tool_calls = toolCalls;

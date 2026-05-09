@@ -1,6 +1,10 @@
-import { Message, UserContent } from "@anvia/core";
+import { AssistantContent, Message, ToolContent, UserContent } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import { OpenAIChatCompletionModel, OpenAIClient } from "../src/index";
+import {
+  fromOpenAIChatCompletionResponse,
+  toOpenAIChatCompletionParams,
+} from "../src/openai/chat-completion";
 
 describe("OpenAI chat-completions client path", () => {
   it("exposes OpenAI chat-completions capability metadata", () => {
@@ -62,6 +66,57 @@ describe("OpenAI chat-completions client path", () => {
     });
 
     expect(openai.completionModel("custom-chat-model")).toBeInstanceOf(OpenAIChatCompletionModel);
+  });
+
+  it("preserves assistant reasoning and provider tool call ids across tool turns", () => {
+    const params = toOpenAIChatCompletionParams("kimi-k2.6", {
+      chatHistory: [
+        Message.assistant([
+          AssistantContent.reasoning("provider reasoning text"),
+          AssistantContent.toolCall("tool_0", "create_task", { title: "A" }, "call_abc"),
+        ]),
+        Message.tool(ToolContent.toolResult("tool_0", '{"id":"task_1"}', "call_abc")),
+        Message.user("continue"),
+      ],
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([
+      {
+        role: "assistant",
+        reasoning_content: "provider reasoning text",
+        tool_calls: [
+          {
+            id: "call_abc",
+            type: "function",
+            function: { name: "create_task", arguments: '{"title":"A"}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_abc", content: '{"id":"task_1"}' },
+      { role: "user", content: "continue" },
+    ]);
+  });
+
+  it("maps non-streaming reasoning_content responses to assistant reasoning", () => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "created",
+            reasoning_content: "provider reasoning text",
+          },
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.choice).toEqual([
+      AssistantContent.text("created"),
+      AssistantContent.reasoning("provider reasoning text"),
+    ]);
   });
 
   it("rejects unsupported document file input before provider calls", async () => {

@@ -3,6 +3,8 @@ packages:
   - "packages/*/*"
   - "apps/*"
   - "examples/*"
+overrides:
+  '@anvia/core': "workspace:*"
 allowBuilds:
   '@google/genai': true
   esbuild: true

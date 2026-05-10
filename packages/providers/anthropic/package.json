@@ -1,6 +1,6 @@
 {
   "name": "@anvia/anthropic",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Anthropic provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
-    "@anvia/core": "workspace:*"
+    "@anvia/core": "^0.2.0"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

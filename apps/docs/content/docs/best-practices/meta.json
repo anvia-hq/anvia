@@ -1,0 +1,16 @@
+{
+  "title": "Best Practices",
+  "description": "Agent pattern library",
+  "icon": "BookCheck",
+  "root": true,
+  "pages": [
+    "index",
+    "common-patterns",
+    "tool-patterns",
+    "mcp-patterns",
+    "knowledge-patterns",
+    "real-cases",
+    "quality-observability",
+    "operations"
+  ]
+}

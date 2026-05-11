@@ -1,0 +1,129 @@
+---
+title: Dynamic Tool Catalogs
+description: Select relevant tools at runtime when a static tool list is too large.
+---
+
+Use dynamic tools when an agent has a large catalog of possible actions but only a small subset should be sent to the model on each turn. This is common for internal platforms, operations agents, research agents, and backoffice assistants with many read-only service tools.
+
+Do not use dynamic tools to hide permission checks. The selected tool still needs to enforce permissions in code.
+
+## Scenario
+
+A support operations agent can inspect orders, refunds, tickets, subscriptions, feature flags, warehouse records, fraud signals, and policy documents. Sending every tool definition on every turn is noisy and expensive. Dynamic tools let Anvia search a tool index with the current prompt and send only the matching definitions.
+
+## When to Use It
+
+| Use dynamic tools | Prefer static tools |
+| --- | --- |
+| many tools compete for the same agent | the agent has a small stable tool set |
+| tools are discoverable by name, description, and schema | every tool is needed in almost every run |
+| the prompt usually needs only a few tools | missing one tool would be more costly than sending all tools |
+| tool catalog can be indexed at startup or deploy time | tools are created entirely per request |
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| `ToolSet` | owns the full catalog and direct test calls |
+| embedding model | embeds provider-facing tool definitions |
+| `createToolIndex(...)` | builds a searchable dynamic tool index |
+| `AgentBuilder.dynamicTools(...)` | selects top matching tools per prompt |
+| tool code | still enforces permissions, tenant scope, and side-effect policy |
+
+## Code Example
+
+```ts
+import { AgentBuilder, ToolSet, createToolIndex } from "@anvia/core";
+import { embeddingModel, model } from "./models";
+import { createAdminTools, createBillingTools, createSupportTools } from "./tools";
+
+const toolCatalog = ToolSet.fromTools([
+  ...createSupportTools(),
+  ...createBillingTools(),
+  ...createAdminTools(),
+]);
+
+const toolIndex = await createToolIndex(embeddingModel, toolCatalog, {
+  content: (tool, definition) => [
+    definition.name,
+    definition.description,
+    JSON.stringify(definition.parameters),
+  ],
+  metadata: (tool) => ({
+    name: tool.name,
+    domain: tool.name.split("_")[0],
+  }),
+});
+
+export const operationsAgent = new AgentBuilder("operations", model)
+  .instructions("Use the most relevant tool for the user's operational request.")
+  .dynamicTools(toolIndex, {
+    topK: 6,
+    threshold: 0.7,
+  })
+  .defaultMaxTurns(4)
+  .build();
+```
+
+Static tools can still be registered when they should always be available.
+
+```ts
+const agent = new AgentBuilder("operations", model)
+  .tool(createThinkTool())
+  .dynamicTools(toolIndex, { topK: 6, threshold: 0.7 })
+  .build();
+```
+
+## Validate Tool Selection
+
+Test the catalog before testing model behavior. Search the index with representative prompts and assert that the expected tool ids appear.
+
+```ts
+const matches = await toolIndex.searchIds({
+  query: "refund order A-100 because it was duplicated",
+  topK: 6,
+  threshold: 0.7,
+});
+
+expect(matches.map((match) => match.id)).toContain("issue_refund");
+```
+
+Then test the selected tool directly through the catalog.
+
+```ts
+const result = await toolCatalog.call(
+  "issue_refund",
+  JSON.stringify({
+    orderId: "A-100",
+    amount: 25,
+    reason: "duplicate_charge",
+  }),
+);
+
+expect(JSON.parse(result).status).toBe("refunded");
+```
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| model cannot find the right tool | improve tool name, description, schema text, or `content` embedding text |
+| too many unrelated tools are sent | raise `threshold`, lower `topK`, or split catalogs by domain |
+| needed tools are missing | lower `threshold`, add domain words to descriptions, or keep critical tools static |
+| permission leak | enforce user and tenant checks inside every tool |
+| catalog changes at runtime | rebuild the index or use a new indexed catalog for future agents |
+
+## Test Checklist
+
+- Search the index with common prompts and assert expected tool ids.
+- Call high-risk tools directly through `ToolSet.call(...)`.
+- Verify each tool still enforces permissions with fake users and tenants.
+- Use Studio traces to inspect which dynamic tools were sent during real runs.
+- Add evals for prompts where tool selection is part of the expected behavior.
+
+## Related Docs
+
+- [Tool Sets](/docs/guides/tools/tool-sets)
+- [Tools and Services](/docs/best-practices/common-patterns/tools-and-services)
+- [Research Agent](/docs/best-practices/real-cases/research-agent)
+

@@ -1,0 +1,6 @@
+{
+  "title": "Operations",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["production-readiness-checklist"]
+}

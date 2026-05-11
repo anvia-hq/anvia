@@ -1,0 +1,131 @@
+---
+title: Support Agent
+description: A practical support chat harness with history, retrieval, account tools, and traces.
+---
+
+This pattern is for customer support chat, help center assistants, and account-aware product support. The agent answers user questions, retrieves support knowledge, reads customer state through tools, persists conversation history, and emits trace metadata.
+
+## Scenario
+
+A signed-in customer asks, "Where is my order A-100 and can I change the address?" The agent needs previous conversation history, support documentation, order tools, and tenant-safe account context.
+
+## When to Use It
+
+Use this pattern when:
+
+- the user is authenticated
+- the agent needs conversation history
+- account-specific data must be fetched through tools
+- documentation or policy should come from retrieval
+- the response is user-facing and should be traceable
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| route | parse request and return product response |
+| runner | resolve user, load history, create scoped tools, persist messages |
+| support agent | instructions, dynamic context, scoped account tools, turn limit |
+| tools | order, ticket, account, and subscription service calls |
+| retrieval | tenant-safe or public support docs |
+| storage | conversation history and trace correlation ids |
+
+## Code Example
+
+```ts
+import { AgentBuilder, Message } from "@anvia/core";
+import { model } from "./model";
+import { supportDocsIndex } from "./support-docs";
+import { createSupportTools } from "./support-tools";
+
+export async function runSupportTurn(input: SupportTurnInput) {
+  const user = await input.auth.requireUser();
+  const history = await input.conversations.loadMessages(input.conversationId);
+
+  const agent = new AgentBuilder("support", model)
+    .instructions(`
+Answer support questions clearly.
+Use account tools for customer-specific data.
+Use retrieved support docs for policy and product behavior.
+Ask for missing details before guessing.
+    `)
+    .dynamicContext(supportDocsIndex, {
+      topK: 4,
+      threshold: 0.72,
+    })
+    .tools(
+      createSupportTools({
+        userId: user.id,
+        tenantId: user.tenantId,
+        orders: input.services.orders,
+        tickets: input.services.tickets,
+        subscriptions: input.services.subscriptions,
+      }),
+    )
+    .context(`Current customer plan: ${user.plan}`, "customer-plan")
+    .defaultMaxTurns(4)
+    .build();
+
+  const response = await agent
+    .prompt([...history, Message.user(input.message)])
+    .withTrace({
+      name: "support-chat",
+      userId: user.id,
+      metadata: {
+        tenantId: user.tenantId,
+        conversationId: input.conversationId,
+        channel: input.channel,
+      },
+    })
+    .send();
+
+  await input.conversations.append(input.conversationId, response.messages);
+
+  return {
+    output: response.output,
+    usage: response.usage,
+  };
+}
+```
+
+## Tool Scope
+
+Support tools should be scoped to the current user and tenant.
+
+```ts
+export function createSupportTools(scope: SupportToolScope) {
+  return [
+    createLookupOrderTool(scope),
+    createCreateTicketTool(scope),
+    createSubscriptionStatusTool(scope),
+  ];
+}
+```
+
+Do not give the model raw database clients. Give it narrow tools that call permission-aware services.
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| agent answers from stale docs | rebuild or refresh the retrieval index |
+| account data leaks across tenants | enforce tenant filters in every tool and retrieval source |
+| route tests call live providers | test runner and tools with fakes first |
+| history grows too large | summarize, window, or use session memory policy |
+| model calls too many tools | lower `defaultMaxTurns` or split tools by workflow |
+
+## Test Checklist
+
+- Test empty and malformed messages in the runner.
+- Test order lookup allowed, denied, and not found paths.
+- Test conversation history is appended with `response.messages`.
+- Test retrieval filters only return allowed documents.
+- Use Studio to inspect tool calls and retrieved context.
+- Add evals for common support questions and known policy answers.
+
+## Related Docs
+
+- [Request Runners](/docs/best-practices/common-patterns/request-runners)
+- [Context and Memory](/docs/best-practices/common-patterns/context-and-memory)
+- [Tools and Services](/docs/best-practices/common-patterns/tools-and-services)
+

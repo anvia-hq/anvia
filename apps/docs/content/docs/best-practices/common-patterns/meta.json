@@ -1,0 +1,15 @@
+{
+  "title": "Common Patterns",
+  "defaultOpen": true,
+  "collapsible": true,
+  "pages": [
+    "harness-blueprint",
+    "agent-structure",
+    "request-runners",
+    "tools-and-services",
+    "context-and-memory",
+    "pipeline",
+    "production-guardrails",
+    "testing-and-observability"
+  ]
+}

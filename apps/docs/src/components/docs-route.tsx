@@ -1,4 +1,4 @@
-import { Link, notFound, useLocation } from "@tanstack/react-router";
+import { Link, notFound, redirect, useLocation } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import browserCollections from "collections/browser";
 import { useFumadocsLoader } from "fumadocs-core/source/client";
@@ -12,15 +12,51 @@ import { source } from "@/lib/source";
 
 const docsSections = [
   { title: "Docs", href: "/docs/guides" },
+  { title: "Best Practices", href: "/docs/best-practices" },
   { title: "Frameworks", href: "/docs/frameworks" },
   { title: "Models", href: "/docs/models" },
   { title: "Studio", href: "/docs/studio/overview" },
   { title: "Reference", href: "/docs/reference" },
 ];
 
+const bestPracticeRedirects: Record<string, string> = {
+  "agent-structure": "/docs/best-practices/common-patterns/agent-structure",
+  "backoffice-agent": "/docs/best-practices/real-cases/backoffice-agent",
+  "coding-agent": "/docs/best-practices/real-cases/coding-agent",
+  "context-and-memory": "/docs/best-practices/common-patterns/context-and-memory",
+  "dynamic-tool-catalogs": "/docs/best-practices/tool-patterns/dynamic-tool-catalogs",
+  "eval-strategy": "/docs/best-practices/quality-observability/eval-strategy",
+  "harness-blueprint": "/docs/best-practices/common-patterns/harness-blueprint",
+  "mcp-agent-harness": "/docs/best-practices/mcp-patterns/mcp-agent-harness",
+  "mcp-server-lifecycle": "/docs/best-practices/mcp-patterns/mcp-server-lifecycle",
+  "mcp-tool-inspection": "/docs/best-practices/mcp-patterns/mcp-tool-inspection",
+  pipeline: "/docs/best-practices/common-patterns/pipeline",
+  "production-guardrails": "/docs/best-practices/common-patterns/production-guardrails",
+  "production-readiness-checklist":
+    "/docs/best-practices/operations/production-readiness-checklist",
+  "rag-agent-context": "/docs/best-practices/knowledge-patterns/rag-agent-context",
+  "rag-ingestion": "/docs/best-practices/knowledge-patterns/rag-ingestion",
+  "request-runners": "/docs/best-practices/common-patterns/request-runners",
+  "research-agent": "/docs/best-practices/real-cases/research-agent",
+  "side-effect-tools": "/docs/best-practices/tool-patterns/side-effect-tools",
+  "support-agent": "/docs/best-practices/real-cases/support-agent",
+  "testing-and-observability": "/docs/best-practices/common-patterns/testing-and-observability",
+  "tool-validation-and-contracts":
+    "/docs/best-practices/tool-patterns/tool-validation-and-contracts",
+  "tools-and-services": "/docs/best-practices/common-patterns/tools-and-services",
+  "tracing-and-debugging": "/docs/best-practices/quality-observability/tracing-and-debugging",
+};
+
 export const docsServerLoader = createServerFn({ method: "GET" })
   .inputValidator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
+    const bestPracticeRedirect =
+      slugs[0] === "best-practices" ? bestPracticeRedirects[slugs[1] ?? ""] : undefined;
+
+    if (bestPracticeRedirect && slugs.length === 2) {
+      throw redirect({ to: bestPracticeRedirect });
+    }
+
     const page = source.getPage(slugs);
 
     if (!page) {

@@ -1,0 +1,6 @@
+{
+  "title": "MCP Patterns",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["mcp-server-lifecycle", "mcp-tool-inspection", "mcp-agent-harness"]
+}

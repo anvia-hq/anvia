@@ -1,0 +1,111 @@
+---
+title: Production Readiness Checklist
+description: Check an agent harness before it handles real users, data, and side effects.
+---
+
+Use this checklist before deploying an agent harness to production or expanding it from read-only behavior into product actions.
+
+## Runtime Boundaries
+
+| Check | Ready when |
+| --- | --- |
+| stable agent id | traces, sessions, Studio, and logs use a stable id |
+| runner boundary | route or job calls a named runner instead of embedding all prompt logic inline |
+| scoped tools | request-local user, tenant, services, and transactions are passed explicitly |
+| turn limits | every agent has `.defaultMaxTurns(...)`, and high-risk runs override lower |
+| timeouts | HTTP routes, jobs, and approval waits have app-owned timeout policy |
+
+## Tools
+
+| Check | Ready when |
+| --- | --- |
+| input schemas | every tool validates model arguments |
+| output contracts | important tool results are typed states or validated output schemas |
+| permission checks | every data-bearing tool checks actor and tenant scope |
+| side effects | writes use service-layer transactions, idempotency, and audit records |
+| direct tests | high-risk tools are tested through direct calls or `ToolSet.call(...)` |
+
+## Dynamic Tools
+
+| Check | Ready when |
+| --- | --- |
+| catalog ownership | a `ToolSet` owns the full catalog |
+| index lifecycle | tool index is built at startup, deploy time, or another explicit boundary |
+| search tests | representative prompts select expected tool ids |
+| critical tools | required tools are either static or reliably selected |
+| trace review | traces show which dynamic tools were available during runs |
+
+## MCP
+
+| Check | Ready when |
+| --- | --- |
+| lifecycle | required servers fail fast, optional servers degrade gracefully |
+| tool inspection | required MCP tools are validated after connection |
+| filtering | agents receive only the MCP tools they should use |
+| reconnect | reconnect closes the previous server and updates future agents |
+| cleanup | long-lived servers close during shutdown, scoped servers close in `finally` |
+
+## Context and Memory
+
+| Check | Ready when |
+| --- | --- |
+| instructions | durable behavior is in instructions |
+| request facts | current user, tenant, plan, locale, or flags are loaded by the runner |
+| retrieval filters | indexes or searches enforce tenant and access boundaries |
+| history | conversation history is stored and replayed deliberately |
+| session policy | workflows use explicit history or sessions deliberately, not casually mixed |
+
+## Observability
+
+| Check | Ready when |
+| --- | --- |
+| trace names | every workflow uses stable names such as `support-chat` |
+| metadata | traces include safe ids such as tenant, conversation, ticket, or channel |
+| usage | usage is available for cost and regression checks |
+| external telemetry | observers or integrations are attached where needed |
+| Studio | local Studio can inspect tools, MCPs, context, sessions, approvals, and traces |
+
+## Testing and Evals
+
+| Check | Ready when |
+| --- | --- |
+| unit tests | tools, services, runners, filters, and known errors are tested with fakes |
+| integration tests | narrow provider-backed tests cover model-dependent behavior |
+| evals | known prompts or regression cases have repeatable evals |
+| approval tests | approval accepted, rejected, and timeout paths are covered |
+| MCP tests | missing, unavailable, and filtered MCP tools are covered |
+
+## Deployment
+
+| Check | Ready when |
+| --- | --- |
+| secrets | provider and MCP credentials are server-only |
+| storage | history, memory, traces, audit, approval, and idempotency stores are durable |
+| retries | job retries are safe for side effects or disabled for non-idempotent runs |
+| streaming | proxies and platforms do not buffer streams that need live events |
+| rollback | agents can be rebuilt with a previous prompt, tool catalog, or MCP config |
+
+## Smoke Test Shape
+
+```ts
+const result = await runSupportTurn({
+  conversationId: "smoke_test",
+  message: "Say hello and do not call tools.",
+  auth: smokeAuth,
+  conversations: smokeConversations,
+  services: smokeServices,
+});
+
+expect(result.ok).toBe(true);
+```
+
+For tool workflows, add a smoke test that calls one read-only tool and verifies trace metadata. For side-effect workflows, run against sandbox services with explicit idempotency records.
+
+## Related Docs
+
+- [Testing and Observability](/docs/best-practices/common-patterns/testing-and-observability)
+- [Eval Strategy](/docs/best-practices/quality-observability/eval-strategy)
+- [Tracing and Debugging](/docs/best-practices/quality-observability/tracing-and-debugging)
+- [RAG Ingestion](/docs/best-practices/knowledge-patterns/rag-ingestion)
+- [Production Guardrails](/docs/best-practices/common-patterns/production-guardrails)
+- [MCP Server Lifecycle](/docs/best-practices/mcp-patterns/mcp-server-lifecycle)

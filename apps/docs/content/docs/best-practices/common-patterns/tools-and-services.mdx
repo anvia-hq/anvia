@@ -1,0 +1,180 @@
+---
+title: Tools and Services
+description: Wrap application services as typed tools without moving product policy into the model.
+---
+
+Tools are the boundary between model decisions and product behavior. Keep tool names, descriptions, schemas, and result shapes model-friendly. Keep permissions, database access, side effects, transactions, and audit policy in application code.
+
+A good tool is a narrow adapter over a product capability. It should not be a second service layer, and it should not trust the model to enforce product policy.
+
+## Tool Factory Pattern
+
+Use factories when a tool needs the current user, tenant, database transaction, feature flags, or service client.
+
+```ts
+import { createTool } from "@anvia/core";
+import { z } from "zod";
+
+type OrderToolScope = {
+  userId: string;
+  tenantId: string;
+  orders: OrdersService;
+};
+
+export function createOrderTools(scope: OrderToolScope) {
+  const lookupOrder = createTool({
+    name: "lookup_order",
+    description: "Look up one order for the current customer.",
+    input: z.object({
+      orderId: z.string().min(1),
+    }),
+    output: z.object({
+      status: z.enum(["found", "not_found"]),
+      orderId: z.string(),
+      fulfillmentStatus: z.string().optional(),
+    }),
+    async execute({ orderId }) {
+      await scope.orders.requireAccess({
+        userId: scope.userId,
+        tenantId: scope.tenantId,
+        orderId,
+      });
+
+      const order = await scope.orders.find(orderId);
+
+      if (!order) {
+        return { status: "not_found" as const, orderId };
+      }
+
+      return {
+        status: "found" as const,
+        orderId,
+        fulfillmentStatus: order.fulfillmentStatus,
+      };
+    },
+  });
+
+  return [lookupOrder];
+}
+```
+
+The model sees a small action. Your application still owns access checks, tenant scoping, service calls, and product states.
+
+## Compose Tool Groups
+
+Create groups by domain, then combine them in the scoped agent factory or runner.
+
+```ts
+import { ToolSet } from "@anvia/core";
+
+export function createSupportToolSet(scope: SupportToolScope) {
+  return ToolSet.fromTools([
+    ...createOrderTools(scope),
+    ...createTicketTools(scope),
+    ...createPolicyTools(scope),
+  ]);
+}
+```
+
+Use `.tools([...])` for a request-scoped list. Use `.useToolSet(...)` when you need a shared mutable catalog that can be inspected or updated at runtime.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use tools when account-specific data is required.")
+  .useToolSet(createSupportToolSet(scope))
+  .defaultMaxTurns(3)
+  .build();
+```
+
+## Return Expected States
+
+Return structured expected states when the model can continue productively. Throw only when the workflow should fail, be retried, or be handled by the application error boundary.
+
+```ts
+async execute({ ticketId }) {
+  const ticket = await tickets.findForUser(scope.userId, ticketId);
+
+  if (!ticket) {
+    return { status: "not_found" as const, ticketId };
+  }
+
+  if (ticket.locked) {
+    return {
+      status: "blocked" as const,
+      reason: "ticket_locked",
+      ticketId,
+    };
+  }
+
+  return {
+    status: "ready" as const,
+    ticketId,
+    subject: ticket.subject,
+    priority: ticket.priority,
+  };
+}
+```
+
+Expected states make the model's next step easier to inspect. Unexpected errors should still throw so the runner can log, retry, or return a stable product error.
+
+## Keep Side Effects Behind Services
+
+For write tools, the tool validates model input and calls a product service. The service owns permissions, transactions, idempotency, and audit records.
+
+```ts
+export function createRefundTools(scope: RefundToolScope) {
+  return [
+    createTool({
+      name: "issue_refund",
+      description: "Issue an approved refund for a paid order.",
+      input: z.object({
+        orderId: z.string(),
+        amount: z.number().positive(),
+        reason: z.string().min(1),
+      }),
+      async execute({ orderId, amount, reason }) {
+        return scope.billing.issueRefund({
+          userId: scope.userId,
+          tenantId: scope.tenantId,
+          orderId,
+          amount,
+          reason,
+          operationId: `refund:${scope.tenantId}:${orderId}:${amount}`,
+        });
+      },
+    }),
+  ];
+}
+```
+
+The model can request the operation. It should not invent the permission check, transaction boundary, or idempotency key policy.
+
+## Tool Contract Checklist
+
+| Concern | Good default |
+| --- | --- |
+| name | verb-noun, stable, specific, such as `lookup_order` |
+| description | tell the model when to use it, not how the service works internally |
+| input schema | require product ids, enums, and bounded strings where possible |
+| output schema | return compact states the model can reason about |
+| permissions | enforce in service or tool code before reading or writing data |
+| side effects | route through service methods with idempotency and audit behavior |
+| errors | return expected states, throw unexpected failures |
+| tests | call tools directly or through `ToolSet.call(...)` with fake services |
+
+## Decision Table
+
+| Situation | Pattern |
+| --- | --- |
+| tool needs current user or tenant | create tools inside a scoped factory |
+| tool reads product data | filter and authorize in the service call |
+| product state is recoverable | return `not_found`, `blocked`, `ready`, or another typed state |
+| product operation failed unexpectedly | throw and let the runner boundary handle it |
+| write operation can be retried | require an idempotency key or transaction in the service layer |
+| many tools need reuse or direct tests | group them with `ToolSet` |
+
+## Related Patterns
+
+- Use [Dynamic Tool Catalogs](/docs/best-practices/tool-patterns/dynamic-tool-catalogs) when the catalog is too large to send every turn.
+- Use [Tool Validation and Contracts](/docs/best-practices/tool-patterns/tool-validation-and-contracts) when tool output drives downstream code.
+- Use [Side Effect Tools](/docs/best-practices/tool-patterns/side-effect-tools) when a tool writes data or calls an external write API.

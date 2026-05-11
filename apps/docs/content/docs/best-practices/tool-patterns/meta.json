@@ -1,0 +1,6 @@
+{
+  "title": "Tool Patterns",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["dynamic-tool-catalogs", "tool-validation-and-contracts", "side-effect-tools"]
+}

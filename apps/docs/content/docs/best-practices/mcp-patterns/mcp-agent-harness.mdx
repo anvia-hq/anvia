@@ -1,0 +1,150 @@
+---
+title: MCP Agent Harness
+description: Combine local tools, MCP tools, registry state, and error handling in one runner.
+---
+
+An MCP agent harness is a normal request runner with one extra dependency: connected MCP servers. Keep MCP connection ownership outside prompt logic, then pass validated servers or filtered tools into the scoped agent.
+
+## Scenario
+
+A support agent uses local account tools plus a remote docs MCP server. If the docs server is unavailable, the agent can still answer from account tools and say it cannot search docs right now.
+
+## When to Use It
+
+Use this pattern when an agent combines application-owned tools with MCP tools, or when MCP availability changes independently from the rest of the app.
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| registry | owns connected MCP servers and health state |
+| startup | connects required servers and optional servers |
+| runner | selects servers or filtered MCP tools for this request |
+| scoped agent | registers local tools plus MCP tools |
+| tools | enforce local permissions and side-effect policy |
+| Studio | inspects registered MCP metadata during development |
+
+## Code Example
+
+```ts
+import { AgentBuilder, type McpServer } from "@anvia/core";
+
+type McpRegistry = {
+  get(name: string): McpServer | undefined;
+};
+
+export function createSupportAgent(input: {
+  docsServer?: McpServer;
+  scope: SupportToolScope;
+}) {
+  const builder = new AgentBuilder("support", model)
+    .instructions(`
+Answer support questions clearly.
+Use account tools for customer-specific data.
+Use docs tools when policy or product documentation is needed.
+    `)
+    .tools(createSupportTools(input.scope))
+    .defaultMaxTurns(4);
+
+  if (input.docsServer) {
+    builder.mcp([input.docsServer]);
+  }
+
+  return builder.build();
+}
+```
+
+The runner chooses the MCP capability for the current request.
+
+```ts
+export async function runSupportWithMcp(input: SupportRunnerInput) {
+  const user = await input.auth.requireUser();
+  const history = await input.conversations.loadMessages(input.conversationId);
+  const docsServer = input.mcp.get("docs");
+
+  const agent = createSupportAgent({
+    docsServer,
+    scope: {
+      userId: user.id,
+      tenantId: user.tenantId,
+      orders: input.services.orders,
+      tickets: input.services.tickets,
+    },
+  });
+
+  const response = await agent
+    .prompt([...history, Message.user(input.message)])
+    .withTrace({
+      name: "support-chat",
+      userId: user.id,
+      metadata: {
+        tenantId: user.tenantId,
+        docsMcpAvailable: docsServer !== undefined,
+      },
+    })
+    .send();
+
+  await input.conversations.append(input.conversationId, response.messages);
+
+  return response.output;
+}
+```
+
+## Filter MCP Tools in the Harness
+
+If the docs server exposes more tools than support should use, filter before building the agent.
+
+```ts
+const docsTools = docsServer?.tools.filter((tool) =>
+  ["search_docs", "read_doc"].includes(tool.name),
+);
+
+const agent = new AgentBuilder("support", model)
+  .tools(createSupportTools(scope))
+  .tools(docsTools ?? [])
+  .defaultMaxTurns(4)
+  .build();
+```
+
+## Error Handling
+
+MCP call errors are tool errors during an agent run. Keep the agent bounded and make server health visible in trace metadata.
+
+```ts
+const response = await agent
+  .prompt(message)
+  .withTrace({
+    name: "support-chat",
+    metadata: {
+      docsMcpAvailable: docsServer !== undefined,
+    },
+  })
+  .maxTurns(3)
+  .send();
+```
+
+Use registry health checks and reconnects outside the prompt run. The model should not be responsible for repairing infrastructure.
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| optional MCP unavailable | build agent without it and include trace metadata |
+| wrong MCP tools exposed | filter or wrap tools before registration |
+| remote tool loops after errors | keep max turns low |
+| credentials are request-scoped | connect in `try/finally` for that request |
+| Studio does not show expected MCP tools | verify `.mcp([server])` or filtered tools are registered on the built agent |
+
+## Test Checklist
+
+- Test runner behavior with MCP available and unavailable.
+- Test filtered MCP tool list includes only allowed names.
+- Test required server validation during startup.
+- Test traces include MCP availability metadata.
+- Use Studio MCP inspection for local verification.
+
+## Related Docs
+
+- [MCP Server Lifecycle](/docs/best-practices/mcp-patterns/mcp-server-lifecycle)
+- [MCP Tool Inspection](/docs/best-practices/mcp-patterns/mcp-tool-inspection)
+- [Support Agent](/docs/best-practices/real-cases/support-agent)

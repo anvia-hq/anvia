@@ -1,0 +1,140 @@
+---
+title: RAG Agent Context
+description: Choose how retrieval enters an agent run and how to test the retrieved evidence.
+---
+
+RAG context is the runtime side of retrieval. The harness decides whether retrieval should happen automatically with `.dynamicContext(...)`, through a search tool the model can call, or through preloaded context from application code.
+
+Retrieval is input, not permission. Filter documents before they can enter the model request.
+
+## Scenario
+
+A support agent needs policy docs on every answer, while a research agent should decide when to search. Both use the same indexed knowledge, but retrieval enters the run differently.
+
+## When to Use It
+
+Use this pattern when:
+
+- the agent needs facts that are too large or change too often for static context
+- answers should include source-backed evidence
+- retrieved documents need formatting, thresholds, or metadata filters
+- you need evals for retrieval quality and answer quality separately
+
+## Architecture Shape
+
+| Pattern | Use when | Tradeoff |
+| --- | --- | --- |
+| `.dynamicContext(...)` | every prompt should receive relevant knowledge | automatic, but search happens every run |
+| search tool | model should decide whether and when to search | more flexible, but uses a tool turn |
+| runner-preloaded context | app already knows required facts | deterministic, but less adaptive |
+| `.dynamicTools(...)` | the retrieved object is a tool definition | solves capability selection, not knowledge |
+
+## Automatic Dynamic Context
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use retrieved support docs when answering policy questions.")
+  .dynamicContext(supportDocsIndex, {
+    topK: 4,
+    threshold: 0.72,
+    format: (result) => ({
+      id: result.id,
+      text: [
+        `Source: ${result.document.title}`,
+        `Product: ${result.metadata?.product ?? "unknown"}`,
+        result.document.body,
+      ].join("\n"),
+    }),
+  })
+  .defaultMaxTurns(3)
+  .build();
+```
+
+Use `format(...)` to control exactly what the model sees. Include source ids or titles when answers should be traceable.
+
+## Search Tool
+
+Use a tool when retrieval should be optional or iterative.
+
+```ts
+const searchSupportDocs = supportDocsIndex.asTool({
+  name: "search_support_docs",
+  description: "Search support documentation by query.",
+  topK: 5,
+  threshold: 0.7,
+});
+
+const agent = new AgentBuilder("support-research", model)
+  .instructions("Search docs when the answer depends on current support policy.")
+  .tool(searchSupportDocs)
+  .defaultMaxTurns(4)
+  .build();
+```
+
+## Tenant and Access Filtering
+
+Filter before retrieval results become model input. Use separate indexes when strict isolation is simpler than filtering.
+
+```ts
+const tenantDocsIndex = docsStore.indexForTenant(user.tenantId);
+
+const agent = new AgentBuilder("tenant-support", model)
+  .dynamicContext(tenantDocsIndex, {
+    topK: 4,
+    threshold: 0.75,
+  })
+  .build();
+```
+
+If a shared index is used, make the index handle enforce metadata filters so another tenant's document cannot be returned.
+
+## Tuning TopK and Threshold
+
+| Symptom | Adjustment |
+| --- | --- |
+| answers miss obvious docs | lower `threshold`, raise `topK`, improve titles/chunks |
+| irrelevant docs enter prompts | raise `threshold`, lower `topK`, improve chunking |
+| prompts are too large | lower `topK` or shorten formatted text |
+| model ignores citations | include source ids in text and instruction |
+| retrieval is slow | use a production vector store and avoid request-time ingestion |
+
+## Test Queries
+
+Test retrieval separately from answer generation.
+
+```ts
+const matches = await supportDocsIndex.searchIds({
+  query: "How long does a password reset link last?",
+  topK: 3,
+  threshold: 0.72,
+});
+
+expect(matches.map((match) => match.id)).toContain("password-reset-policy");
+```
+
+Then test the full agent answer with evals.
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| source is stale | fix ingestion refresh policy |
+| answer lacks evidence | include source ids in formatted context and traces |
+| tenant leak | use tenant-specific index handles or enforced metadata filters |
+| model overuses search tool | use `.dynamicContext(...)` for always-needed knowledge |
+| retrieval hides missing data | return no context and make the model state uncertainty |
+
+## Test Checklist
+
+- Search representative queries and assert expected document ids.
+- Test threshold behavior for weak matches.
+- Test tenant and visibility filters.
+- Inspect traces or Studio knowledge view for retrieved documents.
+- Add evals that fail when required facts are missing.
+
+## Related Docs
+
+- [RAG Ingestion](/docs/best-practices/knowledge-patterns/rag-ingestion)
+- [RAG Context](/docs/guides/retrieval/rag-context)
+- [Eval Strategy](/docs/best-practices/quality-observability/eval-strategy)
+

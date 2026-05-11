@@ -5,15 +5,15 @@ import { ChevronDown } from "lucide-react";
 const githubUrl = "https://github.com/anvia-hq/anvia";
 const discordUrl = "https://discord.gg/6yegrFJBgp";
 const resourceLinks = [
-  { text: "Docs", url: "/docs/guides" },
+  { text: "Best Practices", url: "/docs/best-practices" },
   { text: "Frameworks", url: "/docs/frameworks" },
   { text: "Studio", url: "/docs/studio/overview" },
   { text: "Reference", url: "/docs/reference" },
   { text: "Models", url: "/docs/models" },
 ];
 const agentLinks = [
-  { text: "llms.txt", url: "/llms.txt" },
-  { text: "llms-full.txt", url: "/llms-full.txt" },
+  { text: "llms.txt", url: "/llms.txt", serverOnly: true },
+  { text: "llms-full.txt", url: "/llms-full.txt", serverOnly: true },
 ];
 
 function GitHubIcon() {
@@ -45,7 +45,7 @@ function NavDropdown({
   links,
 }: {
   label: string;
-  links: Array<{ text: string; url: string }>;
+  links: Array<{ text: string; url: string; serverOnly?: boolean }>;
 }) {
   return (
     <li className="group relative list-none">
@@ -57,15 +57,25 @@ function NavDropdown({
         <ChevronDown className="size-3.5 transition-transform group-hover:rotate-180 group-focus-within:rotate-180" />
       </button>
       <div className="invisible absolute left-0 top-full z-50 min-w-44 border border-white/10 bg-[#050505] p-1 opacity-0 shadow-xl shadow-black/30 transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-        {links.map((item) => (
-          <Link
-            className="block px-3 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
-            key={item.url}
-            to={item.url}
-          >
-            {item.text}
-          </Link>
-        ))}
+        {links.map((item) =>
+          item.serverOnly ? (
+            <a
+              className="block px-3 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+              href={item.url}
+              key={item.url}
+            >
+              {item.text}
+            </a>
+          ) : (
+            <Link
+              className="block px-3 py-2 text-sm text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+              key={item.url}
+              to={item.url}
+            >
+              {item.text}
+            </Link>
+          ),
+        )}
       </div>
     </li>
   );
@@ -98,8 +108,8 @@ export const baseOptions: BaseLayoutProps = {
       on: "nav",
     },
     {
-      text: "Blog",
-      url: "/blog",
+      text: "Sponsors",
+      url: "/sponsors",
       active: "nested-url",
       on: "nav",
     },

@@ -1,0 +1,120 @@
+---
+title: Harness Blueprint
+description: The standard production shape around an Anvia agent run.
+---
+
+An agent harness is the application-owned code around the Anvia runtime. It accepts a product request, prepares the agent run, controls access to application behavior, records what happened, and returns a product response.
+
+The harness is not a new framework layer. It is ordinary TypeScript that makes the boundary explicit: Anvia runs the prompt, tools, hooks, retrieval, memory, streaming, and observers; your application owns auth, data, permissions, transactions, storage, retries, deployment, and side effects.
+
+## Ownership Map
+
+| Layer | Owns |
+| --- | --- |
+| route, server action, job, or queue worker | transport parsing, auth entrypoint, response shape, job retry policy |
+| harness runner | one product workflow, request validation, scoped dependencies, trace metadata, error mapping |
+| stable agent factory | agent id, instructions, model behavior, static defaults, reusable observers |
+| request-scoped tools | product service calls, permissions, tenant filtering, side-effect safety |
+| context assembly | static facts, request facts, retrieval results, history, session id |
+| storage and audit | conversation history, event stream, memory store, idempotency records, approval decisions |
+| Anvia runtime | model-tool loop, schemas, hooks, turn limits, tool calls, streaming events, observer events |
+| model provider | completion behavior and provider usage accounting |
+
+Keep the ownership split boring. If a decision affects product correctness or security, it belongs in app code or a tool. If it affects how the model is prompted, constrained, or observed, configure it on the agent or prompt request.
+
+## Recommended Modules
+
+```txt
+src/
+  ai/
+    model.ts              # provider clients and reusable models
+    support-agent.ts      # stable agent factory or shared built agent
+    support-tools.ts      # request-scoped tool factories
+    support-runner.ts     # harness runner for one product workflow
+  services/
+    orders.ts             # product services and permission-aware data access
+    tickets.ts
+  storage/
+    conversations.ts      # history, sessions, events, and audit records
+  routes/
+    support.ts            # thin transport boundary
+```
+
+This layout is a convention, not a requirement. The important part is the direction of dependencies: routes call runners, runners create scoped tools and agents, tools call services, and services own product data.
+
+## Request Lifecycle
+
+| Step | Harness responsibility | Anvia responsibility |
+| --- | --- | --- |
+| validate input | parse payload, reject missing fields, normalize product ids | none |
+| resolve app context | authenticate, load user, tenant, feature flags, services, transaction | none |
+| load state | read history, session state, idempotency record, relevant product records | read memory only if configured |
+| create runtime | build or select agent, create request-scoped tools, add context | hold agent configuration |
+| run prompt | attach trace metadata, set turn limit, call `.send()` or `.stream()` | run model-tool loop |
+| handle effects | tools enforce permissions, services run transactions and audit writes | call tools and return tool results to model |
+| persist result | append messages, event logs, summaries, metrics, user-visible output | return response messages and usage |
+| map response | return HTTP body, job result, UI stream, or domain object | none |
+
+## Minimal Harness
+
+```ts
+import { AgentBuilder, Message } from "@anvia/core";
+import { model } from "./model";
+import { createSupportTools } from "./support-tools";
+
+export async function runSupportHarness(input: SupportHarnessInput) {
+  const user = await input.auth.requireUser();
+  const history = await input.conversations.loadMessages(input.conversationId);
+
+  const agent = new AgentBuilder("support", model)
+    .name("Support Agent")
+    .instructions("Answer support questions clearly. Use tools for account data.")
+    .tools(
+      createSupportTools({
+        userId: user.id,
+        tenantId: user.tenantId,
+        orders: input.services.orders,
+        tickets: input.services.tickets,
+      }),
+    )
+    .context(`Current customer plan: ${user.plan}`, "customer-plan")
+    .defaultMaxTurns(3)
+    .build();
+
+  const response = await agent
+    .prompt([...history, Message.user(input.message)])
+    .withTrace({
+      name: "support-chat",
+      userId: user.id,
+      metadata: {
+        tenantId: user.tenantId,
+        conversationId: input.conversationId,
+      },
+    })
+    .send();
+
+  await input.conversations.append(input.conversationId, response.messages);
+
+  return {
+    output: response.output,
+    usage: response.usage,
+  };
+}
+```
+
+The runner can be called from a route, background job, CLI script, test, or Studio setup. Keep transport details outside it unless the workflow itself is transport-specific.
+
+## Harness Checklist
+
+| Concern | Production default |
+| --- | --- |
+| identity | stable agent id and trace name |
+| input | validate before constructing the prompt |
+| permissions | enforce inside tools and services, not in prompt text |
+| context | attach only scoped, relevant facts |
+| side effects | use idempotency keys or transactions in service code |
+| persistence | save `response.messages` and any app-owned audit records |
+| observability | use stable traces and safe metadata |
+| failures | map known errors to product responses at the runner boundary |
+
+Start with this shape before adding more agents, nested agents, or pipelines. Most harness problems are easier to fix when the single-agent boundary is explicit.

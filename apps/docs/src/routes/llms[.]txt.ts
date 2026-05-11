@@ -15,13 +15,14 @@ Most Anvia workflows use the same ownership split:
 - Provider clients own credentials, base URLs, and provider SDK wiring.
 - Models expose reusable completion or embedding capability.
 - Agents own stable runtime identity, instructions, tools, defaults, hooks, and observers.
-- Prompt requests own user input, history, sessions, request-specific context, traces, limits, and cancellation.
+- Prompt requests own user input, history, sessions, traces, limits, and per-run tool behavior.
 - Tools own application behavior, permissions, side effects, and expected product states.
 - Pipelines own explicit multi-step composition when one prompt is not enough.
 
 Primary docs:
 
 - [Introduction](/docs/guides): SDK overview and core primitives.
+- [Best Practices](/docs/best-practices): Pattern library for production harnesses, coding agents, RAG, evals, tracing, dynamic tool catalogs, MCP servers, validation, side-effect tools, real cases, guardrails, and operations.
 - [How Anvia Works](/docs/guides/sdk-fundamentals/runtime-boundaries): Responsibility boundaries.
 - [Provider Clients and Models](/docs/guides/sdk-fundamentals/clients-and-models): Configure provider access and reusable model capabilities.
 - [Prompt Requests](/docs/guides/sdk-fundamentals/prompt-requests): How prompts become normalized model requests.

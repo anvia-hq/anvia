@@ -1,0 +1,151 @@
+---
+title: Eval Strategy
+description: Build repeatable quality checks for tools, agents, RAG, and workflows.
+---
+
+Evals are for behavior that cannot be fully proven with unit tests. Use unit tests for deterministic boundaries, then use eval suites for model-dependent behavior, retrieval quality, answer quality, tool choice, and regressions.
+
+Do not make every route test call a provider. Keep provider-backed evals focused and repeatable.
+
+## Scenario
+
+A support agent should answer refund-policy questions correctly, use account tools only when needed, and avoid claiming a refund happened unless the refund tool confirms it. Unit tests cover tools and services. Evals cover model behavior.
+
+## When to Use It
+
+Use evals when:
+
+- prompts, instructions, tools, or retrieval change often
+- failures are quality regressions rather than type errors
+- you need a repeatable signal before deploying prompt changes
+- outputs are judged by required facts, schema, similarity, or a rubric
+- traces or Langfuse scores should connect eval outcomes to runs
+
+## Architecture Shape
+
+| Layer | Test with |
+| --- | --- |
+| service and permission policy | unit tests with fakes |
+| tool contracts | direct `tool.call(...)` or `ToolSet.call(...)` |
+| retrieval selection | search probes against indexes |
+| runner response shape | unit tests with fake agents or sandbox agents |
+| agent answer quality | eval suite with `agentEvalTarget(...)` or custom target |
+| traced workflow | eval reporter plus trace metadata |
+
+## Golden Cases
+
+Store cases close to the workflow they protect. Keep them small and named by the behavior they assert.
+
+```ts
+const supportCases = [
+  {
+    id: "refund-window",
+    input: "How long do I have to request a refund?",
+    expected: "30 days",
+  },
+  {
+    id: "password-reset-expiry",
+    input: "Can I use yesterday's password reset link?",
+    expected: "30 minutes",
+  },
+];
+```
+
+## Agent Eval
+
+```ts
+import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
+
+const result = await runEvalSuite({
+  name: "support-agent-regression",
+  cases: supportCases,
+  target: agentEvalTarget(supportAgent),
+  metrics: [
+    contains(),
+  ],
+});
+
+console.log(result.passed, result.failed, result.invalid);
+```
+
+Use `agentEvalTarget(...)` when the target is exactly `agent.prompt(input).send()`.
+
+## Custom Harness Eval
+
+Use a custom target when the real behavior lives in your runner.
+
+```ts
+const result = await runEvalSuite({
+  name: "support-runner-regression",
+  cases: supportCases,
+  target: async (input) => {
+    const response = await runSupportTurn({
+      conversationId: `eval:${input}`,
+      message: input,
+      auth: evalAuth,
+      conversations: evalConversations,
+      services: evalServices,
+    });
+
+    return response.output;
+  },
+  metrics: [contains()],
+});
+```
+
+This covers the harness boundary: history, tools, retrieval, trace metadata, and final output.
+
+## Metric Choice
+
+| Metric | Use it for |
+| --- | --- |
+| `exactMatch(...)` | deterministic booleans, labels, JSON-shaped values |
+| `contains(...)` | required phrases, facts, or regex matches |
+| `semanticSimilarity(...)` | answer similarity when wording can vary |
+| `llmJudge(...)` | schema-shaped rubric checks |
+| `llmScore(...)` | scored quality feedback with a threshold |
+
+Start with deterministic metrics. Add LLM judges when the behavior cannot be checked with simple selectors.
+
+## Report to Langfuse
+
+```ts
+import { createLangfuseEvalReporter, langfuse } from "@anvia/langfuse";
+
+const tracing = langfuse.create({ publicKey, secretKey, baseUrl });
+
+await runEvalSuite({
+  name: "support-agent-regression",
+  cases: supportCases,
+  target: agentEvalTarget(supportAgent),
+  metrics: [contains()],
+  reporters: [createLangfuseEvalReporter(tracing)],
+});
+```
+
+When your target returns a prompt response with trace ids, reporters can connect eval scores back to traces.
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| evals are flaky | prefer deterministic metrics and sandbox services |
+| cases are too broad | split into one behavior per case |
+| evals duplicate unit tests | move deterministic policy checks back to unit tests |
+| judges hide regressions | store judge feedback and add required fact metrics |
+| no trace linkage | include trace metadata or return prompt response trace ids |
+
+## Test Checklist
+
+- Cover tool contracts with unit tests before provider evals.
+- Add retrieval probe tests before answer-quality evals.
+- Keep golden cases small, named, and versioned.
+- Run evals on prompt, retrieval, tool, and model changes.
+- Report eval scores to the same observability system used for traces when useful.
+
+## Related Docs
+
+- [Evals](/docs/guides/testing/evals)
+- [Testing and Observability](/docs/best-practices/common-patterns/testing-and-observability)
+- [Tracing and Debugging](/docs/best-practices/quality-observability/tracing-and-debugging)
+

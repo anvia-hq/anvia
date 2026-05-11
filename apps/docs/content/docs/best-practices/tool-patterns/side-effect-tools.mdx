@@ -1,0 +1,135 @@
+---
+title: Side Effect Tools
+description: Safely expose writes, external actions, approvals, idempotency, and audit records.
+---
+
+Side-effect tools change product state: refunds, deletes, emails, status transitions, webhooks, exports, or external API calls. Treat them as product operations first and model-callable tools second.
+
+## Scenario
+
+A backoffice agent can resolve tickets and issue refunds. The model can decide that a refund is appropriate, but product code must enforce permissions, approval policy, idempotency, transactions, and audit records.
+
+## When to Use It
+
+Use this pattern for any tool that:
+
+- writes to your database
+- calls an external write API
+- sends a message or notification
+- changes a workflow state
+- triggers a job
+- exposes restricted data as a side effect
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| tool schema | require bounded, explicit operation inputs |
+| approval metadata or hook | decide whether a human must approve |
+| product service | enforce permissions, transaction, idempotency, and audit |
+| runner | attach actor, tenant, trace, and operation context |
+| storage | persist operation status and audit evidence |
+
+## Code Example
+
+```ts
+import { createTool } from "@anvia/core";
+import { z } from "zod";
+
+export function createRefundTool(scope: RefundToolScope) {
+  return createTool({
+    name: "issue_refund",
+    description: "Issue an approved refund for a paid order.",
+    input: z.object({
+      orderId: z.string().min(1),
+      amount: z.number().positive(),
+      reason: z.string().min(1),
+    }),
+    output: z.object({
+      status: z.enum(["refunded", "blocked"]),
+      operationId: z.string().optional(),
+      reason: z.string().optional(),
+    }),
+    approval: {
+      when: ({ args }) => args.amount >= 100,
+      reason: "Refunds of 100 or more require reviewer approval.",
+      rejectMessage: "Refund was not approved.",
+    },
+    async execute({ orderId, amount, reason }) {
+      const operationId = `refund:${scope.tenantId}:${orderId}:${amount}`;
+
+      return scope.billing.issueRefund({
+        actorId: scope.userId,
+        tenantId: scope.tenantId,
+        orderId,
+        amount,
+        reason,
+        operationId,
+      });
+    },
+  });
+}
+```
+
+Approval metadata is useful for Studio and approval-capable runtimes. Use a hook when approval depends on request-local state or spans multiple tools.
+
+```ts
+import { createHook } from "@anvia/core";
+
+const approvalHook = createHook({
+  async onToolCall({ toolName, tool }) {
+    if (!["issue_refund", "close_account"].includes(toolName)) {
+      return tool.run();
+    }
+
+    const approved = await approvals.waitForDecision({
+      actorId: scope.userId,
+      tenantId: scope.tenantId,
+      toolName,
+    });
+
+    return approved ? tool.run() : tool.cancel("Operation was not approved.");
+  },
+});
+```
+
+## Idempotency and Audit
+
+The model should not invent idempotency keys. Generate them from product state or pass an operation id from the caller.
+
+```ts
+await audit.write({
+  actorId: scope.userId,
+  tenantId: scope.tenantId,
+  action: "refund.issued",
+  targetId: orderId,
+  operationId,
+  traceName: "backoffice-resolution",
+});
+```
+
+Use traces to debug agent behavior. Use audit records for product accountability.
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| duplicate write after retry | idempotency key or durable operation record |
+| model bypasses policy | enforce permissions in service code |
+| approval waits forever | app-owned approval timeout or asynchronous workflow |
+| audit only exists in trace | write product audit records in service code |
+| side effect is hard to test | split tool adapter from service method and fake the service |
+
+## Test Checklist
+
+- Test permission denied before the write executes.
+- Test approval required and rejected paths.
+- Test idempotency by calling the service twice with the same operation id.
+- Test audit records are written for successful side effects.
+- Test runner behavior when the tool throws a transient service error.
+
+## Related Docs
+
+- [Production Guardrails](/docs/best-practices/common-patterns/production-guardrails)
+- [Human in the Loop](/docs/guides/human-in-the-loop)
+- [Backoffice Agent](/docs/best-practices/real-cases/backoffice-agent)

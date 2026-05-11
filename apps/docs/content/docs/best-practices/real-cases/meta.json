@@ -1,0 +1,6 @@
+{
+  "title": "Real Cases",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["support-agent", "backoffice-agent", "research-agent", "coding-agent"]
+}

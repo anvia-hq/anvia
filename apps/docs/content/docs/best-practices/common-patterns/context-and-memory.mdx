@@ -1,0 +1,136 @@
+---
+title: Context and Memory
+description: Assemble instructions, facts, retrieval, history, and sessions deliberately.
+---
+
+Context works best when each layer has a clear job. Keep durable behavior in instructions, small stable facts in static context, request facts in the scoped agent or prompt text, prompt-dependent knowledge in retrieval, and conversation continuity in history or sessions.
+
+Do not treat context as permission. Filter records by tenant, user, and access level before they can be included in a prompt or retrieval index.
+
+## Choose the Right Layer
+
+| Layer | Use it for | Owner |
+| --- | --- | --- |
+| instructions | behavior rules that apply to every run | stable agent |
+| static context | short stable facts always relevant to the agent | stable agent |
+| request facts | current user, tenant, plan, locale, feature flags, route state | runner or scoped factory |
+| dynamic context | retrieved documents or records selected for the prompt | index plus runner filtering |
+| message history | previous turns needed to continue a conversation | application storage |
+| sessions | durable memory managed through an agent memory store | Anvia memory plus app-chosen store |
+| tools | data that should be fetched or changed only when needed | model decision, app execution |
+
+## Instructions vs Facts
+
+Put behavior in instructions. Put facts in context or loaded prompt data.
+
+```ts
+const agent = new AgentBuilder("billing", model)
+  .instructions(`
+Answer billing questions clearly.
+Use billing tools for account-specific data.
+Do not guess invoice status.
+  `)
+  .context("Invoices are generated on the first day of each month.", "invoice-cycle")
+  .build();
+```
+
+Avoid hiding changing account facts in instructions. If a value depends on the current request, load it in the runner and attach it to the scoped agent or prompt.
+
+```ts
+const agent = new AgentBuilder("billing", model)
+  .instructions("Answer billing questions clearly.")
+  .context(`Current account plan: ${account.plan}`, "account-plan")
+  .context(`Billing country: ${account.country}`, "billing-country")
+  .build();
+```
+
+## Request Context
+
+Use request context for small facts the application already knows are relevant.
+
+```ts
+const prompt = [
+  ...history,
+  Message.user(`
+Current route: support chat
+Current plan: ${account.plan}
+Open ticket count: ${openTickets.length}
+
+User message:
+${message}
+  `),
+];
+
+const response = await agent.prompt(prompt).send();
+```
+
+Keep request context compact. If the agent only needs the current plan, do not paste the whole account record. If the model may need additional fields conditionally, expose a tool instead.
+
+## Dynamic Context
+
+Use dynamic context when relevant facts depend on the prompt.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Use retrieved support context when it is relevant.")
+  .dynamicContext(supportKnowledgeIndex, {
+    topK: 5,
+    threshold: 0.72,
+    format: (result) => ({
+      id: result.id,
+      text: `${result.document.title}\n${result.document.body}`,
+    }),
+  })
+  .build();
+```
+
+Dynamic context should be tenant-safe before search. Use separate indexes, metadata filters, or a prefiltered index handle so records from another tenant cannot be retrieved.
+
+## History and Sessions
+
+Use explicit `Message[]` history when your application already owns conversation storage.
+
+```ts
+import { Message } from "@anvia/core";
+
+const history = await conversations.loadMessages(conversationId);
+
+const response = await agent
+  .prompt([...history, Message.user(message)])
+  .send();
+
+await conversations.append(conversationId, response.messages);
+```
+
+Use `agent.session(...)` when the agent has a memory store configured and you want Anvia to manage durable conversation state for that session.
+
+```ts
+const response = await agent
+  .session(sessionId)
+  .prompt("What did we decide last time?")
+  .send();
+```
+
+Use one approach per workflow unless there is a clear reason to combine them. Mixing explicit history and sessions casually makes prompts harder to inspect.
+
+## Context Assembly Checklist
+
+| Question | Default |
+| --- | --- |
+| Is it a rule for every run? | instruction |
+| Is it a short stable fact? | static `.context(...)` |
+| Is it current user or tenant data? | runner or scoped agent context |
+| Is it large or frequently changing knowledge? | retrieval |
+| Is it previous conversation state? | explicit history or session memory |
+| Does access need to be checked at call time? | tool or service |
+| Could it leak another tenant's data? | filter before context assembly |
+
+## Practical Rule
+
+Context should explain the current run, not become a data dump. If a fact is needed every time, make it stable. If a fact changes per request, load it in the runner. If a fact is large, search for it. If a fact requires permission, put it behind a tool or prefilter it before retrieval.
+
+## Related Patterns
+
+- Use [Support Agent](/docs/best-practices/real-cases/support-agent) for account-aware chat with history and retrieval.
+- Use [Research Agent](/docs/best-practices/real-cases/research-agent) for retrieval-heavy workflows with many read-only tools.
+- Use [Dynamic Tool Catalogs](/docs/best-practices/tool-patterns/dynamic-tool-catalogs) when searchable tools are a better fit than broad context.

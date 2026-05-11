@@ -1,0 +1,104 @@
+---
+title: Pipeline
+description: Choose one agent, a runner, nested agents, or a pipeline based on the job shape.
+---
+
+Start with one runner around one agent. Add orchestration only when the job has a real boundary: a deterministic step, a specialist capability, a parallel branch, a typed extraction stage, batching, or a separately testable process.
+
+Many production workflows do not need a pipeline. They need a clear harness runner.
+
+## One Agent in a Runner
+
+Use one agent when one promptable runtime can own the task and a small set of tools is enough.
+
+```ts
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions and use tools when account data is needed.")
+  .tools(createSupportTools(scope))
+  .defaultMaxTurns(3)
+  .build();
+
+const response = await agent.prompt(message).send();
+```
+
+This is the simplest shape to trace, test, and run in Studio. Prefer it until the workflow has a boundary that should be named and tested separately.
+
+## Runner Before Pipeline
+
+Use a runner when the workflow is mostly application wiring: auth, input validation, history, scoped tools, context, trace metadata, persistence, and error mapping.
+
+```ts
+export async function runSupportTurn(input: SupportRunnerInput) {
+  const user = await input.auth.requireUser();
+  const history = await input.conversations.loadMessages(input.conversationId);
+  const agent = createSupportAgent(model, { user, services: input.services });
+
+  const response = await agent
+    .prompt([...history, Message.user(input.message)])
+    .withTrace({ name: "support-chat", userId: user.id })
+    .send();
+
+  await input.conversations.append(input.conversationId, response.messages);
+  return response.output;
+}
+```
+
+Do not add a pipeline just to hide application setup. If the steps are not reusable or independently testable, the runner is the right abstraction.
+
+## Agent as a Tool
+
+Use an agent tool when a subdomain has stable instructions and should be callable by another agent.
+
+```ts
+const refundsAgent = new AgentBuilder("refunds", model)
+  .description("Answers refund-policy questions.")
+  .instructions("Answer only refund-related questions.")
+  .build();
+
+const triageAgent = new AgentBuilder("triage", model)
+  .instructions("Route refund questions to the refund specialist.")
+  .tool(
+    refundsAgent.asTool({
+      name: "ask_refunds_agent",
+      maxTurns: 2,
+    }),
+  )
+  .defaultMaxTurns(3)
+  .build();
+```
+
+Keep nested agents narrow. A broad agent calling another broad agent usually makes traces harder to understand and quality harder to evaluate.
+
+## Pipeline
+
+Use a pipeline when the job has explicit typed stages that should be tested, reused, or observed independently.
+
+```ts
+const pipeline = new PipelineBuilder<string>()
+  .step((input) => input.trim())
+  .prompt(triageAgent)
+  .extract(ticketExtractor)
+  .step((ticket) => ({
+    ...ticket,
+    needsEscalation: ticket.priority === "high",
+  }))
+  .build();
+```
+
+Pipelines are a good fit for preprocessing, enrichment, extraction, branching, batching, and post-processing. They are a poor fit for hiding route logic or permission policy.
+
+## Decision Table
+
+| Use | When |
+| --- | --- |
+| one agent | one conversational runtime can own the task |
+| runner | the complexity is app context, persistence, tracing, or error mapping |
+| agent tool | another agent owns a narrow specialist boundary |
+| pipeline | the job has explicit typed stages or deterministic steps |
+| direct service call | the step does not need a model |
+| extractor | model output must match a schema for downstream code |
+| parallel branches | independent model or service work can run at the same time |
+
+## Practical Rule
+
+Reach for the smallest named boundary that matches the job. A runner names a product workflow. An agent names model behavior. A tool names product capability. A pipeline names typed process stages.

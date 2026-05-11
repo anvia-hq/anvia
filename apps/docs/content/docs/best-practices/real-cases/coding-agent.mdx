@@ -1,0 +1,206 @@
+---
+title: Coding Agent
+description: A codebase assistant harness with repo search, file tools, command guardrails, patches, and evals.
+---
+
+A coding agent is a high-risk harness because it can inspect source code, run commands, and propose or apply changes. Treat it as an application over a workspace: your app owns the repository boundary, allowed paths, command policy, patch approval, git behavior, audit records, and trace metadata.
+
+This pattern does not require new SDK primitives. It composes agents, tools, MCP, approvals, tracing, and evals around a codebase workflow.
+
+## Scenario
+
+A user asks, "Find why the checkout test fails and propose a fix." The agent should search files, read relevant code, optionally run allowed test commands, propose a patch, and wait for approval before any write.
+
+## When to Use It
+
+Use this pattern when:
+
+- an agent assists with code review, debugging, test triage, migration, or docs changes
+- workspace access must be scoped to allowed repositories and paths
+- command execution must be allow-listed
+- writes require preview, approval, idempotency, and git diff inspection
+- behavior should be checked with coding-task evals
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| runner | resolve user, repo, branch, task, allowed paths, trace metadata |
+| read tools | search files, read files, inspect git diff, list tests |
+| command tool | run only allow-listed commands with timeouts and sandbox policy |
+| patch tool | propose or apply patches behind approval |
+| MCP tools | optional filesystem or git server tools, filtered before registration |
+| audit | record command runs, patch proposals, approvals, and applied changes |
+| evals | regression tasks for search, diagnosis, patch proposal, and no-write behavior |
+
+## Code Example
+
+```ts
+import { AgentBuilder, createHook } from "@anvia/core";
+import { model } from "./model";
+import { createCodebaseTools } from "./tools";
+
+export async function runCodingAgent(input: CodingAgentInput) {
+  const user = await input.auth.requireUser();
+  const workspace = await input.workspaces.open({
+    repoId: input.repoId,
+    userId: user.id,
+  });
+
+  const approvalHook = createHook({
+    async onToolCall({ toolName, tool }) {
+      if (!["apply_patch", "run_command"].includes(toolName)) {
+        return tool.run();
+      }
+
+      const approved = await input.approvals.waitForDecision({
+        actorId: user.id,
+        repoId: input.repoId,
+        toolName,
+        reason: "Codebase mutation or command execution requires approval.",
+      });
+
+      return approved ? tool.run() : tool.cancel("Operation was not approved.");
+    },
+  });
+
+  const agent = new AgentBuilder("coding", model)
+    .instructions(`
+Help with codebase tasks.
+Search and read files before proposing changes.
+Prefer minimal patches.
+Do not run commands unless a tool allows them.
+Do not claim a patch was applied unless the tool confirms it.
+    `)
+    .tools(
+      createCodebaseTools({
+        workspace,
+        allowedPaths: input.allowedPaths,
+        allowedCommands: ["pnpm test", "pnpm lint", "pnpm typecheck"],
+        audit: input.audit,
+      }),
+    )
+    .hook(approvalHook)
+    .defaultMaxTurns(8)
+    .build();
+
+  const response = await agent
+    .prompt(input.task)
+    .withTrace({
+      name: "coding-agent-task",
+      userId: user.id,
+      metadata: {
+        repoId: input.repoId,
+        branch: workspace.branch,
+        taskId: input.taskId,
+      },
+    })
+    .send();
+
+  return {
+    output: response.output,
+    trace: response.trace,
+  };
+}
+```
+
+## Tool Boundaries
+
+Keep read tools separate from mutation tools.
+
+```ts
+export function createCodebaseTools(scope: CodebaseToolScope) {
+  return [
+    createSearchFilesTool(scope),
+    createReadFileTool(scope),
+    createGitDiffTool(scope),
+    createRunCommandTool(scope),
+    createApplyPatchTool(scope),
+  ];
+}
+```
+
+Read tools should enforce allowed paths.
+
+```ts
+async execute({ path }) {
+  scope.workspace.requireAllowedPath(path, scope.allowedPaths);
+  return scope.workspace.readFile(path);
+}
+```
+
+Command tools should enforce exact allow lists, timeouts, and working directory policy.
+
+```ts
+async execute({ command }) {
+  if (!scope.allowedCommands.includes(command)) {
+    return { status: "blocked" as const, reason: "command_not_allowed" };
+  }
+
+  return scope.workspace.run(command, {
+    timeoutMs: 60_000,
+    audit: scope.audit,
+  });
+}
+```
+
+Patch tools should support preview-first behavior.
+
+```ts
+async execute({ patch, mode }) {
+  if (mode === "preview") {
+    return scope.workspace.previewPatch(patch);
+  }
+
+  return scope.workspace.applyPatch({
+    patch,
+    operationId: `patch:${scope.workspace.id}:${hashPatch(patch)}`,
+  });
+}
+```
+
+## MCP Filesystem Tools
+
+If a filesystem MCP server is used, filter or wrap its tools before the coding agent sees them. Prefer local wrapper tools when you need path allow lists, audit records, command policy, or patch approval.
+
+```ts
+const filesystem = await connectMcp(
+  mcp.stdio({
+    name: "filesystem",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", workspace.root],
+  }),
+);
+
+const readOnlyTools = filesystem.tools.filter((tool) =>
+  ["read_file", "list_directory"].includes(tool.name),
+);
+```
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| agent reads outside repo | enforce allowed paths in every file tool |
+| command is too broad | exact allow list and timeout in command tool |
+| patch applies twice | idempotency key from patch hash |
+| write happens without approval | hook or approval metadata on mutation tools |
+| traces leak source code | keep trace metadata to ids, paths, and summaries |
+| evals only check final prose | add task cases for tool choice, no-write mode, and patch preview |
+
+## Test Checklist
+
+- Test file reads inside and outside allowed paths.
+- Test blocked commands and approved commands.
+- Test patch preview without mutation.
+- Test approved and rejected patch application.
+- Test git diff inspection after a patch.
+- Add eval cases for diagnosis, minimal patch proposal, and refusal to run disallowed commands.
+
+## Related Docs
+
+- [MCP Tool Inspection](/docs/best-practices/mcp-patterns/mcp-tool-inspection)
+- [Side Effect Tools](/docs/best-practices/tool-patterns/side-effect-tools)
+- [Eval Strategy](/docs/best-practices/quality-observability/eval-strategy)
+- [Tracing and Debugging](/docs/best-practices/quality-observability/tracing-and-debugging)
+

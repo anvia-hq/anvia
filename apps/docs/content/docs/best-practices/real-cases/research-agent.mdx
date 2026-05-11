@@ -1,0 +1,126 @@
+---
+title: Research Agent
+description: A research workflow with many read-only tools, dynamic selection, retrieval, and extraction.
+---
+
+This pattern is for research, analysis, due diligence, competitive intelligence, and internal knowledge workflows. The agent often has many read-only tools, uses retrieval heavily, and returns structured output for downstream processing.
+
+## Scenario
+
+A research agent answers a market question by searching internal docs, querying external MCP tools, reading product notes, and extracting a structured brief.
+
+## When to Use It
+
+Use this pattern when:
+
+- the workflow is read-heavy
+- the tool catalog is large
+- sources need to be inspected in traces
+- the final output should match a schema
+- deterministic post-processing is useful
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| dynamic tool catalog | selects relevant read-only tools |
+| retrieval | provides internal knowledge context |
+| MCP tools | expose external research systems |
+| agent | gathers and synthesizes evidence |
+| extractor or output schema | produces typed downstream output |
+| pipeline | separates normalize, research, extract, and enrich steps |
+
+## Code Example
+
+```ts
+import { AgentBuilder, ExtractorBuilder, PipelineBuilder, ToolSet, createToolIndex } from "@anvia/core";
+import { z } from "zod";
+import { embeddingModel, model } from "./models";
+import { internalDocsIndex } from "./retrieval";
+import { createResearchTools } from "./tools";
+
+const researchTools = ToolSet.fromTools(createResearchTools());
+
+const researchToolIndex = await createToolIndex(embeddingModel, researchTools, {
+  metadata: (tool) => ({ name: tool.name, domain: "research" }),
+});
+
+const researchAgent = new AgentBuilder("research", model)
+  .instructions(`
+Research the question using available tools and retrieved context.
+Prefer cited facts over guesses.
+Call tools only when they are relevant to the question.
+  `)
+  .dynamicContext(internalDocsIndex, {
+    topK: 6,
+    threshold: 0.72,
+  })
+  .dynamicTools(researchToolIndex, {
+    topK: 8,
+    threshold: 0.68,
+  })
+  .defaultMaxTurns(6)
+  .build();
+
+const briefSchema = z.object({
+  summary: z.string(),
+  confidence: z.enum(["low", "medium", "high"]),
+  keyFindings: z.array(z.string()),
+  openQuestions: z.array(z.string()),
+});
+
+const briefExtractor = new ExtractorBuilder(model, briefSchema).build();
+
+export const researchWorkflow = new PipelineBuilder<string>()
+  .step((question) => question.trim())
+  .prompt(researchAgent)
+  .extract(briefExtractor)
+  .build();
+```
+
+## Add MCP Research Tools
+
+If external research systems are MCP servers, inspect and filter their tools before adding them to the catalog.
+
+```ts
+import { connectMcp, mcp } from "@anvia/core";
+
+const docsServer = await connectMcp(mcp.http({
+  name: "external-docs",
+  url: "https://mcp.example.com/mcp",
+}));
+
+const allowedMcpTools = docsServer.tools.filter((tool) =>
+  ["search_docs", "read_doc"].includes(tool.name),
+);
+
+researchTools.addTools(allowedMcpTools);
+```
+
+Rebuild the dynamic tool index after changing the catalog.
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| agent picks irrelevant tools | improve tool descriptions, lower `topK`, raise `threshold` |
+| important tools are not selected | improve embedding text or lower `threshold` |
+| final output is hard to consume | use an extractor or agent output schema |
+| citations are weak | include source ids in retrieved context and tool outputs |
+| tool catalog changes | rebuild the index before future runs |
+
+## Test Checklist
+
+- Test dynamic tool search for representative research prompts.
+- Test retrieval filters and source formatting.
+- Test pipeline output schema with known questions.
+- Inspect traces for selected tools and retrieved context.
+- Add evals for answer quality and missing-evidence behavior.
+
+## Related Docs
+
+- [Dynamic Tool Catalogs](/docs/best-practices/tool-patterns/dynamic-tool-catalogs)
+- [RAG Agent Context](/docs/best-practices/knowledge-patterns/rag-agent-context)
+- [Eval Strategy](/docs/best-practices/quality-observability/eval-strategy)
+- [MCP Tool Inspection](/docs/best-practices/mcp-patterns/mcp-tool-inspection)
+- [Pipeline](/docs/best-practices/common-patterns/pipeline)

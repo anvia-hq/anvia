@@ -1,0 +1,122 @@
+---
+title: Best Practices
+description: A production pattern library for Anvia agent harnesses.
+---
+
+Use these patterns when an agent is moving from a demo into product code. The goal is to keep model behavior explicit while your application keeps ownership of users, permissions, data, side effects, storage, deployment, and audit trails.
+
+This section is organized as a pattern library. Start with the common harness shape, then jump to the real case that matches the system you are building.
+
+## Pattern Map
+
+| Need | Pattern |
+| --- | --- |
+| Understand the standard agent harness boundary | [Harness Blueprint](/docs/best-practices/common-patterns/harness-blueprint) |
+| Keep stable agent config separate from request state | [Agent Structure](/docs/best-practices/common-patterns/agent-structure) |
+| Wrap one route, job, or queue request | [Request Runners](/docs/best-practices/common-patterns/request-runners) |
+| Wrap product services as safe model-callable actions | [Tools and Services](/docs/best-practices/common-patterns/tools-and-services) |
+| Assemble instructions, facts, retrieval, history, and sessions | [Context and Memory](/docs/best-practices/common-patterns/context-and-memory) |
+| Choose one agent, nested agents, or a typed pipeline | [Pipeline](/docs/best-practices/common-patterns/pipeline) |
+| Add limits, approvals, idempotency, retries, and audit records | [Production Guardrails](/docs/best-practices/common-patterns/production-guardrails) |
+| Test deterministic boundaries and inspect model behavior | [Testing and Observability](/docs/best-practices/common-patterns/testing-and-observability) |
+
+## Tool Patterns
+
+| Real problem | Pattern |
+| --- | --- |
+| The agent has dozens or hundreds of tools | [Dynamic Tool Catalogs](/docs/best-practices/tool-patterns/dynamic-tool-catalogs) |
+| Tool arguments, outputs, and product states need contracts | [Tool Validation and Contracts](/docs/best-practices/tool-patterns/tool-validation-and-contracts) |
+| A tool writes data, sends messages, or changes external state | [Side Effect Tools](/docs/best-practices/tool-patterns/side-effect-tools) |
+
+## MCP Patterns
+
+| Real problem | Pattern |
+| --- | --- |
+| You need to connect and reconnect external MCP servers | [MCP Server Lifecycle](/docs/best-practices/mcp-patterns/mcp-server-lifecycle) |
+| You need to inspect, validate, filter, or wrap MCP tools | [MCP Tool Inspection](/docs/best-practices/mcp-patterns/mcp-tool-inspection) |
+| You need an agent harness that combines app tools and MCP tools | [MCP Agent Harness](/docs/best-practices/mcp-patterns/mcp-agent-harness) |
+
+## Knowledge Patterns
+
+| Real problem | Pattern |
+| --- | --- |
+| You need to build or refresh a retrieval index safely | [RAG Ingestion](/docs/best-practices/knowledge-patterns/rag-ingestion) |
+| You need to decide how retrieval enters an agent run | [RAG Agent Context](/docs/best-practices/knowledge-patterns/rag-agent-context) |
+
+## Real Cases
+
+| System | Pattern |
+| --- | --- |
+| Customer support chat with account tools, retrieval, and history | [Support Agent](/docs/best-practices/real-cases/support-agent) |
+| Backoffice workflow with writes, approvals, audit, and idempotency | [Backoffice Agent](/docs/best-practices/real-cases/backoffice-agent) |
+| Research workflow with many read-only tools and extraction | [Research Agent](/docs/best-practices/real-cases/research-agent) |
+| Coding assistant over a codebase with file, command, patch, and git boundaries | [Coding Agent](/docs/best-practices/real-cases/coding-agent) |
+
+## Quality and Observability
+
+| Need | Pattern |
+| --- | --- |
+| Build regression checks for prompts, tools, and workflows | [Eval Strategy](/docs/best-practices/quality-observability/eval-strategy) |
+| Connect traces, tool calls, retrieval evidence, logs, and eval scores | [Tracing and Debugging](/docs/best-practices/quality-observability/tracing-and-debugging) |
+
+## Operations
+
+| Need | Pattern |
+| --- | --- |
+| Check whether a harness is ready for production | [Production Readiness Checklist](/docs/best-practices/operations/production-readiness-checklist) |
+
+## Baseline Shape
+
+Most production agents follow the same boundaries:
+
+- stable provider clients, models, reusable agents, static tool catalogs, observers, and default limits are created at startup
+- request-local user, tenant, conversation, permission, feature flag, MCP availability, and caller timeout policy are resolved at the application boundary
+- tools wrap product services and enforce permissions before reading or changing data
+- context is assembled from instructions, static facts, request facts, retrieval, history, and memory
+- persistence, retries, idempotency, audit logs, and product response shapes stay in application code
+
+```ts
+import { AgentBuilder, Message } from "@anvia/core";
+import { model } from "./ai/model";
+import { createSupportTools } from "./ai/support-tools";
+
+export async function runSupportTurn(input: SupportTurnInput) {
+  const user = await input.auth.requireUser();
+  const conversation = await input.conversations.load(input.conversationId);
+
+  const agent = new AgentBuilder("support", model)
+    .instructions("Answer support questions clearly. Use tools for account data.")
+    .tools(
+      createSupportTools({
+        userId: user.id,
+        tenantId: user.tenantId,
+        orders: input.services.orders,
+        tickets: input.services.tickets,
+      }),
+    )
+    .context(`Current plan: ${user.plan}`, "current-plan")
+    .defaultMaxTurns(3)
+    .build();
+
+  const response = await agent
+    .prompt([...conversation.history, Message.user(input.message)])
+    .withTrace({
+      name: "support-chat",
+      userId: user.id,
+      metadata: {
+        tenantId: user.tenantId,
+        conversationId: input.conversationId,
+      },
+    })
+    .send();
+
+  await input.conversations.append(input.conversationId, response.messages);
+
+  return {
+    output: response.output,
+    messages: response.messages,
+  };
+}
+```
+
+The exact route, worker, queue, or UI framework can vary. The ownership boundary should not: Anvia owns the model-tool loop, and your application owns product state and side effects.

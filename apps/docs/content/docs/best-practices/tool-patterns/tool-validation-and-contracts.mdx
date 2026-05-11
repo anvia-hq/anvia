@@ -1,0 +1,163 @@
+---
+title: Tool Validation and Contracts
+description: Design tool schemas, outputs, and test boundaries that hold up in production.
+---
+
+Tool contracts are the strongest deterministic boundary in an agent harness. Use schemas to validate arguments and outputs, return typed product states for expected outcomes, and test tools directly before model runs.
+
+## Scenario
+
+A model can choose when to call a tool, but the tool owns the contract. The model should not be able to pass arbitrary unvalidated data into your service layer, and downstream code should not need to parse vague natural-language tool results.
+
+## When to Use It
+
+Use this pattern for every tool that reads product state, writes product state, or returns values used by downstream code.
+
+## Architecture Shape
+
+| Layer | Responsibility |
+| --- | --- |
+| Zod input schema | validate model arguments before execution |
+| Zod output schema | validate tool result before it is serialized |
+| tool `execute` | call product services and return typed states |
+| runner | map expected states and thrown errors to product responses |
+| tests | call tools directly with valid and invalid arguments |
+
+## Code Example
+
+```ts
+import { createTool } from "@anvia/core";
+import { z } from "zod";
+
+const lookupOrderOutput = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("found"),
+    orderId: z.string(),
+    fulfillmentStatus: z.enum(["processing", "shipped", "delivered"]),
+  }),
+  z.object({
+    status: z.literal("not_found"),
+    orderId: z.string(),
+  }),
+  z.object({
+    status: z.literal("blocked"),
+    reason: z.literal("access_denied"),
+  }),
+]);
+
+export function createLookupOrderTool(scope: OrderToolScope) {
+  return createTool({
+    name: "lookup_order",
+    description: "Look up one order owned by the current customer.",
+    input: z.object({
+      orderId: z.string().min(1),
+    }),
+    output: lookupOrderOutput,
+    async execute({ orderId }) {
+      const allowed = await scope.orders.canRead({
+        userId: scope.userId,
+        tenantId: scope.tenantId,
+        orderId,
+      });
+
+      if (!allowed) {
+        return { status: "blocked" as const, reason: "access_denied" as const };
+      }
+
+      const order = await scope.orders.find(orderId);
+
+      if (!order) {
+        return { status: "not_found" as const, orderId };
+      }
+
+      return {
+        status: "found" as const,
+        orderId,
+        fulfillmentStatus: order.fulfillmentStatus,
+      };
+    },
+  });
+}
+```
+
+## Expected States vs Errors
+
+| Situation | Return state | Throw |
+| --- | --- | --- |
+| record not found | yes | no |
+| user lacks access and the model can continue safely | yes | no |
+| malformed model arguments | schema handles it | no |
+| database unavailable | no | yes |
+| invariant violated | no | yes |
+| downstream service timeout | no | yes |
+
+Expected states are useful model input. Unexpected failures belong to the runner, logs, retries, or product error boundary.
+
+## Direct Tool Tests
+
+```ts
+const tool = createLookupOrderTool({
+  userId: "user_123",
+  tenantId: "tenant_123",
+  orders: fakeOrders,
+});
+
+const result = await tool.call({ orderId: "A-100" });
+
+expect(result).toEqual({
+  status: "found",
+  orderId: "A-100",
+  fulfillmentStatus: "shipped",
+});
+```
+
+Use `ToolSet.call(...)` when you want to exercise JSON parsing and serialized output.
+
+```ts
+const tools = ToolSet.fromTools([tool]);
+
+await expect(
+  tools.call("lookup_order", JSON.stringify({ orderId: "" })),
+).rejects.toThrow();
+```
+
+## Runner Error Mapping
+
+The runner should decide which failures become user-facing product errors.
+
+```ts
+try {
+  const response = await agent.prompt(message).send();
+  return { ok: true as const, output: response.output };
+} catch (error) {
+  if (isTemporaryStorageError(error)) {
+    return { ok: false as const, error: "temporarily_unavailable" };
+  }
+
+  throw error;
+}
+```
+
+## Failure Modes
+
+| Failure | Fix |
+| --- | --- |
+| model keeps passing invalid arguments | tighten description, schema descriptions, or ask for missing data first |
+| downstream code parses prose | return structured tool output or agent output schema |
+| permission errors leak details | return a compact `blocked` state or generic product error |
+| tests only cover provider runs | add direct tool and runner tests with fakes |
+
+## Test Checklist
+
+- Test valid inputs, invalid inputs, and missing required fields.
+- Test permission allowed and denied paths.
+- Test expected states such as `not_found` and `blocked`.
+- Test unexpected service failures at the runner boundary.
+- Inspect tool result text in traces for readability.
+
+## Related Docs
+
+- [Creating Tools](/docs/guides/tools/creating-tools)
+- [Tool Schemas](/docs/guides/tools/tool-schemas)
+- [Testing and Observability](/docs/best-practices/common-patterns/testing-and-observability)
+

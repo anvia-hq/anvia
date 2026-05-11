@@ -1,0 +1,6 @@
+{
+  "title": "Knowledge Patterns",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["rag-ingestion", "rag-agent-context"]
+}

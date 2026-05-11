@@ -9,6 +9,7 @@ import {
   type CompletionStreamEvent,
   type DocumentContent,
   type ImageContent,
+  type JsonObject,
   type JsonValue,
   type Message as MessageType,
   type ReasoningContent,
@@ -44,6 +45,17 @@ export class AnthropicCompletionModel implements StreamingCompletionModel {
     private readonly client: Anthropic,
     readonly defaultModel = "claude-sonnet-4-20250514",
   ) {}
+
+  traceRequest(
+    request: CompletionRequest,
+    options: { stream?: boolean | undefined } = {},
+  ): JsonObject {
+    const params = toAnthropicMessagesParams(this.defaultModel, request);
+    if (options.stream === true) {
+      params.stream = true;
+    }
+    return providerRequestSummary(params, request, options);
+  }
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
@@ -111,6 +123,48 @@ export function toAnthropicMessagesParams(
   }
 
   return params;
+}
+
+function providerRequestSummary(
+  params: AnthropicCreateParams,
+  request: CompletionRequest,
+  options: { stream?: boolean | undefined },
+): JsonObject {
+  return compactJsonObject({
+    provider: "anthropic",
+    api: "messages",
+    stream: options.stream === true,
+    model: stringFrom(params.model),
+    parameterKeys: Object.keys(params).sort(),
+    messageCount: Array.isArray(params.messages) ? params.messages.length : undefined,
+    toolCount: request.tools.length,
+    toolNames: request.tools.map((tool) => tool.name),
+    hasSystem: typeof params.system === "string" && params.system.length > 0,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens ?? numberFrom(params.max_tokens),
+    toolChoice: toolChoiceSummary(request.toolChoice),
+    additionalParamKeys: isPlainObject(request.additionalParams)
+      ? Object.keys(request.additionalParams).sort()
+      : undefined,
+  });
+}
+
+function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | undefined {
+  if (toolChoice === undefined || typeof toolChoice === "string") {
+    return toolChoice;
+  }
+  return { type: toolChoice.type, name: toolChoice.name };
+}
+
+function compactJsonObject(values: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(
+    Object.entries(values).flatMap(([key, value]) => {
+      if (value === undefined) {
+        return [];
+      }
+      return [[key, toJsonValue(value)]];
+    }),
+  ) as JsonObject;
 }
 
 function requestMessages(request: CompletionRequest): MessageType[] {

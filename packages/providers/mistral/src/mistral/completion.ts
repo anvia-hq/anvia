@@ -7,6 +7,7 @@ import {
   type CompletionResponse,
   type CompletionStreamEvent,
   type DocumentContent,
+  type JsonObject,
   type JsonValue,
   type Message as MessageType,
   type StreamingCompletionModel,
@@ -39,6 +40,14 @@ export class MistralCompletionModel implements StreamingCompletionModel {
     private readonly client: Mistral,
     readonly defaultModel = "mistral-large-latest",
   ) {}
+
+  traceRequest(
+    request: CompletionRequest,
+    options: { stream?: boolean | undefined } = {},
+  ): JsonObject {
+    const params = toMistralChatParams(this.defaultModel, request);
+    return providerRequestSummary(params, request, options);
+  }
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
@@ -100,6 +109,48 @@ export function toMistralChatParams(
   }
 
   return params;
+}
+
+function providerRequestSummary(
+  params: MistralChatParams,
+  request: CompletionRequest,
+  options: { stream?: boolean | undefined },
+): JsonObject {
+  return compactJsonObject({
+    provider: "mistral",
+    api: options.stream === true ? "chat.stream" : "chat.complete",
+    stream: options.stream === true,
+    model: stringFrom(params.model),
+    parameterKeys: Object.keys(params).sort(),
+    messageCount: Array.isArray(params.messages) ? params.messages.length : undefined,
+    toolCount: request.tools.length,
+    toolNames: request.tools.map((tool) => tool.name),
+    hasOutputSchema: request.outputSchema !== undefined,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens,
+    toolChoice: toolChoiceSummary(request.toolChoice),
+    additionalParamKeys: isPlainObject(request.additionalParams)
+      ? Object.keys(request.additionalParams).sort()
+      : undefined,
+  });
+}
+
+function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | undefined {
+  if (toolChoice === undefined || typeof toolChoice === "string") {
+    return toolChoice;
+  }
+  return { type: toolChoice.type, name: toolChoice.name };
+}
+
+function compactJsonObject(values: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(
+    Object.entries(values).flatMap(([key, value]) => {
+      if (value === undefined) {
+        return [];
+      }
+      return [[key, toJsonValue(value)]];
+    }),
+  ) as JsonObject;
 }
 
 function requestMessages(request: CompletionRequest): MessageType[] {

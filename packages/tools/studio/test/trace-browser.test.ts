@@ -1,3 +1,4 @@
+import { Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import {
   jsonSyntaxTokens,
@@ -53,6 +54,43 @@ describe("trace browser metadata formatting", () => {
     ).toEqual([
       { label: "Assistant output", text: "Hey! How can I help?" },
       { label: "Message Id", text: "resp_123" },
+    ]);
+  });
+
+  it("groups chat history separately from the current prompt", () => {
+    expect(
+      plainTraceValue("Input", {
+        instructions: "Use tools when useful.",
+        chatHistory: [
+          Message.user("Hello!"),
+          Message.assistant("Hello! How can I help you today?"),
+          Message.user("What tools do you have?"),
+        ],
+      }),
+    ).toEqual([
+      { label: "System prompt", text: "Use tools when useful." },
+      {
+        label: "Conversation history (2)",
+        text: "1. User\nHello!\n\n2. Assistant\nHello! How can I help you today?",
+      },
+      { label: "Current prompt", text: "What tools do you have?" },
+    ]);
+  });
+
+  it("groups agent run history while keeping the prompt separate", () => {
+    expect(
+      plainTraceValue("Input", {
+        instructions: "Use tools when useful.",
+        history: [Message.user("Hello!"), Message.assistant("Hello! How can I help you today?")],
+        prompt: Message.user("Get ORDER 11001"),
+      }),
+    ).toEqual([
+      { label: "System prompt", text: "Use tools when useful." },
+      {
+        label: "Conversation history (2)",
+        text: "1. User\nHello!\n\n2. Assistant\nHello! How can I help you today?",
+      },
+      { label: "Current prompt", text: "Get ORDER 11001" },
     ]);
   });
 });

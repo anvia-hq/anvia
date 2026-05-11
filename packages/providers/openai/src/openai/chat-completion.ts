@@ -8,6 +8,8 @@ import {
   type CompletionStreamEvent,
   type DocumentContent,
   type ImageContent,
+  type JsonObject,
+  type JsonValue,
   type Message as MessageType,
   type StreamingCompletionModel,
   type ToolChoice,
@@ -39,6 +41,19 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel {
     private readonly client: OpenAI,
     readonly defaultModel = "openai/gpt-5.2",
   ) {}
+
+  traceRequest(
+    request: CompletionRequest,
+    options: { stream?: boolean | undefined } = {},
+  ): JsonObject {
+    const params: ChatCompletionParams = toOpenAIChatCompletionParams(this.defaultModel, request);
+    if (options.stream === true) {
+      params.stream = true;
+      const streamOptions = isPlainObject(params.stream_options) ? params.stream_options : {};
+      params.stream_options = { ...streamOptions, include_usage: true };
+    }
+    return providerRequestSummary(params, request, options);
+  }
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
@@ -105,6 +120,66 @@ export function toOpenAIChatCompletionParams(
   }
 
   return params;
+}
+
+function providerRequestSummary(
+  params: ChatCompletionParams,
+  request: CompletionRequest,
+  options: { stream?: boolean | undefined },
+): JsonObject {
+  return compactJsonObject({
+    provider: "openai-chat",
+    api: "chat.completions",
+    stream: options.stream === true,
+    model: stringFrom(params.model),
+    parameterKeys: Object.keys(params).sort(),
+    messageCount: Array.isArray(params.messages) ? params.messages.length : undefined,
+    toolCount: request.tools.length,
+    toolNames: request.tools.map((tool) => tool.name),
+    hasOutputSchema: request.outputSchema !== undefined,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens,
+    toolChoice: toolChoiceSummary(request.toolChoice),
+    additionalParamKeys: isPlainObject(request.additionalParams)
+      ? Object.keys(request.additionalParams).sort()
+      : undefined,
+  });
+}
+
+function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | undefined {
+  if (toolChoice === undefined || typeof toolChoice === "string") {
+    return toolChoice;
+  }
+  return { type: toolChoice.type, name: toolChoice.name };
+}
+
+function compactJsonObject(values: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(
+    Object.entries(values).flatMap(([key, value]) => {
+      if (value === undefined) {
+        return [];
+      }
+      return [[key, toJsonValue(value)]];
+    }),
+  ) as JsonObject;
+}
+
+function toJsonValue(value: unknown): JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonValue(item));
+  }
+  if (isPlainObject(value)) {
+    return compactJsonObject(value);
+  }
+  return String(value);
 }
 
 function requestMessages(request: CompletionRequest): MessageType[] {

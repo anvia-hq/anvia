@@ -18,6 +18,7 @@ import {
   type EmbeddingModel,
   embedDocuments,
   InMemoryVectorStore,
+  type JsonObject,
   type McpClient,
   Message,
   PipelineBuilder,
@@ -52,6 +53,15 @@ class QueueModel {
 
   constructor(private readonly responses: CompletionResponse[]) {}
 
+  traceRequest(request: CompletionRequest, options: { stream?: boolean } = {}): JsonObject {
+    return {
+      provider: this.provider,
+      stream: options.stream === true,
+      model: request.model ?? this.defaultModel,
+      messageCount: request.chatHistory.length,
+    };
+  }
+
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
@@ -80,6 +90,15 @@ class StreamingQueueModel implements StreamingCompletionModel {
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
+  }
+
+  traceRequest(request: CompletionRequest, options: { stream?: boolean } = {}): JsonObject {
+    return {
+      provider: this.provider,
+      stream: options.stream === true,
+      model: request.model ?? this.defaultModel,
+      messageCount: request.chatHistory.length,
+    };
   }
 
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
@@ -2214,6 +2233,22 @@ describe("Anvia studio", () => {
             toolNames: [],
             documentCount: 0,
             historyCount: 1,
+            modelInfo: expect.objectContaining({
+              provider: "test",
+              model: "test",
+              capabilities: expect.objectContaining({ streaming: false }),
+            }),
+            modelCall: expect.objectContaining({
+              providerRequest: expect.objectContaining({
+                provider: "test",
+                stream: false,
+                model: "test",
+              }),
+            }),
+            response: expect.objectContaining({
+              usage: expect.any(Object),
+              contentTypes: ["text"],
+            }),
           }),
         },
       ],
@@ -2322,9 +2357,40 @@ describe("Anvia studio", () => {
             documentCount: 0,
             historyCount: 1,
             firstDeltaMs: expect.any(Number),
+            modelInfo: expect.objectContaining({
+              provider: "test",
+              model: "test",
+              capabilities: expect.objectContaining({ streaming: true }),
+            }),
+            modelCall: expect.objectContaining({
+              providerRequest: expect.objectContaining({
+                provider: "test",
+                stream: true,
+                model: "test",
+              }),
+            }),
           }),
         },
-        { kind: "tool", name: "add", status: "success", output: 7 },
+        {
+          kind: "tool",
+          name: "add",
+          status: "success",
+          output: 7,
+          metadata: expect.objectContaining({
+            internalCallId: expect.any(String),
+            argumentBytes: expect.any(Number),
+            resultBytes: expect.any(Number),
+            parameterKeys: ["x", "y"],
+            requiredParameterKeys: ["x", "y"],
+            approvalRequired: false,
+            tools: expect.objectContaining({
+              name: "add",
+              parameterKeys: ["x", "y"],
+              requiredParameterKeys: ["x", "y"],
+              approvalRequired: false,
+            }),
+          }),
+        },
         {
           kind: "generation",
           name: "model.turn.2",
@@ -2338,6 +2404,12 @@ describe("Anvia studio", () => {
             documentCount: 0,
             historyCount: 3,
             firstDeltaMs: expect.any(Number),
+            modelCall: expect.objectContaining({
+              providerRequest: expect.objectContaining({
+                stream: true,
+                messageCount: 3,
+              }),
+            }),
           }),
         },
       ],

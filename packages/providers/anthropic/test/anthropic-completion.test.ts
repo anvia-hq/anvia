@@ -88,6 +88,30 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
+  it("summarizes provider request metadata for traces", () => {
+    const model = new AnthropicCompletionModel({} as never, "claude-test");
+    const request: CompletionRequest = {
+      instructions: "Be concise.",
+      chatHistory: [Message.user("What is 2+5?")],
+      documents: [],
+      tools: [{ name: "add", description: "Add numbers", parameters: { type: "object" } }],
+      maxTokens: 256,
+      toolChoice: "auto",
+    };
+
+    expect(model.traceRequest(request, { stream: true })).toMatchObject({
+      provider: "anthropic",
+      api: "messages",
+      stream: true,
+      model: "claude-test",
+      messageCount: 1,
+      toolCount: 1,
+      toolNames: ["add"],
+      hasSystem: true,
+      parameterKeys: expect.arrayContaining(["messages", "model", "stream", "system", "tools"]),
+    });
+  });
+
   it("prepends normalized static context before chat history and maps system messages", () => {
     const request: CompletionRequest = {
       chatHistory: [Message.system("Use context."), Message.user("What is the owner?")],

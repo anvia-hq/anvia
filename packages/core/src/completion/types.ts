@@ -372,6 +372,10 @@ export interface CompletionModel<RawResponse = unknown> {
   readonly provider: string;
   readonly defaultModel: string;
   readonly capabilities: CompletionModelCapabilities;
+  traceRequest?(
+    request: CompletionRequest,
+    options?: { stream?: boolean | undefined },
+  ): JsonObject | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse<RawResponse>>;
 }
 

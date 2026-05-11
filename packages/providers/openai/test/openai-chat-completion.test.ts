@@ -1,4 +1,10 @@
-import { AssistantContent, Message, ToolContent, UserContent } from "@anvia/core";
+import {
+  AssistantContent,
+  type CompletionRequest,
+  Message,
+  ToolContent,
+  UserContent,
+} from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import { OpenAIChatCompletionModel, OpenAIClient } from "../src/index";
 import {
@@ -97,6 +103,28 @@ describe("OpenAI chat-completions client path", () => {
       { role: "tool", tool_call_id: "call_abc", content: '{"id":"task_1"}' },
       { role: "user", content: "continue" },
     ]);
+  });
+
+  it("summarizes provider request metadata for traces", () => {
+    const model = new OpenAIChatCompletionModel({} as never, "chat-test");
+    const request: CompletionRequest = {
+      chatHistory: [Message.user("What is 2+5?")],
+      documents: [],
+      tools: [{ name: "add", description: "Add numbers", parameters: { type: "object" } }],
+      maxTokens: 64,
+      toolChoice: { type: "function", name: "add" },
+    };
+
+    expect(model.traceRequest(request, { stream: true })).toMatchObject({
+      provider: "openai-chat",
+      api: "chat.completions",
+      stream: true,
+      model: "chat-test",
+      messageCount: 1,
+      toolCount: 1,
+      toolNames: ["add"],
+      parameterKeys: expect.arrayContaining(["messages", "model", "stream", "stream_options"]),
+    });
   });
 
   it("maps non-streaming reasoning_content responses to assistant reasoning", () => {

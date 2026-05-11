@@ -69,6 +69,30 @@ describe("Gemini completion mapping", () => {
     });
   });
 
+  it("summarizes provider request metadata for traces", () => {
+    const model = new GeminiCompletionModel({} as never, "gemini-test");
+    const request: CompletionRequest = {
+      instructions: "Be concise.",
+      chatHistory: [Message.user("What is 2+5?")],
+      documents: [],
+      tools: [{ name: "add", description: "Add numbers", parameters: { type: "object" } }],
+      maxTokens: 128,
+      toolChoice: "auto",
+    };
+
+    expect(model.traceRequest(request, { stream: true })).toMatchObject({
+      provider: "gemini",
+      api: "models.generateContentStream",
+      stream: true,
+      model: "gemini-test",
+      contentCount: 1,
+      toolCount: 1,
+      toolNames: ["add"],
+      hasSystemInstruction: true,
+      parameterKeys: expect.arrayContaining(["config", "contents", "model"]),
+    });
+  });
+
   it("maps normalized requests to Gemini generateContent params", () => {
     const request: CompletionRequest = {
       instructions: "Use the support policy.",

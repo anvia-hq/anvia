@@ -6,6 +6,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
+  type JsonObject,
   type JsonValue,
   type Message as MessageType,
   type StreamingCompletionModel,
@@ -42,6 +43,14 @@ export class GeminiCompletionModel implements StreamingCompletionModel {
     private readonly client: GoogleGenAI,
     readonly defaultModel = "gemini-2.5-flash",
   ) {}
+
+  traceRequest(
+    request: CompletionRequest,
+    options: { stream?: boolean | undefined } = {},
+  ): JsonObject {
+    const params = toGeminiGenerateContentParams(this.defaultModel, request);
+    return providerRequestSummary(params, request, options);
+  }
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
@@ -83,6 +92,51 @@ export function toGeminiGenerateContentParams(
   }
 
   return params;
+}
+
+function providerRequestSummary(
+  params: GeminiGenerateParams,
+  request: CompletionRequest,
+  options: { stream?: boolean | undefined },
+): JsonObject {
+  const config = isPlainObject(params.config) ? params.config : {};
+  return compactJsonObject({
+    provider: "gemini",
+    api: options.stream === true ? "models.generateContentStream" : "models.generateContent",
+    stream: options.stream === true,
+    model: typeof params.model === "string" ? params.model : undefined,
+    parameterKeys: Object.keys(params).sort(),
+    contentCount: Array.isArray(params.contents) ? params.contents.length : undefined,
+    configKeys: Object.keys(config).sort(),
+    toolCount: request.tools.length,
+    toolNames: request.tools.map((tool) => tool.name),
+    hasSystemInstruction: config.systemInstruction !== undefined,
+    hasOutputSchema: request.outputSchema !== undefined,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens,
+    toolChoice: toolChoiceSummary(request.toolChoice),
+    additionalParamKeys: isPlainObject(request.additionalParams)
+      ? Object.keys(request.additionalParams).sort()
+      : undefined,
+  });
+}
+
+function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | undefined {
+  if (toolChoice === undefined || typeof toolChoice === "string") {
+    return toolChoice;
+  }
+  return { type: toolChoice.type, name: toolChoice.name };
+}
+
+function compactJsonObject(values: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(
+    Object.entries(values).flatMap(([key, value]) => {
+      if (value === undefined) {
+        return [];
+      }
+      return [[key, toJsonValue(value)]];
+    }),
+  ) as JsonObject;
 }
 
 function requestMessages(request: CompletionRequest): MessageType[] {

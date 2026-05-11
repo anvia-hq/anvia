@@ -83,6 +83,28 @@ describe("Mistral completion mapping", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("summarizes provider request metadata for traces", () => {
+    const model = new MistralCompletionModel({} as never, "mistral-test");
+    const request: CompletionRequest = {
+      chatHistory: [Message.user("What is 2+5?")],
+      documents: [],
+      tools: [{ name: "add", description: "Add numbers", parameters: { type: "object" } }],
+      maxTokens: 128,
+      toolChoice: "auto",
+    };
+
+    expect(model.traceRequest(request, { stream: true })).toMatchObject({
+      provider: "mistral",
+      api: "chat.stream",
+      stream: true,
+      model: "mistral-test",
+      messageCount: 1,
+      toolCount: 1,
+      toolNames: ["add"],
+      parameterKeys: expect.arrayContaining(["messages", "model", "tools"]),
+    });
+  });
+
   it("maps normalized requests to Mistral chat params", () => {
     const request: CompletionRequest = {
       instructions: "Use the support policy.",

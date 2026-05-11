@@ -1458,14 +1458,14 @@ export function StudioConsole() {
           {allSessions.slice(0, 8).map((session) => (
             <div
               className={cn(
-                "group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_24px] items-center gap-1 rounded-sm border border-transparent pr-1 transition duration-200 hover:border-sidebar-border hover:bg-sidebar-accent",
+                "group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_44px] items-center gap-1 rounded-sm border border-transparent pr-1 transition duration-200 hover:border-sidebar-border hover:bg-sidebar-accent focus-within:border-sidebar-border focus-within:bg-sidebar-accent",
                 session.id === selectedSessionId && "border-sidebar-border bg-sidebar-accent",
               )}
               key={session.id}
             >
               <Button
                 className={cn(
-                  "grid h-auto min-h-8 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-sm border-0 bg-transparent px-2 py-1 text-left text-sidebar-foreground/72 shadow-none hover:bg-transparent hover:text-sidebar-foreground",
+                  "grid h-auto min-h-8 min-w-0 justify-start rounded-sm border-0 bg-transparent px-2 py-1 text-left text-sidebar-foreground/72 shadow-none hover:bg-transparent hover:text-sidebar-foreground",
                   session.id === selectedSessionId && "text-sidebar-accent-foreground",
                 )}
                 type="button"
@@ -1475,21 +1475,23 @@ export function StudioConsole() {
                 <span className="min-w-0 truncate text-xs font-medium">
                   {session.title ?? "Untitled chat"}
                 </span>
-                <time className="font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
+              </Button>
+              <div className="relative grid h-8 min-w-0 place-items-end">
+                <time className="self-center justify-self-end font-mono text-[10px] font-medium tabular-nums text-muted-foreground group-hover:opacity-0 group-focus-within:opacity-0">
                   {formatRelativeTime(session.updatedAt)}
                 </time>
-              </Button>
-              <Button
-                aria-label={`Delete ${session.title ?? "Untitled chat"}`}
-                className="h-6 min-h-6 w-6 border-0 bg-transparent p-0 text-muted-foreground opacity-55 shadow-none hover:bg-transparent hover:text-destructive hover:opacity-100 group-hover:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
-                size="icon"
-                type="button"
-                variant="ghost"
-                disabled={runState === "running"}
-                onClick={() => setDeleteCandidate(session)}
-              >
-                <Trash2 aria-hidden="true" />
-              </Button>
+                <Button
+                  aria-label={`Delete ${session.title ?? "Untitled chat"}`}
+                  className="absolute right-0 top-1/2 hidden h-6 min-h-6 w-6 -translate-y-1/2 border-0 bg-transparent p-0 text-muted-foreground opacity-70 shadow-none hover:bg-transparent hover:text-destructive hover:opacity-100 group-hover:grid group-focus-within:grid [&_svg]:h-3.5 [&_svg]:w-3.5"
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                  disabled={runState === "running"}
+                  onClick={() => setDeleteCandidate(session)}
+                >
+                  <Trash2 aria-hidden="true" />
+                </Button>
+              </div>
             </div>
           ))}
         </nav>

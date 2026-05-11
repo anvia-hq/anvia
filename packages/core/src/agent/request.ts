@@ -4,6 +4,7 @@ import {
   CompletionRequestBuilder,
   type CompletionResponse,
   type Document,
+  type JsonObject,
   Message,
   type Message as MessageType,
   type ReasoningContentType,
@@ -22,7 +23,7 @@ import {
 } from "../observability/group";
 import type { AgentTraceInfo, AgentTraceOptions } from "../observability/types";
 import { toReadableStream } from "../streaming";
-import type { ToolCallStreamEvent } from "../tool";
+import type { AnyTool, ToolCallStreamEvent } from "../tool";
 import type { ToolMiddleware, ToolResultMiddlewareArgs } from "../tool/middleware";
 import type { Agent } from "./agent";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
@@ -30,6 +31,8 @@ import type { PromptHook, ToolHookArgs } from "./hooks";
 import { runControl, toolCallControl } from "./hooks";
 import { type AgentDeltaEvent, CompletionStreamAccumulator } from "./stream-accumulator";
 import { extractRagText, isStreamingCompletionModel, mapWithConcurrency } from "./utils";
+
+const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
 
 export type PromptResponse = {
   output: string;
@@ -239,6 +242,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           {
             turn: currentTurns,
             runObservers,
+            toolDefinitions: request.tools,
           },
         );
         const toolMessage = Message.tool(toolResults);
@@ -308,12 +312,15 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           .build();
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
+        const providerRequest = this.providerTraceRequest(request, { stream: true });
         const generationObservers = await runObservers.startGeneration({
           turn: currentTurns,
           request,
+          ...(providerRequest === undefined ? {} : { providerRequest }),
           modelInfo: {
             provider: this.agent.model.provider,
             defaultModel: this.agent.model.defaultModel,
+            capabilities: this.agent.model.capabilities,
           },
         });
         const accumulator = new CompletionStreamAccumulator();
@@ -395,6 +402,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           {
             turn: currentTurns,
             runObservers,
+            toolDefinitions: request.tools,
           },
         );
         toolResultsPromise.then(
@@ -430,12 +438,15 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     runObservers: ActiveAgentRunObservers,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this.agent.model, request);
+    const providerRequest = this.providerTraceRequest(request);
     const generationObservers = await runObservers.startGeneration({
       turn,
       request,
+      ...(providerRequest === undefined ? {} : { providerRequest }),
       modelInfo: {
         provider: this.agent.model.provider,
         defaultModel: this.agent.model.defaultModel,
+        capabilities: this.agent.model.capabilities,
       },
     });
     try {
@@ -448,6 +459,36 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     }
   }
 
+  private providerTraceRequest(
+    request: ReturnType<CompletionRequestBuilder["build"]>,
+    options: { stream?: boolean | undefined } = {},
+  ): JsonObject | undefined {
+    try {
+      return this.agent.model.traceRequest?.(request, options);
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
+    if (tool === undefined) {
+      return undefined;
+    }
+    const metadata = (tool as { [MCP_TOOL_METADATA_KEY]?: unknown })[MCP_TOOL_METADATA_KEY];
+    const mcpMetadata =
+      typeof metadata === "object" && metadata !== null
+        ? (metadata as { serverName?: unknown })
+        : undefined;
+    return {
+      approvalRequired: tool.approval !== undefined,
+      ...(typeof mcpMetadata?.serverName === "string" && mcpMetadata.serverName.length > 0
+        ? { mcpServerName: mcpMetadata.serverName }
+        : {}),
+    };
+  }
+
   private async executeToolCalls(
     toolCalls: ToolCall[],
     newMessages: MessageType[],
@@ -456,6 +497,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     observation?: {
       turn: number;
       runObservers: ActiveAgentRunObservers;
+      toolDefinitions?: ToolDefinition[];
     },
   ): Promise<ToolResult[]> {
     return mapWithConcurrency(toolCalls, this.concurrency, async (toolCall) => {
@@ -469,6 +511,11 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       if (toolCall.callId !== undefined) {
         hookArgs.toolCallId = toolCall.callId;
       }
+      const tool = this.agent.getTool(toolCall.function.name);
+      const toolDefinition = observation?.toolDefinitions?.find(
+        (definition) => definition.name === toolCall.function.name,
+      );
+      const toolMetadata = this.toolTraceMetadata(tool);
 
       const toolObservers = await observation?.runObservers.startTool({
         turn: observation.turn,
@@ -477,6 +524,8 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         internalCallId,
         args,
         toolCallId: toolCall.callId,
+        ...(toolDefinition === undefined ? {} : { toolDefinition }),
+        ...(toolMetadata === undefined ? {} : { toolMetadata }),
       });
 
       const callAction = await this.activeHook?.onToolCall?.({

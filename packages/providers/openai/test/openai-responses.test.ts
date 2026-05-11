@@ -70,6 +70,30 @@ describe("OpenAI Responses mapping", () => {
     });
   });
 
+  it("summarizes provider request metadata for traces", () => {
+    const model = new OpenAIResponsesCompletionModel({} as never, "gpt-test");
+    const request: CompletionRequest = {
+      instructions: "Be concise.",
+      chatHistory: [Message.user("What is 2+5?")],
+      documents: [],
+      tools: [{ name: "add", description: "Add numbers", parameters: { type: "object" } }],
+      temperature: 0.2,
+      maxTokens: 128,
+      toolChoice: "auto",
+    };
+
+    expect(model.traceRequest(request, { stream: true })).toMatchObject({
+      provider: "openai",
+      api: "responses",
+      stream: true,
+      model: "gpt-test",
+      inputCount: 1,
+      toolCount: 1,
+      toolNames: ["add"],
+      parameterKeys: expect.arrayContaining(["input", "model", "stream", "tools"]),
+    });
+  });
+
   it("prepends normalized static context before chat history", () => {
     const request: CompletionRequest = {
       chatHistory: [Message.system("Use context."), Message.user("What is the owner?")],

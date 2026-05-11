@@ -1,7 +1,18 @@
-import { ArrowLeft, Bot, Cpu, GitBranch, Route, Wrench } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  Cpu,
+  GitBranch,
+  MessageSquareText,
+  Reply,
+  Route,
+  Settings2,
+  Wrench,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { StudioConfig, StudioTrace } from "../../../../types";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ScrollArea } from "../../components/ui/scroll-area";
@@ -629,25 +640,91 @@ function TraceDataSection(props: {
               )}
               key={`${item.label}-${item.text}`}
             >
-              <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <TraceRowIcon label={item.label} />
                 {item.label}
               </span>
-              <p
-                className={cn(
-                  "m-0 whitespace-pre-wrap text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]",
-                  props.compact && "font-mono text-[13px] leading-6",
-                  props.tone === "success" && !isNeutralTraceRow(item) && "text-primary",
-                  props.tone === "error" && "text-destructive",
-                )}
-              >
-                {item.text}
-              </p>
+              <TraceRowContent compact={props.compact} item={item} tone={props.tone} />
             </article>
           ))}
         </div>
       )}
     </section>
   );
+}
+
+function TraceRowContent(props: {
+  compact?: boolean | undefined;
+  item: { label: string; text: string };
+  tone?: "success" | "error" | undefined;
+}) {
+  const historyItems = conversationHistoryItems(props.item);
+  if (historyItems.length > 0) {
+    return (
+      <div className="grid min-w-0 gap-5">
+        {historyItems.map((item) => (
+          <div className="grid min-w-0 gap-2" key={`${item.index}-${item.role}-${item.text}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="font-mono text-xs font-semibold tabular-nums text-muted-foreground">
+                {item.index}
+              </span>
+              <Badge
+                className={cn(
+                  "px-1.5 py-0.5",
+                  item.role === "User" && "border-chart-2/40 bg-chart-2/15 text-chart-2",
+                  item.role === "Assistant" && "border-chart-1/40 bg-chart-1/15 text-chart-1",
+                  item.role === "Tool" && "border-chart-5/40 bg-chart-5/15 text-chart-5",
+                )}
+              >
+                {item.role}
+              </Badge>
+            </div>
+            <p className="m-0 whitespace-pre-wrap text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]">
+              {item.text}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <p
+      className={cn(
+        "m-0 whitespace-pre-wrap text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]",
+        props.compact && "font-mono text-[13px] leading-6",
+        props.tone === "success" && !isNeutralTraceRow(props.item) && "text-primary",
+        props.tone === "error" && "text-destructive",
+      )}
+    >
+      {props.item.text}
+    </p>
+  );
+}
+
+function conversationHistoryItems(row: {
+  label: string;
+  text: string;
+}): Array<{ index: string; role: string; text: string }> {
+  if (!row.label.startsWith("Conversation history")) {
+    return [];
+  }
+  return row.text
+    .split("\n\n")
+    .flatMap((block): Array<{ index: string; role: string; text: string }> => {
+      const [heading, ...content] = block.split("\n");
+      const match = /^(\d+)\.\s+(.+)$/.exec(heading ?? "");
+      if (match === null) {
+        return [];
+      }
+      return [
+        {
+          index: match[1] ?? "",
+          role: match[2] ?? "Message",
+          text: content.join("\n"),
+        },
+      ];
+    });
 }
 
 export function rawTraceJson(value: unknown): string {
@@ -728,6 +805,21 @@ function isNeutralTraceRow(row: { label: string }): boolean {
   return row.label === "Message Id";
 }
 
+function TraceRowIcon(props: { label: string }) {
+  const className = "h-3.5 w-3.5 shrink-0";
+  switch (props.label) {
+    case "System prompt":
+      return <Settings2 aria-hidden="true" className={className} />;
+    case "Prompt":
+      return <MessageSquareText aria-hidden="true" className={className} />;
+    case "Output":
+    case "Assistant output":
+      return <Reply aria-hidden="true" className={className} />;
+    default:
+      return null;
+  }
+}
+
 export function plainTraceValue(
   title: string,
   value: unknown,
@@ -779,6 +871,12 @@ function plainTraceInput(
     return [{ label: "Value", text: value }];
   }
   if (Array.isArray(value)) {
+    if (parentKey === "chatHistory") {
+      return chatHistoryRows(value);
+    }
+    if (parentKey === "history") {
+      return conversationHistoryRows(value);
+    }
     return value
       .map((item, index) => ({
         label: traceArrayItemLabel(item, index, parentKey),
@@ -815,6 +913,49 @@ function plainTraceInput(
   }
 
   return rows;
+}
+
+function chatHistoryRows(value: unknown[]): Array<{ label: string; text: string }> {
+  const messages = value
+    .map((item, index) => ({
+      label: traceArrayItemLabel(item, index, "chatHistory"),
+      text: messageText(item) || formatToolValue(item),
+    }))
+    .filter((item) => item.text.length > 0);
+  const current = messages.at(-1);
+  const history = messages.slice(0, -1);
+  const rows: Array<{ label: string; text: string }> = [];
+  if (history.length > 0) {
+    rows.push({
+      label: `Conversation history (${history.length})`,
+      text: history.map((item, index) => `${index + 1}. ${item.label}\n${item.text}`).join("\n\n"),
+    });
+  }
+  if (current !== undefined) {
+    rows.push({
+      label: history.length > 0 ? "Current prompt" : "Prompt",
+      text: current.text,
+    });
+  }
+  return rows;
+}
+
+function conversationHistoryRows(value: unknown[]): Array<{ label: string; text: string }> {
+  const messages = value
+    .map((item, index) => ({
+      label: traceArrayItemLabel(item, index, "history"),
+      text: messageText(item) || formatToolValue(item),
+    }))
+    .filter((item) => item.text.length > 0);
+  if (messages.length === 0) {
+    return [];
+  }
+  return [
+    {
+      label: `Conversation history (${messages.length})`,
+      text: messages.map((item, index) => `${index + 1}. ${item.label}\n${item.text}`).join("\n\n"),
+    },
+  ];
 }
 
 function traceArrayItemLabel(item: unknown, index: number, parentKey: string | undefined): string {
@@ -1008,6 +1149,17 @@ function selectedTraceDetail(
 
 function traceDetailMetadata(trace: StudioTrace): Record<string, unknown> {
   const metadata = isRecord(trace.metadata) ? trace.metadata : {};
+  const traceGroup = compactTraceMetadata({
+    status: trace.status,
+    traceId: trace.trace?.traceId ?? trace.id,
+    observationId: trace.trace?.observationId,
+    sessionId: trace.sessionId,
+    observationCount: trace.observationCount,
+    messageCount: traceMessageCount(metadata.messages),
+    startedAt: trace.startedAt,
+    endedAt: trace.endedAt,
+    durationMs: trace.durationMs,
+  });
   return compactTraceMetadata({
     ...metadata,
     status: trace.status,
@@ -1019,6 +1171,7 @@ function traceDetailMetadata(trace: StudioTrace): Record<string, unknown> {
     startedAt: trace.startedAt,
     endedAt: trace.endedAt,
     durationMs: trace.durationMs,
+    trace: isRecord(metadata.trace) ? metadata.trace : traceGroup,
   });
 }
 
@@ -1041,7 +1194,7 @@ function turnDetailMetadata(
 
 function observationDetailMetadata(observation: TraceObservationItem): Record<string, unknown> {
   const metadata = isRecord(observation.metadata) ? observation.metadata : {};
-  return compactTraceMetadata({
+  const base = compactTraceMetadata({
     ...metadata,
     status: observation.status,
     kind: observation.kind,
@@ -1051,6 +1204,92 @@ function observationDetailMetadata(observation: TraceObservationItem): Record<st
     endedAt: observation.endedAt ?? null,
     durationMs: observation.durationMs,
   });
+  return compactTraceMetadata({
+    ...base,
+    trace: isRecord(base.trace)
+      ? base.trace
+      : compactTraceMetadata({
+          status: observation.status,
+          kind: observation.kind,
+          turn: observation.turn,
+          parentObservationId: observation.parentObservationId ?? null,
+          startedAt: observation.startedAt,
+          endedAt: observation.endedAt ?? null,
+          durationMs: observation.durationMs,
+        }),
+    modelInfo: isRecord(base.modelInfo) ? base.modelInfo : modelInfoMetadata(base),
+    modelCall: isRecord(base.modelCall) ? base.modelCall : modelCallMetadata(base),
+    response: isRecord(base.response) ? base.response : responseMetadata(base),
+    tools: isRecord(base.tools) ? base.tools : toolsMetadata(base),
+    timing: isRecord(base.timing) ? base.timing : timingMetadata(base),
+  });
+}
+
+function modelInfoMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
+  const group = compactTraceMetadata({
+    provider: metadata.provider,
+    model: metadata.model,
+    requestedModel: metadata.requestedModel,
+    defaultModel: metadata.defaultModel,
+  });
+  return Object.keys(group).length === 0 ? undefined : group;
+}
+
+function modelCallMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
+  const request = compactTraceMetadata({
+    messageCount: metadata.historyCount,
+    documentCount: metadata.documentCount,
+    toolCount: metadata.toolCount,
+    toolNames: metadata.toolNames,
+    temperature: metadata.temperature,
+    maxTokens: metadata.maxTokens,
+    toolChoice: metadata.toolChoice,
+    hasOutputSchema: metadata.hasOutputSchema,
+    additionalParamKeys: metadata.additionalParamKeys,
+  });
+  const group = compactTraceMetadata({
+    request: Object.keys(request).length === 0 ? undefined : request,
+    providerRequest: metadata.providerRequest,
+  });
+  return Object.keys(group).length === 0 ? undefined : group;
+}
+
+function responseMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
+  const group = compactTraceMetadata({
+    messageId: metadata.messageId,
+    usage: metadata.usage,
+    providerResponse: metadata.providerResponse,
+  });
+  return Object.keys(group).length === 0 ? undefined : group;
+}
+
+function toolsMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
+  const group = compactTraceMetadata({
+    count: metadata.toolCount,
+    names: metadata.toolNames,
+    toolChoice: metadata.toolChoice,
+    internalCallId: metadata.internalCallId,
+    toolCallId: metadata.toolCallId,
+    skipped: metadata.skipped,
+    description: metadata.toolDescription,
+    parameterKeys: metadata.parameterKeys,
+    requiredParameterKeys: metadata.requiredParameterKeys,
+    approvalRequired: metadata.approvalRequired,
+    mcpServerName: metadata.mcpServerName,
+    argumentBytes: metadata.argumentBytes,
+    resultBytes: metadata.resultBytes,
+  });
+  return Object.keys(group).length === 0 ? undefined : group;
+}
+
+function timingMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
+  const group = compactTraceMetadata({
+    firstDeltaMs: metadata.firstDeltaMs,
+    durationMs: metadata.durationMs,
+    startedAt: metadata.startedAt,
+    endedAt: metadata.endedAt,
+  });
+  return Object.keys(group).length === 0 ? undefined : group;
 }
 
 function observationStatusSummary(observations: TraceObservationItem[]): string {

@@ -1,6 +1,22 @@
 # @anvia/mistral
 
-Mistral provider adapter for Anvia.
+Mistral completion and embedding provider adapter for Anvia.
+
+Use this package when you want Anvia agents, extractors, pipelines, embeddings, or model listing to run on Mistral APIs.
+
+## Installation
+
+```sh
+pnpm add @anvia/mistral @anvia/core
+```
+
+In this monorepo, the package is available through the workspace:
+
+```sh
+pnpm --filter @anvia/mistral build
+```
+
+## Usage
 
 ```ts
 import { AgentBuilder } from "@anvia/core";
@@ -24,6 +40,30 @@ const embeddings = client.embeddingModel("mistral-embed");
 const vectors = await embeddings.embedTexts(["Refunds take five business days."]);
 ```
 
+## Model Listing
+
+```ts
+const models = await client.listModels();
+```
+
 ## Capabilities
 
-The v1 adapter supports text completions, streaming, tools, tool choice, structured output, and Mistral embeddings. Image inputs, document file inputs, transcription, audio generation, image generation, and model listing are not implemented yet.
+The v1 adapter supports text completions, streaming, tools, tool choice, structured output, Mistral embeddings, and model listing. Image inputs, document file inputs, transcription, audio generation, and image generation are not implemented yet.
+
+## Exports
+
+- `MistralClient`
+- `MistralCompletionModel`
+- `MistralEmbeddingModel`
+- `MistralClientOptions`
+- `MistralEmbeddingModelOptions`
+- `mistralMessageHelpers`
+- `mistral`
+
+## Development
+
+```sh
+pnpm --filter @anvia/mistral typecheck
+pnpm --filter @anvia/mistral test
+pnpm --filter @anvia/mistral build
+```

@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-89c83f?style=flat-square" alt="MIT license" />
-  <img src="https://img.shields.io/badge/core-v0.1.5-2f80c7?style=flat-square" alt="@anvia/core v0.1.5" />
+  <img src="https://img.shields.io/badge/core-v0.2.1-2f80c7?style=flat-square" alt="@anvia/core v0.2.1" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.9" />
   <img src="https://img.shields.io/badge/pnpm-11.0.4-f69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm 11.0.4" />
   <img src="https://img.shields.io/badge/runtime-Node.js-3c873a?style=flat-square&logo=node.js&logoColor=white" alt="Node.js runtime" />
@@ -83,7 +83,7 @@ const normalizedTicket = await workflow.run(
 | `@anvia/langfuse` | `packages/observability/langfuse` | Langfuse tracing adapter for Anvia observers. |
 | `@anvia/otel` | `packages/observability/otel` | OpenTelemetry tracing adapter for Anvia observers. |
 | `@anvia/transformers` | `packages/embeddings/transformers` | Transformers.js embedding model adapter, defaulting to local All-MiniLM. |
-| `@anvia/studio` | `packages/tools/studio` | HTTP runtime and browser UI for serving agents, sessions, traces, and approvals. |
+| `@anvia/studio` | `packages/tools/studio` | HTTP runtime and browser UI for serving agents, sessions, traces, pipelines, tools, MCPs, approvals, and knowledge inspection. |
 | `docs` | `apps/docs` | Private documentation app. |
 | `cookbook` | `examples/cookbook` | Runnable examples that document the public learning path. |
 
@@ -140,7 +140,7 @@ The cookbook is a product learning path. It starts with a plain text call, then 
 | Retrieval | Local embeddings, vector search, metadata filters, RAG context, document loaders, ChromaDB, Qdrant, pgvector, FastEmbed, and Mistral embeddings. |
 | Multi-agent | Agents as tools and pipeline-backed parallel specialists. |
 | Evals | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, and LLM judge/score. |
-| Studio | Served agents, browser sessions, traces, multi-agent runners, tool approvals, human feedback, and Knowledge. |
+| Studio | Served agents, browser sessions, traces, pipeline inspection, multi-agent runners, tool approvals, human feedback, and Knowledge. |
 | Integrations | MCP tools, local skills, Langfuse tracing, Langfuse eval reporting, and OpenTelemetry tracing. |
 
 Run the default example for a level:
@@ -207,9 +207,11 @@ pnpm --filter cookbook typecheck
 │   │   ├── qdrant/                   # @anvia/qdrant
 │   │   └── pgvector/                 # @anvia/pgvector
 │   ├── observability/
-│   │   └── langfuse/                 # @anvia/langfuse
+│   │   ├── langfuse/                 # @anvia/langfuse
+│   │   └── otel/                     # @anvia/otel
 │   ├── embeddings/
-│   │   └── transformers/             # @anvia/transformers
+│   │   ├── transformers/             # @anvia/transformers
+│   │   └── fastembed/                # @anvia/fastembed
 │   └── tools/
 │       └── studio/                   # @anvia/studio
 ├── apps/

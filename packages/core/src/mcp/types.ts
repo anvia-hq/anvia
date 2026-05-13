@@ -1,3 +1,4 @@
+import type { SSEClientTransportOptions } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { JsonObject } from "../completion/index";
@@ -71,4 +72,10 @@ export type McpHttpOptions = {
   name: string;
   url: string | URL;
   transport?: StreamableHTTPClientTransportOptions | undefined;
+};
+
+export type McpSseOptions = {
+  name: string;
+  url: string | URL;
+  transport?: SSEClientTransportOptions | undefined;
 };

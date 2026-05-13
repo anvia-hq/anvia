@@ -1,7 +1,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { McpClient, McpConnection, McpHttpOptions, McpStdioOptions } from "./types";
+import type {
+  McpClient,
+  McpConnection,
+  McpHttpOptions,
+  McpSseOptions,
+  McpStdioOptions,
+} from "./types";
 
 export const mcp = {
   stdio(options: McpStdioOptions): McpConnection {
@@ -25,6 +32,19 @@ export const mcp = {
           asSdkTransport(
             new StreamableHTTPClientTransport(new URL(options.url), options.transport),
           ),
+        );
+        return client as McpClient;
+      },
+    };
+  },
+
+  sse(options: McpSseOptions): McpConnection {
+    return {
+      name: options.name,
+      async connect(): Promise<McpClient> {
+        const client = createSdkClient();
+        await client.connect(
+          asSdkTransport(new SSEClientTransport(new URL(options.url), options.transport)),
         );
         return client as McpClient;
       },

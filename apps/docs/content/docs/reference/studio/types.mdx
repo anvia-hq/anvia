@@ -289,6 +289,30 @@ type StudioAgentKnowledgeConfig = {
   staticContext: StudioStaticKnowledgeDocument[];
 };
 
+type StudioKnowledgeItemKind = "static_context" | "dynamic_context" | "dynamic_tool";
+
+type StudioKnowledgeItem = {
+  id: string;
+  kind: StudioKnowledgeItemKind;
+  text?: string;
+  document?: JsonValue;
+  toolName?: string;
+  description?: string;
+  parameterKeys?: string[];
+  metadata?: JsonObject;
+};
+
+type StudioKnowledgeItemsPage = {
+  agentId: string;
+  sourceId: string;
+  kind: StudioKnowledgeSourceKind;
+  inspectable: boolean;
+  items: StudioKnowledgeItem[];
+  nextCursor?: string;
+  totalCount?: number;
+  message?: string;
+};
+
 type StudioKnowledgeSummary = {
   agents: StudioAgentKnowledgeConfig[];
   evidence: StudioKnowledgeEvidence[];
@@ -297,9 +321,61 @@ type StudioKnowledgeSummary = {
 
 Purpose: summarize each agent's inspectable static context, dynamic context, dynamic tools, and recent trace evidence.
 
-Return behavior: returned by `GET /knowledge`.
+Return behavior: `GET /knowledge` returns `StudioKnowledgeSummary`; source item routes return `StudioKnowledgeItemsPage`.
 
 Notable errors: invalid `limit` query values return `bad_request`.
+
+## Pipeline Run Persistence Types
+
+```ts
+type StudioPipelineRunStatus = "running" | "success" | "error";
+
+type StudioPipelineRunRecord = {
+  runId: string;
+  pipelineId: string;
+  status: StudioPipelineRunStatus;
+  input: JsonValue;
+  output?: JsonValue;
+  error?: JsonValue;
+  metadata?: JsonObject;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+};
+
+type StudioPipelineRunSaveInput = {
+  runId: string;
+  pipelineId: string;
+  status: StudioPipelineRunStatus;
+  input: JsonValue;
+  output?: JsonValue;
+  error?: JsonValue;
+  metadata?: JsonObject;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+};
+
+type StudioPipelineRunListOptions = {
+  pipelineId: string;
+  limit: number;
+};
+
+type StudioPipelineRunStore = {
+  savePipelineRun(
+    input: StudioPipelineRunSaveInput,
+  ): StudioPipelineRunRecord | Promise<StudioPipelineRunRecord>;
+  listPipelineRuns(
+    options: StudioPipelineRunListOptions,
+  ): StudioPipelineRunRecord[] | Promise<StudioPipelineRunRecord[]>;
+};
+```
+
+Purpose: persistence contract for Studio pipeline run history.
+
+Return behavior: stores normalize saved run input into `StudioPipelineRunRecord` values and list recent records per pipeline.
+
+Notable errors: store failures surface through the Studio runtime or HTTP route handling the pipeline request.
 
 ## Error Types
 

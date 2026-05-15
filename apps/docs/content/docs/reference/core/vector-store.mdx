@@ -49,6 +49,24 @@ type VectorSearchResult<T = unknown, Metadata extends VectorMetadata = VectorMet
   metadata?: Metadata;
 };
 
+type VectorInspectRequest = {
+  limit: number;
+  cursor?: string;
+  filter?: VectorFilter;
+};
+
+type VectorInspectItem<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = {
+  id: string;
+  document: T;
+  metadata?: Metadata;
+};
+
+type VectorInspectPage<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = {
+  items: Array<VectorInspectItem<T, Metadata>>;
+  nextCursor?: string;
+  totalCount?: number;
+};
+
 type VectorSearchToolOptions = {
   name: string;
   description?: string;
@@ -73,12 +91,13 @@ interface VectorSearchIndex<T = unknown, Metadata extends VectorMetadata = Vecto
   search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
   searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>>;
   asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown>;
+  inspect?(request: VectorInspectRequest): Promise<VectorInspectPage<T, Metadata>>;
 }
 ```
 
 Purpose: search interface shared by in-memory and integration-backed vector stores.
 
-Return behavior: `searchIds(...)` strips documents and metadata; `asTool(...)` wraps search as a tool.
+Return behavior: `searchIds(...)` strips documents and metadata; `asTool(...)` wraps search as a tool. `inspect(...)` is optional and returns a cursor page for UIs that need to browse indexed documents.
 
 Notable errors: model or store failures reject the returned promises.
 

@@ -23,10 +23,11 @@ Notable errors: rejects when the connection fails, tool listing fails, or the MC
 const mcp: {
   stdio(options: McpStdioOptions): McpConnection;
   http(options: McpHttpOptions): McpConnection;
+  sse(options: McpSseOptions): McpConnection;
 };
 ```
 
-Purpose: factories for stdio and streamable HTTP MCP connections.
+Purpose: factories for stdio, streamable HTTP, and SSE MCP connections.
 
 Return behavior: returns lazy connection objects; network or process work starts when `connectMcp(...)` calls `connect()`.
 
@@ -83,6 +84,12 @@ type McpHttpOptions = {
   name: string;
   url: string | URL;
   transport?: StreamableHTTPClientTransportOptions;
+};
+
+type McpSseOptions = {
+  name: string;
+  url: string | URL;
+  transport?: SSEClientTransportOptions;
 };
 ```
 

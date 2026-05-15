@@ -12,12 +12,13 @@ type StudioStores = {
   sessions?: StudioSessionStore | false;
   traces?: StudioTraceStore;
   pipelineLogs?: StudioPipelineLogStore | false;
+  pipelineRuns?: StudioPipelineRunStore | false;
 };
 ```
 
-Purpose: optional persistence stores for Studio sessions, traces, and pipeline logs.
+Purpose: optional persistence stores for Studio sessions, traces, pipeline logs, and pipeline run history.
 
-Return behavior: `false` disables sessions or pipeline logs. Omitted traces disable trace routes unless the session store also implements `StudioTraceStore`. The default SQLite store implements session, trace, and pipeline log storage.
+Return behavior: `false` disables sessions, pipeline logs, or pipeline runs. Omitted traces disable trace routes unless the session store also implements `StudioTraceStore`. The default SQLite store implements session, trace, pipeline log, and pipeline run storage.
 
 Notable errors: none directly.
 
@@ -30,10 +31,10 @@ type SqliteSessionStoreOptions = {
 
 function createSqliteSessionStore(
   options?: SqliteSessionStoreOptions,
-): StudioSessionStore & StudioTraceStore & StudioPipelineLogStore;
+): StudioSessionStore & StudioTraceStore & StudioPipelineLogStore & StudioPipelineRunStore;
 ```
 
-Purpose: create a SQLite-backed session, trace, and pipeline log store.
+Purpose: create a SQLite-backed session, trace, pipeline log, and pipeline run store.
 
 Return behavior: defaults to in-memory SQLite when `path` is omitted.
 

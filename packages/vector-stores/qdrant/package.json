@@ -1,6 +1,6 @@
 {
   "name": "@anvia/qdrant",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Qdrant vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@anvia/core": "workspace:*",
-    "@qdrant/js-client-rest": "^1.17.0"
+    "@qdrant/js-client-rest": "^1.18.0"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

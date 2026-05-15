@@ -23,12 +23,12 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       {
-        title: "Anvia - TypeScript agent runtime for production AI systems",
+        title: "Anvia - TypeScript runtime for application-owned AI workflows",
       },
       {
         name: "description",
         content:
-          "Anvia is a modern TypeScript agent runtime for typed tools, structured context, provider adapters, retrieval, workflows, and observable execution.",
+          "Anvia helps TypeScript teams build provider-agnostic agents, typed tools, retrieval, pipelines, streaming, and observability inside application code.",
       },
     ],
   }),
@@ -148,8 +148,15 @@ function Page() {
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.055)_1px,transparent_1px)] bg-[length:84px_84px] opacity-30" />
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,5,5,1)_0%,rgba(5,5,5,.98)_42%,rgba(5,5,5,.9)_100%)]" />
 
-          <div className="relative mx-auto grid max-w-7xl border-x border-white/10 bg-[#050505]/92 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="flex min-h-[620px] flex-col justify-center px-6 py-16 sm:px-10 lg:min-h-[680px] lg:px-12 lg:py-20">
+          <div className="relative mx-auto grid max-w-7xl overflow-hidden border-x border-white/10 bg-[#050505]/92 lg:grid-cols-2">
+            <img
+              src="/assets/anvia-hero-isometric.png"
+              alt="Abstract Anvia runtime graphic with muted lime workflow paths"
+              className="absolute inset-0 h-full w-full object-cover object-[68%_center] opacity-90"
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,5,5,1)_0%,rgba(5,5,5,.96)_33%,rgba(5,5,5,.72)_54%,rgba(5,5,5,.12)_100%)]" />
+
+            <div className="relative z-10 flex min-h-[620px] flex-col justify-center px-6 py-16 sm:px-10 lg:min-h-[680px] lg:px-12 lg:py-20">
               <h1
                 className="text-[clamp(4.5rem,13vw,8.75rem)] font-semibold leading-[0.86] text-white lg:text-[clamp(6rem,9vw,8.75rem)]"
                 style={{ letterSpacing: 0 }}
@@ -158,38 +165,31 @@ function Page() {
               </h1>
 
               <p className="mt-8 max-w-2xl text-balance text-2xl leading-9 text-zinc-100 sm:text-3xl sm:leading-10">
-                Build production agents with explicit runtime contracts.
+                Build provider-agnostic agents inside your application code.
               </p>
               <p className="mt-5 max-w-2xl text-balance text-base leading-8 text-zinc-500">
-                Typed tools, structured context, provider-neutral models, retrieval, workflows, and
-                observable execution for TypeScript teams.
+                Use typed tools, structured output, retrieval, pipelines, streaming, and Studio
+                inspection without giving up control of data, permissions, storage, or side effects.
               </p>
 
-              <div className="mt-10 flex flex-col gap-px bg-white/12 sm:w-fit sm:flex-row">
+              <div className="mt-10 flex flex-col gap-2 sm:w-fit sm:flex-row">
                 <a
                   href="/docs/guides/getting-started"
-                  className="inline-flex h-12 items-center justify-center gap-2 bg-[#e5ff1f] px-6 text-sm font-semibold text-black transition hover:bg-[#d7f21b]"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#e5ff1f] px-6 text-sm font-semibold text-black transition hover:bg-[#d7f21b]"
                 >
                   Start building
                   <ArrowRight className="size-4" />
                 </a>
                 <a
                   href="/docs/reference"
-                  className="inline-flex h-12 items-center justify-center gap-2 bg-[#101010] px-6 text-sm font-medium text-white transition hover:bg-[#181818]"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#101010] px-6 text-sm font-medium text-white transition hover:bg-[#181818]"
                 >
                   API reference
                 </a>
               </div>
             </div>
 
-            <div className="relative min-h-[360px] overflow-visible border-t border-white/10 px-6 py-8 sm:min-h-[440px] sm:px-10 lg:min-h-[680px] lg:border-t-0 lg:px-0 lg:py-0">
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.045)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.045)_1px,transparent_1px)] bg-[length:44px_44px] opacity-40" />
-              <img
-                src="/assets/anvia-hero-isometric.png"
-                alt="Minimal isometric runtime wireframe connected by neon-lime workflow paths"
-                className="relative mx-auto h-full max-h-[520px] w-full object-contain object-center opacity-95 mix-blend-lighten lg:absolute lg:inset-y-8 lg:right-24 lg:max-h-none lg:w-[108%] lg:scale-[1.2]"
-              />
-            </div>
+            <div className="hidden min-h-[680px] lg:block" />
           </div>
         </section>
 
@@ -304,7 +304,7 @@ function Page() {
                   <div className="mt-10 flex flex-wrap gap-2">
                     {group.packages.map((name) => (
                       <span
-                        className="inline-flex min-h-9 items-center gap-2 border border-white/10 bg-white/[0.025] px-3 font-mono text-[12px] text-zinc-200"
+                        className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 font-mono text-[12px] text-zinc-200"
                         key={name}
                       >
                         <Terminal className="size-3.5 text-[#e5ff1f]" />

@@ -85,7 +85,7 @@ export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
       <>
-        <img src="/assets/logo.png" alt="" className="h-8 w-auto" />
+        <img src="/assets/logo.png" alt="" className="h-[1.7rem] w-auto" />
         <span className="anvia-wordmark">Anvia</span>
       </>
     ),

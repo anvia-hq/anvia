@@ -4,22 +4,23 @@
 @import "fumadocs-ui/css/preset.css";
 
 :root {
+  --anvia-bg: oklch(13.97% 0 0);
   --fd-layout-width: 100vw;
 }
 
 .dark {
-  --color-fd-background: hsl(0 0% 2%);
+  --color-fd-background: var(--anvia-bg);
   --color-fd-foreground: hsl(0 0% 91%);
-  --color-fd-muted: hsl(0 0% 7%);
+  --color-fd-muted: var(--anvia-bg);
   --color-fd-muted-foreground: hsl(0 0% 58%);
-  --color-fd-popover: hsl(0 0% 5%);
+  --color-fd-popover: var(--anvia-bg);
   --color-fd-popover-foreground: hsl(0 0% 88%);
-  --color-fd-card: hsl(0 0% 4.5%);
+  --color-fd-card: var(--anvia-bg);
   --color-fd-card-foreground: hsl(0 0% 92%);
   --color-fd-border: hsl(0 0% 100% / 5%);
   --color-fd-primary: hsl(68 100% 56%);
   --color-fd-primary-foreground: hsl(0 0% 4%);
-  --color-fd-secondary: hsl(0 0% 6.5%);
+  --color-fd-secondary: var(--anvia-bg);
   --color-fd-secondary-foreground: hsl(0 0% 88%);
   --color-fd-accent: hsl(0 0% 100% / 5%);
   --color-fd-accent-foreground: hsl(0 0% 92%);
@@ -28,12 +29,12 @@
 
 html {
   color-scheme: dark;
-  background: hsl(0 0% 2%);
+  background: var(--anvia-bg);
 }
 
 body {
   min-height: 100vh;
-  background: hsl(0 0% 2%);
+  background: var(--anvia-bg);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
@@ -71,7 +72,7 @@ body {
 }
 
 #nd-nav > div {
-  background: hsl(0 0% 2% / 94%);
+  background: oklch(13.97% 0 0 / 94%);
   border-color: hsl(0 0% 100% / 10%);
   backdrop-filter: blur(14px);
 }
@@ -100,7 +101,7 @@ body {
   flex-direction: column;
   justify-content: flex-end;
   border-bottom: 1px solid hsl(0 0% 100% / 14%);
-  background: hsl(0 0% 2% / 94%);
+  background: oklch(13.97% 0 0 / 94%);
   padding: 1rem 2rem 0;
   backdrop-filter: blur(14px);
   box-shadow: inset 0 -1px 0 hsl(0 0% 0% / 65%);

@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-89c83f?style=flat-square" alt="MIT license" />
-  <img src="https://img.shields.io/badge/core-v0.2.2-2f80c7?style=flat-square" alt="@anvia/core v0.2.2" />
+  <img src="https://img.shields.io/badge/core-v0.2.3-2f80c7?style=flat-square" alt="@anvia/core v0.2.3" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.9" />
   <img src="https://img.shields.io/badge/pnpm-11.0.4-f69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm 11.0.4" />
   <img src="https://img.shields.io/badge/runtime-Node.js-3c873a?style=flat-square&logo=node.js&logoColor=white" alt="Node.js runtime" />

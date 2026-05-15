@@ -1,4 +1,4 @@
-import { ArrowSquareOut, ArrowUp, Moon, Plus, Sun, Trash } from "@phosphor-icons/react";
+import { Archive, ArrowSquareOut, ArrowUp, Moon, Plus, Sun } from "@phosphor-icons/react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -1548,21 +1548,21 @@ export function StudioConsole() {
             onClick={() => navigatePage("knowledge")}
           />
         </nav>
-        <nav className="grid min-h-0 gap-1 overflow-auto px-3 py-3" aria-label="Recent sessions">
+        <nav className="grid min-h-0 gap-0.5 overflow-auto px-3 py-3" aria-label="Recent sessions">
           <div className="px-2.5 pb-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             Recent
           </div>
           {allSessions.slice(0, 8).map((session) => (
             <div
               className={cn(
-                "group grid min-h-9 min-w-0 grid-cols-[minmax(0,1fr)_44px] items-center gap-1 rounded-lg pr-1 transition duration-200 hover:bg-sidebar-accent/80 focus-within:bg-sidebar-accent/80",
+                "group grid min-h-7 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-center gap-1 rounded-lg pr-1 transition duration-200 hover:bg-sidebar-accent/80 focus-within:bg-sidebar-accent/80",
                 session.id === selectedSessionId && "bg-sidebar-accent",
               )}
               key={session.id}
             >
               <Button
                 className={cn(
-                  "grid h-auto min-h-8 min-w-0 justify-start rounded-lg border-0 bg-transparent px-2.5 py-1 text-left text-sidebar-foreground/72 shadow-none hover:bg-transparent hover:text-sidebar-foreground",
+                  "grid h-auto min-h-7 min-w-0 justify-start rounded-lg border-0 bg-transparent px-2.5 py-0.5 text-left text-sidebar-foreground/72 shadow-none hover:bg-transparent hover:text-sidebar-foreground",
                   session.id === selectedSessionId && "text-sidebar-accent-foreground",
                 )}
                 type="button"
@@ -1573,8 +1573,8 @@ export function StudioConsole() {
                   {session.title ?? "Untitled chat"}
                 </span>
               </Button>
-              <div className="relative grid h-8 min-w-0 place-items-end">
-                <time className="self-center justify-self-end font-mono text-[10px] font-medium tabular-nums text-muted-foreground group-hover:opacity-0 group-focus-within:opacity-0">
+              <div className="relative grid h-7 min-w-0 place-items-end">
+                <time className="grid h-6 min-w-6 place-items-center self-center justify-self-end rounded-lg px-1.5 font-mono text-[10px] font-medium tabular-nums text-muted-foreground group-hover:opacity-0 group-focus-within:opacity-0">
                   {formatRelativeTime(session.updatedAt)}
                 </time>
                 <Button
@@ -1586,7 +1586,7 @@ export function StudioConsole() {
                   disabled={runState === "running"}
                   onClick={() => setDeleteCandidate(session)}
                 >
-                  <Trash aria-hidden="true" />
+                  <Archive aria-hidden="true" />
                 </Button>
               </div>
             </div>

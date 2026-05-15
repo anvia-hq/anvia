@@ -28,6 +28,15 @@ This section is organized as a pattern library. Start with the common harness sh
 | Tool arguments, outputs, and product states need contracts | [Tool Validation and Contracts](/docs/best-practices/tool-patterns/tool-validation-and-contracts) |
 | A tool writes data, sends messages, or changes external state | [Side Effect Tools](/docs/best-practices/tool-patterns/side-effect-tools) |
 
+## Long Process Pipelines
+
+| Need | Pattern |
+| --- | --- |
+| Run Anvia pipelines outside the request path with BullMQ and Redis | [Overview](/docs/best-practices/long-process-pipelines) |
+| Enqueue validated pipeline work from an API boundary | [Enqueue Pipeline Jobs](/docs/best-practices/long-process-pipelines/enqueue-pipeline-jobs) |
+| Run pipeline jobs from a separate BullMQ worker | [Run Pipeline Workers](/docs/best-practices/long-process-pipelines/run-pipeline-workers) |
+| Persist status, handle retries, and test long-running jobs | [Status, Retries, and Testing](/docs/best-practices/long-process-pipelines/status-retries-testing) |
+
 ## MCP Patterns
 
 | Real problem | Pattern |

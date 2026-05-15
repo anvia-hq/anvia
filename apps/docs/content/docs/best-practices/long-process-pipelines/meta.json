@@ -1,0 +1,6 @@
+{
+  "title": "Long Process Pipelines",
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["index", "enqueue-pipeline-jobs", "run-pipeline-workers", "status-retries-testing"]
+}

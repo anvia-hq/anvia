@@ -145,6 +145,9 @@
     "cookbook:multimodal:02": "pnpm --filter cookbook multimodal:02",
     "cookbook:multimodal:03": "pnpm --filter cookbook multimodal:03",
     "docs:typecheck": "pnpm --filter docs typecheck",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm --filter './packages/**' build && changeset publish",
     "check": "biome check .",
     "check:staged": "biome check --staged --vcs-enabled=true --vcs-client-kind=git --vcs-use-ignore-file=true --no-errors-on-unmatched",
     "check:fix": "biome check --write .",
@@ -158,6 +161,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",
+    "@changesets/cli": "^2.31.0",
     "@types/node": "^24.9.1",
     "husky": "^9.1.7",
     "tsup": "^8.5.0",

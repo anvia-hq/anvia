@@ -34,8 +34,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        run: pnpm --filter './packages/**' build
+      - name: Build core package
+        run: pnpm --filter @anvia/core build
+
+      - name: Build remaining packages
+        run: pnpm --filter './packages/**' --filter '!@anvia/core' build
 
       - name: Typecheck packages
         run: pnpm --filter './packages/**' typecheck

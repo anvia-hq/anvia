@@ -1,6 +1,8 @@
 import {
   ArrowBendUpLeft,
   ArrowLeft,
+  CaretDown,
+  CaretRight,
   ChatText,
   Cpu,
   GearSix,
@@ -9,7 +11,6 @@ import {
   Robot,
   Wrench,
 } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { StudioConfig, StudioTrace } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
@@ -627,9 +628,7 @@ function TraceDataSection(props: {
         <span className="h-px flex-1 bg-border/80" aria-hidden="true" />
       </div>
       {props.rawJson ? (
-        <pre className="m-0 overflow-x-auto rounded-lg bg-card/85 px-4 py-4 font-mono text-[13px] leading-6 text-foreground">
-          {highlightTraceJson(props.value)}
-        </pre>
+        <TraceJsonTree value={props.value} />
       ) : (
         <div className="grid min-w-0 gap-3">
           {rows.map((item) => (
@@ -736,12 +735,180 @@ export function rawTraceJson(value: unknown): string {
   }
 }
 
-function highlightTraceJson(value: unknown): ReactNode {
-  return jsonSyntaxTokens(rawTraceJson(value)).map((token) => (
-    <span className={jsonTokenClass(token.type)} key={`${token.start}-${token.text}`}>
-      {token.text}
-    </span>
-  ));
+function TraceJsonTree(props: { value: unknown }) {
+  return (
+    <div className="overflow-x-auto rounded-lg bg-card/85 px-4 py-4 font-mono text-[13px] leading-6 text-foreground">
+      <JsonNode depth={0} path="$" value={props.value} />
+    </div>
+  );
+}
+
+const jsonIndentSize = 16;
+const jsonDisclosureGutter = 20;
+
+function JsonNode(props: {
+  arrayIndex?: number | undefined;
+  depth: number;
+  path: string;
+  propertyKey?: string | undefined;
+  trailingComma?: boolean | undefined;
+  value: unknown;
+}) {
+  if (isJsonBranch(props.value)) {
+    return (
+      <JsonBranch
+        arrayIndex={props.arrayIndex}
+        depth={props.depth}
+        path={props.path}
+        propertyKey={props.propertyKey}
+        trailingComma={props.trailingComma}
+        value={props.value}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="min-w-max whitespace-pre"
+      style={{ paddingLeft: `${jsonContentIndent(props.depth)}px` }}
+    >
+      <JsonNodeLabel arrayIndex={props.arrayIndex} propertyKey={props.propertyKey} />
+      <JsonPrimitive value={props.value} />
+      {props.trailingComma ? <span className="text-foreground">,</span> : null}
+    </div>
+  );
+}
+
+function JsonBranch(props: {
+  arrayIndex?: number | undefined;
+  depth: number;
+  path: string;
+  propertyKey?: string | undefined;
+  trailingComma?: boolean | undefined;
+  value: Record<string, unknown> | unknown[];
+}) {
+  const [open, setOpen] = useState(props.depth === 0);
+  const arrayValue = Array.isArray(props.value) ? props.value : undefined;
+  const entries =
+    arrayValue === undefined
+      ? Object.entries(props.value as Record<string, unknown>)
+      : arrayValue.map((item, index): [string, unknown] => [String(index), item]);
+  const opening = arrayValue === undefined ? "{" : "[";
+  const closing = arrayValue === undefined ? "}" : "]";
+  const collapsed = arrayValue === undefined ? "{…}" : "[…]";
+
+  if (entries.length === 0) {
+    return (
+      <div
+        className="min-w-max whitespace-pre"
+        style={{ paddingLeft: `${jsonContentIndent(props.depth)}px` }}
+      >
+        <JsonNodeLabel arrayIndex={props.arrayIndex} propertyKey={props.propertyKey} />
+        <span className="text-foreground">
+          {opening}
+          {closing}
+          {props.trailingComma ? "," : ""}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid min-w-max">
+      <button
+        aria-expanded={open}
+        className="grid min-w-max grid-cols-[16px_auto] items-center gap-1 rounded-lg py-0.5 pr-2 text-left transition duration-200 hover:bg-accent/45 hover:text-accent-foreground"
+        onClick={() => setOpen((current) => !current)}
+        style={{ paddingLeft: `${props.depth * jsonIndentSize}px` }}
+        type="button"
+      >
+        <span className="grid h-4 w-4 place-items-center text-muted-foreground [&_svg]:h-3 [&_svg]:w-3">
+          {open ? <CaretDown aria-hidden="true" /> : <CaretRight aria-hidden="true" />}
+        </span>
+        <span className="whitespace-pre">
+          <JsonNodeLabel arrayIndex={props.arrayIndex} propertyKey={props.propertyKey} />
+          {open ? (
+            <span className="text-foreground">{opening}</span>
+          ) : (
+            <span className="text-muted-foreground">{collapsed}</span>
+          )}
+          {!open && props.trailingComma ? <span className="text-foreground">,</span> : null}
+        </span>
+      </button>
+      {open ? (
+        <>
+          {entries.map(([key, value], index) => (
+            <JsonNode
+              arrayIndex={arrayValue === undefined ? undefined : Number(key)}
+              depth={props.depth + 1}
+              key={`${props.path}.${key}`}
+              path={`${props.path}.${key}`}
+              propertyKey={arrayValue === undefined ? key : undefined}
+              trailingComma={index < entries.length - 1}
+              value={value}
+            />
+          ))}
+          <div
+            className="min-w-max whitespace-pre text-foreground"
+            style={{ paddingLeft: `${jsonContentIndent(props.depth)}px` }}
+          >
+            {closing}
+            {props.trailingComma ? "," : ""}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function jsonContentIndent(depth: number): number {
+  return depth * jsonIndentSize + jsonDisclosureGutter;
+}
+
+function JsonNodeLabel(props: {
+  arrayIndex?: number | undefined;
+  propertyKey?: string | undefined;
+}) {
+  if (props.propertyKey !== undefined) {
+    return (
+      <>
+        <span className="text-chart-2">{JSON.stringify(props.propertyKey)}</span>
+        <span className="text-foreground">: </span>
+      </>
+    );
+  }
+  if (props.arrayIndex !== undefined) {
+    return (
+      <>
+        <span className="text-muted-foreground">[{props.arrayIndex}]</span>
+        <span className="text-foreground"> </span>
+      </>
+    );
+  }
+  return null;
+}
+
+function JsonPrimitive(props: { value: unknown }) {
+  if (typeof props.value === "string") {
+    return <span className="text-primary">{JSON.stringify(props.value)}</span>;
+  }
+  if (typeof props.value === "number") {
+    return <span className="text-chart-1">{String(props.value)}</span>;
+  }
+  if (typeof props.value === "boolean") {
+    return <span className="text-chart-4">{String(props.value)}</span>;
+  }
+  if (props.value === null) {
+    return <span className="text-muted-foreground">null</span>;
+  }
+  if (props.value === undefined) {
+    return <span className="text-muted-foreground">undefined</span>;
+  }
+  return <span className="text-foreground">{rawTraceJson(props.value)}</span>;
+}
+
+function isJsonBranch(value: unknown): value is Record<string, unknown> | unknown[] {
+  return Array.isArray(value) || isRecord(value);
 }
 
 export function jsonSyntaxTokens(
@@ -783,23 +950,6 @@ function jsonTokenType(text: string, followingText: string): JsonTokenType {
     return "null";
   }
   return "number";
-}
-
-function jsonTokenClass(type: JsonTokenType): string {
-  switch (type) {
-    case "key":
-      return "text-chart-2";
-    case "string":
-      return "text-primary";
-    case "number":
-      return "text-chart-1";
-    case "boolean":
-      return "text-chart-4";
-    case "null":
-      return "text-muted-foreground";
-    case "plain":
-      return "text-foreground";
-  }
 }
 
 function isNeutralTraceRow(row: { label: string }): boolean {

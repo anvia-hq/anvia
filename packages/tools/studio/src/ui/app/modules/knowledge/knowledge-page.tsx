@@ -10,8 +10,7 @@ import type {
 } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { isRecord } from "../shared/object";
-import { JsonSyntax, JsonValueView } from "../shared/renderers";
+import { JsonValueView } from "../shared/renderers";
 import type { KnowledgeTab } from "../shared/types";
 
 const itemLimit = 50;
@@ -161,7 +160,7 @@ export function KnowledgePage(props: {
               Knowledge
             </h1>
             <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              Browse configured context, dynamic chunks, dynamic tools, and retrieval evidence.
+              Browse configured context, dynamic chunks, and retrieval evidence.
             </p>
           </div>
           <Button
@@ -193,7 +192,6 @@ export function KnowledgePage(props: {
             onSelect={setSelectedKey}
           >
             <ItemBrowser
-              activeTab={props.activeTab}
               source={selectedSource}
               state={itemState}
               onLoadMore={() => {
@@ -309,39 +307,30 @@ function SourceWorkspace(props: {
 }
 
 function ItemBrowser(props: {
-  activeTab: KnowledgeTab;
   source: KnowledgeSourceRef | undefined;
   state: ItemState | undefined;
   onLoadMore: () => void;
 }) {
   const state = props.state;
-  const showHeader = props.activeTab !== "dynamic-tools";
   return (
-    <section
-      className={[
-        "grid min-h-0 overflow-hidden rounded-xl border border-border/80 bg-card/55",
-        showHeader ? "grid-rows-[auto_minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)_auto]",
-      ].join(" ")}
-    >
-      {showHeader ? (
-        <div className="border-b border-border/80 px-4 py-3">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="m-0 truncate text-sm font-semibold text-foreground">
-                {props.source?.source.label ?? "Knowledge items"}
-              </h2>
-              <p className="m-0 mt-1 truncate font-mono text-xs text-muted-foreground">
-                {props.source === undefined
-                  ? "No source selected"
-                  : `${props.source.agentId} / ${sourceId(props.source.source)}`}
-              </p>
-            </div>
-            {state?.totalCount === undefined ? null : <Badge>{state.totalCount} total</Badge>}
+    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-border/80 bg-card/55">
+      <div className="border-b border-border/80 px-4 py-3">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="m-0 truncate text-sm font-semibold text-foreground">
+              {props.source?.source.label ?? "Knowledge items"}
+            </h2>
+            <p className="m-0 mt-1 truncate font-mono text-xs text-muted-foreground">
+              {props.source === undefined
+                ? "No source selected"
+                : `${props.source.agentId} / ${sourceId(props.source.source)}`}
+            </p>
           </div>
+          {state?.totalCount === undefined ? null : <Badge>{state.totalCount} total</Badge>}
         </div>
-      ) : null}
+      </div>
       <div className="min-h-0 overflow-auto">
-        <div className={props.activeTab === "dynamic-tools" ? "" : "p-4"}>
+        <div className="p-4">
           {props.source === undefined ? <MutedRow text="No knowledge source selected" /> : null}
           {state?.loading === true && state.items.length === 0 ? (
             <MutedRow text="Loading items" />
@@ -353,15 +342,11 @@ function ItemBrowser(props: {
           {state?.inspectable !== false && state?.loading === false && state.items.length === 0 ? (
             <MutedRow text="No items in this source" />
           ) : null}
-          {props.activeTab === "dynamic-tools" && state?.items.length ? (
-            <DynamicToolsTable items={state.items} source={props.source} />
-          ) : (
-            <div className="grid gap-3">
-              {state?.items.map((item) => (
-                <KnowledgeItemCard item={item} key={`${item.kind}:${item.id}`} />
-              ))}
-            </div>
-          )}
+          <div className="grid gap-3">
+            {state?.items.map((item) => (
+              <KnowledgeItemCard item={item} key={`${item.kind}:${item.id}`} />
+            ))}
+          </div>
         </div>
       </div>
       <div className="flex min-h-12 items-center justify-between gap-3 bg-muted/10 px-4 py-2">
@@ -379,73 +364,6 @@ function ItemBrowser(props: {
         </Button>
       </div>
     </section>
-  );
-}
-
-function DynamicToolsTable(props: {
-  items: StudioKnowledgeItem[];
-  source: KnowledgeSourceRef | undefined;
-}) {
-  return (
-    <div className="min-w-0 overflow-x-auto">
-      <div className="grid min-w-230 gap-2 rounded-xl border border-border/80 bg-card/25 p-2 lg:grid-cols-[43%_57%]">
-        <div className="rounded-lg border border-border/60 bg-muted/20 px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Definition
-        </div>
-        <div className="rounded-lg border border-border/60 bg-muted/20 px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Parameter schema
-        </div>
-        {props.items.map((item) => (
-          <DynamicToolRow item={item} key={`${item.kind}:${item.id}`} source={props.source} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DynamicToolRow(props: {
-  item: StudioKnowledgeItem;
-  source: KnowledgeSourceRef | undefined;
-}) {
-  const schema = dynamicToolSchema(props.item);
-  return (
-    <>
-      <article className="grid content-start gap-5 rounded-lg bg-background/40 px-5 py-6">
-        <div className="grid gap-2">
-          <h3 className="m-0 font-mono text-base font-semibold text-foreground">
-            {props.item.toolName ?? props.item.id}
-          </h3>
-          <p className="m-0 font-mono text-xs text-muted-foreground">
-            {props.source?.agentName ?? props.source?.agentId ?? "Agent"}
-          </p>
-        </div>
-        {props.item.description === undefined || props.item.description.length === 0 ? null : (
-          <p className="m-0 max-w-160 text-sm leading-7 text-muted-foreground [overflow-wrap:anywhere]">
-            {props.item.description}
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="success">Dynamic</Badge>
-          <Badge>Approval none</Badge>
-          <Badge>{props.item.parameterKeys?.length ?? 0} field</Badge>
-        </div>
-      </article>
-      <article className="grid content-start overflow-hidden rounded-lg bg-background/40">
-        <div className="flex min-h-11 items-center justify-between gap-3 bg-muted/20 px-5">
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Json schema
-          </span>
-          <span className="font-mono text-xs text-muted-foreground">{schemaType(schema)}</span>
-        </div>
-        <div className="min-w-0 overflow-x-auto px-5 py-5">
-          <pre className="m-0 min-w-max font-mono text-[13px] leading-6 text-foreground">
-            <code>
-              <JsonSyntax text={jsonDisplay(schema)} />
-            </code>
-          </pre>
-        </div>
-      </article>
-    </>
   );
 }
 
@@ -497,16 +415,19 @@ function RetrievalLogPanel(props: {
   onOpenTrace: (traceId: string) => void;
 }) {
   return (
-    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border/80 bg-card/35">
-      <div className="bg-muted/10 px-4 py-3">
-        <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Retrieval log
+    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border/80 bg-card/55">
+      <div className="border-b border-border/80 px-4 py-3">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="m-0 truncate text-sm font-semibold text-foreground">Retrieval log</h2>
+            <p className="m-0 mt-1 truncate font-mono text-xs text-muted-foreground">
+              traces / retrieval-evidence
+            </p>
+          </div>
+          <Badge>{props.evidence.length} entries</Badge>
         </div>
-        <p className="m-0 mt-1 text-xs leading-5 text-muted-foreground">
-          Runtime retrieval and dynamic tool signals captured in traces.
-        </p>
       </div>
-      <div className="min-h-0 overflow-auto p-3">
+      <div className="min-h-0 overflow-auto p-4">
         {props.evidence.length === 0 ? (
           <MutedRow text="No retrieval evidence captured yet" />
         ) : null}
@@ -612,7 +533,6 @@ function flattenSources(agents: StudioAgentKnowledgeConfig[]): KnowledgeSourceRe
 const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
   { id: "static-context", label: "Static Context" },
   { id: "dynamic-context", label: "Dynamic Context" },
-  { id: "dynamic-tools", label: "Dynamic Tools" },
   { id: "retrieval-log", label: "Retrieval Log" },
 ];
 
@@ -663,8 +583,6 @@ function sourceKindForTab(tab: KnowledgeTab): StudioKnowledgeSourceKind | undefi
       return "static_context";
     case "dynamic-context":
       return "dynamic_context";
-    case "dynamic-tools":
-      return "dynamic_tools";
     case "retrieval-log":
       return undefined;
   }
@@ -689,32 +607,6 @@ function tabCountLabel(
     sourceKind,
   );
   return `${tabSources.length} sources / ${itemCount} items`;
-}
-
-function dynamicToolSchema(item: StudioKnowledgeItem): unknown {
-  if (!isRecord(item.document)) {
-    return {};
-  }
-  const definition = isRecord(item.document.definition) ? item.document.definition : {};
-  return definition.parameters ?? {};
-}
-
-function schemaType(schema: unknown): string {
-  if (isRecord(schema) && typeof schema.type === "string") {
-    return schema.type;
-  }
-  if (Array.isArray(schema)) {
-    return "array";
-  }
-  return typeof schema;
-}
-
-function jsonDisplay(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return JSON.stringify(String(value), null, 2);
-  }
 }
 
 function itemKindLabel(kind: StudioKnowledgeItem["kind"]): string {

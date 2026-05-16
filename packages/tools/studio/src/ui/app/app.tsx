@@ -1476,8 +1476,8 @@ export function StudioConsole() {
   }
 
   return (
-    <div className="grid min-h-[100dvh] overflow-hidden bg-background text-foreground lg:grid-cols-[228px_minmax(0,1fr)]">
-      <aside className="flex min-h-[100dvh] flex-col bg-sidebar text-sidebar-foreground">
+    <div className="grid h-[100dvh] min-h-0 overflow-hidden bg-background text-foreground lg:grid-cols-[228px_minmax(0,1fr)]">
+      <aside className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
         <div className="flex h-15 items-center px-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <img className="h-7 w-7 shrink-0 object-contain" src={logoSrc} alt="" />
@@ -1648,7 +1648,7 @@ export function StudioConsole() {
         </header>
 
         {activePage === "playground" ? (
-          <section className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
+          <section className="grid h-full min-h-0 min-w-0 max-h-full max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
             <div className="grid min-h-0 min-w-0 pb-6 pr-6">
               <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-border/80 bg-card/70 p-2 shadow-sm">
                 <section className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]">

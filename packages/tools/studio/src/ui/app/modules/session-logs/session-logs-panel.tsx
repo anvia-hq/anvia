@@ -27,8 +27,8 @@ export function SessionLogsPanel(props: {
   }
 
   return (
-    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70 max-xl:hidden">
-      <header className="grid min-h-12 min-w-0 gap-1 border-b border-border/80 bg-card/35 px-4 py-3">
+    <aside className="grid h-full min-h-0 min-w-0 max-h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70 max-xl:hidden">
+      <header className="grid min-h-12 min-w-0 gap-1 py-3 pl-0 pr-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-sm font-semibold leading-tight text-foreground">Session logs</h2>
           <span className="font-mono text-[10px] font-semibold tabular-nums text-muted-foreground">
@@ -40,7 +40,7 @@ export function SessionLogsPanel(props: {
         </p>
       </header>
       <div
-        className="min-h-0 min-w-0 overflow-x-auto overflow-y-auto"
+        className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"
         ref={scrollerRef}
         onScroll={updateStickiness}
       >
@@ -50,12 +50,16 @@ export function SessionLogsPanel(props: {
           </div>
         ) : null}
         {props.selectedSessionId.length > 0 && props.loading && props.logs.length === 0 ? (
-          <div className="px-2 py-3 text-sm font-medium text-muted-foreground">Loading logs</div>
+          <div className="py-3 pl-0 pr-2 text-sm font-medium text-muted-foreground">
+            Loading logs
+          </div>
         ) : null}
         {props.selectedSessionId.length > 0 && !props.loading && props.logs.length === 0 ? (
-          <div className="px-2 py-3 text-sm font-medium text-muted-foreground">No logs yet</div>
+          <div className="py-3 pl-0 pr-2 text-sm font-medium text-muted-foreground">
+            No logs yet
+          </div>
         ) : null}
-        <div className="grid min-w-full gap-1 p-2 font-mono">
+        <div className="grid min-w-0 gap-1 py-2 pl-0 pr-2 font-mono">
           {props.logs.map((log) => (
             <LogRow log={log} key={log.id} />
           ))}
@@ -79,18 +83,27 @@ function LogRow(props: { log: StudioSessionLogEntry }) {
     .join("  ");
   return (
     <article
-      className="w-max min-w-full whitespace-nowrap px-3 py-1 text-[11px] leading-5 transition duration-200 hover:bg-accent/45"
+      className="grid min-w-0 gap-1 rounded-lg py-2 pl-0 pr-3 text-[11px] leading-5 transition duration-200 hover:bg-accent/45"
       title={line}
     >
-      <time className="text-muted-foreground">{formatLogTime(props.log.timestamp)}</time>
-      <span className={cn("ml-3 font-semibold", levelTextClass(props.log.level))}>
-        {props.log.level.toUpperCase().padEnd(5, " ")}
-      </span>
-      <span className="ml-3 text-muted-foreground">
-        {props.log.category}/{props.log.event}
-      </span>
-      <span className="ml-3 font-medium text-foreground">{props.log.message}</span>
-      <span className="ml-3 text-muted-foreground/85">{metadataText}</span>
+      <div className="flex min-w-0 items-center gap-2">
+        <time className="shrink-0 text-muted-foreground">{formatLogTime(props.log.timestamp)}</time>
+        <span className={cn("shrink-0 font-semibold", levelTextClass(props.log.level))}>
+          {props.log.level.toUpperCase()}
+        </span>
+      </div>
+      <div className="min-w-0 whitespace-normal break-words text-muted-foreground">
+        <span>
+          {props.log.category}/{props.log.event}
+        </span>{" "}
+        <span className="font-medium text-foreground">{props.log.message}</span>
+        {metadataText.length === 0 ? null : (
+          <>
+            {" "}
+            <span className="text-muted-foreground/85">{metadataText}</span>
+          </>
+        )}
+      </div>
       <span className="sr-only">{line}</span>
     </article>
   );

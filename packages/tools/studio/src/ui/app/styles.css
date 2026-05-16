@@ -175,8 +175,9 @@
     font-size: 16px;
     color-scheme: light;
     background: var(--background);
+    height: 100%;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   html.dark {
@@ -185,9 +186,10 @@
 
   body {
     @apply bg-background text-foreground;
+    height: 100%;
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
     min-width: 320px;
     margin: 0;
     background:
@@ -222,9 +224,10 @@
     isolation: isolate;
     position: relative;
     z-index: 1;
+    height: 100dvh;
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   ::selection {

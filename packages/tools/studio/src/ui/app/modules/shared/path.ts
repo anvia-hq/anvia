@@ -161,7 +161,6 @@ function updateLocationPath(nextPath: string): void {
 function knowledgeTabFromSegment(segment: string | undefined): KnowledgeTab {
   switch (segment) {
     case "dynamic-context":
-    case "dynamic-tools":
     case "retrieval-log":
     case "static-context":
       return segment;

@@ -27,7 +27,7 @@ export function SessionLogsPanel(props: {
   }
 
   return (
-    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-border/80 bg-background/70 max-xl:hidden">
+    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70 max-xl:hidden">
       <header className="grid min-h-12 min-w-0 gap-1 border-b border-border/80 bg-card/35 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-sm font-semibold leading-tight text-foreground">Session logs</h2>
@@ -79,10 +79,7 @@ function LogRow(props: { log: StudioSessionLogEntry }) {
     .join("  ");
   return (
     <article
-      className={cn(
-        "w-max min-w-full whitespace-nowrap rounded-lg border-l-2 px-3 py-1 text-[11px] leading-5 transition duration-200 hover:bg-accent/45",
-        levelBorderClass(props.log.level),
-      )}
+      className="w-max min-w-full whitespace-nowrap px-3 py-1 text-[11px] leading-5 transition duration-200 hover:bg-accent/45"
       title={line}
     >
       <time className="text-muted-foreground">{formatLogTime(props.log.timestamp)}</time>
@@ -125,19 +122,6 @@ function formatMetadata(value: unknown): string {
     return "{...}";
   }
   return "";
-}
-
-function levelBorderClass(level: StudioSessionLogEntry["level"]): string {
-  switch (level) {
-    case "error":
-      return "border-destructive";
-    case "warn":
-      return "border-yellow-500";
-    case "debug":
-      return "border-muted-foreground/45";
-    case "info":
-      return "border-primary/70";
-  }
 }
 
 function levelTextClass(level: StudioSessionLogEntry["level"]): string {

@@ -169,8 +169,8 @@ function TraceDetailRoute(props: {
   onShowSessionTraces: (sessionId: string) => void;
 }) {
   return (
-    <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-      <header className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden border-b border-border/80 bg-card/70 px-6 py-3 shadow-sm">
+    <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden rounded-xl border border-border/80 bg-card/70 p-2 shadow-sm">
+      <header className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-lg border border-border/60 bg-card/95 px-4 py-3">
         <Button
           aria-label="Back to traces"
           className="h-8 min-h-8 w-8 text-muted-foreground hover:text-foreground"
@@ -280,10 +280,10 @@ function TracePanel(props: {
     >
       <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">
         <nav
-          className="grid min-h-0 auto-rows-min content-start overflow-auto border-r border-border/80 bg-card/35 max-md:max-h-80 max-md:border-b max-md:border-r-0"
+          className="grid min-h-0 auto-rows-min content-start overflow-auto border-r border-border/80 bg-card/35 pr-2 max-md:max-h-80 max-md:border-b max-md:border-r-0"
           aria-label="Trace timeline"
         >
-          <div className="sticky top-0 z-30 flex min-h-11 items-center justify-between border-b border-border/80 bg-card/90 px-5 text-xs font-medium text-muted-foreground backdrop-blur">
+          <div className="sticky top-0 z-30 flex min-h-11 items-center justify-between bg-card/90 py-0 pl-0 pr-5 text-xs font-medium text-muted-foreground backdrop-blur">
             <span>Search</span>
             <strong className="text-foreground">Timeline</strong>
           </div>
@@ -532,16 +532,16 @@ function TraceDetailPane(props: {
   const selected = selectedTraceDetail(props.trace, props.turns, props.activeKey);
   return (
     <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background"
+      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-card/70"
       aria-label="Trace detail"
     >
-      <header className="border-b border-border/80 bg-card/45 px-6 py-5">
+      <header className="border-b border-border/60 bg-card/70 px-6 py-5">
         <div className="grid min-w-0 gap-5">
           <div className="flex min-w-0 items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <span
                 className={cn(
-                  "grid h-8 w-8 shrink-0 place-items-center bg-primary text-primary-foreground [&_svg]:h-4 [&_svg]:w-4 [&_svg]:opacity-100",
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground [&_svg]:h-4 [&_svg]:w-4 [&_svg]:opacity-100",
                   selected.tone !== "trace" && "bg-muted text-foreground",
                   traceToneIconClass(selected.tone),
                 )}
@@ -567,7 +567,7 @@ function TraceDetailPane(props: {
               <TraceMetric label="Usage" value={selected.usage} />
             )}
             <button
-              className="grid min-w-0 gap-1 rounded-lg bg-background px-4 py-3 text-left transition duration-200 hover:bg-accent hover:text-accent-foreground"
+              className="grid min-w-0 gap-1 rounded-lg bg-card/85 px-4 py-3 text-left transition duration-200 hover:bg-accent hover:text-accent-foreground"
               type="button"
               onClick={() => props.onShowSessionTraces(props.trace.sessionId)}
             >
@@ -601,7 +601,7 @@ function TraceDetailPane(props: {
 
 function TraceMetric(props: { label: string; value: string }) {
   return (
-    <div className="grid min-w-0 gap-1 rounded-lg bg-background px-4 py-3">
+    <div className="grid min-w-0 gap-1 rounded-lg bg-card/85 px-4 py-3">
       <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {props.label}
       </span>
@@ -627,7 +627,7 @@ function TraceDataSection(props: {
         <span className="h-px flex-1 bg-border/80" aria-hidden="true" />
       </div>
       {props.rawJson ? (
-        <pre className="m-0 overflow-x-auto bg-card/65 px-4 py-4 font-mono text-[13px] leading-6 text-foreground">
+        <pre className="m-0 overflow-x-auto rounded-lg bg-card/85 px-4 py-4 font-mono text-[13px] leading-6 text-foreground">
           {highlightTraceJson(props.value)}
         </pre>
       ) : (
@@ -635,11 +635,9 @@ function TraceDataSection(props: {
           {rows.map((item) => (
             <article
               className={cn(
-                "grid min-w-0 gap-3 bg-card/65 px-4 py-4",
+                "grid min-w-0 gap-3 rounded-lg bg-card/85 px-4 py-4",
                 props.compact &&
                   "grid-cols-[150px_minmax(0,1fr)] items-start gap-4 max-lg:grid-cols-1",
-                props.tone === "success" && "bg-primary/[0.08]",
-                props.tone === "error" && "bg-destructive/10",
               )}
               key={`${item.label}-${item.text}`}
             >

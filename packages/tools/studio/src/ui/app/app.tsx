@@ -1649,116 +1649,118 @@ export function StudioConsole() {
 
         {activePage === "playground" ? (
           <section className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
-            <div className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
-              <section className="min-h-0 overflow-auto px-6 py-6">
-                <div className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8">
-                  {!hasMessages ? (
-                    <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
-                      <div className="grid max-w-xl gap-4 text-center">
-                        <div className="mx-auto h-px w-28 bg-primary/45" />
-                        <h1 className="m-0 text-4xl font-semibold leading-tight text-foreground text-balance">
-                          What should this agent work on?
-                        </h1>
-                        <p className="m-0 text-base leading-7 text-muted-foreground text-pretty">
-                          Choose a prompt below or write a task. Studio will stream the response,
-                          tool calls, approvals, and trace data here.
-                        </p>
+            <div className="grid min-h-0 min-w-0 pb-6 pr-6">
+              <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-border/80 bg-card/70 p-2 shadow-sm">
+                <section className="min-h-0 overflow-auto px-4 py-4">
+                  <div className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8">
+                    {!hasMessages ? (
+                      <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
+                        <div className="grid max-w-xl gap-4 text-center">
+                          <div className="mx-auto h-px w-28 bg-primary/45" />
+                          <h1 className="m-0 text-4xl font-semibold leading-tight text-foreground text-balance">
+                            What should this agent work on?
+                          </h1>
+                          <p className="m-0 text-base leading-7 text-muted-foreground text-pretty">
+                            Choose a prompt below or write a task. Studio will stream the response,
+                            tool calls, approvals, and trace data here.
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ) : null}
-                  {messages.map((message) => (
-                    <TranscriptItem
-                      key={message.entryId}
-                      entry={message}
-                      decidingApprovals={decidingApprovals}
-                      answeringQuestions={answeringQuestions}
-                      onApprovalDecision={(approvalId, approved) =>
-                        void decideToolApproval(approvalId, approved)
-                      }
-                      onQuestionAnswer={(questionId, answers) =>
-                        void answerToolQuestion(questionId, answers)
-                      }
-                      onOpenTrace={selectTrace}
-                    />
-                  ))}
-                </div>
-              </section>
-              <form
-                className="grid gap-3 bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pb-6 pt-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void runPrompt(prompt);
-                }}
-              >
-                {hasMessages || selectedAgentQuickPrompts.length === 0 ? null : (
-                  <div className="mx-auto grid w-full max-w-235 grid-cols-3 gap-2 max-md:grid-cols-1">
-                    {selectedAgentQuickPrompts.map((quickPrompt) => (
-                      <Button
-                        className="h-auto min-h-16 justify-start whitespace-normal rounded-xl border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-primary/45 hover:bg-primary/10 hover:text-primary"
-                        type="button"
-                        variant="ghost"
-                        disabled={runState === "running" || selectedAgentId.length === 0}
-                        onClick={() => void runPrompt(quickPrompt)}
-                        key={quickPrompt}
-                      >
-                        <span className="min-w-0 whitespace-normal wrap-break-words">
-                          {quickPrompt}
-                        </span>
-                      </Button>
+                    ) : null}
+                    {messages.map((message) => (
+                      <TranscriptItem
+                        key={message.entryId}
+                        entry={message}
+                        decidingApprovals={decidingApprovals}
+                        answeringQuestions={answeringQuestions}
+                        onApprovalDecision={(approvalId, approved) =>
+                          void decideToolApproval(approvalId, approved)
+                        }
+                        onQuestionAnswer={(questionId, answers) =>
+                          void answerToolQuestion(questionId, answers)
+                        }
+                        onOpenTrace={selectTrace}
+                      />
                     ))}
                   </div>
-                )}
-                <div className="mx-auto grid w-full max-w-235 gap-2 rounded-2xl border border-border/80 bg-card/95 p-2.5 shadow-xl shadow-black/35 backdrop-blur focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
-                  <Textarea
-                    className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-[15px] leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
-                    ref={promptRef}
-                    rows={1}
-                    value={prompt}
-                    onChange={updatePrompt}
-                    onKeyDown={handlePromptKeyDown}
-                    placeholder="Ask anything..."
-                  />
-                  <div className="flex min-w-0 items-center justify-between gap-2">
-                    <div />
-                    <div className="flex min-w-0 items-center gap-2">
-                      {agents.length > 1 ? (
-                        <Select
-                          value={selectedAgent?.id ?? selectedAgentId}
-                          onValueChange={selectPlaygroundAgent}
-                          disabled={runState === "running"}
+                </section>
+                <form
+                  className="grid gap-3 bg-gradient-to-t from-card via-card/95 to-card/0 px-4 pb-4 pt-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void runPrompt(prompt);
+                  }}
+                >
+                  {hasMessages || selectedAgentQuickPrompts.length === 0 ? null : (
+                    <div className="mx-auto grid w-full max-w-235 grid-cols-3 gap-2 max-md:grid-cols-1">
+                      {selectedAgentQuickPrompts.map((quickPrompt) => (
+                        <Button
+                          className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-primary/45 hover:bg-primary/10 hover:text-primary"
+                          type="button"
+                          variant="ghost"
+                          disabled={runState === "running" || selectedAgentId.length === 0}
+                          onClick={() => void runPrompt(quickPrompt)}
+                          key={quickPrompt}
                         >
-                          <SelectTrigger
-                            aria-label="Select agent"
-                            className="hidden h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:flex"
+                          <span className="min-w-0 whitespace-normal wrap-break-words">
+                            {quickPrompt}
+                          </span>
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mx-auto grid w-full max-w-235 gap-2 rounded-lg border border-border/80 bg-card/95 p-2.5 shadow-xl shadow-black/35 backdrop-blur focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
+                    <Textarea
+                      className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-[15px] leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
+                      ref={promptRef}
+                      rows={1}
+                      value={prompt}
+                      onChange={updatePrompt}
+                      onKeyDown={handlePromptKeyDown}
+                      placeholder="Ask anything..."
+                    />
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <div />
+                      <div className="flex min-w-0 items-center gap-2">
+                        {agents.length > 1 ? (
+                          <Select
+                            value={selectedAgent?.id ?? selectedAgentId}
+                            onValueChange={selectPlaygroundAgent}
+                            disabled={runState === "running"}
                           >
-                            <SelectValue placeholder="Agent" />
-                          </SelectTrigger>
-                          <SelectContent align="end">
-                            {agents.map((agent) => (
-                              <SelectItem value={agent.id} key={agent.id}>
-                                {agent.name ?? agent.id}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span className="hidden max-w-60 truncate rounded-lg px-2 py-1 font-mono text-xs font-medium text-muted-foreground sm:block">
-                          {selectedAgent?.name ?? selectedAgent?.id ?? "Agent"}
-                        </span>
-                      )}
-                      <Button
-                        aria-label={runState === "running" ? "Running" : "Send message"}
-                        className="h-9 min-h-9 w-9 rounded-lg border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-                        size="icon"
-                        type="submit"
-                        disabled={runState === "running" || selectedAgentId.length === 0}
-                      >
-                        <ArrowUp />
-                      </Button>
+                            <SelectTrigger
+                              aria-label="Select agent"
+                              className="hidden h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:flex"
+                            >
+                              <SelectValue placeholder="Agent" />
+                            </SelectTrigger>
+                            <SelectContent align="end">
+                              {agents.map((agent) => (
+                                <SelectItem value={agent.id} key={agent.id}>
+                                  {agent.name ?? agent.id}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="hidden max-w-60 truncate rounded-lg px-2 py-1 font-mono text-xs font-medium text-muted-foreground sm:block">
+                            {selectedAgent?.name ?? selectedAgent?.id ?? "Agent"}
+                          </span>
+                        )}
+                        <Button
+                          aria-label={runState === "running" ? "Running" : "Send message"}
+                          className="h-9 min-h-9 w-9 rounded-lg border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+                          size="icon"
+                          type="submit"
+                          disabled={runState === "running" || selectedAgentId.length === 0}
+                        >
+                          <ArrowUp />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </form>
+                </form>
+              </div>
             </div>
             <SessionLogsPanel
               logs={sessionLogs}

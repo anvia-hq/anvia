@@ -12,9 +12,9 @@ export function MarkdownText(props: { text: string }) {
         components={{
           table({ children }) {
             return (
-              <div className="my-4 min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/90 shadow-sm">
+              <div className="my-4 w-full min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/90 shadow-sm">
                 <div className="min-w-0 overflow-x-auto">
-                  <table className="m-0 w-full min-w-130 border-separate border-spacing-0 text-left text-sm">
+                  <table className="m-0 w-full min-w-full border-separate border-spacing-0 text-left text-sm">
                     {children}
                   </table>
                 </div>

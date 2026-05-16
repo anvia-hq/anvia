@@ -189,6 +189,35 @@ export function StudioConsole() {
   const [pipelineRunLoadState, setPipelineRunLoadState] = useState<"idle" | "loading">("idle");
   const [pipelineRunState, setPipelineRunState] = useState<RunState>("idle");
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const transcriptScrollerRef = useRef<HTMLElement | null>(null);
+  const transcriptStickToBottomRef = useRef(true);
+
+  function updateTranscriptStickiness() {
+    const node = transcriptScrollerRef.current;
+    if (node === null) {
+      return;
+    }
+    transcriptStickToBottomRef.current =
+      node.scrollHeight - node.scrollTop - node.clientHeight < 80;
+  }
+
+  useEffect(() => {
+    if (
+      activePage !== "playground" ||
+      messages.length === 0 ||
+      !transcriptStickToBottomRef.current
+    ) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const node = transcriptScrollerRef.current;
+      if (node === null) {
+        return;
+      }
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePage, messages]);
 
   const loadConfig = useCallback(async () => {
     setStatus("Loading");
@@ -779,6 +808,7 @@ export function StudioConsole() {
     setActivePage("playground");
     setError("");
     setPrompt("");
+    transcriptStickToBottomRef.current = true;
     requestAnimationFrame(() => resizeTextarea(promptRef.current));
     setMessages((current) => [
       ...current,
@@ -1651,7 +1681,11 @@ export function StudioConsole() {
           <section className="grid h-full min-h-0 min-w-0 max-h-full max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
             <div className="grid min-h-0 min-w-0 pb-6 pr-6">
               <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-border/80 bg-card/70 p-2 shadow-sm">
-                <section className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]">
+                <section
+                  className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]"
+                  ref={transcriptScrollerRef}
+                  onScroll={updateTranscriptStickiness}
+                >
                   <div className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8">
                     {!hasMessages ? (
                       <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">

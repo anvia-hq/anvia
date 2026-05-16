@@ -44,11 +44,13 @@ export function TranscriptItem(props: {
   }
 
   const traceId = props.entry.role === "assistant" ? props.entry.traceId : undefined;
+  const hasTable = props.entry.role === "assistant" && hasMarkdownTable(props.entry.text);
 
   return (
     <article
       className={cn(
-        "max-w-[min(82ch,100%)] self-start",
+        "self-start",
+        hasTable ? "w-full max-w-full" : "max-w-[min(82ch,100%)]",
         props.entry.role === "assistant" && "justify-self-start text-foreground",
         props.entry.role === "user" &&
           "w-fit max-w-[min(64ch,82%)] justify-self-end rounded-2xl bg-primary/10 px-4 py-2.5 text-foreground shadow-sm shadow-primary/10",
@@ -77,6 +79,18 @@ export function TranscriptItem(props: {
       ) : null}
     </article>
   );
+}
+
+function hasMarkdownTable(text: string): boolean {
+  const lines = text.split("\n");
+  return lines.some((line, index) => {
+    const next = lines[index + 1];
+    return (
+      line.includes("|") &&
+      next !== undefined &&
+      /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(next)
+    );
+  });
 }
 
 function ToolEntry(props: {

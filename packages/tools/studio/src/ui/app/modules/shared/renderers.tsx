@@ -146,15 +146,15 @@ function jsonTokenClass(kind: ReturnType<typeof jsonTokenKind>): string {
     case "key":
       return "text-primary";
     case "string":
-      return "text-zinc-100";
+      return "text-foreground dark:text-zinc-100";
     case "number":
-      return "text-sky-300";
+      return "text-chart-2 dark:text-sky-300";
     case "boolean":
-      return "text-fuchsia-300";
+      return "text-chart-5 dark:text-fuchsia-300";
     case "null":
-      return "text-zinc-500";
+      return "text-muted-foreground";
     case "punctuation":
-      return "text-zinc-500";
+      return "text-muted-foreground";
   }
 }
 

@@ -1651,7 +1651,7 @@ export function StudioConsole() {
           <section className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
             <div className="grid min-h-0 min-w-0 pb-6 pr-6">
               <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-border/80 bg-card/70 p-2 shadow-sm">
-                <section className="min-h-0 overflow-auto px-4 py-4">
+                <section className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]">
                   <div className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8">
                     {!hasMessages ? (
                       <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">

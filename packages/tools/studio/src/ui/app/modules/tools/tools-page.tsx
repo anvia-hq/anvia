@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { cn } from "../../lib/utils";
+import { JsonSyntax } from "../shared/renderers";
 
 export function ToolsPage(props: {
   agents: StudioConfig["agents"];
@@ -144,7 +145,9 @@ function SchemaBlock(props: { value: unknown }) {
       </div>
       <div className="min-w-0 overflow-x-auto">
         <pre className="m-0 max-h-96 min-w-max p-4 font-mono text-[12px] leading-5 text-foreground">
-          <code>{formatSchema(props.value)}</code>
+          <code>
+            <JsonSyntax text={formatSchema(props.value)} />
+          </code>
         </pre>
       </div>
     </section>

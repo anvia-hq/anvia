@@ -58,18 +58,19 @@ export function TranscriptItem(props: {
       <MarkdownText text={props.entry.text} />
       {traceId !== undefined ? (
         <Button
-          className="group mt-3 h-auto min-h-0 max-w-full gap-2 rounded-lg border-0 bg-transparent px-0 py-1 font-mono text-xs font-semibold text-muted-foreground shadow-none transition duration-200 hover:bg-transparent hover:text-primary"
+          className="group mt-3 h-7 min-h-7 max-w-full gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 font-mono text-xs font-semibold text-muted-foreground shadow-none transition duration-200 hover:border-primary/45 hover:bg-primary/15 hover:text-primary"
           type="button"
           variant="ghost"
           onClick={() => props.onOpenTrace(traceId)}
         >
-          <span className="grid h-5 w-5 shrink-0 place-items-center bg-primary text-background [&_svg]:h-3 [&_svg]:w-3">
+          <span className="grid h-4 w-4 shrink-0 place-items-center text-primary [&_svg]:h-3 [&_svg]:w-3">
             <Path aria-hidden="true" />
           </span>
-          <span className="font-sans text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+          <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
             Trace
           </span>
-          <span className="min-w-0 truncate border-l border-border/80 pl-2 text-muted-foreground transition-colors group-hover:text-primary">
+          <span className="h-4 w-px shrink-0 bg-primary/25" aria-hidden="true" />
+          <span className="min-w-0 truncate text-muted-foreground transition-colors group-hover:text-primary">
             {traceId}
           </span>
         </Button>

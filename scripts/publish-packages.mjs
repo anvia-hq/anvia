@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const root = process.cwd();
@@ -27,13 +28,28 @@ for (const pkg of sortedPackages) {
     continue;
   }
 
+  console.info(`Packing "${name}" at "${version}"`);
+  const packedPackage = packPackage(pkg);
+  if (packedPackage === undefined) {
+    failed.push({ name, version });
+    continue;
+  }
+
   console.info(`Publishing "${name}" at "${version}"`);
-  const args = ["publish", "--access", publishConfig?.access ?? "public", "--tag", "latest"];
+  const args = [
+    "publish",
+    packedPackage.filename,
+    "--access",
+    publishConfig?.access ?? "public",
+    "--tag",
+    "latest",
+  ];
   const result = spawnSync("npm", args, {
-    cwd: pkg.dir,
+    cwd: root,
     env: process.env,
     stdio: "inherit",
   });
+  packedPackage.cleanup();
 
   if (result.status === 0) {
     published.push({ name, version });
@@ -106,6 +122,34 @@ async function isVersionPublished(name, version) {
 
   console.error(output.trim());
   throw new Error(`Failed checking npm version for ${name}@${version}`);
+}
+
+function packPackage(pkg) {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "anvia-publish-"));
+  const cleanup = () => rmSync(tempDir, { recursive: true, force: true });
+  const result = spawnSync("pnpm", ["pack", "--pack-destination", tempDir, "--json"], {
+    cwd: pkg.dir,
+    env: process.env,
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+    cleanup();
+    return undefined;
+  }
+
+  try {
+    const packed = JSON.parse(result.stdout);
+    if (typeof packed.filename !== "string" || !existsSync(packed.filename)) {
+      throw new Error("pnpm pack did not return a package filename");
+    }
+    return { filename: packed.filename, cleanup };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 }
 
 function createGitTags(releases) {

@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "workspace:*",
+    "@anvia/core": "^0.2.3",
     "@qdrant/js-client-rest": "^1.18.0"
   },
   "devDependencies": {

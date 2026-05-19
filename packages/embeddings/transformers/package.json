@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "workspace:*",
+    "@anvia/core": "^0.2.3",
     "@huggingface/transformers": "^4.2.0"
   },
   "devDependencies": {

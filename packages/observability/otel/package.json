@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "workspace:*",
+    "@anvia/core": "^0.2.3",
     "@opentelemetry/api": "^1.9.1"
   },
   "devDependencies": {

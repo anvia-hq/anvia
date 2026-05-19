@@ -5,6 +5,11 @@
   "author": "anvia",
   "maintainer": "Indra Zulfi",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/vector-stores/qdrant"
+  },
   "files": [
     "dist"
   ],

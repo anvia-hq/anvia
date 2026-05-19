@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 0.2.7
+
+### Patch Changes
+
+- a0a5def: Lazy-load the default SQLite store so importing Studio does not require `node:sqlite` in Bun-compatible runtimes.
+- Updated dependencies [a0a5def]
+  - @anvia/core@0.2.4
+
 ## 0.2.6
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/transformers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Transformers.js embedding model adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

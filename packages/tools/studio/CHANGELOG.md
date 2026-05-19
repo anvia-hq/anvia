@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.2.6
+
+### Patch Changes
+
+- 1f7d3aa: Republish packages with registry-safe dependency metadata.
+
 ## 0.2.5
 
 ### Patch Changes

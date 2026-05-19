@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.2.5
+
+### Patch Changes
+
+- 1ad360d: Fix Anthropic-compatible streaming tool inputs and update provider dependencies.
+
 ## 0.2.4
 
 ### Patch Changes

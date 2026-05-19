@@ -1,4 +1,11 @@
-import { AssistantContent, type CompletionRequest, Message, Usage, UserContent } from "@anvia/core";
+import {
+  AssistantContent,
+  type CompletionRequest,
+  type CompletionStreamEvent,
+  Message,
+  Usage,
+  UserContent,
+} from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import {
   AnthropicCompletionModel,
@@ -355,4 +362,100 @@ describe("Anthropic Messages mapping", () => {
       }),
     ).toEqual([{ type: "tool_call_delta", id: "toolu_1", name: "lookup" }]);
   });
+
+  it("preserves complete tool input from streamed content_block_start events", async () => {
+    const events = await collectStreamEvents([
+      {
+        type: "content_block_start",
+        index: 2,
+        content_block: {
+          type: "tool_use",
+          id: "toolu_write",
+          name: "Write",
+          input: {
+            file_path: "src/main.tsx",
+            content: "console.log('ok');",
+          },
+        },
+      },
+      { type: "content_block_stop", index: 2 },
+    ]);
+
+    expect(accumulatedToolArguments(events, "toolu_write")).toEqual({
+      file_path: "src/main.tsx",
+      content: "console.log('ok');",
+    });
+  });
+
+  it("does not duplicate streamed tool input when input_json_delta also arrives", async () => {
+    const events = await collectStreamEvents([
+      {
+        type: "content_block_start",
+        index: 2,
+        content_block: {
+          type: "tool_use",
+          id: "toolu_write",
+          name: "Write",
+          input: '{"file_path":"src/main.tsx","content":"start"}',
+        },
+      },
+      {
+        type: "content_block_delta",
+        index: 2,
+        delta: {
+          type: "input_json_delta",
+          partial_json: '{"file_path":"src/main.tsx","content":"delta"}',
+        },
+      },
+      { type: "content_block_stop", index: 2 },
+    ]);
+
+    expect(
+      events.filter(
+        (event) => event.type === "tool_call_delta" && event.argumentsDelta !== undefined,
+      ),
+    ).toHaveLength(1);
+    expect(accumulatedToolArguments(events, "toolu_write")).toEqual({
+      file_path: "src/main.tsx",
+      content: "start",
+    });
+  });
 });
+
+async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamEvent[]> {
+  const model = new AnthropicCompletionModel(
+    {
+      messages: {
+        create: async () => streamFrom(events),
+      },
+    } as never,
+    "claude-test",
+  );
+
+  const mapped: CompletionStreamEvent[] = [];
+  for await (const event of model.streamCompletion({
+    chatHistory: [Message.user("write a file")],
+    documents: [],
+    tools: [],
+  })) {
+    mapped.push(event);
+  }
+  return mapped;
+}
+
+async function* streamFrom(events: unknown[]): AsyncIterable<unknown> {
+  for (const event of events) {
+    yield event;
+  }
+}
+
+function accumulatedToolArguments(events: CompletionStreamEvent[], id: string): unknown {
+  const argumentsText = events
+    .flatMap((event) =>
+      event.type === "tool_call_delta" && event.id === id && event.argumentsDelta !== undefined
+        ? [event.argumentsDelta]
+        : [],
+    )
+    .join("");
+  return argumentsText.length === 0 ? {} : JSON.parse(argumentsText);
+}

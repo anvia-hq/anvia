@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@anvia/core": "workspace:*",
-    "@hono/node-server": "^2.0.2",
+    "@hono/node-server": "^2.0.3",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -38,7 +38,7 @@
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "hono": "^4.12.18",
+    "hono": "^4.12.19",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",

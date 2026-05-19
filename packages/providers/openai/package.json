@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@anvia/core": "workspace:*",
-    "openai": "^6.37.0"
+    "openai": "^6.38.0"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

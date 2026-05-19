@@ -69,6 +69,7 @@ export class AnthropicCompletionModel implements StreamingCompletionModel {
     const params = { ...toAnthropicMessagesParams(this.defaultModel, request), stream: true };
     const stream = await this.client.messages.create(params as never);
     const toolIdsByIndex = new Map<number, string>();
+    const blocksWithInitialToolInput = new Set<number>();
     for await (const event of stream as unknown as AsyncIterable<unknown>) {
       if (isPlainObject(event) && event.type === "content_block_start") {
         const index = numberFrom(event.index);
@@ -77,8 +78,20 @@ export class AnthropicCompletionModel implements StreamingCompletionModel {
         if (id !== undefined) {
           toolIdsByIndex.set(index, id);
         }
+        if (toolInputArgumentsDelta(block.input) !== undefined) {
+          blocksWithInitialToolInput.add(index);
+        }
       }
       for (const mapped of fromAnthropicStreamEvent(event)) {
+        if (
+          mapped.type === "tool_call_delta" &&
+          mapped.argumentsDelta !== undefined &&
+          isPlainObject(event) &&
+          event.type === "content_block_delta" &&
+          blocksWithInitialToolInput.has(numberFrom(event.index))
+        ) {
+          continue;
+        }
         if (mapped.type === "tool_call_delta" && mapped.id.startsWith("tool_")) {
           const index = Number(mapped.id.slice("tool_".length));
           yield { ...mapped, id: toolIdsByIndex.get(index) ?? mapped.id };
@@ -254,6 +267,7 @@ export function fromAnthropicStreamEvent(event: unknown): CompletionStreamEvent[
       return [
         toolCallDelta(stringFrom(block.id) ?? `tool_${numberFrom(event.index)}`, {
           name: stringFrom(block.name),
+          argumentsDelta: toolInputArgumentsDelta(block.input),
         }),
       ];
     }
@@ -508,6 +522,31 @@ function toJsonValue(value: unknown): JsonValue {
   }
 
   return String(value);
+}
+
+function toolInputArgumentsDelta(input: unknown): string | undefined {
+  if (input === undefined) {
+    return undefined;
+  }
+
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    if (trimmed.length === 0 || trimmed === "{}") {
+      return undefined;
+    }
+    try {
+      JSON.parse(trimmed);
+      return trimmed;
+    } catch {
+      return JSON.stringify(input);
+    }
+  }
+
+  if (isPlainObject(input) && Object.keys(input).length === 0) {
+    return undefined;
+  }
+
+  return JSON.stringify(toJsonValue(input));
 }
 
 function toolCallDelta(

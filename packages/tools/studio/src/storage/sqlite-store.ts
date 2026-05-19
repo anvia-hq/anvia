@@ -37,13 +37,13 @@ import type {
   StudioTranscriptEntry,
 } from "../types";
 
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
-) as typeof import("node:sqlite");
-
 export type SqliteSessionStoreOptions = {
   path?: string;
 };
+
+type DatabaseSyncConstructor = typeof DatabaseSyncType;
+
+let DatabaseSync: DatabaseSyncConstructor | undefined;
 
 type SessionRow = {
   id: string;
@@ -827,7 +827,7 @@ class SqliteSessionStore
       mkdirSync(dirname(resolve(this.path)), { recursive: true });
     }
 
-    const db = new DatabaseSync(this.path, {
+    const db = new (loadDatabaseSync())(this.path, {
       allowUnknownNamedParameters: true,
       timeout: 5000,
     });
@@ -1238,6 +1238,24 @@ function guardAgainstLegacySessionSchema(db: DatabaseSyncType): void {
   if (columns.some((column) => column.name === "messages_json")) {
     throw new Error(
       "Existing Studio SQLite DB uses the legacy messages_json schema. Delete or recreate the Studio SQLite DB to use normalized session messages.",
+    );
+  }
+}
+
+function loadDatabaseSync(): DatabaseSyncConstructor {
+  if (DatabaseSync !== undefined) {
+    return DatabaseSync;
+  }
+
+  try {
+    ({ DatabaseSync } = createRequire(import.meta.url)(
+      "node:sqlite",
+    ) as typeof import("node:sqlite"));
+    return DatabaseSync;
+  } catch (error) {
+    throw new Error(
+      "The default Studio SQLite store requires Node.js with node:sqlite support. Provide custom Studio stores or disable persisted stores when running Studio in a runtime without node:sqlite.",
+      { cause: error },
     );
   }
 }

@@ -1,8 +1,10 @@
 import {
+  AgentBuilder,
   AssistantContent,
   type CompletionRequest,
   type CompletionStreamEvent,
   Message,
+  type Tool,
   Usage,
   UserContent,
 } from "@anvia/core";
@@ -420,6 +422,89 @@ describe("Anthropic Messages mapping", () => {
       content: "start",
     });
   });
+
+  it("keeps streamed input_json_delta tool arguments when the final message has empty tool input", async () => {
+    const toolCalls: unknown[] = [];
+    const model = anthropicModelWithStreams([
+      [
+        { type: "message_start", message: { id: "msg_1" } },
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "tool_use", id: "toolu_1", name: "Write", input: {} },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "input_json_delta",
+            partial_json: '{"file_path":"src/main.tsx","content":"hello"}',
+          },
+        },
+        {
+          type: "message_stop",
+          message: {
+            id: "msg_1",
+            content: [{ type: "tool_use", id: "toolu_1", name: "Write", input: {} }],
+          },
+        },
+      ],
+      finalTextStream(),
+    ]);
+    const agent = new AgentBuilder("test-agent", model).tool(writeTool(toolCalls)).build();
+
+    const events = await collect(agent.prompt("write").stream());
+
+    expect(events).toContainEqual({
+      type: "tool_call",
+      turn: 1,
+      toolCall: AssistantContent.toolCall("toolu_1", "Write", {
+        file_path: "src/main.tsx",
+        content: "hello",
+      }),
+    });
+    expect(toolCalls).toEqual([{ file_path: "src/main.tsx", content: "hello" }]);
+  });
+
+  it("keeps streamed start-block tool arguments when the final message has empty tool input", async () => {
+    const toolCalls: unknown[] = [];
+    const model = anthropicModelWithStreams([
+      [
+        { type: "message_start", message: { id: "msg_1" } },
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: { file_path: "src/main.tsx", content: "hello" },
+          },
+        },
+        {
+          type: "message_stop",
+          message: {
+            id: "msg_1",
+            content: [{ type: "tool_use", id: "toolu_1", name: "Write", input: {} }],
+          },
+        },
+      ],
+      finalTextStream(),
+    ]);
+    const agent = new AgentBuilder("test-agent", model).tool(writeTool(toolCalls)).build();
+
+    const events = await collect(agent.prompt("write").stream());
+
+    expect(events).toContainEqual({
+      type: "tool_call",
+      turn: 1,
+      toolCall: AssistantContent.toolCall("toolu_1", "Write", {
+        file_path: "src/main.tsx",
+        content: "hello",
+      }),
+    });
+    expect(toolCalls).toEqual([{ file_path: "src/main.tsx", content: "hello" }]);
+  });
 });
 
 async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamEvent[]> {
@@ -443,10 +528,67 @@ async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamE
   return mapped;
 }
 
+function anthropicModelWithStreams(streams: unknown[][]): AnthropicCompletionModel {
+  return new AnthropicCompletionModel(
+    {
+      messages: {
+        create: async () => streamFrom(streams.shift() ?? []),
+      },
+    } as never,
+    "claude-test",
+  );
+}
+
+function writeTool(calls: unknown[]): Tool {
+  return {
+    name: "Write",
+    definition() {
+      return {
+        name: "Write",
+        description: "Write a file",
+        parameters: {
+          type: "object",
+          properties: {
+            file_path: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["file_path", "content"],
+        },
+      };
+    },
+    call(args) {
+      calls.push(args);
+      return "written";
+    },
+  };
+}
+
+function finalTextStream(): unknown[] {
+  return [
+    { type: "message_start", message: { id: "msg_2" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "done" } },
+    {
+      type: "message_stop",
+      message: {
+        id: "msg_2",
+        content: [{ type: "text", text: "done" }],
+      },
+    },
+  ];
+}
+
 async function* streamFrom(events: unknown[]): AsyncIterable<unknown> {
   for (const event of events) {
     yield event;
   }
+}
+
+async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const event of events) {
+    result.push(event);
+  }
+  return result;
 }
 
 function accumulatedToolArguments(events: CompletionStreamEvent[], id: string): unknown {

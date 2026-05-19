@@ -100,10 +100,11 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   }
 
   response(): CompletionResponse<RawResponse> {
+    const accumulatedResponse = this.buildAccumulatedResponse();
     if (this.finalResponse !== undefined) {
       if (this.finalResponse.choice.length === 0) {
         const response = {
-          ...this.buildAccumulatedResponse(),
+          ...accumulatedResponse,
           usage: this.finalResponse.usage,
           rawResponse: this.finalResponse.rawResponse,
         };
@@ -112,10 +113,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
         }
         return response;
       }
-      return this.finalResponse;
+      return this.mergeFinalResponse(accumulatedResponse, this.finalResponse);
     }
 
-    return this.buildAccumulatedResponse();
+    return accumulatedResponse;
   }
 
   private buildAccumulatedResponse(): CompletionResponse<RawResponse> {
@@ -182,6 +183,47 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     this.toolCalls.set(toolCall.id, partial);
   }
 
+  private mergeFinalResponse(
+    accumulatedResponse: CompletionResponse<RawResponse>,
+    finalResponse: CompletionResponse<RawResponse>,
+  ): CompletionResponse<RawResponse> {
+    const accumulatedById = new Map<string, ToolCall>();
+    const accumulatedByCallId = new Map<string, ToolCall>();
+    for (const content of accumulatedResponse.choice) {
+      if (content.type !== "tool_call") {
+        continue;
+      }
+      accumulatedById.set(content.id, content);
+      if (content.callId !== undefined) {
+        accumulatedByCallId.set(content.callId, content);
+      }
+    }
+
+    return {
+      ...finalResponse,
+      choice: finalResponse.choice.map((content) => {
+        if (content.type !== "tool_call" || !isEmptyToolArguments(content.function.arguments)) {
+          return content;
+        }
+
+        const accumulated =
+          accumulatedById.get(content.id) ??
+          (content.callId === undefined ? undefined : accumulatedByCallId.get(content.callId));
+        if (accumulated === undefined || isEmptyToolArguments(accumulated.function.arguments)) {
+          return content;
+        }
+
+        return {
+          ...content,
+          function: {
+            ...content.function,
+            arguments: accumulated.function.arguments,
+          },
+        };
+      }),
+    };
+  }
+
   private appendReasoning(
     reasoning: ReasoningState,
     event: Extract<CompletionStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
@@ -239,4 +281,20 @@ function reasoningDeltaEvent(
   if (event.contentType !== undefined) mapped.contentType = event.contentType;
   if (event.signature !== undefined) mapped.signature = event.signature;
   return mapped;
+}
+
+function isEmptyToolArguments(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return true;
+  }
+  if (typeof value === "string") {
+    return value.trim().length === 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  if (typeof value === "object") {
+    return Object.values(value).every((item) => item === undefined);
+  }
+  return false;
 }

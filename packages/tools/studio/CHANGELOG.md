@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.2.8
+
+### Patch Changes
+
+- 896ae21: Update upstream provider and runtime dependencies.
+
 ## 0.2.7
 
 ### Patch Changes

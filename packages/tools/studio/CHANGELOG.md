@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.2.9
+
+### Patch Changes
+
+- 49e43a3: Update upstream runtime dependencies for Anthropic, Gemini, OpenAI, and Studio.
+
 ## 0.2.8
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @anvia/otel
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [09c70f5]
+  - @anvia/core@0.3.0
+
 ## 0.1.3
 
 ### Patch Changes

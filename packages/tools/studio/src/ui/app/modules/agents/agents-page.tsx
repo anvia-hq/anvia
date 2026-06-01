@@ -1,8 +1,39 @@
-import type { StudioConfig } from "../../../../types";
+import { useEffect, useState } from "react";
+import type { StudioAgentRuntimeSummary, StudioConfig } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { cn } from "../../lib/utils";
 
 export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgentId: string }) {
+  const [runtimeByAgentId, setRuntimeByAgentId] = useState<
+    Record<string, StudioAgentRuntimeSummary | undefined>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRuntimeSummaries() {
+      const entries = await Promise.all(
+        props.agents.map(async (agent) => {
+          try {
+            const response = await fetch(`/agents/${encodeURIComponent(agent.id)}/runtime`);
+            if (!response.ok) {
+              return [agent.id, undefined] as const;
+            }
+            return [agent.id, (await response.json()) as StudioAgentRuntimeSummary] as const;
+          } catch {
+            return [agent.id, undefined] as const;
+          }
+        }),
+      );
+      if (!cancelled) {
+        setRuntimeByAgentId(Object.fromEntries(entries));
+      }
+    }
+    void loadRuntimeSummaries();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.agents]);
+
   return (
     <section
       className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
@@ -40,6 +71,7 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
               {props.agents.map((agent) => (
                 <AgentDossier
                   agent={agent}
+                  runtime={runtimeByAgentId[agent.id]}
                   active={agent.id === props.selectedAgentId}
                   key={agent.id}
                 />
@@ -52,8 +84,13 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
   );
 }
 
-function AgentDossier(props: { agent: StudioConfig["agents"][number]; active: boolean }) {
+function AgentDossier(props: {
+  agent: StudioConfig["agents"][number];
+  runtime: StudioAgentRuntimeSummary | undefined;
+  active: boolean;
+}) {
   const metadata = metadataEntries(props.agent.metadata);
+  const runtime = props.runtime;
 
   return (
     <article
@@ -122,6 +159,50 @@ function AgentDossier(props: { agent: StudioConfig["agents"][number]; active: bo
         </section>
 
         <section className="grid content-start gap-3 rounded-lg bg-background/35 p-5">
+          <SectionLabel>runtime</SectionLabel>
+          {runtime === undefined ? (
+            <div className="rounded-lg border border-dashed border-border/80 bg-background/45 px-3 py-2 text-sm text-muted-foreground">
+              Runtime summary unavailable
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <RuntimeMetric label="tools" value={runtime.toolCount} />
+                <RuntimeMetric label="mcp" value={runtime.mcpToolCount} />
+                <RuntimeMetric
+                  label="context"
+                  value={runtime.staticContextCount + runtime.dynamicContextCount}
+                />
+                <RuntimeMetric label="observers" value={runtime.observerCount} />
+              </div>
+              <div className="flex min-w-0 flex-wrap gap-2">
+                <Badge className={runtime.hasMemory ? enabledBadge : disabledBadge}>memory</Badge>
+                <Badge className={runtime.hasHook ? enabledBadge : disabledBadge}>hook</Badge>
+                <Badge className={runtime.hasOutputSchema ? enabledBadge : disabledBadge}>
+                  output schema
+                </Badge>
+                {runtime.defaultMaxTurns === undefined ? null : (
+                  <Badge className="border-border/80 bg-muted/55 text-muted-foreground">
+                    {runtime.defaultMaxTurns} turns
+                  </Badge>
+                )}
+              </div>
+              {runtime.model === undefined ? null : (
+                <div className="grid min-w-0 gap-1 rounded-lg bg-muted/20 px-3 py-2 text-sm">
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    model
+                  </span>
+                  <span
+                    className="min-w-0 truncate font-mono text-xs text-foreground"
+                    title={formatMetadataValue(runtime.model)}
+                  >
+                    {formatMetadataValue(runtime.model)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           <SectionLabel>metadata</SectionLabel>
           {metadata.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/80 bg-background/45 px-3 py-2 text-sm text-muted-foreground">
@@ -150,6 +231,20 @@ function AgentDossier(props: { agent: StudioConfig["agents"][number]; active: bo
         </section>
       </div>
     </article>
+  );
+}
+
+const enabledBadge = "border-primary/35 bg-primary/10 text-primary";
+const disabledBadge = "border-border/80 bg-muted/55 text-muted-foreground";
+
+function RuntimeMetric(props: { label: string; value: number }) {
+  return (
+    <div className="grid gap-1 rounded-lg bg-muted/20 px-3 py-2">
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {props.label}
+      </span>
+      <span className="font-mono text-lg font-semibold text-foreground">{props.value}</span>
+    </div>
   );
 }
 

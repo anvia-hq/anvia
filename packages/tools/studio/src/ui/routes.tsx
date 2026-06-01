@@ -62,6 +62,11 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
   app.get(`${options.path}/tracing/*`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/sessions`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/agents`, async (c) => c.html(await renderShell()));
+  app.get(`${options.path}/tools`, async (c) => c.html(await renderShell()));
+  app.get(`${options.path}/mcps`, async (c) => c.html(await renderShell()));
+  app.get(`${options.path}/pipelines`, async (c) => c.html(await renderShell()));
+  app.get(`${options.path}/memory`, async (c) => c.html(await renderShell()));
+  app.get(`${options.path}/status`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/knowledge`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/knowledge/:tab`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/knowledge/*`, async (c) => c.html(await renderShell()));

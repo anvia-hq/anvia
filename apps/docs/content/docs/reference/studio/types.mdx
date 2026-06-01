@@ -12,10 +12,12 @@ type StudioCapability =
   | "agents"
   | "approvals"
   | "knowledge"
+  | "memory"
   | "mcps"
   | "observability"
   | "pipelines"
   | "sessions"
+  | "status"
   | "tools"
   | "traces";
 
@@ -33,6 +35,26 @@ type StudioAgentConfig = {
   name?: string;
   description?: string;
   quickPrompts: string[];
+  metadata?: JsonObject;
+};
+
+type StudioAgentRuntimeSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  model?: JsonValue;
+  toolCount: number;
+  staticToolCount: number;
+  dynamicToolCount: number;
+  approvalToolCount: number;
+  mcpToolCount: number;
+  staticContextCount: number;
+  dynamicContextCount: number;
+  observerCount: number;
+  hasMemory: boolean;
+  hasHook: boolean;
+  hasOutputSchema: boolean;
+  defaultMaxTurns?: number;
   metadata?: JsonObject;
 };
 
@@ -111,6 +133,23 @@ type StudioAgentToolsSummary = {
   tools: StudioAgentToolMetadata[];
 };
 
+type StudioToolRunRequest = {
+  args: JsonValue;
+  context?: JsonObject;
+};
+
+type StudioToolRunResponse = {
+  agentId: string;
+  toolName: string;
+  result?: JsonValue;
+  error?: JsonValue;
+  status: "success" | "error";
+  durationMs: number;
+  startedAt: string;
+  endedAt: string;
+  events: JsonValue[];
+};
+
 type StudioAgentMcpToolMetadata = {
   name: string;
   description: string;
@@ -133,11 +172,114 @@ type StudioAgentMcpsSummary = {
 
 Purpose: metadata returned by `GET /agents/:agentId/tools` and used by the Studio Tools inspector.
 
-Return behavior: static tools come from `agent.toolSet`; dynamic tools are listed when the dynamic tool index exposes its underlying `ToolSet`.
+Return behavior: static tools come from `agent.toolSet`; dynamic tools are listed when the dynamic tool index exposes its underlying `ToolSet`. Direct tool runs use `POST /agents/:agentId/tools/:toolName/runs`.
 
 Notable errors: unknown agents return `not_found`.
 
 `GET /agents/:agentId/mcps` returns the MCP subset grouped by server name. MCP metadata is available for tools registered through `.mcp(...)`.
+
+## Memory and Status Types
+
+```ts
+type StudioMemoryUserSummary = {
+  userId: string;
+  conversationCount: number;
+  agentIds: string[];
+  lastInteractionAt: string;
+};
+
+type StudioMemoryConversationSummary = {
+  id: string;
+  userId: string;
+  agentId: string;
+  title?: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  metadata?: JsonObject;
+};
+
+type StudioMemoryConversationsPage = {
+  conversations: StudioMemoryConversationSummary[];
+  total: number;
+};
+
+type StudioMemoryUsersPage = {
+  users: StudioMemoryUserSummary[];
+  total: number;
+};
+
+type StudioMemoryConversationMessages = {
+  conversation: StudioMemoryConversationSummary;
+  messages: Message[];
+  transcript: StudioTranscriptEntry[];
+};
+
+type StudioMemoryConversationSteps = {
+  conversation: StudioMemoryConversationSummary;
+  steps: StudioTranscriptEntry[];
+};
+
+type StudioStatusSummary = {
+  runner: {
+    id: string;
+    name?: string;
+    version?: string;
+  };
+  storage: {
+    sessions?: string;
+    traces?: string;
+    pipelineLogs?: string;
+    pipelineRuns?: string;
+  };
+  counts: {
+    agents: number;
+    pipelines: number;
+    sessions?: number;
+    traces?: number;
+    pipelineRuns?: number;
+  };
+  capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
+  generatedAt: string;
+};
+
+type StudioEvalSuite = RunEvalSuiteOptions<unknown, unknown, unknown> & {
+  id?: string;
+  description?: string;
+  metadata?: JsonObject;
+};
+
+type StudioEvalSuiteConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  caseCount: number;
+  metricNames: string[];
+  concurrency?: number;
+  metadata?: JsonObject;
+};
+
+type StudioEvalRunRequest = {
+  concurrency?: number;
+};
+
+type StudioEvalRunResponse = {
+  runId: string;
+  suiteId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  result: JsonObject;
+};
+```
+
+Purpose: response contracts for Memory, Status, direct tool runs, eval runs, and richer agent runtime inspection routes.
+
+Return behavior: Memory routes summarize the active Studio session store; Status returns a compact runtime snapshot.
+
+Register eval suites with `new Studio(targets, { evals: [...] })`. Studio lists their case and metric counts and runs them through `POST /evals/:evalId/runs`.
+
+Notable errors: unsupported or missing stores return `unsupported_capability` or `not_found` from route handlers.
 
 ## Run Types
 
@@ -164,11 +306,29 @@ type AgentRunStreamEvent =
   | StudioSessionLogEvent
   | StudioPipelineLogEvent
   | StudioPipelineFinalEvent;
+
+type StudioObservabilityEventType = "session_log" | "pipeline_log" | "trace";
+
+type StudioObservabilityEvent =
+  | {
+      type: "session_log";
+      log: StudioSessionLogEntry;
+    }
+  | {
+      type: "pipeline_log";
+      log: StudioPipelineLogEntry;
+    }
+  | {
+      type: "trace";
+      trace: StudioTraceSummary;
+    };
 ```
 
 Purpose: HTTP request and response contracts for Studio agent runs.
 
 Return behavior: non-streaming agent runs return `AgentRunResponse`; streaming agent runs emit newline-delimited `AgentRunStreamEvent` values. `session_log` and `pipeline_log` events are Studio-owned metadata-only runtime logs.
+
+`GET /observability/events` emits newline-delimited `StudioObservabilityEvent` values. Use the optional `type` query string to subscribe to `session_log`, `pipeline_log`, `trace`, or a comma-separated subset.
 
 Notable errors: invalid run request bodies return `bad_request`; unsupported stores or capabilities return `unsupported_capability`.
 
@@ -229,6 +389,11 @@ type StudioPipelineFinalEvent = {
 
 type StudioPipelineRunRequest = {
   input: JsonValue;
+  stream?: boolean;
+  metadata?: JsonObject;
+};
+
+type StudioPipelineReplayRequest = {
   stream?: boolean;
   metadata?: JsonObject;
 };

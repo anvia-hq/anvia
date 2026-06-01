@@ -47,6 +47,8 @@ Notable errors: none directly.
 ```ts
 type StudioOptions = {
   quickPrompts?: Record<string, string[]>;
+  stores?: StudioStores;
+  ui?: boolean | StudioUiOptions;
 };
 
 type StudioTarget = Agent | Pipeline<unknown, unknown>;

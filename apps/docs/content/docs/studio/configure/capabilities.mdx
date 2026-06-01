@@ -19,6 +19,8 @@ curl http://localhost:4021/config
   },
   "capabilities": {
     "agents": { "enabled": true },
+    "status": { "enabled": true },
+    "memory": { "enabled": true },
     "sessions": { "enabled": true },
     "traces": { "enabled": true }
   },
@@ -31,7 +33,9 @@ curl http://localhost:4021/config
 | Capability | Enabled when |
 | --- | --- |
 | `agents` | Always enabled |
+| `status` | Always enabled |
 | `sessions` | Session storage is available |
+| `memory` | Session storage is available |
 | `traces` | Trace storage is available |
 | `tools` | At least one registered agent has static tools or dynamic tool indexes |
 | `mcps` | At least one registered agent has tools registered from an MCP server |
@@ -51,3 +55,5 @@ If a capability is unavailable, Studio lists it in `unsupportedCapabilities`. Re
 ```
 
 Most applications should inspect `/config` before building custom tooling around optional Studio surfaces.
+
+Use `/status` when you need a compact runtime snapshot with record counts, storage adapter labels, and the same resolved capability map.

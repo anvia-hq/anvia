@@ -82,6 +82,15 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
   if (first === "pipelines") {
     return { page: "pipelines" };
   }
+  if (first === "evals") {
+    return { page: "evals" };
+  }
+  if (first === "memory") {
+    return { page: "memory" };
+  }
+  if (first === "status") {
+    return { page: "status" };
+  }
   if (first === "knowledge") {
     return { page: "knowledge", knowledgeTab: knowledgeTabFromSegment(second) };
   }
@@ -110,7 +119,10 @@ export function updatePagePath(page: ActivePage): void {
       page === "agents" ||
       page === "tools" ||
       page === "mcps" ||
-      page === "pipelines")
+      page === "pipelines" ||
+      page === "evals" ||
+      page === "memory" ||
+      page === "status")
   ) {
     updateLocationPath(`${normalizedCompatUiPath}/${page}`);
     return;

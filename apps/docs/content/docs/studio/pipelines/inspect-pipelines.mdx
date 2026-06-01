@@ -31,6 +31,7 @@ Studio reads pipeline graph metadata automatically from build order. Optional pi
 | Graph | Input, steps, nested pipelines, parallel branches, agents, extractors, and output |
 | Node details | Kind, label, description, metadata, branch key, agent id, or nested pipeline id |
 | Run controls | JSON-compatible input sent to `POST /pipelines/:pipelineId/runs` |
+| Run history | Persisted pipeline executions with saved output and replay controls |
 | Logs | Persisted metadata-only pipeline audit logs with live stream updates |
 
 Pipeline logs include ids, stage kinds, status, durations, counts, and byte lengths. They do not persist raw input, output, prompt text, model output, tool arguments, tool results, documents, images, or reasoning text.
@@ -50,6 +51,16 @@ curl -X POST http://localhost:4021/pipelines/ticket-pipeline/runs \
   -H 'content-type: application/json' \
   -d '{
     "input": "Customer cannot check out",
+    "stream": true
+  }'
+```
+
+Replay a persisted run with the original saved input:
+
+```bash
+curl -X POST http://localhost:4021/pipelines/ticket-pipeline/runs/RUN_ID/replay \
+  -H 'content-type: application/json' \
+  -d '{
     "stream": true
   }'
 ```

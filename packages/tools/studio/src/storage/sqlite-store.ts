@@ -171,8 +171,8 @@ class SqliteSessionStore
       .prepare(
         `SELECT s.id, s.agent_id, s.title, s.metadata_json, s.created_at, s.updated_at,
                 COUNT(m.message_index) AS message_count
-         FROM runner_sessions s
-         LEFT JOIN runner_session_messages m ON m.session_id = s.id
+         FROM anvia_studio_sessions s
+         LEFT JOIN anvia_studio_session_messages m ON m.session_id = s.id
          ${agentClause}
          GROUP BY s.id, s.agent_id, s.title, s.metadata_json, s.created_at, s.updated_at
          ORDER BY s.updated_at DESC
@@ -190,7 +190,7 @@ class SqliteSessionStore
     const db = this.database();
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO runner_sessions (
+      `INSERT INTO anvia_studio_sessions (
         id,
         agent_id,
         title,
@@ -238,7 +238,7 @@ class SqliteSessionStore
       const row = db
         .prepare(
           `SELECT id, agent_id, title, metadata_json, created_at, updated_at
-           FROM runner_sessions
+           FROM anvia_studio_sessions
            WHERE id = $id`,
         )
         .get({ $id: input.context.sessionId }) as SessionRow | undefined;
@@ -253,7 +253,7 @@ class SqliteSessionStore
 
       this.insertMessages(input.context.sessionId, input.messages, nextIndex, updatedAt);
       db.prepare(
-        `UPDATE runner_sessions
+        `UPDATE anvia_studio_sessions
          SET updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
@@ -277,17 +277,17 @@ class SqliteSessionStore
     try {
       db.exec("BEGIN IMMEDIATE");
       db.prepare(
-        `UPDATE runner_sessions
+        `UPDATE anvia_studio_sessions
          SET updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
         $id: context.sessionId,
         $updatedAt: updatedAt,
       });
-      db.prepare("DELETE FROM runner_session_messages WHERE session_id = $id").run({
+      db.prepare("DELETE FROM anvia_studio_session_messages WHERE session_id = $id").run({
         $id: context.sessionId,
       });
-      db.prepare("DELETE FROM runner_session_runs WHERE session_id = $id").run({
+      db.prepare("DELETE FROM anvia_studio_session_runs WHERE session_id = $id").run({
         $id: context.sessionId,
       });
       db.exec("COMMIT");
@@ -336,7 +336,7 @@ class SqliteSessionStore
       const title = current.title ?? input.title;
 
       db.prepare(
-        `INSERT INTO runner_session_runs (
+        `INSERT INTO anvia_studio_session_runs (
           run_id,
           session_id,
           status,
@@ -357,7 +357,7 @@ class SqliteSessionStore
         )
         ON CONFLICT(run_id) DO UPDATE SET
           status = excluded.status,
-          title = COALESCE(runner_session_runs.title, excluded.title),
+          title = COALESCE(anvia_studio_session_runs.title, excluded.title),
           transcript_json = excluded.transcript_json,
           error_json = excluded.error_json,
           updated_at = excluded.updated_at`,
@@ -372,7 +372,7 @@ class SqliteSessionStore
       });
 
       db.prepare(
-        `UPDATE runner_sessions
+        `UPDATE anvia_studio_sessions
          SET title = $title,
              updated_at = $updatedAt
          WHERE id = $id`,
@@ -418,7 +418,7 @@ class SqliteSessionStore
       };
 
       db.prepare(
-        `INSERT INTO runner_session_logs (
+        `INSERT INTO anvia_studio_session_logs (
           id,
           session_id,
           run_id,
@@ -471,7 +471,7 @@ class SqliteSessionStore
       .prepare(
         `SELECT id, session_id, run_id, sequence, timestamp, level, category, event, message,
                 metadata_json
-         FROM runner_session_logs
+         FROM anvia_studio_session_logs
          WHERE session_id = $sessionId
          ${afterClause}
          ORDER BY sequence ASC
@@ -507,7 +507,7 @@ class SqliteSessionStore
       };
 
       db.prepare(
-        `INSERT INTO runner_pipeline_logs (
+        `INSERT INTO anvia_studio_pipeline_logs (
           id,
           pipeline_id,
           run_id,
@@ -560,7 +560,7 @@ class SqliteSessionStore
       .prepare(
         `SELECT id, pipeline_id, run_id, sequence, timestamp, level, category, event, message,
                 metadata_json
-         FROM runner_pipeline_logs
+         FROM anvia_studio_pipeline_logs
          WHERE pipeline_id = $pipelineId
          ${afterClause}
          ORDER BY sequence ASC
@@ -578,7 +578,7 @@ class SqliteSessionStore
   savePipelineRun(input: StudioPipelineRunSaveInput): StudioPipelineRunRecord {
     const db = this.database();
     db.prepare(
-      `INSERT INTO runner_pipeline_runs (
+      `INSERT INTO anvia_studio_pipeline_runs (
         run_id,
         pipeline_id,
         status,
@@ -644,7 +644,7 @@ class SqliteSessionStore
       .prepare(
         `SELECT run_id, pipeline_id, status, input_json, output_json, error_json,
                 metadata_json, started_at, ended_at, duration_ms
-         FROM runner_pipeline_runs
+         FROM anvia_studio_pipeline_runs
          WHERE pipeline_id = $pipelineId
          ORDER BY started_at DESC
          LIMIT $limit`,
@@ -662,10 +662,12 @@ class SqliteSessionStore
 
     try {
       db.exec("BEGIN IMMEDIATE");
-      db.prepare("DELETE FROM runner_traces WHERE session_id = $id").run({ $id: id });
-      db.prepare("DELETE FROM runner_session_runs WHERE session_id = $id").run({ $id: id });
-      db.prepare("DELETE FROM runner_session_logs WHERE session_id = $id").run({ $id: id });
-      const result = db.prepare("DELETE FROM runner_sessions WHERE id = $id").run({ $id: id }) as {
+      db.prepare("DELETE FROM anvia_studio_traces WHERE session_id = $id").run({ $id: id });
+      db.prepare("DELETE FROM anvia_studio_session_runs WHERE session_id = $id").run({ $id: id });
+      db.prepare("DELETE FROM anvia_studio_session_logs WHERE session_id = $id").run({ $id: id });
+      const result = db
+        .prepare("DELETE FROM anvia_studio_sessions WHERE id = $id")
+        .run({ $id: id }) as {
         changes: number | bigint;
       };
       db.exec("COMMIT");
@@ -706,8 +708,8 @@ class SqliteSessionStore
         `SELECT t.id, t.session_id, t.name, t.status, t.trace_json, t.input_json, t.output,
                 t.error_json, t.usage_json, t.metadata_json, t.observations_json,
                 t.started_at, t.ended_at, t.duration_ms
-         FROM runner_traces t
-         LEFT JOIN runner_sessions s ON s.id = t.session_id
+         FROM anvia_studio_traces t
+         LEFT JOIN anvia_studio_sessions s ON s.id = t.session_id
          ${whereClause}
          ORDER BY t.started_at DESC
          LIMIT $limit`,
@@ -723,7 +725,7 @@ class SqliteSessionStore
       .prepare(
         `SELECT id, session_id, name, status, trace_json, input_json, output, error_json,
                 usage_json, metadata_json, observations_json, started_at, ended_at, duration_ms
-         FROM runner_traces
+         FROM anvia_studio_traces
          WHERE session_id = $sessionId
          ORDER BY started_at DESC
          LIMIT $limit`,
@@ -742,7 +744,7 @@ class SqliteSessionStore
       .prepare(
         `SELECT id, session_id, name, status, trace_json, input_json, output, error_json,
                 usage_json, metadata_json, observations_json, started_at, ended_at, duration_ms
-         FROM runner_traces
+         FROM anvia_studio_traces
          WHERE id = $id`,
       )
       .get({ $id: id }) as TraceRow | undefined;
@@ -753,7 +755,7 @@ class SqliteSessionStore
   saveTrace(trace: StudioTrace): StudioTrace {
     const db = this.database();
     db.prepare(
-      `INSERT INTO runner_traces (
+      `INSERT INTO anvia_studio_traces (
         id,
         session_id,
         name,
@@ -837,7 +839,7 @@ class SqliteSessionStore
     `);
     guardAgainstLegacySessionSchema(db);
     db.exec(`
-      CREATE TABLE IF NOT EXISTS runner_sessions (
+      CREATE TABLE IF NOT EXISTS anvia_studio_sessions (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL,
         title TEXT,
@@ -845,20 +847,20 @@ class SqliteSessionStore
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_sessions_agent_updated_idx
-        ON runner_sessions(agent_id, updated_at DESC);
-      CREATE TABLE IF NOT EXISTS runner_session_messages (
+      CREATE INDEX IF NOT EXISTS anvia_studio_sessions_agent_updated_idx
+        ON anvia_studio_sessions(agent_id, updated_at DESC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_session_messages (
         session_id TEXT NOT NULL,
         message_index INTEGER NOT NULL,
         role TEXT NOT NULL,
         message_id TEXT,
         created_at TEXT NOT NULL,
         PRIMARY KEY(session_id, message_index),
-        FOREIGN KEY(session_id) REFERENCES runner_sessions(id) ON DELETE CASCADE
+        FOREIGN KEY(session_id) REFERENCES anvia_studio_sessions(id) ON DELETE CASCADE
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_session_messages_session_idx
-        ON runner_session_messages(session_id, message_index ASC);
-      CREATE TABLE IF NOT EXISTS runner_session_message_parts (
+      CREATE INDEX IF NOT EXISTS anvia_studio_session_messages_session_idx
+        ON anvia_studio_session_messages(session_id, message_index ASC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_session_message_parts (
         session_id TEXT NOT NULL,
         message_index INTEGER NOT NULL,
         part_index INTEGER NOT NULL,
@@ -866,10 +868,10 @@ class SqliteSessionStore
         part_json TEXT NOT NULL,
         PRIMARY KEY(session_id, message_index, part_index),
         FOREIGN KEY(session_id, message_index)
-          REFERENCES runner_session_messages(session_id, message_index)
+          REFERENCES anvia_studio_session_messages(session_id, message_index)
           ON DELETE CASCADE
       ) STRICT;
-      CREATE TABLE IF NOT EXISTS runner_session_runs (
+      CREATE TABLE IF NOT EXISTS anvia_studio_session_runs (
         run_id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         status TEXT NOT NULL,
@@ -878,11 +880,11 @@ class SqliteSessionStore
         error_json TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY(session_id) REFERENCES runner_sessions(id) ON DELETE CASCADE
+        FOREIGN KEY(session_id) REFERENCES anvia_studio_sessions(id) ON DELETE CASCADE
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_session_runs_session_created_idx
-        ON runner_session_runs(session_id, created_at ASC);
-      CREATE TABLE IF NOT EXISTS runner_session_logs (
+      CREATE INDEX IF NOT EXISTS anvia_studio_session_runs_session_created_idx
+        ON anvia_studio_session_runs(session_id, created_at ASC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_session_logs (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         run_id TEXT,
@@ -894,11 +896,11 @@ class SqliteSessionStore
         message TEXT NOT NULL,
         metadata_json TEXT,
         UNIQUE(session_id, sequence),
-        FOREIGN KEY(session_id) REFERENCES runner_sessions(id) ON DELETE CASCADE
+        FOREIGN KEY(session_id) REFERENCES anvia_studio_sessions(id) ON DELETE CASCADE
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_session_logs_session_sequence_idx
-        ON runner_session_logs(session_id, sequence ASC);
-      CREATE TABLE IF NOT EXISTS runner_pipeline_logs (
+      CREATE INDEX IF NOT EXISTS anvia_studio_session_logs_session_sequence_idx
+        ON anvia_studio_session_logs(session_id, sequence ASC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_pipeline_logs (
         id TEXT PRIMARY KEY,
         pipeline_id TEXT NOT NULL,
         run_id TEXT,
@@ -911,9 +913,9 @@ class SqliteSessionStore
         metadata_json TEXT,
         UNIQUE(pipeline_id, sequence)
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_pipeline_logs_pipeline_sequence_idx
-        ON runner_pipeline_logs(pipeline_id, sequence ASC);
-      CREATE TABLE IF NOT EXISTS runner_pipeline_runs (
+      CREATE INDEX IF NOT EXISTS anvia_studio_pipeline_logs_pipeline_sequence_idx
+        ON anvia_studio_pipeline_logs(pipeline_id, sequence ASC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_pipeline_runs (
         run_id TEXT PRIMARY KEY,
         pipeline_id TEXT NOT NULL,
         status TEXT NOT NULL,
@@ -925,9 +927,9 @@ class SqliteSessionStore
         ended_at TEXT,
         duration_ms INTEGER
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_pipeline_runs_pipeline_started_idx
-        ON runner_pipeline_runs(pipeline_id, started_at DESC);
-      CREATE TABLE IF NOT EXISTS runner_traces (
+      CREATE INDEX IF NOT EXISTS anvia_studio_pipeline_runs_pipeline_started_idx
+        ON anvia_studio_pipeline_runs(pipeline_id, started_at DESC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_traces (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
         name TEXT,
@@ -943,8 +945,8 @@ class SqliteSessionStore
         ended_at TEXT,
         duration_ms INTEGER
       ) STRICT;
-      CREATE INDEX IF NOT EXISTS runner_traces_session_started_idx
-        ON runner_traces(session_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS anvia_studio_traces_session_started_idx
+        ON anvia_studio_traces(session_id, started_at DESC);
     `);
 
     this.db = db;
@@ -955,7 +957,7 @@ class SqliteSessionStore
     return this.database()
       .prepare(
         `SELECT id, agent_id, title, metadata_json, created_at, updated_at
-         FROM runner_sessions
+         FROM anvia_studio_sessions
          WHERE id = $id`,
       )
       .get({ $id: id }) as SessionRow | undefined;
@@ -965,7 +967,7 @@ class SqliteSessionStore
     return this.database()
       .prepare(
         `SELECT run_id, session_id, status, title, transcript_json, error_json, created_at, updated_at
-         FROM runner_session_runs
+         FROM anvia_studio_session_runs
          WHERE session_id = $sessionId AND run_id = $runId`,
       )
       .get({ $sessionId: sessionId, $runId: runId }) as SessionRunRow | undefined;
@@ -975,7 +977,7 @@ class SqliteSessionStore
     return this.database()
       .prepare(
         `SELECT run_id, session_id, status, title, transcript_json, error_json, created_at, updated_at
-         FROM runner_session_runs
+         FROM anvia_studio_session_runs
          WHERE session_id = $sessionId
          ORDER BY created_at ASC`,
       )
@@ -986,7 +988,7 @@ class SqliteSessionStore
     const row = this.database()
       .prepare(
         `SELECT COALESCE(MAX(sequence) + 1, 0) AS next_sequence
-         FROM runner_session_logs
+         FROM anvia_studio_session_logs
          WHERE session_id = $sessionId`,
       )
       .get({ $sessionId: sessionId }) as { next_sequence: number };
@@ -997,7 +999,7 @@ class SqliteSessionStore
     const row = this.database()
       .prepare(
         `SELECT COALESCE(MAX(sequence) + 1, 0) AS next_sequence
-         FROM runner_pipeline_logs
+         FROM anvia_studio_pipeline_logs
          WHERE pipeline_id = $pipelineId`,
       )
       .get({ $pipelineId: pipelineId }) as { next_sequence: number };
@@ -1009,7 +1011,7 @@ class SqliteSessionStore
     const messageRows = db
       .prepare(
         `SELECT session_id, message_index, role, message_id, created_at
-         FROM runner_session_messages
+         FROM anvia_studio_session_messages
          WHERE session_id = $sessionId
          ORDER BY message_index ASC`,
       )
@@ -1022,7 +1024,7 @@ class SqliteSessionStore
     const partRows = db
       .prepare(
         `SELECT session_id, message_index, part_index, type, part_json
-         FROM runner_session_message_parts
+         FROM anvia_studio_session_message_parts
          WHERE session_id = $sessionId
          ORDER BY message_index ASC, part_index ASC`,
       )
@@ -1043,7 +1045,7 @@ class SqliteSessionStore
     const row = this.database()
       .prepare(
         `SELECT COALESCE(MAX(message_index) + 1, 0) AS next_index
-         FROM runner_session_messages
+         FROM anvia_studio_session_messages
          WHERE session_id = $sessionId`,
       )
       .get({ $sessionId: sessionId }) as { next_index: number };
@@ -1058,7 +1060,7 @@ class SqliteSessionStore
   ): void {
     const db = this.database();
     const insertMessage = db.prepare(
-      `INSERT INTO runner_session_messages (
+      `INSERT INTO anvia_studio_session_messages (
         session_id,
         message_index,
         role,
@@ -1067,7 +1069,7 @@ class SqliteSessionStore
       ) VALUES ($sessionId, $messageIndex, $role, $messageId, $createdAt)`,
     );
     const insertPart = db.prepare(
-      `INSERT INTO runner_session_message_parts (
+      `INSERT INTO anvia_studio_session_message_parts (
         session_id,
         message_index,
         part_index,
@@ -1234,7 +1236,7 @@ function systemContentFromParts(parts: unknown[]): string {
 }
 
 function guardAgainstLegacySessionSchema(db: DatabaseSyncType): void {
-  const columns = db.prepare("PRAGMA table_info('runner_sessions')").all() as TableInfoRow[];
+  const columns = db.prepare("PRAGMA table_info('anvia_studio_sessions')").all() as TableInfoRow[];
   if (columns.some((column) => column.name === "messages_json")) {
     throw new Error(
       "Existing Studio SQLite DB uses the legacy messages_json schema. Delete or recreate the Studio SQLite DB to use normalized session messages.",

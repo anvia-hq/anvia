@@ -3,6 +3,7 @@ import {
   ChatText,
   Database,
   FlowArrow,
+  Gauge,
   List,
   type Icon as PhosphorIcon,
   Plug,
@@ -43,6 +44,7 @@ type IconName =
   | "activity"
   | "bot"
   | "database"
+  | "gauge"
   | "list"
   | "message"
   | "plug"
@@ -58,6 +60,8 @@ function navIcon(name: IconName): PhosphorIcon {
       return Robot;
     case "database":
       return Database;
+    case "gauge":
+      return Gauge;
     case "list":
       return List;
     case "message":

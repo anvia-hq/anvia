@@ -16,6 +16,8 @@ import {
   createToolIndex,
   type Embedding,
   type EmbeddingModel,
+  type EvalMetric,
+  EvalOutcome,
   embedDocuments,
   InMemoryVectorStore,
   type JsonObject,
@@ -218,7 +220,7 @@ let studioDbDir: string | undefined;
 beforeEach(() => {
   previousStudioDb = process.env.ANVIA_STUDIO_DB;
   studioDbDir = mkdtempSync(join(tmpdir(), "anvia-studio-test-"));
-  process.env.ANVIA_STUDIO_DB = join(studioDbDir, "studio.sqlite");
+  delete process.env.ANVIA_STUDIO_DB;
 });
 
 afterEach(() => {
@@ -353,7 +355,9 @@ describe("Anvia studio", () => {
       },
       capabilities: {
         agents: { enabled: true },
+        memory: { enabled: true },
         sessions: { enabled: true },
+        status: { enabled: true },
         traces: { enabled: true },
       },
       unsupportedCapabilities: [],
@@ -449,7 +453,12 @@ describe("Anvia studio", () => {
       .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
       .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
       .build();
-    const runner = new Studio([pipeline]);
+    const studioDbPath = join(studioDbDir ?? tmpdir(), "pipeline.sqlite");
+    const runner = new Studio([pipeline], {
+      stores: {
+        sessions: createSqliteSessionStore({ path: studioDbPath }),
+      },
+    });
 
     const run = await runner.fetch(
       new Request("http://runner.test/pipelines/audit-pipeline/runs", {
@@ -539,16 +548,57 @@ describe("Anvia studio", () => {
       output: { reply: "RAW SECRET PAYLOAD" },
     });
 
-    const studioDbPath = process.env.ANVIA_STUDIO_DB;
-    if (studioDbPath === undefined) {
-      throw new Error("Expected ANVIA_STUDIO_DB to be set");
-    }
+    const replay = await runner.fetch(
+      new Request(`http://runner.test/pipelines/audit-pipeline/runs/${savedRun.runId}/replay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          stream: false,
+          metadata: { source: "test" },
+        }),
+      }),
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      pipelineId: "audit-pipeline",
+      output: { reply: "RAW SECRET PAYLOAD" },
+    });
+
+    const replayRunsPage = await runner.fetch(
+      new Request("http://runner.test/pipelines/audit-pipeline/runs?limit=10"),
+    );
+    expect(replayRunsPage.status).toBe(200);
+    const replayRunsBody = (await replayRunsPage.json()) as {
+      runs: Array<{
+        runId: string;
+        input: unknown;
+        output?: unknown;
+        metadata?: unknown;
+      }>;
+    };
+    expect(replayRunsBody.runs).toHaveLength(2);
+    const replayedRun = replayRunsBody.runs.find((run) => run.runId !== savedRun.runId);
+    expect(replayedRun).toMatchObject({
+      input: " raw secret payload ",
+      output: { reply: "RAW SECRET PAYLOAD" },
+      metadata: { source: "test", replayOf: savedRun.runId },
+    });
+
+    const missingReplay = await runner.fetch(
+      new Request("http://runner.test/pipelines/audit-pipeline/runs/missing/replay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stream: false }),
+      }),
+    );
+    expect(missingReplay.status).toBe(404);
+
     const db = new DatabaseSync(studioDbPath);
     try {
       const row = db
         .prepare(
           `SELECT pipeline_id, status, input_json, output_json
-           FROM runner_pipeline_runs
+           FROM anvia_studio_pipeline_runs
            WHERE run_id = $runId`,
         )
         .get({ $runId: savedRun.runId }) as
@@ -757,6 +807,74 @@ describe("Anvia studio", () => {
           approval: { required: false },
         }),
       ],
+    });
+  });
+
+  it("runs registered tools directly", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([])).tool(addTool).build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/tools/add/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ args: { x: 2, y: 3 } }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      agentId: "support",
+      toolName: "add",
+      status: "success",
+      result: "5",
+      events: [],
+    });
+  });
+
+  it("exposes runtime status and richer agent runtime metadata", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([]))
+      .name("Support")
+      .tool(addTool)
+      .defaultMaxTurns(4)
+      .build();
+    const runner = new Studio([agent]);
+
+    const status = await runner.fetch(new Request("http://runner.test/status"));
+    expect(status.status).toBe(200);
+    await expect(status.json()).resolves.toMatchObject({
+      runner: { id: "anvia-studio" },
+      storage: {
+        sessions: "memory",
+        traces: "memory",
+        pipelineLogs: "available",
+        pipelineRuns: "available",
+      },
+      counts: { agents: 1, pipelines: 0, sessions: 0, traces: 0 },
+      capabilities: {
+        agents: { enabled: true },
+        memory: { enabled: true },
+        sessions: { enabled: true },
+        status: { enabled: true },
+        tools: { enabled: true },
+        traces: { enabled: true },
+      },
+    });
+
+    const runtime = await runner.fetch(new Request("http://runner.test/agents/support/runtime"));
+    expect(runtime.status).toBe(200);
+    await expect(runtime.json()).resolves.toMatchObject({
+      id: "support",
+      name: "Support",
+      toolCount: 1,
+      staticToolCount: 1,
+      dynamicToolCount: 0,
+      approvalToolCount: 0,
+      mcpToolCount: 0,
+      hasMemory: true,
+      hasHook: false,
+      hasOutputSchema: false,
+      defaultMaxTurns: 4,
     });
   });
 
@@ -1898,6 +2016,8 @@ describe("Anvia studio", () => {
       "/ui/tools",
       "/ui/pipelines",
       "/ui/mcps",
+      "/ui/memory",
+      "/ui/status",
       "/ui/knowledge",
       "/ui/knowledge/static-context",
       "/ui/knowledge/dynamic-context",
@@ -1935,8 +2055,13 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("First answer")]),
       response([AssistantContent.text("Second answer")]),
     ]);
+    const path = join(studioDbDir ?? tmpdir(), "studio.sqlite");
     const agent = new AgentBuilder("support", model).build();
-    const runner = new Studio([agent]);
+    const runner = new Studio([agent], {
+      stores: {
+        sessions: createSqliteSessionStore({ path }),
+      },
+    });
 
     const emptyList = await runner.fetch(new Request("http://runner.test/sessions"));
     await expect(emptyList.json()).resolves.toEqual({ sessions: [] });
@@ -1975,7 +2100,11 @@ describe("Anvia studio", () => {
       Message.user("Follow up"),
     ]);
 
-    const reloadedRunner = new Studio([new AgentBuilder("support", new QueueModel([])).build()]);
+    const reloadedRunner = new Studio([new AgentBuilder("support", new QueueModel([])).build()], {
+      stores: {
+        sessions: createSqliteSessionStore({ path }),
+      },
+    });
     const loaded = await reloadedRunner.fetch(
       new Request(`http://runner.test/sessions/${session.id}`),
     );
@@ -1996,6 +2125,90 @@ describe("Anvia studio", () => {
         { kind: "message", role: "assistant", text: "First answer" },
         { kind: "message", role: "user", text: "Follow up" },
         { kind: "message", role: "assistant", text: "Second answer" },
+      ],
+    });
+  });
+
+  it("exposes stored sessions through memory explorer routes", async () => {
+    const model = new QueueModel([response([AssistantContent.text("Ticket is blocked")])]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          agentId: "support",
+          title: "Ticket triage",
+          metadata: { userId: "dev_1" },
+        }),
+      }),
+    );
+    expect(created.status).toBe(201);
+    const session = (await created.json()) as { id: string };
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Check ticket", sessionId: session.id }),
+      }),
+    );
+    expect(run.status).toBe(200);
+
+    const users = await runner.fetch(new Request("http://runner.test/memory/users"));
+    expect(users.status).toBe(200);
+    await expect(users.json()).resolves.toMatchObject({
+      total: 1,
+      users: [
+        {
+          userId: "dev_1",
+          conversationCount: 1,
+          agentIds: ["support"],
+        },
+      ],
+    });
+
+    const conversations = await runner.fetch(
+      new Request("http://runner.test/memory/conversations?userId=dev_1"),
+    );
+    expect(conversations.status).toBe(200);
+    await expect(conversations.json()).resolves.toMatchObject({
+      total: 1,
+      conversations: [
+        {
+          id: session.id,
+          userId: "dev_1",
+          agentId: "support",
+          title: "Ticket triage",
+          messageCount: 2,
+        },
+      ],
+    });
+
+    const messages = await runner.fetch(
+      new Request(`http://runner.test/memory/conversations/${session.id}/messages`),
+    );
+    expect(messages.status).toBe(200);
+    await expect(messages.json()).resolves.toMatchObject({
+      conversation: { id: session.id, userId: "dev_1" },
+      messages: [Message.user("Check ticket"), Message.assistant("Ticket is blocked")],
+      transcript: [
+        { kind: "message", role: "user", text: "Check ticket" },
+        { kind: "message", role: "assistant", text: "Ticket is blocked" },
+      ],
+    });
+
+    const steps = await runner.fetch(
+      new Request(`http://runner.test/memory/conversations/${session.id}/steps`),
+    );
+    expect(steps.status).toBe(200);
+    await expect(steps.json()).resolves.toMatchObject({
+      conversation: { id: session.id, userId: "dev_1" },
+      steps: [
+        { kind: "message", role: "user", text: "Check ticket" },
+        { kind: "message", role: "assistant", text: "Ticket is blocked" },
       ],
     });
   });
@@ -2729,10 +2942,10 @@ describe("Anvia studio", () => {
 
     const db = new DatabaseSync(path);
     const messageCount = db
-      .prepare("SELECT COUNT(*) AS count FROM runner_session_messages")
+      .prepare("SELECT COUNT(*) AS count FROM anvia_studio_session_messages")
       .get() as { count: number };
     const partCount = db
-      .prepare("SELECT COUNT(*) AS count FROM runner_session_message_parts")
+      .prepare("SELECT COUNT(*) AS count FROM anvia_studio_session_message_parts")
       .get() as { count: number };
     expect(messageCount.count).toBe(4);
     expect(partCount.count).toBe(9);
@@ -2787,7 +3000,7 @@ describe("Anvia studio", () => {
     const path = join(studioDbDir ?? tmpdir(), "legacy.sqlite");
     const db = new DatabaseSync(path);
     db.exec(`
-      CREATE TABLE runner_sessions (
+      CREATE TABLE anvia_studio_sessions (
         id TEXT PRIMARY KEY,
         agent_id TEXT NOT NULL,
         title TEXT,
@@ -2904,6 +3117,137 @@ describe("Anvia studio", () => {
     const missingTrace = await runner.fetch(new Request("http://runner.test/traces/missing"));
     expect(missingTrace.status).toBe(404);
   });
+
+  it("streams realtime observability events", async () => {
+    const agent = new AgentBuilder(
+      "support",
+      new QueueModel([response([AssistantContent.text("observed")])]),
+    ).build();
+    const runner = new Studio([agent]);
+    const session = (await (
+      await runner.fetch(
+        new Request("http://runner.test/sessions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agentId: "support" }),
+        }),
+      )
+    ).json()) as { id: string };
+
+    const stream = await runner.fetch(
+      new Request("http://runner.test/observability/events?type=session_log,trace"),
+    );
+    expect(stream.status).toBe(200);
+    const reader = createJsonlReader(stream);
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "observe",
+          sessionId: session.id,
+          trace: { name: "observability-test" },
+        }),
+      }),
+    );
+    expect(run.status).toBe(200);
+
+    const events = [await withTimeout(reader.read(), 1000)];
+    while (!events.some((event) => isTraceObservabilityEvent(event))) {
+      events.push(await withTimeout(reader.read(), 1000));
+    }
+    await reader.cancel();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "session_log",
+        log: expect.objectContaining({ event: "run.received" }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "trace",
+        trace: expect.objectContaining({
+          name: "observability-test",
+          status: "success",
+          observationCount: expect.any(Number),
+        }),
+      }),
+    );
+  });
+
+  it("runs registered eval suites", async () => {
+    const metric: EvalMetric<string, string, boolean, string> = {
+      name: "uppercase_match",
+      evaluate(args) {
+        return args.output === args.case.expected
+          ? EvalOutcome.pass(true)
+          : EvalOutcome.fail(false);
+      },
+    };
+    const runner = new Studio([], {
+      evals: [
+        {
+          id: "uppercase-suite",
+          name: "Uppercase Suite",
+          description: "Checks a deterministic transform.",
+          cases: [{ id: "basic", input: "hello", expected: "HELLO" }],
+          target: (input: string) => input.toUpperCase(),
+          metrics: [metric],
+        },
+      ],
+    });
+
+    const config = (await (
+      await runner.fetch(new Request("http://runner.test/config"))
+    ).json()) as { capabilities: { evals?: { enabled: boolean } }; evals: Array<{ id: string }> };
+    expect(config.capabilities.evals?.enabled).toBe(true);
+    expect(config.evals).toEqual([expect.objectContaining({ id: "uppercase-suite" })]);
+
+    const list = await runner.fetch(new Request("http://runner.test/evals"));
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      evals: [
+        {
+          id: "uppercase-suite",
+          name: "Uppercase Suite",
+          caseCount: 1,
+          metricNames: ["uppercase_match"],
+        },
+      ],
+    });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/evals/uppercase-suite/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ concurrency: 1 }),
+      }),
+    );
+    expect(run.status).toBe(200);
+    await expect(run.json()).resolves.toMatchObject({
+      suiteId: "uppercase-suite",
+      result: {
+        name: "Uppercase Suite",
+        passed: 1,
+        failed: 0,
+        invalid: 0,
+        results: [
+          {
+            case: { id: "basic", input: "hello", expected: "HELLO" },
+            output: "HELLO",
+            metrics: [
+              {
+                metricName: "uppercase_match",
+                outcome: { outcome: "pass", score: true },
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
 });
 
 async function readJsonl(response: Response): Promise<unknown[]> {
@@ -2915,7 +3259,10 @@ async function readJsonl(response: Response): Promise<unknown[]> {
     .map((line) => JSON.parse(line));
 }
 
-function createJsonlReader(response: Response): { read: () => Promise<unknown> } {
+function createJsonlReader(response: Response): {
+  cancel: () => Promise<void>;
+  read: () => Promise<unknown>;
+} {
   if (response.body === null) {
     throw new Error("Expected response body");
   }
@@ -2926,6 +3273,9 @@ function createJsonlReader(response: Response): { read: () => Promise<unknown> }
   const events: unknown[] = [];
 
   return {
+    async cancel(): Promise<void> {
+      await reader.cancel();
+    },
     async read(): Promise<unknown> {
       while (events.length === 0) {
         const next = await reader.read();
@@ -2950,6 +3300,10 @@ function createJsonlReader(response: Response): { read: () => Promise<unknown> }
       return events.shift();
     },
   };
+}
+
+function isTraceObservabilityEvent(event: unknown): boolean {
+  return typeof event === "object" && event !== null && "type" in event && event.type === "trace";
 }
 
 async function readRemainingJsonl(reader: { read: () => Promise<unknown> }): Promise<unknown[]> {

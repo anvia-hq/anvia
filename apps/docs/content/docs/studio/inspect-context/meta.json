@@ -2,5 +2,5 @@
   "title": "Inspect Context",
   "defaultOpen": false,
   "collapsible": true,
-  "pages": ["knowledge"]
+  "pages": ["knowledge", "memory"]
 }

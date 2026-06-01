@@ -1,25 +1,33 @@
 ---
 title: Storage and Persistence
-description: Understand Studio's local SQLite storage for sessions, traces, and pipeline logs.
+description: Understand Studio's in-memory default store and optional SQLite persistence.
 ---
 
-Studio creates a local SQLite store by default. It stores sessions, runtime messages, transcript entries, traces, and pipeline logs for local inspection.
+Studio uses an in-memory store by default. It stores sessions, runtime messages, transcript entries, traces, and pipeline logs for local inspection while the process is running, without creating a local database file.
 
-## Default Path
+## Optional SQLite
 
-By default, Studio writes to:
-
-```txt
-.anvia-studio/anvia-studio.sqlite
-```
-
-Set `ANVIA_STUDIO_DB` when you want a specific file.
+Set `ANVIA_STUDIO_DB` when you want Studio state to survive process restarts.
 
 ```bash
 ANVIA_STUDIO_DB=.data/studio.sqlite pnpm tsx studio.ts
 ```
 
 `AION_STUDIO_DB` is also read as a compatibility fallback.
+
+SQLite storage uses dedicated `anvia_studio_*` tables, including `anvia_studio_sessions`, `anvia_studio_traces`, `anvia_studio_pipeline_logs`, and `anvia_studio_pipeline_runs`. That makes it safe to point Studio at a shared application database without writing into production product tables.
+
+You can also pass a store explicitly:
+
+```ts
+import { Studio, createSqliteSessionStore } from "@anvia/studio";
+
+new Studio([agent], {
+  stores: {
+    sessions: createSqliteSessionStore({ path: ".data/studio.sqlite" }),
+  },
+}).start();
+```
 
 ## What Gets Stored
 
@@ -30,10 +38,11 @@ ANVIA_STUDIO_DB=.data/studio.sqlite pnpm tsx studio.ts
 | Transcript entries | UI-friendly run output with messages, reasoning, tool calls, approvals, and questions |
 | Traces | Generation and tool observations captured during runs |
 | Pipeline logs | Metadata-only audit events for Studio pipeline runs |
+| Memory explorer data | User and conversation summaries derived from stored sessions |
 
 ## Sessions and Traces
 
-When storage is available, Studio enables both `sessions` and `traces` capabilities. Runs with a `sessionId` load the stored messages as history and append the final messages after the run completes.
+When the default in-memory store or an explicit store is available, Studio enables `sessions`, `memory`, and `traces` capabilities. Runs with a `sessionId` load the stored messages as history and append the final messages after the run completes.
 
 ```bash
 curl http://localhost:4021/config
@@ -43,10 +52,11 @@ curl http://localhost:4021/config
 {
   "capabilities": {
     "sessions": { "enabled": true },
+    "memory": { "enabled": true },
     "traces": { "enabled": true }
   },
   "unsupportedCapabilities": []
 }
 ```
 
-Use [`Sessions`](/docs/studio/runs/sessions) and [`Traces`](/docs/studio/runs/traces) for the runtime workflow.
+Use [`Sessions`](/docs/studio/runs/sessions), [`Memory`](/docs/studio/inspect-context/memory), and [`Traces`](/docs/studio/runs/traces) for the runtime workflow.

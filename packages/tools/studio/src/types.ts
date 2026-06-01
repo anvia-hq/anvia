@@ -10,6 +10,7 @@ import type {
   Pipeline,
   PipelineGraph,
   PromptResponse,
+  RunEvalSuiteOptions,
   ToolResultContent,
   Usage,
 } from "@anvia/core";
@@ -18,11 +19,14 @@ import type { Hono } from "hono";
 export type StudioCapability =
   | "agents"
   | "approvals"
+  | "evals"
+  | "memory"
   | "knowledge"
   | "mcps"
   | "observability"
   | "pipelines"
   | "sessions"
+  | "status"
   | "tools"
   | "traces";
 
@@ -42,6 +46,26 @@ export type StudioAgentConfig = {
   name?: string;
   description?: string;
   quickPrompts: string[];
+  metadata?: JsonObject;
+};
+
+export type StudioAgentRuntimeSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  model?: JsonValue;
+  toolCount: number;
+  staticToolCount: number;
+  dynamicToolCount: number;
+  approvalToolCount: number;
+  mcpToolCount: number;
+  staticContextCount: number;
+  dynamicContextCount: number;
+  observerCount: number;
+  hasMemory: boolean;
+  hasHook: boolean;
+  hasOutputSchema: boolean;
+  defaultMaxTurns?: number;
   metadata?: JsonObject;
 };
 
@@ -69,6 +93,39 @@ export type StudioPipelineDetail = StudioPipelineConfig & {
   graph: PipelineGraph;
 };
 
+export type StudioEvalSuite<
+  Input = unknown,
+  Output = unknown,
+  Expected = unknown,
+> = RunEvalSuiteOptions<Input, Output, Expected> & {
+  id?: string;
+  description?: string;
+  metadata?: JsonObject;
+};
+
+export type StudioEvalSuiteConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  caseCount: number;
+  metricNames: string[];
+  concurrency?: number;
+  metadata?: JsonObject;
+};
+
+export type StudioEvalRunRequest = {
+  concurrency?: number;
+};
+
+export type StudioEvalRunResponse = {
+  runId: string;
+  suiteId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  result: JsonObject;
+};
+
 export type StudioCapabilityConfig = {
   enabled: boolean;
   reason?: string;
@@ -81,6 +138,7 @@ export type StudioConfig = {
   version?: string;
   agents: StudioAgentConfig[];
   pipelines: StudioPipelineConfig[];
+  evals: StudioEvalSuiteConfig[];
   chat: {
     quickPrompts: Record<string, string[]>;
   };
@@ -108,6 +166,23 @@ export type StudioAgentToolMetadata = {
 export type StudioAgentToolsSummary = {
   agentId: string;
   tools: StudioAgentToolMetadata[];
+};
+
+export type StudioToolRunRequest = {
+  args: JsonValue;
+  context?: JsonObject;
+};
+
+export type StudioToolRunResponse = {
+  agentId: string;
+  toolName: string;
+  result?: JsonValue;
+  error?: JsonValue;
+  status: "success" | "error";
+  durationMs: number;
+  startedAt: string;
+  endedAt: string;
+  events: JsonValue[];
 };
 
 export type StudioAgentMcpToolMetadata = {
@@ -329,6 +404,22 @@ export type StudioTrace = StudioTraceSummary & {
   observations: StudioTraceObservation[];
 };
 
+export type StudioObservabilityEventType = "session_log" | "pipeline_log" | "trace";
+
+export type StudioObservabilityEvent =
+  | {
+      type: "session_log";
+      log: StudioSessionLogEntry;
+    }
+  | {
+      type: "pipeline_log";
+      log: StudioPipelineLogEntry;
+    }
+  | {
+      type: "trace";
+      trace: StudioTraceSummary;
+    };
+
 export type StudioTraceListOptions = {
   limit: number;
   agentId?: string;
@@ -429,6 +520,68 @@ export type StudioKnowledgeSummary = {
   evidence: StudioKnowledgeEvidence[];
 };
 
+export type StudioMemoryUserSummary = {
+  userId: string;
+  conversationCount: number;
+  agentIds: string[];
+  lastInteractionAt: string;
+};
+
+export type StudioMemoryConversationSummary = {
+  id: string;
+  userId: string;
+  agentId: string;
+  title?: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  metadata?: JsonObject;
+};
+
+export type StudioMemoryConversationsPage = {
+  conversations: StudioMemoryConversationSummary[];
+  total: number;
+};
+
+export type StudioMemoryUsersPage = {
+  users: StudioMemoryUserSummary[];
+  total: number;
+};
+
+export type StudioMemoryConversationMessages = {
+  conversation: StudioMemoryConversationSummary;
+  messages: Message[];
+  transcript: StudioTranscriptEntry[];
+};
+
+export type StudioMemoryConversationSteps = {
+  conversation: StudioMemoryConversationSummary;
+  steps: StudioTranscriptEntry[];
+};
+
+export type StudioStatusSummary = {
+  runner: {
+    id: string;
+    name?: string;
+    version?: string;
+  };
+  storage: {
+    sessions?: string;
+    traces?: string;
+    pipelineLogs?: string;
+    pipelineRuns?: string;
+  };
+  counts: {
+    agents: number;
+    pipelines: number;
+    sessions?: number;
+    traces?: number;
+    pipelineRuns?: number;
+  };
+  capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
+  generatedAt: string;
+};
+
 export type StudioStores = {
   sessions?: StudioSessionStore | false;
   traces?: StudioTraceStore;
@@ -446,7 +599,11 @@ export type StudioUiOptions = {
 };
 
 export type StudioOptions = {
+  // biome-ignore lint/suspicious/noExplicitAny: Studio accepts eval suites with arbitrary user-defined case and output types.
+  evals?: Array<StudioEvalSuite<any, any, any>>;
   quickPrompts?: Record<string, string[]>;
+  stores?: StudioStores;
+  ui?: boolean | StudioUiOptions;
 };
 
 export type StudioServeOptions = {
@@ -660,6 +817,11 @@ export type StudioPipelineRunStore = {
 
 export type StudioPipelineRunRequest = {
   input: JsonValue;
+  stream?: boolean;
+  metadata?: JsonObject;
+};
+
+export type StudioPipelineReplayRequest = {
   stream?: boolean;
   metadata?: JsonObject;
 };

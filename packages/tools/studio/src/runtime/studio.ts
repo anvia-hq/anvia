@@ -37,8 +37,15 @@ import {
   registerApprovalRoutes,
   type StudioApprovalHook,
 } from "./approvals";
+import { registerEvalRoutes } from "./evals";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
+import { registerMemoryRoutes } from "./memory";
+import {
+  observeStores,
+  registerObservabilityRoutes,
+  StudioObservabilityHub,
+} from "./observability";
 import { registerPipelineRoutes } from "./pipelines";
 import { createQuestionRuntime, registerQuestionRoutes } from "./questions";
 import {
@@ -64,6 +71,7 @@ import {
 import { registerSessionRoutes } from "./sessions";
 import {
   agentConfig,
+  agentRuntimeSummary,
   buildConfig,
   errorResponse,
   normalizeAgents,
@@ -75,6 +83,7 @@ import {
   unsupportedCapabilities,
   unsupportedCapability,
 } from "./shared";
+import { registerStatusRoutes } from "./status";
 import { registerToolRoutes } from "./tools";
 import { registerTraceRoutes } from "./trace-routes";
 
@@ -165,6 +174,9 @@ function studioOptionsFromTargets(
   return {
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
     pipelines: inferStudioPipelines(pipelines),
+    evals: options.evals ?? [],
+    ...(options.stores === undefined ? {} : { stores: options.stores }),
+    ...(options.ui === undefined ? {} : { ui: options.ui }),
   };
 }
 
@@ -220,13 +232,15 @@ function agentMetadata(agent: Agent): JsonObject {
 }
 
 function createStudioApp(options: StudioRuntimeOptions): StudioApp {
-  const stores = resolveStores(options);
+  const observabilityHub = new StudioObservabilityHub();
+  const stores = observeStores(resolveStores(options), observabilityHub);
   const agents = normalizeAgents(options.agents)
     .map((agent) => withStudioSessionMemory(agent, stores.sessions))
     .map((agent) => withStudioTraceObserver(agent, stores.traces));
   const pipelines = normalizePipelines(options.pipelines);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
+  const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
   const approvalRuntime = createApprovalRuntime();
   const questionRuntime = createQuestionRuntime();
   const app = new HonoApp();
@@ -252,6 +266,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   );
 
   app.get("/config", (c) => c.json(buildConfig(options, agents, pipelines, stores)));
+  registerStatusRoutes(app, { options, agents, pipelines, stores });
 
   app.get("/agents", (c) => c.json({ agents: agents.map(agentConfig) }));
 
@@ -264,10 +279,24 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     return c.json(agentConfig(agent));
   });
 
+  app.get("/agents/:agentId/runtime", (c) => {
+    const agent = agentMap.get(c.req.param("agentId"));
+    if (agent === undefined) {
+      return errorResponse(c, 404, "not_found", "Agent not found");
+    }
+
+    return c.json(agentRuntimeSummary(agent));
+  });
+
   registerMcpRoutes(app, { agentMap });
   registerToolRoutes(app, { agentMap });
   registerApprovalRoutes(app, approvalRuntime);
   registerQuestionRoutes(app, questionRuntime);
+  registerObservabilityRoutes(app, observabilityHub);
+  registerEvalRoutes(app, {
+    evals: options.evals,
+    evalMap,
+  });
   registerKnowledgeRoutes(app, {
     agents,
     ...(stores.traces === undefined ? {} : { traceStore: stores.traces }),
@@ -472,6 +501,9 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   });
 
   if (stores.sessions !== undefined) {
+    registerMemoryRoutes(app, {
+      sessionStore: stores.sessions,
+    });
     registerSessionRoutes(app, {
       agentMap,
       sessionStore: stores.sessions,

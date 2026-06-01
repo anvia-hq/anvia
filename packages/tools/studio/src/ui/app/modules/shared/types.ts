@@ -25,6 +25,9 @@ export type ActivePage =
   | "tools"
   | "mcps"
   | "pipelines"
+  | "evals"
+  | "memory"
+  | "status"
   | "knowledge";
 export type KnowledgeTab = "static-context" | "dynamic-context" | "retrieval-log";
 export type TraceStatusFilter = "all" | StudioTrace["status"];

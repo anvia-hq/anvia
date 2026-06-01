@@ -82,6 +82,7 @@
     "studio:06": "tsx -r dotenv/config 09_studio/06-subagents.ts dotenv_config_path=../../.env",
     "studio:07": "tsx -r dotenv/config 09_studio/07-pipeline-inspector.ts dotenv_config_path=../../.env",
     "studio:08": "tsx -r dotenv/config 09_studio/08-multiple-pipelines.ts dotenv_config_path=../../.env",
+    "studio:09": "tsx -r dotenv/config 09_studio/09-inspection-surfaces.ts dotenv_config_path=../../.env",
     "integrations": "tsx -r dotenv/config 10_integrations/01-mcp-tools.ts dotenv_config_path=../../.env",
     "integrations:01": "tsx -r dotenv/config 10_integrations/01-mcp-tools.ts dotenv_config_path=../../.env",
     "integrations:02": "tsx -r dotenv/config 10_integrations/02-local-skills.ts dotenv_config_path=../../.env",

@@ -1,6 +1,12 @@
-import type { Hono } from "hono";
-import type { StudioAgent, StudioAgentToolMetadata } from "../types";
-import { errorResponse } from "./shared";
+import type { Context, Hono } from "hono";
+import type {
+  StudioAgent,
+  StudioAgentToolMetadata,
+  StudioToolRunRequest,
+  StudioToolRunResponse,
+} from "../types";
+import { serializeUnknown, toJsonValue } from "./json";
+import { errorResponse, isJsonObject, isJsonValue } from "./shared";
 import { agentToolItems, approvalMetadata } from "./tool-metadata";
 
 export function registerToolRoutes(
@@ -21,6 +27,89 @@ export function registerToolRoutes(
       tools: await agentToolMetadata(agent),
     });
   });
+
+  app.post("/agents/:agentId/tools/:toolName/runs", async (c) => {
+    const agentId = c.req.param("agentId");
+    const toolName = c.req.param("toolName");
+    const agent = props.agentMap.get(agentId);
+    if (agent === undefined) {
+      return errorResponse(c, 404, "not_found", "Agent not found");
+    }
+    if (agent.agent.getTool(toolName) === undefined) {
+      return errorResponse(c, 404, "not_found", "Tool not found");
+    }
+
+    const body = await parseToolRunRequest(c);
+    if ("error" in body) {
+      return body.error;
+    }
+
+    const started = Date.now();
+    const startedAt = new Date(started).toISOString();
+    const events: unknown[] = [];
+    try {
+      const result = await agent.agent.callTool(toolName, JSON.stringify(body.args), {
+        emitStreamEvent(event) {
+          events.push(event);
+        },
+      });
+      const ended = Date.now();
+      return c.json({
+        agentId,
+        toolName,
+        status: "success",
+        result: toJsonValue(result),
+        durationMs: ended - started,
+        startedAt,
+        endedAt: new Date(ended).toISOString(),
+        events: events.map(toJsonValue),
+      } satisfies StudioToolRunResponse);
+    } catch (error) {
+      const ended = Date.now();
+      return c.json(
+        {
+          agentId,
+          toolName,
+          status: "error",
+          error: serializeUnknown(error),
+          durationMs: ended - started,
+          startedAt,
+          endedAt: new Date(ended).toISOString(),
+          events: events.map(toJsonValue),
+        } satisfies StudioToolRunResponse,
+        500,
+      );
+    }
+  });
+}
+
+async function parseToolRunRequest(
+  c: Context,
+): Promise<StudioToolRunRequest | { error: Response }> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return { error: errorResponse(c, 400, "bad_request", "Request body must be JSON") };
+  }
+  if (body === undefined || body === null) {
+    return { args: {} } satisfies StudioToolRunRequest;
+  }
+  if (!isJsonObject(body)) {
+    return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
+  }
+  const args = Object.hasOwn(body, "args") ? body.args : {};
+  if (!isJsonValue(args)) {
+    return { error: errorResponse(c, 400, "bad_request", "args must be JSON-compatible") };
+  }
+  const request: StudioToolRunRequest = { args };
+  if (Object.hasOwn(body, "context")) {
+    if (!isJsonObject(body.context)) {
+      return { error: errorResponse(c, 400, "bad_request", "context must be an object") };
+    }
+    request.context = body.context;
+  }
+  return request;
 }
 
 export async function agentToolMetadata(agent: StudioAgent): Promise<StudioAgentToolMetadata[]> {

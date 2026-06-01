@@ -546,6 +546,51 @@ describe("Anvia studio", () => {
       output: { reply: "RAW SECRET PAYLOAD" },
     });
 
+    const replay = await runner.fetch(
+      new Request(`http://runner.test/pipelines/audit-pipeline/runs/${savedRun.runId}/replay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          stream: false,
+          metadata: { source: "test" },
+        }),
+      }),
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      pipelineId: "audit-pipeline",
+      output: { reply: "RAW SECRET PAYLOAD" },
+    });
+
+    const replayRunsPage = await runner.fetch(
+      new Request("http://runner.test/pipelines/audit-pipeline/runs?limit=10"),
+    );
+    expect(replayRunsPage.status).toBe(200);
+    const replayRunsBody = (await replayRunsPage.json()) as {
+      runs: Array<{
+        runId: string;
+        input: unknown;
+        output?: unknown;
+        metadata?: unknown;
+      }>;
+    };
+    expect(replayRunsBody.runs).toHaveLength(2);
+    const replayedRun = replayRunsBody.runs.find((run) => run.runId !== savedRun.runId);
+    expect(replayedRun).toMatchObject({
+      input: " raw secret payload ",
+      output: { reply: "RAW SECRET PAYLOAD" },
+      metadata: { source: "test", replayOf: savedRun.runId },
+    });
+
+    const missingReplay = await runner.fetch(
+      new Request("http://runner.test/pipelines/audit-pipeline/runs/missing/replay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stream: false }),
+      }),
+    );
+    expect(missingReplay.status).toBe(404);
+
     const db = new DatabaseSync(studioDbPath);
     try {
       const row = db

@@ -344,6 +344,11 @@ type StudioPipelineRunRequest = {
   metadata?: JsonObject;
 };
 
+type StudioPipelineReplayRequest = {
+  stream?: boolean;
+  metadata?: JsonObject;
+};
+
 type StudioPipelineRunResponse = {
   runId: string;
   pipelineId: string;

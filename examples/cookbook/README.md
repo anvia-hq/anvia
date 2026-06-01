@@ -28,7 +28,7 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document loaders, vector stores, and embedding provider variants. |
 | `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, streaming agent-tools, and event stores. |
 | `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, and LLM judge/score. |
-| `09_studio` | Single-agent, multi-agent, pipeline, and subagent Studio runners, tool approvals, human feedback, Knowledge, Memory, Status, and tool inspection. |
+| `09_studio` | Single-agent, multi-agent, pipeline, and subagent Studio runners, pipeline replay, tool approvals, human feedback, Knowledge, Memory, Status, and tool inspection. |
 | `10_integrations` | MCP tools, local skills, Langfuse tracing, and Langfuse eval reporting. |
 
 ## Environment

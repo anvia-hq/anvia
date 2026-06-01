@@ -767,6 +767,11 @@ export type StudioPipelineRunRequest = {
   metadata?: JsonObject;
 };
 
+export type StudioPipelineReplayRequest = {
+  stream?: boolean;
+  metadata?: JsonObject;
+};
+
 export type StudioPipelineRunResponse = {
   runId: string;
   pipelineId: string;

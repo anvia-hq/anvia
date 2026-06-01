@@ -911,24 +911,7 @@ export function StudioConsole() {
         throw new Error(await responseErrorMessage(response, "Pipeline run failed"));
       }
 
-      await readJsonl(response.body, async (event) => {
-        if (isPipelineLogEvent(event)) {
-          if (event.log.runId !== undefined) {
-            setActivePipelineRunId((current) => current || event.log.runId || "");
-          }
-          appendPipelineLogEntry(event.log);
-          await nextPaint();
-          return;
-        }
-        if (isPipelineFinalEvent(event)) {
-          setPipelineRunOutput(JSON.stringify(event.output, null, 2));
-          await nextPaint();
-          return;
-        }
-        if (isErrorStreamEvent(event)) {
-          throw new Error(JSON.stringify(event.error));
-        }
-      });
+      await consumePipelineRunStream(response.body);
       await Promise.all([loadPipelineLogs(pipelineId), loadPipelineRuns(pipelineId)]);
       setStatus("Connected");
     } catch (runError) {
@@ -936,6 +919,68 @@ export function StudioConsole() {
     } finally {
       setPipelineRunState("idle");
     }
+  }
+
+  async function replayPipelineRun(runId: string) {
+    const pipelineId = selectedPipelineId || config?.pipelines[0]?.id || "";
+    if (pipelineId.length === 0 || runId.length === 0 || pipelineRunState === "running") {
+      return;
+    }
+
+    setPipelineRunState("running");
+    setPipelineRunOutput("");
+    setActivePipelineRunId("");
+    setError("");
+    try {
+      const response = await fetch(
+        `/pipelines/${encodeURIComponent(pipelineId)}/runs/${encodeURIComponent(runId)}/replay`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            stream: true,
+            metadata: {
+              source: "anvia-studio",
+            },
+          }),
+        },
+      );
+
+      if (!response.ok || response.body === null) {
+        throw new Error(await responseErrorMessage(response, "Pipeline replay failed"));
+      }
+
+      await consumePipelineRunStream(response.body);
+      await Promise.all([loadPipelineLogs(pipelineId), loadPipelineRuns(pipelineId)]);
+      setStatus("Connected");
+    } catch (runError) {
+      setError(errorMessage(runError));
+    } finally {
+      setPipelineRunState("idle");
+    }
+  }
+
+  async function consumePipelineRunStream(body: ReadableStream<Uint8Array>) {
+    await readJsonl(body, async (event) => {
+      if (isPipelineLogEvent(event)) {
+        if (event.log.runId !== undefined) {
+          setActivePipelineRunId((current) => current || event.log.runId || "");
+        }
+        appendPipelineLogEntry(event.log);
+        await nextPaint();
+        return;
+      }
+      if (isPipelineFinalEvent(event)) {
+        setPipelineRunOutput(JSON.stringify(event.output, null, 2));
+        await nextPaint();
+        return;
+      }
+      if (isErrorStreamEvent(event)) {
+        throw new Error(JSON.stringify(event.error));
+      }
+    });
   }
 
   function acceptStreamEvent(event: AgentRunStreamEvent): boolean {
@@ -1905,6 +1950,7 @@ export function StudioConsole() {
             }}
             onRunInputChange={setPipelineRunInput}
             onRun={() => void runPipeline()}
+            onReplayRun={(runId) => void replayPipelineRun(runId)}
           />
         ) : null}
 

@@ -11,7 +11,7 @@ import {
   ReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Play } from "@phosphor-icons/react";
+import { ArrowClockwise, Play } from "@phosphor-icons/react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioConfig,
@@ -58,6 +58,7 @@ export function PipelinesPage(props: {
   onSelectPipeline: (pipelineId: string) => void;
   onRunInputChange: (value: string) => void;
   onRun: () => void;
+  onReplayRun: (runId: string) => void;
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
   const graph = props.detail?.graph;
@@ -166,6 +167,7 @@ export function PipelinesPage(props: {
         }}
         onRunInputChange={props.onRunInputChange}
         onRun={props.onRun}
+        onReplayRun={props.onReplayRun}
       />
     </section>
   );
@@ -187,6 +189,7 @@ function PipelineInspectorSidebar(props: {
   onSelectPipeline: (pipelineId: string) => void;
   onRunInputChange: (value: string) => void;
   onRun: () => void;
+  onReplayRun: (runId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<PipelineSidebarTab>("input");
   const graph = props.detail?.graph;
@@ -263,6 +266,7 @@ function PipelineInspectorSidebar(props: {
             runOutput={props.runOutput}
             runState={props.runState}
             loading={props.runsLoading}
+            onReplayRun={props.onReplayRun}
           />
         ) : null}
         {activeTab === "logs" ? (
@@ -407,6 +411,7 @@ function PipelineRunsPanel(props: {
   runOutput: string;
   runState: "idle" | "running";
   loading: boolean;
+  onReplayRun: (runId: string) => void;
 }) {
   return (
     <section className="grid gap-3">
@@ -437,14 +442,23 @@ function PipelineRunsPanel(props: {
           </div>
         ) : null}
         {props.runs.map((run) => (
-          <PipelineRunRow run={run} key={run.runId} />
+          <PipelineRunRow
+            disabled={props.runState === "running"}
+            run={run}
+            key={run.runId}
+            onReplayRun={props.onReplayRun}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function PipelineRunRow(props: { run: StudioPipelineRunRecord }) {
+function PipelineRunRow(props: {
+  run: StudioPipelineRunRecord;
+  disabled: boolean;
+  onReplayRun: (runId: string) => void;
+}) {
   const output = pipelineRunOutputText(props.run);
   return (
     <article className="grid gap-3 rounded-lg border border-border/80 bg-card/25 p-3">
@@ -466,6 +480,18 @@ function PipelineRunRow(props: { run: StudioPipelineRunRecord }) {
         <span className="truncate text-right tabular-nums">
           {props.run.durationMs === undefined ? "" : `${props.run.durationMs}ms`}
         </span>
+      </div>
+      <div className="flex min-w-0 items-center justify-end">
+        <Button
+          className="h-7 rounded-lg px-2.5 text-[11px] font-semibold"
+          disabled={props.disabled || props.run.status === "running"}
+          onClick={() => props.onReplayRun(props.run.runId)}
+          title="Replay this run with its saved input"
+          variant="secondary"
+        >
+          <ArrowClockwise className="mr-1.5 h-3.5 w-3.5" />
+          Replay
+        </Button>
       </div>
       <PipelineRunOutputBlock title="Output" output={output} />
     </article>

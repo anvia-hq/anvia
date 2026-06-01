@@ -6,6 +6,7 @@ import type {
   StudioPipeline,
   StudioPipelineDetail,
   StudioPipelineLogStore,
+  StudioPipelineReplayRequest,
   StudioPipelineRunRequest,
   StudioPipelineRunResponse,
   StudioPipelineRunSaveInput,
@@ -117,98 +118,150 @@ export function registerPipelineRoutes(
       return body.error;
     }
 
-    const runId = globalThis.crypto.randomUUID();
-    const startedAt = Date.now();
-    const startedAtIso = new Date(startedAt).toISOString();
-    await appendPipelineLog(
-      props.logStore,
-      pipelineRunReceivedLog({
-        pipeline,
-        runId,
-        stream: body.stream === true,
-        input: body.input,
-        ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-      }),
-    );
+    return executePipelineRun(c, props, pipeline, body);
+  });
+
+  app.post("/pipelines/:pipelineId/runs/:runId/replay", async (c) => {
+    const pipeline = props.pipelineMap.get(c.req.param("pipelineId"));
+    if (pipeline === undefined) {
+      return errorResponse(c, 404, "not_found", "Pipeline not found");
+    }
+    if (props.runStore === undefined) {
+      return errorResponse(
+        c,
+        501,
+        "unsupported_capability",
+        'Capability "pipelines.runs" is not implemented by this runner',
+        { capability: "pipelines", operation: "runs" },
+      );
+    }
+
+    const body = await parsePipelineReplayRequest(c);
+    if ("error" in body) {
+      return body.error;
+    }
+
+    const sourceRunId = c.req.param("runId");
+    const runs = await props.runStore.listPipelineRuns({
+      pipelineId: pipeline.id,
+      limit: 1000,
+    });
+    const sourceRun = runs.find((run) => run.runId === sourceRunId);
+    if (sourceRun === undefined) {
+      return errorResponse(c, 404, "not_found", "Pipeline run not found");
+    }
+    if (sourceRun.status === "running") {
+      return errorResponse(c, 409, "conflict", "Cannot replay a running pipeline run");
+    }
+
+    return executePipelineRun(c, props, pipeline, {
+      input: sourceRun.input,
+      ...(body.stream === undefined ? {} : { stream: body.stream }),
+      metadata: replayMetadata(sourceRun.metadata, body.metadata, sourceRun.runId),
+    });
+  });
+}
+
+async function executePipelineRun(
+  c: Context,
+  props: {
+    logStore?: StudioPipelineLogStore;
+    runStore?: StudioPipelineRunStore;
+  },
+  pipeline: StudioPipeline,
+  body: StudioPipelineRunRequest,
+): Promise<Response> {
+  const runId = globalThis.crypto.randomUUID();
+  const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
+  await appendPipelineLog(
+    props.logStore,
+    pipelineRunReceivedLog({
+      pipeline,
+      runId,
+      stream: body.stream === true,
+      input: body.input,
+      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+    }),
+  );
+  await savePipelineRun(props.runStore, {
+    runId,
+    pipelineId: pipeline.id,
+    status: "running",
+    input: body.input,
+    ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+    startedAt: startedAtIso,
+  });
+
+  if (body.stream === true) {
+    return streamPipelineRun(c, {
+      pipeline,
+      runId,
+      input: body.input,
+      startedAt,
+      startedAtIso,
+      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      ...(props.logStore === undefined ? {} : { logStore: props.logStore }),
+      ...(props.runStore === undefined ? {} : { runStore: props.runStore }),
+    });
+  }
+
+  try {
+    await appendPipelineLog(props.logStore, pipelineRunStartedLog(pipeline, runId));
+    const output = await pipeline.pipeline.run(body.input, {
+      observer: {
+        async onEvent(event) {
+          await appendPipelineLog(props.logStore, pipelineStageLog(pipeline.id, runId, event));
+        },
+      },
+    });
+    const jsonOutput = toJsonValue(output);
+    const endedAt = Date.now();
     await savePipelineRun(props.runStore, {
       runId,
       pipelineId: pipeline.id,
-      status: "running",
+      status: "success",
       input: body.input,
+      output: jsonOutput,
       ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
       startedAt: startedAtIso,
+      endedAt: new Date(endedAt).toISOString(),
+      durationMs: endedAt - startedAt,
     });
-
-    if (body.stream === true) {
-      return streamPipelineRun(c, {
-        pipeline,
-        runId,
-        input: body.input,
-        startedAt,
-        startedAtIso,
-        ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-        ...(props.logStore === undefined ? {} : { logStore: props.logStore }),
-        ...(props.runStore === undefined ? {} : { runStore: props.runStore }),
-      });
-    }
-
-    try {
-      await appendPipelineLog(props.logStore, pipelineRunStartedLog(pipeline, runId));
-      const output = await pipeline.pipeline.run(body.input, {
-        observer: {
-          async onEvent(event) {
-            await appendPipelineLog(props.logStore, pipelineStageLog(pipeline.id, runId, event));
-          },
-        },
-      });
-      const jsonOutput = toJsonValue(output);
-      const endedAt = Date.now();
-      await savePipelineRun(props.runStore, {
-        runId,
+    await appendPipelineLog(
+      props.logStore,
+      pipelineRunCompletedLog({
         pipelineId: pipeline.id,
-        status: "success",
-        input: body.input,
-        output: jsonOutput,
-        ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-        startedAt: startedAtIso,
-        endedAt: new Date(endedAt).toISOString(),
+        runId,
         durationMs: endedAt - startedAt,
-      });
-      await appendPipelineLog(
-        props.logStore,
-        pipelineRunCompletedLog({
-          pipelineId: pipeline.id,
-          runId,
-          durationMs: endedAt - startedAt,
-          output: jsonOutput,
-        }),
-      );
-      const response: StudioPipelineRunResponse = {
-        runId,
-        pipelineId: pipeline.id,
         output: jsonOutput,
-      };
-      return c.json(response);
-    } catch (error) {
-      const endedAt = Date.now();
-      await savePipelineRun(props.runStore, {
-        runId,
-        pipelineId: pipeline.id,
-        status: "error",
-        input: body.input,
-        error: serializeError(error),
-        ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-        startedAt: startedAtIso,
-        endedAt: new Date(endedAt).toISOString(),
-        durationMs: endedAt - startedAt,
-      });
-      await appendPipelineLog(
-        props.logStore,
-        pipelineRunFailedLog(pipeline.id, runId, error, startedAt),
-      );
-      return errorResponse(c, 500, "internal_error", "Pipeline run failed", serializeError(error));
-    }
-  });
+      }),
+    );
+    const response: StudioPipelineRunResponse = {
+      runId,
+      pipelineId: pipeline.id,
+      output: jsonOutput,
+    };
+    return c.json(response);
+  } catch (error) {
+    const endedAt = Date.now();
+    await savePipelineRun(props.runStore, {
+      runId,
+      pipelineId: pipeline.id,
+      status: "error",
+      input: body.input,
+      error: serializeError(error),
+      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      startedAt: startedAtIso,
+      endedAt: new Date(endedAt).toISOString(),
+      durationMs: endedAt - startedAt,
+    });
+    await appendPipelineLog(
+      props.logStore,
+      pipelineRunFailedLog(pipeline.id, runId, error, startedAt),
+    );
+    return errorResponse(c, 500, "internal_error", "Pipeline run failed", serializeError(error));
+  }
 }
 
 function pipelineDetail(pipeline: StudioPipeline): StudioPipelineDetail {
@@ -389,6 +442,48 @@ async function parsePipelineRunRequest(
     request.metadata = body.metadata;
   }
   return request;
+}
+
+async function parsePipelineReplayRequest(
+  c: Context,
+): Promise<StudioPipelineReplayRequest | { error: Response }> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return { error: errorResponse(c, 400, "bad_request", "Request body must be JSON") };
+  }
+
+  if (!isObject(body)) {
+    return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
+  }
+
+  const request: StudioPipelineReplayRequest = {};
+  if ("stream" in body) {
+    if (typeof body.stream !== "boolean") {
+      return { error: errorResponse(c, 400, "bad_request", "stream must be a boolean") };
+    }
+    request.stream = body.stream;
+  }
+  if ("metadata" in body) {
+    if (!isJsonObject(body.metadata)) {
+      return { error: errorResponse(c, 400, "bad_request", "metadata must be an object") };
+    }
+    request.metadata = body.metadata;
+  }
+  return request;
+}
+
+function replayMetadata(
+  sourceMetadata: JsonObject | undefined,
+  requestMetadata: JsonObject | undefined,
+  sourceRunId: string,
+): JsonObject {
+  return {
+    ...(sourceMetadata ?? {}),
+    ...(requestMetadata ?? {}),
+    replayOf: sourceRunId,
+  };
 }
 
 function parsePipelineLogLimit(value: string | undefined): number | undefined {

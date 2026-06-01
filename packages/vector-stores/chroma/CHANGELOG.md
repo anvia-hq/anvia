@@ -1,5 +1,12 @@
 # @anvia/chroma
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [b12932d]
+  - @anvia/core@0.3.1
+
 ## 0.1.3
 
 ### Patch Changes

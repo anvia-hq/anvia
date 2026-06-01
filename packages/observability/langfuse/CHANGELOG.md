@@ -1,5 +1,16 @@
 # @anvia/langfuse
 
+## 0.1.7
+
+### Patch Changes
+
+- b12932d: Update upstream dependencies for PDF loading, globbing, Langfuse tracing, and pgvector support.
+
+  The PDF loader now destroys the `pdfjs-dist` loading task after reading pages, matching the v6 cleanup API.
+
+- Updated dependencies [b12932d]
+  - @anvia/core@0.3.1
+
 ## 0.1.6
 
 ### Patch Changes

@@ -318,7 +318,8 @@ async function readFileSource(source: FileSource): Promise<string> {
 async function readPdfPages(source: PdfSource): Promise<PdfPage[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const bytes = "bytes" in source ? source.bytes : toUint8Array(await readFile(source.path));
-  const document = await pdfjs.getDocument({ data: bytes }).promise;
+  const loadingTask = pdfjs.getDocument({ data: bytes });
+  const document = await loadingTask.promise;
   const pages: PdfPage[] = [];
   try {
     for (let index = 1; index <= document.numPages; index += 1) {
@@ -332,7 +333,7 @@ async function readPdfPages(source: PdfSource): Promise<PdfPage[]> {
       pages.push({ pageNumber: index - 1, text: text.length > 0 ? `${text}\n` : "" });
     }
   } finally {
-    await document.destroy();
+    await loadingTask.destroy();
   }
   return pages;
 }

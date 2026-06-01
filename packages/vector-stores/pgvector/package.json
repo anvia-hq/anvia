@@ -33,7 +33,7 @@
   "dependencies": {
     "@anvia/core": "workspace:*",
     "pg": "^8.21.0",
-    "pgvector": "^0.2.1"
+    "pgvector": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

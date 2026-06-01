@@ -242,11 +242,42 @@ type StudioStatusSummary = {
   capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
   generatedAt: string;
 };
+
+type StudioEvalSuite = RunEvalSuiteOptions<unknown, unknown, unknown> & {
+  id?: string;
+  description?: string;
+  metadata?: JsonObject;
+};
+
+type StudioEvalSuiteConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  caseCount: number;
+  metricNames: string[];
+  concurrency?: number;
+  metadata?: JsonObject;
+};
+
+type StudioEvalRunRequest = {
+  concurrency?: number;
+};
+
+type StudioEvalRunResponse = {
+  runId: string;
+  suiteId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  result: JsonObject;
+};
 ```
 
-Purpose: response contracts for Memory, Status, direct tool runs, and richer agent runtime inspection routes.
+Purpose: response contracts for Memory, Status, direct tool runs, eval runs, and richer agent runtime inspection routes.
 
 Return behavior: Memory routes summarize the active Studio session store; Status returns a compact runtime snapshot.
+
+Register eval suites with `new Studio(targets, { evals: [...] })`. Studio lists their case and metric counts and runs them through `POST /evals/:evalId/runs`.
 
 Notable errors: unsupported or missing stores return `unsupported_capability` or `not_found` from route handlers.
 

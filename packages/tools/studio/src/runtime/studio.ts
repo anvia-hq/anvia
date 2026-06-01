@@ -37,6 +37,7 @@ import {
   registerApprovalRoutes,
   type StudioApprovalHook,
 } from "./approvals";
+import { registerEvalRoutes } from "./evals";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
 import { registerMemoryRoutes } from "./memory";
@@ -173,6 +174,7 @@ function studioOptionsFromTargets(
   return {
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
     pipelines: inferStudioPipelines(pipelines),
+    evals: options.evals ?? [],
     ...(options.stores === undefined ? {} : { stores: options.stores }),
     ...(options.ui === undefined ? {} : { ui: options.ui }),
   };
@@ -238,6 +240,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const pipelines = normalizePipelines(options.pipelines);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
+  const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
   const approvalRuntime = createApprovalRuntime();
   const questionRuntime = createQuestionRuntime();
   const app = new HonoApp();
@@ -290,6 +293,10 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   registerApprovalRoutes(app, approvalRuntime);
   registerQuestionRoutes(app, questionRuntime);
   registerObservabilityRoutes(app, observabilityHub);
+  registerEvalRoutes(app, {
+    evals: options.evals,
+    evalMap,
+  });
   registerKnowledgeRoutes(app, {
     agents,
     ...(stores.traces === undefined ? {} : { traceStore: stores.traces }),

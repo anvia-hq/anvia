@@ -82,6 +82,9 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
   if (first === "pipelines") {
     return { page: "pipelines" };
   }
+  if (first === "evals") {
+    return { page: "evals" };
+  }
   if (first === "memory") {
     return { page: "memory" };
   }
@@ -117,6 +120,7 @@ export function updatePagePath(page: ActivePage): void {
       page === "tools" ||
       page === "mcps" ||
       page === "pipelines" ||
+      page === "evals" ||
       page === "memory" ||
       page === "status")
   ) {

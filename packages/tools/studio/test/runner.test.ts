@@ -16,6 +16,8 @@ import {
   createToolIndex,
   type Embedding,
   type EmbeddingModel,
+  type EvalMetric,
+  EvalOutcome,
   embedDocuments,
   InMemoryVectorStore,
   type JsonObject,
@@ -3173,6 +3175,78 @@ describe("Anvia studio", () => {
         }),
       }),
     );
+  });
+
+  it("runs registered eval suites", async () => {
+    const metric: EvalMetric<string, string, boolean, string> = {
+      name: "uppercase_match",
+      evaluate(args) {
+        return args.output === args.case.expected
+          ? EvalOutcome.pass(true)
+          : EvalOutcome.fail(false);
+      },
+    };
+    const runner = new Studio([], {
+      evals: [
+        {
+          id: "uppercase-suite",
+          name: "Uppercase Suite",
+          description: "Checks a deterministic transform.",
+          cases: [{ id: "basic", input: "hello", expected: "HELLO" }],
+          target: (input: string) => input.toUpperCase(),
+          metrics: [metric],
+        },
+      ],
+    });
+
+    const config = (await (
+      await runner.fetch(new Request("http://runner.test/config"))
+    ).json()) as { capabilities: { evals?: { enabled: boolean } }; evals: Array<{ id: string }> };
+    expect(config.capabilities.evals?.enabled).toBe(true);
+    expect(config.evals).toEqual([expect.objectContaining({ id: "uppercase-suite" })]);
+
+    const list = await runner.fetch(new Request("http://runner.test/evals"));
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toMatchObject({
+      evals: [
+        {
+          id: "uppercase-suite",
+          name: "Uppercase Suite",
+          caseCount: 1,
+          metricNames: ["uppercase_match"],
+        },
+      ],
+    });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/evals/uppercase-suite/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ concurrency: 1 }),
+      }),
+    );
+    expect(run.status).toBe(200);
+    await expect(run.json()).resolves.toMatchObject({
+      suiteId: "uppercase-suite",
+      result: {
+        name: "Uppercase Suite",
+        passed: 1,
+        failed: 0,
+        invalid: 0,
+        results: [
+          {
+            case: { id: "basic", input: "hello", expected: "HELLO" },
+            output: "HELLO",
+            metrics: [
+              {
+                metricName: "uppercase_match",
+                outcome: { outcome: "pass", score: true },
+              },
+            ],
+          },
+        ],
+      },
+    });
   });
 });
 

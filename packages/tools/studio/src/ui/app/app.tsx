@@ -13,6 +13,7 @@ import type {
   StudioAgentMcpsSummary,
   StudioAgentToolsSummary,
   StudioConfig,
+  StudioEvalRunResponse,
   StudioKnowledgeSummary,
   StudioPipelineDetail,
   StudioPipelineLogEntry,
@@ -35,6 +36,7 @@ import {
 import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
 import { AgentsPage } from "./modules/agents/agents-page";
+import { EvalsPage } from "./modules/evals/evals-page";
 import { KnowledgePage } from "./modules/knowledge/knowledge-page";
 import { McpsPage } from "./modules/mcps/mcps-page";
 import { MemoryPage } from "./modules/memory/memory-page";
@@ -149,6 +151,7 @@ export function StudioConsole() {
   const [mcpsAgentId, setMcpsAgentId] = useState("");
   const [toolsAgentId, setToolsAgentId] = useState("");
   const [selectedPipelineId, setSelectedPipelineId] = useState("");
+  const [selectedEvalId, setSelectedEvalId] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [allSessions, setAllSessions] = useState<StudioSessionSummary[]>([]);
   const [traces, setTraces] = useState<StudioTrace[]>([]);
@@ -160,6 +163,7 @@ export function StudioConsole() {
   const [prompt, setPrompt] = useState("");
   const [pipelineRunInput, setPipelineRunInput] = useState('"Hello from Studio"');
   const [pipelineRunOutput, setPipelineRunOutput] = useState("");
+  const [evalRunResult, setEvalRunResult] = useState<StudioEvalRunResponse | undefined>();
   const [activePipelineRunId, setActivePipelineRunId] = useState("");
   const [activePage, setActivePage] = useState<ActivePage>(() => initialLocation.page);
   const [theme, setTheme] = useState<StudioTheme>(() => initialStudioTheme);
@@ -191,6 +195,7 @@ export function StudioConsole() {
   const [pipelineLogLoadState, setPipelineLogLoadState] = useState<"idle" | "loading">("idle");
   const [pipelineRunLoadState, setPipelineRunLoadState] = useState<"idle" | "loading">("idle");
   const [pipelineRunState, setPipelineRunState] = useState<RunState>("idle");
+  const [evalRunState, setEvalRunState] = useState<RunState>("idle");
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const transcriptScrollerRef = useRef<HTMLElement | null>(null);
   const transcriptStickToBottomRef = useRef(true);
@@ -241,6 +246,7 @@ export function StudioConsole() {
       setMcpsAgentId((current) => current || nextConfig.agents[0]?.id || "");
       setToolsAgentId((current) => current || nextConfig.agents[0]?.id || "");
       setSelectedPipelineId((current) => current || nextConfig.pipelines[0]?.id || "");
+      setSelectedEvalId((current) => current || nextConfig.evals[0]?.id || "");
       setStatus("Connected");
     } catch (loadError) {
       setError(errorMessage(loadError));
@@ -258,10 +264,12 @@ export function StudioConsole() {
   const mcpsEnabled = config?.capabilities.mcps?.enabled === true;
   const toolsEnabled = config?.capabilities.tools?.enabled === true;
   const pipelinesEnabled = config?.capabilities.pipelines?.enabled === true;
+  const evalsEnabled = config?.capabilities.evals?.enabled === true;
   const memoryEnabled = config?.capabilities.memory?.enabled === true;
   const statusEnabled = config?.capabilities.status?.enabled === true;
   const agents = config?.agents ?? [];
   const pipelines = config?.pipelines ?? [];
+  const evals = config?.evals ?? [];
   const hasAgents = agents.length > 0;
   const selectedAgent =
     agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? undefined;
@@ -962,6 +970,35 @@ export function StudioConsole() {
     }
   }
 
+  async function runEvalSuite() {
+    const evalId = selectedEvalId || config?.evals[0]?.id || "";
+    if (evalId.length === 0 || evalRunState === "running") {
+      return;
+    }
+
+    setEvalRunState("running");
+    setEvalRunResult(undefined);
+    setError("");
+    try {
+      const response = await fetch(`/evals/${encodeURIComponent(evalId)}/runs`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) {
+        throw new Error(await responseErrorMessage(response, "Eval run failed"));
+      }
+      setEvalRunResult((await response.json()) as StudioEvalRunResponse);
+      setStatus("Connected");
+    } catch (runError) {
+      setError(errorMessage(runError));
+    } finally {
+      setEvalRunState("idle");
+    }
+  }
+
   async function consumePipelineRunStream(body: ReadableStream<Uint8Array>) {
     await readJsonl(body, async (event) => {
       if (isPipelineLogEvent(event)) {
@@ -1524,11 +1561,13 @@ export function StudioConsole() {
 
     const nextPage: ActivePage = pipelinesEnabled
       ? "pipelines"
-      : sessionsEnabled
-        ? "sessions"
-        : tracesEnabled
-          ? "tracing"
-          : "agents";
+      : evalsEnabled
+        ? "evals"
+        : sessionsEnabled
+          ? "sessions"
+          : tracesEnabled
+            ? "tracing"
+            : "agents";
 
     resetTranscriptSequence();
     setSelectedSessionId("");
@@ -1545,13 +1584,18 @@ export function StudioConsole() {
         void loadPipeline(pipelineId);
       }
     }
+    if (nextPage === "evals") {
+      setSelectedEvalId(selectedEvalId || config.evals[0]?.id || "");
+    }
   }, [
     activePage,
     config,
     hasAgents,
     loadPipeline,
+    evalsEnabled,
     pipelines,
     pipelinesEnabled,
+    selectedEvalId,
     selectedPipelineId,
     sessionsEnabled,
     tracesEnabled,
@@ -1598,6 +1642,13 @@ export function StudioConsole() {
             label="Pipelines"
             disabled={!pipelinesEnabled}
             onClick={() => navigatePage("pipelines")}
+          />
+          <NavButton
+            active={activePage === "evals"}
+            icon="gauge"
+            label="Evals"
+            disabled={!evalsEnabled}
+            onClick={() => navigatePage("evals")}
           />
           <NavButton
             active={activePage === "sessions"}
@@ -1951,6 +2002,21 @@ export function StudioConsole() {
             onRunInputChange={setPipelineRunInput}
             onRun={() => void runPipeline()}
             onReplayRun={(runId) => void replayPipelineRun(runId)}
+          />
+        ) : null}
+
+        {activePage === "evals" ? (
+          <EvalsPage
+            evals={evals}
+            selectedEvalId={selectedEvalId}
+            enabled={evalsEnabled}
+            runState={evalRunState}
+            result={evalRunResult}
+            onSelectEval={(evalId) => {
+              setSelectedEvalId(evalId);
+              setEvalRunResult(undefined);
+            }}
+            onRun={() => void runEvalSuite()}
           />
         ) : null}
 

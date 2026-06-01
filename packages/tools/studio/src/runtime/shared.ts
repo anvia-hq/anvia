@@ -11,6 +11,8 @@ import type {
   StudioConfig,
   StudioErrorCode,
   StudioErrorResponse,
+  StudioEvalSuite,
+  StudioEvalSuiteConfig,
   StudioPipeline,
   StudioPipelineConfig,
   StudioPipelineLogStore,
@@ -38,6 +40,7 @@ export type StudioRuntimeOptions = {
   version?: string;
   agents: StudioAgent[];
   pipelines: StudioPipeline[];
+  evals: StudioEvalSuite[];
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
 };
@@ -212,6 +215,7 @@ export function buildConfig(
     ...(options.version === undefined ? {} : { version: options.version }),
     agents: agents.map(agentConfig),
     pipelines: pipelines.map(pipelineConfig),
+    evals: options.evals.map(evalConfig),
     chat: {
       quickPrompts: Object.fromEntries(agents.map((agent) => [agent.id, agent.quickPrompts ?? []])),
     },
@@ -301,6 +305,9 @@ export function capabilityConfig(
   if (pipelines.length > 0) {
     capabilities.pipelines = { enabled: true };
   }
+  if (_options.evals.length > 0) {
+    capabilities.evals = { enabled: true };
+  }
   if (
     agents.some(
       (agent) => agent.agent.toolSet.values().length > 0 || agent.agent.dynamicTools.length > 0,
@@ -332,6 +339,18 @@ export function capabilityConfig(
     capabilities.knowledge = { enabled: true };
   }
   return capabilities;
+}
+
+export function evalConfig(suite: StudioEvalSuite): StudioEvalSuiteConfig {
+  return {
+    id: suite.id ?? suite.name,
+    name: suite.name,
+    ...(suite.description === undefined ? {} : { description: suite.description }),
+    caseCount: suite.cases.length,
+    metricNames: suite.metrics.map((metric) => metric.name),
+    ...(suite.concurrency === undefined ? {} : { concurrency: suite.concurrency }),
+    ...(suite.metadata === undefined ? {} : { metadata: suite.metadata }),
+  };
 }
 
 export function optionalQueryString(value: string | undefined): string | undefined {

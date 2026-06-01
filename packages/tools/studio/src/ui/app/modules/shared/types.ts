@@ -25,6 +25,7 @@ export type ActivePage =
   | "tools"
   | "mcps"
   | "pipelines"
+  | "evals"
   | "memory"
   | "status"
   | "knowledge";

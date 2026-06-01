@@ -10,6 +10,7 @@ import type {
   Pipeline,
   PipelineGraph,
   PromptResponse,
+  RunEvalSuiteOptions,
   ToolResultContent,
   Usage,
 } from "@anvia/core";
@@ -18,6 +19,7 @@ import type { Hono } from "hono";
 export type StudioCapability =
   | "agents"
   | "approvals"
+  | "evals"
   | "memory"
   | "knowledge"
   | "mcps"
@@ -91,6 +93,39 @@ export type StudioPipelineDetail = StudioPipelineConfig & {
   graph: PipelineGraph;
 };
 
+export type StudioEvalSuite<
+  Input = unknown,
+  Output = unknown,
+  Expected = unknown,
+> = RunEvalSuiteOptions<Input, Output, Expected> & {
+  id?: string;
+  description?: string;
+  metadata?: JsonObject;
+};
+
+export type StudioEvalSuiteConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  caseCount: number;
+  metricNames: string[];
+  concurrency?: number;
+  metadata?: JsonObject;
+};
+
+export type StudioEvalRunRequest = {
+  concurrency?: number;
+};
+
+export type StudioEvalRunResponse = {
+  runId: string;
+  suiteId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  result: JsonObject;
+};
+
 export type StudioCapabilityConfig = {
   enabled: boolean;
   reason?: string;
@@ -103,6 +138,7 @@ export type StudioConfig = {
   version?: string;
   agents: StudioAgentConfig[];
   pipelines: StudioPipelineConfig[];
+  evals: StudioEvalSuiteConfig[];
   chat: {
     quickPrompts: Record<string, string[]>;
   };
@@ -563,6 +599,8 @@ export type StudioUiOptions = {
 };
 
 export type StudioOptions = {
+  // biome-ignore lint/suspicious/noExplicitAny: Studio accepts eval suites with arbitrary user-defined case and output types.
+  evals?: Array<StudioEvalSuite<any, any, any>>;
   quickPrompts?: Record<string, string[]>;
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;

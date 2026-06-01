@@ -21,6 +21,8 @@
     "chroma",
     "pgvector",
     "qdrant",
+    "---Logger---",
+    "logger",
     "---Observability---",
     "langfuse",
     "otel",

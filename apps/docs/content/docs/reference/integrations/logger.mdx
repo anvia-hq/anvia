@@ -1,0 +1,126 @@
+---
+title: Logger
+description: Public exports from @anvia/logger.
+---
+
+Import from `@anvia/logger`.
+
+## Logger
+
+```ts
+interface Logger {
+  trace(message: string, context?: Record<string, unknown>): void;
+  debug(message: string, context?: Record<string, unknown>): void;
+  info(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  fatal(message: string, context?: Record<string, unknown>): void;
+  child(bindings: Record<string, unknown>): Logger;
+}
+```
+
+Purpose: minimal structured logger interface used by the Anvia logger adapters.
+
+Return behavior: implemented by `createConsoleLogger(...)`, `createPinoLogger(...)`, or a user-provided custom logger.
+
+## LogLevel
+
+```ts
+type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
+```
+
+Purpose: supported logging levels.
+
+## LogContext
+
+```ts
+type LogContext = Record<string, unknown>;
+```
+
+Purpose: structured fields passed alongside a log message.
+
+## LoggerOptions
+
+```ts
+type LoggerOptions = {
+  level?: LogLevel;
+  name?: string;
+  bindings?: LogContext;
+};
+```
+
+Purpose: shared logger configuration for base level and default bindings.
+
+## ConsoleLoggerOptions
+
+```ts
+type ConsoleLoggerOptions = LoggerOptions & {
+  writer?: (line: string) => void;
+  timestamp?: () => Date;
+};
+```
+
+Purpose: configure the built-in JSON console logger.
+
+Notable behavior: when `level` is omitted, `ANVIA_LOG_LEVEL`, `LOG_LEVEL`, and `NODE_ENV` are used to choose a default.
+
+## createConsoleLogger
+
+```ts
+function createConsoleLogger(options?: ConsoleLoggerOptions): Logger;
+```
+
+Purpose: create a lightweight structured JSON logger.
+
+Return behavior: returns a `Logger` that writes one JSON object per log line.
+
+## PinoLoggerOptions
+
+```ts
+type PinoLoggerOptions = LoggerOptions & {
+  pinoOptions?: PinoBaseOptions;
+  destination?: DestinationStream;
+};
+```
+
+Purpose: configure the Pino-backed logger.
+
+Notable behavior: `pinoOptions` are passed to Pino, while `name`, `level`, and `bindings` provide Anvia-friendly defaults.
+
+## createPinoLogger
+
+```ts
+function createPinoLogger(options?: PinoLoggerOptions): Logger;
+```
+
+Purpose: create a `Logger` backed by Pino.
+
+Return behavior: returns a logger that writes structured Pino records and supports child bindings.
+
+## LoggerObserverOptions
+
+```ts
+type LoggerObserverOptions = {
+  includeOutput?: boolean;
+  includeRequest?: boolean;
+  includeResponse?: boolean;
+  includeToolResult?: boolean;
+};
+```
+
+Purpose: control which verbose agent payloads are included in lifecycle logs.
+
+## createLoggerObserver
+
+```ts
+function createLoggerObserver(
+  logger: Logger,
+  options?: LoggerObserverOptions,
+): AgentObserver;
+```
+
+Purpose: adapt an Anvia `Logger` into an agent observer.
+
+Return behavior: can be passed to `AgentBuilder.observe(...)` to log run, generation, and tool events.
+
+Notable behavior: final outputs, full model requests, model responses, and tool results are omitted unless the corresponding `LoggerObserverOptions` flag is enabled.

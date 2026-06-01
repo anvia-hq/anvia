@@ -15,12 +15,21 @@ const repoRoot = join(scriptDir, "../../..");
 const packagesRoot = join(repoRoot, "packages");
 const outputDir = join(repoRoot, "apps/docs/content/docs/changelog");
 
-const groupOrder = ["core", "providers", "embeddings", "vector-stores", "observability", "tools"];
+const groupOrder = [
+  "core",
+  "providers",
+  "embeddings",
+  "vector-stores",
+  "logger",
+  "observability",
+  "tools",
+];
 const groupTitles = new Map([
   ["core", "Core"],
   ["providers", "Providers"],
   ["embeddings", "Embeddings"],
   ["vector-stores", "Vector Stores"],
+  ["logger", "Logger"],
   ["observability", "Observability"],
   ["tools", "Tools"],
 ]);

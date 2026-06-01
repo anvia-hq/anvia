@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@anvia/core": ["../core/src/index.ts"],
+      "@anvia/core/*": ["../core/src/*/index.ts"]
+    }
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

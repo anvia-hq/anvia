@@ -9,6 +9,7 @@
     "pgvector",
     "fastembed",
     "transformers",
+    "logger",
     "langfuse",
     "otel"
   ]

@@ -1,0 +1,86 @@
+---
+title: Logging
+description: Log Anvia agent lifecycle events with @anvia/logger.
+---
+
+`@anvia/logger` turns Anvia observer events into structured application logs. Use it when you want run, model generation, and tool lifecycle events in the same log stream as the rest of your app.
+
+## 1. Install the Package
+
+```sh
+pnpm add @anvia/logger
+```
+
+## 2. Create a Logger
+
+Use Pino for production logging:
+
+```ts
+import { createPinoLogger } from "@anvia/logger";
+
+const logger = createPinoLogger({
+  name: "support-app",
+  level: "info",
+});
+```
+
+Use the console logger for simple local output:
+
+```ts
+import { createConsoleLogger } from "@anvia/logger";
+
+const logger = createConsoleLogger({
+  name: "support-app",
+  level: "debug",
+});
+```
+
+## 3. Attach the Logger Observer
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { createLoggerObserver } from "@anvia/logger";
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .observe(createLoggerObserver(logger))
+  .build();
+```
+
+The logger observer writes events for:
+
+- agent run start, end, and error
+- model generation start, end, and error
+- tool start, stream event, end, and error
+
+## 4. Add Trace Metadata
+
+Trace metadata is included in run logs so application logs can line up with traces.
+
+```ts
+const response = await agent
+  .prompt("Summarize ticket TICKET-1001.")
+  .withTrace({
+    name: "support-ticket-summary",
+    userId: user.id,
+    sessionId: session.id,
+    metadata: { ticketId: "TICKET-1001" },
+    tags: ["support"],
+  })
+  .send();
+```
+
+## 5. Control Verbose Payloads
+
+By default, the logger observer avoids logging final outputs, full model requests, responses, and tool results. Opt in when your data policy allows it:
+
+```ts
+const observer = createLoggerObserver(logger, {
+  includeOutput: true,
+  includeRequest: true,
+  includeResponse: true,
+  includeToolResult: true,
+});
+```
+
+Keep prompts, responses, secrets, and customer data out of logs unless your application has an explicit policy for storing them.

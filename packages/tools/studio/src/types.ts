@@ -39,7 +39,9 @@ export type StudioAgent = {
   metadata?: JsonObject;
 };
 
-export type StudioTarget = Agent | Pipeline<unknown, unknown>;
+// Studio accepts arbitrary pipelines and validates run inputs at the HTTP boundary.
+// biome-ignore lint/suspicious/noExplicitAny: input/output types remain user-defined outside Studio.
+export type StudioTarget = Agent | Pipeline<any, any>;
 
 export type StudioAgentConfig = {
   id: string;
@@ -71,7 +73,8 @@ export type StudioAgentRuntimeSummary = {
 
 export type StudioPipeline = {
   id: string;
-  pipeline: Pipeline<unknown, unknown>;
+  // biome-ignore lint/suspicious/noExplicitAny: Studio stores heterogeneous user pipelines.
+  pipeline: Pipeline<any, any>;
   name?: string;
   description?: string;
   metadata?: JsonObject;

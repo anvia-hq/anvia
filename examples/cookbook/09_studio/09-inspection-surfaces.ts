@@ -77,6 +77,7 @@ new Studio([agent], {
   },
 }).start({ port: 4021 });
 
-console.log("Open http://localhost:4021/tools to run get_ticket directly.");
-console.log("Open http://localhost:4021/memory after creating a session.");
-console.log("Open http://localhost:4021/status for runtime counts and capabilities.");
+console.log("Open http://localhost:4021/ui/tools to run get_ticket directly.");
+console.log("Open http://localhost:4021/ui/memory after creating a session.");
+console.log("Open http://localhost:4021/ui/status for runtime counts and capabilities.");
+console.log("Open http://localhost:4021/status for the raw status API response.");

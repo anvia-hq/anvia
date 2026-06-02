@@ -1,9 +1,29 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "baseUrl": ".",
     "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx"
+    "jsxImportSource": "hono/jsx",
+    "paths": {
+      "@anvia/chroma": ["../../packages/vector-stores/chroma/src/index.ts"],
+      "@anvia/core": ["../../packages/core/src/index.ts"],
+      "@anvia/core/*": ["../../packages/core/src/*/index.ts"],
+      "@anvia/fastembed": ["../../packages/embeddings/fastembed/src/index.ts"],
+      "@anvia/gemini": ["../../packages/providers/gemini/src/index.ts"],
+      "@anvia/langfuse": ["../../packages/observability/langfuse/src/index.ts"],
+      "@anvia/logger": ["../../packages/logger/src/index.ts"],
+      "@anvia/mistral": ["../../packages/providers/mistral/src/index.ts"],
+      "@anvia/openai": ["../../packages/providers/openai/src/index.ts"],
+      "@anvia/otel": ["../../packages/observability/otel/src/index.ts"],
+      "@anvia/pgvector": ["../../packages/vector-stores/pgvector/src/index.ts"],
+      "@anvia/qdrant": ["../../packages/vector-stores/qdrant/src/index.ts"],
+      "@anvia/react": ["../../packages/react/src/index.ts"],
+      "@anvia/server": ["../../packages/server/src/index.ts"],
+      "@anvia/studio": ["../../packages/tools/studio/src/index.ts"],
+      "@anvia/transformers": ["../../packages/embeddings/transformers/src/index.ts"]
+    }
   },
   "include": [
     "01_basics/**/*.ts",

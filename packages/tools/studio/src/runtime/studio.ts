@@ -169,7 +169,8 @@ function studioOptionsFromTargets(
 ): StudioRuntimeOptions {
   const agents = targets.filter((target): target is Agent => target instanceof Agent);
   const pipelines = targets.filter(
-    (target): target is Pipeline<unknown, unknown> => target instanceof Pipeline,
+    // biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous user pipelines.
+    (target): target is Pipeline<any, any> => target instanceof Pipeline,
   );
   return {
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
@@ -193,7 +194,8 @@ function inferStudioAgents(agents: Agent[], quickPrompts: Record<string, string[
   });
 }
 
-function inferStudioPipelines(pipelines: Array<Pipeline<unknown, unknown>>): StudioPipeline[] {
+// biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous user pipelines.
+function inferStudioPipelines(pipelines: Array<Pipeline<any, any>>): StudioPipeline[] {
   const ids = new Set<string>();
   return pipelines.map((pipeline) => {
     const id = uniqueAgentId(pipeline.id || "pipeline", ids);

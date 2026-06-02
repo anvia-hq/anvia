@@ -65,6 +65,7 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
   app.get(`${options.path}/tools`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/mcps`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/pipelines`, async (c) => c.html(await renderShell()));
+  app.get(`${options.path}/evals`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/memory`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/status`, async (c) => c.html(await renderShell()));
   app.get(`${options.path}/knowledge`, async (c) => c.html(await renderShell()));
@@ -194,7 +195,7 @@ function normalizeUiPath(path: string): string {
 }
 
 export function studioUiEntryPath(options: ResolvedStudioUiOptions): string {
-  return options.rootRoutes ? "/playground" : options.path;
+  return `${options.path}/playground`;
 }
 
 async function readBundledUiIndex(): Promise<string> {

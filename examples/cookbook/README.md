@@ -28,7 +28,7 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document loaders, vector stores, and embedding provider variants. |
 | `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, streaming agent-tools, and event stores. |
 | `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, and LLM judge/score. |
-| `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, and tool inspection. |
+| `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool inspection, SQLite persistence, and UI route options. |
 | `10_integrations` | MCP tools, local skills, Langfuse tracing, logging, and eval reporting. |
 
 ## Environment
@@ -63,7 +63,7 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 - `retrieval:08` uses the compose pgvector connection on host port `5439` by default. Set `DATABASE_URL` to point it at another Postgres database.
 - Langfuse examples need Langfuse credentials and live in `10_integrations`.
 - `integrations:06` logs agent lifecycle events with `@anvia/logger`.
-- Studio examples start a local HTTP server and keep Studio state in memory unless `ANVIA_STUDIO_DB` is set.
+- Studio examples start a local HTTP server and keep Studio state in memory unless `ANVIA_STUDIO_DB` is set. `studio:10` shows explicit SQLite store wiring for sessions, traces, pipeline logs, and pipeline run history.
 - Tool history and loader examples write sample files under `.memory`.
 - Image and audio generation examples write generated media files in the current working directory.
 - `providers:09` uses the bundled `assets/audio/voice.wav` sample by default. Set `ANVIA_AUDIO_FILE` to transcribe a different local audio file.

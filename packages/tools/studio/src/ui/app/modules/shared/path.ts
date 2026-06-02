@@ -111,55 +111,38 @@ export function updatePagePath(page: ActivePage): void {
     updateKnowledgePath(defaultKnowledgeTab);
     return;
   }
-  const normalizedUiPath = normalizePathPrefix(uiPath);
-  const normalizedCompatUiPath = normalizePathPrefix(compatUiPath) || "/ui";
-  if (
-    normalizedUiPath.length === 0 &&
-    (page === "sessions" ||
-      page === "agents" ||
-      page === "tools" ||
-      page === "mcps" ||
-      page === "pipelines" ||
-      page === "evals" ||
-      page === "memory" ||
-      page === "status")
-  ) {
-    updateLocationPath(`${normalizedCompatUiPath}/${page}`);
-    return;
-  }
-  const nextPath =
-    page === "playground" ? `${normalizedUiPath}/playground` : `${normalizedUiPath}/${page}`;
+  const basePath = canonicalUiPath();
+  const nextPath = page === "playground" ? `${basePath}/playground` : `${basePath}/${page}`;
   updateLocationPath(nextPath);
 }
 
 export function updateKnowledgePath(tab: KnowledgeTab): void {
-  const normalizedUiPath = normalizePathPrefix(uiPath);
-  const normalizedCompatUiPath = normalizePathPrefix(compatUiPath) || "/ui";
-  const basePath = normalizedUiPath.length === 0 ? normalizedCompatUiPath : normalizedUiPath;
-  updateLocationPath(`${basePath}/knowledge/${tab}`);
+  updateLocationPath(`${canonicalUiPath()}/knowledge/${tab}`);
 }
 
 export function updateSessionPath(sessionId: string | undefined): void {
-  const normalizedUiPath = normalizePathPrefix(uiPath);
+  const basePath = canonicalUiPath();
   const nextPath =
     sessionId === undefined
-      ? `${normalizedUiPath}/playground`
-      : `${normalizedUiPath}/playground/${encodeURIComponent(sessionId)}`;
+      ? `${basePath}/playground`
+      : `${basePath}/playground/${encodeURIComponent(sessionId)}`;
   updateLocationPath(nextPath);
 }
 
 export function updateTracePath(traceId: string): void {
-  const normalizedUiPath = normalizePathPrefix(uiPath);
-  updateLocationPath(`${normalizedUiPath}/tracing/${encodeURIComponent(traceId)}`);
+  updateLocationPath(`${canonicalUiPath()}/tracing/${encodeURIComponent(traceId)}`);
 }
 
 export function updateTraceSessionPath(sessionId: string): void {
-  const normalizedUiPath = normalizePathPrefix(uiPath);
-  updateLocationPath(`${normalizedUiPath}/tracing/sessions/${encodeURIComponent(sessionId)}`);
+  updateLocationPath(`${canonicalUiPath()}/tracing/sessions/${encodeURIComponent(sessionId)}`);
 }
 
 export function normalizePathPrefix(path: string): string {
   return path === "/" ? "" : path.replace(/\/+$/, "");
+}
+
+function canonicalUiPath(): string {
+  return normalizePathPrefix(compatUiPath) || normalizePathPrefix(uiPath) || "/ui";
 }
 
 function updateLocationPath(nextPath: string): void {
@@ -173,6 +156,7 @@ function updateLocationPath(nextPath: string): void {
 function knowledgeTabFromSegment(segment: string | undefined): KnowledgeTab {
   switch (segment) {
     case "dynamic-context":
+    case "dynamic-tools":
     case "retrieval-log":
     case "static-context":
       return segment;

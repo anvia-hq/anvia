@@ -878,6 +878,23 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("serializes cyclic model metadata in runtime summaries", async () => {
+    const model = new QueueModel([]);
+    Object.assign(model, { self: model });
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const runtime = await runner.fetch(new Request("http://runner.test/agents/support/runtime"));
+    expect(runtime.status).toBe(200);
+    await expect(runtime.json()).resolves.toMatchObject({
+      id: "support",
+      model: {
+        provider: "test",
+        self: "[Circular]",
+      },
+    });
+  });
+
   it("exposes MCP server metadata for registered agents", async () => {
     const mcpClient: McpClient = {
       async listTools() {
@@ -1989,7 +2006,7 @@ describe("Anvia studio", () => {
 
     const redirect = await runner.fetch(new Request("http://runner.test/"));
     expect(redirect.status).toBe(302);
-    expect(redirect.headers.get("location")).toBe("/playground");
+    expect(redirect.headers.get("location")).toBe("/ui/playground");
 
     const shell = await runner.fetch(new Request("http://runner.test/ui"));
     expect(shell.status).toBe(200);
@@ -2015,6 +2032,7 @@ describe("Anvia studio", () => {
       "/ui/agents",
       "/ui/tools",
       "/ui/pipelines",
+      "/ui/evals",
       "/ui/mcps",
       "/ui/memory",
       "/ui/status",

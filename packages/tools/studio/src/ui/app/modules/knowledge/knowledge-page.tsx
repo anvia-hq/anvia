@@ -533,6 +533,7 @@ function flattenSources(agents: StudioAgentKnowledgeConfig[]): KnowledgeSourceRe
 const knowledgeTabs: Array<{ id: KnowledgeTab; label: string }> = [
   { id: "static-context", label: "Static Context" },
   { id: "dynamic-context", label: "Dynamic Context" },
+  { id: "dynamic-tools", label: "Dynamic Tools" },
   { id: "retrieval-log", label: "Retrieval Log" },
 ];
 
@@ -583,6 +584,8 @@ function sourceKindForTab(tab: KnowledgeTab): StudioKnowledgeSourceKind | undefi
       return "static_context";
     case "dynamic-context":
       return "dynamic_context";
+    case "dynamic-tools":
+      return "dynamic_tools";
     case "retrieval-log":
       return undefined;
   }

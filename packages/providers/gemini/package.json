@@ -1,6 +1,6 @@
 {
   "name": "@anvia/gemini",
-  "version": "0.1.10",
+  "version": "0.2.0",
   "description": "Gemini provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "^0.3.0",
+    "@anvia/core": "^0.4.0",
     "@google/genai": "^2.7.0"
   },
   "devDependencies": {

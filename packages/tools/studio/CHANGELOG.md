@@ -1,5 +1,15 @@
 # @anvia/studio
 
+## 0.4.0
+
+### Minor Changes
+
+- b542b87: Add Studio inspection surfaces for memory, runtime status, richer agent metadata, direct tool invocation, pipeline replay controls, realtime observability events, and eval suite runs, with in-memory storage as the default and optional SQLite persistence.
+
+### Patch Changes
+
+- b542b87: Allow Studio to accept typed pipelines with arbitrary input and output types, and update the cookbook Studio inspection example to point at the correct UI routes.
+
 ## 0.3.0
 
 ### Minor Changes

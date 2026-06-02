@@ -41,7 +41,7 @@ new Studio([agent]).start({
 Then open:
 
 ```txt
-http://localhost:4021/playground
+http://localhost:4021/ui/playground
 ```
 
 ## Browser UI

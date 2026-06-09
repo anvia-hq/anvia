@@ -24,6 +24,7 @@ export class PromptRequestMemory {
     }
 
     const memoryHistory = await memory.store.load(this.memoryContext);
+    const chatHistory = [...memoryHistory, ...this.initialHistory];
     if (memory.options.savePolicy === "message") {
       await memory.store.append({
         context: this.memoryContext,
@@ -32,7 +33,7 @@ export class PromptRequestMemory {
         messages: newMessages,
       });
     }
-    return [...memoryHistory, ...this.initialHistory];
+    return chatHistory;
   }
 
   async commitMessages(

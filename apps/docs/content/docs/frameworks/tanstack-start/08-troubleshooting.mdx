@@ -32,12 +32,10 @@ Keep provider clients, agents, database clients, and scoped tool factories out o
 
 ## Streaming Does Not Flush
 
-Use a server route, return a `Response`, and set NDJSON headers:
+Use a server route and return the event stream response from `@anvia/server`:
 
 ```ts
-return new Response(agent.prompt(message).readableStream(), {
-  headers: { "Content-Type": "application/x-ndjson" },
-});
+return createEventStream(agent.prompt(message).stream(), { format: "jsonl" });
 ```
 
 Also check host buffering and route timeouts.

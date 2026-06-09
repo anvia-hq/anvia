@@ -31,9 +31,9 @@ if (!parsed.success) {
 Set the NDJSON content type and check proxy buffering.
 
 ```ts
-return reply
-  .header("Content-Type", "application/x-ndjson")
-  .send(agent.prompt(message).readableStream());
+const streamResponse = createEventStream(agent.prompt(message).stream());
+streamResponse.headers.forEach((value, key) => reply.header(key, value));
+return reply.send(Readable.fromWeb(streamResponse.body));
 ```
 
 ## Provider Failures Leak Details

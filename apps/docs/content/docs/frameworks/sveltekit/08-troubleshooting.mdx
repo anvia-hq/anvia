@@ -31,12 +31,10 @@ if (!parsed.success) {
 
 ## Stream Does Not Flush
 
-Check the adapter and hosting platform. Return a `Response` with `application/x-ndjson` and avoid wrapping the stream in `json(...)`.
+Check the adapter and hosting platform. Return the event stream response from `@anvia/server` and avoid wrapping the stream in `json(...)`.
 
 ```ts
-return new Response(agent.prompt(message).readableStream(), {
-  headers: { "Content-Type": "application/x-ndjson" },
-});
+return createEventStream(agent.prompt(message).stream(), { format: "jsonl" });
 ```
 
 ## Provider Failures

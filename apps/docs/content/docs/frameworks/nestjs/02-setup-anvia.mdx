@@ -61,7 +61,7 @@ export class SupportAgentService {
   }
 
   streamSupport(message: string) {
-    return this.agent.prompt(message).readableStream();
+    return this.agent.prompt(message).stream();
   }
 
   getAgent() {

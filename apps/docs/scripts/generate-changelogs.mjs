@@ -144,7 +144,11 @@ Anvia package release notes are generated from the package changelog files maint
 
 Developers should keep writing release notes with \`pnpm changeset\`. The docs pages in this section are generated from \`packages/**/CHANGELOG.md\`.
 
+<div className="package-changelog-index">
+
 ${sections.join("\n\n")}
+
+</div>
 `;
 }
 

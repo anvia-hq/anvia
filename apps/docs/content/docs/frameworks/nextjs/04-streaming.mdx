@@ -3,11 +3,12 @@ title: 04 Streaming
 description: Stream Anvia run events from a Next.js route handler.
 ---
 
-Anvia exposes a Web `ReadableStream`, so Next.js route handlers can return it directly.
+Next.js route handlers can return the streaming `Response` created by `@anvia/server`.
 
 ## 1. Create `app/api/support/stream/route.ts`
 
 ```ts
+import { createEventStream } from "@anvia/server";
 import { supportAgent } from "@/app/ai/support-agent";
 
 export const runtime = "nodejs";
@@ -27,34 +28,32 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  return new Response(supportAgent.prompt(message).readableStream(), {
-    headers: {
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache",
-    },
-  });
+  return createEventStream(supportAgent.prompt(message).stream(), { format: "jsonl" });
 }
 ```
 
-## 2. Consume Events
+## 2. Consume Events From React
 
-```ts
-const response = await fetch("/api/support/stream", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ message: "Draft a refund reply." }),
-});
+```tsx
+"use client";
 
-const reader = response.body?.getReader();
-const decoder = new TextDecoder();
+import { useChat } from "@anvia/react";
 
-while (reader) {
-  const next = await reader.read();
-  if (next.done) break;
+export function SupportChat() {
+  const chat = useChat({ endpoint: "/api/support/stream" });
 
-  for (const line of decoder.decode(next.value).split("\n")) {
-    if (line.trim()) console.log(JSON.parse(line));
-  }
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void chat.send();
+      }}
+    >
+      <div>{chat.text}</div>
+      <input value={chat.input} onChange={(event) => chat.setInput(event.target.value)} />
+      <button disabled={chat.status === "streaming"}>Send</button>
+    </form>
+  );
 }
 ```
 

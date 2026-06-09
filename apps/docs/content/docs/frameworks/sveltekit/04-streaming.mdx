@@ -3,11 +3,12 @@ title: 04 Streaming
 description: Stream Anvia run events from a SvelteKit endpoint.
 ---
 
-SvelteKit endpoints can return standard `Response` objects, so Anvia streams can be returned directly.
+SvelteKit endpoints can return standard `Response` objects, so `@anvia/server` can serialize Anvia events directly.
 
 ## 1. Create `src/routes/api/support/stream/+server.ts`
 
 ```ts
+import { createEventStream } from "@anvia/server";
 import type { RequestHandler } from "@sveltejs/kit";
 import { z } from "zod";
 import { supportAgent } from "$lib/server/ai/support-agent";
@@ -26,11 +27,8 @@ export const POST: RequestHandler = async ({ request }) => {
     );
   }
 
-  return new Response(supportAgent.prompt(parsed.data.message).readableStream(), {
-    headers: {
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache",
-    },
+  return createEventStream(supportAgent.prompt(parsed.data.message).stream(), {
+    format: "jsonl",
   });
 };
 ```

@@ -17,7 +17,7 @@ If you already have a Next.js app, use the App Router `app/` directory. The rout
 ## 2. Install Anvia
 
 ```sh
-pnpm add @anvia/core @anvia/openai zod
+pnpm add @anvia/core @anvia/openai @anvia/server @anvia/react zod
 ```
 
 Install other provider packages when you need them:
@@ -54,7 +54,7 @@ Keep these files server-only:
 | `app/api/support/route.ts` | Non-streaming prompt endpoint |
 | `app/api/support/stream/route.ts` | Streaming prompt endpoint |
 
-Next.js route handlers use the Web `Request` and `Response` APIs, so Anvia `readableStream()` can be returned directly.
+Next.js route handlers use the Web `Request` and `Response` APIs, so `@anvia/server` can return Anvia streams directly. React client components can consume those streams with `@anvia/react`.
 
 ## Next
 

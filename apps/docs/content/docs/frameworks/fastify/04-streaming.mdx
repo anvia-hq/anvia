@@ -3,11 +3,13 @@ title: 04 Streaming
 description: Stream Anvia run events from a Fastify route.
 ---
 
-Fastify replies can send stream-like payloads. Set NDJSON headers and return Anvia's `readableStream()`.
+Fastify replies can send stream-like payloads. Use `@anvia/server` to serialize Anvia events and set the correct stream headers.
 
 ## 1. Add `/api/support/stream`
 
 ```ts
+import { Readable } from "node:stream";
+import { createEventStream } from "@anvia/server";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { supportAgent } from "../ai/support-agent";
@@ -26,10 +28,19 @@ export async function supportRoutes(app: FastifyInstance) {
       });
     }
 
-    return reply
-      .header("Content-Type", "application/x-ndjson")
-      .header("Cache-Control", "no-cache")
-      .send(supportAgent.prompt(parsed.data.message).readableStream());
+    const streamResponse = createEventStream(supportAgent.prompt(parsed.data.message).stream(), {
+      format: "jsonl",
+    });
+
+    streamResponse.headers.forEach((value, key) => {
+      reply.header(key, value);
+    });
+
+    if (streamResponse.body === null) {
+      return reply.status(streamResponse.status).send();
+    }
+
+    return reply.status(streamResponse.status).send(Readable.fromWeb(streamResponse.body));
   });
 }
 ```

@@ -3,11 +3,12 @@ title: 04 Streaming
 description: Stream Anvia run events from a NestJS controller.
 ---
 
-With the default Express adapter, inject `@Res()` and pipe Anvia's Web stream into the Node response.
+With the default Express adapter, inject `@Res()`, create the Anvia event response with `@anvia/server`, and pipe its Web stream into the Node response.
 
 ## 1. Add A Streaming Controller Method
 
 ```ts
+import { createEventStream } from "@anvia/server";
 import { BadRequestException, Body, Controller, Post, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { Readable } from "node:stream";
@@ -30,11 +31,20 @@ export class SupportController {
       throw new BadRequestException(parsed.error.issues[0]?.message);
     }
 
-    res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Cache-Control", "no-cache");
+    const streamResponse = createEventStream(this.supportAgent.streamSupport(parsed.data.message), {
+      format: "jsonl",
+    });
 
-    const stream = Readable.fromWeb(this.supportAgent.streamSupport(parsed.data.message));
-    stream.pipe(res);
+    streamResponse.headers.forEach((value, key) => {
+      res.setHeader(key, value);
+    });
+
+    if (streamResponse.body === null) {
+      res.end();
+      return;
+    }
+
+    Readable.fromWeb(streamResponse.body).pipe(res);
   }
 }
 ```

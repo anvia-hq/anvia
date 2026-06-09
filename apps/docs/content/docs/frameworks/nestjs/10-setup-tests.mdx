@@ -57,7 +57,7 @@ Nest returns `201` for `POST` by default unless you set `@HttpCode(200)`.
 
 ## 3. Test The Stream Method
 
-Mock `streamSupport()` with a small `ReadableStream` that emits one `final` event. Assert the controller sets `application/x-ndjson`.
+Mock `streamSupport()` with a small async iterable that emits one `final` event. Assert the controller sets `application/x-ndjson`.
 
 ## 4. Test Studio Without A Port
 

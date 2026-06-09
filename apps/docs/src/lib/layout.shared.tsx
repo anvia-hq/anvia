@@ -7,6 +7,7 @@ const discordUrl = "https://discord.gg/6yegrFJBgp";
 const resourceLinks = [
   { text: "Best Practices", url: "/docs/best-practices" },
   { text: "Frameworks", url: "/docs/frameworks" },
+  { text: "Changelog", url: "/docs/changelog" },
   { text: "Studio", url: "/docs/studio/overview" },
   { text: "Reference", url: "/docs/reference" },
   { text: "Models", url: "/docs/models" },

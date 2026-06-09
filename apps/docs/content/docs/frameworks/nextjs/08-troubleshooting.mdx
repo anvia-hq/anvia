@@ -33,12 +33,7 @@ The agent module was imported by a client component. Import it only from route h
 Check proxy buffering, function timeouts, and response headers:
 
 ```ts
-return new Response(agent.prompt(message).readableStream(), {
-  headers: {
-    "Content-Type": "application/x-ndjson",
-    "Cache-Control": "no-cache",
-  },
-});
+return createEventStream(agent.prompt(message).stream(), { format: "jsonl" });
 ```
 
 ## Tool Can Read The Wrong User

@@ -28,11 +28,12 @@ if (!parsed.success) {
 
 ## Stream Does Not Flush
 
-Set `application/x-ndjson`, call `res.write(...)`, and check proxy buffering.
+Use `createEventStream(...)`, pipe the response body to `res`, and check proxy buffering.
 
 ```ts
-res.setHeader("Content-Type", "application/x-ndjson");
-res.write(chunk);
+const streamResponse = createEventStream(agent.prompt(message).stream());
+streamResponse.headers.forEach((value, key) => res.setHeader(key, value));
+Readable.fromWeb(streamResponse.body).pipe(res);
 ```
 
 ## Provider Failures Leak Details

@@ -68,7 +68,7 @@ const response = await app.request("/api/support/stream", {
 expect(response.headers.get("content-type")).toContain("application/x-ndjson");
 ```
 
-Mock `readableStream()` with a small `ReadableStream` that emits one final event.
+Mock `stream()` with a small async iterable that emits one final event.
 
 ## 5. Test Studio Without a Port
 

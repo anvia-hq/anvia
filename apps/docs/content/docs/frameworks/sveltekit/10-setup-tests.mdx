@@ -53,17 +53,14 @@ describe("POST /api/support", () => {
 ## 3. Test The Stream Endpoint
 
 ```ts
-const stream = new ReadableStream({
-  start(controller) {
-    controller.enqueue(new TextEncoder().encode('{"type":"final"}\n'));
-    controller.close();
-  },
-});
+async function* stream() {
+  yield { type: "final", output: "Hello" };
+}
 
 vi.mock("$lib/server/ai/support-agent", () => ({
   supportAgent: {
     prompt: () => ({
-      readableStream: () => stream,
+      stream,
     }),
   },
 }));

@@ -5,6 +5,8 @@ description: Add Anvia agents to application frameworks without giving up your a
 
 These guides show how to move Anvia from a local script into real HTTP runtimes.
 
+Use `@anvia/server` at the HTTP boundary to return JSONL or SSE event streams. In React-based apps, use `@anvia/react` for chat state and fetch-backed stream transports.
+
 Each framework follows the same path:
 
 | Step | Goal |
@@ -12,7 +14,7 @@ Each framework follows the same path:
 | 01 Prep | Create the project shape and install Anvia packages |
 | 02 Setup Anvia | Build provider clients, models, tools, and agents in server-side modules |
 | 03 Route Handler | Return a normal JSON response from a framework route |
-| 04 Streaming | Return newline-delimited stream events from the same agent |
+| 04 Streaming | Return `@anvia/server` event streams from the same agent |
 | 05 Tools and Context | Pass request-local auth, product data, and retrieval context safely |
 | 06 Persistence | Store conversation history through your application storage |
 | 07 Deploy | Check runtime, environment, and operational constraints |

@@ -35,9 +35,9 @@ export const Route = createFileRoute("/")({
 });
 
 const metrics = [
-  { value: "13", label: "Runtime packages", icon: Package },
+  { value: "16", label: "Runtime packages", icon: Package },
   { value: "4", label: "Model adapters", icon: Boxes },
-  { value: "7", label: "Integration packages", icon: BookOpen },
+  { value: "8", label: "Integration packages", icon: BookOpen },
   { value: "1", label: "Core package", icon: Zap },
 ];
 
@@ -102,8 +102,8 @@ const docsEntrypoints = [
 const packageGroups = [
   {
     title: "Runtime",
-    description: "Core agent primitives plus the local inspection surface.",
-    packages: ["@anvia/core", "@anvia/studio"],
+    description: "Core agent primitives, application transports, hooks, and inspection.",
+    packages: ["@anvia/core", "@anvia/server", "@anvia/react", "@anvia/studio"],
   },
   {
     title: "Model adapters",
@@ -124,7 +124,7 @@ const packageGroups = [
   {
     title: "Observability",
     description: "Trace and score Anvia runs through existing telemetry systems.",
-    packages: ["@anvia/langfuse", "@anvia/otel"],
+    packages: ["@anvia/logger", "@anvia/langfuse", "@anvia/otel"],
   },
 ];
 

@@ -3,11 +3,13 @@ title: 04 Streaming
 description: Stream Anvia run events from an Express route.
 ---
 
-Express uses Node response objects. Read from Anvia's Web `ReadableStream` and write NDJSON chunks to `res`.
+Express uses Node response objects. Use `@anvia/server` to create the event stream response, then bridge its Web stream into `res`.
 
 ## 1. Add `/api/support/stream`
 
 ```ts
+import { Readable } from "node:stream";
+import { createEventStream } from "@anvia/server";
 import { Router } from "express";
 import { z } from "zod";
 import { supportAgent } from "../ai/support-agent";
@@ -28,19 +30,20 @@ supportRouter.post("/support/stream", async (req, res, next) => {
       });
     }
 
-    res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Cache-Control", "no-cache");
+    const streamResponse = createEventStream(supportAgent.prompt(parsed.data.message).stream(), {
+      format: "jsonl",
+    });
 
-    const reader = supportAgent.prompt(parsed.data.message).readableStream().getReader();
-    const decoder = new TextDecoder();
+    streamResponse.headers.forEach((value, key) => {
+      res.setHeader(key, value);
+    });
 
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      res.write(decoder.decode(next.value));
+    if (streamResponse.body === null) {
+      res.end();
+      return;
     }
 
-    res.end();
+    Readable.fromWeb(streamResponse.body).on("error", next).pipe(res);
   } catch (error) {
     next(error);
   }

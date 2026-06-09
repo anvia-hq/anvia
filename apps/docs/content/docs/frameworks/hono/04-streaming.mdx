@@ -3,12 +3,13 @@ title: 04 Streaming
 description: Stream Anvia run events from a Hono route.
 ---
 
-Hono handlers can return a standard `Response`, so Anvia `readableStream()` can be used directly.
+Hono handlers can return a standard `Response`, so `@anvia/server` can serialize Anvia events directly.
 
 ## 1. Add `/api/support/stream`
 
 ```ts
 import { zValidator } from "@hono/zod-validator";
+import { createEventStream } from "@anvia/server";
 import { z } from "zod";
 import { supportAgent } from "./ai/support-agent";
 
@@ -18,12 +19,7 @@ const SupportStreamRequest = z.object({
 
 app.post("/api/support/stream", zValidator("json", SupportStreamRequest), async (c) => {
   const { message } = c.req.valid("json");
-  return new Response(supportAgent.prompt(message).readableStream(), {
-    headers: {
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache",
-    },
-  });
+  return createEventStream(supportAgent.prompt(message).stream(), { format: "jsonl" });
 });
 ```
 

@@ -151,6 +151,26 @@ body {
   background: var(--color-fd-accent);
 }
 
+.package-changelog-index table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.package-changelog-index table th:nth-child(1),
+.package-changelog-index table td:nth-child(1) {
+  width: 42%;
+}
+
+.package-changelog-index table th:nth-child(2),
+.package-changelog-index table td:nth-child(2) {
+  width: 28%;
+}
+
+.package-changelog-index table th:nth-child(3),
+.package-changelog-index table td:nth-child(3) {
+  width: 30%;
+}
+
 @media (max-width: 767px) {
   #nd-docs-layout.docs-with-section-tabs {
     --fd-header-height: 7.25rem;

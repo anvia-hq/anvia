@@ -48,12 +48,10 @@ if (!apiKey) throw new Error("OPENAI_API_KEY is required");
 
 ## Streaming Does Not Flush
 
-Return a Web `Response` with the Anvia stream and NDJSON content type:
+Return the event stream response from `@anvia/server`:
 
 ```ts
-return new Response(agent.prompt(message).readableStream(), {
-  headers: { "Content-Type": "application/x-ndjson" },
-});
+return createEventStream(agent.prompt(message).stream(), { format: "jsonl" });
 ```
 
 Check adapter support, reverse proxy buffering, and route timeouts.

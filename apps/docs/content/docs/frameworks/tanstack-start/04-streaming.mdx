@@ -3,11 +3,12 @@ title: 04 Streaming
 description: Stream Anvia run events from a TanStack Start server route.
 ---
 
-Use a server route for streaming because it gives direct access to `Response`.
+Use a server route for streaming because it gives direct access to the `Response` created by `@anvia/server`.
 
 ## 1. Add `POST` Streaming Handler
 
 ```ts
+import { createEventStream } from "@anvia/server";
 import { createFileRoute } from "@tanstack/react-router";
 import { supportAgent } from "~/ai/support-agent";
 
@@ -29,37 +30,33 @@ export const Route = createFileRoute("/api/support/stream")({
           );
         }
 
-        return new Response(supportAgent.prompt(message).readableStream(), {
-          headers: {
-            "Content-Type": "application/x-ndjson",
-            "Cache-Control": "no-cache",
-          },
-        });
+        return createEventStream(supportAgent.prompt(message).stream(), { format: "jsonl" });
       },
     },
   },
 });
 ```
 
-## 2. Consume Stream Lines
+## 2. Consume Stream Events From React
 
-```ts
-const response = await fetch("/api/support/stream", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ message: "Draft a support reply." }),
-});
+```tsx
+import { useChat } from "@anvia/react";
 
-const reader = response.body?.getReader();
-const decoder = new TextDecoder();
+export function SupportChat() {
+  const chat = useChat({ endpoint: "/api/support/stream" });
 
-while (reader) {
-  const next = await reader.read();
-  if (next.done) break;
-
-  for (const line of decoder.decode(next.value).split("\n")) {
-    if (line.trim()) console.log(JSON.parse(line));
-  }
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void chat.send();
+      }}
+    >
+      <div>{chat.text}</div>
+      <input value={chat.input} onChange={(event) => chat.setInput(event.target.value)} />
+      <button disabled={chat.status === "streaming"}>Send</button>
+    </form>
+  );
 }
 ```
 

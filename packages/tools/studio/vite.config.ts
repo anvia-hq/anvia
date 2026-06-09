@@ -12,6 +12,7 @@ export default defineConfig({
     alias: {
       "@": resolve(import.meta.dirname, "src/ui/app"),
     },
+    dedupe: ["react", "react-dom"],
   },
   build: {
     outDir: resolve(import.meta.dirname, "dist/ui"),

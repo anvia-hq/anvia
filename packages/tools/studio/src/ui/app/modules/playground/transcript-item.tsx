@@ -45,13 +45,16 @@ export function TranscriptItem(props: {
 
   const traceId = props.entry.role === "assistant" ? props.entry.traceId : undefined;
   const hasTable = props.entry.role === "assistant" && hasMarkdownTable(props.entry.text);
+  const isError =
+    props.entry.role === "assistant" && "tone" in props.entry && props.entry.tone === "error";
 
   return (
     <article
       className={cn(
         "self-start",
         hasTable ? "w-full max-w-full" : "max-w-[min(82ch,100%)]",
-        props.entry.role === "assistant" && "justify-self-start text-foreground",
+        props.entry.role === "assistant" &&
+          cn("justify-self-start text-foreground", isError && "text-destructive"),
         props.entry.role === "user" &&
           "w-fit max-w-[min(64ch,82%)] justify-self-end rounded-2xl bg-primary/10 px-4 py-2.5 text-foreground shadow-sm shadow-primary/10",
       )}

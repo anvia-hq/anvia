@@ -1,5 +1,4 @@
 import type { Hono } from "hono";
-import { stream as streamResponse } from "hono/streaming";
 import type {
   StudioObservabilityEvent,
   StudioObservabilityEventType,
@@ -10,6 +9,7 @@ import type {
   StudioTraceSummary,
 } from "../types";
 import type { ResolvedStores } from "./shared";
+import { streamStudioJsonl } from "./streams";
 
 type ObservabilitySubscription = {
   close: () => void;
@@ -72,27 +72,27 @@ export function registerObservabilityRoutes(app: Hono, hub: StudioObservabilityH
       );
     }
 
-    c.header("content-type", "application/x-ndjson; charset=utf-8");
-    c.header("cache-control", "no-cache, no-transform");
-    c.header("connection", "keep-alive");
-    c.header("transfer-encoding", "chunked");
-    c.header("x-accel-buffering", "no");
-
-    return streamResponse(c, async (stream) => {
-      const subscription = hub.subscribe(types === undefined ? {} : { types });
-      try {
-        while (true) {
-          const next = await subscription.next();
-          if (next.done === true) {
-            break;
-          }
-          await stream.write(`${JSON.stringify(next.value)}\n`);
-        }
-      } finally {
-        subscription.close();
-      }
-    });
+    return streamStudioJsonl(observabilityEvents(hub, types));
   });
+}
+
+function observabilityEvents(
+  hub: StudioObservabilityHub,
+  types: Set<StudioObservabilityEventType> | undefined,
+): AsyncIterable<StudioObservabilityEvent> {
+  const subscription = hub.subscribe(types === undefined ? {} : { types });
+
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => subscription.next(),
+        async return() {
+          subscription.close();
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
 }
 
 function createSubscription(

@@ -1,4 +1,5 @@
 import type { Message } from "@anvia/core/completion";
+import { readJsonlStream } from "@anvia/react";
 import type { ChangeEvent } from "react";
 import { formatToolValue } from "./format";
 import { isRecord } from "./object";
@@ -130,28 +131,8 @@ export async function readJsonl(
   stream: ReadableStream<Uint8Array>,
   onEvent: (event: unknown) => void | Promise<void>,
 ): Promise<void> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const next = await reader.read();
-    if (next.done) {
-      break;
-    }
-    buffer += decoder.decode(next.value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (line.trim().length > 0) {
-        await onEvent(JSON.parse(line));
-      }
-    }
-  }
-
-  buffer += decoder.decode();
-  if (buffer.trim().length > 0) {
-    await onEvent(JSON.parse(buffer));
+  for await (const event of readJsonlStream(stream)) {
+    await onEvent(event);
   }
 }
 

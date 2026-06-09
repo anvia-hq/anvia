@@ -1,4 +1,5 @@
-import type { ToolResultContent } from "@anvia/core/completion";
+import type { Message, ToolResultContent } from "@anvia/core/completion";
+import { createChatTransport, EventStreamHttpError, useChat } from "@anvia/react";
 import { Archive, ArrowSquareOut, ArrowUp, Moon, Plus, Sun } from "@phosphor-icons/react";
 import {
   type ChangeEvent,
@@ -90,6 +91,17 @@ import { TraceBrowser } from "./modules/tracing/trace-browser";
 
 type StudioTheme = "light" | "dark";
 
+type StudioAgentRunRequest = {
+  agentId: string;
+  message: string;
+  sessionId?: string;
+  history?: Message[];
+  stream: true;
+  metadata: {
+    source: string;
+  };
+};
+
 const studioThemeStorageKey = "anvia-studio-theme";
 
 function readInitialStudioTheme(): StudioTheme {
@@ -142,6 +154,26 @@ async function responseErrorMessage(response: Response, label: string): Promise<
     // Ignore non-JSON error bodies.
   }
   return `${label} with HTTP ${response.status}${detail}`;
+}
+
+function agentRunErrorMessage(error: unknown): string {
+  if (error instanceof EventStreamHttpError) {
+    return error.response.status === 401
+      ? "Authentication required"
+      : `Run failed with HTTP ${error.response.status}`;
+  }
+  return errorMessage(error);
+}
+
+function serializedStreamErrorText(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
 }
 
 export function StudioConsole() {
@@ -199,6 +231,9 @@ export function StudioConsole() {
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const transcriptScrollerRef = useRef<HTMLElement | null>(null);
   const transcriptStickToBottomRef = useRef(true);
+  const playgroundRunRequestRef = useRef<StudioAgentRunRequest | undefined>(undefined);
+  const playgroundRunErrorRef = useRef<unknown>(undefined);
+  const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
 
   function updateTranscriptStickiness() {
     const node = transcriptScrollerRef.current;
@@ -275,11 +310,51 @@ export function StudioConsole() {
     agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? undefined;
   const selectedAgentQuickPrompts = selectedAgent?.quickPrompts ?? [];
   const hasMessages = messages.length > 0;
+  const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
+    transport: createChatTransport<StudioAgentRunRequest, AgentRunStreamEvent>({
+      endpoint: (request) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
+      method: "POST",
+      format: "jsonl",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: (request) => {
+        const { agentId: _agentId, ...body } = request;
+        return JSON.stringify(body);
+      },
+      mapEvent: (event) => event as AgentRunStreamEvent,
+    }),
+    createRequest: () => {
+      const request = playgroundRunRequestRef.current;
+      if (request === undefined) {
+        throw new Error("Missing playground run request");
+      }
+      return request;
+    },
+    eventToDelta: () => undefined,
+    eventToFinal: () => undefined,
+    onEvent(event) {
+      const visibleDelta = acceptStreamEvent(event);
+      if (visibleDelta) {
+        playgroundVisibleEventRef.current = playgroundVisibleEventRef.current.then(nextPaint);
+      }
+    },
+    onError(error) {
+      playgroundRunErrorRef.current = error;
+      const message = agentRunErrorMessage(error);
+      setError(message);
+      appendAssistantError(message);
+    },
+  });
 
   useEffect(() => {
     applyStudioTheme(theme);
     storeStudioTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    setRunState(playgroundChat.status === "streaming" ? "running" : "idle");
+  }, [playgroundChat.status]);
 
   const loadAllSessions = useCallback(async () => {
     if (!sessionsEnabled) {
@@ -813,7 +888,12 @@ export function StudioConsole() {
   async function runPrompt(text: string) {
     const trimmed = text.trim();
     const agentId = selectedAgent?.id ?? selectedAgentId;
-    if (trimmed.length === 0 || agentId.length === 0 || runState === "running") {
+    if (
+      trimmed.length === 0 ||
+      agentId.length === 0 ||
+      runState === "running" ||
+      playgroundChat.status === "streaming"
+    ) {
       return;
     }
 
@@ -834,50 +914,41 @@ export function StudioConsole() {
           ? (await createSession(titleFromText(trimmed))).id
           : selectedSessionId;
       const history = sessionsEnabled ? undefined : toHistory(messages);
-      const response = await fetch(`/agents/${encodeURIComponent(agentId)}/runs`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
+      playgroundRunErrorRef.current = undefined;
+      playgroundVisibleEventRef.current = Promise.resolve();
+      playgroundRunRequestRef.current = {
+        agentId,
+        message: trimmed,
+        ...(sessionId.length === 0 ? {} : { sessionId }),
+        ...(history === undefined ? {} : { history }),
+        stream: true,
+        metadata: {
+          source: "anvia-studio",
         },
-        body: JSON.stringify({
-          message: trimmed,
-          ...(sessionId.length === 0 ? {} : { sessionId }),
-          ...(history === undefined ? {} : { history }),
-          stream: true,
-          metadata: {
-            source: "anvia-studio",
-          },
-        }),
-      });
+      };
 
-      if (response.status === 401) {
-        throw new Error("Authentication required");
-      }
-      if (!response.ok || response.body === null) {
-        throw new Error(`Run failed with HTTP ${response.status}`);
-      }
+      await playgroundChat.send(trimmed);
+      await playgroundVisibleEventRef.current;
 
-      await readJsonl(response.body, async (event) => {
-        const visibleDelta = acceptStreamEvent(event as AgentRunStreamEvent);
-        if (visibleDelta) {
-          await nextPaint();
+      if (playgroundRunErrorRef.current === undefined) {
+        await loadAllSessions();
+        if (sessionId.length > 0) {
+          setSelectedSessionId(sessionId);
+          const [traceSummaries] = await Promise.all([
+            loadSessionTraceSummaries(sessionId),
+            loadSessionLogs(sessionId),
+          ]);
+          setMessages((current) => enrichTranscriptWithTraceIds(current, traceSummaries));
         }
-      });
-      await loadAllSessions();
-      if (sessionId.length > 0) {
-        setSelectedSessionId(sessionId);
-        const [traceSummaries] = await Promise.all([
-          loadSessionTraceSummaries(sessionId),
-          loadSessionLogs(sessionId),
-        ]);
-        setMessages((current) => enrichTranscriptWithTraceIds(current, traceSummaries));
+        setStatus("Connected");
       }
-      setStatus("Connected");
     } catch (runError) {
       const message = errorMessage(runError);
       setError(message);
-      appendAssistantText(`\n${message}`);
+      appendAssistantError(message);
     } finally {
+      playgroundRunRequestRef.current = undefined;
+      playgroundChat.reset();
       setRunState("idle");
     }
   }
@@ -1078,7 +1149,11 @@ export function StudioConsole() {
       return true;
     }
     if (event.type === "error") {
-      setError(JSON.stringify(event.error));
+      const message = serializedStreamErrorText(event.error);
+      playgroundRunErrorRef.current = event.error;
+      setError(message);
+      appendAssistantError(message);
+      return true;
     }
     return false;
   }
@@ -1117,6 +1192,19 @@ export function StudioConsole() {
       }
       return next;
     });
+  }
+
+  function appendAssistantError(message: string) {
+    setMessages((current) => [
+      ...current,
+      {
+        entryId: nextTranscriptId(),
+        kind: "message",
+        role: "assistant",
+        text: message,
+        tone: "error",
+      },
+    ]);
   }
 
   function assignAssistantTraceId(traceId: string) {

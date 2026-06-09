@@ -209,6 +209,7 @@ export type StudioTranscriptChatEntry = {
   kind: "message";
   role: "user" | "assistant";
   text: string;
+  tone?: "error";
   traceId?: string;
 };
 

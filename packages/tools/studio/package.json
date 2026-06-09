@@ -32,6 +32,8 @@
   },
   "dependencies": {
     "@anvia/core": "workspace:*",
+    "@anvia/react": "workspace:*",
+    "@anvia/server": "workspace:*",
     "@hono/node-server": "^2.0.4",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-alert-dialog": "^1.1.16",

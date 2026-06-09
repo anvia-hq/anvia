@@ -1,7 +1,6 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import type { PipelineRunEvent } from "@anvia/core/pipeline";
 import type { Context, Hono } from "hono";
-import { stream as streamResponse } from "hono/streaming";
 import type {
   AgentRunStreamEvent,
   StudioPipeline,
@@ -24,6 +23,7 @@ import {
 } from "./pipeline-logs";
 import { AsyncEventQueue } from "./runs";
 import { errorResponse, isJsonObject, isObject, pipelineConfig, serializeError } from "./shared";
+import { streamStudioJsonl } from "./streams";
 
 export function registerPipelineRoutes(
   app: Hono,
@@ -275,7 +275,7 @@ function pipelineDetail(pipeline: StudioPipeline): StudioPipelineDetail {
 }
 
 function streamPipelineRun(
-  c: Context,
+  _c: Context,
   props: {
     pipeline: StudioPipeline;
     runId: string;
@@ -287,23 +287,7 @@ function streamPipelineRun(
     runStore?: StudioPipelineRunStore;
   },
 ): Response {
-  c.header("content-type", "application/x-ndjson; charset=utf-8");
-  c.header("cache-control", "no-cache, no-transform");
-  c.header("connection", "keep-alive");
-  c.header("transfer-encoding", "chunked");
-  c.header("x-accel-buffering", "no");
-
-  return streamResponse(
-    c,
-    async (stream) => {
-      for await (const event of pipelineRunEvents(props)) {
-        await stream.write(`${JSON.stringify(event)}\n`);
-      }
-    },
-    async (error, stream) => {
-      await stream.write(`${JSON.stringify({ type: "error", error: serializeError(error) })}\n`);
-    },
-  );
+  return streamStudioJsonl(pipelineRunEvents(props));
 }
 
 async function* pipelineRunEvents(props: {

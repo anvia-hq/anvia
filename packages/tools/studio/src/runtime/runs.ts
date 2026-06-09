@@ -2,7 +2,6 @@ import type { AgentStreamEvent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { AgentTraceOptions } from "@anvia/core/observability";
 import type { Context } from "hono";
-import { stream as streamResponse } from "hono/streaming";
 import type {
   AgentRunRequest,
   AgentRunStreamEvent,
@@ -22,6 +21,7 @@ import {
   isPositiveInteger,
   serializeError,
 } from "./shared";
+import { streamStudioJsonl } from "./streams";
 
 export class AsyncEventQueue<T> {
   private readonly values: T[] = [];
@@ -112,26 +112,10 @@ export async function* mergeRunAndApprovalEvents(
 }
 
 export function streamAgentRunEvents(
-  c: Context,
+  _c: Context,
   events: AsyncIterable<AgentRunStreamEvent>,
 ): Response {
-  c.header("content-type", "application/x-ndjson; charset=utf-8");
-  c.header("cache-control", "no-cache, no-transform");
-  c.header("connection", "keep-alive");
-  c.header("transfer-encoding", "chunked");
-  c.header("x-accel-buffering", "no");
-
-  return streamResponse(
-    c,
-    async (stream) => {
-      for await (const event of events) {
-        await stream.write(`${JSON.stringify(event)}\n`);
-      }
-    },
-    async (error, stream) => {
-      await stream.write(`${JSON.stringify({ type: "error", error: serializeError(error) })}\n`);
-    },
-  );
+  return streamStudioJsonl(events);
 }
 
 export function traceForRun(
@@ -191,6 +175,7 @@ export async function* persistStreamingSessionTranscript(props: {
       yield event;
     }
   } catch (error) {
+    appendTranscriptAssistantError(transcript, errorText(error));
     await props.store.saveSessionRunTranscript({
       id: props.session.id,
       runId: props.runId,
@@ -329,6 +314,9 @@ function acceptTranscriptStreamEvent(
   if (event.type === "final" && event.trace?.traceId !== undefined) {
     assignTranscriptTraceId(transcript, event.trace.traceId);
   }
+  if (event.type === "error") {
+    appendTranscriptAssistantError(transcript, errorText(event.error));
+  }
 }
 
 function approvalCallId(approval: { callId?: string; toolCallId?: string }): string | undefined {
@@ -439,9 +427,6 @@ function childAgentTranscriptEvent(
 }
 
 function errorText(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
   if (typeof error === "string") {
     return error;
   }
@@ -540,7 +525,7 @@ function messageToTranscriptEntry(
 
 function appendTranscriptAssistantText(transcript: StudioTranscriptEntry[], delta: string): void {
   const last = transcript.at(-1);
-  if (last?.kind === "message" && last.role === "assistant") {
+  if (last?.kind === "message" && last.role === "assistant" && last.tone !== "error") {
     last.text = `${last.text}${delta}`;
     return;
   }
@@ -549,6 +534,25 @@ function appendTranscriptAssistantText(transcript: StudioTranscriptEntry[], delt
     kind: "message",
     role: "assistant",
     text: delta,
+  });
+}
+
+function appendTranscriptAssistantError(transcript: StudioTranscriptEntry[], text: string): void {
+  const last = transcript.at(-1);
+  if (
+    last?.kind === "message" &&
+    last.role === "assistant" &&
+    last.tone === "error" &&
+    last.text === text
+  ) {
+    return;
+  }
+  transcript.push({
+    entryId: transcript.length,
+    kind: "message",
+    role: "assistant",
+    text,
+    tone: "error",
   });
 }
 

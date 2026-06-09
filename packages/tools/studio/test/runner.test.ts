@@ -27,8 +27,10 @@ import {
   type VectorSearchRequest,
   type VectorSearchToolOptions,
 } from "@anvia/core/vector-store";
+import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Studio } from "../src/index";
+import { registerObservabilityRoutes, StudioObservabilityHub } from "../src/runtime/observability";
 import { createSqliteSessionStore } from "../src/sqlite";
 
 const { DatabaseSync } = createRequire(import.meta.url)(
@@ -462,6 +464,7 @@ describe("Anvia studio", () => {
     );
 
     expect(run.status).toBe(200);
+    expect(run.headers.get("content-type")).toContain("application/x-ndjson");
     const events = await readJsonl(run);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -2838,6 +2841,7 @@ describe("Anvia studio", () => {
     );
 
     expect(run.status).toBe(200);
+    expect(run.headers.get("content-type")).toContain("application/x-ndjson");
     expect(await readJsonl(run)).toContainEqual(
       expect.objectContaining({
         type: "error",
@@ -2852,6 +2856,12 @@ describe("Anvia studio", () => {
       transcript: [
         { kind: "message", role: "user", text: "stream fail" },
         { kind: "message", role: "assistant", text: "partial" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: expect.stringContaining('"message":"stream failed"'),
+          tone: "error",
+        },
       ],
     });
   });
@@ -3188,6 +3198,37 @@ describe("Anvia studio", () => {
     );
   });
 
+  it("closes realtime observability subscriptions when streams are cancelled", async () => {
+    const hub = new StudioObservabilityHub();
+    const app = new Hono();
+    registerObservabilityRoutes(app, hub);
+
+    const stream = await app.request("http://runner.test/observability/events");
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("content-type")).toContain("application/x-ndjson");
+    if (stream.body === null) {
+      throw new Error("Expected observability response body");
+    }
+
+    const reader = stream.body.getReader();
+    const pendingRead = reader.read();
+    await waitFor(() => observabilitySubscriptionCount(hub) === 1);
+    hub.emit({
+      type: "trace",
+      trace: {
+        id: "trace_cancel",
+        sessionId: "session_cancel",
+        status: "success",
+        startedAt: new Date().toISOString(),
+        observationCount: 0,
+      },
+    });
+    await expect(pendingRead).resolves.toMatchObject({ done: false });
+
+    await reader.cancel();
+    await waitFor(() => observabilitySubscriptionCount(hub) === 0);
+  });
+
   it("runs registered eval suites", async () => {
     const metric: EvalMetric<string, string, boolean, string> = {
       name: "uppercase_match",
@@ -3317,6 +3358,10 @@ function isTraceObservabilityEvent(event: unknown): boolean {
   return typeof event === "object" && event !== null && "type" in event && event.type === "trace";
 }
 
+function observabilitySubscriptionCount(hub: StudioObservabilityHub): number {
+  return (hub as unknown as { subscriptions: Set<unknown> }).subscriptions.size;
+}
+
 async function readRemainingJsonl(reader: { read: () => Promise<unknown> }): Promise<unknown[]> {
   const events: unknown[] = [];
   while (true) {
@@ -3344,5 +3389,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     if (timeout !== undefined) {
       clearTimeout(timeout);
     }
+  }
+}
+
+async function waitFor(predicate: () => boolean, ms = 1000): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > ms) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }

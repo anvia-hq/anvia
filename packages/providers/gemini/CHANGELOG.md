@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 0.2.1
+
+### Patch Changes
+
+- c9728d4: Update upstream runtime dependencies to their latest compatible releases.
+
 ## 0.2.0
 
 ### Minor Changes

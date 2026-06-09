@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.5.2
+
+### Patch Changes
+
+- 46dbd72: Use shared `@anvia/server` and `@anvia/react` stream helpers internally while preserving Studio stream behavior and UI transcript handling.
+
 ## 0.5.1
 
 ### Patch Changes

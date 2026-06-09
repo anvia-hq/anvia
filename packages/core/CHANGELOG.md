@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.4.1
+
+### Patch Changes
+
+- 95712d8: Refactor core internals for improved maintainability while preserving public API and behavior.
+
 ## 0.4.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.5.1
+
+### Patch Changes
+
+- c9728d4: Update upstream runtime dependencies to their latest compatible releases.
+
 ## 0.5.0
 
 ### Minor Changes

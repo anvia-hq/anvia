@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.1
+
+### Patch Changes
+
+- c9728d4: Update upstream runtime dependencies to their latest compatible releases.
+
 ## 0.3.0
 
 ### Minor Changes

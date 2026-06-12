@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.5.4
+
+### Patch Changes
+
+- 7eb7027: Update upstream wrapper dependencies to the latest available releases.
+
 ## 0.5.3
 
 ### Patch Changes

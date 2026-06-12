@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.2
+
+### Patch Changes
+
+- 7eb7027: Update upstream wrapper dependencies to the latest available releases.
+
 ## 0.3.1
 
 ### Patch Changes

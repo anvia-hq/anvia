@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 0.2.1
+
+### Patch Changes
+
+- 7eb7027: Update upstream wrapper dependencies to the latest available releases.
+
 ## 0.2.0
 
 ### Minor Changes

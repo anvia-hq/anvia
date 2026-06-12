@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.102.0",
+    "@anthropic-ai/sdk": "^0.104.1",
     "@anvia/core": "^0.4.0"
   },
   "devDependencies": {

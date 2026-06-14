@@ -1,4 +1,13 @@
 {
   "title": "Anvia",
-  "pages": ["guides", "best-practices", "frameworks", "models", "studio", "reference", "changelog"]
+  "pages": [
+    "guides",
+    "best-practices",
+    "frameworks",
+    "models",
+    "sandbox",
+    "studio",
+    "reference",
+    "changelog"
+  ]
 }

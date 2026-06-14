@@ -15,6 +15,7 @@ const docsSections = [
   { title: "Best Practices", href: "/docs/best-practices" },
   { title: "Frameworks", href: "/docs/frameworks" },
   { title: "Models", href: "/docs/models" },
+  { title: "Sandbox", href: "/docs/sandbox", badge: "New" },
   { title: "Studio", href: "/docs/studio/overview" },
   { title: "Reference", href: "/docs/reference" },
 ];
@@ -140,7 +141,10 @@ function DocsSectionTabs() {
 
         return (
           <Link aria-current={active ? "page" : undefined} key={section.href} to={section.href}>
-            {section.title}
+            <span>{section.title}</span>
+            {"badge" in section ? (
+              <span className="docs-section-tab-badge">{section.badge}</span>
+            ) : null}
           </Link>
         );
       })}

@@ -1,0 +1,9 @@
+{
+  "title": "Sandbox",
+  "description": "Isolated Docker workspaces",
+  "icon": "Box",
+  "root": true,
+  "defaultOpen": false,
+  "collapsible": true,
+  "pages": ["index"]
+}

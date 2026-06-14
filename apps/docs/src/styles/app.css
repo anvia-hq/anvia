@@ -120,8 +120,11 @@ body {
 }
 
 .docs-section-tabs a {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
   border-bottom: 2px solid transparent;
+  gap: 0.4rem;
   padding: 0 0 0.625rem;
   color: var(--color-fd-muted-foreground);
   font-size: 0.875rem;
@@ -140,6 +143,18 @@ body {
 .docs-section-tabs a[aria-current="page"] {
   border-color: var(--color-fd-primary);
   color: var(--color-fd-primary);
+}
+
+.docs-section-tab-badge {
+  border: 1px solid hsl(68 100% 56% / 42%);
+  border-radius: 999px;
+  background: hsl(68 100% 56% / 12%);
+  padding: 0.0625rem 0.35rem;
+  color: var(--color-fd-primary);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1rem;
+  text-transform: uppercase;
 }
 
 #nd-page > div:has(> a[href^="/docs/"]) > a {

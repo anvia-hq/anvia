@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 0.3.1
+
+### Patch Changes
+
+- b80f013: Refactor stream helpers into focused internal modules, add coverage-gated tests, and omit stack traces from default streamed server error events.
+
 ## 0.3.0
 
 ### Minor Changes

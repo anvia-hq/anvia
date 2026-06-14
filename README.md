@@ -63,6 +63,22 @@ pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
 
 Anvia clients take explicit constructor values and do not read environment variables on their own, so credentials stay in your existing configuration layer.
 
+## Studio
+
+Anvia includes `@anvia/studio`, a local browser UI for inspecting and running agents, tools, sessions, traces, pipelines, memory, status, and knowledge during development. Add one line to serve any agent in Studio:
+
+```ts
+new Studio([agent]).start({ port: 4021 });
+```
+
+<p align="center">
+  <img src="apps/docs/public/assets/anvia-readme-preview.png" alt="Anvia Studio preview" width="960" />
+</p>
+
+<p align="center">
+  <em>Preview of Anvia Studio from <code>packages/tools/studio</code>.</em>
+</p>
+
 ## What You Can Build
 
 | Capability | Use it for |

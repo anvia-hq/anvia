@@ -27,6 +27,7 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --external react",
+    "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -34,9 +35,14 @@
     "react": ">=18"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^24.9.1",
     "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "4.1.5",
+    "happy-dom": "20.9.0",
     "react": "^19.2.6",
+    "react-dom": "19.2.6",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"

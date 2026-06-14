@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.4
+
+### Patch Changes
+
+- 4c76d8d: Harden non-OpenAI provider response validation and package-local build scripts.
+
 ## 0.3.3
 
 ### Patch Changes

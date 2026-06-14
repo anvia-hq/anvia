@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 0.2.3
+
+### Patch Changes
+
+- 4c76d8d: Harden non-OpenAI provider response validation and package-local build scripts.
+
 ## 0.2.2
 
 ### Patch Changes

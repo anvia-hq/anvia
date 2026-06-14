@@ -92,7 +92,7 @@ export function nativeImageResponseFromGemini(response: unknown): ImageGeneratio
       }
       return [
         {
-          data: new Uint8Array(Buffer.from(data, "base64")),
+          data: decodeBase64Image(data),
           mediaType:
             typeof part.inlineData.mimeType === "string" ? part.inlineData.mimeType : "image/png",
         },
@@ -126,7 +126,7 @@ export function imagenResponseFromGemini(response: unknown): ImageGenerationResp
       }
       return [
         {
-          data: new Uint8Array(Buffer.from(imageBytes, "base64")),
+          data: decodeBase64Image(imageBytes),
           mediaType: typeof item.image.mimeType === "string" ? item.image.mimeType : "image/png",
         },
       ];
@@ -162,6 +162,16 @@ function gcd(left: number, right: number): number {
     b = next;
   }
   return a;
+}
+
+function decodeBase64Image(value: string): Uint8Array {
+  const normalized = value.replace(/\s/g, "").replace(/=+$/, "");
+  const bytes = Buffer.from(value, "base64");
+  const roundTrip = bytes.toString("base64").replace(/=+$/, "");
+  if (normalized.length === 0 || bytes.length === 0 || roundTrip !== normalized) {
+    throw new Error("Gemini image generation response contained invalid base64 image data.");
+  }
+  return new Uint8Array(bytes);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

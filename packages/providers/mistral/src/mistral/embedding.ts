@@ -42,20 +42,17 @@ export class MistralEmbeddingModel implements EmbeddingModel {
     }
 
     const response = await this.client.embeddings.create(params as never);
-    const data = dataFromResponse(response);
+    const data = dataFromResponse(response, texts.length);
     if (data.length !== texts.length) {
       throw new Error(
         `Embedding response length ${data.length} did not match input length ${texts.length}`,
       );
     }
 
-    return data
-      .slice()
-      .sort((left, right) => left.index - right.index)
-      .map((item, index) => ({
-        document: texts[index] as string,
-        vector: item.embedding,
-      }));
+    return Array.from({ length: texts.length }, (_, index) => ({
+      document: texts[index] as string,
+      vector: data[index]?.embedding ?? [],
+    }));
   }
 }
 
@@ -64,20 +61,42 @@ type EmbeddingData = {
   index: number;
 };
 
-function dataFromResponse(response: unknown): EmbeddingData[] {
+function dataFromResponse(response: unknown, inputLength: number): EmbeddingData[] {
   const raw = response as Record<string, unknown>;
-  return Array.isArray(raw.data)
-    ? raw.data.flatMap((item): EmbeddingData[] => {
-        const data = item as Record<string, unknown>;
-        if (!Array.isArray(data.embedding)) {
-          return [];
-        }
-        return [
-          {
-            embedding: data.embedding.filter((value): value is number => typeof value === "number"),
-            index: typeof data.index === "number" ? data.index : 0,
-          },
-        ];
-      })
-    : [];
+  const items = Array.isArray(raw.data) ? raw.data : [];
+  const byIndex = new Map<number, EmbeddingData>();
+
+  for (const [position, item] of items.entries()) {
+    if (!isObject(item)) {
+      throw new Error(`Invalid Mistral embedding response row at position ${position}.`);
+    }
+
+    const index = item.index;
+    if (typeof index !== "number" || !Number.isInteger(index)) {
+      throw new Error(`Invalid Mistral embedding response index at position ${position}.`);
+    }
+    if (index < 0 || index >= inputLength) {
+      throw new Error(`Mistral embedding response index ${index} was outside the input range.`);
+    }
+    if (byIndex.has(index)) {
+      throw new Error(`Duplicate Mistral embedding response index ${index}.`);
+    }
+    if (!isNumberArray(item.embedding)) {
+      throw new Error(`Invalid Mistral embedding response vector at position ${position}.`);
+    }
+
+    byIndex.set(index, { embedding: item.embedding, index });
+  }
+
+  return Array.from({ length: inputLength }, (_, index) => byIndex.get(index)).filter(
+    (item): item is EmbeddingData => item !== undefined,
+  );
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "number");
 }

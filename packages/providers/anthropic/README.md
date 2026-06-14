@@ -65,3 +65,5 @@ pnpm --filter @anvia/anthropic typecheck
 pnpm --filter @anvia/anthropic test
 pnpm --filter @anvia/anthropic build
 ```
+
+Package-local `typecheck` and `build` scripts build `@anvia/core` first so core subpath types are available in a fresh worktree.

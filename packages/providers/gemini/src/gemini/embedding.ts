@@ -80,17 +80,25 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
 function embeddingsFromResponse(response: unknown): number[][] {
   const raw = response as Record<string, unknown>;
   if (Array.isArray(raw.embeddings)) {
-    return raw.embeddings.map(vectorFromEmbedding);
+    return raw.embeddings.map((embedding, index) => vectorFromEmbedding(embedding, index));
   }
   if (raw.embedding !== undefined) {
-    return [vectorFromEmbedding(raw.embedding)];
+    return [vectorFromEmbedding(raw.embedding, 0)];
   }
   return [];
 }
 
-function vectorFromEmbedding(embedding: unknown): number[] {
-  const raw = embedding as Record<string, unknown>;
-  return Array.isArray(raw.values)
-    ? raw.values.filter((value): value is number => typeof value === "number")
-    : [];
+function vectorFromEmbedding(embedding: unknown, position: number): number[] {
+  if (!isObject(embedding) || !isNumberArray(embedding.values)) {
+    throw new Error(`Invalid Gemini embedding response vector at position ${position}.`);
+  }
+  return embedding.values;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "number");
 }

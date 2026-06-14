@@ -70,4 +70,92 @@ describe("Mistral embedding models", () => {
       "Embedding response length 1 did not match input length 2",
     );
   });
+
+  it("rejects duplicate embedding response indexes", async () => {
+    const client = new MistralClient({
+      client: {
+        embeddings: {
+          create: async () => ({
+            data: [
+              { index: 0, embedding: [1] },
+              { index: 0, embedding: [2] },
+            ],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
+      "Duplicate Mistral embedding response index 0.",
+    );
+  });
+
+  it("rejects missing or non-integer embedding response indexes", async () => {
+    const missingIndexClient = new MistralClient({
+      client: {
+        embeddings: {
+          create: async () => ({
+            data: [{ embedding: [1] }, { index: 1, embedding: [2] }],
+          }),
+        },
+      } as never,
+    });
+    const fractionalIndexClient = new MistralClient({
+      client: {
+        embeddings: {
+          create: async () => ({
+            data: [
+              { index: 0.5, embedding: [1] },
+              { index: 1, embedding: [2] },
+            ],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(missingIndexClient.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
+      "Invalid Mistral embedding response index at position 0.",
+    );
+    await expect(fractionalIndexClient.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
+      "Invalid Mistral embedding response index at position 0.",
+    );
+  });
+
+  it("rejects out-of-range embedding response indexes", async () => {
+    const client = new MistralClient({
+      client: {
+        embeddings: {
+          create: async () => ({
+            data: [
+              { index: 0, embedding: [1] },
+              { index: 2, embedding: [2] },
+            ],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
+      "Mistral embedding response index 2 was outside the input range.",
+    );
+  });
+
+  it("rejects invalid embedding vectors", async () => {
+    const client = new MistralClient({
+      client: {
+        embeddings: {
+          create: async () => ({
+            data: [
+              { index: 0, embedding: [1] },
+              { index: 1, embedding: [2, "bad"] },
+            ],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
+      "Invalid Mistral embedding response vector at position 1.",
+    );
+  });
 });

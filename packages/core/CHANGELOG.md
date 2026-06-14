@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.4.2
+
+### Patch Changes
+
+- 4c1620d: Harden MCP connection cleanup and vector dimension validation, and organize loader internals without changing public loader APIs.
+
 ## 0.4.1
 
 ### Patch Changes

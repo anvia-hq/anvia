@@ -1,5 +1,12 @@
 # @anvia/studio
 
+## 0.5.5
+
+### Patch Changes
+
+- Updated dependencies [4c1620d]
+  - @anvia/core@0.4.2
+
 ## 0.5.4
 
 ### Patch Changes

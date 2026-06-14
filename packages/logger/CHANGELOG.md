@@ -1,5 +1,12 @@
 # @anvia/logger
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [4c1620d]
+  - @anvia/core@0.4.2
+
 ## 0.3.2
 
 ### Patch Changes

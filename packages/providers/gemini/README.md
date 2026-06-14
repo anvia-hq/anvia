@@ -94,3 +94,5 @@ pnpm --filter @anvia/gemini typecheck
 pnpm --filter @anvia/gemini test
 pnpm --filter @anvia/gemini build
 ```
+
+Package-local `typecheck` and `build` scripts build `@anvia/core` first so core subpath types are available in a fresh worktree.

@@ -7,7 +7,7 @@ import type {
 import type { GoogleGenAI } from "@google/genai";
 
 const TRANSCRIPTION_PREAMBLE =
-  "Translate the provided audio exactly. Do not add additional information.";
+  "Transcribe the provided audio exactly. Do not add additional information.";
 
 export class GeminiTranscriptionModel implements TranscriptionModel {
   readonly provider = "gemini";

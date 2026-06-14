@@ -56,4 +56,34 @@ describe("Gemini embedding models", () => {
       "Embedding response length 1 did not match input length 2",
     );
   });
+
+  it("rejects invalid Gemini embedding response rows", async () => {
+    const client = new GeminiClient({
+      client: {
+        models: {
+          embedContent: async () => ({
+            embeddings: [{ values: [1, 2] }, { values: [3, "bad"] }],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
+      "Invalid Gemini embedding response vector at position 1.",
+    );
+  });
+
+  it("rejects malformed Gemini single embedding responses", async () => {
+    const client = new GeminiClient({
+      client: {
+        models: {
+          embedContent: async () => ({ embedding: { values: "bad" } }),
+        },
+      } as never,
+    });
+
+    await expect(client.embeddingModel().embedTexts(["a"])).rejects.toThrow(
+      "Invalid Gemini embedding response vector at position 0.",
+    );
+  });
 });

@@ -69,6 +69,47 @@ describe("Gemini multimodal models", () => {
     expect(response.mediaType).toBe("image/jpeg");
   });
 
+  it("rejects malformed native Gemini image responses", async () => {
+    const client = mockGeminiClient({
+      generateContentResponse: {
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: "not base64!!!", mimeType: "image/png" } }],
+            },
+          },
+        ],
+      },
+    });
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
+
+    await expect(imageGenerationRequest(model).prompt("draw").send()).rejects.toThrow(
+      "Gemini image generation response contained invalid base64 image data.",
+    );
+  });
+
+  it("rejects malformed Imagen image responses", async () => {
+    const client = mockGeminiClient({
+      generateImagesResponse: {
+        generatedImages: [
+          {
+            image: {
+              imageBytes: "not base64!!!",
+              mimeType: "image/jpeg",
+            },
+          },
+        ],
+      },
+    });
+    const model = new GeminiClient({ client: client as never }).imagenGenerationModel(
+      "imagen-test",
+    );
+
+    await expect(imageGenerationRequest(model).prompt("draw").send()).rejects.toThrow(
+      "Gemini image generation response contained invalid base64 image data.",
+    );
+  });
+
   it("maps transcription requests through generateContent inline audio", async () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).transcriptionModel("gemini-test");
@@ -100,14 +141,16 @@ describe("Gemini multimodal models", () => {
         topP: 0.8,
         temperature: 0.2,
         systemInstruction:
-          "Translate the provided audio exactly. Do not add additional information.\n\nUse support terminology.",
+          "Transcribe the provided audio exactly. Do not add additional information.\n\nUse support terminology.",
       },
     });
     expect(response.text).toBe("transcribed text");
   });
 });
 
-function mockGeminiClient() {
+function mockGeminiClient(
+  responses: { generateContentResponse?: unknown; generateImagesResponse?: unknown } = {},
+) {
   const generateImagesCalls: unknown[] = [];
   const generateContentCalls: unknown[] = [];
   return {
@@ -115,37 +158,41 @@ function mockGeminiClient() {
       generateImagesCalls,
       async generateImages(params: unknown) {
         generateImagesCalls.push(params);
-        return {
-          generatedImages: [
-            {
-              image: {
-                imageBytes: Buffer.from([4, 5, 6]).toString("base64"),
-                mimeType: "image/jpeg",
+        return (
+          responses.generateImagesResponse ?? {
+            generatedImages: [
+              {
+                image: {
+                  imageBytes: Buffer.from([4, 5, 6]).toString("base64"),
+                  mimeType: "image/jpeg",
+                },
               },
-            },
-          ],
-        };
+            ],
+          }
+        );
       },
       generateContentCalls,
       async generateContent(params: unknown) {
         generateContentCalls.push(params);
-        return {
-          candidates: [
-            {
-              content: {
-                parts: [
-                  { text: "transcribed text" },
-                  {
-                    inlineData: {
-                      data: Buffer.from([1, 2, 3]).toString("base64"),
-                      mimeType: "image/png",
+        return (
+          responses.generateContentResponse ?? {
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    { text: "transcribed text" },
+                    {
+                      inlineData: {
+                        data: Buffer.from([1, 2, 3]).toString("base64"),
+                        mimeType: "image/png",
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
               },
-            },
-          ],
-        };
+            ],
+          }
+        );
       },
     },
   };

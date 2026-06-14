@@ -67,3 +67,5 @@ pnpm --filter @anvia/mistral typecheck
 pnpm --filter @anvia/mistral test
 pnpm --filter @anvia/mistral build
 ```
+
+Package-local `typecheck` and `build` scripts build `@anvia/core` first so core subpath types are available in a fresh worktree.

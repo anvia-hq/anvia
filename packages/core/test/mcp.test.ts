@@ -114,6 +114,33 @@ describe("MCP tools", () => {
     });
   });
 
+  it("closes the MCP client when listing tools fails", async () => {
+    const client = fakeMcpClient({
+      tools: [],
+      result: { content: [{ type: "text", text: "unused" }] },
+      listToolsError: new Error("list failed"),
+    });
+
+    await expect(connectMcp(fakeConnection("broken", client))).rejects.toThrow("list failed");
+
+    expect(client.connectCalls).toBe(1);
+    expect(client.listToolsCalls).toBe(1);
+    expect(client.closeCalls).toBe(1);
+  });
+
+  it("preserves the list tools error when MCP close also fails", async () => {
+    const client = fakeMcpClient({
+      tools: [],
+      result: { content: [{ type: "text", text: "unused" }] },
+      listToolsError: new Error("list failed"),
+      closeError: new Error("close failed"),
+    });
+
+    await expect(connectMcp(fakeConnection("broken", client))).rejects.toThrow("list failed");
+
+    expect(client.closeCalls).toBe(1);
+  });
+
   it("forwards MCP tool calls with JSON object arguments", async () => {
     const client = fakeMcpClient({
       tools: [
@@ -316,25 +343,37 @@ type FakeMcpClient = McpClient & {
   connectCalls: number;
   listToolsCalls: number;
   callToolCalls: { name: string; arguments?: Record<string, unknown> }[];
+  closeCalls: number;
 };
 
 function fakeMcpClient(options: {
   tools: Awaited<ReturnType<McpClient["listTools"]>>["tools"];
   result: Awaited<ReturnType<McpClient["callTool"]>>;
+  listToolsError?: Error | undefined;
+  closeError?: Error | undefined;
 }): FakeMcpClient {
   return {
     connectCalls: 0,
     listToolsCalls: 0,
     callToolCalls: [],
+    closeCalls: 0,
     async listTools() {
       this.listToolsCalls += 1;
+      if (options.listToolsError !== undefined) {
+        throw options.listToolsError;
+      }
       return { tools: options.tools };
     },
     async callTool(params) {
       this.callToolCalls.push(params);
       return options.result;
     },
-    async close() {},
+    async close() {
+      this.closeCalls += 1;
+      if (options.closeError !== undefined) {
+        throw options.closeError;
+      }
+    },
   };
 }
 

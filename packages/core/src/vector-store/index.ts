@@ -69,6 +69,7 @@ export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMeta
   private readonly documents = new Map<string, StoredDocument<T, Metadata>>();
   private indexStrategy: IndexStrategy;
   private lshIndex: LshIndex | undefined;
+  private embeddingDimension: number | undefined;
 
   constructor(options: { index?: IndexStrategy } = {}) {
     this.indexStrategy = options.index ?? { type: "bruteForce" };
@@ -84,6 +85,7 @@ export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMeta
   }
 
   addDocuments(documents: Array<EmbeddedDocument<T, Metadata>>): this {
+    this.validateDocumentDimensions(documents);
     for (const document of documents) {
       this.documents.set(document.id, document);
     }
@@ -112,6 +114,7 @@ export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMeta
   }
 
   candidates(queryEmbedding: Embedding): Array<StoredDocument<T, Metadata>> {
+    this.validateQueryDimension(queryEmbedding);
     if (this.indexStrategy.type !== "lsh" || this.lshIndex === undefined) {
       return this.values();
     }
@@ -146,6 +149,23 @@ export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMeta
       }
     }
     this.lshIndex = index;
+  }
+
+  private validateDocumentDimensions(documents: Array<EmbeddedDocument<T, Metadata>>): void {
+    let dimension = this.embeddingDimension;
+    for (const document of documents) {
+      for (const embedding of document.embeddings) {
+        dimension = validateEmbeddingDimension(dimension, embedding, document.id);
+      }
+    }
+    this.embeddingDimension = dimension;
+  }
+
+  private validateQueryDimension(queryEmbedding: Embedding): void {
+    if (this.embeddingDimension === undefined) {
+      return;
+    }
+    validateEmbeddingDimension(this.embeddingDimension, queryEmbedding, "query");
   }
 }
 
@@ -250,4 +270,20 @@ function bestScore(queryEmbedding: Embedding, embeddings: Embedding[]): number |
     best = best === undefined ? score : Math.max(best, score);
   }
   return best;
+}
+
+function validateEmbeddingDimension(
+  expectedDimension: number | undefined,
+  embedding: Embedding,
+  id: string,
+): number {
+  if (expectedDimension === undefined) {
+    return embedding.vector.length;
+  }
+  if (embedding.vector.length !== expectedDimension) {
+    throw new Error(
+      `Vector dimension mismatch: expected ${expectedDimension} dimensions but received ${embedding.vector.length} for ${id}`,
+    );
+  }
+  return expectedDimension;
 }

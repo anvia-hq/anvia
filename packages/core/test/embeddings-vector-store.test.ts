@@ -283,6 +283,64 @@ describe("in-memory vector store", () => {
       totalCount: 2,
     });
   });
+
+  it("rejects mixed embedding dimensions when creating a store", () => {
+    expect(() =>
+      InMemoryVectorStore.fromDocuments([
+        {
+          id: "short",
+          document: { title: "Short" },
+          embeddings: [{ document: "short", vector: [1, 0] }],
+        },
+        {
+          id: "long",
+          document: { title: "Long" },
+          embeddings: [{ document: "long", vector: [1, 0, 0] }],
+        },
+      ]),
+    ).toThrow("Vector dimension mismatch");
+  });
+
+  it("rejects mismatched added embeddings without mutating the store", () => {
+    const store = InMemoryVectorStore.fromDocuments([
+      {
+        id: "base",
+        document: { title: "Base" },
+        embeddings: [{ document: "base", vector: [1, 0, 0] }],
+      },
+    ]);
+
+    expect(() =>
+      store.addDocuments([
+        {
+          id: "bad",
+          document: { title: "Bad" },
+          embeddings: [{ document: "bad", vector: [1, 0] }],
+        },
+      ]),
+    ).toThrow("Vector dimension mismatch");
+    expect(store.get("bad")).toBeUndefined();
+    expect(store.len()).toBe(1);
+  });
+
+  it("rejects query embeddings with dimensions that differ from stored documents", async () => {
+    const store = InMemoryVectorStore.fromDocuments([
+      {
+        id: "base",
+        document: { title: "Base" },
+        embeddings: [{ document: "base", vector: [1, 0, 0] }],
+      },
+    ]);
+    const queryModel: EmbeddingModel = {
+      async embedTexts(texts) {
+        return texts.map((document) => ({ document, vector: [1, 0] }));
+      },
+    };
+
+    await expect(store.index(queryModel).search({ query: "base", topK: 1 })).rejects.toThrow(
+      "Vector dimension mismatch",
+    );
+  });
 });
 
 describe("agent dynamic context", () => {

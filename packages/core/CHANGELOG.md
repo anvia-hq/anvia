@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.5.0
+
+### Minor Changes
+
+- 4ab66c9: Broaden agent runtime hooks and add general middleware for completion requests, completion responses, tool inputs, and tool outputs while keeping existing tool middleware APIs as deprecated aliases.
+
 ## 0.4.2
 
 ### Patch Changes

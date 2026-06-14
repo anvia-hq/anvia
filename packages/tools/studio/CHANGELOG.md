@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.5.6
+
+### Patch Changes
+
+- 9cf2e11: Improve Studio runtime lookups, store helpers, UI splitting, and regression coverage.
+
 ## 0.5.5
 
 ### Patch Changes

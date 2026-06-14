@@ -145,7 +145,7 @@ body {
   color: var(--color-fd-primary);
 }
 
-.docs-sidebar-new-badge {
+.docs-sidebar-status-badge {
   border: 1px solid hsl(68 100% 56% / 42%);
   border-radius: 999px;
   background: hsl(68 100% 56% / 12%);

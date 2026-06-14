@@ -3,16 +3,22 @@ import { type LoaderPlugin, loader } from "fumadocs-core/source";
 import { lucideIconsPlugin } from "fumadocs-core/source/plugins/lucide-icons";
 import { createElement, Fragment } from "react";
 
-const newMenuWindowMs = 30 * 24 * 60 * 60 * 1000;
+const recentMenuWindowMs = 30 * 24 * 60 * 60 * 1000;
 
-function isNewMenuItem(createdAt: unknown) {
-  if (typeof createdAt !== "string") return false;
+function isRecentDate(value: unknown) {
+  if (typeof value !== "string") return false;
 
-  const createdTime = Date.parse(createdAt);
-  if (!Number.isFinite(createdTime)) return false;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return false;
 
-  const ageMs = Date.now() - createdTime;
-  return ageMs >= 0 && ageMs < newMenuWindowMs;
+  const ageMs = Date.now() - time;
+  return ageMs >= 0 && ageMs < recentMenuWindowMs;
+}
+
+function menuBadgeForMeta(data: Record<string, unknown>) {
+  if (isRecentDate(data.createdAt)) return "New";
+  if (isRecentDate(data.updatedAt)) return "Updated";
+  return undefined;
 }
 
 function newMenuBadgePlugin(): LoaderPlugin {
@@ -23,16 +29,22 @@ function newMenuBadgePlugin(): LoaderPlugin {
         if (!metaPath) return node;
 
         const meta = this.storage.read(metaPath);
-        const createdAt =
-          meta?.format === "meta" ? (meta.data as Record<string, unknown>).createdAt : undefined;
+        const badge =
+          meta?.format === "meta"
+            ? menuBadgeForMeta(meta.data as Record<string, unknown>)
+            : undefined;
 
-        if (!isNewMenuItem(createdAt)) return node;
+        if (!badge) return node;
 
         return {
           ...node,
           name: createElement(Fragment, null, [
             node.name,
-            createElement("span", { className: "docs-sidebar-new-badge", key: "new-badge" }, "New"),
+            createElement(
+              "span",
+              { className: "docs-sidebar-status-badge", key: "status-badge" },
+              badge,
+            ),
           ]),
         };
       },

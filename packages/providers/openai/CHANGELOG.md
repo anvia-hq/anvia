@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.4
+
+### Patch Changes
+
+- ac73a10: Harden OpenAI embedding and image response validation.
+
 ## 0.3.3
 
 ### Patch Changes

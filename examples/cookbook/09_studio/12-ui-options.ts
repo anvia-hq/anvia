@@ -33,15 +33,14 @@ const getRunbook = createTool({
 const model = client.completionModel("gpt-5.5");
 const agent = new AgentBuilder("studio-custom-ui", model)
   .name("Studio Custom UI")
-  .description("Demonstrates custom Studio UI path, title, and root-route behavior.")
+  .description("Demonstrates Studio UI title and root-route behavior.")
   .instructions("Use get_runbook when the user asks for an operational checklist.")
   .tool(getRunbook)
   .build();
 
 new Studio([agent], {
   ui: {
-    path: "/ops",
-    title: "Operations Studio",
+    title: "Anvia Studio",
     rootRoutes: false,
     redirectRoot: true,
   },
@@ -53,7 +52,5 @@ new Studio([agent], {
   },
 }).start({ port: 4021 });
 
-console.log("Open http://localhost:4021/ops/playground");
-console.log(
-  "Root redirects to the custom UI path, and root aliases like /playground are disabled.",
-);
+console.log("Open http://localhost:4021/ui/playground");
+console.log("Root redirects to /ui/playground, and root aliases like /playground are disabled.");

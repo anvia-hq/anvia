@@ -47,6 +47,9 @@ describe("public exports", () => {
     expect(audioGeneration).toHaveProperty("AudioGenerationRequestBuilder");
     expect(audioGeneration).toHaveProperty("audioGenerationRequest");
     expect(completion).toHaveProperty("CompletionRequestBuilder");
+    expect(completion).toHaveProperty("createCompletion");
+    expect(completion).toHaveProperty("createParsedCompletion");
+    expect(completion).toHaveProperty("createCompletionStream");
     expect(completion).toHaveProperty("Message");
     expect(embeddings).toHaveProperty("embedText");
     expect(evals).toHaveProperty("runEvalSuite");
@@ -63,5 +66,11 @@ describe("public exports", () => {
     expect(tool).toHaveProperty("createTool");
     expect(transcription).toHaveProperty("TranscriptionRequestBuilder");
     expect(vectorStore).toHaveProperty("InMemoryVectorStore");
+  });
+
+  it("exposes createCompletion from the root entrypoint", () => {
+    expect("createCompletion" in publicCore).toBe(true);
+    expect("createParsedCompletion" in publicCore).toBe(true);
+    expect("createCompletionStream" in publicCore).toBe(true);
   });
 });

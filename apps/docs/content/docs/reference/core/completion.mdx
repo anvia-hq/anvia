@@ -255,6 +255,73 @@ Return behavior: returns `void` when the request is supported.
 
 Notable errors: throws `CompletionCapabilityError` for unsupported tools, tool choice, image input, file document input, output schema, or streaming. Static `CompletionRequest.documents` context and `UserContent.documentText(...)` are treated as text, not file document input.
 
+## Direct Completion Helpers
+
+```ts
+type CreateCompletionInput = string | Message | Message[];
+
+type CreateCompletionBaseOptions = {
+  input?: CreateCompletionInput;
+  messages?: Message[];
+  instructions?: string;
+  documents?: Document[];
+  tools?: ToolDefinition[];
+  temperature?: number;
+  maxTokens?: number;
+  toolChoice?: ToolChoice;
+  outputSchema?: JsonObject;
+  params?: JsonValue;
+};
+
+type CreateCompletionOptions = CreateCompletionBaseOptions;
+type CreateCompletionStreamOptions = CreateCompletionBaseOptions;
+type CreateParsedCompletionOptions<T> =
+  Omit<CreateCompletionBaseOptions, "outputSchema"> & {
+    schema: ZodSchema<T>;
+  };
+
+type CreateCompletionResult<RawResponse = unknown> = {
+  text: string;
+  content: AssistantContent[];
+  usage: Usage;
+  response: CompletionResponse<RawResponse>;
+};
+
+type CreateParsedCompletionResult<T, RawResponse = unknown> =
+  CreateCompletionResult<RawResponse> & {
+    data: T;
+  };
+
+function createCompletion<Model extends CompletionModel>(
+  model: Model,
+  options: CreateCompletionOptions,
+): Promise<CreateCompletionResult>;
+
+function createCompletionStream<Model extends StreamingCompletionModel>(
+  model: Model,
+  options: CreateCompletionStreamOptions,
+): AsyncIterable<CompletionStreamEvent>;
+
+function createParsedCompletion<T, Model extends CompletionModel>(
+  model: Model,
+  options: CreateParsedCompletionOptions<T>,
+): Promise<CreateParsedCompletionResult<T>>;
+```
+
+Purpose: call a completion model directly without building an agent or executing tools.
+
+Return behavior: `createCompletion(...)` always returns a promise for the final response. `createCompletionStream(...)` returns the model's normalized `CompletionStreamEvent` iterable directly.
+
+`createParsedCompletion(...)` converts `schema` to `outputSchema`, calls the model once, parses the assistant text as JSON, validates it with the same schema, and returns `data` plus the normal completion result fields.
+
+`messages` supplies an existing transcript. `input` accepts a string, one message, or multiple messages and is appended after `messages`. At least one of `input` or `messages` is required.
+
+`params` maps to `CompletionRequest.additionalParams` for provider-specific options.
+
+Notable errors: `createCompletion(...)` rejects if input is empty or the request uses unsupported model features. `createCompletionStream(...)` throws before returning the stream when validation fails or when the model does not support streaming. `createParsedCompletion(...)` also rejects when the response text is not valid JSON or does not match `schema`.
+
+Direct completion streams are raw model streams. They can include text deltas, reasoning deltas, tool call deltas, tool calls, message ids, final responses, and errors. They do not execute tools and do not emit agent stream events such as `turn_start`, `tool_result`, `agent_tool_event`, or agent `final` output.
+
 ## CompletionRequestBuilder
 
 ```ts

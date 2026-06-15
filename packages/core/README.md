@@ -47,6 +47,74 @@ const response = await agent.prompt("What is happening with order A123?").send()
 console.log(response.output);
 ```
 
+## Direct Completions
+
+Use `createCompletion` when you want a single provider call without agent turns, memory, or
+tool execution:
+
+```ts
+import { createCompletion } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
+
+const result = await createCompletion(model, {
+  input: "Summarize Anvia in one sentence.",
+  instructions: "Answer clearly and concisely.",
+});
+
+console.log(result.text);
+```
+
+Use `messages` when you already own the transcript. If `input` is also provided, it is appended as
+the final message:
+
+```ts
+import { Message, createCompletion } from "@anvia/core";
+
+const result = await createCompletion(model, {
+  messages: [
+    Message.system("You are concise."),
+    Message.user("Explain Anvia."),
+  ],
+  maxTokens: 300,
+  params: {
+    reasoning: { effort: "low" },
+  },
+});
+```
+
+Use `createCompletionStream` to receive raw completion stream events from the model:
+
+```ts
+import { createCompletionStream } from "@anvia/core";
+
+for await (const event of createCompletionStream(model, {
+  input: "Write a short launch note.",
+})) {
+  if (event.type === "text_delta") process.stdout.write(event.delta);
+}
+```
+
+Use `createParsedCompletion` when you want a direct completion to return schema-validated data:
+
+```ts
+import { createParsedCompletion } from "@anvia/core";
+import { z } from "zod";
+
+const eventSchema = z.object({
+  name: z.string(),
+  date: z.string(),
+});
+
+const event = await createParsedCompletion(model, {
+  schema: eventSchema,
+  input: "Alice and Bob are going to a science fair on Friday.",
+});
+
+console.log(event.data);
+```
+
 ## Prompts and Memory
 
 Use a plain prompt for stateless calls:

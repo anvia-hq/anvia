@@ -1,0 +1,90 @@
+---
+title: Structured Output
+description: Parse direct completion responses into typed schema data.
+---
+
+Use `createParsedCompletion` when you want one direct model call to return validated data.
+
+```ts
+import { createParsedCompletion } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+const eventSchema = z.object({
+  name: z.string(),
+  date: z.string(),
+  participants: z.array(z.string()),
+});
+
+const model = new OpenAIClient({ apiKey }).completionModel("gpt-5.5");
+
+const result = await createParsedCompletion(model, {
+  schema: eventSchema,
+  input: "Alice and Bob are going to a science fair on Friday.",
+});
+
+console.log(result.data.participants);
+```
+
+`createParsedCompletion` converts the Zod schema to the provider `outputSchema`, waits for the final response, parses the assistant text as JSON, and validates the parsed value with the same schema.
+
+It returns the parsed data plus the normal completion fields:
+
+| Field | Meaning |
+| --- | --- |
+| `data` | Parsed and schema-validated value |
+| `text` | Joined assistant text content |
+| `content` | Normalized assistant content parts |
+| `usage` | Normalized token usage |
+| `response` | Full normalized `CompletionResponse`, including the raw provider response |
+
+## Messages and Multimodal Input
+
+Parsed completions use the same prompt shape as `createCompletion`. You can pass `messages`, `input`, text, images, and documents:
+
+```ts
+import { Message, UserContent, createParsedCompletion } from "@anvia/core";
+
+const result = await createParsedCompletion(model, {
+  schema: eventSchema,
+  messages: [
+    Message.system("Extract event details."),
+    Message.user([
+      UserContent.text("Read this flyer and extract the event."),
+      UserContent.imageUrl("https://example.com/flyer.png"),
+    ]),
+  ],
+});
+```
+
+If `input` is also provided, Anvia appends it after `messages`.
+
+## Provider Params
+
+Use `params` the same way you would with `createCompletion`:
+
+```ts
+const result = await createParsedCompletion(model, {
+  schema: eventSchema,
+  input: "Alice and Bob are going to a science fair on Friday.",
+  params: {
+    reasoning: { effort: "low" },
+  },
+});
+```
+
+## Compared With Extractors
+
+`createParsedCompletion` is a direct completion helper. It does not execute tools, create a submit tool, or retry validation failures.
+
+Use `ExtractorBuilder` when you want the higher-level extraction workflow: required `submit` tool semantics, retries, usage/history helpers, and pipeline integration.
+
+## Validation Errors
+
+The helper rejects if:
+
+- the request uses model features the provider adapter does not support
+- the model does not return valid JSON text
+- the parsed JSON does not match the schema
+
+Provider support for structured output still matters. If the model does not support output schemas, Anvia rejects before calling the provider.

@@ -18,6 +18,13 @@ export type {
   CompletionModel,
   CompletionRequest,
   CompletionResponse,
+  CreateCompletionBaseOptions,
+  CreateCompletionInput,
+  CreateCompletionOptions,
+  CreateCompletionResult,
+  CreateCompletionStreamOptions,
+  CreateParsedCompletionOptions,
+  CreateParsedCompletionResult,
   Document,
   ImageContent,
   JsonObject,
@@ -34,6 +41,9 @@ export type {
 } from "./completion/index";
 export {
   AssistantContent,
+  createCompletion,
+  createCompletionStream,
+  createParsedCompletion,
   Message,
   Usage,
   UserContent,

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/logger",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Structured logger adapters for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

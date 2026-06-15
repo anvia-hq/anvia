@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.6.1
+
+### Patch Changes
+
+- 2d039f6: Add ergonomic tool result message helpers and export `ToolContent` from the root entrypoint.
+
 ## 0.6.0
 
 ### Minor Changes

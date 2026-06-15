@@ -79,4 +79,63 @@ describe("message attachment content", () => {
     });
     expect(reasoningDisplayText(reasoning)).toBe("Checked the plan.Visible thinking.");
   });
+
+  it("creates a tool result message from string output", () => {
+    expect(Message.toolResult("abc", "hello")).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "abc",
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    });
+  });
+
+  it("creates a tool result message from JSON-serializable output with callId", () => {
+    expect(Message.toolResult("abc", { ok: true }, { callId: "call_123" })).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "abc",
+          callId: "call_123",
+          content: [{ type: "text", text: '{"ok":true}' }],
+        },
+      ],
+    });
+  });
+
+  it("preserves structured tool result content", () => {
+    expect(Message.toolResult("abc", [{ type: "text", text: "hello" }])).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "abc",
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    });
+  });
+
+  it("omits callId when no callId is provided", () => {
+    const message = Message.toolResult("abc", "hello");
+
+    expect(message.role).toBe("tool");
+    if (message.role !== "tool") {
+      throw new Error("Expected tool message");
+    }
+    expect(message).toMatchObject({
+      role: "tool",
+      content: [{ type: "tool_result", id: "abc" }],
+    });
+    const [toolResult] = message.content;
+    expect(toolResult).toBeDefined();
+    if (toolResult === undefined) {
+      throw new Error("Expected tool result content");
+    }
+    expect("callId" in toolResult).toBe(false);
+  });
 });

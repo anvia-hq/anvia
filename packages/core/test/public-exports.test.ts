@@ -6,7 +6,9 @@ import * as embeddings from "../src/embeddings";
 import * as evals from "../src/evals";
 import * as extractor from "../src/extractor";
 import * as imageGeneration from "../src/image-generation";
+import type { ToolContent as RootToolContentType } from "../src/index";
 import * as publicCore from "../src/index";
+import { Message as RootMessage, ToolContent as RootToolContent } from "../src/index";
 import * as internalAgent from "../src/internal/agent";
 import * as loaders from "../src/loaders";
 import * as mcp from "../src/mcp";
@@ -72,5 +74,22 @@ describe("public exports", () => {
     expect("createCompletion" in publicCore).toBe(true);
     expect("createParsedCompletion" in publicCore).toBe(true);
     expect("createCompletionStream" in publicCore).toBe(true);
+  });
+
+  it("exposes ToolContent from the root entrypoint", () => {
+    expect(publicCore).toHaveProperty("ToolContent");
+    const toolResult: RootToolContentType = RootToolContent.toolResult("abc", "hello", "call_123");
+
+    expect(RootMessage.tool(toolResult)).toMatchObject({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "abc",
+          callId: "call_123",
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    });
   });
 });

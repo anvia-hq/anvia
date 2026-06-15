@@ -76,12 +76,13 @@ const Message: {
   user(content: string | UserContent[]): Message;
   assistant(content: string | AssistantContent[], id?: string): Message;
   tool(content: ToolContent | ToolContent[]): Message;
+  toolResult(id: string, output: unknown, options?: { callId?: string | undefined }): Message;
 };
 ```
 
 Purpose: normalized chat history and prompt shape.
 
-Return behavior: factory methods return message objects with normalized content arrays.
+Return behavior: factory methods return message objects with normalized content arrays. `Message.tool(...)` is the low-level factory for complete tool content. `Message.toolResult(...)` creates the common tool-role message after executing a model-requested tool call, serializing non-string output with JSON and preserving structured `ToolResultContent[]`.
 
 Notable errors: none directly.
 
@@ -117,6 +118,12 @@ const ToolContent: {
 Purpose: helper factories for user, assistant, and tool content.
 
 Return behavior: returns normalized content values.
+
+For normal manual tool execution, prefer:
+
+```ts
+messages.push(Message.toolResult(toolCall.id, result, { callId: toolCall.callId }));
+```
 
 `AssistantContent.reasoning(text, id?)` keeps the legacy shape. Provider adapters can populate `reasoning.content` with structured text, summary, encrypted, or redacted blocks; `reasoning.text` remains the display-safe text made from text and summary blocks.
 

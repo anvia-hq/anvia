@@ -45,6 +45,7 @@ export {
   createCompletionStream,
   createParsedCompletion,
   Message,
+  ToolContent,
   Usage,
   UserContent,
 } from "./completion/index";

@@ -111,6 +111,12 @@ const historyWithToolCall: Message[] = [
 
 Only create tool-call history yourself when importing an existing transcript or replaying a known run. For live runs, persist `response.messages`.
 
+After manually executing a model-requested tool call, prefer the high-level helper:
+
+```ts
+messages.push(Message.toolResult(toolCall.id, result, { callId: toolCall.callId }));
+```
+
 ## Reasoning In History
 
 Assistant messages can include provider-returned reasoning content. The stable display field is `reasoning.text`; adapters may also include structured `content` blocks for text, summaries, encrypted state, and redacted state.

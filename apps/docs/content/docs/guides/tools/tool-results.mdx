@@ -68,6 +68,12 @@ During an agent run, tool results are appended as tool messages.
 
 You usually do not construct this message yourself. Store `response.messages` if you need conversation history.
 
+If you execute a model-requested tool call manually, create the result message with:
+
+```ts
+messages.push(Message.toolResult(toolCall.id, result, { callId: toolCall.callId }));
+```
+
 ## Display Values
 
 Return values should be useful to the model, not necessarily formatted for your UI.

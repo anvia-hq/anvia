@@ -200,6 +200,44 @@ export const ToolContent = {
   },
 };
 
+function serializeToolResultOutput(output: unknown): string {
+  if (typeof output === "string") {
+    return output;
+  }
+
+  try {
+    const serialized = JSON.stringify(output);
+    return serialized === undefined ? String(output) : serialized;
+  } catch {
+    return String(output);
+  }
+}
+
+function isToolResultContentArray(value: unknown): value is ToolResultContent[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => {
+      if (typeof item !== "object" || item === null || !("type" in item)) {
+        return false;
+      }
+      if (item.type === "text") {
+        return "text" in item && typeof item.text === "string";
+      }
+      if (item.type === "image") {
+        return (
+          "data" in item &&
+          typeof item.data === "string" &&
+          (!("mediaType" in item) ||
+            item.mediaType === undefined ||
+            typeof item.mediaType === "string")
+        );
+      }
+      return false;
+    })
+  );
+}
+
 export const AssistantContent = {
   text(text: string): Text {
     return { type: "text", text };
@@ -291,6 +329,10 @@ export const Message = {
       role: "tool",
       content: Array.isArray(content) ? content : [content],
     };
+  },
+  toolResult(id: string, output: unknown, options: { callId?: string | undefined } = {}): Message {
+    const content = isToolResultContentArray(output) ? output : serializeToolResultOutput(output);
+    return Message.tool(ToolContent.toolResult(id, content, options.callId));
   },
 };
 

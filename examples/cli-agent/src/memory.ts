@@ -4,7 +4,6 @@ import {
   AssistantContent,
   type JsonValue,
   Message,
-  ToolContent,
 } from "@anvia/core/completion";
 import type { AssistantMessage, ChatMessage } from "./types.js";
 
@@ -47,7 +46,7 @@ function assistantHistory(message: AssistantMessage) {
 
     if (part.type === "tool_result") {
       flushAssistantContent();
-      history.push(Message.tool(ToolContent.toolResult(part.id, part.result, part.callId)));
+      history.push(Message.toolResult(part.id, part.result, { callId: part.callId }));
     }
   }
 

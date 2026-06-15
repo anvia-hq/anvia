@@ -1,5 +1,12 @@
 # @anvia/fastembed
 
+## 0.2.4
+
+### Patch Changes
+
+- Updated dependencies [e54aece]
+  - @anvia/core@0.6.0
+
 ## 0.2.3
 
 ### Patch Changes

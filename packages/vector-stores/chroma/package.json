@@ -1,6 +1,6 @@
 {
   "name": "@anvia/chroma",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "ChromaDB vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

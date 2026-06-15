@@ -1,0 +1,59 @@
+---
+title: DeepInfra
+description: Use DeepInfra's OpenAI-compatible inference with Anvia.
+---
+
+DeepInfra exposes an OpenAI-compatible chat completions surface at `https://api.deepinfra.com/v1/openai`. In Anvia, configure `OpenAIClient` with that `baseUrl`, then pass DeepInfra model ids to `completionModel(...)`. DeepInfra also hosts dedicated APIs for embeddings, image generation, speech, and reranking.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.deepinfra.com/v1/openai",
+  apiKey: process.env.DEEPINFRA_TOKEN,
+});
+
+const model = client.completionModel("deepseek-ai/DeepSeek-V3");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+`baseUrl` makes Anvia use the OpenAI-compatible chat completion adapter. DeepInfra model ids are namespaced as `<org>/<model>` and are not interchangeable with the upstream Hugging Face ids.
+
+## Get the Model List
+
+DeepInfra exposes a `/v1/models` endpoint that returns the model ids available to your token. Because the client was created with `baseUrl`, `listModels()` calls DeepInfra's `/models` endpoint.
+
+```ts
+const models = await client.listModels();
+
+console.table(
+  models.data.map((model) => ({
+    id: model.id,
+    name: model.name,
+    contextLength: model.contextLength,
+  })),
+);
+```
+
+Use the `id` field directly with `completionModel(...)`.
+
+## Notes
+
+- DeepInfra API tokens are passed as bearer tokens in the `Authorization` header.
+- Supported parameters include `model`, `messages`, `max_tokens`, `stream`, `temperature`, `top_p`, `stop`, `n`, `presence_penalty`, `frequency_penalty`, `response_format`, `tools`, `tool_choice`, `service_tier`, and `reasoning_effort`. Coverage can vary slightly per model.
+- `service_tier: "priority"` requests priority inference with faster time-to-first-token and higher throughput during peak demand. Priority requests incur a 20% surcharge on top of the model's standard per-token price.
+- The hard cap for output tokens is 16384 for most models. To extend a response beyond the cap, send a follow-up chat completion with the previous assistant content included; DeepInfra returns `400` when the total context size is exceeded.
+- DeepInfra hosts a wide open-model catalog, including DeepSeek, Llama, Qwen, Mistral, Mixtral, and many others. Browse the full list at [deepinfra.com/models](https://deepinfra.com/models).
+- DeepInfra also exposes dedicated APIs for embeddings, image generation, speech, and reranking that are not part of the OpenAI surface. Use DeepInfra's native endpoints or the OpenAI-compatible chat completions endpoint described here.
+
+For current DeepInfra API details, see the [DeepInfra OpenAI chat completions docs](https://deepinfra.com/docs/openai_api) and the [DeepInfra model catalog](https://deepinfra.com/models).

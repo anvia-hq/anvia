@@ -1,0 +1,75 @@
+---
+title: SambaNova
+description: Use SambaCloud's OpenAI-compatible inference with Anvia.
+---
+
+SambaCloud exposes an OpenAI-compatible chat completions surface through the SambaNova developer platform, including SambaCloud and SambaStack. In Anvia, configure `OpenAIClient` with the SambaNova `baseUrl`, then pass a SambaCloud model id to `completionModel(...)`. SambaNova also publishes a first-party SDK and a custom-checkpoint deployment path on SambaStack.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.sambanova.ai/v1",
+  apiKey: process.env.SAMBANOVA_API_KEY,
+});
+
+const model = client.completionModel("Meta-Llama-3.3-70B-Instruct");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+`baseUrl` makes Anvia use the OpenAI-compatible chat completion adapter. The model id is the SambaCloud id, not an Anvia-specific alias.
+
+## Get the Model List
+
+When SambaCloud exposes a `/v1/models` endpoint for your account, `listModels()` returns the model ids available to your key. Because the client was created with `baseUrl`, the call goes to SambaNova's `/models` endpoint.
+
+```ts
+const models = await client.listModels();
+
+console.table(
+  models.data.map((model) => ({
+    id: model.id,
+    name: model.name,
+    contextLength: model.contextLength,
+  })),
+);
+```
+
+Use the `id` field directly with `completionModel(...)`.
+
+## Available Models
+
+SambaCloud hosts a curated open-model catalog optimized for high token throughput on the RDU. Sample ids include:
+
+| Model | Notes |
+| --- | --- |
+| `Meta-Llama-3.3-70B-Instruct` | Meta Llama 3.3 70B Instruct |
+| `Meta-Llama-3.1-8B-Instruct` | Meta Llama 3.1 8B Instruct |
+| `Meta-Llama-4-Maverick-17B-128E-Instruct-FP8` | Meta Llama 4 Maverick |
+| `Meta-Llama-4-Scout-17B-16E-Instruct` | Meta Llama 4 Scout |
+| `DeepSeek-V3.1` | DeepSeek V3.1 |
+| `DeepSeek-R1` | DeepSeek R1 reasoning |
+| `gpt-oss-120b` | OpenAI gpt-oss 120B |
+| `Qwen3-32B` | Alibaba Qwen 3 32B |
+
+The catalog rotates as new model versions are added. Pick the model id shown in the [SambaCloud model catalog](https://cloud.sambanova.ai/) at request time.
+
+## Notes
+
+- SambaNova API keys are passed as bearer tokens in the `Authorization` header.
+- SambaCloud focuses on high-throughput inference on the SN40 and SN50 RDU. Choose it when you need sustained tokens per second on large open models.
+- SambaStack is the on-prem option. Custom checkpoints deployed to a SambaStack cluster can be exposed with their own ids — the OpenAI-compatible surface stays the same shape.
+- The OpenAI surface is the supported integration path for SambaCloud, but SambaNova also publishes a first-party Python SDK and a custom-checkpoints deployment API for SambaStack. Use those when you need model-bundling features that are not part of the OpenAI shape.
+- Model capabilities still depend on the hosted upstream model. Test the specific model id for tool calling, structured output, streaming, and multimodal support before enabling those features.
+
+For current SambaNova API details, see the [SambaNova developer guide](https://docs.sambanova.ai/) and the [SambaCloud pricing](https://cloud.sambanova.ai/plans/pricing).

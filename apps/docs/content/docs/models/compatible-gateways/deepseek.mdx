@@ -1,0 +1,81 @@
+---
+title: DeepSeek
+description: Use DeepSeek's first-party OpenAI-compatible API with Anvia.
+---
+
+DeepSeek's first-party API uses an OpenAI-compatible format at `https://api.deepseek.com`. In Anvia, configure `OpenAIClient` with that `baseUrl`, then pass a DeepSeek model id to `completionModel(...)`. DeepSeek also exposes an Anthropic-API-compatible surface at `https://api.deepseek.com/anthropic`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.deepseek.com",
+  apiKey: process.env.DEEPSEEK_API_KEY,
+});
+
+const model = client.completionModel("deepseek-v4-pro");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Hello!").send();
+
+console.log(response.output);
+```
+
+`baseUrl` makes Anvia use the OpenAI-compatible chat completion adapter. The model id is the DeepSeek id, not an Anvia-specific alias.
+
+## Thinking Mode
+
+DeepSeek reasoning models support a `thinking` block on the request body and a `reasoning_effort` parameter for non-reasoning models. The OpenAI SDK does not declare these fields, so pass `thinking` through `extra_body`.
+
+```ts
+const response = await client.completionModel("deepseek-v4-pro").doPrompt({
+  messages: [{ role: "user", content: "Hello!" }],
+  reasoning_effort: "high",
+  thinking: { type: "enabled" },
+});
+```
+
+## Get the Model List
+
+DeepSeek exposes a `/models` endpoint that returns the model ids available to your key. Because the client was created with `baseUrl`, `listModels()` calls DeepSeek's `/models` endpoint.
+
+```ts
+const models = await client.listModels();
+
+console.table(
+  models.data.map((model) => ({
+    id: model.id,
+    name: model.name,
+    contextLength: model.contextLength,
+  })),
+);
+```
+
+Use the `id` field directly with `completionModel(...)`.
+
+## Available Models
+
+Sample ids and the deprecation schedule for the legacy aliases:
+
+| Model | Notes |
+| --- | --- |
+| `deepseek-v4-flash` | Latest fast non-thinking / thinking model |
+| `deepseek-v4-pro` | Flagship reasoning model |
+| `deepseek-chat` | Deprecated 2026/07/24 15:59 UTC. Alias for non-thinking `deepseek-v4-flash`. |
+| `deepseek-reasoner` | Deprecated 2026/07/24 15:59 UTC. Alias for thinking `deepseek-v4-flash`. |
+
+## Notes
+
+- DeepSeek API keys are passed as bearer tokens in the `Authorization` header.
+- `deepseek-chat` and `deepseek-reasoner` will be removed on 2026/07/24. Migrate to `deepseek-v4-flash` and `deepseek-v4-pro` before that date.
+- DeepSeek is supported by several agent and coding tools, including Claude Code, GitHub Copilot, and OpenCode. Point any of them at the DeepSeek `baseUrl` to use DeepSeek as the backend model.
+- DeepSeek also exposes an Anthropic-API-compatible surface at `https://api.deepseek.com/anthropic`. Use `AnthropicClient` with that `baseUrl` for Anthropic-format requests.
+- `logprobs`, `top_logprobs`, and other OpenAI parameters not listed in the [DeepSeek API reference](https://api-docs.deepseek.com/) are not supported.
+
+For current DeepSeek API details, see the [DeepSeek API quickstart](https://api-docs.deepseek.com/) and the [DeepSeek models and pricing](https://api-docs.deepseek.com/quick_start/pricing).

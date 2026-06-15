@@ -1,0 +1,67 @@
+---
+title: Perplexity
+description: Use Perplexity's search-augmented models with Anvia.
+---
+
+Perplexity exposes the Sonar line of search-augmented models through its API platform, alongside Search and Embeddings APIs. The chat surface is OpenAI-compatible at `https://api.perplexity.ai` for older Sonar models, and the Agent API at `https://api.perplexity.ai/v1/agent` exposes a Responses-style surface that fronts frontier third-party models with web search tools.
+
+## Create the Client (Sonar Chat)
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://api.perplexity.ai",
+  apiKey: process.env.PERPLEXITY_API_KEY,
+});
+
+const model = client.completionModel("sonar-pro");
+
+const agent = new AgentBuilder("research", model)
+  .instructions("Answer with citations.")
+  .build();
+
+const response = await agent.prompt("Latest news about renewable energy policy.").send();
+
+console.log(response.output);
+```
+
+`baseUrl` makes Anvia use the OpenAI-compatible chat completion adapter. The model id is the Sonar id, not an Anvia-specific alias.
+
+## Agent API (Frontier Models)
+
+The Agent API fronts models such as `openai/gpt-5.5` and `openai/gpt-5.2` with built-in web search, X search, and source filtering. It uses a Responses-style shape rather than the chat completions surface, so wire it up directly with `fetch` or a Perplexity SDK when you need it.
+
+```ts
+const response = await fetch("https://api.perplexity.ai/v1/agent", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "openai/gpt-5.5",
+    input: "Today's most important AI announcements",
+    tools: [{ type: "web_search" }],
+  }),
+});
+
+const data = await response.json();
+console.log(data.output_text);
+```
+
+Use the Agent API when you want the search-augmented frontier models and the source-filter controls. Use the Sonar chat surface when you want a single chat-completion model that Perplexity runs directly.
+
+## Get the Model List
+
+Perplexity does not expose a generic `/v1/models` endpoint. Pick a model id from the [Perplexity model catalog](https://docs.perplexity.ai/docs/model-cards) and pass it to `completionModel(...)`. Sonar family ids include `sonar`, `sonar-pro`, `sonar-reasoning`, and `sonar-reasoning-pro`.
+
+## Notes
+
+- Perplexity API keys are passed as bearer tokens in the `Authorization` header.
+- The Agent API supports `web_search` tools with `search_domain_filter` and `search_recency_filter` controls. JSON schema structured outputs are supported through `response_format`.
+- Sonar chat models return citations in the response. The citations surface differs from the Agent API; downstream code that expects OpenAI-shaped responses may need a small adapter.
+- Perplexity also publishes a Search API for raw, ranked web results, and an Embeddings API for retrieval workloads. Use those for non-chat workloads.
+
+For current Perplexity API details, see the [Perplexity API docs](https://docs.perplexity.ai/) and the [Sonar model cards](https://docs.perplexity.ai/docs/model-cards).

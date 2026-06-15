@@ -1,0 +1,81 @@
+---
+title: Hugging Face Inference
+description: Use Hugging Face's OpenAI-compatible Inference Providers router with Anvia.
+---
+
+Hugging Face exposes an OpenAI-compatible chat completions endpoint at `https://router.huggingface.co/v1` that routes requests across partner providers (Cerebras, Cohere, DeepInfra, Fireworks, Groq, HF Inference, SambaNova, Together, and others). In Anvia, configure `OpenAIClient` with that `baseUrl`, then pass a Hugging Face model id to `completionModel(...)`.
+
+## Create the Client
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+
+const client = new OpenAIClient({
+  baseUrl: "https://router.huggingface.co/v1",
+  apiKey: process.env.HF_TOKEN,
+});
+
+const model = client.completionModel("openai/gpt-oss-120b:fastest");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("How many 'G's are in 'huggingface'?").send();
+
+console.log(response.output);
+```
+
+`baseUrl` makes Anvia use the OpenAI-compatible chat completion adapter. Hugging Face model ids are namespaced as `<org>/<model>`. The router defaults to the `:fastest` policy and picks the highest-throughput provider.
+
+## Provider Selection Policies
+
+Append a suffix to the model id to control how the router picks a provider:
+
+| Suffix | Behavior |
+| --- | --- |
+| `:fastest` | Highest throughput in tokens per second (default) |
+| `:cheapest` | Lowest price per output token |
+| `:preferred` | First available provider in [your preference order](https://hf.co/settings/inference-providers) |
+| `:<provider>` | Force a specific provider, e.g. `openai/gpt-oss-120b:sambanova` |
+
+```ts
+const fastest = client.completionModel("openai/gpt-oss-120b:fastest");
+const cheapest = client.completionModel("openai/gpt-oss-120b:cheapest");
+const onSambaNova = client.completionModel("openai/gpt-oss-120b:sambanova");
+```
+
+## Get the Model List
+
+Hugging Face's router returns available models across all partner providers, including per-provider pricing, context length, latency, and throughput when available.
+
+```ts
+const models = await client.listModels();
+
+console.table(
+  models.data.map((model) => ({
+    id: model.id,
+    name: model.name,
+    contextLength: model.contextLength,
+  })),
+);
+```
+
+Use the `id` field directly with `completionModel(...)`.
+
+## Available Providers
+
+The router covers chat completion (LLM and VLM), feature extraction, text-to-image, text-to-video, and speech-to-text across these partners:
+
+- Cerebras, Cohere, DeepInfra, Featherless AI, Fireworks, Groq, HF Inference, Hyperbolic, Novita, Nscale, OVHcloud, Public AI, SambaNova, Scaleway, Together, WaveSpeedAI, Z.ai
+- For image and video generation, providers also include Fal AI, Replicate, and WaveSpeedAI
+
+## Notes
+
+- Hugging Face tokens are passed as bearer tokens in the `Authorization` header. Use a fine-grained token with the "Make calls to Inference Providers" permission.
+- The OpenAI-compatible endpoint is currently available for chat completion tasks only. For text-to-image, embeddings, and speech processing, use the [Hugging Face JS client](https://huggingface.co/docs/huggingface_hub/guides/inference) or the [`@huggingface/inference`](https://huggingface.co/docs/inference-providers/en/index) SDK.
+- Hugging Face does not add a markup on provider rates. The cost per token is the upstream provider's list price.
+- The Inference Clients (JS and Python) support the same model ids with a `provider` field. Use them when you need task types beyond chat completions or when you want explicit client-side provider control.
+
+For current Hugging Face Inference details, see the [Inference Providers documentation](https://huggingface.co/docs/inference-providers/en/index) and the [Hugging Face model catalog](https://huggingface.co/models?inference_provider=all).

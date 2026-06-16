@@ -20,6 +20,8 @@ const packageDocs = new Map([
   ["@anvia/chroma", "apps/docs/content/docs/reference/integrations/chroma.mdx"],
   ["@anvia/pgvector", "apps/docs/content/docs/reference/integrations/pgvector.mdx"],
   ["@anvia/qdrant", "apps/docs/content/docs/reference/integrations/qdrant.mdx"],
+  ["@anvia/pinecone", "apps/docs/content/docs/reference/integrations/pinecone.mdx"],
+  ["@anvia/milvus", "apps/docs/content/docs/reference/integrations/milvus.mdx"],
   ["@anvia/logger", "apps/docs/content/docs/reference/integrations/logger.mdx"],
   ["@anvia/langfuse", "apps/docs/content/docs/reference/integrations/langfuse.mdx"],
   ["@anvia/otel", "apps/docs/content/docs/reference/integrations/otel.mdx"],

@@ -71,3 +71,14 @@ Purpose: convert Anvia vector filters to Chroma `where` filters.
 Return behavior: returns `undefined` when no filter is supplied.
 
 Notable errors: none directly.
+
+## ChromaCollectionLike
+
+```ts
+type ChromaCollectionLike = {
+  upsert(options: Record<string, unknown>): Promise<unknown>;
+  query(options: Record<string, unknown>): Promise<unknown>;
+};
+```
+
+Purpose: duck-typed interface for a Chroma collection.

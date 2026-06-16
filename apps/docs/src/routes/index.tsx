@@ -35,9 +35,9 @@ export const Route = createFileRoute("/")({
 });
 
 const metrics = [
-  { value: "17", label: "Runtime packages", icon: Package },
+  { value: "19", label: "Runtime packages", icon: Package },
   { value: "4", label: "Model adapters", icon: Boxes },
-  { value: "8", label: "Integration packages", icon: BookOpen },
+  { value: "10", label: "Integration packages", icon: BookOpen },
   { value: "1", label: "Core package", icon: Zap },
 ];
 
@@ -118,6 +118,8 @@ const packageGroups = [
       "@anvia/fastembed",
       "@anvia/transformers",
       "@anvia/chroma",
+      "@anvia/milvus",
+      "@anvia/pinecone",
       "@anvia/qdrant",
       "@anvia/pgvector",
     ],

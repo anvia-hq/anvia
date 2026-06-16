@@ -20,6 +20,8 @@
     "transformers",
     "---Vector Stores---",
     "chroma",
+    "milvus",
+    "pinecone",
     "pgvector",
     "qdrant",
     "---Observability---",

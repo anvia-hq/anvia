@@ -1,0 +1,172 @@
+---
+title: "@anvia/pinecone"
+description: Pinecone vector store adapter for Anvia.
+---
+
+`@anvia/pinecone` connects Anvia's vector store interface to Pinecone. Use it to store embedded documents in a Pinecone index and query them through Anvia retrieval workflows.
+
+## Install
+
+```sh
+pnpm add @anvia/pinecone
+```
+
+The Pinecone client (`@pinecone-database/pinecone`) is a transitive dependency. Configure Pinecone credentials the same way you would for the official client.
+
+## Quick Start
+
+```ts
+import { createFastEmbedEmbeddingModel } from "@anvia/fastembed";
+import { PineconeVectorStore } from "@anvia/pinecone";
+
+const model = await createFastEmbedEmbeddingModel();
+
+const store = await PineconeVectorStore.connect({
+  indexName: "documents",
+  namespace: "support",
+});
+
+await store.upsertDocuments([
+  {
+    id: "doc-1",
+    document: "Anvia is a TypeScript AI agent framework.",
+    embeddings: await model.embedTexts(["Anvia is a TypeScript AI agent framework."]),
+  },
+]);
+
+const index = store.index(model);
+const results = await index.search({ query: "What is Anvia?", topK: 5 });
+console.log(results[0].document);
+```
+
+## Connection Options
+
+```ts
+type PineconeVectorStoreConnectOptions = {
+  client?: PineconeClientLike;      // pre-configured Pinecone client
+  indexName: string;                // required
+  namespace?: string;               // default: ""
+  createIfMissing?: boolean;        // default: true
+  metric?: PineconeMetric;          // default: "cosine"
+};
+```
+
+```ts
+// Default: creates the index if missing and uses the default namespace
+const store = await PineconeVectorStore.connect({
+  indexName: "docs",
+});
+
+// Use a namespace
+const store = await PineconeVectorStore.connect({
+  indexName: "docs",
+  namespace: "production",
+});
+
+// Don't create if missing
+const store = await PineconeVectorStore.connect({
+  indexName: "docs",
+  createIfMissing: false,
+});
+
+// Custom distance metric
+const store = await PineconeVectorStore.connect({
+  indexName: "docs",
+  metric: "dotproduct",
+});
+```
+
+## Upserting Documents
+
+```ts
+await store.upsertDocuments([
+  {
+    id: "doc-1",
+    document: { title: "Getting Started", content: "..." },
+    metadata: { category: "guide", version: 2 },
+    embeddings: await model.embedTexts(["Getting Started content..."]),
+  },
+]);
+```
+
+- Documents are stored as Pinecone vectors with document content and metadata in the vector metadata
+- Documents with multiple embeddings get indexed as `doc-1#embedding:0`, `doc-1#embedding:1`, etc.
+- Vector IDs are deterministic SHA-256 hashes of the document ID
+
+## Searching
+
+```ts
+const index = store.index(model);
+
+// Basic search
+const results = await index.search({ query: "agent tools", topK: 5 });
+
+// With threshold
+const results = await index.search({
+  query: "agent tools",
+  topK: 10,
+  threshold: 0.7,
+});
+
+// With metadata filter
+const results = await index.search({
+  query: "agent tools",
+  topK: 5,
+  filter: { type: "eq", key: "category", value: "guide" },
+});
+```
+
+## Metadata Filters
+
+```ts
+// Equality
+{ type: "eq", key: "category", value: "guide" }
+
+// Range
+{ type: "gt", key: "version", value: 2 }
+{ type: "lt", key: "version", value: 5 }
+
+// Logical combinators
+{ type: "and", filters: [...] }
+{ type: "or", filters: [...] }
+```
+
+Filters are translated to Pinecone's native filter format (`$eq`, `$gt`, `$lt`, `$and`, `$or`).
+
+## Distance Metrics
+
+| Metric | Pinecone value | Notes |
+| --- | --- | --- |
+| Cosine (default) | `"cosine"` | Best for text embeddings |
+| Euclidean | `"euclidean"` | L2 distance |
+| Dot product | `"dotproduct"` | Dot product similarity |
+
+## Agent Tool
+
+Expose the vector index as an agent tool:
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+
+const searchTool = index.asTool({
+  name: "search_docs",
+  description: "Search the documentation.",
+});
+
+const agent = new AgentBuilder("support", model)
+  .tool(searchTool)
+  .build();
+```
+
+## Error Handling
+
+- `connect()` throws if Pinecone credentials or network access fail
+- `connect({ createIfMissing: false })` throws if the index does not exist
+- `upsertDocuments()` throws if a document has zero embeddings
+- Metadata keys starting with `__anvia_` are reserved and rejected
+
+## Related
+
+- [Retrieval Guide](/docs/guides/retrieval) for RAG concepts
+- [`@anvia/fastembed`](/docs/packages/fastembed) for local embeddings
+- [`@anvia/transformers`](/docs/packages/transformers) for local Transformers.js embeddings

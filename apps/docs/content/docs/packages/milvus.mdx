@@ -1,0 +1,176 @@
+---
+title: "@anvia/milvus"
+description: Milvus vector store adapter for Anvia.
+---
+
+`@anvia/milvus` connects Anvia's vector store interface to Milvus. Use it to store embedded documents in a Milvus collection and search them through Anvia retrieval workflows.
+
+## Install
+
+```sh
+pnpm add @anvia/milvus
+```
+
+The Milvus client (`@zilliz/milvus2-sdk-node`) is a transitive dependency. By default, the adapter connects to `localhost:19530`; pass a custom client when you need a different endpoint.
+
+## Quick Start
+
+```ts
+import { createFastEmbedEmbeddingModel } from "@anvia/fastembed";
+import { MilvusVectorStore } from "@anvia/milvus";
+
+const model = await createFastEmbedEmbeddingModel();
+
+const store = await MilvusVectorStore.connect({
+  collectionName: "documents",
+  vectorSize: 384,  // must match your embedding model's dimensions
+});
+
+await store.upsertDocuments([
+  {
+    id: "doc-1",
+    document: "Anvia is a TypeScript AI agent framework.",
+    embeddings: await model.embedTexts(["Anvia is a TypeScript AI agent framework."]),
+  },
+]);
+
+const index = store.index(model);
+const results = await index.search({ query: "What is Anvia?", topK: 5 });
+console.log(results[0].document);
+```
+
+## Connection Options
+
+```ts
+type MilvusVectorStoreConnectOptions = {
+  client?: MilvusClientLike;   // pre-configured Milvus client
+  collectionName: string;      // required
+  vectorSize: number;          // required: embedding dimensions
+  createIfMissing?: boolean;   // default: true
+  metric?: MilvusMetric;       // default: "COSINE"
+};
+```
+
+```ts
+// Default: creates the collection if missing and loads it
+const store = await MilvusVectorStore.connect({
+  collectionName: "docs",
+  vectorSize: 384,
+});
+
+// Don't create if missing
+const store = await MilvusVectorStore.connect({
+  collectionName: "docs",
+  vectorSize: 384,
+  createIfMissing: false,
+});
+
+// Custom distance metric
+const store = await MilvusVectorStore.connect({
+  collectionName: "docs",
+  vectorSize: 384,
+  metric: "IP",
+});
+```
+
+When `createIfMissing` is `true` (default), the adapter:
+
+1. Checks whether the collection exists
+2. Creates a collection with an `id`, document fields, and a `FloatVector` field
+3. Creates an HNSW index on the vector field
+4. Loads the collection before returning the store
+
+## Upserting Documents
+
+```ts
+await store.upsertDocuments([
+  {
+    id: "doc-1",
+    document: { title: "Getting Started", content: "..." },
+    metadata: { category: "guide", version: 2 },
+    embeddings: await model.embedTexts(["Getting Started content..."]),
+  },
+]);
+```
+
+- Documents are inserted as Milvus rows with document content and metadata fields
+- Documents with multiple embeddings get indexed as `doc-1#embedding:0`, `doc-1#embedding:1`, etc.
+- Row IDs are deterministic SHA-256 hashes of the document ID
+
+## Searching
+
+```ts
+const index = store.index(model);
+
+// Basic search
+const results = await index.search({ query: "agent tools", topK: 5 });
+
+// With threshold
+const results = await index.search({
+  query: "agent tools",
+  topK: 10,
+  threshold: 0.7,
+});
+
+// With metadata filter
+const results = await index.search({
+  query: "agent tools",
+  topK: 5,
+  filter: { type: "eq", key: "category", value: "guide" },
+});
+```
+
+## Metadata Filters
+
+```ts
+// Equality
+{ type: "eq", key: "category", value: "guide" }
+
+// Range
+{ type: "gt", key: "version", value: 2 }
+{ type: "lt", key: "version", value: 5 }
+
+// Logical combinators
+{ type: "and", filters: [...] }
+{ type: "or", filters: [...] }
+```
+
+Filters are translated to Milvus boolean expressions such as `category == "guide"` or `(category == "guide") && (version > 2)`.
+
+## Distance Metrics
+
+| Metric | Milvus value | Notes |
+| --- | --- | --- |
+| Cosine (default) | `"COSINE"` | Best for text embeddings |
+| L2 | `"L2"` | Euclidean distance |
+| Inner product | `"IP"` | Dot product similarity |
+
+## Agent Tool
+
+Expose the vector index as an agent tool:
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+
+const searchTool = index.asTool({
+  name: "search_docs",
+  description: "Search the documentation.",
+});
+
+const agent = new AgentBuilder("support", model)
+  .tool(searchTool)
+  .build();
+```
+
+## Error Handling
+
+- `connect()` throws if Milvus is unreachable
+- `connect({ createIfMissing: false })` throws if the collection does not exist
+- `upsertDocuments()` throws if a document has zero embeddings
+- Metadata keys starting with `__anvia_` are reserved and rejected
+
+## Related
+
+- [Retrieval Guide](/docs/guides/retrieval) for RAG concepts
+- [`@anvia/fastembed`](/docs/packages/fastembed) for local embeddings
+- [`@anvia/transformers`](/docs/packages/transformers) for local Transformers.js embeddings

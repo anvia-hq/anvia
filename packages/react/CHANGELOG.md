@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 0.4.0
+
+### Minor Changes
+
+- da736e9: Add `useCompletion` hook for single-prompt text completion streaming and `createDirectTransport` for in-process transport without HTTP.
+
 ## 0.3.1
 
 ### Patch Changes

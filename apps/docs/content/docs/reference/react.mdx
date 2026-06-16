@@ -146,6 +146,58 @@ Purpose: React chat state machine that consumes events from any `EventTransport`
 
 Passing `endpoint` creates a default JSONL fetch transport. Passing `transport` makes the hook independent of HTTP.
 
+## useCompletion
+
+```ts
+type UseCompletionRequest = {
+  prompt: string;
+  stream: true;
+};
+
+type UseCompletionStatus = "idle" | "streaming" | "error";
+
+type UseCompletionOptions<TEvent = unknown> = {
+  transport?: EventTransport<UseCompletionRequest, TEvent>;
+  endpoint?: string | URL;
+  format?: "jsonl" | "sse";
+  initialCompletion?: string;
+  eventToDelta?: (event: TEvent) => string | undefined;
+  eventToFinal?: (event: TEvent) => string | undefined;
+  onEvent?: (event: TEvent) => void;
+  onError?: (error: unknown) => void;
+};
+
+type UseCompletionResult = {
+  completion: string;
+  input: string;
+  setInput(input: string): void;
+  complete(prompt?: string): Promise<void>;
+  stop(): void;
+  reset(completion?: string): void;
+  status: UseCompletionStatus;
+  error: unknown;
+};
+
+function useCompletion<TEvent = unknown>(
+  options?: UseCompletionOptions<TEvent>,
+): UseCompletionResult;
+```
+
+Purpose: React hook for single-prompt text completion streaming. Simpler alternative to `useChat` when you only need prompt-in, text-out without message history.
+
+Default `eventToDelta` matches `{ type: "text_delta", delta: string }` events.
+Default `eventToFinal` matches `{ type: "final", response: { choice: Array<{ type: "text", text: string }> } }` events (compatible with `CompletionStreamEvent` from `@anvia/core`).
+
+## createDirectTransport
+
+```ts
+function createDirectTransport<TRequest, TEvent>(
+  handler: (request: TRequest) => AsyncIterable<TEvent>,
+): EventTransport<TRequest, TEvent>;
+```
+
+Purpose: in-process transport that calls a handler function directly, bypassing HTTP. Works with both `useChat` and `useCompletion`. Useful for SSR, testing, and single-process applications.
+
 ## EventStreamHttpError
 
 ```ts

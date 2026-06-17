@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.6.2
+
+### Patch Changes
+
+- 4806f3e: Add `PromptRequest.steer()` for enqueueing user messages at safe model-turn boundaries during active prompt runs.
+
 ## 0.6.1
 
 ### Patch Changes

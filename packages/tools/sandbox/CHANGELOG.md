@@ -1,5 +1,11 @@
 # @anvia/sandbox
 
+## 0.3.0
+
+### Minor Changes
+
+- 18403b7: Add sandbox V2 controls for persistent workspaces, lifecycle cleanup, streaming command execution, file-size limits, observability hooks, language presets, and model-facing tool policies.
+
 ## 0.2.2
 
 ### Patch Changes

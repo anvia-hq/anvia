@@ -44,9 +44,9 @@ Run the relevant checks:
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm --filter './packages/**' typecheck
-pnpm --filter './packages/**' test
-pnpm --filter './packages/**' build
+pnpm --filter './packages/*' typecheck
+pnpm --filter './packages/*' test
+pnpm --filter './packages/*' build
 ```
 
 If docs changed, also run:
@@ -96,7 +96,7 @@ pnpm release
 That command runs:
 
 ```sh
-pnpm --filter './packages/**' build && changeset publish
+pnpm --filter './packages/*' build && changeset publish
 ```
 
 ## Manual Version Check

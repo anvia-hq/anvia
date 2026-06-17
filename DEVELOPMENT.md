@@ -25,10 +25,13 @@ pnpm install
 │   └── cookbook/                 # Runnable learning path
 ├── packages/
 │   ├── core/                     # @anvia/core
-│   ├── provider-*/               # Provider adapters
 │   ├── embedding-*/              # Embedding adapters
+│   ├── logger/                   # @anvia/logger
 │   ├── observability-*/          # Observability adapters
-│   ├── tool-studio/              # @anvia/studio
+│   ├── provider-*/               # Provider adapters
+│   ├── react/                    # @anvia/react
+│   ├── server/                   # @anvia/server
+│   ├── tool-*/                   # Tool packages
 │   └── vector-*/                 # Vector store adapters
 └── bin/                          # Local maintenance scripts
 ```

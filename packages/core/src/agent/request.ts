@@ -15,6 +15,7 @@ import {
   Usage,
 } from "../completion/index";
 import { createAsyncQueue } from "../internal/async-queue";
+import { compact } from "../internal/compact";
 import type { MemoryContext } from "../memory";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
 import type { AgentTraceInfo, AgentTraceOptions } from "../observability/types";
@@ -382,16 +383,16 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
-        const generationObservers = await runObservers.startGeneration({
+        const generationObservers = await runObservers.startGeneration(compact({
           turn: currentTurns,
           request,
-          ...(providerRequest === undefined ? {} : { providerRequest }),
+          providerRequest,
           modelInfo: {
             provider: this.agent.model.provider,
             defaultModel: this.agent.model.defaultModel,
             capabilities: this.agent.model.capabilities,
           },
-        });
+        }));
         const accumulator = new CompletionStreamAccumulator();
         const generationStartedAt = Date.now();
         let firstDeltaMs: number | undefined;
@@ -415,11 +416,11 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         }
 
         let response = accumulator.response();
-        await generationObservers.end({
+        await generationObservers.end(compact({
           turn: currentTurns,
           response,
-          ...(firstDeltaMs === undefined ? {} : { firstDeltaMs }),
-        });
+          firstDeltaMs,
+        }));
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
         usage = Usage.add(usage, response.usage);
         await this.runCompletionResponseHook(prompt, response, newMessages);
@@ -528,16 +529,16 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this.agent.model, request);
     const providerRequest = this.providerTraceRequest(request);
-    const generationObservers = await runObservers.startGeneration({
+    const generationObservers = await runObservers.startGeneration(compact({
       turn,
       request,
-      ...(providerRequest === undefined ? {} : { providerRequest }),
+      providerRequest,
       modelInfo: {
         provider: this.agent.model.provider,
         defaultModel: this.agent.model.defaultModel,
         capabilities: this.agent.model.capabilities,
       },
-    });
+    }));
     try {
       const response = await this.agent.model.completion(request);
       await generationObservers.end({ turn, response });
@@ -616,14 +617,13 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     await registration.store.append({
       runId,
       agentId,
-      ...(agentName === undefined ? {} : { agentName }),
-      ...(turn === undefined ? {} : { turn }),
+      ...compact({ agentName, turn }),
       ...(event.type === "agent_tool_event"
-        ? {
+        ? compact({
             toolName: event.toolName,
-            ...(event.toolCallId === undefined ? {} : { toolCallId: event.toolCallId }),
+            toolCallId: event.toolCallId,
             internalCallId: event.internalCallId,
-          }
+          })
         : {}),
       event,
     });

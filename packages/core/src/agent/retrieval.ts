@@ -1,4 +1,5 @@
 import type { Document, ToolDefinition } from "../completion/index";
+import { compact } from "../internal/compact";
 import type { Agent } from "./agent";
 
 export async function fetchDynamicContext(
@@ -23,14 +24,14 @@ export async function fetchDynamicContext(
         documents.push(formatted);
       } else {
         const metadata = formatMetadata(result.metadata);
-        documents.push({
+        documents.push(compact({
           id: result.id,
           text:
             typeof result.document === "string"
               ? result.document
               : JSON.stringify(result.document, null, 2),
-          ...(metadata === undefined ? {} : { additionalProps: metadata }),
-        });
+          additionalProps: metadata,
+        }) as Document);
       }
     }
   }

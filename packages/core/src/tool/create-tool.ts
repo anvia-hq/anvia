@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { compact } from "../internal/compact";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { Tool, ToolApprovalPolicy, ToolCallContext } from "./tool";
 
@@ -43,8 +44,7 @@ export function createTool<
   const parameters = toProviderJsonSchema(options.input);
 
   return {
-    name: options.name,
-    ...(options.approval === undefined ? {} : { approval: options.approval }),
+    ...compact({ name: options.name, approval: options.approval }),
     definition() {
       return {
         name: options.name,

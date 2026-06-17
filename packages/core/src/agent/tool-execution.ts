@@ -6,6 +6,7 @@ import type {
   ToolResultContent,
 } from "../completion";
 import { ToolContent } from "../completion";
+import { compact } from "../internal/compact";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type { ActiveAgentRunObservers, ActiveToolObservers } from "../observability/group";
 import type { AnyTool, NormalizedToolOutput, ToolCallStreamEvent } from "../tool";
@@ -82,16 +83,16 @@ export class ToolCallExecutor {
       );
       const toolMetadata = toolTraceMetadata(tool);
 
-      const toolObservers = await observation?.runObservers.startTool({
+      const toolObservers = await observation?.runObservers.startTool(compact({
         turn: observation.turn,
         toolCall,
         toolName: toolCall.function.name,
         internalCallId,
         args,
         toolCallId: toolCall.callId,
-        ...(toolDefinition === undefined ? {} : { toolDefinition }),
-        ...(toolMetadata === undefined ? {} : { toolMetadata }),
-      });
+        toolDefinition,
+        toolMetadata,
+      }));
 
       const callAction = await this.activeHook?.onToolCall?.({
         ...hookArgs,
@@ -136,15 +137,17 @@ export class ToolCallExecutor {
         try {
           output = await this.agent.callTool(toolCall.function.name, effectiveArgs, {
             emitStreamEvent: async (event) => {
-              await toolObservers?.streamEvent({
-                turn: observation?.turn ?? 0,
-                toolCall,
-                toolName: toolCall.function.name,
-                internalCallId,
-                args: effectiveArgs,
-                ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
-                event,
-              });
+              await toolObservers?.streamEvent(
+                compact({
+                  turn: observation?.turn ?? 0,
+                  toolCall,
+                  toolName: toolCall.function.name,
+                  internalCallId,
+                  args: effectiveArgs,
+                  toolCallId: toolCall.callId,
+                  event,
+                }),
+              );
               const payload = agentToolEventPayload(toolCall, internalCallId, event);
               if (payload !== undefined) {
                 onStreamEvent?.(payload);
@@ -164,7 +167,7 @@ export class ToolCallExecutor {
             toolName: toolCall.function.name,
             internalCallId,
             args: effectiveArgs,
-            ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
+            ...(toolCall.callId !== undefined && { toolCallId: toolCall.callId }),
             error,
           });
           if (errorAction?.type === "terminate") {
@@ -357,13 +360,13 @@ function agentToolEventPayload(
   if (typeof event.agentId !== "string" || event.agentId.length === 0) {
     return undefined;
   }
-  return {
-    type: "agent_tool_event",
+  return compact({
+    type: "agent_tool_event" as const,
     toolName: toolCall.function.name,
-    ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
+    toolCallId: toolCall.callId,
     internalCallId,
     agentId: event.agentId,
-    ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
+    agentName: event.agentName,
     event: event.event as AgentChildStreamEvent,
-  };
+  });
 }

@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.5.13
+
+### Patch Changes
+
+- 3572881: Flatten package folders to the top-level `packages/*` workspace layout. This only updates repository layout metadata and does not change package behavior.
+
 ## 0.5.12
 
 ### Patch Changes

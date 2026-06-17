@@ -1,5 +1,11 @@
 # @anvia/mistral
 
+## 0.2.7
+
+### Patch Changes
+
+- 3572881: Flatten package folders to the top-level `packages/*` workspace layout. This only updates repository layout metadata and does not change package behavior.
+
 ## 0.2.6
 
 ### Patch Changes

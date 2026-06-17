@@ -1,5 +1,11 @@
 # @anvia/qdrant
 
+## 0.2.6
+
+### Patch Changes
+
+- 3572881: Flatten package folders to the top-level `packages/*` workspace layout. This only updates repository layout metadata and does not change package behavior.
+
 ## 0.2.5
 
 ### Patch Changes

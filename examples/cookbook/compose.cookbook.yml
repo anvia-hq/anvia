@@ -55,7 +55,34 @@ services:
       timeout: 3s
       retries: 20
 
+  milvus:
+    image: milvusdb/milvus:v2.5.17
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      COMMON_STORAGETYPE: local
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus-data:/var/lib/milvus
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-lc",
+          "curl -sf http://127.0.0.1:9091/healthz",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
 volumes:
   chroma-data:
   qdrant-data:
   pgvector-data:
+  milvus-data:

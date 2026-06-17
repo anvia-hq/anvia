@@ -154,6 +154,9 @@ importers:
 
   examples/cookbook:
     dependencies:
+      '@anvia/anthropic':
+        specifier: workspace:*
+        version: link:../../packages/provider-anthropic
       '@anvia/chroma':
         specifier: workspace:*
         version: link:../../packages/vector-chroma
@@ -172,6 +175,9 @@ importers:
       '@anvia/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@anvia/milvus':
+        specifier: workspace:*
+        version: link:../../packages/vector-milvus
       '@anvia/mistral':
         specifier: workspace:*
         version: link:../../packages/provider-mistral
@@ -184,6 +190,9 @@ importers:
       '@anvia/pgvector':
         specifier: workspace:*
         version: link:../../packages/vector-pgvector
+      '@anvia/pinecone':
+        specifier: workspace:*
+        version: link:../../packages/vector-pinecone
       '@anvia/qdrant':
         specifier: workspace:*
         version: link:../../packages/vector-qdrant

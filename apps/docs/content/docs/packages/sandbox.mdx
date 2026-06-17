@@ -36,12 +36,15 @@ type DockerSandboxOptions = {
   image?: string;          // Docker image (default: "node:22-bookworm")
   pull?: "missing" | "always" | "never";  // pull policy (default: "missing")
   workdir?: string;        // workspace directory (default: "/workspace")
-  network?: boolean | "none" | "host" | string;  // network mode (default: false/none)
+  workspace?: SandboxWorkspaceOptions;  // ephemeral or persistent volume
+  lifecycle?: SandboxLifecycleOptions;  // ttl and idle cleanup
+  network?: boolean | "none" | "host" | string | { mode: boolean | "none" | "host" | string };
   user?: string;           // container user
   dockerPath?: string;     // path to docker CLI
   labels?: Record<string, string>;  // Docker container labels
   limits?: SandboxLimits;  // resource limits
   security?: DockerSandboxSecurityOptions;
+  hooks?: SandboxHooks;
 };
 ```
 
@@ -49,13 +52,21 @@ type DockerSandboxOptions = {
 // Custom image and limits
 const sandbox = new DockerSandbox({
   image: "python:3.12-slim",
-  limits: { timeoutMs: 30_000, memoryMb: 512, cpus: 1 },
+  limits: { timeoutMs: 30_000, maxFileBytes: 5_000_000, memoryMb: 512, cpus: 1 },
 });
 
 // Network access enabled
 const sandbox = new DockerSandbox({
-  network: "host",
+  network: { mode: "host" },
 });
+```
+
+### Presets
+
+```ts
+const nodeSandbox = DockerSandbox.node();
+const pythonSandbox = DockerSandbox.python();
+const denoSandbox = DockerSandbox.deno();
 ```
 
 ### Security Defaults
@@ -86,6 +97,7 @@ Each session creates one Docker container and one Docker volume mounted at the w
 ```ts
 const session = await sandbox.createSession({
   id: "my-session",           // optional custom ID
+  workspace: { mode: "ephemeral" },
   metadata: { userId: "123" }, // optional metadata
   manifest: {
     files: {
@@ -99,6 +111,17 @@ const session = await sandbox.createSession({
 ```
 
 The manifest seeds the workspace with files and directories before any commands run.
+
+Use a persistent workspace only when continuity is explicit:
+
+```ts
+const session = await sandbox.createSession({
+  workspace: {
+    mode: "persistent",
+    id: `user-${userId}`,
+  },
+});
+```
 
 ### Executing Commands
 
@@ -120,6 +143,16 @@ console.log(result.stderr);
 console.log(result.exitCode);
 console.log(result.durationMs);
 console.log(result.timedOut);
+```
+
+Stream command output with `execStream(...)`:
+
+```ts
+for await (const event of session.execStream({ command: "npm", args: ["test"] })) {
+  if (event.type === "stdout" || event.type === "stderr") {
+    process.stdout.write(event.text);
+  }
+}
 ```
 
 ### File Operations
@@ -155,7 +188,13 @@ import { createSandboxTools } from "@anvia/sandbox";
 import { AgentBuilder } from "@anvia/core";
 
 const session = await sandbox.createSession();
-const tools = createSandboxTools(session);
+const tools = createSandboxTools(session, {
+  allow: ["exec_command", "read_file", "write_file", "list_files"],
+  exec: {
+    allowedCommands: ["node", "npm"],
+    maxTimeoutMs: 30_000,
+  },
+});
 
 const agent = new AgentBuilder("coder", model)
   .instructions("Write and run code to solve problems.")

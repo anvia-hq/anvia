@@ -1,5 +1,6 @@
 import { type AnyTool, createTool } from "@anvia/core/tool";
 import { z } from "zod";
+import { SandboxToolPolicyError } from "./errors";
 import type {
   SandboxExecOptions,
   SandboxExecResult,
@@ -49,7 +50,7 @@ export function createSandboxTools(
   options: SandboxToolsOptions = {},
 ): AnyTool[] {
   const include = new Set<SandboxToolName>(
-    options.include ?? ["exec_command", "read_file", "write_file", "list_files"],
+    options.allow ?? options.include ?? ["exec_command", "read_file", "write_file", "list_files"],
   );
   const tools: AnyTool[] = [];
 
@@ -58,11 +59,11 @@ export function createSandboxTools(
   }
 
   if (include.has("read_file")) {
-    tools.push(createReadFileTool(session));
+    tools.push(createReadFileTool(session, options));
   }
 
   if (include.has("write_file")) {
-    tools.push(createWriteFileTool(session));
+    tools.push(createWriteFileTool(session, options));
   }
 
   if (include.has("list_files")) {
@@ -73,6 +74,8 @@ export function createSandboxTools(
 }
 
 function createExecCommandTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
+  const policy = options.exec ?? {};
+
   return createTool({
     name: "exec_command",
     description:
@@ -80,6 +83,8 @@ function createExecCommandTool(session: SandboxSession, options: SandboxToolsOpt
     input: execCommandInput,
     output: textOutput,
     execute: async ({ command, args, cwd, env, timeoutMs, input }) => {
+      assertCommandAllowed(command, options);
+
       const execOptions: SandboxExecOptions = {
         command,
       };
@@ -93,8 +98,9 @@ function createExecCommandTool(session: SandboxSession, options: SandboxToolsOpt
       if (env !== undefined) {
         execOptions.env = env;
       }
-      const effectiveTimeoutMs = timeoutMs ?? options.execTimeoutMs;
+      const effectiveTimeoutMs = timeoutMs ?? policy.defaultTimeoutMs ?? options.execTimeoutMs;
       if (effectiveTimeoutMs !== undefined) {
+        assertTimeoutAllowed(effectiveTimeoutMs, options);
         execOptions.timeoutMs = effectiveTimeoutMs;
       }
       if (input !== undefined) {
@@ -108,23 +114,28 @@ function createExecCommandTool(session: SandboxSession, options: SandboxToolsOpt
   });
 }
 
-function createReadFileTool(session: SandboxSession): AnyTool {
+function createReadFileTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
   return createTool({
     name: "read_file",
     description: "Read a text file from the sandbox workspace.",
     input: readFileInput,
     output: textOutput,
-    execute: async ({ path }) => session.readTextFile(path),
+    execute: async ({ path }) => {
+      const content = await session.readTextFile(path);
+      assertReadAllowed(content, options);
+      return content;
+    },
   });
 }
 
-function createWriteFileTool(session: SandboxSession): AnyTool {
+function createWriteFileTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
   return createTool({
     name: "write_file",
     description: "Write a text file inside the sandbox workspace. Creates parent directories.",
     input: writeFileInput,
     output: textOutput,
     execute: async ({ path, content }) => {
+      assertContentAllowed(content, options);
       await session.writeTextFile(path, content);
       return `Wrote ${path}`;
     },
@@ -178,4 +189,42 @@ function formatExecResult(result: SandboxExecResult): string {
   }
 
   return parts.join("\n\n");
+}
+
+function assertCommandAllowed(command: string, options: SandboxToolsOptions): void {
+  const policy = options.exec;
+
+  if (policy?.blockedCommands?.includes(command)) {
+    throw new SandboxToolPolicyError(`Command is blocked by sandbox tool policy: ${command}`);
+  }
+
+  if (policy?.allowedCommands !== undefined && !policy.allowedCommands.includes(command)) {
+    throw new SandboxToolPolicyError(`Command is not allowed by sandbox tool policy: ${command}`);
+  }
+}
+
+function assertTimeoutAllowed(timeoutMs: number, options: SandboxToolsOptions): void {
+  const maxTimeoutMs = options.exec?.maxTimeoutMs;
+
+  if (maxTimeoutMs !== undefined && timeoutMs > maxTimeoutMs) {
+    throw new SandboxToolPolicyError(
+      `Command timeout exceeds sandbox tool policy (${timeoutMs} > ${maxTimeoutMs}).`,
+    );
+  }
+}
+
+function assertContentAllowed(content: string, options: SandboxToolsOptions): void {
+  const maxBytes = options.writeFile?.maxBytes;
+
+  if (maxBytes !== undefined && Buffer.byteLength(content) > maxBytes) {
+    throw new SandboxToolPolicyError("File content exceeds sandbox tool policy.");
+  }
+}
+
+function assertReadAllowed(content: string, options: SandboxToolsOptions): void {
+  const maxBytes = options.readFile?.maxBytes;
+
+  if (maxBytes !== undefined && Buffer.byteLength(content) > maxBytes) {
+    throw new SandboxToolPolicyError("File content exceeds sandbox tool policy.");
+  }
 }

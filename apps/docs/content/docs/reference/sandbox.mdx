@@ -11,6 +11,9 @@ Import from `@anvia/sandbox`.
 class DockerSandbox implements Sandbox {
   readonly provider: "docker";
   constructor(options?: DockerSandboxOptions);
+  static node(options?: DockerSandboxOptions): DockerSandbox;
+  static python(options?: DockerSandboxOptions): DockerSandbox;
+  static deno(options?: DockerSandboxOptions): DockerSandbox;
   createSession(options?: SandboxCreateSessionOptions): Promise<SandboxSession>;
 }
 ```
@@ -34,6 +37,7 @@ interface SandboxSession {
   readonly provider: string;
   readonly workdir: string;
   exec(options: SandboxExecOptions): Promise<SandboxExecResult>;
+  execStream(options: SandboxExecOptions): AsyncIterable<SandboxExecStreamEvent>;
   readFile(path: string): Promise<Uint8Array>;
   readTextFile(path: string): Promise<string>;
   writeFile(path: string, data: string | Uint8Array): Promise<void>;
@@ -52,9 +56,18 @@ Return behavior: file paths are sandbox-relative; absolute paths and traversal o
 ```ts
 type SandboxCreateSessionOptions = {
   id?: string;
+  workspace?: SandboxWorkspaceOptions;
   manifest?: SandboxManifest;
   metadata?: Record<string, string>;
 };
+
+type SandboxWorkspaceOptions =
+  | { mode?: "ephemeral" }
+  | {
+      mode: "persistent";
+      id: string;
+      destroyOnSessionDestroy?: boolean;
+    };
 
 type SandboxManifest = {
   files?: Record<string, string | Uint8Array>;
@@ -65,13 +78,20 @@ type SandboxManifest = {
 type SandboxLimits = {
   timeoutMs?: number;
   maxOutputBytes?: number;
+  maxFileBytes?: number;
   memoryMb?: number;
   cpus?: number;
   pidsLimit?: number;
 };
+
+type SandboxLifecycleOptions = {
+  ttlMs?: number;
+  idleTimeoutMs?: number;
+  autoDestroy?: boolean;
+};
 ```
 
-Purpose: seed files, directories, environment, metadata, and runtime limits for a sandbox session.
+Purpose: seed files, directories, environment, metadata, workspace mode, lifecycle cleanup, and runtime limits for a sandbox session.
 
 ## Docker Options
 
@@ -80,12 +100,15 @@ type DockerSandboxOptions = {
   image?: string;
   pull?: "missing" | "always" | "never";
   workdir?: string;
-  network?: SandboxNetworkMode;
+  workspace?: SandboxWorkspaceOptions;
+  lifecycle?: SandboxLifecycleOptions;
+  network?: SandboxNetworkMode | DockerSandboxNetworkOptions;
   user?: string;
   dockerPath?: string;
   labels?: Record<string, string>;
   limits?: SandboxLimits;
   security?: DockerSandboxSecurityOptions;
+  hooks?: SandboxHooks;
 };
 
 type DockerSandboxSecurityOptions = {
@@ -94,10 +117,16 @@ type DockerSandboxSecurityOptions = {
   dropCapabilities?: string[];
 };
 
+type DockerSandboxNetworkOptions = {
+  mode: SandboxNetworkMode;
+};
+
 type SandboxNetworkMode = boolean | "none" | "host" | string;
 ```
 
 Defaults: `image` is `node:22-bookworm`, `pull` is `missing`, `workdir` is `/workspace`, network access is disabled, `noNewPrivileges` is enabled, and Docker capabilities are dropped with `["ALL"]`.
+
+Static presets: `DockerSandbox.node(...)`, `DockerSandbox.python(...)`, and `DockerSandbox.deno(...)` create sandboxes with language-specific default images.
 
 ## Execution
 
@@ -124,9 +153,14 @@ type SandboxExecResult = {
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
 };
+
+type SandboxExecStreamEvent =
+  | { type: "stdout"; chunk: Uint8Array; text: string }
+  | { type: "stderr"; chunk: Uint8Array; text: string }
+  | { type: "exit"; result: SandboxExecResult };
 ```
 
-Return behavior: non-zero command exits are returned in `SandboxExecResult`; infrastructure failures throw.
+Return behavior: non-zero command exits are returned in `SandboxExecResult`; infrastructure failures throw. `execStream(...)` yields stdout and stderr chunks as they arrive, then yields one `exit` event with the final result.
 
 ## Files
 
@@ -151,8 +185,12 @@ function createSandboxTools(
 ): AnyTool[];
 
 type SandboxToolsOptions = {
+  allow?: SandboxToolName[];
   include?: SandboxToolName[];
   execTimeoutMs?: number;
+  exec?: SandboxExecToolPolicy;
+  readFile?: SandboxFileToolPolicy;
+  writeFile?: SandboxFileToolPolicy;
 };
 
 type SandboxToolName =
@@ -161,13 +199,59 @@ type SandboxToolName =
   | "write_file"
   | "list_files";
 
+type SandboxExecToolPolicy = {
+  allowedCommands?: string[];
+  blockedCommands?: string[];
+  defaultTimeoutMs?: number;
+  maxTimeoutMs?: number;
+};
+
+type SandboxFileToolPolicy = {
+  maxBytes?: number;
+};
+
 type SandboxToolsFactory = (
   session: SandboxSession,
   options?: SandboxToolsOptions,
 ) => AnyTool[];
 ```
 
-Purpose: expose a live sandbox session as Anvia tools. The default bundle includes `exec_command`, `read_file`, `write_file`, and `list_files`.
+Purpose: expose a live sandbox session as Anvia tools. The default bundle includes `exec_command`, `read_file`, `write_file`, and `list_files`. Use `allow` or `include` to select tools and `SandboxExecToolPolicy` or `SandboxFileToolPolicy` to bound model-facing operations.
+
+## Hooks
+
+```ts
+type SandboxHooks = {
+  onSessionCreate?: (event: SandboxSessionEvent) => void | Promise<void>;
+  onExecStart?: (event: SandboxExecEvent) => void | Promise<void>;
+  onExecEnd?: (event: SandboxExecEndEvent) => void | Promise<void>;
+  onFileWrite?: (event: SandboxFileWriteEvent) => void | Promise<void>;
+  onDestroy?: (event: SandboxSessionEvent) => void | Promise<void>;
+};
+
+type SandboxSessionEvent = {
+  sessionId: string;
+  provider: string;
+  workdir: string;
+};
+
+type SandboxExecEvent = SandboxSessionEvent & {
+  command: string;
+  args: string[];
+  cwd?: string;
+};
+
+type SandboxExecEndEvent = SandboxExecEvent & {
+  result: SandboxExecResult;
+};
+
+type SandboxFileWriteEvent = SandboxSessionEvent & {
+  path: string;
+  size: number;
+};
+```
+
+Purpose: observe session creation, command execution, file writes, and cleanup without exposing those details to the model.
 
 For workflow guidance, see [Sandbox](/docs/guides/sandbox) and the `tools:11` cookbook example.
 
@@ -180,6 +264,8 @@ class SandboxDockerCommandError extends SandboxError {}
 class SandboxSessionDestroyedError extends SandboxError {}
 class SandboxPathError extends SandboxError {}
 class SandboxTimeoutError extends SandboxError {}
+class SandboxFileSizeError extends SandboxError {}
+class SandboxToolPolicyError extends SandboxError {}
 ```
 
-Purpose: typed failures for Docker setup, path validation, destroyed sessions, and sandbox operations.
+Purpose: typed failures for Docker setup, path validation, destroyed sessions, file size limits, tool policy limits, and sandbox operations.

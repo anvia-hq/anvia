@@ -12,9 +12,24 @@ import { createSandboxTools, DockerSandbox } from "@anvia/sandbox";
 const sandbox = new DockerSandbox();
 const session = await sandbox.createSession();
 
+const tools = createSandboxTools(session, {
+  allow: ["exec_command", "read_file", "write_file", "list_files"],
+  exec: {
+    allowedCommands: ["node", "npm"],
+    defaultTimeoutMs: 10_000,
+    maxTimeoutMs: 30_000,
+  },
+  readFile: {
+    maxBytes: 64_000,
+  },
+  writeFile: {
+    maxBytes: 64_000,
+  },
+});
+
 const agent = new AgentBuilder("coder", model)
   .instructions("Use the sandbox for code execution and file operations.")
-  .tools(createSandboxTools(session))
+  .tools(tools)
   .defaultMaxTurns(6)
   .build();
 
@@ -39,3 +54,22 @@ The default bundle exposes:
 | `list_files` | List files and directories under a workspace path |
 
 Keep the session lifetime explicit. Create the session before the agent run and destroy it in a `finally` block.
+
+## Tool Policy
+
+Use `allow` to choose which sandbox tools are exposed. Use `exec.allowedCommands` or `exec.blockedCommands` to keep model-chosen commands inside the product boundary.
+
+```ts
+const tools = createSandboxTools(session, {
+  allow: ["exec_command", "read_file", "list_files"],
+  exec: {
+    allowedCommands: ["node", "npm"],
+    maxTimeoutMs: 30_000,
+  },
+  readFile: {
+    maxBytes: 64_000,
+  },
+});
+```
+
+Tool policy is separate from Docker isolation. Docker limits protect the host; tool policy controls what the model can ask the session to do.

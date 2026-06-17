@@ -20,6 +20,12 @@ describe("createSandboxTools", () => {
     expect(tools.map((tool) => tool.name)).toEqual(["read_file"]);
   });
 
+  it("supports allow as a tool selection alias", () => {
+    const tools = createSandboxTools(createSession(), { allow: ["list_files"] });
+
+    expect(tools.map((tool) => tool.name)).toEqual(["list_files"]);
+  });
+
   it("exec_command calls the sandbox session with structured args", async () => {
     const session = createSession();
     const [tool] = createSandboxTools(session, { include: ["exec_command"], execTimeoutMs: 1234 });
@@ -43,6 +49,44 @@ describe("createSandboxTools", () => {
     });
     expect(output).toContain("exit_code: 0");
     expect(output).toContain("stdout:");
+  });
+
+  it("enforces exec command policy", async () => {
+    const session = createSession();
+    const [tool] = createSandboxTools(session, {
+      allow: ["exec_command"],
+      exec: {
+        allowedCommands: ["node"],
+        maxTimeoutMs: 1000,
+      },
+    });
+    if (tool === undefined) {
+      throw new Error("Expected exec_command tool.");
+    }
+
+    await expect(tool.call({ command: "python" })).rejects.toThrow(
+      "Command is not allowed by sandbox tool policy",
+    );
+    await expect(tool.call({ command: "node", timeoutMs: 2000 })).rejects.toThrow(
+      "Command timeout exceeds sandbox tool policy",
+    );
+  });
+
+  it("enforces file tool byte policies", async () => {
+    const session = createSession();
+    const tools = Object.fromEntries(
+      createSandboxTools(session, {
+        readFile: { maxBytes: 4 },
+        writeFile: { maxBytes: 4 },
+      }).map((tool) => [tool.name, tool] as const),
+    );
+
+    await expect(tools.read_file?.call({ path: "a.txt" })).rejects.toThrow(
+      "File content exceeds sandbox tool policy",
+    );
+    await expect(tools.write_file?.call({ path: "a.txt", content: "content" })).rejects.toThrow(
+      "File content exceeds sandbox tool policy",
+    );
   });
 
   it("read_file, write_file, and list_files delegate to the session", async () => {
@@ -78,6 +122,21 @@ function createSession(): SandboxSession {
       stdoutTruncated: false,
       stderrTruncated: false,
     })),
+    execStream: vi.fn(async function* () {
+      yield {
+        type: "exit" as const,
+        result: {
+          stdout: "ok\n",
+          stderr: "",
+          exitCode: 0,
+          durationMs: 10,
+          timedOut: false,
+          aborted: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        },
+      };
+    }),
     readFile: vi.fn(async () => new TextEncoder().encode("file content")),
     readTextFile: vi.fn(async () => "file content"),
     writeFile: vi.fn(async () => undefined),

@@ -28,3 +28,7 @@ export class SandboxSessionDestroyedError extends SandboxError {}
 export class SandboxPathError extends SandboxError {}
 
 export class SandboxTimeoutError extends SandboxError {}
+
+export class SandboxFileSizeError extends SandboxError {}
+
+export class SandboxToolPolicyError extends SandboxError {}

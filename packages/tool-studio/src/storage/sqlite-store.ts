@@ -220,6 +220,27 @@ class SqliteSessionStore
       : toSession(row, this.listSessionMessages(id), this.listSessionRunRows(id));
   }
 
+  updateSessionMetadata(id: string, metadata: JsonObject | undefined): StudioSession | undefined {
+    const db = this.database();
+    const now = new Date().toISOString();
+    const result = db
+      .prepare(
+        `UPDATE anvia_studio_sessions
+         SET metadata_json = $metadata,
+             updated_at = $now
+         WHERE id = $id`,
+      )
+      .run({
+        $id: id,
+        $metadata: metadata === undefined ? null : JSON.stringify(metadata),
+        $now: now,
+      });
+    if (result.changes === 0) {
+      return undefined;
+    }
+    return this.getSession(id);
+  }
+
   load(context: MemoryContext): Promise<Message[]> {
     const session = this.getSession(context.sessionId);
     return Promise.resolve(session?.messages ?? []);

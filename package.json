@@ -96,6 +96,7 @@
     "cookbook:studio:10": "pnpm --filter cookbook studio:10",
     "cookbook:studio:11": "pnpm --filter cookbook studio:11",
     "cookbook:studio:12": "pnpm --filter cookbook studio:12",
+    "cookbook:studio:13": "pnpm --filter cookbook studio:13",
     "cookbook:integrations": "pnpm --filter cookbook integrations",
     "cookbook:integrations:01": "pnpm --filter cookbook integrations:01",
     "cookbook:integrations:02": "pnpm --filter cookbook integrations:02",

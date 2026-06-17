@@ -44,6 +44,68 @@ Then open:
 http://localhost:4021/ui/playground
 ```
 
+## Multi-Provider Models
+
+Studio can expose a shared model catalog and let each agent choose from registered providers:
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { AnthropicClient } from "@anvia/anthropic";
+import { OpenAIClient } from "@anvia/openai";
+import { Studio } from "@anvia/studio";
+
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const agent = new AgentBuilder("support", openai.completionModel("gpt-5"))
+  .name("Support")
+  .instructions("Answer support questions clearly.")
+  .build();
+
+new Studio([agent], {
+  models: {
+    providers: [
+      {
+        id: "openai",
+        name: "OpenAI",
+        defaultModel: "gpt-5",
+        createCompletionModel: (model) => openai.completionModel(model),
+        listModels: () => openai.listModels(),
+        models: [
+          {
+            id: "gpt-5",
+            modalities: { input: ["text", "image", "document"], output: ["text"] },
+          },
+        ],
+      },
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        defaultModel: "claude-sonnet-4-20250514",
+        createCompletionModel: (model) => anthropic.completionModel(model),
+      },
+    ],
+    agents: {
+      support: {
+        default: "openai:gpt-5",
+        allowed: ["openai:*", "anthropic:claude-sonnet-4-20250514"],
+      },
+    },
+  },
+}).start();
+```
+
+The playground message composer shows the allowed models for the selected agent. API callers can
+also select a model per run:
+
+```json
+{
+  "message": "Summarize this ticket",
+  "model": "anthropic:claude-sonnet-4-20250514",
+  "stream": true
+}
+```
+
 ## Browser UI
 
 Studio exposes:

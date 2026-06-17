@@ -79,6 +79,20 @@ class InMemoryStudioStore
     return session === undefined ? undefined : materializeSession(session);
   }
 
+  updateSessionMetadata(id: string, metadata: JsonObject | undefined): StudioSession | undefined {
+    const session = this.sessions.get(id);
+    if (session === undefined) {
+      return undefined;
+    }
+    if (metadata === undefined) {
+      delete session.metadata;
+    } else {
+      session.metadata = metadata;
+    }
+    session.updatedAt = new Date().toISOString();
+    return materializeSession(session);
+  }
+
   load(context: MemoryContext): Promise<Message[]> {
     return Promise.resolve(this.sessions.get(context.sessionId)?.messages ?? []);
   }

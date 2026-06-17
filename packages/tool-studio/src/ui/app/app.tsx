@@ -1,6 +1,15 @@
-import type { Message, ToolResultContent } from "@anvia/core/completion";
+import type { Message, ToolResultContent, UserContent } from "@anvia/core/completion";
 import { createChatTransport, EventStreamHttpError, useChat } from "@anvia/react";
-import { Archive, ArrowSquareOut, ArrowUp, Moon, Plus, Sun } from "@phosphor-icons/react";
+import {
+  Archive,
+  ArrowSquareOut,
+  ArrowUp,
+  Moon,
+  Paperclip,
+  Plus,
+  Sun,
+  X,
+} from "@phosphor-icons/react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -15,10 +24,12 @@ import {
 import type {
   AgentRunStreamEvent,
   StudioAgentMcpsSummary,
+  StudioAgentModelsSummary,
   StudioAgentToolsSummary,
   StudioConfig,
   StudioEvalRunResponse,
   StudioKnowledgeSummary,
+  StudioModelSummary,
   StudioPipelineDetail,
   StudioPipelineLogEntry,
   StudioPipelineRunRecord,
@@ -151,13 +162,27 @@ type StudioTheme = "light" | "dark";
 
 type StudioAgentRunRequest = {
   agentId: string;
-  message: string;
+  message: string | Message;
   sessionId?: string;
   history?: Message[];
+  model?: string;
   stream: true;
   metadata: {
     source: string;
+    studioModel?: string;
   };
+};
+
+const studioModelMetadataKey = "studioModel";
+const supportedAttachmentTypes = ".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.md,.csv,.json";
+
+type PromptAttachment = {
+  id: string;
+  name: string;
+  mediaType: string;
+  kind: "image" | "document";
+  data: string;
+  size: number;
 };
 
 const studioThemeStorageKey = "anvia-studio-theme";
@@ -251,6 +276,7 @@ export function StudioConsole() {
   const [pipelineRuns, setPipelineRuns] = useState<StudioPipelineRunRecord[]>([]);
   const [messages, setMessages] = useState<TranscriptEntry[]>([]);
   const [prompt, setPrompt] = useState("");
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [pipelineRunInput, setPipelineRunInput] = useState('"Hello from Studio"');
   const [pipelineRunOutput, setPipelineRunOutput] = useState("");
   const [evalRunResult, setEvalRunResult] = useState<StudioEvalRunResponse | undefined>();
@@ -279,6 +305,8 @@ export function StudioConsole() {
   const [mcpsLoadState, setMcpsLoadState] = useState<"idle" | "loading">("idle");
   const [tools, setTools] = useState<StudioAgentToolsSummary | undefined>();
   const [toolsLoadState, setToolsLoadState] = useState<"idle" | "loading">("idle");
+  const [agentModels, setAgentModels] = useState<StudioAgentModelsSummary | undefined>();
+  const [selectedModelRef, setSelectedModelRef] = useState("");
   const [pipelineDetailLoadState, setPipelineDetailLoadState] = useState<"idle" | "loading">(
     "idle",
   );
@@ -287,6 +315,7 @@ export function StudioConsole() {
   const [pipelineRunState, setPipelineRunState] = useState<RunState>("idle");
   const [evalRunState, setEvalRunState] = useState<RunState>("idle");
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const transcriptScrollerRef = useRef<HTMLElement | null>(null);
   const transcriptStickToBottomRef = useRef(true);
   const playgroundRunRequestRef = useRef<StudioAgentRunRequest | undefined>(undefined);
@@ -392,8 +421,53 @@ export function StudioConsole() {
   );
   const selectedAgent =
     agents.find((agent) => agent.id === selectedAgentId) ?? agents[0] ?? undefined;
+  const selectedAgentModelId = selectedAgent?.id;
   const selectedAgentQuickPrompts = selectedAgent?.quickPrompts ?? [];
+  const selectedAgentModels =
+    agentModels !== undefined && agentModels.agentId === selectedAgent?.id
+      ? agentModels.models
+      : [];
   const hasMessages = messages.length > 0;
+
+  useEffect(() => {
+    if (config?.models === undefined || selectedAgentModelId === undefined) {
+      setAgentModels(undefined);
+      setSelectedModelRef("");
+      return;
+    }
+
+    const agentId = selectedAgentModelId;
+    let cancelled = false;
+    async function loadAgentModels() {
+      try {
+        const response = await fetch(`/agents/${encodeURIComponent(agentId)}/models`);
+        if (!response.ok) {
+          throw new Error(`Agent models failed with HTTP ${response.status}`);
+        }
+        const body = (await response.json()) as StudioAgentModelsSummary;
+        if (cancelled) {
+          return;
+        }
+        setAgentModels(body);
+        setSelectedModelRef((current) =>
+          modelRefAvailable(body.models, current)
+            ? current
+            : (body.defaultModel ?? body.models[0]?.ref ?? ""),
+        );
+      } catch (loadError) {
+        if (!cancelled) {
+          setAgentModels(undefined);
+          setError(errorMessage(loadError));
+        }
+      }
+    }
+
+    void loadAgentModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [config?.models, selectedAgentModelId]);
+
   const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
     transport: createChatTransport<StudioAgentRunRequest, AgentRunStreamEvent>({
       endpoint: (request) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
@@ -502,6 +576,7 @@ export function StudioConsole() {
         title,
         metadata: {
           source: "anvia-studio",
+          ...(selectedModelRef.length === 0 ? {} : { [studioModelMetadataKey]: selectedModelRef }),
         },
       }),
     });
@@ -830,8 +905,10 @@ export function StudioConsole() {
         ]);
         setTranscriptSequence(nextSequence(session.transcript));
         setSelectedAgentId(session.agentId);
+        setSelectedModelRef(sessionModelRef(session));
         setSelectedSessionId(session.id);
         setMessages(enrichTranscriptWithTraceIds(session.transcript, traceSummaries));
+        setAttachments([]);
         if (options.updatePath !== false) {
           setActivePage("playground");
           updateSessionPath(session.id);
@@ -856,6 +933,7 @@ export function StudioConsole() {
       setSessionLogs([]);
       setMessages([]);
       setPrompt("");
+      setAttachments([]);
       setActivePage("playground");
       setError("");
       if (options.updatePath !== false) {
@@ -873,11 +951,13 @@ export function StudioConsole() {
       }
 
       setSelectedAgentId(agentId);
+      setSelectedModelRef("");
       resetTranscriptSequence();
       setSelectedSessionId("");
       setSessionLogs([]);
       setMessages([]);
       setPrompt("");
+      setAttachments([]);
       setActivePage("playground");
       setError("");
       updateSessionPath(undefined);
@@ -908,6 +988,7 @@ export function StudioConsole() {
         setSessionLogs([]);
         setMessages([]);
         setPrompt("");
+        setAttachments([]);
         if (activePage === "playground") {
           updateSessionPath(undefined);
         }
@@ -971,9 +1052,10 @@ export function StudioConsole() {
 
   async function runPrompt(text: string) {
     const trimmed = text.trim();
+    const promptAttachments = attachments;
     const agentId = selectedAgent?.id ?? selectedAgentId;
     if (
-      trimmed.length === 0 ||
+      (trimmed.length === 0 && promptAttachments.length === 0) ||
       agentId.length === 0 ||
       runState === "running" ||
       playgroundChat.status === "streaming"
@@ -985,11 +1067,24 @@ export function StudioConsole() {
     setActivePage("playground");
     setError("");
     setPrompt("");
+    setAttachments([]);
     transcriptStickToBottomRef.current = true;
     requestAnimationFrame(() => resizeTextarea(promptRef.current));
+    const promptMessage =
+      promptAttachments.length === 0
+        ? trimmed
+        : userMessageWithAttachments(trimmed, promptAttachments);
     setMessages((current) => [
       ...current,
-      { entryId: nextTranscriptId(), kind: "message", role: "user", text: trimmed },
+      {
+        entryId: nextTranscriptId(),
+        kind: "message",
+        role: "user",
+        text: trimmed,
+        ...(promptAttachments.length === 0
+          ? {}
+          : { attachments: transcriptAttachmentsForPrompt(promptAttachments) }),
+      },
     ]);
 
     try {
@@ -1002,12 +1097,14 @@ export function StudioConsole() {
       playgroundVisibleEventRef.current = Promise.resolve();
       playgroundRunRequestRef.current = {
         agentId,
-        message: trimmed,
+        message: promptMessage,
         ...(sessionId.length === 0 ? {} : { sessionId }),
         ...(history === undefined ? {} : { history }),
+        ...(selectedModelRef.length === 0 ? {} : { model: selectedModelRef }),
         stream: true,
         metadata: {
           source: "anvia-studio",
+          ...(selectedModelRef.length === 0 ? {} : { studioModel: selectedModelRef }),
         },
       };
 
@@ -1675,6 +1772,25 @@ export function StudioConsole() {
     resizeTextarea(event.currentTarget);
   }
 
+  async function addPromptAttachments(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    try {
+      const nextAttachments = await Promise.all(files.map(fileToAttachment));
+      setAttachments((current) => [...current, ...nextAttachments]);
+    } catch (attachmentError) {
+      setError(errorMessage(attachmentError));
+    }
+  }
+
+  function removePromptAttachment(id: string) {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }
+
   function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
       return;
@@ -1738,6 +1854,7 @@ export function StudioConsole() {
     setSessionLogs([]);
     setMessages([]);
     setPrompt("");
+    setAttachments([]);
     setActivePage(nextPage);
     updatePagePath(nextPage);
 
@@ -2050,9 +2167,74 @@ export function StudioConsole() {
                       onKeyDown={handlePromptKeyDown}
                       placeholder="Ask anything..."
                     />
+                    {attachments.length === 0 ? null : (
+                      <div className="flex min-w-0 flex-wrap gap-1.5 px-2">
+                        {attachments.map((attachment) => (
+                          <span
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-muted/55 px-2 py-1 font-mono text-[11px] font-medium text-muted-foreground"
+                            key={attachment.id}
+                          >
+                            <span className="min-w-0 truncate">
+                              {attachment.kind === "image" ? "Image" : "Doc"} / {attachment.name}
+                            </span>
+                            <Button
+                              aria-label={`Remove ${attachment.name}`}
+                              className="h-5 min-h-5 w-5 rounded-md border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-foreground [&_svg]:h-3 [&_svg]:w-3"
+                              size="icon"
+                              type="button"
+                              variant="ghost"
+                              onClick={() => removePromptAttachment(attachment.id)}
+                            >
+                              <X aria-hidden="true" />
+                            </Button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex min-w-0 items-center justify-between gap-2">
-                      <div />
                       <div className="flex min-w-0 items-center gap-2">
+                        <input
+                          ref={attachmentInputRef}
+                          className="hidden"
+                          type="file"
+                          multiple
+                          accept={supportedAttachmentTypes}
+                          onChange={(event) => void addPromptAttachments(event)}
+                        />
+                        <Button
+                          aria-label="Attach image or document"
+                          className="h-8 min-h-8 w-8 border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                          size="icon"
+                          type="button"
+                          variant="ghost"
+                          disabled={runState === "running"}
+                          onClick={() => attachmentInputRef.current?.click()}
+                        >
+                          <Paperclip aria-hidden="true" />
+                        </Button>
+                      </div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        {selectedAgentModels.length === 0 ? null : (
+                          <Select
+                            value={selectedModelRef}
+                            onValueChange={setSelectedModelRef}
+                            disabled={runState === "running"}
+                          >
+                            <SelectTrigger
+                              aria-label="Select model"
+                              className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:max-w-72"
+                            >
+                              <SelectValue placeholder="Model" />
+                            </SelectTrigger>
+                            <SelectContent align="end">
+                              {selectedAgentModels.map((model) => (
+                                <SelectItem value={model.ref} key={model.ref}>
+                                  {modelSelectLabel(model)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                         {agents.length > 1 ? (
                           <Select
                             value={selectedAgent?.id ?? selectedAgentId}
@@ -2348,4 +2530,116 @@ function enrichTranscriptWithTraceIds(
 function withoutTraceId(entry: Extract<TranscriptEntry, { kind: "message" }>): TranscriptEntry {
   const { traceId: _traceId, ...rest } = entry;
   return rest;
+}
+
+function sessionModelRef(session: StudioSession): string {
+  const value = session.metadata?.[studioModelMetadataKey];
+  return typeof value === "string" ? value : "";
+}
+
+function modelRefAvailable(models: StudioModelSummary[], ref: string): boolean {
+  return ref.length > 0 && models.some((model) => model.ref === ref);
+}
+
+function modelSelectLabel(model: StudioModelSummary): string {
+  const provider = model.providerName ?? model.providerId;
+  const name = model.name ?? model.id;
+  const modalities = model.modalities?.input
+    .filter((modality) => modality !== "text")
+    .map((modality) => modality.slice(0, 3))
+    .join("/");
+  return modalities === undefined || modalities.length === 0
+    ? `${provider} / ${name}`
+    : `${provider} / ${name} (${modalities})`;
+}
+
+async function fileToAttachment(file: File): Promise<PromptAttachment> {
+  const mediaType = file.type || mediaTypeFromName(file.name);
+  const kind = mediaType.startsWith("image/") ? "image" : "document";
+  if (!isSupportedAttachment(mediaType, file.name)) {
+    throw new Error(`Unsupported attachment type: ${file.name}`);
+  }
+  return {
+    id: globalThis.crypto.randomUUID(),
+    name: file.name,
+    mediaType,
+    kind,
+    data: await fileToBase64(file),
+    size: file.size,
+  };
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`));
+    reader.onload = () => {
+      const value = reader.result;
+      if (typeof value !== "string") {
+        reject(new Error(`Failed to read ${file.name}`));
+        return;
+      }
+      resolve(value.slice(value.indexOf(",") + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function userMessageWithAttachments(text: string, attachments: PromptAttachment[]): Message {
+  const content: UserContent[] = [];
+  if (text.length > 0) {
+    content.push({ type: "text", text });
+  }
+  for (const attachment of attachments) {
+    if (attachment.kind === "image") {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          data: attachment.data,
+          mediaType: attachment.mediaType,
+        },
+      });
+      continue;
+    }
+    content.push({
+      type: "document",
+      source: {
+        type: "base64",
+        data: attachment.data,
+        mediaType: attachment.mediaType,
+        filename: attachment.name,
+      },
+    });
+  }
+  return { role: "user", content };
+}
+
+function transcriptAttachmentsForPrompt(
+  attachments: PromptAttachment[],
+): NonNullable<Extract<TranscriptEntry, { kind: "message" }>["attachments"]> {
+  return attachments.map((attachment) => ({
+    kind: attachment.kind,
+    name: attachment.name,
+    mediaType: attachment.mediaType,
+    data: attachment.data,
+  }));
+}
+
+function isSupportedAttachment(mediaType: string, name: string): boolean {
+  return (
+    mediaType.startsWith("image/") ||
+    mediaType === "application/pdf" ||
+    mediaType.startsWith("text/") ||
+    ["application/json", "text/markdown", "text/csv"].includes(mediaType) ||
+    /\.(md|csv|json|txt)$/i.test(name)
+  );
+}
+
+function mediaTypeFromName(name: string): string {
+  if (/\.pdf$/i.test(name)) return "application/pdf";
+  if (/\.md$/i.test(name)) return "text/markdown";
+  if (/\.csv$/i.test(name)) return "text/csv";
+  if (/\.json$/i.test(name)) return "application/json";
+  return "text/plain";
 }

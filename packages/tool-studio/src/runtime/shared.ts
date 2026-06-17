@@ -13,6 +13,7 @@ import type {
   StudioErrorResponse,
   StudioEvalSuite,
   StudioEvalSuiteConfig,
+  StudioModelConfig,
   StudioPipeline,
   StudioPipelineConfig,
   StudioPipelineLogStore,
@@ -24,6 +25,7 @@ import type {
   StudioUiOptions,
 } from "../types";
 import { serializeUnknown, toJsonValue } from "./json";
+import { createStudioModelRegistry, studioModelsConfig } from "./models";
 import { agentHasMcpTools, agentToolItems, mcpServerName } from "./tool-metadata";
 
 export type ResolvedStores = {
@@ -41,6 +43,7 @@ export type StudioRuntimeOptions = {
   agents: StudioAgent[];
   pipelines: StudioPipeline[];
   evals: StudioEvalSuite[];
+  models?: StudioModelConfig;
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
 };
@@ -206,12 +209,17 @@ export function buildConfig(
   pipelines: StudioPipeline[],
   stores: ResolvedStores,
 ): StudioConfig {
+  const models =
+    options.models === undefined
+      ? undefined
+      : studioModelsConfig(createStudioModelRegistry(options.models), agents);
   return {
     id: runnerId(options),
     ...(options.name === undefined ? {} : { name: options.name }),
     ...(options.description === undefined ? {} : { description: options.description }),
     ...(options.version === undefined ? {} : { version: options.version }),
     agents: agents.map(agentConfig),
+    ...(models === undefined ? {} : { models }),
     pipelines: pipelines.map(pipelineConfig),
     evals: options.evals.map(evalConfig),
     chat: {

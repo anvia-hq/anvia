@@ -7,6 +7,7 @@ import type {
   AgentRunStreamEvent,
   StudioSession,
   StudioSessionStore,
+  StudioTranscriptAttachment,
   StudioTranscriptChildAgentEvent,
   StudioTranscriptEntry,
 } from "../types";
@@ -476,6 +477,7 @@ function messageToTranscriptEntry(
     kind: "message",
     role,
     text: extractMessageText(message),
+    ...(role === "user" ? optionalTranscriptAttachments(message) : {}),
   };
 }
 
@@ -595,6 +597,44 @@ function extractMessageText(message: string | Message): string {
     .join("\n");
 }
 
+function optionalTranscriptAttachments(message: string | Message): {
+  attachments?: StudioTranscriptAttachment[];
+} {
+  if (typeof message === "string" || message.role !== "user") {
+    return {};
+  }
+  const attachments = message.content.flatMap((content): StudioTranscriptAttachment[] => {
+    if (content.type === "image") {
+      return [
+        {
+          kind: "image",
+          ...(content.source.type === "base64"
+            ? { data: content.source.data, mediaType: content.source.mediaType }
+            : { url: content.source.url }),
+        },
+      ];
+    }
+    if (content.type === "document") {
+      return [
+        {
+          kind: "document",
+          ...(content.source.filename === undefined ? {} : { name: content.source.filename }),
+          ...(content.source.mediaType === undefined
+            ? {}
+            : { mediaType: content.source.mediaType }),
+          ...(content.source.type === "base64"
+            ? { data: content.source.data }
+            : content.source.type === "url"
+              ? { url: content.source.url }
+              : {}),
+        },
+      ];
+    }
+    return [];
+  });
+  return attachments.length === 0 ? {} : { attachments };
+}
+
 function formatJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
@@ -667,6 +707,30 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
       };
     }
     request.toolConcurrency = body.toolConcurrency;
+  }
+
+  if ("model" in body) {
+    if (typeof body.model === "string") {
+      request.model = body.model;
+    } else if (
+      isObject(body.model) &&
+      typeof body.model.provider === "string" &&
+      typeof body.model.model === "string"
+    ) {
+      request.model = {
+        provider: body.model.provider,
+        model: body.model.model,
+      };
+    } else {
+      return {
+        error: errorResponse(
+          c,
+          400,
+          "bad_request",
+          "model must be a provider:model string or { provider, model } object",
+        ),
+      };
+    }
   }
 
   if ("metadata" in body) {

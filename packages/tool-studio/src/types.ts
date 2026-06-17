@@ -1,14 +1,18 @@
 import type { AgentStreamEvent, PromptResponse } from "@anvia/core/agent";
 import type {
+  CompletionModel,
+  CompletionModelCapabilities,
   JsonObject,
   JsonValue,
   Message,
+  StreamingCompletionModel,
   ToolResultContent,
   Usage,
 } from "@anvia/core/completion";
 import type { RunEvalSuiteOptions } from "@anvia/core/evals";
 import type { Agent } from "@anvia/core/internal/agent";
 import type { MemoryStore } from "@anvia/core/memory";
+import type { ModelList } from "@anvia/core/model-listing";
 import type { AgentTraceInfo, AgentTraceOptions } from "@anvia/core/observability";
 import type { Pipeline, PipelineGraph } from "@anvia/core/pipeline";
 import type { Hono } from "hono";
@@ -26,6 +30,78 @@ export type StudioCapability =
   | "status"
   | "tools"
   | "traces";
+
+export type StudioModelRef = string | { provider: string; model: string };
+
+export type StudioModelModality = "text" | "image" | "document" | "audio" | "video";
+
+export type StudioModelModalities = {
+  input: StudioModelModality[];
+  output?: StudioModelModality[];
+};
+
+export type StudioModelDefinition = {
+  id: string;
+  name?: string;
+  description?: string;
+  modalities?: StudioModelModalities;
+  capabilities?: Partial<CompletionModelCapabilities>;
+  metadata?: JsonObject;
+};
+
+export type StudioModelProvider = {
+  id: string;
+  name?: string;
+  defaultModel?: string;
+  models?: StudioModelDefinition[];
+  createCompletionModel(model: string): CompletionModel | StreamingCompletionModel;
+  listModels?: () => Promise<ModelList>;
+  metadata?: JsonObject;
+};
+
+export type StudioAgentModelPolicy = {
+  default?: StudioModelRef;
+  allowed?: Array<StudioModelRef | `${string}:*`>;
+};
+
+export type StudioModelConfig = {
+  providers: StudioModelProvider[];
+  default?: StudioModelRef;
+  agents?: Record<string, StudioAgentModelPolicy>;
+};
+
+export type StudioModelSummary = StudioModelDefinition & {
+  ref: string;
+  providerId: string;
+  providerName?: string;
+};
+
+export type StudioModelProviderConfig = {
+  id: string;
+  name?: string;
+  defaultModel?: string;
+  models: StudioModelSummary[];
+  metadata?: JsonObject;
+  warning?: string;
+};
+
+export type StudioAgentModelPolicyConfig = {
+  default?: string;
+  allowed?: string[];
+};
+
+export type StudioModelsConfig = {
+  providers: StudioModelProviderConfig[];
+  default?: string;
+  agents: Record<string, StudioAgentModelPolicyConfig>;
+};
+
+export type StudioAgentModelsSummary = {
+  agentId: string;
+  defaultModel?: string;
+  models: StudioModelSummary[];
+  warnings?: JsonObject[];
+};
 
 export type StudioAgent = {
   id: string;
@@ -137,6 +213,7 @@ export type StudioConfig = {
   description?: string;
   version?: string;
   agents: StudioAgentConfig[];
+  models?: StudioModelsConfig;
   pipelines: StudioPipelineConfig[];
   evals: StudioEvalSuiteConfig[];
   chat: {
@@ -211,6 +288,15 @@ export type StudioTranscriptChatEntry = {
   text: string;
   tone?: "error";
   traceId?: string;
+  attachments?: StudioTranscriptAttachment[];
+};
+
+export type StudioTranscriptAttachment = {
+  kind: "image" | "document";
+  name?: string;
+  mediaType?: string;
+  data?: string;
+  url?: string;
 };
 
 export type StudioTranscriptReasoningEntry = {
@@ -354,6 +440,10 @@ export type StudioSessionStore = MemoryStore & {
   getSession(id: string): StudioSession | undefined | Promise<StudioSession | undefined>;
   saveSessionRunTranscript(
     input: StudioSessionRunTranscriptInput,
+  ): StudioSession | undefined | Promise<StudioSession | undefined>;
+  updateSessionMetadata?(
+    id: string,
+    metadata: JsonObject | undefined,
   ): StudioSession | undefined | Promise<StudioSession | undefined>;
   appendSessionLog?(
     input: StudioSessionLogAppendInput,
@@ -605,6 +695,7 @@ export type StudioOptions = {
   quickPrompts?: Record<string, string[]>;
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
+  models?: StudioModelConfig;
 };
 
 export type StudioServeOptions = {
@@ -848,6 +939,7 @@ export type AgentRunRequest = {
   stream?: boolean;
   maxTurns?: number;
   toolConcurrency?: number;
+  model?: StudioModelRef;
   metadata?: JsonObject;
   trace?: AgentTraceOptions;
 };

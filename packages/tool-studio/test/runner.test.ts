@@ -413,6 +413,228 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("exposes configured and listed provider models", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([])).name("Support").build();
+    const runner = new Studio([agent], {
+      models: {
+        default: "openai:gpt-5",
+        providers: [
+          {
+            id: "openai",
+            name: "OpenAI",
+            defaultModel: "gpt-5",
+            models: [
+              {
+                id: "gpt-5",
+                name: "GPT-5",
+                modalities: { input: ["text", "image", "document"], output: ["text"] },
+                capabilities: { streaming: true, tools: true },
+              },
+            ],
+            createCompletionModel: () => new QueueModel([]),
+            listModels: async () => ({
+              data: [{ id: "gpt-5-mini", name: "GPT-5 mini", ownedBy: "provider" }],
+            }),
+          },
+        ],
+        agents: {
+          support: {
+            default: "openai:gpt-5",
+            allowed: ["openai:*"],
+          },
+        },
+      },
+    });
+
+    expect(runner.config().models).toMatchObject({
+      default: "openai:gpt-5",
+      providers: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          defaultModel: "gpt-5",
+          models: [
+            {
+              ref: "openai:gpt-5",
+              providerId: "openai",
+              providerName: "OpenAI",
+              modalities: { input: ["text", "image", "document"], output: ["text"] },
+            },
+          ],
+        },
+      ],
+      agents: {
+        support: {
+          default: "openai:gpt-5",
+          allowed: ["openai:*"],
+        },
+      },
+    });
+
+    const models = await runner.fetch(new Request("http://runner.test/agents/support/models"));
+    await expect(models.json()).resolves.toMatchObject({
+      agentId: "support",
+      defaultModel: "openai:gpt-5",
+      models: [
+        { ref: "openai:gpt-5", name: "GPT-5" },
+        { ref: "openai:gpt-5-mini", name: "GPT-5 mini", metadata: { ownedBy: "provider" } },
+      ],
+    });
+  });
+
+  it("uses the selected provider model for runs and persists the session default", async () => {
+    const baseModel = new QueueModel([]);
+    const selectedModel = new QueueModel([
+      response([AssistantContent.text("First answer")]),
+      response([AssistantContent.text("Second answer")]),
+    ]);
+    const agent = new AgentBuilder("support", baseModel).build();
+    const runner = new Studio([agent], {
+      models: {
+        providers: [
+          {
+            id: "test",
+            defaultModel: "primary",
+            models: [{ id: "secondary", modalities: { input: ["text"], output: ["text"] } }],
+            createCompletionModel: (model) => {
+              if (model !== "secondary") {
+                throw new Error(`Unexpected model: ${model}`);
+              }
+              return selectedModel;
+            },
+          },
+        ],
+        agents: {
+          support: {
+            allowed: ["test:secondary"],
+          },
+        },
+      },
+    });
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        body: JSON.stringify({ agentId: "support", title: "Support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+
+    const firstRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId: session.id,
+          message: "first",
+          model: "test:secondary",
+        }),
+      }),
+    );
+    expect(firstRun.status).toBe(200);
+
+    const secondRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId: session.id,
+          message: "second",
+        }),
+      }),
+    );
+    expect(secondRun.status).toBe(200);
+    expect(baseModel.requests).toHaveLength(0);
+    expect(selectedModel.requests).toHaveLength(2);
+
+    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
+    await expect(loaded.json()).resolves.toMatchObject({
+      metadata: {
+        studioModel: "test:secondary",
+      },
+    });
+  });
+
+  it("rejects models outside the agent policy", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const runner = new Studio([agent], {
+      models: {
+        providers: [
+          {
+            id: "test",
+            createCompletionModel: () => new QueueModel([]),
+          },
+        ],
+        agents: {
+          support: {
+            allowed: ["test:allowed"],
+          },
+        },
+      },
+    });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          message: "hello",
+          model: "test:blocked",
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(400);
+    await expect(run.json()).resolves.toMatchObject({
+      error: {
+        code: "bad_request",
+        message: "Model test:blocked is not allowed for agent support",
+      },
+    });
+  });
+
+  it("accepts multimodal message payloads from Studio runs", async () => {
+    const model = new QueueModel([response([AssistantContent.text("image noted")])]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "Describe this image." },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  data: "aW1hZ2U=",
+                  mediaType: "image/png",
+                },
+              },
+            ],
+          },
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(200);
+    expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: "Describe this image." },
+        { type: "image", source: { type: "base64", mediaType: "image/png" } },
+      ],
+    });
+
+    const body = (await run.json()) as { messages: Message[] };
+    expect(body.messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: "Describe this image." },
+        { type: "image", source: { type: "base64", mediaType: "image/png" } },
+      ],
+    });
+  });
+
   it("registers pipelines separately from agents", async () => {
     const agent = new AgentBuilder("support", new QueueModel([])).name("Support").build();
     const pipeline = new PipelineBuilder<string>({

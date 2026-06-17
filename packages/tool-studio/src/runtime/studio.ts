@@ -39,6 +39,14 @@ import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
 import { registerMemoryRoutes } from "./memory";
 import {
+  createStudioModelRegistry,
+  ModelSelectionError,
+  registerModelRoutes,
+  resolveStudioModel,
+  STUDIO_MODEL_METADATA_KEY,
+  sessionModelRef,
+} from "./models";
+import {
   observeStores,
   registerObservabilityRoutes,
   StudioObservabilityHub,
@@ -173,6 +181,7 @@ function studioOptionsFromTargets(
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
     pipelines: inferStudioPipelines(pipelines),
     evals: options.evals ?? [],
+    ...(options.models === undefined ? {} : { models: options.models }),
     ...(options.stores === undefined ? {} : { stores: options.stores }),
     ...(options.ui === undefined ? {} : { ui: options.ui }),
   };
@@ -236,6 +245,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const agents = normalizeAgents(options.agents).map((agent) =>
     withStudioTraceObserver(agent, stores.traces),
   );
+  const modelRegistry = createStudioModelRegistry(options.models);
   const pipelines = normalizePipelines(options.pipelines);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
@@ -287,6 +297,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     return c.json(agentRuntimeSummary(agent));
   });
 
+  registerModelRoutes(app, { registry: modelRegistry, agentMap });
   registerMcpRoutes(app, { agentMap });
   registerToolRoutes(app, { agentMap });
   registerApprovalRoutes(app, approvalRuntime);
@@ -332,6 +343,24 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       return errorResponse(c, 400, "bad_request", "Session belongs to another agent");
     }
 
+    let selectedModel: ReturnType<typeof resolveStudioModel>;
+    try {
+      selectedModel = resolveStudioModel(modelRegistry, {
+        agent,
+        request: body,
+        sessionMetadata: session?.metadata,
+      });
+    } catch (error) {
+      if (error instanceof ModelSelectionError) {
+        return errorResponse(c, 400, "bad_request", error.message);
+      }
+      throw error;
+    }
+    const runAgent =
+      selectedModel.model === undefined
+        ? agent.agent
+        : cloneAgent(agent.agent, { model: selectedModel.model });
+
     const runId = globalThis.crypto.randomUUID();
     const runStartedAt = Date.now();
     if (session !== undefined) {
@@ -346,13 +375,44 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
           ...(body.maxTurns === undefined ? {} : { maxTurns: body.maxTurns }),
           ...(body.toolConcurrency === undefined ? {} : { toolConcurrency: body.toolConcurrency }),
           hasTrace: body.trace !== undefined,
-          ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+          ...(body.metadata === undefined && selectedModel.ref === undefined
+            ? {}
+            : {
+                metadata: {
+                  ...(body.metadata ?? {}),
+                  ...(selectedModel.ref === undefined
+                    ? {}
+                    : { [STUDIO_MODEL_METADATA_KEY]: selectedModel.ref }),
+                },
+              }),
         }),
       );
+    }
+    if (session !== undefined && selectedModel.ref !== undefined) {
+      for (const warning of selectedModel.warnings) {
+        await appendSessionLog(stores.sessions, {
+          sessionId: session.id,
+          runId,
+          level: "warn",
+          category: "model",
+          event: "model.warning",
+          message: typeof warning.message === "string" ? warning.message : "Model warning",
+          metadata: warning,
+        });
+      }
+      if (sessionModelRef(session.metadata) !== selectedModel.ref) {
+        await stores.sessions?.updateSessionMetadata?.(session.id, {
+          ...(session.metadata ?? {}),
+          [STUDIO_MODEL_METADATA_KEY]: selectedModel.ref,
+        });
+      }
     }
     const memoryMetadata = {
       agentId,
       ...(body.metadata ?? {}),
+      ...(selectedModel.ref === undefined
+        ? {}
+        : { [STUDIO_MODEL_METADATA_KEY]: selectedModel.ref }),
       studioRunId: runId,
     };
     const promptMessage = normalizePromptMessage(body.message);
@@ -360,7 +420,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     const shouldPersistSessionMessages =
       session !== undefined &&
       sessionStore !== undefined &&
-      !usesStoreAsAgentMemory(agent.agent, sessionStore);
+      !usesStoreAsAgentMemory(runAgent, sessionStore);
     if (shouldPersistSessionMessages) {
       await sessionStore.append({
         context: { sessionId: session.id, metadata: memoryMetadata },
@@ -371,10 +431,10 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     }
     const request =
       session !== undefined
-        ? agent.agent.memory === undefined
-          ? agent.agent.prompt([...session.messages, promptMessage])
-          : agent.agent.session(session.id, { metadata: memoryMetadata }).prompt(body.message)
-        : agent.agent.prompt(
+        ? runAgent.memory === undefined
+          ? runAgent.prompt([...session.messages, promptMessage])
+          : runAgent.session(session.id, { metadata: memoryMetadata }).prompt(body.message)
+        : runAgent.prompt(
             body.history !== undefined ? [...body.history, promptMessage] : body.message,
           );
     if (body.maxTurns !== undefined) {
@@ -393,13 +453,13 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       const runtimeEvents = new AsyncEventQueue<AgentRunStreamEvent>();
       const effectiveHook = composeHooks(
         composeHooks(
-          agent.agent.hook,
+          runAgent.hook,
           approvalRuntime.createHook({
             runId,
             agentId,
             ...(session?.id === undefined ? {} : { sessionId: session.id }),
             ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-            getTool: (toolName) => agent.agent.getTool(toolName),
+            getTool: (toolName) => runAgent.getTool(toolName),
             emit: (event) => runtimeEvents.push(event),
           }),
         ),
@@ -442,13 +502,13 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       }
       const effectiveHook = composeHooks(
         composeHooks(
-          agent.agent.hook,
+          runAgent.hook,
           approvalRuntime.createHook({
             runId,
             agentId,
             ...(session?.id === undefined ? {} : { sessionId: session.id }),
             ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-            getTool: (toolName) => agent.agent.getTool(toolName),
+            getTool: (toolName) => runAgent.getTool(toolName),
           }),
         ),
         questionRuntime.createHook({

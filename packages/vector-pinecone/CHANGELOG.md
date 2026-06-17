@@ -1,5 +1,12 @@
 # @anvia/pinecone
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [369b6c4]
+  - @anvia/core@0.6.3
+
 ## 0.3.2
 
 ### Patch Changes

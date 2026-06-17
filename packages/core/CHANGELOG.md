@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.6.3
+
+### Patch Changes
+
+- 369b6c4: Refactor internal code quality: consolidate duplicate utilities, eliminate conditional spread patterns, and improve file organization.
+
 ## 0.6.2
 
 ### Patch Changes

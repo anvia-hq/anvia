@@ -1,5 +1,12 @@
 # @anvia/mistral
 
+## 0.2.9
+
+### Patch Changes
+
+- Updated dependencies [369b6c4]
+  - @anvia/core@0.6.3
+
 ## 0.2.8
 
 ### Patch Changes

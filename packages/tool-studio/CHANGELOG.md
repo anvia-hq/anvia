@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 0.6.1
+
+### Patch Changes
+
+- 369b6c4: Refactor internal code quality: consolidate duplicate utilities, eliminate conditional spread patterns, and improve file organization.
+- Updated dependencies [369b6c4]
+  - @anvia/core@0.6.3
+
 ## 0.6.0
 
 ### Minor Changes

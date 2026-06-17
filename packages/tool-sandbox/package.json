@@ -1,0 +1,44 @@
+{
+  "name": "@anvia/sandbox",
+  "version": "0.3.0",
+  "description": "Sandboxed workspace tools for Anvia agents.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/tool-sandbox"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run build:deps && tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build:deps": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
+    "test": "pnpm run build:deps && vitest run",
+    "typecheck": "pnpm run build:deps && tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

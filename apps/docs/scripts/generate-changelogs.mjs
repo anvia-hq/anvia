@@ -60,15 +60,25 @@ function discoverPackages() {
   return findPackageDirs(packagesRoot).map((dir) => {
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
     const pathParts = relative(packagesRoot, dir).split("/");
+    const folderName = pathParts[0];
 
     return {
       dir,
       pkg,
-      group: pathParts[0],
+      group: packageGroup(folderName),
       slug: packageSlug(pkg.name),
       changelogPath: join(dir, "CHANGELOG.md"),
     };
   });
+}
+
+function packageGroup(folderName) {
+  if (folderName.startsWith("provider-")) return "providers";
+  if (folderName.startsWith("embedding-")) return "embeddings";
+  if (folderName.startsWith("vector-")) return "vector-stores";
+  if (folderName.startsWith("observability-")) return "observability";
+  if (folderName.startsWith("tool-")) return "tools";
+  return folderName;
 }
 
 function findPackageDirs(dir) {

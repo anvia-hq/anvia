@@ -1,0 +1,69 @@
+{
+  "name": "@anvia/studio",
+  "version": "0.5.12",
+  "description": "Studio UI and HTTP runtime for Anvia agents.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/tool-studio"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run build:deps && tsup && vite build --config vite.config.ts",
+    "build:deps": "(test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build) && pnpm --filter @anvia/server --filter @anvia/react build",
+    "test": "pnpm run build:deps && vitest run",
+    "typecheck": "pnpm run build:deps && tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/react": "workspace:*",
+    "@anvia/server": "workspace:*",
+    "@hono/node-server": "^2.0.4",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-alert-dialog": "^1.1.16",
+    "@radix-ui/react-dialog": "^1.1.16",
+    "@radix-ui/react-scroll-area": "^1.2.11",
+    "@radix-ui/react-select": "^2.3.0",
+    "@radix-ui/react-separator": "^1.1.9",
+    "@radix-ui/react-slot": "^1.2.5",
+    "@xyflow/react": "^12.11.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "hono": "^4.12.25",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.2.4",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.10",
+    "vitest": "^4.0.8"
+  }
+}

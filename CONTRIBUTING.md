@@ -13,9 +13,9 @@ Thanks for taking the time to improve Anvia. This project is a TypeScript pnpm w
 Good contributions usually fall into one of these areas:
 
 - Core runtime fixes or focused feature work in `packages/core`.
-- Provider adapter fixes in `packages/providers/*`.
-- Vector store or embedding adapter fixes in `packages/vector-stores/*` and `packages/embeddings/*`.
-- Studio runtime or UI fixes in `packages/tools/studio`.
+- Provider adapter fixes in `packages/provider-*`.
+- Vector store or embedding adapter fixes in `packages/vector-*` and `packages/embedding-*`.
+- Studio runtime or UI fixes in `packages/tool-studio`.
 - Cookbook examples that clarify an existing workflow or introduce a missing one.
 - Documentation updates in `apps/docs` or package READMEs.
 - Tests that capture bugs, edge cases, or public behavior.

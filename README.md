@@ -76,7 +76,7 @@ new Studio([agent]).start({ port: 4021 });
 </p>
 
 <p align="center">
-  <em>Preview of Anvia Studio from <code>packages/tools/studio</code>.</em>
+  <em>Preview of Anvia Studio from <code>packages/tool-studio</code>.</em>
 </p>
 
 ## What You Can Build

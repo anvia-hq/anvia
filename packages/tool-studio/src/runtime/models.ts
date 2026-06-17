@@ -15,7 +15,8 @@ import type {
   StudioModelSummary,
   StudioModelsConfig,
 } from "../types";
-import { errorResponse, serializeError } from "./shared";
+import { compact } from "./compact";
+import { errorResponse, serializeError } from "./http";
 
 export const STUDIO_MODEL_METADATA_KEY = "studioModel";
 
@@ -71,15 +72,13 @@ export function createStudioModelRegistry(
     providers.set(id, {
       ...provider,
       id,
-      ...(provider.defaultModel === undefined
-        ? {}
-        : { defaultModel: normalizeModelId(provider.defaultModel) }),
+      ...compact({ defaultModel: provider.defaultModel !== undefined ? normalizeModelId(provider.defaultModel) : undefined }),
       staticModels,
     });
   }
 
   return {
-    ...(config.default === undefined ? {} : { defaultModel: normalizeModelRef(config.default) }),
+    ...compact({ defaultModel: config.default !== undefined ? normalizeModelRef(config.default) : undefined }),
     providers,
     agentPolicies: normalizeAgentPolicies(config.agents ?? {}),
     modelCache: new Map(),
@@ -100,10 +99,8 @@ export function studioModelsConfig(
     );
     return {
       id: provider.id,
-      ...(provider.name === undefined ? {} : { name: provider.name }),
-      ...(provider.defaultModel === undefined ? {} : { defaultModel: provider.defaultModel }),
+      ...compact({ name: provider.name, defaultModel: provider.defaultModel, metadata: provider.metadata }),
       models,
-      ...(provider.metadata === undefined ? {} : { metadata: provider.metadata }),
     };
   });
 
@@ -116,7 +113,7 @@ export function studioModelsConfig(
 
   return {
     providers,
-    ...(registry.defaultModel === undefined ? {} : { default: registry.defaultModel }),
+    ...compact({ default: registry.defaultModel }),
     agents: agentsConfig,
   };
 }
@@ -134,9 +131,7 @@ export function registerModelRoutes(
     );
     return c.json({
       providers,
-      ...(props.registry.defaultModel === undefined
-        ? {}
-        : { defaultModel: props.registry.defaultModel }),
+      ...compact({ defaultModel: props.registry.defaultModel }),
     });
   });
 
@@ -282,9 +277,9 @@ async function agentModelsCatalog(
   const defaultModel = policy?.default ?? registry.defaultModel;
   return {
     agentId: agent.id,
-    ...(defaultModel === undefined ? {} : { defaultModel }),
+    ...compact({ defaultModel }),
     models: [...models, ...exactPolicyModels],
-    ...(warnings.length === 0 ? {} : { warnings }),
+    ...compact({ warnings: warnings.length === 0 ? undefined : warnings }),
   };
 }
 
@@ -304,14 +299,15 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
           model.id,
           modelSummary(provider, model.id, {
             id: model.id,
-            ...(model.name === undefined ? {} : { name: model.name }),
-            ...(model.description === undefined ? {} : { description: model.description }),
+            ...compact({ name: model.name, description: model.description }),
             ...(staticModel ?? {}),
             metadata: {
-              ...(model.type === undefined ? {} : { type: model.type }),
-              ...(model.createdAt === undefined ? {} : { createdAt: model.createdAt }),
-              ...(model.ownedBy === undefined ? {} : { ownedBy: model.ownedBy }),
-              ...(model.contextLength === undefined ? {} : { contextLength: model.contextLength }),
+              ...compact({
+                type: model.type,
+                createdAt: model.createdAt,
+                ownedBy: model.ownedBy,
+                contextLength: model.contextLength,
+              }),
               ...(staticModel?.metadata ?? {}),
             },
           }),
@@ -328,11 +324,8 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
 
   return {
     id: provider.id,
-    ...(provider.name === undefined ? {} : { name: provider.name }),
-    ...(provider.defaultModel === undefined ? {} : { defaultModel: provider.defaultModel }),
+    ...compact({ name: provider.name, defaultModel: provider.defaultModel, metadata: provider.metadata, warning }),
     models: [...models.values()].sort((left, right) => left.ref.localeCompare(right.ref)),
-    ...(provider.metadata === undefined ? {} : { metadata: provider.metadata }),
-    ...(warning === undefined ? {} : { warning }),
   };
 }
 
@@ -346,7 +339,7 @@ function modelSummary(
     id: modelId,
     ref: `${provider.id}:${modelId}`,
     providerId: provider.id,
-    ...(provider.name === undefined ? {} : { providerName: provider.name }),
+    ...compact({ providerName: provider.name }),
   };
 }
 
@@ -374,26 +367,21 @@ function normalizeAgentPolicies(
     Object.entries(policies).map(([agentId, policy]) => [
       agentId.trim(),
       {
-        ...(policy.default === undefined ? {} : { default: normalizeModelRef(policy.default) }),
-        ...(policy.allowed === undefined
-          ? {}
-          : {
-              allowed: policy.allowed.map((entry) =>
-                typeof entry === "string" && entry.trim().endsWith(":*")
-                  ? `${normalizeProviderId(entry.trim().slice(0, -2))}:*`
-                  : normalizeModelRef(entry),
-              ),
-            }),
+        ...compact({
+          default: policy.default !== undefined ? normalizeModelRef(policy.default) : undefined,
+          allowed: policy.allowed?.map((entry) =>
+            typeof entry === "string" && entry.trim().endsWith(":*")
+              ? `${normalizeProviderId(entry.trim().slice(0, -2))}:*`
+              : normalizeModelRef(entry),
+          ),
+        }),
       },
     ]),
   );
 }
 
 function publicPolicy(policy: NormalizedAgentModelPolicy): StudioAgentModelPolicyConfig {
-  return {
-    ...(policy.default === undefined ? {} : { default: policy.default }),
-    ...(policy.allowed === undefined ? {} : { allowed: policy.allowed }),
-  };
+  return compact({ default: policy.default, allowed: policy.allowed });
 }
 
 function modelWarnings(

@@ -1,3 +1,4 @@
+import { compact } from "../internal/compact";
 import type { EvalMetadata } from "./types";
 
 export type EvalOutcome<Score = unknown> =
@@ -26,24 +27,24 @@ export const EvalOutcome = {
     score?: Score,
     options: { comment?: string | undefined; metadata?: EvalMetadata | undefined } = {},
   ): EvalOutcome<Score> {
-    return {
-      outcome: "pass",
-      ...(score === undefined ? {} : { score }),
-      ...(options.comment === undefined ? {} : { comment: options.comment }),
-      ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
-    };
+    return compact({
+      outcome: "pass" as const,
+      score,
+      comment: options.comment,
+      metadata: options.metadata,
+    }) as EvalOutcome<Score>;
   },
 
   fail<Score>(
     score?: Score,
     options: { comment?: string | undefined; metadata?: EvalMetadata | undefined } = {},
   ): EvalOutcome<Score> {
-    return {
-      outcome: "fail",
-      ...(score === undefined ? {} : { score }),
-      ...(options.comment === undefined ? {} : { comment: options.comment }),
-      ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
-    };
+    return compact({
+      outcome: "fail" as const,
+      score,
+      comment: options.comment,
+      metadata: options.metadata,
+    }) as EvalOutcome<Score>;
   },
 
   invalid<Score = never>(
@@ -54,12 +55,12 @@ export const EvalOutcome = {
       metadata?: EvalMetadata | undefined;
     } = {},
   ): EvalOutcome<Score> {
-    return {
-      outcome: "invalid",
+    return compact({
+      outcome: "invalid" as const,
       reason,
-      ...(options.score === undefined ? {} : { score: options.score }),
-      ...(options.comment === undefined ? {} : { comment: options.comment }),
-      ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
-    };
+      score: options.score,
+      comment: options.comment,
+      metadata: options.metadata,
+    }) as EvalOutcome<Score>;
   },
 };

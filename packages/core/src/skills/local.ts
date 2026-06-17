@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { isRecord } from "../internal/compact";
 import type { Skill, SkillLoader, SkillValidationIssue } from "./types";
 import { SkillValidationError } from "./types";
 
@@ -176,8 +177,4 @@ async function collectFiles(root: string, directory: string, files: string[]): P
 
 function toPortablePath(path: string): string {
   return sep === "/" ? path : path.split(sep).join("/");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

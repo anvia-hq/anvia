@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import { compact } from "../runtime/compact";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import type {
   StudioPipelineLogAppendInput,
@@ -204,11 +205,11 @@ class SqliteSessionStore
     return {
       id: input.id,
       agentId: input.agentId,
-      ...(input.title === undefined ? {} : { title: input.title }),
+      ...compact({ title: input.title }),
       createdAt: now,
       updatedAt: now,
       messageCount: 0,
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      ...compact({ metadata: input.metadata }),
     };
   }
 
@@ -423,14 +424,14 @@ class SqliteSessionStore
       const entry: StudioSessionLogEntry = {
         id: globalThis.crypto.randomUUID(),
         sessionId: input.sessionId,
-        ...(input.runId === undefined ? {} : { runId: input.runId }),
+        ...compact({ runId: input.runId }),
         sequence,
         timestamp: now,
         level: input.level,
         category: input.category,
         event: input.event,
         message: input.message,
-        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+        ...compact({ metadata: input.metadata }),
       };
 
       db.prepare(
@@ -512,14 +513,14 @@ class SqliteSessionStore
       const entry: StudioPipelineLogEntry = {
         id: globalThis.crypto.randomUUID(),
         pipelineId: input.pipelineId,
-        ...(input.runId === undefined ? {} : { runId: input.runId }),
+        ...compact({ runId: input.runId }),
         sequence,
         timestamp: now,
         level: input.level,
         category: input.category,
         event: input.event,
         message: input.message,
-        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+        ...compact({ metadata: input.metadata }),
       };
 
       db.prepare(
@@ -645,12 +646,12 @@ class SqliteSessionStore
       pipelineId: input.pipelineId,
       status: input.status,
       input: input.input,
-      ...(input.output === undefined ? {} : { output: input.output }),
-      ...(input.error === undefined ? {} : { error: input.error }),
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      ...compact({ output: input.output }),
+      ...compact({ error: input.error }),
+      ...compact({ metadata: input.metadata }),
       startedAt: input.startedAt,
-      ...(input.endedAt === undefined ? {} : { endedAt: input.endedAt }),
-      ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
+      ...compact({ endedAt: input.endedAt }),
+      ...compact({ durationMs: input.durationMs }),
     };
   }
 
@@ -1158,11 +1159,11 @@ function toSessionSummary(row: SessionSummaryRow): StudioSessionSummary {
   return {
     id: row.id,
     agentId: row.agent_id,
-    ...(row.title === null ? {} : { title: row.title }),
+    ...compact({ title: row.title ?? undefined }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messageCount: row.message_count,
-    ...(metadata === undefined ? {} : { metadata }),
+    ...compact({ metadata }),
   };
 }
 
@@ -1171,14 +1172,14 @@ function toSessionLog(row: SessionLogRow): StudioSessionLogEntry {
   return {
     id: row.id,
     sessionId: row.session_id,
-    ...(row.run_id === null ? {} : { runId: row.run_id }),
+    ...compact({ runId: row.run_id ?? undefined }),
     sequence: row.sequence,
     timestamp: row.timestamp,
     level: row.level,
     category: row.category,
     event: row.event,
     message: row.message,
-    ...(metadata === undefined ? {} : { metadata }),
+    ...compact({ metadata }),
   };
 }
 
@@ -1187,14 +1188,14 @@ function toPipelineLog(row: PipelineLogRow): StudioPipelineLogEntry {
   return {
     id: row.id,
     pipelineId: row.pipeline_id,
-    ...(row.run_id === null ? {} : { runId: row.run_id }),
+    ...compact({ runId: row.run_id ?? undefined }),
     sequence: row.sequence,
     timestamp: row.timestamp,
     level: row.level,
     category: row.category,
     event: row.event,
     message: row.message,
-    ...(metadata === undefined ? {} : { metadata }),
+    ...compact({ metadata }),
   };
 }
 
@@ -1207,12 +1208,12 @@ function toPipelineRun(row: PipelineRunRow): StudioPipelineRunRecord {
     pipelineId: row.pipeline_id,
     status: row.status,
     input: JSON.parse(row.input_json) as JsonValue,
-    ...(output === undefined ? {} : { output }),
-    ...(error === undefined ? {} : { error }),
-    ...(metadata === undefined ? {} : { metadata }),
+    ...compact({ output }),
+    ...compact({ error }),
+    ...compact({ metadata }),
     startedAt: row.started_at,
-    ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
-    ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
+    ...compact({ endedAt: row.ended_at ?? undefined }),
+    ...compact({ durationMs: row.duration_ms ?? undefined }),
   };
 }
 
@@ -1242,7 +1243,7 @@ function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   if (row.role === "assistant") {
     return {
       role: "assistant",
-      ...(row.message_id === null ? {} : { id: row.message_id }),
+      ...compact({ id: row.message_id ?? undefined }),
       content: parts as Extract<Message, { role: "assistant" }>["content"],
     };
   }
@@ -1303,8 +1304,8 @@ function toTrace(row: TraceRow): StudioTrace {
   const input = parseJsonValue<StudioTrace["input"]>(row.input_json);
   return {
     ...toTraceSummary(row),
-    ...(trace === undefined ? {} : { trace }),
-    ...(input === undefined ? {} : { input }),
+    ...compact({ trace }),
+    ...compact({ input }),
     observations: parseJsonArray<StudioTrace["observations"][number]>(row.observations_json),
   };
 }
@@ -1317,15 +1318,15 @@ function toTraceSummary(row: TraceRow): StudioTraceSummary {
   return {
     id: row.id,
     sessionId: row.session_id,
-    ...(row.name === null ? {} : { name: row.name }),
+    ...compact({ name: row.name ?? undefined }),
     status: row.status,
     startedAt: row.started_at,
-    ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
-    ...(row.duration_ms === null ? {} : { durationMs: row.duration_ms }),
-    ...(row.output === null ? {} : { output: row.output }),
-    ...(error === undefined ? {} : { error }),
-    ...(usage === undefined ? {} : { usage }),
-    ...(metadata === undefined ? {} : { metadata }),
+    ...compact({ endedAt: row.ended_at ?? undefined }),
+    ...compact({ durationMs: row.duration_ms ?? undefined }),
+    ...compact({ output: row.output ?? undefined }),
+    ...compact({ error }),
+    ...compact({ usage }),
+    ...compact({ metadata }),
     observationCount: observations.length,
   };
 }

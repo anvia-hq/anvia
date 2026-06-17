@@ -10,7 +10,10 @@ import type {
   StudioToolQuestionPrompt,
   StudioToolQuestionStatus,
 } from "../types";
-import { errorResponse, isObject, optionalQueryString } from "./shared";
+import { compact } from "./compact";
+import { errorResponse } from "./http";
+import { optionalQueryString } from "./query";
+import { isObject } from "./type-guards";
 
 type PendingQuestion = StudioToolQuestion & {
   status: "pending";
@@ -139,12 +142,12 @@ async function parseQuestionAnswerRequest(
     if ("custom" in answer && typeof answer.custom !== "boolean") {
       return { error: errorResponse(c, 400, "bad_request", "custom must be a boolean") };
     }
-    answers.push({
+    answers.push(compact({
       questionId: answer.questionId.trim(),
       answer: answer.answer.trim(),
-      ...(typeof answer.choice === "string" ? { choice: answer.choice } : {}),
-      ...(typeof answer.custom === "boolean" ? { custom: answer.custom } : {}),
-    });
+      choice: typeof answer.choice === "string" ? answer.choice : undefined,
+      custom: typeof answer.custom === "boolean" ? answer.custom : undefined,
+    }) as StudioToolQuestionAnswer);
   }
 
   return { answers };
@@ -167,13 +170,13 @@ export function createQuestionRuntime(): QuestionRuntime {
             return control.skip(prompts.error);
           }
 
-          const answers = await requestQuestion(questions, context, {
+          const answers = await requestQuestion(questions, context, compact({
             toolName,
-            ...(toolCallId === undefined ? {} : { toolCallId }),
+            toolCallId,
             internalCallId,
             args,
             questions: prompts.questions,
-          });
+          }) as QuestionRequest);
 
           return control.skip(JSON.stringify({ answers }));
         },
@@ -226,18 +229,20 @@ async function requestQuestion(
 ): Promise<StudioToolQuestionAnswer[]> {
   const id = globalThis.crypto.randomUUID();
   const question: PendingQuestion = {
-    id,
-    runId: context.runId,
-    agentId: context.agentId,
-    ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
-    toolName: request.toolName,
-    ...(request.toolCallId === undefined ? {} : { callId: request.toolCallId }),
-    internalCallId: request.internalCallId,
-    args: request.args,
-    questions: request.questions,
-    status: "pending",
-    requestedAt: new Date().toISOString(),
-    ...(context.emit === undefined ? {} : { emit: context.emit }),
+    ...compact({
+      id,
+      runId: context.runId,
+      agentId: context.agentId,
+      sessionId: context.sessionId,
+      toolName: request.toolName,
+      callId: request.toolCallId,
+      internalCallId: request.internalCallId,
+      args: request.args,
+      questions: request.questions,
+      status: "pending" as const,
+      requestedAt: new Date().toISOString(),
+      emit: context.emit,
+    }),
     resolve: () => {},
   };
 

@@ -2,14 +2,8 @@ import type {
   CompletionModel,
   JsonValue,
   Message as MessageType,
-  StreamingCompletionModel,
 } from "../completion/index";
-
-export function isStreamingCompletionModel(
-  model: CompletionModel,
-): model is StreamingCompletionModel {
-  return "streamCompletion" in model && typeof model.streamCompletion === "function";
-}
+export { isStreamingCompletionModel } from "../completion/create-completion";
 
 export function extractRagText(message: MessageType): string | undefined {
   if (message.role === "user") {

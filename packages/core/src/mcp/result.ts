@@ -1,4 +1,5 @@
 import type { JsonValue } from "../completion/index";
+import { isRecord } from "../internal/compact";
 import type { McpToolCallContent, McpToolCallResult } from "./types";
 
 export function createCallToolParams(
@@ -9,7 +10,7 @@ export function createCallToolParams(
     return { name };
   }
 
-  if (!isPlainRecord(args)) {
+  if (!isRecord(args)) {
     throw new Error("MCP tool arguments must be a JSON object");
   }
 
@@ -66,8 +67,4 @@ function serializeMcpValue(value: unknown): string {
 
   const serialized = JSON.stringify(value);
   return serialized === undefined ? String(value) : serialized;
-}
-
-function isPlainRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

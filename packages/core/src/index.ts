@@ -12,7 +12,7 @@ export type {
   AgentChildStreamEvent,
   AgentStreamEvent,
   PromptResponse,
-} from "./agent/request";
+} from "./agent/request-types";
 export type {
   AssistantMessage,
   CompletionModel,

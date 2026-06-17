@@ -1,6 +1,8 @@
 import type { Hono } from "hono";
 import type { StudioTraceStore } from "../types";
-import { errorResponse, optionalQueryString, parseLimit, parseTraceStatus } from "./shared";
+import { compact } from "./compact";
+import { errorResponse } from "./http";
+import { optionalQueryString, parseLimit, parseTraceStatus } from "./query";
 
 export function registerTraceRoutes(app: Hono, traceStore: StudioTraceStore): void {
   app.get("/traces", async (c) => {
@@ -28,9 +30,7 @@ export function registerTraceRoutes(app: Hono, traceStore: StudioTraceStore): vo
     const sessionId = optionalQueryString(c.req.query("sessionId"));
     const traces = await traceStore.listTraces({
       limit,
-      ...(agentId === undefined ? {} : { agentId }),
-      ...(sessionId === undefined ? {} : { sessionId }),
-      ...(status === undefined ? {} : { status }),
+      ...compact({ agentId, sessionId, status }),
     });
     return c.json({ traces });
   });

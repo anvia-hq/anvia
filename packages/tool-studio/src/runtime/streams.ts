@@ -1,5 +1,5 @@
 import { createEventStream } from "@anvia/server";
-import { serializeError } from "./shared";
+import { serializeError } from "./http";
 
 type StudioStreamErrorEvent = {
   type: "error";

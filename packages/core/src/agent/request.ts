@@ -6,27 +6,32 @@ import {
   type JsonObject,
   Message,
   type Message as MessageType,
-  type ReasoningContentType,
   type ToolCall,
   type ToolDefinition,
   type ToolResult,
-  type ToolResultContent,
   textFromAssistantContent,
   Usage,
 } from "../completion/index";
 import { createAsyncQueue } from "../internal/async-queue";
+import { compact } from "../internal/compact";
 import type { MemoryContext } from "../memory";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
-import type { AgentTraceInfo, AgentTraceOptions } from "../observability/types";
+import type { AgentTraceOptions } from "../observability/types";
 import { toReadableStream } from "../streaming";
 import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
 import type { Agent } from "./agent";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
 import type { PromptHook } from "./hooks";
 import { runControl } from "./hooks";
+import {
+  type AgentStreamEvent,
+  type PromptResponse,
+  addTurn,
+  isGenerationDeltaEvent,
+} from "./request-types";
 import { PromptRequestMemory } from "./request-memory";
 import { fetchDynamicContext, fetchToolDefinitions } from "./retrieval";
-import { type AgentDeltaEvent, CompletionStreamAccumulator } from "./stream-accumulator";
+import { CompletionStreamAccumulator } from "./stream-accumulator";
 import {
   type AgentToolEventPayload,
   ToolCallExecutor,
@@ -34,79 +39,6 @@ import {
   type ToolResultEventPayload,
 } from "./tool-execution";
 import { extractRagText, isStreamingCompletionModel } from "./utils";
-
-export type PromptResponse = {
-  output: string;
-  usage: Usage;
-  messages: MessageType[];
-  trace?: AgentTraceInfo | undefined;
-};
-
-export type AgentChildStreamEvent<RawResponse = unknown> =
-  | {
-      type: "turn_start";
-      turn: number;
-      prompt: MessageType;
-      history: MessageType[];
-    }
-  | {
-      type: "text_delta";
-      turn: number;
-      delta: string;
-    }
-  | {
-      type: "reasoning_delta";
-      turn: number;
-      delta: string;
-      id?: string;
-      contentType?: ReasoningContentType;
-      signature?: string;
-    }
-  | {
-      type: "tool_call";
-      turn: number;
-      toolCall: ToolCall;
-    }
-  | {
-      type: "tool_result";
-      turn: number;
-      toolName: string;
-      toolCallId?: string;
-      internalCallId: string;
-      args: string;
-      result: string;
-      structuredResult?: ToolResultContent[] | undefined;
-    }
-  | {
-      type: "turn_end";
-      turn: number;
-      response: CompletionResponse<RawResponse>;
-    }
-  | {
-      type: "final";
-      runId: string;
-      output: string;
-      usage: Usage;
-      messages: MessageType[];
-      trace?: AgentTraceInfo | undefined;
-    }
-  | {
-      type: "error";
-      error: unknown;
-    };
-
-export type AgentStreamEvent<RawResponse = unknown> =
-  | AgentChildStreamEvent<RawResponse>
-  | {
-      type: "agent_tool_event";
-      turn: number;
-      toolName: string;
-      toolCallId?: string;
-      internalCallId: string;
-      agentId: string;
-      agentName?: string;
-      event: AgentChildStreamEvent<RawResponse>;
-    };
 
 export class PromptRequest<M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
@@ -382,16 +314,16 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
-        const generationObservers = await runObservers.startGeneration({
+        const generationObservers = await runObservers.startGeneration(compact({
           turn: currentTurns,
           request,
-          ...(providerRequest === undefined ? {} : { providerRequest }),
+          providerRequest,
           modelInfo: {
             provider: this.agent.model.provider,
             defaultModel: this.agent.model.defaultModel,
             capabilities: this.agent.model.capabilities,
           },
-        });
+        }));
         const accumulator = new CompletionStreamAccumulator();
         const generationStartedAt = Date.now();
         let firstDeltaMs: number | undefined;
@@ -415,11 +347,11 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         }
 
         let response = accumulator.response();
-        await generationObservers.end({
+        await generationObservers.end(compact({
           turn: currentTurns,
           response,
-          ...(firstDeltaMs === undefined ? {} : { firstDeltaMs }),
-        });
+          firstDeltaMs,
+        }));
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
         usage = Usage.add(usage, response.usage);
         await this.runCompletionResponseHook(prompt, response, newMessages);
@@ -528,16 +460,16 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this.agent.model, request);
     const providerRequest = this.providerTraceRequest(request);
-    const generationObservers = await runObservers.startGeneration({
+    const generationObservers = await runObservers.startGeneration(compact({
       turn,
       request,
-      ...(providerRequest === undefined ? {} : { providerRequest }),
+      providerRequest,
       modelInfo: {
         provider: this.agent.model.provider,
         defaultModel: this.agent.model.defaultModel,
         capabilities: this.agent.model.capabilities,
       },
-    });
+    }));
     try {
       const response = await this.agent.model.completion(request);
       await generationObservers.end({ turn, response });
@@ -616,14 +548,13 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     await registration.store.append({
       runId,
       agentId,
-      ...(agentName === undefined ? {} : { agentName }),
-      ...(turn === undefined ? {} : { turn }),
+      ...compact({ agentName, turn }),
       ...(event.type === "agent_tool_event"
-        ? {
+        ? compact({
             toolName: event.toolName,
-            ...(event.toolCallId === undefined ? {} : { toolCallId: event.toolCallId }),
+            toolCallId: event.toolCallId,
             internalCallId: event.internalCallId,
-          }
+          })
         : {}),
       event,
     });
@@ -852,27 +783,4 @@ function normalizeSteeringInput(input: string | MessageType | MessageType[]): Me
     return [Message.user(input)];
   }
   return Array.isArray(input) ? [...input] : [input];
-}
-
-function addTurn(turn: number, event: AgentDeltaEvent): AgentStreamEvent {
-  if (event.type === "text_delta") {
-    return { type: "text_delta", turn, delta: event.delta };
-  }
-  if (event.type === "reasoning_delta") {
-    const mapped: AgentStreamEvent = { type: "reasoning_delta", turn, delta: event.delta };
-    if (event.id !== undefined) mapped.id = event.id;
-    if (event.contentType !== undefined) mapped.contentType = event.contentType;
-    if (event.signature !== undefined) mapped.signature = event.signature;
-    return mapped;
-  }
-  return { type: "tool_call", turn, toolCall: event.toolCall };
-}
-
-function isGenerationDeltaEvent(type: string): boolean {
-  return (
-    type === "text_delta" ||
-    type === "reasoning_delta" ||
-    type === "tool_call_delta" ||
-    type === "tool_call"
-  );
 }

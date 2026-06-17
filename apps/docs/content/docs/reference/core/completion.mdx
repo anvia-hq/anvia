@@ -244,6 +244,18 @@ Return behavior: streaming models yield deltas and finish with a `final` event.
 
 Notable errors: provider adapters can throw transport, authentication, provider validation, stream, or capability validation errors.
 
+## Model Utilities
+
+```ts
+function isStreamingCompletionModel(model: CompletionModel): model is StreamingCompletionModel;
+```
+
+Purpose: type guard that checks whether a completion model supports streaming.
+
+Return behavior: returns `true` when the model implements `streamCompletion`.
+
+Notable errors: none.
+
 ## Capability Validation
 
 ```ts
@@ -354,6 +366,18 @@ Purpose: fluent construction of provider requests.
 Return behavior: `build()` returns a `CompletionRequest`; `send()` validates capabilities and calls the configured model.
 
 Notable errors: `send()` throws `CompletionCapabilityError` before provider transport when the request uses unsupported features, and otherwise forwards model errors.
+
+## Tool Result Serialization
+
+```ts
+function serializeToolResultOutput(output: unknown): string;
+```
+
+Purpose: serializes tool output to a string, with defensive error handling for non-serializable values.
+
+Return behavior: returns string values unchanged; JSON-stringifies objects and arrays; falls back to `String(output)` when serialization fails.
+
+Notable errors: none.
 
 ## Document Helpers
 

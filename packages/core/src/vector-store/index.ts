@@ -7,6 +7,7 @@ import {
   embedText,
   type VectorMetadata,
 } from "../embeddings";
+import { compact } from "../internal/compact";
 import { createTool } from "../tool/create-tool";
 import type { Tool } from "../tool/tool";
 import { matchesVectorFilter, type VectorFilter } from "./filter";
@@ -195,7 +196,7 @@ export class InMemoryVectorIndex<T, Metadata extends VectorMetadata = VectorMeta
             score,
             id: document.id,
             document: document.document,
-            ...(document.metadata === undefined ? {} : { metadata: document.metadata }),
+            ...(document.metadata !== undefined && { metadata: document.metadata }),
           },
         ];
       })
@@ -219,7 +220,7 @@ export class InMemoryVectorIndex<T, Metadata extends VectorMetadata = VectorMeta
       items: page.map((document) => ({
         id: document.id,
         document: document.document,
-        ...(document.metadata === undefined ? {} : { metadata: document.metadata }),
+        ...(document.metadata !== undefined && { metadata: document.metadata }),
       })),
       ...(nextOffset < documents.length ? { nextCursor: String(nextOffset) } : {}),
       totalCount: documents.length,

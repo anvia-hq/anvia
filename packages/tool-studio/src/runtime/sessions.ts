@@ -1,15 +1,11 @@
 import type { JsonObject } from "@anvia/core/completion";
 import type { Context, Hono } from "hono";
 import type { StudioAgent, StudioSessionStore, StudioTraceStore } from "../types";
+import { compact } from "./compact";
 import { appendSessionLog, sessionCreatedLog } from "./session-logs";
-import {
-  errorResponse,
-  isJsonObject,
-  isObject,
-  optionalQueryString,
-  parseLimit,
-  unsupportedCapability,
-} from "./shared";
+import { errorResponse, parseJsonBody, unsupportedCapability } from "./http";
+import { isJsonObject, isObject } from "./type-guards";
+import { optionalQueryString, parseAfter, parseLimit } from "./query";
 
 export function registerSessionRoutes(
   app: Hono,
@@ -31,7 +27,7 @@ export function registerSessionRoutes(
     }
 
     const sessions = await props.sessionStore.listSessions({
-      ...(agentId === undefined ? {} : { agentId }),
+      ...compact({ agentId }),
       limit,
     });
     return c.json({ sessions });
@@ -49,8 +45,7 @@ export function registerSessionRoutes(
     const session = await props.sessionStore.createSession({
       id: globalThis.crypto.randomUUID(),
       agentId: body.agentId,
-      ...(body.title === undefined ? {} : { title: body.title }),
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      ...compact({ title: body.title, metadata: body.metadata }),
     });
     await appendSessionLog(props.sessionStore, sessionCreatedLog(session));
     return c.json(session, 201);
@@ -80,11 +75,11 @@ export function registerSessionRoutes(
       );
     }
 
-    const limit = parseSessionLogLimit(c.req.query("limit"));
+    const limit = parseLimit(c.req.query("limit"), 200, 1000);
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
-    const after = parseSessionLogAfter(c.req.query("after"));
+    const after = parseAfter(c.req.query("after"));
     if (after === false) {
       return errorResponse(c, 400, "bad_request", "after must be a non-negative integer");
     }
@@ -92,7 +87,7 @@ export function registerSessionRoutes(
     const logs = await props.sessionStore.listSessionLogs({
       sessionId,
       limit,
-      ...(after === undefined ? {} : { after }),
+      ...compact({ after }),
     });
     const last = logs.at(-1);
     return c.json({
@@ -137,28 +132,6 @@ export function registerSessionRoutes(
     const traces = await props.traceStore.listSessionTraces({ sessionId, limit });
     return c.json({ traces });
   });
-}
-
-function parseSessionLogLimit(value: string | undefined): number | undefined {
-  if (value === undefined || value.trim().length === 0) {
-    return 200;
-  }
-  const limit = Number(value);
-  if (!Number.isInteger(limit) || limit <= 0) {
-    return undefined;
-  }
-  return Math.min(limit, 1000);
-}
-
-function parseSessionLogAfter(value: string | undefined): number | undefined | false {
-  if (value === undefined || value.trim().length === 0) {
-    return undefined;
-  }
-  const after = Number(value);
-  if (!Number.isInteger(after) || after < 0) {
-    return false;
-  }
-  return after;
 }
 
 async function parseCreateSessionRequest(c: Context): Promise<

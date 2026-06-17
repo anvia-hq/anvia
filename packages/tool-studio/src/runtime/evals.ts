@@ -1,8 +1,11 @@
 import { runEvalSuite } from "@anvia/core/evals";
 import type { Context, Hono } from "hono";
 import type { StudioEvalRunRequest, StudioEvalRunResponse, StudioEvalSuite } from "../types";
+import { compact } from "./compact";
 import { toJsonValue } from "./json";
-import { errorResponse, evalConfig, isJsonObject, isObject, isPositiveInteger } from "./shared";
+import { evalConfig } from "./config";
+import { errorResponse } from "./http";
+import { isJsonObject, isObject, isPositiveInteger } from "./type-guards";
 
 export function registerEvalRoutes(
   app: Hono,
@@ -40,7 +43,7 @@ export function registerEvalRoutes(
     const startedAt = Date.now();
     const result = await runEvalSuite({
       ...suite,
-      ...(body.concurrency === undefined ? {} : { concurrency: body.concurrency }),
+      ...compact({ concurrency: body.concurrency }),
     });
     const endedAt = Date.now();
     const jsonResult = toJsonValue(result);

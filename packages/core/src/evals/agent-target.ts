@@ -1,5 +1,5 @@
 import type { Agent } from "../agent/agent";
-import type { PromptResponse } from "../agent/request";
+import type { PromptResponse } from "../agent/request-types";
 import type { Message } from "../completion";
 import type { EvalCase, EvalTarget } from "./types";
 

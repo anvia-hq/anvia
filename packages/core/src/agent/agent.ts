@@ -8,6 +8,7 @@ import type {
   ToolChoice,
 } from "../completion/index";
 import type { MemoryRegistration, SessionOptions } from "../memory";
+import { compact } from "../internal/compact";
 import type { AgentObserverRegistration } from "../observability";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
@@ -176,8 +177,8 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     }
     return new AgentSession(this, {
       sessionId: normalized,
-      ...(options.userId === undefined ? {} : { userId: options.userId }),
-      ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
+      ...(options.userId !== undefined && { userId: options.userId }),
+      ...(options.metadata !== undefined && { metadata: options.metadata }),
     });
   }
 
@@ -204,11 +205,11 @@ export class Agent<M extends CompletionModel = CompletionModel> {
         ) {
           let output = "";
           for await (const event of childRequest.stream()) {
-            await context.emitStreamEvent({
+            await context.emitStreamEvent(compact({
               agentId: this.id,
-              ...(this.name === undefined ? {} : { agentName: this.name }),
+              agentName: this.name,
               event,
-            });
+            }));
             if (event.type === "final") {
               output = event.output;
             }

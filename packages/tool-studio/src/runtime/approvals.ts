@@ -19,7 +19,10 @@ import type {
   StudioToolApprovalDecision,
   StudioToolApprovalStatus,
 } from "../types";
-import { errorResponse, isObject, optionalQueryString } from "./shared";
+import { compact } from "./compact";
+import { errorResponse } from "./http";
+import { optionalQueryString } from "./query";
+import { isObject } from "./type-guards";
 
 type PendingApproval = StudioToolApproval & {
   status: "pending";
@@ -146,12 +149,12 @@ async function parseApprovalDecisionRequest(
     return { error: errorResponse(c, 400, "bad_request", "reason must be a string") };
   }
 
-  return {
+  return compact({
     approved: body.approved,
-    ...(typeof body.reason === "string" && body.reason.trim().length > 0
-      ? { reason: body.reason.trim() }
-      : {}),
-  };
+    reason: typeof body.reason === "string" && body.reason.trim().length > 0
+      ? body.reason.trim()
+      : undefined,
+  }) as StudioToolApprovalDecision;
 }
 
 export function createApprovalRuntime(): ApprovalRuntime {
@@ -164,14 +167,14 @@ export function createApprovalRuntime(): ApprovalRuntime {
         { toolName, toolCallId, internalCallId, args, tool: control },
         request,
       ) => {
-        const decision = await requestApproval(approvals, context, {
+        const decision = await requestApproval(approvals, context, compact({
           toolName,
-          ...(toolCallId === undefined ? {} : { toolCallId }),
+          toolCallId,
           internalCallId,
           args,
-          ...(request.reason === undefined ? {} : { reason: request.reason }),
-          ...(request.rejectMessage === undefined ? {} : { rejectMessage: request.rejectMessage }),
-        });
+          reason: request.reason,
+          rejectMessage: request.rejectMessage,
+        }) as ApprovalRequest);
 
         return decision.approved
           ? control.run()
@@ -188,19 +191,19 @@ export function createApprovalRuntime(): ApprovalRuntime {
 
             const rawParsedArgs = parseToolArgs(args);
             const parsedArgs = registeredTool.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
-            const approvalContext = {
+            const approvalContext = compact({
               toolName,
               args: parsedArgs,
               rawArgs: args,
-              ...(toolCallId === undefined ? {} : { toolCallId }),
+              toolCallId,
               internalCallId,
-              run: {
+              run: compact({
                 agentId: context.agentId,
                 runId: context.runId,
-                ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
-                ...(context.metadata === undefined ? {} : { metadata: context.metadata }),
-              },
-            };
+                sessionId: context.sessionId,
+                metadata: context.metadata,
+              }),
+            });
 
             const required = await approval.when(approvalContext);
             if (!required) {
@@ -212,14 +215,14 @@ export function createApprovalRuntime(): ApprovalRuntime {
               approval.rejectMessage,
               approvalContext,
             );
-            const decision = await requestApproval(approvals, context, {
+            const decision = await requestApproval(approvals, context, compact({
               toolName,
-              ...(toolCallId === undefined ? {} : { toolCallId }),
+              toolCallId,
               internalCallId,
               args,
-              ...(reason === undefined ? {} : { reason }),
-              ...(rejectMessage === undefined ? {} : { rejectMessage }),
-            });
+              reason,
+              rejectMessage,
+            }) as ApprovalRequest);
 
             return decision.approved
               ? control.run()
@@ -263,15 +266,13 @@ export function createApprovalRuntime(): ApprovalRuntime {
       const reason = decision.approved
         ? decision.reason
         : (decision.reason ?? approval.rejectMessage ?? "Rejected in Anvia Studio.");
-      const resolved = resolveApproval(approval, decision.approved ? "approved" : "rejected", {
-        ...(reason === undefined ? {} : { reason }),
-      });
+      const resolved = resolveApproval(approval, decision.approved ? "approved" : "rejected", compact({ reason }));
       approvals.set(id, resolved);
       approval.emit?.({ type: "tool_approval_result", approval: resolved });
-      approval.resolve({
+      approval.resolve(compact({
         approved: decision.approved,
-        ...(reason === undefined ? {} : { reason }),
-      });
+        reason,
+      }) as StudioToolApprovalDecision);
       return publicApproval(resolved);
     },
   };
@@ -284,19 +285,21 @@ async function requestApproval(
 ): Promise<StudioToolApprovalDecision> {
   const id = globalThis.crypto.randomUUID();
   const approval: PendingApproval = {
-    id,
-    runId: context.runId,
-    agentId: context.agentId,
-    ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
-    toolName: request.toolName,
-    ...(request.toolCallId === undefined ? {} : { callId: request.toolCallId }),
-    internalCallId: request.internalCallId,
-    args: request.args,
-    status: "pending",
-    requestedAt: new Date().toISOString(),
-    ...(request.reason === undefined ? {} : { reason: request.reason }),
-    ...(request.rejectMessage === undefined ? {} : { rejectMessage: request.rejectMessage }),
-    ...(context.emit === undefined ? {} : { emit: context.emit }),
+    ...compact({
+      id,
+      runId: context.runId,
+      agentId: context.agentId,
+      sessionId: context.sessionId,
+      toolName: request.toolName,
+      callId: request.toolCallId,
+      internalCallId: request.internalCallId,
+      args: request.args,
+      status: "pending" as const,
+      requestedAt: new Date().toISOString(),
+      reason: request.reason,
+      rejectMessage: request.rejectMessage,
+      emit: context.emit,
+    }),
     resolve: () => {},
   };
 
@@ -305,25 +308,23 @@ async function requestApproval(
       const current = approvals.get(id);
       if (!isPendingApproval(current)) {
         if (current !== undefined) {
-          resolve({
+          resolve(compact({
             approved: current.status === "approved",
-            ...(current.reason === undefined ? {} : { reason: current.reason }),
-          });
+            reason: current.reason,
+          }) as StudioToolApprovalDecision);
         }
         return;
       }
       const reason = decision.approved
         ? decision.reason
         : (decision.reason ?? request.rejectMessage ?? "Rejected in Anvia Studio.");
-      const resolved = resolveApproval(current, decision.approved ? "approved" : "rejected", {
-        ...(reason === undefined ? {} : { reason }),
-      });
+      const resolved = resolveApproval(current, decision.approved ? "approved" : "rejected", compact({ reason }));
       approvals.set(id, resolved);
       context.emit?.({ type: "tool_approval_result", approval: resolved });
-      resolve({
+      resolve(compact({
         approved: decision.approved,
-        ...(reason === undefined ? {} : { reason }),
-      });
+        reason,
+      }) as StudioToolApprovalDecision);
     };
   });
 
@@ -352,9 +353,11 @@ function resolveApproval(
 ): StudioToolApproval {
   return publicApproval({
     ...approval,
-    status,
-    resolvedAt: new Date().toISOString(),
-    ...(options.reason === undefined ? {} : { reason: options.reason }),
+    ...compact({
+      status,
+      resolvedAt: new Date().toISOString(),
+      reason: options.reason,
+    }),
   });
 }
 

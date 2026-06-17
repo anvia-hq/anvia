@@ -1,5 +1,7 @@
 import type { Message } from "@anvia/core/completion";
 import type { StudioTranscriptAttachment, StudioTranscriptEntry } from "../types";
+import { compact } from "./compact";
+import { formatJson } from "./json";
 
 export function renumberTranscript(entries: StudioTranscriptEntry[]): StudioTranscriptEntry[] {
   return entries.map((entry, entryId) => ({ ...entry, entryId }));
@@ -16,13 +18,13 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
       let textEntryAdded = false;
       for (const content of message.content) {
         if (content.type === "text") {
-          transcript.push({
+          transcript.push(compact({
             entryId: transcript.length,
-            kind: "message",
-            role: "user",
+            kind: "message" as const,
+            role: "user" as const,
             text: content.text,
-            ...(attachments.length === 0 ? {} : { attachments }),
-          });
+            attachments: attachments.length === 0 ? undefined : attachments,
+          }) as StudioTranscriptEntry);
           textEntryAdded = true;
         }
       }
@@ -59,12 +61,12 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
       if (content.type === "text") {
         appendAssistantTranscriptText(transcript, content.text);
       } else if (content.type === "reasoning") {
-        transcript.push({
+        transcript.push(compact({
           entryId: transcript.length,
-          kind: "reasoning",
-          ...(content.id === undefined ? {} : { reasoningId: content.id }),
+          kind: "reasoning" as const,
+          reasoningId: content.id,
           text: content.text,
-        });
+        }) as StudioTranscriptEntry);
       } else if (content.type === "tool_call") {
         transcript.push({
           entryId: transcript.length,
@@ -96,18 +98,13 @@ function attachmentsFromMessage(message: Message): StudioTranscriptAttachment[] 
     }
     if (content.type === "document") {
       return [
-        {
-          kind: "document",
-          ...(content.source.filename === undefined ? {} : { name: content.source.filename }),
-          ...(content.source.mediaType === undefined
-            ? {}
-            : { mediaType: content.source.mediaType }),
-          ...(content.source.type === "base64"
-            ? { data: content.source.data }
-            : content.source.type === "url"
-              ? { url: content.source.url }
-              : {}),
-        },
+        compact({
+          kind: "document" as const,
+          name: content.source.filename,
+          mediaType: content.source.mediaType,
+          data: content.source.type === "base64" ? content.source.data : undefined,
+          url: content.source.type === "url" ? content.source.url : undefined,
+        }) as StudioTranscriptAttachment,
       ];
     }
     return [];
@@ -126,12 +123,4 @@ function appendAssistantTranscriptText(transcript: StudioTranscriptEntry[], text
     role: "assistant",
     text,
   });
-}
-
-function formatJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }

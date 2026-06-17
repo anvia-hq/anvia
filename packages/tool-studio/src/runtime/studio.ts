@@ -4,6 +4,7 @@ import {
   type PromptHook,
   type ToolCallHookAction,
 } from "@anvia/core/agent";
+import { compact } from "./compact";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
 import { Agent } from "@anvia/core/internal/agent";
 import { Pipeline } from "@anvia/core/pipeline";
@@ -78,16 +79,13 @@ import {
   agentConfig,
   agentRuntimeSummary,
   buildConfig,
-  errorResponse,
-  normalizeAgents,
-  normalizePipelines,
-  resolveStores,
   runnerId,
+  type ResolvedStores,
   type StudioRuntimeOptions,
-  serializeError,
   unsupportedCapabilities,
-  unsupportedCapability,
-} from "./shared";
+} from "./config";
+import { resolveStores, normalizeAgents, normalizePipelines } from "./shared";
+import { errorResponse, serializeError, unsupportedCapability } from "./http";
 import { registerStatusRoutes } from "./status";
 import { registerToolRoutes } from "./tools";
 import { registerTraceRoutes } from "./trace-routes";
@@ -133,7 +131,7 @@ export class Studio implements AnviaStudio {
     const port = serveOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
     this.server = serve({
       fetch: (request) => this.fetch(request),
-      ...(serveOptions.hostname === undefined ? {} : { hostname: serveOptions.hostname }),
+      ...compact({ hostname: serveOptions.hostname }),
       port,
     });
 
@@ -181,9 +179,9 @@ function studioOptionsFromTargets(
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
     pipelines: inferStudioPipelines(pipelines),
     evals: options.evals ?? [],
-    ...(options.models === undefined ? {} : { models: options.models }),
-    ...(options.stores === undefined ? {} : { stores: options.stores }),
-    ...(options.ui === undefined ? {} : { ui: options.ui }),
+    ...compact({ models: options.models }),
+    ...compact({ stores: options.stores }),
+    ...compact({ ui: options.ui }),
   };
 }
 
@@ -208,9 +206,9 @@ function inferStudioPipelines(pipelines: Array<Pipeline<any, any>>): StudioPipel
     return {
       id,
       pipeline,
-      ...(pipeline.name === undefined ? {} : { name: pipeline.name }),
-      ...(pipeline.description === undefined ? {} : { description: pipeline.description }),
-      ...(pipeline.metadata === undefined ? {} : { metadata: pipeline.metadata }),
+      ...compact({ name: pipeline.name }),
+      ...compact({ description: pipeline.description }),
+      ...compact({ metadata: pipeline.metadata }),
     };
   });
 }
@@ -228,7 +226,7 @@ function uniqueAgentId(baseId: string, ids: Set<string>): string {
 
 function agentMetadata(agent: Agent): JsonObject {
   return {
-    ...(agent.defaultMaxTurns === undefined ? {} : { defaultMaxTurns: agent.defaultMaxTurns }),
+    ...compact({ defaultMaxTurns: agent.defaultMaxTurns }),
     staticContextCount: agent.staticContext.length,
     dynamicContextCount: agent.dynamicContexts.length,
     dynamicToolCount: agent.dynamicTools.length,
@@ -309,13 +307,13 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   });
   registerKnowledgeRoutes(app, {
     agents,
-    ...(stores.traces === undefined ? {} : { traceStore: stores.traces }),
+    ...compact({ traceStore: stores.traces }),
   });
   registerPipelineRoutes(app, {
     pipelines,
     pipelineMap,
-    ...(stores.pipelineLogs === undefined ? {} : { logStore: stores.pipelineLogs }),
-    ...(stores.pipelineRuns === undefined ? {} : { runStore: stores.pipelineRuns }),
+    ...compact({ logStore: stores.pipelineLogs }),
+    ...compact({ runStore: stores.pipelineRuns }),
   });
 
   app.post("/agents/:agentId/runs", async (c) => {
@@ -372,8 +370,8 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
           agentId,
           message: body.message,
           stream: body.stream === true,
-          ...(body.maxTurns === undefined ? {} : { maxTurns: body.maxTurns }),
-          ...(body.toolConcurrency === undefined ? {} : { toolConcurrency: body.toolConcurrency }),
+          ...compact({ maxTurns: body.maxTurns }),
+          ...compact({ toolConcurrency: body.toolConcurrency }),
           hasTrace: body.trace !== undefined,
           ...(body.metadata === undefined && selectedModel.ref === undefined
             ? {}
@@ -457,8 +455,8 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
           approvalRuntime.createHook({
             runId,
             agentId,
-            ...(session?.id === undefined ? {} : { sessionId: session.id }),
-            ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+            ...compact({ sessionId: session?.id }),
+            ...compact({ metadata: body.metadata }),
             getTool: (toolName) => runAgent.getTool(toolName),
             emit: (event) => runtimeEvents.push(event),
           }),
@@ -466,8 +464,8 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
         questionRuntime.createHook({
           runId,
           agentId,
-          ...(session?.id === undefined ? {} : { sessionId: session.id }),
-          ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+          ...compact({ sessionId: session?.id }),
+          ...compact({ metadata: body.metadata }),
           emit: (event) => runtimeEvents.push(event),
         }),
       );
@@ -506,16 +504,16 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
           approvalRuntime.createHook({
             runId,
             agentId,
-            ...(session?.id === undefined ? {} : { sessionId: session.id }),
-            ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+            ...compact({ sessionId: session?.id }),
+            ...compact({ metadata: body.metadata }),
             getTool: (toolName) => runAgent.getTool(toolName),
           }),
         ),
         questionRuntime.createHook({
           runId,
           agentId,
-          ...(session?.id === undefined ? {} : { sessionId: session.id }),
-          ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+          ...compact({ sessionId: session?.id }),
+          ...compact({ metadata: body.metadata }),
         }),
       );
       if (effectiveHook !== undefined) {
@@ -589,7 +587,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     registerSessionRoutes(app, {
       agentMap,
       sessionStore: stores.sessions,
-      ...(stores.traces === undefined ? {} : { traceStore: stores.traces }),
+      ...compact({ traceStore: stores.traces }),
     });
   }
 
@@ -611,8 +609,8 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       return buildConfig(options, agents, pipelines, stores);
     },
     close() {},
-    ...(stores.sessions === undefined ? {} : { sessionStore: stores.sessions }),
-    ...(stores.traces === undefined ? {} : { traceStore: stores.traces }),
+    ...compact({ sessionStore: stores.sessions }),
+    ...compact({ traceStore: stores.traces }),
   };
 }
 

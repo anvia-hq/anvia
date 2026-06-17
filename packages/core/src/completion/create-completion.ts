@@ -154,7 +154,7 @@ function messagesFromInput(input: CreateCompletionInput | undefined): MessageTyp
   return Array.isArray(input) ? [...input] : [input];
 }
 
-function isStreamingCompletionModel(model: CompletionModel): model is StreamingCompletionModel {
+export function isStreamingCompletionModel(model: CompletionModel): model is StreamingCompletionModel {
   return typeof (model as { streamCompletion?: unknown }).streamCompletion === "function";
 }
 

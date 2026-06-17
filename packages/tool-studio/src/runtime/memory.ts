@@ -9,7 +9,9 @@ import type {
   StudioSessionStore,
   StudioSessionSummary,
 } from "../types";
-import { errorResponse, optionalQueryString, parseLimit } from "./shared";
+import { compact } from "./compact";
+import { errorResponse } from "./http";
+import { optionalQueryString, parseLimit } from "./query";
 
 const DEFAULT_USER_ID = "default";
 
@@ -66,7 +68,7 @@ export function registerMemoryRoutes(
     const agentId = optionalQueryString(c.req.query("agentId"));
     const userId = optionalQueryString(c.req.query("userId"));
     const sessions = await props.sessionStore.listSessions({
-      ...(agentId === undefined ? {} : { agentId }),
+      ...compact({ agentId }),
       limit: 100,
     });
     const conversations = sessions
@@ -107,16 +109,16 @@ export function registerMemoryRoutes(
 function memoryConversationSummary(
   session: StudioSession | StudioSessionSummary,
 ): StudioMemoryConversationSummary {
-  return {
+  return compact({
     id: session.id,
     userId: sessionUserId(session),
     agentId: session.agentId,
-    ...(session.title === undefined ? {} : { title: session.title }),
+    title: session.title,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: session.messageCount,
-    ...(session.metadata === undefined ? {} : { metadata: session.metadata }),
-  };
+    metadata: session.metadata,
+  }) as StudioMemoryConversationSummary;
 }
 
 function sessionUserId(session: Pick<StudioSession, "metadata">): string {

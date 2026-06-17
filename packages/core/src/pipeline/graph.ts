@@ -1,4 +1,5 @@
 import type { JsonObject } from "../completion";
+import { compact } from "../internal/compact";
 import type {
   PipelineBuilderState,
   PipelineGraph,
@@ -20,10 +21,12 @@ export function initialBuilderState(metadata: PipelineMetadata): PipelineBuilder
 export function initialGraph(metadata: PipelineMetadata): PipelineGraph {
   const id = normalizeId(metadata.id ?? "pipeline");
   return {
-    id,
-    ...(metadata.name === undefined ? {} : { name: metadata.name }),
-    ...(metadata.description === undefined ? {} : { description: metadata.description }),
-    ...(metadata.metadata === undefined ? {} : { metadata: metadata.metadata }),
+    ...compact({
+      id,
+      name: metadata.name,
+      description: metadata.description,
+      metadata: metadata.metadata,
+    }),
     nodes: [{ id: "input", kind: "input", label: "Input" }],
     edges: [],
   };
@@ -158,17 +161,17 @@ function graphNode(
     normalizeId(options.preferredId ?? `${kind}_${index}`),
     options.existingIds ?? new Set(),
   );
-  return {
+  return compact({
     id,
     kind,
     label,
-    ...(options.description === undefined ? {} : { description: options.description }),
-    ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
-    ...(options.agentId === undefined ? {} : { agentId: options.agentId }),
-    ...(options.agentName === undefined ? {} : { agentName: options.agentName }),
-    ...(options.pipelineId === undefined ? {} : { pipelineId: options.pipelineId }),
-    ...(options.branchKey === undefined ? {} : { branchKey: options.branchKey }),
-  };
+    description: options.description,
+    metadata: options.metadata,
+    agentId: options.agentId,
+    agentName: options.agentName,
+    pipelineId: options.pipelineId,
+    branchKey: options.branchKey,
+  }) as PipelineGraphNode;
 }
 
 function normalizeId(value: string): string {

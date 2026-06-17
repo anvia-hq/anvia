@@ -6,7 +6,9 @@ import type {
   StudioPipelineLogEntry,
   StudioPipelineLogStore,
 } from "../types";
-import { serializeError } from "./shared";
+import { compact } from "./compact";
+import { formatUnknown } from "./json";
+import { serializeError } from "./http";
 
 export async function appendPipelineLog(
   store: StudioPipelineLogStore | undefined,
@@ -39,7 +41,7 @@ export function pipelineRunReceivedLog(props: {
     category: "api",
     event: "pipeline.run_received",
     message: "Pipeline run request received",
-    metadata: cleanMetadata({
+    metadata: compact({
       stream: props.stream,
       inputBytes: byteLength(formatUnknown(props.input)),
       metadataKeys: Object.keys(props.metadata ?? {}),
@@ -59,7 +61,7 @@ export function pipelineRunStartedLog(
     category: "run",
     event: "pipeline.run_started",
     message: "Pipeline run started",
-    metadata: cleanMetadata({
+    metadata: compact({
       stageCount: graph.nodes.filter((node) => node.kind !== "input" && node.kind !== "output")
         .length,
       edgeCount: graph.edges.length,
@@ -80,7 +82,7 @@ export function pipelineRunCompletedLog(props: {
     category: "run",
     event: "pipeline.run_completed",
     message: "Pipeline run completed",
-    metadata: cleanMetadata({
+    metadata: compact({
       durationMs: props.durationMs,
       outputBytes: byteLength(formatUnknown(props.output)),
     }),
@@ -100,7 +102,7 @@ export function pipelineRunFailedLog(
     category: "run",
     event: "pipeline.run_failed",
     message: "Pipeline run failed",
-    metadata: cleanMetadata({
+    metadata: compact({
       durationMs: Date.now() - startedAt,
       error: serializeError(error),
     }),
@@ -132,7 +134,7 @@ export function pipelineStageLog(
       category,
       event: `${event.node.kind}.completed`,
       message: `${event.node.label} completed`,
-      metadata: cleanMetadata({
+      metadata: compact({
         ...nodeMetadata(event.node),
         durationMs: event.durationMs,
       }),
@@ -145,7 +147,7 @@ export function pipelineStageLog(
     category,
     event: `${event.node.kind}.failed`,
     message: `${event.node.label} failed`,
-    metadata: cleanMetadata({
+    metadata: compact({
       ...nodeMetadata(event.node),
       durationMs: event.durationMs,
       error: serializeError(event.error),
@@ -167,7 +169,7 @@ function stageCategory(node: PipelineGraphNode): StudioPipelineLogAppendInput["c
 }
 
 function nodeMetadata(node: PipelineGraphNode): JsonObject {
-  return cleanMetadata({
+  return compact({
     nodeId: node.id,
     kind: node.kind,
     label: node.label,
@@ -177,20 +179,6 @@ function nodeMetadata(node: PipelineGraphNode): JsonObject {
   });
 }
 
-function cleanMetadata(value: Record<string, unknown>): JsonObject {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => item !== undefined),
-  ) as JsonObject;
-}
-
 function byteLength(value: string | undefined): number | undefined {
   return value === undefined ? undefined : new TextEncoder().encode(value).length;
-}
-
-function formatUnknown(value: unknown): string | undefined {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
 }

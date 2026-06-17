@@ -11,8 +11,10 @@ import type {
   StudioTranscriptChildAgentEvent,
   StudioTranscriptEntry,
 } from "../types";
+import { compact } from "./compact";
+import { errorResponse, parseJsonBody, serializeError } from "./http";
+import { formatJson } from "./json";
 import {
-  errorResponse,
   isAgentTraceOptions,
   isJsonObject,
   isMessage,
@@ -20,8 +22,7 @@ import {
   isNonNegativeInteger,
   isObject,
   isPositiveInteger,
-  serializeError,
-} from "./shared";
+} from "./type-guards";
 import { streamStudioJsonl } from "./streams";
 
 export { transcriptFromMessages } from "./transcript";
@@ -223,17 +224,15 @@ function acceptTranscriptStreamEvent(
   if (event.type === "tool_result") {
     const matched = findTranscriptToolEntry(transcript, event.toolName, event.toolCallId);
     if (matched === undefined) {
-      transcript.push({
+      transcript.push(compact({
         entryId: transcript.length,
-        kind: "tool",
+        kind: "tool" as const,
         toolName: event.toolName,
-        ...(event.toolCallId === undefined ? {} : { callId: event.toolCallId }),
+        callId: event.toolCallId,
         args: event.args,
         result: event.result,
-        ...(event.structuredResult === undefined
-          ? {}
-          : { structuredResult: event.structuredResult }),
-      });
+        structuredResult: event.structuredResult,
+      }) as StudioTranscriptEntry);
       return;
     }
     matched.args = matched.args ?? event.args;
@@ -245,15 +244,15 @@ function acceptTranscriptStreamEvent(
   if (event.type === "agent_tool_event") {
     const matched = findTranscriptToolEntry(transcript, event.toolName, event.toolCallId);
     if (matched === undefined) {
-      transcript.push({
+      transcript.push(compact({
         entryId: transcript.length,
-        kind: "tool",
+        kind: "tool" as const,
         toolName: event.toolName,
-        ...(event.toolCallId === undefined ? {} : { callId: event.toolCallId }),
+        callId: event.toolCallId,
         childEvents: [childAgentTranscriptEvent(event)].filter(
           (childEvent): childEvent is StudioTranscriptChildAgentEvent => childEvent !== undefined,
         ),
-      });
+      }) as StudioTranscriptEntry);
       return;
     }
     appendChildAgentTranscriptEvent(matched, event);
@@ -279,15 +278,13 @@ function acceptTranscriptStreamEvent(
       approvalCallId(event.approval),
     );
     if (matched !== undefined) {
-      matched.approval = {
+      matched.approval = compact({
         id: event.approval.id,
         status: event.approval.status,
         requestedAt: event.approval.requestedAt,
-        ...(event.approval.resolvedAt === undefined
-          ? {}
-          : { resolvedAt: event.approval.resolvedAt }),
-        ...(event.approval.reason === undefined ? {} : { reason: event.approval.reason }),
-      };
+        resolvedAt: event.approval.resolvedAt,
+        reason: event.approval.reason,
+      }) as NonNullable<typeof matched.approval>;
     }
   }
   if (event.type === "tool_question_request") {
@@ -312,16 +309,14 @@ function acceptTranscriptStreamEvent(
       questionCallId(event.question),
     );
     if (matched !== undefined) {
-      matched.question = {
+      matched.question = compact({
         id: event.question.id,
         status: event.question.status,
         requestedAt: event.question.requestedAt,
-        ...(event.question.answeredAt === undefined
-          ? {}
-          : { answeredAt: event.question.answeredAt }),
+        answeredAt: event.question.answeredAt,
         questions: event.question.questions,
-        ...(event.question.answers === undefined ? {} : { answers: event.question.answers }),
-      };
+        answers: event.question.answers,
+      }) as NonNullable<typeof matched.question>;
     }
   }
   if (event.type === "final" && event.trace?.traceId !== undefined) {
@@ -388,53 +383,51 @@ function childAgentTranscriptEvent(
 ): StudioTranscriptChildAgentEvent | undefined {
   const child = event.event;
   if (child.type === "text_delta") {
-    return {
-      kind: "message",
+    return compact({
+      kind: "message" as const,
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
+      agentName: event.agentName,
       text: child.delta,
-    };
+    }) as StudioTranscriptChildAgentEvent;
   }
   if (child.type === "reasoning_delta") {
-    return {
-      kind: "reasoning",
+    return compact({
+      kind: "reasoning" as const,
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
-      ...(child.id === undefined ? {} : { reasoningId: child.id }),
+      agentName: event.agentName,
+      reasoningId: child.id,
       text: child.delta,
-    };
+    }) as StudioTranscriptChildAgentEvent;
   }
   if (child.type === "tool_call") {
-    return {
-      kind: "tool",
+    return compact({
+      kind: "tool" as const,
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
+      agentName: event.agentName,
       toolName: child.toolCall.function.name,
-      ...(child.toolCall.callId === undefined && child.toolCall.id === undefined
-        ? {}
-        : { callId: child.toolCall.callId ?? child.toolCall.id }),
+      callId: child.toolCall.callId ?? child.toolCall.id,
       args: formatJson(child.toolCall.function.arguments),
-    };
+    }) as StudioTranscriptChildAgentEvent;
   }
   if (child.type === "tool_result") {
-    return {
-      kind: "tool",
+    return compact({
+      kind: "tool" as const,
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
+      agentName: event.agentName,
       toolName: child.toolName,
-      ...(child.toolCallId === undefined ? {} : { callId: child.toolCallId }),
+      callId: child.toolCallId,
       args: child.args,
       result: child.result,
-      ...(child.structuredResult === undefined ? {} : { structuredResult: child.structuredResult }),
-    };
+      structuredResult: child.structuredResult,
+    }) as StudioTranscriptChildAgentEvent;
   }
   if (child.type === "error") {
-    return {
-      kind: "message",
+    return compact({
+      kind: "message" as const,
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
+      agentName: event.agentName,
       text: `Error: ${errorText(child.error)}`,
-    };
+    }) as StudioTranscriptChildAgentEvent;
   }
   return undefined;
 }
@@ -534,12 +527,12 @@ function appendTranscriptReasoningText(
     last.text = `${last.text}${delta}`;
     return;
   }
-  transcript.push({
+  transcript.push(compact({
     entryId: transcript.length,
-    kind: "reasoning",
-    ...(reasoningId === undefined ? {} : { reasoningId }),
+    kind: "reasoning" as const,
+    reasoningId,
     text: delta,
-  });
+  }) as StudioTranscriptEntry);
 }
 
 function findTranscriptToolEntry(
@@ -616,31 +609,18 @@ function optionalTranscriptAttachments(message: string | Message): {
     }
     if (content.type === "document") {
       return [
-        {
-          kind: "document",
-          ...(content.source.filename === undefined ? {} : { name: content.source.filename }),
-          ...(content.source.mediaType === undefined
-            ? {}
-            : { mediaType: content.source.mediaType }),
-          ...(content.source.type === "base64"
-            ? { data: content.source.data }
-            : content.source.type === "url"
-              ? { url: content.source.url }
-              : {}),
-        },
+        compact({
+          kind: "document" as const,
+          name: content.source.filename,
+          mediaType: content.source.mediaType,
+          data: content.source.type === "base64" ? content.source.data : undefined,
+          url: content.source.type === "url" ? content.source.url : undefined,
+        }) as StudioTranscriptAttachment,
       ];
     }
     return [];
   });
   return attachments.length === 0 ? {} : { attachments };
-}
-
-function formatJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { error: Response }> {

@@ -6,7 +6,8 @@ import type {
   StudioToolRunResponse,
 } from "../types";
 import { serializeUnknown, toJsonValue } from "./json";
-import { errorResponse, isJsonObject, isJsonValue } from "./shared";
+import { errorResponse } from "./http";
+import { isJsonObject, isJsonValue } from "./type-guards";
 import { agentToolItems, approvalMetadata } from "./tool-metadata";
 
 export function registerToolRoutes(

@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import { compact } from "../runtime/compact";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import type {
   StudioPipelineLogAppendInput,
@@ -59,13 +60,15 @@ class InMemoryStudioStore
   createSession(input: StudioSessionCreateInput): StudioSessionSummary {
     const now = new Date().toISOString();
     const session: MemorySessionRecord = {
-      id: input.id,
-      agentId: input.agentId,
-      ...(input.title === undefined ? {} : { title: input.title }),
-      createdAt: now,
-      updatedAt: now,
-      messageCount: 0,
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      ...compact({
+        id: input.id,
+        agentId: input.agentId,
+        title: input.title,
+        createdAt: now,
+        updatedAt: now,
+        messageCount: 0,
+        metadata: input.metadata,
+      }),
       messages: [],
       runs: [],
       logs: [],
@@ -153,18 +156,18 @@ class InMemoryStudioStore
   appendSessionLog(input: StudioSessionLogAppendInput): StudioSessionLogEntry {
     const session = this.sessions.get(input.sessionId);
     const logs = session?.logs ?? [];
-    const entry: StudioSessionLogEntry = {
+    const entry: StudioSessionLogEntry = compact({
       id: globalThis.crypto.randomUUID(),
       sessionId: input.sessionId,
-      ...(input.runId === undefined ? {} : { runId: input.runId }),
+      runId: input.runId,
       sequence: logs.length,
       timestamp: new Date().toISOString(),
       level: input.level,
       category: input.category,
       event: input.event,
       message: input.message,
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
-    };
+      metadata: input.metadata,
+    }) as StudioSessionLogEntry;
     if (session !== undefined) {
       session.logs.push(entry);
       session.updatedAt = entry.timestamp;
@@ -212,18 +215,18 @@ class InMemoryStudioStore
 
   appendPipelineLog(input: StudioPipelineLogAppendInput): StudioPipelineLogEntry {
     const logs = this.pipelineLogs.get(input.pipelineId) ?? [];
-    const entry: StudioPipelineLogEntry = {
+    const entry: StudioPipelineLogEntry = compact({
       id: globalThis.crypto.randomUUID(),
       pipelineId: input.pipelineId,
-      ...(input.runId === undefined ? {} : { runId: input.runId }),
+      runId: input.runId,
       sequence: logs.length,
       timestamp: new Date().toISOString(),
       level: input.level,
       category: input.category,
       event: input.event,
       message: input.message,
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
-    };
+      metadata: input.metadata,
+    }) as StudioPipelineLogEntry;
     this.pipelineLogs.set(input.pipelineId, [...logs, entry]);
     return entry;
   }
@@ -235,18 +238,18 @@ class InMemoryStudioStore
   }
 
   savePipelineRun(input: StudioPipelineRunSaveInput): StudioPipelineRunRecord {
-    const record: StudioPipelineRunRecord = {
+    const record: StudioPipelineRunRecord = compact({
       runId: input.runId,
       pipelineId: input.pipelineId,
       status: input.status,
       input: input.input,
-      ...(input.output === undefined ? {} : { output: input.output }),
-      ...(input.error === undefined ? {} : { error: input.error }),
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      output: input.output,
+      error: input.error,
+      metadata: input.metadata,
       startedAt: input.startedAt,
-      ...(input.endedAt === undefined ? {} : { endedAt: input.endedAt }),
-      ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
-    };
+      endedAt: input.endedAt,
+      durationMs: input.durationMs,
+    }) as StudioPipelineRunRecord;
     this.pipelineRuns.set(input.runId, record);
     return record;
   }
@@ -268,15 +271,15 @@ class InMemoryStudioStore
 }
 
 function sessionSummary(session: MemorySessionRecord): StudioSessionSummary {
-  return {
+  return compact({
     id: session.id,
     agentId: session.agentId,
-    ...(session.title === undefined ? {} : { title: session.title }),
+    title: session.title,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: session.messages.length,
-    ...(session.metadata === undefined ? {} : { metadata: session.metadata }),
-  };
+    metadata: session.metadata,
+  }) as StudioSessionSummary;
 }
 
 function materializeSession(session: MemorySessionRecord): StudioSession {
@@ -288,20 +291,20 @@ function materializeSession(session: MemorySessionRecord): StudioSession {
 }
 
 function traceSummary(trace: StudioTrace): StudioTraceSummary {
-  return {
+  return compact({
     id: trace.id,
     sessionId: trace.sessionId,
-    ...(trace.name === undefined ? {} : { name: trace.name }),
+    name: trace.name,
     status: trace.status,
     startedAt: trace.startedAt,
-    ...(trace.endedAt === undefined ? {} : { endedAt: trace.endedAt }),
-    ...(trace.durationMs === undefined ? {} : { durationMs: trace.durationMs }),
-    ...(trace.output === undefined ? {} : { output: trace.output }),
-    ...(trace.error === undefined ? {} : { error: trace.error }),
-    ...(trace.usage === undefined ? {} : { usage: trace.usage }),
-    ...(trace.metadata === undefined ? {} : { metadata: trace.metadata }),
+    endedAt: trace.endedAt,
+    durationMs: trace.durationMs,
+    output: trace.output,
+    error: trace.error,
+    usage: trace.usage,
+    metadata: trace.metadata,
     observationCount: trace.observations.length,
-  };
+  }) as StudioTraceSummary;
 }
 
 function traceAgentId(trace: StudioTrace): string | undefined {

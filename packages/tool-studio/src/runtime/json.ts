@@ -63,3 +63,19 @@ export function serializeUnknown(error: unknown): JsonValue {
   }
   return toJsonValue(error);
 }
+
+export function formatJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+export function formatUnknown(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}

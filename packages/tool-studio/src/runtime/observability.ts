@@ -8,7 +8,8 @@ import type {
   StudioTraceStore,
   StudioTraceSummary,
 } from "../types";
-import type { ResolvedStores } from "./shared";
+import type { ResolvedStores } from "./config";
+import { compact } from "./compact";
 import { streamStudioJsonl } from "./streams";
 
 type ObservabilitySubscription = {
@@ -47,13 +48,11 @@ export class StudioObservabilityHub {
 export function observeStores(stores: ResolvedStores, hub: StudioObservabilityHub): ResolvedStores {
   return {
     ...stores,
-    ...(stores.sessions === undefined
-      ? {}
-      : { sessions: observeSessionStore(stores.sessions, hub) }),
-    ...(stores.traces === undefined ? {} : { traces: observeTraceStore(stores.traces, hub) }),
-    ...(stores.pipelineLogs === undefined
-      ? {}
-      : { pipelineLogs: observePipelineLogStore(stores.pipelineLogs, hub) }),
+    ...compact({
+      sessions: stores.sessions !== undefined ? observeSessionStore(stores.sessions, hub) : undefined,
+      traces: stores.traces !== undefined ? observeTraceStore(stores.traces, hub) : undefined,
+      pipelineLogs: stores.pipelineLogs !== undefined ? observePipelineLogStore(stores.pipelineLogs, hub) : undefined,
+    }),
   };
 }
 
@@ -80,7 +79,7 @@ function observabilityEvents(
   hub: StudioObservabilityHub,
   types: Set<StudioObservabilityEventType> | undefined,
 ): AsyncIterable<StudioObservabilityEvent> {
-  const subscription = hub.subscribe(types === undefined ? {} : { types });
+  const subscription = hub.subscribe(compact({ types }));
 
   return {
     [Symbol.asyncIterator]() {
@@ -228,15 +227,17 @@ function traceSummary(trace: StudioTrace): StudioTraceSummary {
   return {
     id: trace.id,
     sessionId: trace.sessionId,
-    ...(trace.name === undefined ? {} : { name: trace.name }),
     status: trace.status,
     startedAt: trace.startedAt,
-    ...(trace.endedAt === undefined ? {} : { endedAt: trace.endedAt }),
-    ...(trace.durationMs === undefined ? {} : { durationMs: trace.durationMs }),
-    ...(trace.output === undefined ? {} : { output: trace.output }),
-    ...(trace.error === undefined ? {} : { error: trace.error }),
-    ...(trace.usage === undefined ? {} : { usage: trace.usage }),
-    ...(trace.metadata === undefined ? {} : { metadata: trace.metadata }),
     observationCount: trace.observations.length,
+    ...compact({
+      name: trace.name,
+      endedAt: trace.endedAt,
+      durationMs: trace.durationMs,
+      output: trace.output,
+      error: trace.error,
+      usage: trace.usage,
+      metadata: trace.metadata,
+    }),
   };
 }

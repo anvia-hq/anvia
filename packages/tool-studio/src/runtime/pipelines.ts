@@ -12,6 +12,7 @@ import type {
   StudioPipelineRunSaveInput,
   StudioPipelineRunStore,
 } from "../types";
+import { compact } from "./compact";
 import { toJsonValue } from "./json";
 import {
   appendPipelineLog,
@@ -23,7 +24,9 @@ import {
   pipelineStageLog,
 } from "./pipeline-logs";
 import { AsyncEventQueue } from "./runs";
-import { errorResponse, isJsonObject, isObject, pipelineConfig, serializeError } from "./shared";
+import { pipelineConfig } from "./config";
+import { errorResponse, parseJsonBody, serializeError } from "./http";
+import { isJsonObject, isObject } from "./type-guards";
 import { streamStudioJsonl } from "./streams";
 
 export function registerPipelineRoutes(
@@ -76,7 +79,7 @@ export function registerPipelineRoutes(
     const logs = await props.logStore.listPipelineLogs({
       pipelineId,
       limit,
-      ...(after === undefined ? {} : { after }),
+      ...compact({ after }),
     });
     const last = logs.at(-1);
     return c.json({
@@ -157,7 +160,7 @@ export function registerPipelineRoutes(
 
     return executePipelineRun(c, props, pipeline, {
       input: sourceRun.input,
-      ...(body.stream === undefined ? {} : { stream: body.stream }),
+      ...compact({ stream: body.stream }),
       metadata: replayMetadata(sourceRun.metadata, body.metadata, sourceRun.runId),
     });
   });
@@ -182,7 +185,7 @@ async function executePipelineRun(
       runId,
       stream: body.stream === true,
       input: body.input,
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      ...compact({ metadata: body.metadata }),
     }),
   );
   await savePipelineRun(props.runStore, {
@@ -190,7 +193,7 @@ async function executePipelineRun(
     pipelineId: pipeline.id,
     status: "running",
     input: body.input,
-    ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+    ...compact({ metadata: body.metadata }),
     startedAt: startedAtIso,
   });
 
@@ -201,9 +204,8 @@ async function executePipelineRun(
       input: body.input,
       startedAt,
       startedAtIso,
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-      ...(props.logStore === undefined ? {} : { logStore: props.logStore }),
-      ...(props.runStore === undefined ? {} : { runStore: props.runStore }),
+      ...compact({ metadata: body.metadata }),
+      ...compact({ logStore: props.logStore, runStore: props.runStore }),
     });
   }
 
@@ -224,7 +226,7 @@ async function executePipelineRun(
       status: "success",
       input: body.input,
       output: jsonOutput,
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      ...compact({ metadata: body.metadata }),
       startedAt: startedAtIso,
       endedAt: new Date(endedAt).toISOString(),
       durationMs: endedAt - startedAt,
@@ -252,7 +254,7 @@ async function executePipelineRun(
       status: "error",
       input: body.input,
       error: serializeError(error),
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      ...compact({ metadata: body.metadata }),
       startedAt: startedAtIso,
       endedAt: new Date(endedAt).toISOString(),
       durationMs: endedAt - startedAt,
@@ -326,7 +328,7 @@ async function* pipelineRunEvents(props: {
         status: "success",
         input: props.input,
         output: jsonOutput,
-        ...(props.metadata === undefined ? {} : { metadata: props.metadata }),
+        ...compact({ metadata: props.metadata }),
         startedAt: props.startedAtIso,
         endedAt: new Date(endedAt).toISOString(),
         durationMs: endedAt - props.startedAt,
@@ -358,7 +360,7 @@ async function* pipelineRunEvents(props: {
         status: "error",
         input: props.input,
         error: serializeError(error),
-        ...(props.metadata === undefined ? {} : { metadata: props.metadata }),
+        ...compact({ metadata: props.metadata }),
         startedAt: props.startedAtIso,
         endedAt: new Date(endedAt).toISOString(),
         durationMs: endedAt - props.startedAt,

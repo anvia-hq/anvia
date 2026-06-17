@@ -4,7 +4,7 @@ import type {
   StudioAgentMcpServerMetadata,
   StudioAgentMcpToolMetadata,
 } from "../types";
-import { errorResponse } from "./shared";
+import { errorResponse } from "./http";
 import { agentToolItems, mcpServerName } from "./tool-metadata";
 
 export function registerMcpRoutes(

@@ -1,5 +1,6 @@
 import type { Agent } from "../agent/agent";
 import { AgentBuilder } from "../agent/builder";
+import { extractRagText } from "../agent/utils";
 import {
   CompletionCapabilityError,
   type CompletionModel,
@@ -176,10 +177,4 @@ function extractSubmittedData<T>(response: CompletionResponse, schema: ZodSchema
   return schema.parse(submitted.function.arguments);
 }
 
-function extractRagText(message: Message): string | undefined {
-  if (message.role === "user") {
-    return message.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
-  }
 
-  return undefined;
-}

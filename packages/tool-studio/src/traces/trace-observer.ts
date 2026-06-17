@@ -15,6 +15,7 @@ import type {
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
 } from "@anvia/core/observability";
+import { compact } from "../runtime/compact";
 import {
   compactJsonObject,
   serializeUnknown as serializeError,
@@ -176,7 +177,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
     const trace: StudioTrace = {
       id: this.props.id,
       sessionId,
-      ...(this.props.args.trace?.name === undefined ? {} : { name: this.props.args.trace.name }),
+      ...compact({ name: this.props.args.trace?.name }),
       status,
       trace: this.trace,
       startedAt: this.startedAt.toISOString(),
@@ -187,9 +188,9 @@ class StudioRunTraceObserver implements AgentRunObserver {
         prompt: this.props.args.prompt,
         history: this.props.args.history,
       }),
-      ...(result.output === undefined ? {} : { output: result.output }),
-      ...(result.error === undefined ? {} : { error: result.error }),
-      ...(result.usage === undefined ? {} : { usage: result.usage }),
+      ...compact({ output: result.output }),
+      ...compact({ error: result.error }),
+      ...compact({ usage: result.usage }),
       metadata,
       observations: this.observations,
       observationCount: this.observations.length,
@@ -248,7 +249,7 @@ class ChildAgentToolTraceAccumulator {
       this.agentStarts.set(agentId, {
         startedAt: new Date(),
         agentId,
-        ...(agentName === undefined ? {} : { agentName }),
+        ...compact({ agentName }),
       });
     }
 
@@ -260,7 +261,7 @@ class ChildAgentToolTraceAccumulator {
           history: child.history,
         }),
         agentId,
-        ...(agentName === undefined ? {} : { agentName }),
+        ...compact({ agentName }),
         childTurn,
       });
       return;
@@ -277,7 +278,7 @@ class ChildAgentToolTraceAccumulator {
           status: "success",
           turn: this.parent.turn,
           startedAt: start?.startedAt ?? new Date(),
-          ...(start?.input === undefined ? {} : { input: start.input }),
+          ...compact({ input: start?.input }),
           output: toJsonValue(child.response),
           metadata: this.childMetadata(agentId, agentName, childTurn),
         }),
@@ -298,10 +299,10 @@ class ChildAgentToolTraceAccumulator {
       this.toolStarts.push({
         startedAt: new Date(),
         agentId,
-        ...(agentName === undefined ? {} : { agentName }),
+        ...compact({ agentName }),
         childTurn,
         toolName,
-        ...(callId === undefined ? {} : { toolCallId: callId }),
+        ...compact({ toolCallId: callId }),
         input: toJsonValue(toolCallFunction?.arguments ?? {}),
         completed: false,
       });
@@ -326,12 +327,12 @@ class ChildAgentToolTraceAccumulator {
           status: "success",
           turn: this.parent.turn,
           startedAt: start?.startedAt ?? new Date(),
-          ...(input === undefined ? {} : { input }),
+          ...compact({ input }),
           ...(typeof child.result === "string" ? { output: parseOrString(child.result) } : {}),
           metadata: {
             ...this.childMetadata(agentId, agentName, childTurn),
-            ...(toolCallId === undefined ? {} : { toolCallId }),
-            ...(internalCallId === undefined ? {} : { internalCallId }),
+            ...compact({ toolCallId }),
+            ...compact({ internalCallId }),
           },
         }),
       );
@@ -477,10 +478,10 @@ function traceObservation(props: {
     startedAt: props.startedAt.toISOString(),
     endedAt: endedAt.toISOString(),
     durationMs: durationMs(props.startedAt, endedAt),
-    ...(props.input === undefined ? {} : { input: props.input }),
-    ...(props.output === undefined ? {} : { output: props.output }),
-    ...(props.error === undefined ? {} : { error: props.error }),
-    ...(props.metadata === undefined ? {} : { metadata: props.metadata }),
+    ...compact({ input: props.input }),
+    ...compact({ output: props.output }),
+    ...compact({ error: props.error }),
+    ...compact({ metadata: props.metadata }),
   };
 }
 

@@ -6,7 +6,9 @@ import type {
   StudioSessionLogEntry,
   StudioSessionStore,
 } from "../types";
-import { serializeError } from "./shared";
+import { compact } from "./compact";
+import { formatUnknown } from "./json";
+import { serializeError } from "./http";
 
 export async function appendSessionLog(
   store: StudioSessionStore | undefined,
@@ -55,7 +57,7 @@ export function sessionCreatedLog(
     category: "session",
     event: "session.created",
     message: "Session created",
-    metadata: cleanMetadata({
+    metadata: compact({
       agentId: session.agentId,
       hasTitle: session.title !== undefined,
       titleLength: session.title?.length ?? 0,
@@ -81,7 +83,7 @@ export function runReceivedLog(props: {
     category: "api",
     event: "run.received",
     message: "Run request received",
-    metadata: cleanMetadata({
+    metadata: compact({
       agentId: props.agentId,
       stream: props.stream,
       message: messageSummary(props.message),
@@ -101,7 +103,7 @@ export function runStartedLog(session: StudioSession, runId: string): StudioSess
     category: "run",
     event: "run.started",
     message: "Run started",
-    metadata: cleanMetadata({
+    metadata: compact({
       agentId: session.agentId,
       existingMessageCount: session.messageCount,
     }),
@@ -119,7 +121,7 @@ export function memoryLoadedLog(
     category: "memory",
     event: "memory.loaded",
     message: "Session memory loaded",
-    metadata: cleanMetadata({
+    metadata: compact({
       messageCount: session.messageCount,
       transcriptEntries: session.transcript.length,
     }),
@@ -141,7 +143,7 @@ export function runCompletedLog(props: {
     category: "run",
     event: "run.completed",
     message: "Run completed",
-    metadata: cleanMetadata({
+    metadata: compact({
       durationMs: props.durationMs,
       usage: usageSummary(props.usage),
       outputBytes: byteLength(props.output),
@@ -162,7 +164,7 @@ export function memorySavedLog(props: {
     category: "memory",
     event: "memory.saved",
     message: "Session memory saved",
-    metadata: cleanMetadata({
+    metadata: compact({
       messageCount: props.messageCount,
     }),
   };
@@ -181,7 +183,7 @@ export function runFailedLog(
     category: "run",
     event: "run.failed",
     message: "Run failed",
-    metadata: cleanMetadata({
+    metadata: compact({
       durationMs: Date.now() - startedAt,
       error: serializeError(error),
     }),
@@ -204,7 +206,7 @@ function logsFromStreamEvent(props: {
         category: "prompt",
         event: "prompt.prepared",
         message: `Turn ${event.turn} prompt prepared`,
-        metadata: cleanMetadata({
+        metadata: compact({
           turn: event.turn,
           prompt: messageSummary(event.prompt),
           historyCount: event.history.length,
@@ -221,7 +223,7 @@ function logsFromStreamEvent(props: {
         category: "tool",
         event: "tool.called",
         message: `Tool ${event.toolCall.function.name} called`,
-        metadata: cleanMetadata({
+        metadata: compact({
           turn: event.turn,
           toolName: event.toolCall.function.name,
           callId: event.toolCall.callId ?? event.toolCall.id,
@@ -239,7 +241,7 @@ function logsFromStreamEvent(props: {
         category: "tool",
         event: "tool.completed",
         message: `Tool ${event.toolName} completed`,
-        metadata: cleanMetadata({
+        metadata: compact({
           turn: event.turn,
           toolName: event.toolName,
           callId: event.toolCallId,
@@ -263,7 +265,7 @@ function logsFromStreamEvent(props: {
         category: "model",
         event: "model.turn.completed",
         message: `Model turn ${event.turn} completed`,
-        metadata: cleanMetadata({
+        metadata: compact({
           turn: event.turn,
           contentCount: event.response.choice.length,
           usage: usageSummary(event.response.usage),
@@ -296,7 +298,7 @@ function logsFromStreamEvent(props: {
         category: "approval",
         event: "approval.requested",
         message: `Approval requested for ${event.approval.toolName}`,
-        metadata: cleanMetadata({
+        metadata: compact({
           approvalId: event.approval.id,
           toolName: event.approval.toolName,
           callId: event.approval.callId,
@@ -316,7 +318,7 @@ function logsFromStreamEvent(props: {
         category: "approval",
         event: "approval.resolved",
         message: `Approval ${event.approval.status} for ${event.approval.toolName}`,
-        metadata: cleanMetadata({
+        metadata: compact({
           approvalId: event.approval.id,
           toolName: event.approval.toolName,
           callId: event.approval.callId,
@@ -335,7 +337,7 @@ function logsFromStreamEvent(props: {
         category: "question",
         event: "question.requested",
         message: `Question requested by ${event.question.toolName}`,
-        metadata: cleanMetadata({
+        metadata: compact({
           questionId: event.question.id,
           toolName: event.question.toolName,
           callId: event.question.callId,
@@ -355,7 +357,7 @@ function logsFromStreamEvent(props: {
         category: "question",
         event: "question.answered",
         message: `Question answered for ${event.question.toolName}`,
-        metadata: cleanMetadata({
+        metadata: compact({
           questionId: event.question.id,
           toolName: event.question.toolName,
           callId: event.question.callId,
@@ -396,7 +398,7 @@ function childAgentLog(
         category: "tool",
         event: "child_tool.called",
         message: `Child agent ${event.agentName ?? event.agentId} called ${child.toolCall.function.name}`,
-        metadata: cleanMetadata({
+        metadata: compact({
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
@@ -418,7 +420,7 @@ function childAgentLog(
         category: "tool",
         event: "child_tool.completed",
         message: `Child agent ${event.agentName ?? event.agentId} completed ${child.toolName}`,
-        metadata: cleanMetadata({
+        metadata: compact({
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
@@ -444,7 +446,7 @@ function childAgentLog(
         category: "run",
         event: "child_agent.turn_started",
         message: `Child agent ${event.agentName ?? event.agentId} turn ${child.turn} started`,
-        metadata: cleanMetadata({
+        metadata: compact({
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
@@ -463,7 +465,7 @@ function childAgentLog(
         category: "run",
         event: "child_agent.completed",
         message: `Child agent ${event.agentName ?? event.agentId} completed`,
-        metadata: cleanMetadata({
+        metadata: compact({
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
@@ -483,7 +485,7 @@ function childAgentLog(
         category: "run",
         event: "child_agent.failed",
         message: `Child agent ${event.agentName ?? event.agentId} failed`,
-        metadata: cleanMetadata({
+        metadata: compact({
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
@@ -516,47 +518,13 @@ function usageSummary(value: unknown): JsonObject | undefined {
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  return cleanMetadata({
+  return compact({
     inputTokens: numericValue(record.inputTokens),
     outputTokens: numericValue(record.outputTokens),
     totalTokens: numericValue(record.totalTokens),
     cachedInputTokens: numericValue(record.cachedInputTokens),
     cacheCreationInputTokens: numericValue(record.cacheCreationInputTokens),
   });
-}
-
-function cleanMetadata(value: Record<string, unknown>): JsonObject {
-  const cleaned: JsonObject = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (item === undefined) {
-      continue;
-    }
-    const jsonValue = cleanJsonValue(item);
-    if (jsonValue !== undefined) {
-      cleaned[key] = jsonValue;
-    }
-  }
-  return cleaned;
-}
-
-function cleanJsonValue(value: unknown): JsonValue | undefined {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => cleanJsonValue(item))
-      .filter((item): item is JsonValue => item !== undefined);
-  }
-  if (typeof value === "object" && value !== null) {
-    return cleanMetadata(value as Record<string, unknown>);
-  }
-  return undefined;
 }
 
 function numericValue(value: unknown): number | undefined {
@@ -567,13 +535,4 @@ function byteLength(value: string | undefined): number {
   return value === undefined ? 0 : new TextEncoder().encode(value).byteLength;
 }
 
-function formatUnknown(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
+

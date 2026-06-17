@@ -1,4 +1,5 @@
 import type { CompletionResponse, Message, ToolResultContent, Usage } from "../completion/index";
+import { compact } from "../internal/compact";
 
 export type HookAction = { type: "continue" } | { type: "terminate"; reason: string };
 export type ToolApprovalRequestOptions = {
@@ -123,11 +124,11 @@ export function skipTool(reason: string): ToolCallHookAction {
 }
 
 export function requestToolApproval(options: ToolApprovalRequestOptions = {}): ToolCallHookAction {
-  return {
-    type: "approval_request",
-    ...(options.reason === undefined ? {} : { reason: options.reason }),
-    ...(options.rejectMessage === undefined ? {} : { rejectMessage: options.rejectMessage }),
-  };
+  return compact({
+    type: "approval_request" as const,
+    reason: options.reason,
+    rejectMessage: options.rejectMessage,
+  }) as ToolCallHookAction;
 }
 
 export const runControl: RunControl = {

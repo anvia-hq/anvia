@@ -54,6 +54,18 @@ Return behavior: trace stores return summaries for lists and full traces for det
 
 Notable errors: none directly.
 
+## Trace Utilities
+
+```ts
+function traceSummary(trace: StudioTrace): StudioTraceSummary;
+```
+
+Purpose: converts a full `StudioTrace` to a `StudioTraceSummary` by projecting summary fields and counting observations.
+
+Return behavior: returns a plain object with trace summary fields.
+
+Notable errors: none.
+
 ## Trace Store Types
 
 ```ts

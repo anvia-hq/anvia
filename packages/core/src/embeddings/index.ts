@@ -1,3 +1,4 @@
+import { compact } from "../internal/compact";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type {
   EmbedDocumentsOptions,
@@ -85,7 +86,7 @@ export async function embedDocuments<T, Metadata extends VectorMetadata = Vector
   return prepared.map((item, index) => ({
     id: item.id,
     document: item.document,
-    ...(item.metadata === undefined ? {} : { metadata: item.metadata }),
+    ...(item.metadata !== undefined && { metadata: item.metadata }),
     embeddings: byDocument.get(index) ?? [],
   }));
 }

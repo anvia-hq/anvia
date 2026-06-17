@@ -1,11 +1,12 @@
 import type { Hono } from "hono";
 import type { StudioAgent, StudioPipeline, StudioStatusSummary } from "../types";
+import { compact } from "./compact";
 import {
   capabilityConfig,
   type ResolvedStores,
   runnerId,
   type StudioRuntimeOptions,
-} from "./shared";
+} from "./config";
 
 export function registerStatusRoutes(
   app: Hono,
@@ -20,30 +21,28 @@ export function registerStatusRoutes(
     const summary: StudioStatusSummary = {
       runner: {
         id: runnerId(props.options),
-        ...(props.options.name === undefined ? {} : { name: props.options.name }),
-        ...(props.options.version === undefined ? {} : { version: props.options.version }),
+        ...compact({ name: props.options.name, version: props.options.version }),
       },
       storage: {
-        ...(props.stores.sessions?.kind === undefined
-          ? {}
-          : { sessions: props.stores.sessions.kind }),
-        ...(props.stores.traces?.kind === undefined ? {} : { traces: props.stores.traces.kind }),
-        ...(props.stores.pipelineLogs === undefined ? {} : { pipelineLogs: "available" }),
-        ...(props.stores.pipelineRuns === undefined ? {} : { pipelineRuns: "available" }),
+        ...compact({
+          sessions: props.stores.sessions?.kind,
+          traces: props.stores.traces?.kind,
+          pipelineLogs: props.stores.pipelineLogs !== undefined ? "available" as const : undefined,
+          pipelineRuns: props.stores.pipelineRuns !== undefined ? "available" as const : undefined,
+        }),
       },
       counts: {
         agents: props.agents.length,
         pipelines: props.pipelines.length,
-        ...(props.stores.sessions === undefined
-          ? {}
-          : { sessions: (await props.stores.sessions.listSessions({ limit: 100 })).length }),
-        ...(props.stores.traces?.listTraces === undefined
-          ? {}
-          : { traces: (await props.stores.traces.listTraces({ limit: 100 })).length }),
-        ...(props.stores.pipelineRuns === undefined || props.pipelines.length === 0
-          ? {}
-          : {
-              pipelineRuns: (
+        ...compact({
+          sessions: props.stores.sessions !== undefined
+            ? (await props.stores.sessions.listSessions({ limit: 100 })).length
+            : undefined,
+          traces: props.stores.traces?.listTraces !== undefined
+            ? (await props.stores.traces.listTraces({ limit: 100 })).length
+            : undefined,
+          pipelineRuns: props.stores.pipelineRuns !== undefined && props.pipelines.length > 0
+            ? (
                 await Promise.all(
                   props.pipelines.map((pipeline) =>
                     props.stores.pipelineRuns?.listPipelineRuns({
@@ -52,8 +51,9 @@ export function registerStatusRoutes(
                     }),
                   ),
                 )
-              ).reduce((sum, runs) => sum + (runs?.length ?? 0), 0),
-            }),
+              ).reduce((sum, runs) => sum + (runs?.length ?? 0), 0)
+            : undefined,
+        }),
       },
       capabilities: capabilityConfig(props.options, props.agents, props.pipelines, props.stores),
       generatedAt: new Date().toISOString(),

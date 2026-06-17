@@ -200,7 +200,7 @@ export const ToolContent = {
   },
 };
 
-function serializeToolResultOutput(output: unknown): string {
+export function serializeToolResultOutput(output: unknown): string {
   if (typeof output === "string") {
     return output;
   }
@@ -213,7 +213,7 @@ function serializeToolResultOutput(output: unknown): string {
   }
 }
 
-function isToolResultContentArray(value: unknown): value is ToolResultContent[] {
+export function isToolResultContentArray(value: unknown): value is ToolResultContent[] {
   return (
     Array.isArray(value) &&
     value.length > 0 &&

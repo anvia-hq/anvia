@@ -1,4 +1,8 @@
 import type { JsonObject, JsonValue, ToolDefinition, ToolResultContent } from "../completion/types";
+import {
+  isToolResultContentArray,
+  serializeToolResultOutput as serializeToolOutput,
+} from "../completion/types";
 
 export type ToolApprovalRunContext = {
   agentId: string;
@@ -52,39 +56,7 @@ export const ToolOutput = {
   },
 };
 
-export function serializeToolOutput(output: unknown): string {
-  if (typeof output === "string") {
-    return output;
-  }
-
-  const serialized = JSON.stringify(output);
-  return serialized === undefined ? String(output) : serialized;
-}
-
-export function isToolResultContentArray(value: unknown): value is ToolResultContent[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((item) => {
-      if (typeof item !== "object" || item === null || !("type" in item)) {
-        return false;
-      }
-      if (item.type === "text") {
-        return "text" in item && typeof item.text === "string";
-      }
-      if (item.type === "image") {
-        return (
-          "data" in item &&
-          typeof item.data === "string" &&
-          (!("mediaType" in item) ||
-            item.mediaType === undefined ||
-            typeof item.mediaType === "string")
-        );
-      }
-      return false;
-    })
-  );
-}
+export { isToolResultContentArray, serializeToolOutput };
 
 export function normalizeToolResultOutput(output: unknown): NormalizedToolOutput {
   return isToolResultContentArray(output) ? output : serializeToolOutput(output);

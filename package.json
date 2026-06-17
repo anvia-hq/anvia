@@ -156,7 +156,7 @@
     "changeset": "changeset",
     "github-releases": "node scripts/create-github-releases.mjs",
     "version-packages": "changeset version",
-    "release": "pnpm --filter @anvia/core build && pnpm --filter './packages/**' --filter '!@anvia/core' build && node scripts/publish-packages.mjs",
+    "release": "pnpm --filter @anvia/core build && pnpm --filter './packages/*' --filter '!@anvia/core' build && node scripts/publish-packages.mjs",
     "check": "biome check .",
     "check:staged": "biome check --staged --vcs-enabled=true --vcs-client-kind=git --vcs-use-ignore-file=true --no-errors-on-unmatched",
     "check:fix": "biome check --write .",

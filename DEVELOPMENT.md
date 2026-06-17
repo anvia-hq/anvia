@@ -25,18 +25,20 @@ pnpm install
 │   └── cookbook/                 # Runnable learning path
 ├── packages/
 │   ├── core/                     # @anvia/core
-│   ├── providers/                # Provider adapters
-│   ├── embeddings/               # Embedding adapters
-│   ├── observability/            # Observability adapters
-│   ├── tools/studio/             # @anvia/studio
-│   └── vector-stores/            # Vector store adapters
+│   ├── embedding-*/              # Embedding adapters
+│   ├── logger/                   # @anvia/logger
+│   ├── observability-*/          # Observability adapters
+│   ├── provider-*/               # Provider adapters
+│   ├── react/                    # @anvia/react
+│   ├── server/                   # @anvia/server
+│   ├── tool-*/                   # Tool packages
+│   └── vector-*/                 # Vector store adapters
 └── bin/                          # Local maintenance scripts
 ```
 
 The workspace is declared in `pnpm-workspace.yaml` and includes:
 
 - `packages/*`
-- `packages/*/*`
 - `apps/*`
 - `examples/*`
 

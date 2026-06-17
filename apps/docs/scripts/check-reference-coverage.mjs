@@ -37,21 +37,12 @@ function walk(dir) {
 
 function discoverPackages() {
   const packageDirs = [];
-  for (const workspaceDir of ["packages"]) {
-    const root = join(repoRoot, workspaceDir);
-    for (const name of readdirSync(root)) {
-      const firstLevel = join(root, name);
-      if (!statSync(firstLevel).isDirectory()) continue;
+  const root = join(repoRoot, "packages");
 
-      const firstLevelPackage = join(firstLevel, "package.json");
-      if (existsSync(firstLevelPackage)) packageDirs.push(firstLevel);
-
-      for (const childName of readdirSync(firstLevel)) {
-        const secondLevel = join(firstLevel, childName);
-        if (statSync(secondLevel).isDirectory() && existsSync(join(secondLevel, "package.json"))) {
-          packageDirs.push(secondLevel);
-        }
-      }
+  for (const name of readdirSync(root)) {
+    const dir = join(root, name);
+    if (statSync(dir).isDirectory() && existsSync(join(dir, "package.json"))) {
+      packageDirs.push(dir);
     }
   }
 

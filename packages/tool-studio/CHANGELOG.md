@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.6.0
+
+### Minor Changes
+
+- e09746c: Add multi-provider model selection and multimodal attachment support to Studio, including cookbook documentation and assistant loading feedback in the playground.
+
 ## 0.5.14
 
 ### Patch Changes

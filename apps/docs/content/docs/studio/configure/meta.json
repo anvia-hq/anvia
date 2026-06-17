@@ -2,5 +2,12 @@
   "title": "Configure Studio",
   "defaultOpen": false,
   "collapsible": true,
-  "pages": ["serve-options", "quick-prompts", "storage-and-persistence", "capabilities", "status"]
+  "pages": [
+    "serve-options",
+    "quick-prompts",
+    "model-providers",
+    "storage-and-persistence",
+    "capabilities",
+    "status"
+  ]
 }

@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.7
+
+### Patch Changes
+
+- ae9296f: Report Anthropic Messages streaming usage from message start and delta events.
+
 ## 0.3.6
 
 ### Patch Changes

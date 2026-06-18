@@ -1,6 +1,6 @@
 {
   "name": "@anvia/lancedb",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "LanceDB vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

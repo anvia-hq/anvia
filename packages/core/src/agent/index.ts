@@ -1,4 +1,9 @@
 export type {
+  ToolApprovalDecision,
+  ToolApprovalRequest,
+  ToolApprovalsOptions,
+} from "../tool";
+export type {
   AgentMiddleware,
   CompletionRequestMiddlewareArgs,
   CompletionRequestMiddlewareResult,
@@ -20,7 +25,7 @@ export type {
   AgentEventStoreOptions,
 } from "./agent";
 export { AgentBuilder } from "./builder";
-export { MaxTurnsError, PromptCancelledError } from "./errors";
+export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./errors";
 export type {
   CompletionCallHookArgs,
   CompletionErrorHookArgs,

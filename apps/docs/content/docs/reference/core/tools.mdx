@@ -84,13 +84,18 @@ type ToolApprovalPolicy<Args = unknown> = {
   reason?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
   rejectMessage?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
 };
+
+type ToolApprovalRequest<Args = unknown> = ToolApprovalContext<Args> & {
+  reason?: string;
+  rejectMessage?: string;
+};
 ```
 
-Purpose: attach portable approval metadata to a tool for runtimes such as Studio.
+Purpose: declare when a tool call requires approval and what approval prompt/rejection text should be used.
 
-Return behavior: core stores this metadata only. Core prompt execution ignores it unless a hook or runtime interprets it.
+Return behavior: core prompt execution evaluates `when(...)` before running the tool. When approval is required, the active `ToolApprovalsOptions.handler` decides whether the tool runs or is skipped.
 
-Notable errors: runtime-specific approval evaluators can surface errors thrown by `when(...)`, `reason(...)`, or `rejectMessage(...)`.
+Notable errors: approval evaluators can surface errors thrown by `when(...)`, `reason(...)`, or `rejectMessage(...)`; missing approval handlers throw `ToolApprovalRequiredError`.
 
 ## AgentMiddleware
 

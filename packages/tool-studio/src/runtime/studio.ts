@@ -4,7 +4,6 @@ import {
   type PromptHook,
   type ToolCallHookAction,
 } from "@anvia/core/agent";
-import { compact } from "./compact";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
 import { Agent } from "@anvia/core/internal/agent";
 import { Pipeline } from "@anvia/core/pipeline";
@@ -30,12 +29,18 @@ import {
   resolveStudioUiOptions,
   studioUiEntryPath,
 } from "../ui/routes";
+import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
+import { compact } from "./compact";
 import {
-  createApprovalRuntime,
-  registerApprovalRoutes,
-  type StudioApprovalHook,
-} from "./approvals";
+  agentConfig,
+  agentRuntimeSummary,
+  buildConfig,
+  runnerId,
+  type StudioRuntimeOptions,
+  unsupportedCapabilities,
+} from "./config";
 import { registerEvalRoutes } from "./evals";
+import { errorResponse, serializeError, unsupportedCapability } from "./http";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
 import { registerMemoryRoutes } from "./memory";
@@ -75,17 +80,7 @@ import {
   streamSessionRunLogs,
 } from "./session-logs";
 import { registerSessionRoutes } from "./sessions";
-import {
-  agentConfig,
-  agentRuntimeSummary,
-  buildConfig,
-  runnerId,
-  type ResolvedStores,
-  type StudioRuntimeOptions,
-  unsupportedCapabilities,
-} from "./config";
-import { resolveStores, normalizeAgents, normalizePipelines } from "./shared";
-import { errorResponse, serializeError, unsupportedCapability } from "./http";
+import { normalizeAgents, normalizePipelines, resolveStores } from "./shared";
 import { registerStatusRoutes } from "./status";
 import { registerToolRoutes } from "./tools";
 import { registerTraceRoutes } from "./trace-routes";
@@ -449,18 +444,17 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
 
     if (body.stream === true) {
       const runtimeEvents = new AsyncEventQueue<AgentRunStreamEvent>();
+      request.approvals(
+        approvalRuntime.createApprovals({
+          runId,
+          agentId,
+          ...compact({ sessionId: session?.id }),
+          ...compact({ metadata: body.metadata }),
+          emit: (event) => runtimeEvents.push(event),
+        }),
+      );
       const effectiveHook = composeHooks(
-        composeHooks(
-          runAgent.hook,
-          approvalRuntime.createHook({
-            runId,
-            agentId,
-            ...compact({ sessionId: session?.id }),
-            ...compact({ metadata: body.metadata }),
-            getTool: (toolName) => runAgent.getTool(toolName),
-            emit: (event) => runtimeEvents.push(event),
-          }),
-        ),
+        runAgent.hook,
         questionRuntime.createHook({
           runId,
           agentId,
@@ -499,17 +493,16 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
         await appendSessionLog(sessionStore, memoryLoadedLog(session, runId));
       }
       const effectiveHook = composeHooks(
-        composeHooks(
-          runAgent.hook,
-          approvalRuntime.createHook({
-            runId,
-            agentId,
-            ...compact({ sessionId: session?.id }),
-            ...compact({ metadata: body.metadata }),
-            getTool: (toolName) => runAgent.getTool(toolName),
-          }),
-        ),
+        runAgent.hook,
         questionRuntime.createHook({
+          runId,
+          agentId,
+          ...compact({ sessionId: session?.id }),
+          ...compact({ metadata: body.metadata }),
+        }),
+      );
+      request.approvals(
+        approvalRuntime.createApprovals({
           runId,
           agentId,
           ...compact({ sessionId: session?.id }),
@@ -700,11 +693,12 @@ function composeHooks(
     },
     async onToolCall(args): Promise<ToolCallHookAction | undefined> {
       const firstAction = await first.onToolCall?.(args);
-      if (firstAction?.type === "skip" || firstAction?.type === "terminate") {
+      if (
+        firstAction?.type === "skip" ||
+        firstAction?.type === "terminate" ||
+        firstAction?.type === "approval_request"
+      ) {
         return firstAction;
-      }
-      if (firstAction?.type === "approval_request") {
-        return (await approvalRequestHandler(second)?.(args, firstAction)) ?? firstAction;
       }
       const secondAction = await second.onToolCall?.(args);
       return secondAction ?? firstAction ?? undefined;
@@ -716,13 +710,4 @@ function composeHooks(
         : ((await second.onToolResult?.(args)) ?? undefined);
     },
   });
-}
-
-function approvalRequestHandler(
-  hook: PromptHook,
-): StudioApprovalHook["handleApprovalRequest"] | undefined {
-  const candidate = hook as Partial<StudioApprovalHook>;
-  return typeof candidate.handleApprovalRequest === "function"
-    ? candidate.handleApprovalRequest
-    : undefined;
 }

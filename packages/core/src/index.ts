@@ -1,5 +1,5 @@
 export { AgentBuilder } from "./agent/builder";
-export { MaxTurnsError, PromptCancelledError } from "./agent/errors";
+export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./agent/errors";
 export {
   cancelPrompt,
   createHook,
@@ -57,7 +57,10 @@ export type {
   CreateToolOptions,
   Tool,
   ToolApprovalContext,
+  ToolApprovalDecision,
   ToolApprovalPolicy,
+  ToolApprovalRequest,
+  ToolApprovalsOptions,
   ToolCallContext,
   ToolCallStreamEvent,
 } from "./tool/index";

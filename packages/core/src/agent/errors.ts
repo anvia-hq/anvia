@@ -1,4 +1,5 @@
 import type { Message } from "../completion/index";
+import type { ToolApprovalRequest } from "../tool";
 
 export class MaxTurnsError extends Error {
   constructor(
@@ -18,5 +19,12 @@ export class PromptCancelledError extends Error {
   ) {
     super(`Prompt cancelled: ${reason}`);
     this.name = "PromptCancelledError";
+  }
+}
+
+export class ToolApprovalRequiredError extends Error {
+  constructor(readonly request: ToolApprovalRequest) {
+    super(`Tool approval required for ${request.toolName}, but no approval handler is configured.`);
+    this.name = "ToolApprovalRequiredError";
   }
 }

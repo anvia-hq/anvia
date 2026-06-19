@@ -18,18 +18,19 @@ import type { MemoryContext } from "../memory";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
 import type { AgentTraceOptions } from "../observability/types";
 import { toReadableStream } from "../streaming";
+import type { ToolApprovalsOptions } from "../tool";
 import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
 import type { Agent } from "./agent";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
 import type { PromptHook } from "./hooks";
 import { runControl } from "./hooks";
+import { PromptRequestMemory } from "./request-memory";
 import {
   type AgentStreamEvent,
-  type PromptResponse,
   addTurn,
   isGenerationDeltaEvent,
+  type PromptResponse,
 } from "./request-types";
-import { PromptRequestMemory } from "./request-memory";
 import { fetchDynamicContext, fetchToolDefinitions } from "./retrieval";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import {
@@ -44,6 +45,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
   private maxTurnCount: number;
   private activeHook: PromptHook | undefined;
+  private approvalOptions: ToolApprovalsOptions | undefined;
   private concurrency = 1;
   private traceOptions: AgentTraceOptions | undefined;
   private requestMiddlewares: AgentMiddleware[] = [];
@@ -55,11 +57,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     private readonly agent: Agent<M>,
     private readonly promptMessage: MessageType,
     initialHistory: MessageType[] = [],
-    memoryContext: MemoryContext | undefined = undefined,
+    private readonly memoryContext: MemoryContext | undefined = undefined,
   ) {
     this.chatHistory = initialHistory;
     this.maxTurnCount = agent.defaultMaxTurns ?? 0;
     this.activeHook = agent.hook;
+    this.approvalOptions = agent.approvals;
     this.memoryRecorder = new PromptRequestMemory(agent, memoryContext, initialHistory);
   }
 
@@ -79,6 +82,11 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
   withHook(hook: PromptHook): this {
     this.activeHook = hook;
+    return this;
+  }
+
+  approvals(options: ToolApprovalsOptions): this {
+    this.approvalOptions = options;
     return this;
   }
 
@@ -224,6 +232,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         }
 
         const toolResults = await this.executeToolCalls(
+          runId,
           toolCalls,
           newMessages,
           undefined,
@@ -314,16 +323,18 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
-        const generationObservers = await runObservers.startGeneration(compact({
-          turn: currentTurns,
-          request,
-          providerRequest,
-          modelInfo: {
-            provider: this.agent.model.provider,
-            defaultModel: this.agent.model.defaultModel,
-            capabilities: this.agent.model.capabilities,
-          },
-        }));
+        const generationObservers = await runObservers.startGeneration(
+          compact({
+            turn: currentTurns,
+            request,
+            providerRequest,
+            modelInfo: {
+              provider: this.agent.model.provider,
+              defaultModel: this.agent.model.defaultModel,
+              capabilities: this.agent.model.capabilities,
+            },
+          }),
+        );
         const accumulator = new CompletionStreamAccumulator();
         const generationStartedAt = Date.now();
         let firstDeltaMs: number | undefined;
@@ -347,11 +358,13 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         }
 
         let response = accumulator.response();
-        await generationObservers.end(compact({
-          turn: currentTurns,
-          response,
-          firstDeltaMs,
-        }));
+        await generationObservers.end(
+          compact({
+            turn: currentTurns,
+            response,
+            firstDeltaMs,
+          }),
+        );
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
         usage = Usage.add(usage, response.usage);
         await this.runCompletionResponseHook(prompt, response, newMessages);
@@ -404,6 +417,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
         const toolResultEvents = createAsyncQueue<ToolExecutionEventPayload>();
         const toolResultsPromise = this.executeToolCalls(
+          runId,
           toolCalls,
           newMessages,
           (result) => {
@@ -460,16 +474,18 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this.agent.model, request);
     const providerRequest = this.providerTraceRequest(request);
-    const generationObservers = await runObservers.startGeneration(compact({
-      turn,
-      request,
-      providerRequest,
-      modelInfo: {
-        provider: this.agent.model.provider,
-        defaultModel: this.agent.model.defaultModel,
-        capabilities: this.agent.model.capabilities,
-      },
-    }));
+    const generationObservers = await runObservers.startGeneration(
+      compact({
+        turn,
+        request,
+        providerRequest,
+        modelInfo: {
+          provider: this.agent.model.provider,
+          defaultModel: this.agent.model.defaultModel,
+          capabilities: this.agent.model.capabilities,
+        },
+      }),
+    );
     try {
       const response = await this.agent.model.completion(request);
       await generationObservers.end({ turn, response });
@@ -494,6 +510,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   }
 
   private async executeToolCalls(
+    runId: string,
     toolCalls: ToolCall[],
     newMessages: MessageType[],
     onResult?: (result: ToolResultEventPayload) => void,
@@ -507,6 +524,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     const executor = new ToolCallExecutor(
       this.agent,
       this.activeHook,
+      this.approvalOptions,
+      {
+        runId,
+        sessionId: this.memoryContext?.sessionId,
+        metadata: this.memoryContext?.metadata,
+      },
       this.concurrency,
       this.requestMiddlewares,
       (reason) => this.cancelled(newMessages, reason),

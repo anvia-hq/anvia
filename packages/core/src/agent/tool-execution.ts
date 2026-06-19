@@ -9,15 +9,25 @@ import { ToolContent } from "../completion";
 import { compact } from "../internal/compact";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type { ActiveAgentRunObservers, ActiveToolObservers } from "../observability/group";
-import type { AnyTool, NormalizedToolOutput, ToolCallStreamEvent } from "../tool";
-import { toolResultContentToText } from "../tool";
+import type {
+  AnyTool,
+  NormalizedToolOutput,
+  ToolApprovalContext,
+  ToolApprovalDecision,
+  ToolApprovalPolicy,
+  ToolApprovalRequest,
+  ToolApprovalsOptions,
+  ToolCallStreamEvent,
+} from "../tool";
+import { parseToolArgs, toolResultContentToText } from "../tool";
 import type {
   AgentMiddleware,
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
 } from "../tool/middleware";
 import type { Agent } from "./agent";
-import type { PromptHook, ToolHookArgs } from "./hooks";
+import { ToolApprovalRequiredError } from "./errors";
+import type { PromptHook, ToolApprovalRequestOptions, ToolHookArgs } from "./hooks";
 import { runControl, toolCallControl } from "./hooks";
 import type { AgentChildStreamEvent } from "./request-types";
 
@@ -51,10 +61,18 @@ export type ToolExecutionObservation = {
   toolDefinitions?: ToolDefinition[];
 };
 
+export type ToolExecutionRunContext = {
+  runId: string;
+  sessionId?: string | undefined;
+  metadata?: JsonObject | undefined;
+};
+
 export class ToolCallExecutor {
   constructor(
     private readonly agent: Agent,
     private readonly activeHook: PromptHook | undefined,
+    private readonly approvals: ToolApprovalsOptions | undefined,
+    private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,
     private readonly requestMiddlewares: AgentMiddleware[],
     private readonly cancel: (reason: string) => Error,
@@ -83,16 +101,18 @@ export class ToolCallExecutor {
       );
       const toolMetadata = toolTraceMetadata(tool);
 
-      const toolObservers = await observation?.runObservers.startTool(compact({
-        turn: observation.turn,
-        toolCall,
-        toolName: toolCall.function.name,
-        internalCallId,
-        args,
-        toolCallId: toolCall.callId,
-        toolDefinition,
-        toolMetadata,
-      }));
+      const toolObservers = await observation?.runObservers.startTool(
+        compact({
+          turn: observation.turn,
+          toolCall,
+          toolName: toolCall.function.name,
+          internalCallId,
+          args,
+          toolCallId: toolCall.callId,
+          toolDefinition,
+          toolMetadata,
+        }),
+      );
 
       const callAction = await this.activeHook?.onToolCall?.({
         ...hookArgs,
@@ -109,19 +129,6 @@ export class ToolCallExecutor {
         );
         throw this.cancel(callAction.reason);
       }
-      if (callAction?.type === "approval_request") {
-        const reason = `Tool approval was requested for ${toolCall.function.name}, but no approval handler is installed.`;
-        await recordToolError(
-          toolObservers,
-          observation?.turn,
-          toolCall,
-          internalCallId,
-          args,
-          reason,
-        );
-        throw this.cancel(reason);
-      }
-
       let output: NormalizedToolOutput;
       let skipped = false;
       let effectiveArgs = args;
@@ -129,51 +136,74 @@ export class ToolCallExecutor {
         output = callAction.reason;
         skipped = true;
       } else {
-        effectiveArgs = await this.runToolInputMiddlewares({
-          ...hookArgs,
-          turn: observation?.turn ?? 0,
-          originalArgs: args,
-        });
+        let approvalDecision: { approved: true } | { approved: false; result: string };
         try {
-          output = await this.agent.callTool(toolCall.function.name, effectiveArgs, {
-            emitStreamEvent: async (event) => {
-              await toolObservers?.streamEvent(
-                compact({
-                  turn: observation?.turn ?? 0,
-                  toolCall,
-                  toolName: toolCall.function.name,
-                  internalCallId,
-                  args: effectiveArgs,
-                  toolCallId: toolCall.callId,
-                  event,
-                }),
-              );
-              const payload = agentToolEventPayload(toolCall, internalCallId, event);
-              if (payload !== undefined) {
-                onStreamEvent?.(payload);
-              }
-            },
-          });
+          approvalDecision =
+            callAction?.type === "approval_request"
+              ? await this.requestApproval(tool, hookArgs, callAction)
+              : ((await this.evaluateToolApproval(tool, hookArgs)) ?? { approved: true });
         } catch (error) {
-          const errorAction = await this.activeHook?.onToolError?.({
-            ...hookArgs,
-            args: effectiveArgs,
-            error,
-            run: runControl,
-          });
-          await toolObservers?.error({
-            turn: observation?.turn ?? 0,
+          await recordToolError(
+            toolObservers,
+            observation?.turn,
             toolCall,
-            toolName: toolCall.function.name,
             internalCallId,
-            args: effectiveArgs,
-            ...(toolCall.callId !== undefined && { toolCallId: toolCall.callId }),
+            args,
             error,
+          );
+          throw error;
+        }
+
+        if (!approvalDecision.approved) {
+          output = approvalDecision.result;
+          skipped = true;
+        } else {
+          effectiveArgs = await this.runToolInputMiddlewares({
+            ...hookArgs,
+            turn: observation?.turn ?? 0,
+            originalArgs: args,
           });
-          if (errorAction?.type === "terminate") {
-            throw this.cancel(errorAction.reason);
+          try {
+            output = await this.agent.callTool(toolCall.function.name, effectiveArgs, {
+              emitStreamEvent: async (event) => {
+                await toolObservers?.streamEvent(
+                  compact({
+                    turn: observation?.turn ?? 0,
+                    toolCall,
+                    toolName: toolCall.function.name,
+                    internalCallId,
+                    args: effectiveArgs,
+                    toolCallId: toolCall.callId,
+                    event,
+                  }),
+                );
+                const payload = agentToolEventPayload(toolCall, internalCallId, event);
+                if (payload !== undefined) {
+                  onStreamEvent?.(payload);
+                }
+              },
+            });
+          } catch (error) {
+            const errorAction = await this.activeHook?.onToolError?.({
+              ...hookArgs,
+              args: effectiveArgs,
+              error,
+              run: runControl,
+            });
+            await toolObservers?.error({
+              turn: observation?.turn ?? 0,
+              toolCall,
+              toolName: toolCall.function.name,
+              internalCallId,
+              args: effectiveArgs,
+              ...(toolCall.callId !== undefined && { toolCallId: toolCall.callId }),
+              error,
+            });
+            if (errorAction?.type === "terminate") {
+              throw this.cancel(errorAction.reason);
+            }
+            output = error instanceof Error ? error.toString() : String(error);
           }
-          output = error instanceof Error ? error.toString() : String(error);
         }
       }
 
@@ -294,6 +324,94 @@ export class ToolCallExecutor {
   private activeMiddlewares(): AgentMiddleware[] {
     return [...this.agent.middlewares, ...this.requestMiddlewares];
   }
+
+  private async evaluateToolApproval(
+    tool: AnyTool | undefined,
+    hookArgs: ToolHookArgs,
+  ): Promise<{ approved: true } | { approved: false; result: string } | undefined> {
+    if (tool?.approval === undefined) {
+      return undefined;
+    }
+    const policy = tool.approval as ToolApprovalPolicy<unknown>;
+    const context = approvalContext(tool, hookArgs, this.agent, this.runContext);
+    const required = await policy.when(context);
+    if (!required) {
+      return { approved: true };
+    }
+
+    const reason = await resolveApprovalText(policy.reason, context);
+    const rejectMessage = await resolveApprovalText(policy.rejectMessage, context);
+    return this.requestApproval(tool, hookArgs, compact({ reason, rejectMessage }));
+  }
+
+  private async requestApproval(
+    tool: AnyTool | undefined,
+    hookArgs: ToolHookArgs,
+    options: ToolApprovalRequestOptions,
+  ): Promise<{ approved: true } | { approved: false; result: string }> {
+    const request = compact({
+      ...approvalContext(tool, hookArgs, this.agent, this.runContext),
+      reason: options.reason,
+      rejectMessage: options.rejectMessage,
+    }) as ToolApprovalRequest;
+    if (this.approvals === undefined) {
+      throw new ToolApprovalRequiredError(request);
+    }
+
+    const decision = normalizeApprovalDecision(await this.approvals.handler(request));
+    if (decision.approved) {
+      return { approved: true };
+    }
+    return {
+      approved: false,
+      result:
+        decision.rejectMessage ??
+        decision.reason ??
+        request.rejectMessage ??
+        "Tool approval was rejected.",
+    };
+  }
+}
+
+function approvalContext(
+  tool: AnyTool | undefined,
+  hookArgs: ToolHookArgs,
+  agent: Agent,
+  run: ToolExecutionRunContext,
+): ToolApprovalContext {
+  const rawParsedArgs = parseToolArgs(hookArgs.args);
+  const parsedArgs = tool?.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
+  return compact({
+    toolName: hookArgs.toolName,
+    args: parsedArgs,
+    rawArgs: hookArgs.args,
+    toolCallId: hookArgs.toolCallId,
+    internalCallId: hookArgs.internalCallId,
+    run: compact({
+      agentId: agent.id,
+      runId: run.runId,
+      sessionId: run.sessionId,
+      metadata: run.metadata,
+    }),
+  }) as ToolApprovalContext;
+}
+
+function normalizeApprovalDecision(decision: ToolApprovalDecision): {
+  approved: boolean;
+  reason?: string;
+  rejectMessage?: string;
+} {
+  if (typeof decision === "boolean") {
+    return { approved: decision };
+  }
+  return decision;
+}
+
+async function resolveApprovalText<Args>(
+  value: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>) | undefined,
+  context: ToolApprovalContext<Args>,
+): Promise<string | undefined> {
+  return typeof value === "function" ? value(context as ToolApprovalContext<Args>) : value;
 }
 
 function normalizeToolOutputMiddlewareResult(result: ToolOutputMiddlewareResult): {

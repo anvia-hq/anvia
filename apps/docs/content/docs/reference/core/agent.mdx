@@ -111,6 +111,7 @@ class AgentBuilder<M extends CompletionModel = CompletionModel> {
   /** @deprecated Use middlewares instead. */
   toolMiddlewares(middlewares: ToolMiddleware[]): this;
   observe(observer: AgentObserver, options?: ObserveOptions): this;
+  approvals(options: ToolApprovalsOptions): this;
   memory(store: MemoryStore, options?: MemoryOptions): this;
   eventStore(store: AgentEventStore, options?: AgentEventStoreOptions): this;
   outputSchema(schema: ZodSchema): this;
@@ -254,6 +255,7 @@ class PromptRequest<M extends CompletionModel = CompletionModel> {
   /** @deprecated Use withMiddlewares instead. */
   withToolMiddlewares(middlewares: ToolMiddleware[]): this;
   withTrace(trace: AgentTraceOptions): this;
+  approvals(options: ToolApprovalsOptions): this;
   send(): Promise<PromptResponse>;
   stream(): AsyncIterable<AgentStreamEvent>;
   readableStream(options?: ReadableStreamOptions): ReadableStream<AgentStreamEvent>;
@@ -264,7 +266,7 @@ Purpose: per-run request state for an agent prompt.
 
 Return behavior: `send()` resolves a final `PromptResponse`; `stream()` yields run events and ends with a `final` event; `readableStream()` wraps the stream in a web stream.
 
-Notable errors: throws `MaxTurnsError` when the tool loop exceeds the configured turn limit, `PromptCancelledError` when a hook terminates the run, and a plain `Error` when streaming is requested for a non-streaming model.
+Notable errors: throws `MaxTurnsError` when the tool loop exceeds the configured turn limit, `PromptCancelledError` when a hook terminates the run, `ToolApprovalRequiredError` when a protected tool call has no approval handler, and a plain `Error` when streaming is requested for a non-streaming model.
 
 ## PromptResponse
 
@@ -422,7 +424,26 @@ Purpose: intercept run lifecycle, turn lifecycle, completion calls, completion r
 
 Return behavior: callback controls such as `tool.run()`, `tool.skip(...)`, `tool.cancel(...)`, `tool.requestApproval(...)`, `run.continue()`, and `run.cancel(...)` create actions consumed by `PromptRequest`. The low-level `cancelPrompt(...)`, `skipTool(...)`, and `requestToolApproval(...)` helpers are also available.
 
-Notable errors: a terminating hook produces `PromptCancelledError`. If `tool.requestApproval(...)` reaches core without Studio or another approval handler, the request cancels with `PromptCancelledError`.
+Notable errors: a terminating hook produces `PromptCancelledError`. If `tool.requestApproval(...)` reaches core without Studio or another approval handler, the request throws `ToolApprovalRequiredError`.
+
+## Tool Approvals
+
+```ts
+type ToolApprovalDecision =
+  | boolean
+  | { approved: true; reason?: string }
+  | { approved: false; reason?: string; rejectMessage?: string };
+
+type ToolApprovalsOptions = {
+  handler(request: ToolApprovalRequest): ToolApprovalDecision | Promise<ToolApprovalDecision>;
+};
+```
+
+Purpose: provide the decision source for `ToolApprovalPolicy` and hook-based `tool.requestApproval(...)` requests.
+
+Return behavior: configure with `AgentBuilder.approvals(...)` or per request with `prompt(...).approvals(...)`; request-level approvals override agent-level approvals. Approved decisions run the tool. Rejected decisions skip execution and return the rejection text as the tool result.
+
+Notable errors: if a tool call requires approval and no handler is configured, core throws `ToolApprovalRequiredError`.
 
 ## Error Classes
 
@@ -436,6 +457,10 @@ class MaxTurnsError extends Error {
 class PromptCancelledError extends Error {
   readonly chatHistory: Message[];
   readonly reason: string;
+}
+
+class ToolApprovalRequiredError extends Error {
+  readonly request: ToolApprovalRequest;
 }
 ```
 

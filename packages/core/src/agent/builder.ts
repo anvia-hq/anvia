@@ -11,7 +11,7 @@ import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { SkillSet } from "../skills";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
-import type { AnyTool } from "../tool/tool";
+import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
 import {
@@ -40,6 +40,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private turns: number | undefined;
   private requestHook: PromptHook | undefined;
   private schema: JsonObject | undefined;
+  private approvalOptions: ToolApprovalsOptions | undefined;
   private skillInstructionBlocks: string[] = [];
   private observerRegistrations: AgentObserverRegistration[] = [];
   private dynamicContextRegistrations: DynamicContextRegistration[] = [];
@@ -181,6 +182,11 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
+  approvals(options: ToolApprovalsOptions): this {
+    this.approvalOptions = options;
+    return this;
+  }
+
   memory(store: MemoryStore, options: MemoryOptions = {}): this {
     this.memoryRegistration = {
       store,
@@ -221,6 +227,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       hook: this.requestHook,
       outputSchema: this.schema,
       observers: this.observerRegistrations,
+      approvals: this.approvalOptions,
       dynamicContexts: this.dynamicContextRegistrations,
       dynamicTools: this.dynamicToolRegistrations,
       middlewares: this.middlewareRegistrations,

@@ -15,6 +15,7 @@ import {
   Message,
   PromptCancelledError,
   requestToolApproval,
+  ToolApprovalRequiredError,
   ToolOutput,
   Usage,
 } from "./helpers/imports";
@@ -610,7 +611,7 @@ describe("PromptRequest", () => {
     expect(model.requests).toHaveLength(1);
   });
 
-  it("cancels clearly when a tool call hook requests approval without a handler", async () => {
+  it("throws clearly when a tool call hook requests approval without a handler", async () => {
     let executed = false;
     const guardedTool = createTool({
       name: "guarded",
@@ -633,12 +634,84 @@ describe("PromptRequest", () => {
     });
     const agent = new AgentBuilder("test-agent", model).tool(guardedTool).hook(hook).build();
 
-    await expect(agent.prompt("run guarded").send()).rejects.toMatchObject({
-      name: "PromptCancelledError",
-      reason: "Tool approval was requested for guarded, but no approval handler is installed.",
-    });
+    await expect(agent.prompt("run guarded").send()).rejects.toBeInstanceOf(
+      ToolApprovalRequiredError,
+    );
     expect(executed).toBe(false);
     expect(model.requests).toHaveLength(1);
+  });
+
+  it("routes hook-based approval requests through the approval handler", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({}),
+      output: z.string(),
+      execute() {
+        executed = true;
+        return "approved result";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .hook(
+        createHook({
+          onToolCall({ tool }) {
+            return tool.requestApproval({ reason: "Guarded action." });
+          },
+        }),
+      )
+      .approvals({ handler: () => true })
+      .build();
+
+    await expect(agent.prompt("run guarded").send()).resolves.toMatchObject({ output: "done" });
+    expect(executed).toBe(true);
+  });
+
+  it("skips hook-based approval requests when the approval handler rejects", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({}),
+      output: z.string(),
+      execute() {
+        executed = true;
+        return "should not run";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("denied")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .hook(
+        createHook({
+          onToolCall({ tool }) {
+            return tool.requestApproval({ rejectMessage: "Rejected by hook." });
+          },
+        }),
+      )
+      .approvals({ handler: () => false })
+      .build();
+
+    await expect(agent.prompt("run guarded").send()).resolves.toMatchObject({ output: "denied" });
+    expect(executed).toBe(false);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "Rejected by hook." }],
+        },
+      ]),
+    );
   });
 
   it("executes a tool after async approval-style hook allows it", async () => {
@@ -721,6 +794,165 @@ describe("PromptRequest", () => {
         },
       ]),
     );
+  });
+
+  it("runs approval-protected tools when the handler approves", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({ amount: z.number() }),
+      output: z.string(),
+      approval: {
+        when: ({ args }) => args.amount > 100,
+        reason: ({ args }) => `Approve ${args.amount}`,
+      },
+      execute({ amount }) {
+        executed = true;
+        return `approved ${amount}`;
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", { amount: 250 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const requests: unknown[] = [];
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .approvals({
+        handler(request) {
+          requests.push(request);
+          return true;
+        },
+      })
+      .build();
+
+    await expect(agent.prompt("run guarded").send()).resolves.toMatchObject({ output: "done" });
+    expect(executed).toBe(true);
+    expect(requests).toMatchObject([
+      {
+        toolName: "guarded",
+        args: { amount: 250 },
+        reason: "Approve 250",
+        run: { agentId: "test-agent" },
+      },
+    ]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "approved 250" }],
+        },
+      ]),
+    );
+  });
+
+  it("skips approval-protected tools when the handler rejects", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({ amount: z.number() }),
+      output: z.string(),
+      approval: {
+        when: ({ args }) => args.amount > 100,
+        rejectMessage: "Rejected by policy.",
+      },
+      execute() {
+        executed = true;
+        return "should not run";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", { amount: 250 })]),
+      response([AssistantContent.text("denied")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .approvals({ handler: () => false })
+      .build();
+
+    await expect(agent.prompt("run guarded").send()).resolves.toMatchObject({ output: "denied" });
+    expect(executed).toBe(false);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          content: [{ type: "text", text: "Rejected by policy." }],
+        },
+      ]),
+    );
+  });
+
+  it("runs approval-protected tools directly when the condition is false", async () => {
+    let approvals = 0;
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({ amount: z.number() }),
+      output: z.string(),
+      approval: {
+        when: ({ args }) => args.amount > 100,
+      },
+      execute() {
+        executed = true;
+        return "safe result";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", { amount: 50 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .approvals({
+        handler() {
+          approvals += 1;
+          return false;
+        },
+      })
+      .build();
+
+    await expect(agent.prompt("run guarded").send()).resolves.toMatchObject({ output: "done" });
+    expect(executed).toBe(true);
+    expect(approvals).toBe(0);
+  });
+
+  it("lets request-level approvals override agent-level approvals", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({}),
+      output: z.string(),
+      approval: {
+        when: () => true,
+        rejectMessage: "Rejected by request.",
+      },
+      execute() {
+        executed = true;
+        return "request approved";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .approvals({ handler: () => false })
+      .build();
+
+    await expect(
+      agent
+        .prompt("run guarded")
+        .approvals({ handler: () => true })
+        .send(),
+    ).resolves.toMatchObject({ output: "done" });
+    expect(executed).toBe(true);
   });
 
   it("can cancel prompts from a hook helper", async () => {

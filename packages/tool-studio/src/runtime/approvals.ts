@@ -1,17 +1,5 @@
-import {
-  createHook,
-  type PromptHook,
-  type ToolApprovalRequestOptions,
-  type ToolCallHookAction,
-  type ToolCallHookArgs,
-} from "@anvia/core/agent";
 import type { JsonObject } from "@anvia/core/completion";
-import {
-  type AnyTool,
-  parseToolArgs,
-  type ToolApprovalContext,
-  type ToolApprovalPolicy,
-} from "@anvia/core/tool";
+import type { ToolApprovalRequest, ToolApprovalsOptions } from "@anvia/core/tool";
 import type { Context, Hono } from "hono";
 import type {
   AgentRunStreamEvent,
@@ -36,7 +24,6 @@ type ApprovalHookContext = {
   agentId: string;
   sessionId?: string;
   metadata?: JsonObject;
-  getTool(toolName: string): AnyTool | undefined;
   emit?: (event: AgentRunStreamEvent) => void;
 };
 
@@ -51,7 +38,7 @@ type ApprovalRequest = {
 
 export type ApprovalRuntime = {
   approvals: Map<string, PendingApproval | StudioToolApproval>;
-  createHook(context: ApprovalHookContext): StudioApprovalHook;
+  createApprovals(context: ApprovalHookContext): ToolApprovalsOptions;
   list(options: ApprovalListOptions): StudioToolApproval[];
   decide(
     id: string,
@@ -64,13 +51,6 @@ type ApprovalListOptions = {
   runId?: string;
   agentId?: string;
   sessionId?: string;
-};
-
-export type StudioApprovalHook = PromptHook & {
-  handleApprovalRequest(
-    args: ToolCallHookArgs,
-    request: ToolApprovalRequestOptions,
-  ): Promise<ToolCallHookAction>;
 };
 
 export function registerApprovalRoutes(app: Hono, approvals: ApprovalRuntime): void {
@@ -151,9 +131,10 @@ async function parseApprovalDecisionRequest(
 
   return compact({
     approved: body.approved,
-    reason: typeof body.reason === "string" && body.reason.trim().length > 0
-      ? body.reason.trim()
-      : undefined,
+    reason:
+      typeof body.reason === "string" && body.reason.trim().length > 0
+        ? body.reason.trim()
+        : undefined,
   }) as StudioToolApprovalDecision;
 }
 
@@ -162,74 +143,25 @@ export function createApprovalRuntime(): ApprovalRuntime {
 
   return {
     approvals,
-    createHook(context) {
-      const handleApprovalRequest: StudioApprovalHook["handleApprovalRequest"] = async (
-        { toolName, toolCallId, internalCallId, args, tool: control },
-        request,
-      ) => {
-        const decision = await requestApproval(approvals, context, compact({
-          toolName,
-          toolCallId,
-          internalCallId,
-          args,
-          reason: request.reason,
-          rejectMessage: request.rejectMessage,
-        }) as ApprovalRequest);
-
-        return decision.approved
-          ? control.run()
-          : control.skip(decision.reason ?? request.rejectMessage ?? "Rejected in Anvia Studio.");
-      };
+    createApprovals(context) {
       return {
-        ...createHook({
-          async onToolCall({ toolName, toolCallId, internalCallId, args, tool: control }) {
-            const registeredTool = context.getTool(toolName);
-            if (registeredTool?.approval === undefined) {
-              return control.run();
-            }
-            const approval = registeredTool.approval as ToolApprovalPolicy<unknown>;
-
-            const rawParsedArgs = parseToolArgs(args);
-            const parsedArgs = registeredTool.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
-            const approvalContext = compact({
-              toolName,
-              args: parsedArgs,
-              rawArgs: args,
-              toolCallId,
-              internalCallId,
-              run: compact({
-                agentId: context.agentId,
-                runId: context.runId,
-                sessionId: context.sessionId,
-                metadata: context.metadata,
-              }),
-            });
-
-            const required = await approval.when(approvalContext);
-            if (!required) {
-              return control.run();
-            }
-
-            const reason = await resolveApprovalText(approval.reason, approvalContext);
-            const rejectMessage = await resolveApprovalText(
-              approval.rejectMessage,
-              approvalContext,
-            );
-            const decision = await requestApproval(approvals, context, compact({
-              toolName,
-              toolCallId,
-              internalCallId,
-              args,
-              reason,
-              rejectMessage,
-            }) as ApprovalRequest);
-
-            return decision.approved
-              ? control.run()
-              : control.skip(decision.reason ?? rejectMessage ?? "Rejected in Anvia Studio.");
-          },
-        }),
-        handleApprovalRequest,
+        async handler(request: ToolApprovalRequest) {
+          const decision = await requestApproval(
+            approvals,
+            context,
+            compact({
+              toolName: request.toolName,
+              toolCallId: request.toolCallId,
+              internalCallId: request.internalCallId,
+              args: request.rawArgs,
+              reason: request.reason,
+              rejectMessage: request.rejectMessage,
+            }) as ApprovalRequest,
+          );
+          return decision.approved
+            ? compact({ approved: true as const, reason: decision.reason })
+            : compact({ approved: false as const, reason: decision.reason });
+        },
       };
     },
     list(options) {
@@ -266,13 +198,19 @@ export function createApprovalRuntime(): ApprovalRuntime {
       const reason = decision.approved
         ? decision.reason
         : (decision.reason ?? approval.rejectMessage ?? "Rejected in Anvia Studio.");
-      const resolved = resolveApproval(approval, decision.approved ? "approved" : "rejected", compact({ reason }));
+      const resolved = resolveApproval(
+        approval,
+        decision.approved ? "approved" : "rejected",
+        compact({ reason }),
+      );
       approvals.set(id, resolved);
       approval.emit?.({ type: "tool_approval_result", approval: resolved });
-      approval.resolve(compact({
-        approved: decision.approved,
-        reason,
-      }) as StudioToolApprovalDecision);
+      approval.resolve(
+        compact({
+          approved: decision.approved,
+          reason,
+        }) as StudioToolApprovalDecision,
+      );
       return publicApproval(resolved);
     },
   };
@@ -308,36 +246,37 @@ async function requestApproval(
       const current = approvals.get(id);
       if (!isPendingApproval(current)) {
         if (current !== undefined) {
-          resolve(compact({
-            approved: current.status === "approved",
-            reason: current.reason,
-          }) as StudioToolApprovalDecision);
+          resolve(
+            compact({
+              approved: current.status === "approved",
+              reason: current.reason,
+            }) as StudioToolApprovalDecision,
+          );
         }
         return;
       }
       const reason = decision.approved
         ? decision.reason
         : (decision.reason ?? request.rejectMessage ?? "Rejected in Anvia Studio.");
-      const resolved = resolveApproval(current, decision.approved ? "approved" : "rejected", compact({ reason }));
+      const resolved = resolveApproval(
+        current,
+        decision.approved ? "approved" : "rejected",
+        compact({ reason }),
+      );
       approvals.set(id, resolved);
       context.emit?.({ type: "tool_approval_result", approval: resolved });
-      resolve(compact({
-        approved: decision.approved,
-        reason,
-      }) as StudioToolApprovalDecision);
+      resolve(
+        compact({
+          approved: decision.approved,
+          reason,
+        }) as StudioToolApprovalDecision,
+      );
     };
   });
 
   approvals.set(id, approval);
   context.emit?.({ type: "tool_approval_request", approval: publicApproval(approval) });
   return decision;
-}
-
-async function resolveApprovalText<Args>(
-  value: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>) | undefined,
-  context: ToolApprovalContext<Args>,
-): Promise<string | undefined> {
-  return typeof value === "function" ? value(context) : value;
 }
 
 function isPendingApproval(

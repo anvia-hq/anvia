@@ -7,14 +7,20 @@ import type {
   Message as MessageType,
   ToolChoice,
 } from "../completion/index";
-import type { MemoryRegistration, SessionOptions } from "../memory";
 import { compact } from "../internal/compact";
+import type { MemoryRegistration, SessionOptions } from "../memory";
 import type { AgentObserverRegistration } from "../observability";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
 import { isSkillTool } from "../tool/skill-tool-marker";
-import type { AnyTool, NormalizedToolOutput, Tool, ToolCallContext } from "../tool/tool";
+import type {
+  AnyTool,
+  NormalizedToolOutput,
+  Tool,
+  ToolApprovalsOptions,
+  ToolCallContext,
+} from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
 import type { PromptHook } from "./hooks";
@@ -38,6 +44,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   hook?: PromptHook | undefined;
   outputSchema?: JsonObject | undefined;
   observers?: AgentObserverRegistration[] | undefined;
+  approvals?: ToolApprovalsOptions | undefined;
   dynamicContexts?: DynamicContextRegistration[] | undefined;
   dynamicTools?: DynamicToolRegistration[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
@@ -129,6 +136,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
   readonly hook: PromptHook | undefined;
   readonly outputSchema: JsonObject | undefined;
   readonly observers: AgentObserverRegistration[];
+  readonly approvals: ToolApprovalsOptions | undefined;
   readonly dynamicContexts: DynamicContextRegistration[];
   readonly dynamicTools: DynamicToolRegistration[];
   readonly middlewares: AgentMiddleware[];
@@ -155,6 +163,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     this.hook = options.hook;
     this.outputSchema = options.outputSchema;
     this.observers = options.observers ?? [];
+    this.approvals = options.approvals;
     this.dynamicContexts = options.dynamicContexts ?? [];
     this.dynamicTools = options.dynamicTools ?? [];
     this.middlewares = options.middlewares ?? options.toolMiddlewares ?? [];
@@ -205,11 +214,13 @@ export class Agent<M extends CompletionModel = CompletionModel> {
         ) {
           let output = "";
           for await (const event of childRequest.stream()) {
-            await context.emitStreamEvent(compact({
-              agentId: this.id,
-              agentName: this.name,
-              event,
-            }));
+            await context.emitStreamEvent(
+              compact({
+                agentId: this.id,
+                agentName: this.name,
+                event,
+              }),
+            );
             if (event.type === "final") {
               output = event.output;
             }

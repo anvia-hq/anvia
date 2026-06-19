@@ -1,5 +1,12 @@
 # @anvia/redis
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [0b24637]
+  - @anvia/core@0.8.0
+
 ## 0.2.1
 
 ### Patch Changes

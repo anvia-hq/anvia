@@ -1,5 +1,12 @@
 # @anvia/langfuse
 
+## 0.2.5
+
+### Patch Changes
+
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
 ## 0.2.4
 
 ### Patch Changes

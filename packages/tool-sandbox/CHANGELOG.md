@@ -1,5 +1,12 @@
 # @anvia/sandbox
 
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
 ## 0.3.3
 
 ### Patch Changes

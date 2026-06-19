@@ -117,9 +117,15 @@ pnpm cookbook:studio:01
 - [Design Philosophy](apps/docs/content/docs/guides/design-philosophy.mdx)
 - [Contributing](CONTRIBUTING.md)
 
-## Project Activity
+## Repository Stats
 
-![Repobeats analytics image](https://repobeats.axiom.co/api/embed/a63db5f32641718a48cb706d9957e94fa413871d.svg "Repobeats analytics image")
+<p>
+  <img src="https://img.shields.io/github/stars/anvia-hq/anvia?style=flat-square&label=stars" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/forks/anvia-hq/anvia?style=flat-square&label=forks" alt="GitHub forks" />
+  <img src="https://img.shields.io/github/issues/anvia-hq/anvia?style=flat-square&label=open%20issues" alt="Open issues" />
+  <img src="https://img.shields.io/github/issues-pr/anvia-hq/anvia?style=flat-square&label=open%20pull%20requests" alt="Open pull requests" />
+  <img src="https://img.shields.io/github/last-commit/anvia-hq/anvia/main?style=flat-square&label=last%20commit" alt="Last commit on main" />
+</p>
 
 ## License
 

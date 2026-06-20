@@ -1,5 +1,13 @@
 # @anvia/openai
 
+## 0.3.13
+
+### Patch Changes
+
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+- Updated dependencies [2559d04]
+  - @anvia/core@0.7.1
+
 ## 0.3.12
 
 ### Patch Changes

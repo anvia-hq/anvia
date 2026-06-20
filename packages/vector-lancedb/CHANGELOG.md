@@ -1,5 +1,13 @@
 # @anvia/lancedb
 
+## 0.2.3
+
+### Patch Changes
+
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+- Updated dependencies [2559d04]
+  - @anvia/core@0.7.1
+
 ## 0.2.2
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/pgvector",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Postgres pgvector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -43,6 +43,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "^0.7.0"
+    "@anvia/core": "^0.7.1"
   }
 }

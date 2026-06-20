@@ -1,6 +1,6 @@
 {
   "name": "@anvia/gemini",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "Gemini provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -43,6 +43,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "^0.7.0"
+    "@anvia/core": "^0.7.1"
   }
 }

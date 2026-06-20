@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.7.1
+
+### Patch Changes
+
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+
 ## 0.7.0
 
 ### Minor Changes

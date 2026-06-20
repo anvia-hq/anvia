@@ -1,6 +1,6 @@
 {
   "name": "@anvia/redis",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Redis vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -41,6 +41,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "^0.7.0"
+    "@anvia/core": "^0.7.1"
   }
 }

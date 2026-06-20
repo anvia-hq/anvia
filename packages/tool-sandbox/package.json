@@ -42,6 +42,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "^0.7.0"
+    "@anvia/core": "^0.7.1"
   }
 }

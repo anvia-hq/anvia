@@ -19,7 +19,7 @@ const ticketExtractor = new ExtractorBuilder(model, ticketSchema)
   .instructions("Extract a support ticket from the provided operational note.")
   .build();
 
-const ticketPipeline = new PipelineBuilder<string>()
+const ticketPipeline = new PipelineBuilder(z.string())
   .step((note) => `Extract a support ticket from this note:\n\n${note}`)
   .extract(ticketExtractor)
   .build();

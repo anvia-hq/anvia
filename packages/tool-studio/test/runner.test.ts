@@ -36,6 +36,7 @@ import {
 } from "@anvia/core/vector-store";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { createInMemoryStudioStore, Studio } from "../src/index";
 import { registerObservabilityRoutes, StudioObservabilityHub } from "../src/runtime/observability";
 import { createSqliteSessionStore } from "../src/sqlite";
@@ -637,7 +638,7 @@ describe("Anvia studio", () => {
 
   it("registers pipelines separately from agents", async () => {
     const agent = new AgentBuilder("support", new QueueModel([])).name("Support").build();
-    const pipeline = new PipelineBuilder<string>({
+    const pipeline = new PipelineBuilder(z.string(), {
       id: "ticket-pipeline",
       name: "Ticket Pipeline",
       description: "Prepare support tickets",
@@ -689,7 +690,7 @@ describe("Anvia studio", () => {
   });
 
   it("runs pipelines over HTTP and persists runs plus metadata-only pipeline logs", async () => {
-    const pipeline = new PipelineBuilder<string>({ id: "audit-pipeline" })
+    const pipeline = new PipelineBuilder(z.string(), { id: "audit-pipeline" })
       .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
       .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
       .build();
@@ -857,7 +858,7 @@ describe("Anvia studio", () => {
   });
 
   it("replays persisted pipeline runs outside the first runs page", async () => {
-    const pipeline = new PipelineBuilder<string>({ id: "audit-pipeline" })
+    const pipeline = new PipelineBuilder(z.string(), { id: "audit-pipeline" })
       .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
       .build();
     const store = createSqliteSessionStore({

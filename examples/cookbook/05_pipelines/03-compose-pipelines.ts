@@ -1,6 +1,7 @@
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-const parseTicket = new PipelineBuilder<string>()
+const parseTicket = new PipelineBuilder(z.string())
   .step((raw) => raw.split("\n"))
   .step((lines) =>
     Object.fromEntries(lines.map((line) => line.split(":").map((part) => part.trim()))),
@@ -12,7 +13,13 @@ const parseTicket = new PipelineBuilder<string>()
   }))
   .build();
 
-const scoreTicket = new PipelineBuilder<{ customer: string; issue: string; impact: string }>()
+const TicketInput = z.object({
+  customer: z.string(),
+  issue: z.string(),
+  impact: z.string(),
+});
+
+const scoreTicket = new PipelineBuilder(TicketInput)
   .step((ticket) => ({
     ...ticket,
     severity:
@@ -24,7 +31,7 @@ const scoreTicket = new PipelineBuilder<{ customer: string; issue: string; impac
   .step((ticket) => `[${ticket.severity.toUpperCase()}] ${ticket.customer}: ${ticket.issue}`)
   .build();
 
-const ticketSummary = new PipelineBuilder<string>().use(parseTicket).use(scoreTicket).build();
+const ticketSummary = new PipelineBuilder(z.string()).use(parseTicket).use(scoreTicket).build();
 
 const summary = await ticketSummary.run(
   [

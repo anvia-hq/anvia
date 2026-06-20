@@ -28,10 +28,8 @@ export class PipelineBuilder<Input, Output = Input> {
   private readonly executor: PipelineExecutor<Input, Output>;
   private readonly state: PipelineBuilderState;
 
-  constructor();
-  constructor(metadata: PipelineMetadata);
-  constructor(schema: z.ZodType<unknown, Input>);
-  constructor(schema: z.ZodType<unknown, Input>, metadata: PipelineMetadata);
+  constructor(schema: z.ZodType<Output, Input>);
+  constructor(schema: z.ZodType<Output, Input>, metadata: PipelineMetadata);
   constructor(executor: (input: Input) => Output | Promise<Output>);
   constructor(executor: PipelineExecutor<Input, Output>, state: PipelineBuilderState);
   constructor(

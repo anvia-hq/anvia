@@ -45,11 +45,11 @@ const researchTools = ToolSet.fromTools([
   }),
 ]);
 
-const searchNotes = new PipelineBuilder<string>()
+const searchNotes = new PipelineBuilder(z.string())
   .step((topic) => researchTools.call("search_notes", JSON.stringify({ topic })))
   .build();
 
-const sourceQuality = new PipelineBuilder<string>()
+const sourceQuality = new PipelineBuilder(z.string())
   .step((topic) => researchTools.call("source_quality", JSON.stringify({ topic })))
   .build();
 
@@ -65,7 +65,7 @@ const synthesizer = new AgentBuilder("synthesizer", synthesizerModel)
   )
   .build();
 
-const researchPipeline = new PipelineBuilder<string>()
+const researchPipeline = new PipelineBuilder(z.string())
   .parallel({
     notesJson: searchNotes,
     qualityJson: sourceQuality,

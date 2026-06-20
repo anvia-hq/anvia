@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import * as anvia from "./helpers/imports";
 import {
@@ -49,7 +49,7 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
 
 describe("PipelineBuilder", () => {
   it("composes sync steps", async () => {
-    const op = new PipelineBuilder<number>()
+    const op = new PipelineBuilder(z.number())
       .step((value) => value + 1)
       .step((value) => `value:${value}`)
       .build();
@@ -58,7 +58,7 @@ describe("PipelineBuilder", () => {
   });
 
   it("composes async steps", async () => {
-    const op = new PipelineBuilder<string>()
+    const op = new PipelineBuilder(z.string())
       .step(async (value) => value.trim())
       .step(async (value) => value.toUpperCase())
       .build();
@@ -67,8 +67,8 @@ describe("PipelineBuilder", () => {
   });
 
   it("uses another pipeline op", async () => {
-    const suffix = new PipelineBuilder<string>().step((value) => `${value}!`).build();
-    const op = new PipelineBuilder<string>()
+    const suffix = new PipelineBuilder(z.string()).step((value) => `${value}!`).build();
+    const op = new PipelineBuilder(z.string())
       .step((value) => value.toUpperCase())
       .use(suffix)
       .build();
@@ -79,7 +79,7 @@ describe("PipelineBuilder", () => {
   it("batches with a concurrency limit and preserves order", async () => {
     let active = 0;
     let maxActive = 0;
-    const op = new PipelineBuilder<number>()
+    const op = new PipelineBuilder(z.number())
       .step(async (value) => {
         active += 1;
         maxActive = Math.max(maxActive, active);
@@ -95,11 +95,11 @@ describe("PipelineBuilder", () => {
   });
 
   it("runs named parallel branches and returns object output", async () => {
-    const op = new PipelineBuilder<string>()
+    const op = new PipelineBuilder(z.string())
       .parallel({
-        upper: new PipelineBuilder<string>().step((value) => value.toUpperCase()).build(),
-        length: new PipelineBuilder<string>().step(async (value) => value.length).build(),
-        includesA: new PipelineBuilder<string>().step((value) => value.includes("a")).build(),
+        upper: new PipelineBuilder(z.string()).step((value) => value.toUpperCase()).build(),
+        length: new PipelineBuilder(z.string()).step(async (value) => value.length).build(),
+        includesA: new PipelineBuilder(z.string()).step((value) => value.includes("a")).build(),
       })
       .build();
 
@@ -113,7 +113,7 @@ describe("PipelineBuilder", () => {
   it("prompts an agent and returns output", async () => {
     const model = new QueueModel([response([AssistantContent.text("answer")])]);
     const agent = new AgentBuilder("test-agent", model).build();
-    const op = new PipelineBuilder<string>()
+    const op = new PipelineBuilder(z.string())
       .step((value) => `Question: ${value}`)
       .prompt(agent)
       .build();
@@ -133,7 +133,7 @@ describe("PipelineBuilder", () => {
       model,
       z.object({ priority: z.enum(["low", "high"]) }),
     ).build();
-    const op = new PipelineBuilder<string>()
+    const op = new PipelineBuilder(z.string())
       .step((value) => `Extract priority: ${value}`)
       .extract(extractor)
       .build();
@@ -142,7 +142,7 @@ describe("PipelineBuilder", () => {
   });
 
   it("rejects run and batch when a step throws", async () => {
-    const op = new PipelineBuilder<number>()
+    const op = new PipelineBuilder(z.number())
       .step((value) => {
         if (value === 2) {
           throw new Error("boom");
@@ -156,7 +156,7 @@ describe("PipelineBuilder", () => {
   });
 
   it("can use a custom pipeline op", async () => {
-    const op = new PipelineBuilder<number>().use(createPipelineOp((value) => value + 10)).build();
+    const op = new PipelineBuilder(z.number()).use(createPipelineOp((value) => value + 10)).build();
 
     await expect(op.run(5)).resolves.toBe(15);
   });
@@ -164,7 +164,7 @@ describe("PipelineBuilder", () => {
   it("exposes an automatic graph", () => {
     const model = new QueueModel([response([AssistantContent.text("answer")])]);
     const agent = new AgentBuilder("support", model).name("Support").build();
-    const op = new PipelineBuilder<string>({
+    const op = new PipelineBuilder(z.string(), {
       id: "ticket_triage",
       name: "Ticket triage",
       description: "Prepare a support answer.",
@@ -172,8 +172,8 @@ describe("PipelineBuilder", () => {
     })
       .step((value) => value.trim())
       .parallel({
-        upper: new PipelineBuilder<string>().step((value) => value.toUpperCase()).build(),
-        length: new PipelineBuilder<string>().step((value) => value.length).build(),
+        upper: new PipelineBuilder(z.string()).step((value) => value.toUpperCase()).build(),
+        length: new PipelineBuilder(z.string()).step((value) => value.length).build(),
       })
       .prompt(agent)
       .build();
@@ -208,7 +208,7 @@ describe("PipelineBuilder", () => {
 
   it("emits pipeline stage run events without changing output", async () => {
     const events: string[] = [];
-    const op = new PipelineBuilder<number>()
+    const op = new PipelineBuilder(z.number())
       .step((value) => value + 1)
       .step((value) => value * 2)
       .build();
@@ -231,10 +231,14 @@ describe("PipelineBuilder", () => {
   });
 
   it("does not expose the old helper-first methods at type level", () => {
-    const builder = new PipelineBuilder<number>();
+    const builder = new PipelineBuilder(z.number());
     const op = builder.step((value) => value + 1).build();
 
     if (unreachable()) {
+      // @ts-expect-error - pass a Zod schema instead.
+      new PipelineBuilder<number>();
+      // @ts-expect-error - pass metadata as the second argument after a Zod schema.
+      new PipelineBuilder<number>({ name: "M" });
       // @ts-expect-error - use step(...) instead of map(...).
       builder.map((value: number) => value);
       // @ts-expect-error - use step(...) instead of then(...).
@@ -252,7 +256,10 @@ describe("PipelineBuilder", () => {
 
   it("accepts a Zod schema at construction and infers input type", async () => {
     const op = new PipelineBuilder(z.object({ query: z.string(), limit: z.number() }))
-      .step(({ query, limit }) => `${query}:${limit}`)
+      .step((input) => {
+        expectTypeOf(input).toEqualTypeOf<{ query: string; limit: number }>();
+        return `${input.query}:${input.limit}`;
+      })
       .build();
 
     await expect(op.run({ query: "search", limit: 3 })).resolves.toBe("search:3");
@@ -269,7 +276,10 @@ describe("PipelineBuilder", () => {
 
   it("applies Zod defaults when parsing input", async () => {
     const op = new PipelineBuilder(z.object({ query: z.string(), limit: z.number().default(10) }))
-      .step(({ query, limit }) => `${query}:${limit}`)
+      .step((input) => {
+        expectTypeOf(input).toEqualTypeOf<{ query: string; limit: number }>();
+        return `${input.query}:${input.limit}`;
+      })
       .build();
 
     await expect(op.run({ query: "hi" })).resolves.toBe("hi:10");
@@ -290,11 +300,11 @@ describe("PipelineBuilder", () => {
     expect(op.metadata).toEqual({ owner: "test" });
   });
 
-  it("keeps existing constructors working alongside the schema overload", async () => {
-    const empty = new PipelineBuilder<string>().step((s: string) => s).build();
-    const metadataOnly = new PipelineBuilder<string>({ name: "M" }).step((s: string) => s).build();
+  it("accepts metadata as the second argument after a Zod schema", async () => {
+    const metadataOnly = new PipelineBuilder(z.string(), { name: "M" })
+      .step((s: string) => s)
+      .build();
 
-    await expect(empty.run("hi")).resolves.toBe("hi");
     await expect(metadataOnly.run("hi")).resolves.toBe("hi");
     expect(metadataOnly.name).toBe("M");
   });

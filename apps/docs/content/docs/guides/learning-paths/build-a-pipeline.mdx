@@ -41,14 +41,15 @@ Do not use a pipeline just to send one prompt. Start with an agent and add a pip
 
 ```ts
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-type TicketInput = {
-  customer: string;
-  subject: string;
-  body: string;
-};
+const TicketInput = z.object({
+  customer: z.string(),
+  subject: z.string(),
+  body: z.string(),
+});
 
-const pipeline = new PipelineBuilder<TicketInput>()
+const pipeline = new PipelineBuilder(TicketInput)
   .step((ticket) => ({
     customer: ticket.customer.trim(),
     subject: ticket.subject.trim(),
@@ -93,7 +94,7 @@ const extractor = new ExtractorBuilder(
   }),
 ).build();
 
-const pipeline = new PipelineBuilder<TicketInput>()
+const pipeline = new PipelineBuilder(TicketInput)
   .step(
     (ticket) =>
       [
@@ -120,16 +121,16 @@ For object inputs, format the prompt in a step before `.prompt(...)` or `.extrac
 ## Parallel Branch Shape
 
 ```ts
-const checks = new PipelineBuilder<TicketInput>()
+const checks = new PipelineBuilder(TicketInput)
   .step((ticket) => ticket.body)
   .parallel({
-    uppercase: new PipelineBuilder<string>()
+    uppercase: new PipelineBuilder(z.string())
       .step((value) => value.toUpperCase())
       .build(),
-    length: new PipelineBuilder<string>()
+    length: new PipelineBuilder(z.string())
       .step((value) => value.length)
       .build(),
-    urgent: new PipelineBuilder<string>()
+    urgent: new PipelineBuilder(z.string())
       .step((value) => value.toLowerCase().includes("failing"))
       .build(),
   })

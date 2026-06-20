@@ -1,9 +1,16 @@
-import { SchemaFieldTypes, VectorAlgorithms } from "redis";
-
 export const documentIdField = "__anvia_document_id";
 export const documentField = "__anvia_document";
 export const vectorField = "__anvia_vector";
 export const reservedFieldPrefix = "__anvia_";
+
+export const SchemaFieldTypes = {
+  TEXT: "TEXT",
+  VECTOR: "VECTOR",
+} as const;
+
+export const VectorAlgorithms = {
+  HNSW: "HNSW",
+} as const;
 
 export type RedisDistance = "COSINE" | "L2" | "IP";
 
@@ -30,5 +37,3 @@ export type RedisVectorStoreConnectOptions = {
   createIfMissing?: boolean | undefined;
   distance?: RedisDistance | undefined;
 };
-
-export { SchemaFieldTypes, VectorAlgorithms };

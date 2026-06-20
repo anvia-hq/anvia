@@ -8,12 +8,12 @@ Use `.parallel(...)` when independent work can run from the same input. Each bra
 ## 1. Create Branches
 
 ```ts
-const summaryBranch = new PipelineBuilder<string>()
+const summaryBranch = new PipelineBuilder(z.string())
   .step((ticket) => `Summarize:\n\n${ticket}`)
   .prompt(summarizer)
   .build();
 
-const priorityBranch = new PipelineBuilder<string>()
+const priorityBranch = new PipelineBuilder(z.string())
   .step((ticket) => `Classify priority:\n\n${ticket}`)
   .prompt(priorityAgent)
   .build();
@@ -22,7 +22,7 @@ const priorityBranch = new PipelineBuilder<string>()
 ## 2. Run Them in Parallel
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .parallel({
     summary: summaryBranch,
     priority: priorityBranch,
@@ -44,7 +44,7 @@ The branch names become the output keys.
 ## 4. Continue After Branching
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .parallel({
     summary: summaryBranch,
     priority: priorityBranch,

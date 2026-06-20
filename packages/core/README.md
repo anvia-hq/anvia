@@ -195,8 +195,9 @@ const ticket = await extractor.extract(
 
 ```ts
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((input) => `Extract this support ticket:\n\n${input}`)
   .prompt(agent)
   .extract(extractor)

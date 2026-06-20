@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "pg": "^8.21.0",
+    "pg": "^8.22.0",
     "pgvector": "^0.3.0"
   },
   "devDependencies": {

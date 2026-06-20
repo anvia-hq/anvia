@@ -74,7 +74,7 @@ const briefSchema = z.object({
 
 const briefExtractor = new ExtractorBuilder(model, briefSchema).build();
 
-export const researchWorkflow = new PipelineBuilder<string>()
+export const researchWorkflow = new PipelineBuilder(z.string())
   .step((question) => question.trim())
   .prompt(researchAgent)
   .extract(briefExtractor)

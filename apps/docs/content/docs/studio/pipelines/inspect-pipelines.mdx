@@ -12,7 +12,7 @@ import { Studio } from "@anvia/studio";
 
 const supportAgent = new AgentBuilder("support", model).build();
 
-const ticketPipeline = new PipelineBuilder<string>({
+const ticketPipeline = new PipelineBuilder(z.string(), {
   id: "ticket-pipeline",
   name: "Ticket Pipeline",
 })

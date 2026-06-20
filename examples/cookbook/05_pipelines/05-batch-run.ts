@@ -1,6 +1,7 @@
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-const normalizeIncident = new PipelineBuilder<string>()
+const normalizeIncident = new PipelineBuilder(z.string())
   .step((input) => input.trim().replace(/\s+/g, " "))
   .step((input) => ({
     normalized: input,

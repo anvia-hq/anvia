@@ -272,14 +272,15 @@ Minimal shape:
 
 \`\`\`ts
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-type TicketInput = {
-  customer: string;
-  subject: string;
-  body: string;
-};
+const TicketInput = z.object({
+  customer: z.string(),
+  subject: z.string(),
+  body: z.string(),
+});
 
-const pipeline = new PipelineBuilder<TicketInput>()
+const pipeline = new PipelineBuilder(TicketInput)
   .step((ticket) => ({
     customer: ticket.customer.trim(),
     subject: ticket.subject.trim(),
@@ -302,7 +303,7 @@ const result = await pipeline.run({
 Agent and extractor pipeline shape:
 
 \`\`\`ts
-const pipeline = new PipelineBuilder<TicketInput>()
+const pipeline = new PipelineBuilder(TicketInput)
   .step((ticket) =>
     [
       "Customer: " + ticket.customer,

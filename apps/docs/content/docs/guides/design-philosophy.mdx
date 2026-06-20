@@ -164,7 +164,7 @@ const lookupCustomer = createTool({
 
 const extractor = new ExtractorBuilder(model, ticketSchema).build();
 
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((input) => input.trim())
   .extract(extractor)
   .step((ticket) => ({
@@ -198,7 +198,7 @@ const supportAgent = new AgentBuilder("support", model)
   )
   .build();
 
-const workflow = new PipelineBuilder<string>()
+const workflow = new PipelineBuilder(z.string())
   .prompt(supportAgent)
   .extract(extractor)
   .build();

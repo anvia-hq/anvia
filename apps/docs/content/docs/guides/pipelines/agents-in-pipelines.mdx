@@ -17,7 +17,7 @@ const triageAgent = new AgentBuilder("triage", model)
 ## 2. Format the Prompt in a Step
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((ticket) => `Classify this ticket:\n\n${ticket}`)
   .prompt(triageAgent)
   .build();
@@ -34,7 +34,7 @@ const supportAgent = new AgentBuilder("support", model)
   .defaultMaxTurns(3)
   .build();
 
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((ticket) => `Answer this support ticket:\n\n${ticket}`)
   .prompt(supportAgent)
   .build();
@@ -45,10 +45,10 @@ The agent can call tools during the prompt step. The pipeline receives the final
 ## 4. Use Separate Agents for Separate Jobs
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .parallel({
-    customerReply: new PipelineBuilder<string>().prompt(replyAgent).build(),
-    internalSummary: new PipelineBuilder<string>().prompt(summaryAgent).build(),
+    customerReply: new PipelineBuilder(z.string()).prompt(replyAgent).build(),
+    internalSummary: new PipelineBuilder(z.string()).prompt(summaryAgent).build(),
   })
   .build();
 ```

@@ -1,6 +1,7 @@
 import { AgentBuilder } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
@@ -58,22 +59,22 @@ const synthesizerAgent = new AgentBuilder("synthesizer", model)
   )
   .build();
 
-const supportNotesPipeline = new PipelineBuilder<string>()
+const supportNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Triage this incident for support:\n\n${input}`)
   .prompt(supportAgent)
   .build();
 
-const engineeringNotesPipeline = new PipelineBuilder<string>()
+const engineeringNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Triage this incident for engineering:\n\n${input}`)
   .prompt(engineeringAgent)
   .build();
 
-const commsNotesPipeline = new PipelineBuilder<string>()
+const commsNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Draft customer communication for this incident:\n\n${input}`)
   .prompt(commsAgent)
   .build();
 
-const incidentBrief = new PipelineBuilder<string>()
+const incidentBrief = new PipelineBuilder(z.string())
   .parallel({
     support: supportNotesPipeline,
     engineering: engineeringNotesPipeline,

@@ -62,15 +62,15 @@ const marketTools = ToolSet.fromTools([
   }),
 ]);
 
-const quoteSnapshot = new PipelineBuilder<string>()
+const quoteSnapshot = new PipelineBuilder(z.string())
   .step((ticker) => marketTools.call("quote_snapshot", JSON.stringify({ ticker })))
   .build();
 
-const marketNews = new PipelineBuilder<string>()
+const marketNews = new PipelineBuilder(z.string())
   .step((ticker) => marketTools.call("market_news", JSON.stringify({ ticker })))
   .build();
 
-const riskFlags = new PipelineBuilder<string>()
+const riskFlags = new PipelineBuilder(z.string())
   .step((ticker) => marketTools.call("risk_flags", JSON.stringify({ ticker })))
   .build();
 
@@ -86,7 +86,7 @@ const marketAnalyst = new AgentBuilder("market-analyst", marketAnalystModel)
   )
   .build();
 
-const marketPipeline = new PipelineBuilder<string>()
+const marketPipeline = new PipelineBuilder(z.string())
   .step((ticker) => ticker.trim().toUpperCase())
   .parallel({
     quoteJson: quoteSnapshot,

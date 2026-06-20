@@ -37,7 +37,7 @@ Throw only when the workflow should fail or be retried. That keeps tool behavior
 Pipeline steps are ordinary functions. Keep deterministic steps small enough to test before adding model calls:
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((input) => input.trim())
   .step((input) => ({ query: input, limit: 5 }))
   .build();

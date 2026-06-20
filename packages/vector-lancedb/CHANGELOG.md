@@ -1,5 +1,11 @@
 # @anvia/lancedb
 
+## 0.2.2
+
+### Patch Changes
+
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+
 ## 0.2.1
 
 ### Patch Changes

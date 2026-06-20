@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.12
+
+### Patch Changes
+
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+
 ## 0.3.11
 
 ### Patch Changes

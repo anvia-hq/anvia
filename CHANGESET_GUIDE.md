@@ -103,6 +103,8 @@ pnpm --filter './packages/*' build && changeset publish
 
 Preview packages are early-access builds from `main`. They do not use Changesets, do not create GitHub Releases, and do not update the `latest` npm tag.
 
+Create changesets with the feature or fix PR that changes package behavior. Do not add a changeset only because you want a preview build. Preview publishing does not consume `.changeset/*.md` files; those changesets remain available for the stable `Version Packages` PR.
+
 To publish a preview:
 
 1. Open GitHub Actions.

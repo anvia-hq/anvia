@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Agent } from "../agent/agent";
 import type { CompletionModel } from "../completion";
 import type { Extractor } from "../extractor";
@@ -29,18 +30,21 @@ export class PipelineBuilder<Input, Output = Input> {
 
   constructor();
   constructor(metadata: PipelineMetadata);
+  constructor(schema: z.ZodType<unknown, Input>);
+  constructor(schema: z.ZodType<unknown, Input>, metadata: PipelineMetadata);
   constructor(executor: (input: Input) => Output | Promise<Output>);
   constructor(executor: PipelineExecutor<Input, Output>, state: PipelineBuilderState);
   constructor(
     metadataOrExecutor?:
       | PipelineMetadata
+      | z.ZodType
       | ((input: Input) => Output | Promise<Output>)
       | PipelineExecutor<Input, Output>,
-    state?: PipelineBuilderState,
+    stateOrMetadata?: PipelineBuilderState | PipelineMetadata,
   ) {
-    if (state !== undefined) {
+    if (stateOrMetadata !== undefined && isBuilderState(stateOrMetadata)) {
       this.executor = metadataOrExecutor as PipelineExecutor<Input, Output>;
-      this.state = state;
+      this.state = stateOrMetadata;
       return;
     }
 
@@ -51,8 +55,17 @@ export class PipelineBuilder<Input, Output = Input> {
       return;
     }
 
+    if (isZodSchema(metadataOrExecutor)) {
+      const schema = metadataOrExecutor;
+      const metadata: PipelineMetadata =
+        stateOrMetadata !== undefined && isPipelineMetadata(stateOrMetadata) ? stateOrMetadata : {};
+      this.executor = ((input) => schema.parse(input)) as PipelineExecutor<Input, Output>;
+      this.state = initialBuilderState(metadata);
+      return;
+    }
+
     this.executor = identity as PipelineExecutor<Input, Output>;
-    this.state = initialBuilderState(metadataOrExecutor ?? {});
+    this.state = initialBuilderState((metadataOrExecutor as PipelineMetadata | undefined) ?? {});
   }
 
   /** Add a synchronous or asynchronous transform stage. */
@@ -212,4 +225,35 @@ export class PipelineBuilder<Input, Output = Input> {
 
 function identity<T>(input: T): T {
   return input;
+}
+
+function isZodSchema(value: unknown): value is z.ZodType {
+  return value instanceof z.ZodType;
+}
+
+function isBuilderState(value: unknown): value is PipelineBuilderState {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    "graph" in candidate &&
+    "terminalNodeId" in candidate &&
+    "terminalNodeIds" in candidate &&
+    "nextNodeIndex" in candidate &&
+    "nextEdgeIndex" in candidate
+  );
+}
+
+function isPipelineMetadata(value: unknown): value is PipelineMetadata {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    "id" in candidate ||
+    "name" in candidate ||
+    "description" in candidate ||
+    "metadata" in candidate
+  );
 }

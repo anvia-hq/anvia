@@ -249,6 +249,55 @@ describe("PipelineBuilder", () => {
       anvia.parallel();
     }
   });
+
+  it("accepts a Zod schema at construction and infers input type", async () => {
+    const op = new PipelineBuilder(z.object({ query: z.string(), limit: z.number() }))
+      .step(({ query, limit }) => `${query}:${limit}`)
+      .build();
+
+    await expect(op.run({ query: "search", limit: 3 })).resolves.toBe("search:3");
+  });
+
+  it("validates input with a Zod schema at runtime", async () => {
+    const op = new PipelineBuilder(z.object({ query: z.string() }))
+      .step(({ query }) => query)
+      .build();
+
+    await expect(op.run({ query: "ok" })).resolves.toBe("ok");
+    await expect(op.run({ query: 42 } as unknown as { query: string })).rejects.toThrow();
+  });
+
+  it("applies Zod defaults when parsing input", async () => {
+    const op = new PipelineBuilder(z.object({ query: z.string(), limit: z.number().default(10) }))
+      .step(({ query, limit }) => `${query}:${limit}`)
+      .build();
+
+    await expect(op.run({ query: "hi" })).resolves.toBe("hi:10");
+  });
+
+  it("accepts a Zod schema with metadata as the second argument", async () => {
+    const op = new PipelineBuilder(z.object({ x: z.string() }), {
+      name: "X Pipeline",
+      description: "desc",
+      metadata: { owner: "test" },
+    })
+      .step(({ x }) => x.toUpperCase())
+      .build();
+
+    await expect(op.run({ x: "ok" })).resolves.toBe("OK");
+    expect(op.name).toBe("X Pipeline");
+    expect(op.description).toBe("desc");
+    expect(op.metadata).toEqual({ owner: "test" });
+  });
+
+  it("keeps existing constructors working alongside the schema overload", async () => {
+    const empty = new PipelineBuilder<string>().step((s: string) => s).build();
+    const metadataOnly = new PipelineBuilder<string>({ name: "M" }).step((s: string) => s).build();
+
+    await expect(empty.run("hi")).resolves.toBe("hi");
+    await expect(metadataOnly.run("hi")).resolves.toBe("hi");
+    expect(metadataOnly.name).toBe("M");
+  });
 });
 
 function unreachable(): boolean {

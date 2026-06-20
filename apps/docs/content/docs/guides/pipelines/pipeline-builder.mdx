@@ -172,7 +172,43 @@ const triage = await ticketPipeline.run({
 });
 ```
 
-## 7. Add Capabilities Gradually
+## 7. Validate Inputs With a Zod Schema
+
+Pass a Zod schema directly to the constructor when you want runtime validation in addition to type inference. The builder infers `Input` and `Output` from the schema with `z.infer<typeof schema>` and parses every call to `pipeline.run(...)`.
+
+```ts
+import { z } from "zod";
+import { PipelineBuilder } from "@anvia/core/pipeline";
+
+const SearchInput = z.object({
+  query: z.string().min(1),
+  limit: z.number().int().positive().default(10),
+});
+
+const searchPipeline = new PipelineBuilder(SearchInput)
+  .step(({ query, limit }) => search(query, limit))
+  .build();
+
+const results = await searchPipeline.run({ query: "anvia" });
+// returns `SearchInput` parsed: { query: "anvia", limit: 10 }
+```
+
+Pass metadata as the second argument when you also want the pipeline to carry a name or description:
+
+```ts
+const searchPipeline = new PipelineBuilder(
+  SearchInput,
+  { name: "Search Pipeline", description: "Validates and runs a search." },
+)
+  .step(({ query, limit }) => search(query, limit))
+  .build();
+
+console.log(searchPipeline.name);
+```
+
+Invalid input throws `ZodError` before any stage runs, so downstream code can assume the schema has already been satisfied.
+
+## 8. Add Capabilities Gradually
 
 Build pipelines in this order:
 

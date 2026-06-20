@@ -144,6 +144,11 @@ Notable errors: observer errors propagate to the run.
 class PipelineBuilder<Input, Output = Input> {
   constructor();
   constructor(metadata: PipelineMetadata);
+  constructor<S extends z.ZodType>(schema: S): PipelineBuilder<z.infer<S>, z.infer<S>>;
+  constructor<S extends z.ZodType>(
+    schema: S,
+    metadata: PipelineMetadata,
+  ): PipelineBuilder<z.infer<S>, z.infer<S>>;
   step<Next>(
     fn: (input: Awaited<Output>) => Next | Promise<Next>,
     metadata?: PipelineStageMetadata,
@@ -164,8 +169,8 @@ class PipelineBuilder<Input, Output = Input> {
 
 Purpose: typed composition of transform functions, operations, agents, and extractors.
 
-Return behavior: each composition method returns a new builder with the inferred output type.
+Return behavior: each composition method returns a new builder with the inferred output type. The Zod schema overloads parse input at runtime, so the inferred `Input` type flows through the chain and invalid inputs throw `ZodError` before any stage runs.
 
-Notable errors: forwards errors from transform functions, nested operations, agents, or extractors.
+Notable errors: forwards errors from transform functions, nested operations, agents, or extractors. Schema overloads additionally throw `ZodError` on input that does not match the schema.
 
 For workflow guidance, see [Pipeline Builder](/docs/guides/pipelines/pipeline-builder).

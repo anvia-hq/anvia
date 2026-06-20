@@ -49,3 +49,8 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Notify Discord
+        run: node scripts/notify-discord-release.mjs preview
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PREVIEW_RELEASE_WEBHOOK_URL }}

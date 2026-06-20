@@ -103,6 +103,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Notify Discord
+        run: node scripts/notify-discord-release.mjs stable
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_STABLE_RELEASE_WEBHOOK_URL }}
+
   deploy-docs:
     name: Deploy stable docs
     if: github.event_name == 'workflow_dispatch'

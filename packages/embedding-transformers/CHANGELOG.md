@@ -1,5 +1,11 @@
 # @anvia/transformers
 
+## 0.2.11
+
+### Patch Changes
+
+- f8b8538: Refactor package entrypoints into barrel exports with focused internal modules.
+
 ## 0.2.10
 
 ### Patch Changes

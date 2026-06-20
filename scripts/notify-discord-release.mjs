@@ -77,6 +77,7 @@ const response = await fetch(webhookUrl, {
   headers: {
     "Content-Type": "application/json",
   },
+  signal: AbortSignal.timeout(10_000),
   body: JSON.stringify({
     embeds: [
       {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { matchesVectorFilter } from "../src/vector-store/filter";
 import {
   AgentBuilder,
   AssistantContent,
@@ -340,6 +341,66 @@ describe("in-memory vector store", () => {
     await expect(store.index(queryModel).search({ query: "base", topK: 1 })).rejects.toThrow(
       "Vector dimension mismatch",
     );
+  });
+});
+
+describe("vector metadata filters", () => {
+  const metadata = {
+    active: true,
+    category: "ops",
+    rank: 3,
+  };
+
+  it("matches absent filters and rejects absent metadata when a filter is present", () => {
+    expect(matchesVectorFilter(undefined, undefined)).toBe(true);
+    expect(matchesVectorFilter(metadata, undefined)).toBe(true);
+    expect(matchesVectorFilter(undefined, vectorFilter.eq("category", "ops"))).toBe(false);
+  });
+
+  it("evaluates equality and ordered comparisons for supported metadata values", () => {
+    expect(matchesVectorFilter(metadata, vectorFilter.eq("category", "ops"))).toBe(true);
+    expect(matchesVectorFilter(metadata, vectorFilter.eq("category", "support"))).toBe(false);
+    expect(matchesVectorFilter(metadata, vectorFilter.gt("rank", 2))).toBe(true);
+    expect(matchesVectorFilter(metadata, vectorFilter.gt("rank", 3))).toBe(false);
+    expect(matchesVectorFilter(metadata, vectorFilter.lt("rank", 4))).toBe(true);
+    expect(matchesVectorFilter(metadata, vectorFilter.lt("rank", 3))).toBe(false);
+    expect(matchesVectorFilter(metadata, vectorFilter.gt("category", "alpha"))).toBe(true);
+    expect(matchesVectorFilter(metadata, vectorFilter.lt("category", "zulu"))).toBe(true);
+    expect(matchesVectorFilter(metadata, vectorFilter.gt("active", false))).toBe(true);
+    expect(matchesVectorFilter(metadata, vectorFilter.lt("active", true))).toBe(false);
+  });
+
+  it("does not match ordered comparisons for missing or mixed-type values", () => {
+    expect(matchesVectorFilter(metadata, vectorFilter.gt("missing", 1))).toBe(false);
+    expect(matchesVectorFilter(metadata, vectorFilter.lt("rank", "4"))).toBe(false);
+    expect(matchesVectorFilter(metadata, vectorFilter.gt("active", 0))).toBe(false);
+  });
+
+  it("combines filters with boolean operators", () => {
+    expect(
+      matchesVectorFilter(
+        metadata,
+        vectorFilter.and(vectorFilter.eq("category", "ops"), vectorFilter.gt("rank", 2)),
+      ),
+    ).toBe(true);
+    expect(
+      matchesVectorFilter(
+        metadata,
+        vectorFilter.and(vectorFilter.eq("category", "ops"), vectorFilter.lt("rank", 2)),
+      ),
+    ).toBe(false);
+    expect(
+      matchesVectorFilter(
+        metadata,
+        vectorFilter.or(vectorFilter.eq("category", "support"), vectorFilter.eq("rank", 3)),
+      ),
+    ).toBe(true);
+    expect(
+      matchesVectorFilter(
+        metadata,
+        vectorFilter.or(vectorFilter.eq("category", "support"), vectorFilter.eq("rank", 4)),
+      ),
+    ).toBe(false);
   });
 });
 

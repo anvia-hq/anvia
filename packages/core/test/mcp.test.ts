@@ -157,6 +157,65 @@ describe("MCP tools", () => {
     expect(client.callToolCalls).toEqual([{ name: "add", arguments: { x: 2, y: 5 } }]);
   });
 
+  it("omits null MCP arguments and rejects non-object arguments", async () => {
+    const client = fakeMcpClient({
+      tools: [
+        {
+          name: "ping",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+      result: { content: [{ type: "text", text: "pong" }] },
+    });
+    const server = await connectMcp(fakeConnection("ping", client));
+
+    await expect(server.tools[0]?.call(null)).resolves.toBe("pong");
+    expect(client.callToolCalls).toEqual([{ name: "ping" }]);
+    await expect(server.tools[0]?.call("bad")).rejects.toThrow(
+      "MCP tool arguments must be a JSON object",
+    );
+  });
+
+  it("maps direct MCP toolResult payloads", async () => {
+    const stringClient = fakeMcpClient({
+      tools: [
+        {
+          name: "string_result",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+      result: { toolResult: "done", content: [] },
+    });
+    const objectClient = fakeMcpClient({
+      tools: [
+        {
+          name: "object_result",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+      result: { toolResult: { ok: true }, content: [] },
+    });
+    const undefinedClient = fakeMcpClient({
+      tools: [
+        {
+          name: "undefined_result",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+      result: { toolResult: undefined, content: [] },
+    });
+
+    await expect(
+      (await connectMcp(fakeConnection("string", stringClient))).tools[0]?.call({}),
+    ).resolves.toBe("done");
+    await expect(
+      (await connectMcp(fakeConnection("object", objectClient))).tools[0]?.call({}),
+    ).resolves.toBe('{"ok":true}');
+    await expect(
+      (await connectMcp(fakeConnection("undefined", undefinedClient))).tools[0]?.call({}),
+    ).resolves.toBe("undefined");
+  });
+
   it("maps image and resource MCP tool results", async () => {
     const client = fakeMcpClient({
       tools: [
@@ -206,6 +265,23 @@ describe("MCP tools", () => {
     const errorServer = await connectMcp(fakeConnection("errors", errorClient));
 
     await expect(errorServer.tools[0]?.call({})).rejects.toThrow("denied");
+
+    const fallbackErrorClient = fakeMcpClient({
+      tools: [
+        {
+          name: "fallback_fail",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+      ],
+      result: { isError: true, content: [{ type: "image", mimeType: "image/png", data: "abc" }] },
+    });
+    const fallbackErrorServer = await connectMcp(
+      fakeConnection("fallback-errors", fallbackErrorClient),
+    );
+
+    await expect(fallbackErrorServer.tools[0]?.call({})).rejects.toThrow(
+      "MCP tool returned an error",
+    );
 
     const unsupportedClient = fakeMcpClient({
       tools: [

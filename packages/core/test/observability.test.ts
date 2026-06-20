@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import {
+  ActiveGenerationObservers,
+  ActiveToolObservers,
+  startAgentRunObservers,
+} from "../src/observability/group";
 import * as anvia from "./helpers/imports";
 import {
   AgentBuilder,
   type AgentGenerationEndArgs,
+  type AgentGenerationErrorArgs,
+  type AgentGenerationStartArgs,
   type AgentObserver,
   type AgentRunEndArgs,
   type AgentRunErrorArgs,
   type AgentRunObserver,
   type AgentRunStartArgs,
   type AgentToolEndArgs,
+  type AgentToolErrorArgs,
+  type AgentToolStartArgs,
+  type AgentToolStreamEventArgs,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -20,6 +30,7 @@ import {
   type JsonObject,
   type StreamingCompletionModel,
   skipTool,
+  type ToolCall,
   Usage,
 } from "./helpers/imports";
 
@@ -372,11 +383,309 @@ describe("agent observability", () => {
   });
 });
 
+describe("active agent observer groups", () => {
+  it("skips undefined run observers and selects the first available trace", async () => {
+    const runObserver = createRunObserver({
+      trace: { traceId: "trace_1", observationId: "obs_1" },
+    });
+
+    const active = await startAgentRunObservers(
+      [{ observer: { startRun: () => undefined } }, { observer: { startRun: () => runObserver } }],
+      runStartArgs(),
+      false,
+    );
+
+    expect(active.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
+  });
+
+  it("swallows run observer start failures unless global or registration strict mode is enabled", async () => {
+    const error = new Error("start failed");
+    const registration = {
+      observer: {
+        startRun() {
+          throw error;
+        },
+      },
+    };
+
+    await expect(
+      startAgentRunObservers([registration], runStartArgs(), false),
+    ).resolves.toMatchObject({
+      trace: undefined,
+    });
+    await expect(startAgentRunObservers([registration], runStartArgs(), true)).rejects.toThrow(
+      error,
+    );
+    await expect(
+      startAgentRunObservers(
+        [{ ...registration, failOnObserverError: true }],
+        runStartArgs(),
+        false,
+      ),
+    ).rejects.toThrow(error);
+  });
+
+  it("swallows nested observer failures in non-strict mode", async () => {
+    const error = new Error("nested failed");
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                startGeneration: () => {
+                  throw error;
+                },
+                startTool: () => {
+                  throw error;
+                },
+                end: () => {
+                  throw error;
+                },
+                error: () => {
+                  throw error;
+                },
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    await expect(active.startGeneration(generationStartArgs())).resolves.toBeInstanceOf(
+      ActiveGenerationObservers,
+    );
+    await expect(active.startTool(toolStartArgs())).resolves.toBeInstanceOf(ActiveToolObservers);
+    await expect(active.end(runEndArgs())).resolves.toBeUndefined();
+    await expect(active.error(runErrorArgs())).resolves.toBeUndefined();
+  });
+
+  it("throws nested observer failures in strict mode", async () => {
+    const error = new Error("strict failed");
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                startGeneration: () => {
+                  throw error;
+                },
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      true,
+    );
+
+    await expect(active.startGeneration(generationStartArgs())).rejects.toThrow(error);
+  });
+
+  it("handles missing optional generation and tool observer methods", async () => {
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                startGeneration: () => undefined,
+                startTool: () => undefined,
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    const generationObservers = await active.startGeneration(generationStartArgs());
+    const toolObservers = await active.startTool(toolStartArgs());
+
+    await expect(generationObservers.error(generationErrorArgs())).resolves.toBeUndefined();
+    await expect(toolObservers.streamEvent(toolStreamEventArgs())).resolves.toBeUndefined();
+    await expect(toolObservers.error(toolErrorArgs())).resolves.toBeUndefined();
+  });
+
+  it("skips absent optional callbacks on active observers", async () => {
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                startGeneration: () => ({
+                  end() {},
+                }),
+                startTool: () => ({
+                  end() {},
+                }),
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    const generationObservers = await active.startGeneration(generationStartArgs());
+    const toolObservers = await active.startTool(toolStartArgs());
+
+    await expect(active.error(runErrorArgs())).resolves.toBeUndefined();
+    await expect(generationObservers.error(generationErrorArgs())).resolves.toBeUndefined();
+    await expect(toolObservers.streamEvent(toolStreamEventArgs())).resolves.toBeUndefined();
+    await expect(toolObservers.error(toolErrorArgs())).resolves.toBeUndefined();
+  });
+
+  it("applies strict handling inside generation and tool observer groups", async () => {
+    const error = new Error("group failed");
+    const generation = new ActiveGenerationObservers(
+      [
+        {
+          end() {
+            throw error;
+          },
+          error() {
+            throw error;
+          },
+        },
+      ],
+      true,
+    );
+    const tool = new ActiveToolObservers(
+      [
+        {
+          streamEvent() {
+            throw error;
+          },
+          end() {
+            throw error;
+          },
+          error() {
+            throw error;
+          },
+        },
+      ],
+      true,
+    );
+
+    await expect(generation.end(generationEndArgs())).rejects.toThrow(error);
+    await expect(generation.error(generationErrorArgs())).rejects.toThrow(error);
+    await expect(tool.streamEvent(toolStreamEventArgs())).rejects.toThrow(error);
+    await expect(tool.end(toolEndArgs())).rejects.toThrow(error);
+    await expect(tool.error(toolErrorArgs())).rejects.toThrow(error);
+  });
+});
+
 function response(choice: CompletionResponse["choice"]): CompletionResponse {
   return {
     choice,
     usage: Usage.empty(),
     rawResponse: {},
+  };
+}
+
+function createRunObserver(overrides: Partial<AgentRunObserver> = {}): AgentRunObserver {
+  return {
+    end() {},
+    ...overrides,
+  };
+}
+
+function runStartArgs(): AgentRunStartArgs {
+  return {
+    prompt: { role: "user", content: [{ type: "text", text: "hello" }] },
+    history: [],
+    maxTurns: 3,
+  };
+}
+
+function runEndArgs(): AgentRunEndArgs {
+  return {
+    output: "ok",
+    usage: Usage.empty(),
+    messages: [],
+  };
+}
+
+function runErrorArgs(): AgentRunErrorArgs {
+  return {
+    error: new Error("run failed"),
+    usage: Usage.empty(),
+    messages: [],
+  };
+}
+
+function generationStartArgs(): AgentGenerationStartArgs {
+  return {
+    turn: 0,
+    request: {
+      chatHistory: [],
+      documents: [],
+      tools: [],
+    },
+  };
+}
+
+function generationEndArgs(): AgentGenerationEndArgs {
+  return {
+    turn: 0,
+    response: response([AssistantContent.text("ok")]),
+  };
+}
+
+function generationErrorArgs(): AgentGenerationErrorArgs {
+  return {
+    turn: 0,
+    error: new Error("generation failed"),
+  };
+}
+
+function toolStartArgs(): AgentToolStartArgs {
+  return {
+    turn: 0,
+    toolCall: toolCall(),
+    toolName: "add",
+    args: '{"x":1,"y":2}',
+    internalCallId: "internal_1",
+    toolCallId: "call_1",
+  };
+}
+
+function toolEndArgs(): AgentToolEndArgs {
+  return {
+    ...toolStartArgs(),
+    result: "3",
+    skipped: false,
+  };
+}
+
+function toolErrorArgs(): AgentToolErrorArgs {
+  return {
+    ...toolStartArgs(),
+    error: new Error("tool failed"),
+  };
+}
+
+function toolStreamEventArgs(): AgentToolStreamEventArgs {
+  return {
+    ...toolStartArgs(),
+    event: {
+      agentId: "agent_1",
+      event: { chunk: '{"x":1' },
+    },
+  };
+}
+
+function toolCall(): ToolCall {
+  return {
+    type: "tool_call",
+    id: "call_1",
+    function: {
+      name: "add",
+      arguments: { x: 1, y: 2 },
+    },
   };
 }
 

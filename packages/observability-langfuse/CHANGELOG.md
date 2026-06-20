@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 0.2.8
+
+### Patch Changes
+
+- f8b8538: Refactor package entrypoints into barrel exports with focused internal modules.
+
 ## 0.2.7
 
 ### Patch Changes

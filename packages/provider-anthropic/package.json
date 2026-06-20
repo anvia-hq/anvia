@@ -33,13 +33,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.1",
-    "@anvia/core": "^0.7.0"
+    "@anthropic-ai/sdk": "^0.104.1"
   },
   "devDependencies": {
+    "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "^0.7.0"
   }
 }

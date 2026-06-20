@@ -31,15 +31,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "workspace:*",
     "pg": "^8.21.0",
     "pgvector": "^0.3.0"
   },
   "devDependencies": {
+    "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "@types/pg": "^8.15.6",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "^0.7.0"
   }
 }

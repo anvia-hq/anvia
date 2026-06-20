@@ -31,15 +31,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "^0.7.0",
     "@langfuse/otel": "^5.4.1",
     "@langfuse/tracing": "^5.4.1",
     "@opentelemetry/sdk-node": "^0.219.0"
   },
   "devDependencies": {
+    "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "^0.7.0"
   }
 }

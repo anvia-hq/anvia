@@ -1,0 +1,19 @@
+{
+  "name": "peer-core-compat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pretypecheck": "pnpm --filter @anvia/openai --filter @anvia/studio build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/openai": "workspace:*",
+    "@anvia/studio": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "typescript": "^5.9.3"
+  }
+}

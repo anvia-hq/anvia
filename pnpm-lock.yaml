@@ -237,6 +237,25 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/peer-core-compat:
+    dependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@anvia/openai':
+        specifier: workspace:*
+        version: link:../../packages/provider-openai
+      '@anvia/studio':
+        specifier: workspace:*
+        version: link:../../packages/tool-studio
+    devDependencies:
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.12.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/core:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -270,13 +289,13 @@ importers:
 
   packages/embedding-fastembed:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       fastembed:
         specifier: ^2.1.0
         version: 2.1.0
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -292,13 +311,13 @@ importers:
 
   packages/embedding-transformers:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@huggingface/transformers':
         specifier: ^4.2.0
         version: 4.2.0
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -314,13 +333,13 @@ importers:
 
   packages/logger:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       pino:
         specifier: ^10.3.1
         version: 10.3.1
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -336,9 +355,6 @@ importers:
 
   packages/observability-langfuse:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@langfuse/otel':
         specifier: ^5.4.1
         version: 5.4.1(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
@@ -349,6 +365,9 @@ importers:
         specifier: ^0.219.0
         version: 0.219.0(@opentelemetry/api@1.9.1)
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -364,13 +383,13 @@ importers:
 
   packages/observability-otel:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -389,10 +408,10 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.104.1
         version: 0.104.1(zod@4.4.3)
+    devDependencies:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -408,13 +427,13 @@ importers:
 
   packages/provider-gemini:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@google/genai':
         specifier: ^2.8.0
         version: 2.8.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -430,13 +449,13 @@ importers:
 
   packages/provider-mistral:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@mistralai/mistralai':
         specifier: ^2.2.5
         version: 2.2.5
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -452,13 +471,13 @@ importers:
 
   packages/provider-openai:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       openai:
         specifier: ^6.42.0
         version: 6.42.0(ws@8.21.0)(zod@4.4.3)
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -528,13 +547,13 @@ importers:
 
   packages/tool-sandbox:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       zod:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -550,9 +569,6 @@ importers:
 
   packages/tool-studio:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@anvia/react':
         specifier: workspace:*
         version: link:../react
@@ -608,6 +624,9 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@tailwindcss/typography':
         specifier: ^0.5.19
         version: 0.5.19(tailwindcss@4.2.4)
@@ -647,13 +666,13 @@ importers:
 
   packages/vector-chroma:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       chromadb:
         specifier: ^3.4.3
         version: 3.4.3
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -669,13 +688,13 @@ importers:
 
   packages/vector-lancedb:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@lancedb/lancedb':
         specifier: ^0.13.0
         version: 0.13.0(apache-arrow@17.0.0)
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -691,13 +710,13 @@ importers:
 
   packages/vector-milvus:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@zilliz/milvus2-sdk-node':
         specifier: ^2.5.0
         version: 2.6.17
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -713,9 +732,6 @@ importers:
 
   packages/vector-pgvector:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       pg:
         specifier: ^8.21.0
         version: 8.21.0
@@ -723,6 +739,9 @@ importers:
         specifier: ^0.3.0
         version: 0.3.0
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -741,13 +760,13 @@ importers:
 
   packages/vector-pinecone:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@pinecone-database/pinecone':
         specifier: ^5.1.0
         version: 5.1.2
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -763,13 +782,13 @@ importers:
 
   packages/vector-qdrant:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       '@qdrant/js-client-rest':
         specifier: ^1.18.0
         version: 1.18.0(typescript@5.9.3)
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -785,13 +804,13 @@ importers:
 
   packages/vector-redis:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       redis:
         specifier: ^4.7.0
         version: 4.7.1
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -807,13 +826,13 @@ importers:
 
   packages/vector-weaviate:
     dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
       weaviate-client:
         specifier: ^3.5.0
         version: 3.13.1
     devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2

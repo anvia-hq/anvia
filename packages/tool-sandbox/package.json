@@ -32,13 +32,16 @@
     "typecheck": "pnpm run build:deps && tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "^0.7.0"
   }
 }

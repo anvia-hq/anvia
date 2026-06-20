@@ -32,7 +32,6 @@
     "typecheck": "pnpm run build:deps && tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/core": "workspace:*",
     "@anvia/react": "workspace:*",
     "@anvia/server": "workspace:*",
     "@hono/node-server": "^2.0.4",
@@ -53,6 +52,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@anvia/core": "workspace:*",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.4",
     "@types/node": "^24.9.1",
@@ -65,5 +65,8 @@
     "typescript": "^5.9.3",
     "vite": "^8.0.10",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "^0.7.0"
   }
 }

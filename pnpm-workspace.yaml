@@ -2,8 +2,6 @@ packages:
   - "packages/*"
   - "apps/*"
   - "examples/*"
-overrides:
-  '@anvia/core': "workspace:*"
 allowBuilds:
   '@google/genai': true
   esbuild: true
@@ -11,3 +9,11 @@ allowBuilds:
   protobufjs: true
   sharp: true
   workerd: true
+overrides:
+  '@anvia/core': "workspace:*"
+patchedDependencies:
+  apache-arrow@17.0.0: patches/apache-arrow@17.0.0.patch
+packageExtensions:
+  apache-arrow@17.0.0:
+    bin:
+      arrow2csv: bin/arrow2csv.js

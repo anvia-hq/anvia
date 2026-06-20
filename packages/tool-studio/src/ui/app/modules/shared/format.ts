@@ -172,7 +172,7 @@ export function parseToolDisplayValue(
 }
 
 export function titleFromText(text: string): string {
-  const normalized = text.replace(/s+/g, " ").trim();
+  const normalized = text.replace(/\s+/g, " ").trim();
   return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
 }
 

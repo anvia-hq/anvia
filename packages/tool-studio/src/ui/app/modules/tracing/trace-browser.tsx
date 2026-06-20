@@ -1171,7 +1171,7 @@ function plainTraceText(value: unknown): string {
   }
 }
 
-function traceTurns(trace: StudioTrace): Array<{
+export function traceTurns(trace: StudioTrace): Array<{
   turn: number;
   observations: TraceObservationItem[];
   durationMs?: number;
@@ -1198,7 +1198,7 @@ type TraceObservationNode = {
   children: TraceObservationNode[];
 };
 
-function traceObservationTree(observations: TraceObservationItem[]): TraceObservationNode[] {
+export function traceObservationTree(observations: TraceObservationItem[]): TraceObservationNode[] {
   const nodes = new Map<string, TraceObservationNode>();
   for (const observation of observations) {
     nodes.set(observation.id, { observation, children: [] });
@@ -1221,7 +1221,7 @@ function traceObservationTree(observations: TraceObservationItem[]): TraceObserv
   return roots;
 }
 
-function selectedTraceDetail(
+export function selectedTraceDetail(
   trace: StudioTrace,
   turns: Array<{ turn: number; observations: TraceObservationItem[]; durationMs?: number }>,
   activeKey: TraceInspectorKey,
@@ -1298,7 +1298,7 @@ function selectedTraceDetail(
   };
 }
 
-function traceDetailMetadata(trace: StudioTrace): Record<string, unknown> {
+export function traceDetailMetadata(trace: StudioTrace): Record<string, unknown> {
   const metadata = isRecord(trace.metadata) ? trace.metadata : {};
   const traceGroup = compactTraceMetadata({
     status: trace.status,
@@ -1343,7 +1343,9 @@ function turnDetailMetadata(
   });
 }
 
-function observationDetailMetadata(observation: TraceObservationItem): Record<string, unknown> {
+export function observationDetailMetadata(
+  observation: TraceObservationItem,
+): Record<string, unknown> {
   const metadata = isRecord(observation.metadata) ? observation.metadata : {};
   const base = compactTraceMetadata({
     ...metadata,
@@ -1443,7 +1445,7 @@ function timingMetadata(metadata: Record<string, unknown>): Record<string, unkno
   return Object.keys(group).length === 0 ? undefined : group;
 }
 
-function observationStatusSummary(observations: TraceObservationItem[]): string {
+export function observationStatusSummary(observations: TraceObservationItem[]): string {
   if (observations.length === 0) {
     return "empty";
   }
@@ -1460,18 +1462,20 @@ function traceMessageCount(value: unknown): number | undefined {
   return Array.isArray(value) ? value.length : undefined;
 }
 
-function compactTraceMetadata(values: Record<string, unknown>): Record<string, unknown> {
+export function compactTraceMetadata(values: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 }
 
-function traceObservationLabel(observation: TraceObservationItem): string {
+export function traceObservationLabel(observation: TraceObservationItem): string {
   if (observation.kind === "agent") {
     return observation.name;
   }
   return observation.kind === "tool" ? `tool.${observation.name}` : observation.name;
 }
 
-function firstDeltaMsFromObservations(observations: TraceObservationItem[]): number | undefined {
+export function firstDeltaMsFromObservations(
+  observations: TraceObservationItem[],
+): number | undefined {
   for (const observation of observations) {
     const firstDeltaMs = firstDeltaMsFromMetadata(observation.metadata);
     if (firstDeltaMs !== undefined) {
@@ -1533,14 +1537,14 @@ function traceToneIconClass(
   }
 }
 
-function observationUsageText(observation: TraceObservationItem): string {
+export function observationUsageText(observation: TraceObservationItem): string {
   if (!isRecord(observation.output) || !isRecord(observation.output.usage)) {
     return "";
   }
   return formatUsageValue(observation.output.usage);
 }
 
-function turnUsageText(observations: TraceObservationItem[]): string {
+export function turnUsageText(observations: TraceObservationItem[]): string {
   const totals = observations
     .map(observationUsageText)
     .filter((usage) => usage.length > 0)

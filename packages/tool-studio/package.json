@@ -28,6 +28,7 @@
   "scripts": {
     "build": "pnpm run build:deps && tsup && vite build --config vite.config.ts",
     "build:deps": "(test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build) && pnpm --filter @anvia/server --filter @anvia/react build",
+    "coverage": "pnpm run build:deps && vitest run --coverage",
     "test": "pnpm run build:deps && vitest run",
     "typecheck": "pnpm run build:deps && tsc --noEmit"
   },

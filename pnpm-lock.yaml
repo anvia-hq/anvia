@@ -7,6 +7,9 @@ settings:
 overrides:
   '@anvia/core': workspace:*
 
+patchedDependencies:
+  apache-arrow@17.0.0: f4a2f3a4aa360f366808f6ed229209c19761b8d49412347605ff3d36e7a5e7ab
+
 importers:
 
   .:
@@ -693,7 +696,7 @@ importers:
     dependencies:
       '@lancedb/lancedb':
         specifier: ^0.30.0
-        version: 0.30.0(apache-arrow@17.0.0)
+        version: 0.30.0(apache-arrow@17.0.0(patch_hash=f4a2f3a4aa360f366808f6ed229209c19761b8d49412347605ff3d36e7a5e7ab))
     devDependencies:
       '@anvia/core':
         specifier: workspace:*
@@ -9036,9 +9039,9 @@ snapshots:
   '@lancedb/lancedb-win32-x64-msvc@0.30.0':
     optional: true
 
-  '@lancedb/lancedb@0.30.0(apache-arrow@17.0.0)':
+  '@lancedb/lancedb@0.30.0(apache-arrow@17.0.0(patch_hash=f4a2f3a4aa360f366808f6ed229209c19761b8d49412347605ff3d36e7a5e7ab))':
     dependencies:
-      apache-arrow: 17.0.0
+      apache-arrow: 17.0.0(patch_hash=f4a2f3a4aa360f366808f6ed229209c19761b8d49412347605ff3d36e7a5e7ab)
       reflect-metadata: 0.2.2
     optionalDependencies:
       '@lancedb/lancedb-darwin-arm64': 0.30.0
@@ -11422,7 +11425,7 @@ snapshots:
 
   anynum@1.0.0: {}
 
-  apache-arrow@17.0.0:
+  apache-arrow@17.0.0(patch_hash=f4a2f3a4aa360f366808f6ed229209c19761b8d49412347605ff3d36e7a5e7ab):
     dependencies:
       '@swc/helpers': 0.5.23
       '@types/command-line-args': 5.2.3

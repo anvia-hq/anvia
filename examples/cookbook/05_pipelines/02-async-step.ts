@@ -1,6 +1,7 @@
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-const fetchCustomerProfile = new PipelineBuilder<string>()
+const fetchCustomerProfile = new PipelineBuilder(z.string())
   .step(async (customerId) => {
     await delay(10);
     return {

@@ -10,9 +10,9 @@ The worker owns execution. It should mark jobs running, call `pipeline.run(...)`
 ```ts
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { ticketAgent, ticketExtractor } from "./ai";
-import type { TicketJobData } from "./schema";
+import { ticketInputSchema } from "./schema";
 
-export const ticketPipeline = new PipelineBuilder<TicketJobData>({
+export const ticketPipeline = new PipelineBuilder(ticketInputSchema, {
   id: "ticket-triage-pipeline",
   name: "Ticket triage pipeline",
 })

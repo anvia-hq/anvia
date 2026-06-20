@@ -74,7 +74,7 @@ Keep nested agents narrow. A broad agent calling another broad agent usually mak
 Use a pipeline when the job has explicit typed stages that should be tested, reused, or observed independently.
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((input) => input.trim())
   .prompt(triageAgent)
   .extract(ticketExtractor)

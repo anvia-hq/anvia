@@ -60,7 +60,7 @@ const agent = new AgentBuilder("studio-persistent-ops", model)
   .defaultMaxTurns(4)
   .build();
 
-const escalationPipeline = new PipelineBuilder<string>({
+const escalationPipeline = new PipelineBuilder(z.string(), {
   id: "persistent-escalation-pipeline",
   name: "Persistent Escalation Pipeline",
   description: "Creates pipeline logs and replayable run history in the same SQLite store.",

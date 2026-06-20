@@ -94,7 +94,7 @@ The summarizer creates readable synthesis. The extractor turns that synthesis in
 ## 4. Compose the Pipeline
 
 ```ts
-const researchPipeline = new PipelineBuilder<string>()
+const researchPipeline = new PipelineBuilder(z.string())
   .step(async (query): Promise<ResearchPacket> => ({
     query,
     results: await searchWeb(query),

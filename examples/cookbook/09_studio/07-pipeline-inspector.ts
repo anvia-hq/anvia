@@ -2,6 +2,7 @@ import { AgentBuilder } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
+import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
@@ -21,7 +22,7 @@ const replyAgent = new AgentBuilder("studio-reply-drafter", replyModel)
   )
   .build();
 
-const ticketPipeline = new PipelineBuilder<string>({
+const ticketPipeline = new PipelineBuilder(z.string(), {
   id: "ticket-triage-pipeline",
   name: "Ticket Triage Pipeline",
   description: "Normalizes a ticket, computes metadata, then drafts a reply.",
@@ -35,12 +36,12 @@ const ticketPipeline = new PipelineBuilder<string>({
   })
   .parallel(
     {
-      classification: new PipelineBuilder<string>()
+      classification: new PipelineBuilder(z.string())
         .step((ticket) => ({
           topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
         }))
         .build(),
-      priority: new PipelineBuilder<string>()
+      priority: new PipelineBuilder(z.string())
         .step((ticket) => ({
           priority:
             ticket.toLowerCase().includes("outage") || ticket.toLowerCase().includes("enterprise")

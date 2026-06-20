@@ -1,19 +1,20 @@
 import { PipelineBuilder } from "@anvia/core/pipeline";
+import { z } from "zod";
 
-const classifyText = new PipelineBuilder<string>()
+const classifyText = new PipelineBuilder(z.string())
   .step((text) => ({
     topic: text.toLowerCase().includes("payment") ? "billing" : "operations",
   }))
   .build();
 
-const extractSignals = new PipelineBuilder<string>()
+const extractSignals = new PipelineBuilder(z.string())
   .step((text) => ({
     hasOutage: text.toLowerCase().includes("outage"),
     hasEnterpriseCustomer: text.toLowerCase().includes("enterprise"),
   }))
   .build();
 
-const estimatePriority = new PipelineBuilder<string>()
+const estimatePriority = new PipelineBuilder(z.string())
   .step((text) => ({
     priority:
       text.toLowerCase().includes("outage") || text.toLowerCase().includes("missed orders")
@@ -22,7 +23,7 @@ const estimatePriority = new PipelineBuilder<string>()
   }))
   .build();
 
-const triage = new PipelineBuilder<string>()
+const triage = new PipelineBuilder(z.string())
   .parallel({
     classification: classifyText,
     signals: extractSignals,

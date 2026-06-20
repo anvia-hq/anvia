@@ -1,6 +1,7 @@
 import { AgentBuilder } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
@@ -19,7 +20,7 @@ const analyst = new AgentBuilder("analyst", analystModel)
   )
   .build();
 
-const executiveUpdate = new PipelineBuilder<string[]>()
+const executiveUpdate = new PipelineBuilder(z.array(z.string()))
   .step((notes) => notes.map((note) => `- ${note}`).join("\n"))
   .step((notes) => `Prepare an executive update from these notes:\n\n${notes}`)
   .prompt(analyst)

@@ -1,5 +1,6 @@
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { Studio } from "@anvia/studio";
+import { z } from "zod";
 
 type OrderSnapshot = {
   id: string;
@@ -29,7 +30,7 @@ const orders: Record<string, OrderSnapshot> = {
   },
 };
 
-const orderStatusPipeline = new PipelineBuilder<string>({
+const orderStatusPipeline = new PipelineBuilder(z.string(), {
   id: "order-status-pipeline",
   name: "Order Status Pipeline",
   description:
@@ -78,7 +79,7 @@ const orderStatusPipeline = new PipelineBuilder<string>({
   )
   .build();
 
-const ticketRoutingPipeline = new PipelineBuilder<string>({
+const ticketRoutingPipeline = new PipelineBuilder(z.string(), {
   id: "ticket-routing-pipeline",
   name: "Ticket Routing Pipeline",
   description: "Classifies a pasted support ticket and recommends an operational route.",
@@ -93,12 +94,12 @@ const ticketRoutingPipeline = new PipelineBuilder<string>({
   })
   .parallel(
     {
-      classification: new PipelineBuilder<string>()
+      classification: new PipelineBuilder(z.string())
         .step((ticket) => ({
           topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
         }))
         .build(),
-      priority: new PipelineBuilder<string>()
+      priority: new PipelineBuilder(z.string())
         .step((ticket) => ({
           priority:
             ticket.toLowerCase().includes("outage") ||
@@ -108,7 +109,7 @@ const ticketRoutingPipeline = new PipelineBuilder<string>({
               : "normal",
         }))
         .build(),
-      routing: new PipelineBuilder<string>()
+      routing: new PipelineBuilder(z.string())
         .step((ticket) => ({
           team: ticket.toLowerCase().includes("payment") ? "billing-ops" : "support-ops",
         }))

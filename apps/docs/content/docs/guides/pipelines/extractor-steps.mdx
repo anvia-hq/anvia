@@ -26,7 +26,7 @@ const extractor = new ExtractorBuilder(model, triageSchema)
 ## 2. Extract Inside the Pipeline
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((ticket) => `Summarize this ticket:\n\n${ticket}`)
   .prompt(summarizer)
   .extract(extractor)
@@ -44,7 +44,7 @@ console.log(triage.priority);
 ## 3. Add Application Logic After Extraction
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .prompt(summarizer)
   .extract(extractor)
   .step((triage) => ({

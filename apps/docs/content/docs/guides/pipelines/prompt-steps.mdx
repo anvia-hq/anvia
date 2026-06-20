@@ -16,7 +16,7 @@ const summarizer = new AgentBuilder("summarizer", model)
 ## 2. Prepare the Prompt
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((ticket) => `Summarize this support ticket:\n\n${ticket}`)
   .prompt(summarizer)
   .build();
@@ -27,7 +27,7 @@ const pipeline = new PipelineBuilder<string>()
 ## 3. Continue After the Prompt
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((ticket) => `Summarize this support ticket:\n\n${ticket}`)
   .prompt(summarizer)
   .step((summary) => summary.trim())
@@ -45,7 +45,7 @@ const agent = new AgentBuilder("triage", model)
   .instructions("Classify support urgency using the company policy.")
   .build();
 
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step((ticket) => `Ticket:\n${ticket}`)
   .prompt(agent)
   .build();

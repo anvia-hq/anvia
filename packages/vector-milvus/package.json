@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@zilliz/milvus2-sdk-node": "^2.5.0"
+    "@zilliz/milvus2-sdk-node": "^3.0.3"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

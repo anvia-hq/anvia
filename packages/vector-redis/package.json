@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "redis": "^4.7.0"
+    "redis": "^6.0.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

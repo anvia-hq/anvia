@@ -8,13 +8,13 @@ Steps are the basic unit of a pipeline. Use them for parsing, normalization, enr
 ## 1. Transform the Input
 
 ```ts
-type TicketInput = {
-  customer: string;
-  subject: string;
-  body: string;
-};
+const TicketInput = z.object({
+  customer: z.string(),
+  subject: z.string(),
+  body: z.string(),
+});
 
-const pipeline = new PipelineBuilder<TicketInput>()
+const pipeline = new PipelineBuilder(TicketInput)
   .step((ticket) => ({
     ...ticket,
     customer: ticket.customer.trim(),
@@ -39,7 +39,7 @@ The first step receives the `run(...)` input.
 ## 2. Return a New Shape
 
 ```ts
-const pipeline = new PipelineBuilder<number>()
+const pipeline = new PipelineBuilder(z.number())
   .step((dollars) => Math.round(dollars * 100))
   .step((cents) => ({
     cents,
@@ -55,7 +55,12 @@ Each next step receives the value returned by the previous step. In this example
 ## 3. Use Async Steps
 
 ```ts
-const pipeline = new PipelineBuilder<{ email: string; subject: string }>()
+const PipelineInput = z.object({
+  email: z.email(),
+  subject: z.string(),
+});
+
+const pipeline = new PipelineBuilder(PipelineInput)
   .step(async (input) => ({
     user: await users.findByEmail(input.email),
     subject: input.subject,
@@ -75,7 +80,7 @@ Async steps are awaited before the next stage runs.
 Prefer several simple steps over one large function:
 
 ```ts
-const pipeline = new PipelineBuilder<string>()
+const pipeline = new PipelineBuilder(z.string())
   .step(parseInboundEmail)
   .step(normalizeTicketFields)
   .step(loadCustomerContext)

@@ -5,27 +5,30 @@ description: Compose multi-step workflows with Anvia pipelines.
 
 Use `PipelineBuilder` when a workflow should be explicit, testable, and made from named stages instead of one large prompt.
 
-## 1. Start With Input and Output Types
+## 1. Start With an Input Schema
 
 ```ts
+import { z } from "zod";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 
-const pipeline = new PipelineBuilder<string>();
+const pipeline = new PipelineBuilder(z.string());
 ```
 
-`PipelineBuilder<Input, Output = Input>` tracks two types:
+Pass a Zod schema to `PipelineBuilder`. The schema defines the input accepted by `run(...)`, validates every run at runtime, and gives TypeScript the parsed value type for the first stage.
+
+`PipelineBuilder` tracks two types from that schema:
 
 | Type | Meaning |
 | --- | --- |
-| `Input` | The value accepted by `run(...)` after `.build()`. |
-| `Output` | The current value after the latest stage. It starts as `Input` and changes as stages return new values. |
+| `Input` | The value accepted by `run(...)`. This is the schema input type. |
+| `Output` | The current value after the latest stage. It starts as the parsed schema output and changes as stages return new values. |
 
-Most pipelines only set the first generic. TypeScript infers the output after every `.step(...)`, `.use(...)`, `.parallel(...)`, `.prompt(...)`, and `.extract(...)`.
+TypeScript infers the output after every `.step(...)`, `.use(...)`, `.parallel(...)`, `.prompt(...)`, and `.extract(...)`.
 
 ## 2. Build, Then Run
 
 ```ts
-const normalizeTicket = new PipelineBuilder<string>()
+const normalizeTicket = new PipelineBuilder(z.string())
   .step((input) => input.trim())
   .step((input) => input.replace(/\s+/g, " "))
   .build();
@@ -55,11 +58,11 @@ The builder describes the pipeline. `.build()` returns the runnable `Pipeline<In
 Pipelines are not limited to strings. A step can return an object, array, number, or any other TypeScript value.
 
 ```ts
-type SupportTicketInput = {
-  customer: string;
-  subject: string;
-  body: string;
-};
+const SupportTicketInput = z.object({
+  customer: z.string(),
+  subject: z.string(),
+  body: z.string(),
+});
 
 type NormalizedTicket = {
   customer: string;
@@ -67,7 +70,7 @@ type NormalizedTicket = {
   words: number;
 };
 
-const normalizeTicket = new PipelineBuilder<SupportTicketInput>()
+const normalizeTicket = new PipelineBuilder(SupportTicketInput)
   .step((ticket): NormalizedTicket => ({
     customer: ticket.customer.trim(),
     title: ticket.subject.trim().toLowerCase(),
@@ -84,12 +87,12 @@ const ticket = await normalizeTicket.run({
 console.log(ticket.title);
 ```
 
-The first step receives `SupportTicketInput`. The built pipeline returns `NormalizedTicket`.
+The first step receives the parsed `SupportTicketInput` value. The built pipeline returns `NormalizedTicket`.
 
 ## 4. Use Arrays and Numbers
 
 ```ts
-const executiveNotes = new PipelineBuilder<string[]>()
+const executiveNotes = new PipelineBuilder(z.array(z.string()))
   .step((notes) => notes.map((note) => `- ${note}`).join("\n"))
   .build();
 
@@ -100,7 +103,7 @@ const notes = await executiveNotes.run([
 ```
 
 ```ts
-const formatPrice = new PipelineBuilder<number>()
+const formatPrice = new PipelineBuilder(z.number())
   .step((dollars) => Math.round(dollars * 100))
   .step((cents) => ({
     cents,
@@ -116,15 +119,15 @@ console.log(price.formatted);
 ## 5. Branch Into Different Output Types
 
 ```ts
-const ticketSignals = new PipelineBuilder<string>()
+const ticketSignals = new PipelineBuilder(z.string())
   .parallel({
-    title: new PipelineBuilder<string>()
+    title: new PipelineBuilder(z.string())
       .step((ticket) => ticket.split(".")[0] ?? ticket)
       .build(),
-    wordCount: new PipelineBuilder<string>()
+    wordCount: new PipelineBuilder(z.string())
       .step((ticket) => ticket.trim().split(/\s+/).length)
       .build(),
-    urgent: new PipelineBuilder<string>()
+    urgent: new PipelineBuilder(z.string())
       .step((ticket) => ticket.toLowerCase().includes("outage"))
       .build(),
   })
@@ -152,7 +155,7 @@ The result is typed as:
 `.prompt(agent)` and `.extract(extractor)` call `String(input)` internally. For strings, that is usually fine. For objects, add a formatting step first so the model receives intentional text instead of `[object Object]`.
 
 ```ts
-const ticketPipeline = new PipelineBuilder<SupportTicketInput>()
+const ticketPipeline = new PipelineBuilder(SupportTicketInput)
   .step(
     (ticket) =>
       [
@@ -172,14 +175,11 @@ const triage = await ticketPipeline.run({
 });
 ```
 
-## 7. Validate Inputs With a Zod Schema
+## 7. Use Defaults and Metadata
 
-Pass a Zod schema directly to the constructor when you want runtime validation in addition to type inference. The builder infers `Input` and `Output` from the schema with `z.infer<typeof schema>` and parses every call to `pipeline.run(...)`.
+Schemas can apply defaults, transforms, and validation before any stage runs. The first stage receives the parsed schema output.
 
 ```ts
-import { z } from "zod";
-import { PipelineBuilder } from "@anvia/core/pipeline";
-
 const SearchInput = z.object({
   query: z.string().min(1),
   limit: z.number().int().positive().default(10),
@@ -222,7 +222,7 @@ Build pipelines in this order:
 ## Minimal End-to-End Shape
 
 ```ts
-const ticketPipeline = new PipelineBuilder<string>()
+const ticketPipeline = new PipelineBuilder(z.string())
   .step((ticket) => ticket.trim())
   .step((ticket) => `Summarize this ticket:\n\n${ticket}`)
   .prompt(summarizer)

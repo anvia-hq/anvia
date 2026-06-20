@@ -8,7 +8,7 @@ Use `batch(...)` when the same pipeline should process many inputs with a concur
 ## 1. Build a Normal Pipeline
 
 ```ts
-const normalizeTicket = new PipelineBuilder<string>()
+const normalizeTicket = new PipelineBuilder(z.string())
   .step((ticket) => ticket.trim())
   .step((ticket) => ticket.replace(/\s+/g, " "))
   .build();

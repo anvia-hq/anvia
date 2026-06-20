@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lancedb/lancedb": "^0.13.0"
+    "@lancedb/lancedb": "^0.30.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

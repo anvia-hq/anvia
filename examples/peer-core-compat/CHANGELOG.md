@@ -1,5 +1,12 @@
 # peer-core-compat
 
+## 0.1.3
+
+### Patch Changes
+
+- Updated dependencies [ac55f41]
+  - @anvia/studio@0.7.3
+
 ## 0.1.2
 
 ### Patch Changes

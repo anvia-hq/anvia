@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.7.3
+
+### Patch Changes
+
+- ac55f41: Refactor Studio routing and modularize the UI/runtime internals while preserving existing Studio behavior.
+
 ## 0.7.2
 
 ### Patch Changes

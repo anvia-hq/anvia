@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   StudioConfig,
   StudioPipelineDetail,
@@ -31,14 +31,19 @@ export function usePipelines(props: {
   const [pipelineLogLoadState, setPipelineLogLoadState] = useState<"idle" | "loading">("idle");
   const [pipelineRunLoadState, setPipelineRunLoadState] = useState<"idle" | "loading">("idle");
   const [pipelineRunState, setPipelineRunState] = useState<RunState>("idle");
+  const pipelineDetailRequestRef = useRef(0);
+  const pipelineLogRequestRef = useRef(0);
 
   const loadPipelineLogs = useCallback(
     async (pipelineId: string): Promise<StudioPipelineLogEntry[]> => {
       if (!props.enabled || pipelineId.length === 0) {
+        pipelineLogRequestRef.current += 1;
         setPipelineLogs([]);
         return [];
       }
 
+      const requestId = pipelineLogRequestRef.current + 1;
+      pipelineLogRequestRef.current = requestId;
       setPipelineLogLoadState("loading");
       try {
         const params = new URLSearchParams({ limit: "1000" });
@@ -47,14 +52,20 @@ export function usePipelines(props: {
           throw new Error(`Pipeline logs failed with HTTP ${response.status}`);
         }
         const body = (await response.json()) as { logs: StudioPipelineLogEntry[] };
-        setPipelineLogs(body.logs);
+        if (pipelineLogRequestRef.current === requestId) {
+          setPipelineLogs(body.logs);
+        }
         return body.logs;
       } catch (loadError) {
-        props.onError(errorMessage(loadError));
-        setPipelineLogs([]);
+        if (pipelineLogRequestRef.current === requestId) {
+          props.onError(errorMessage(loadError));
+          setPipelineLogs([]);
+        }
         return [];
       } finally {
-        setPipelineLogLoadState("idle");
+        if (pipelineLogRequestRef.current === requestId) {
+          setPipelineLogLoadState("idle");
+        }
       }
     },
     [props.enabled, props.onError],
@@ -91,12 +102,15 @@ export function usePipelines(props: {
   const loadPipeline = useCallback(
     async (pipelineId: string) => {
       if (!props.enabled || pipelineId.length === 0) {
+        pipelineDetailRequestRef.current += 1;
         setPipelineDetail(undefined);
         setPipelineLogs([]);
         setPipelineRuns([]);
         return;
       }
 
+      const requestId = pipelineDetailRequestRef.current + 1;
+      pipelineDetailRequestRef.current = requestId;
       setPipelineDetailLoadState("loading");
       props.onError("");
       try {
@@ -104,14 +118,22 @@ export function usePipelines(props: {
         if (!response.ok) {
           throw new Error(`Pipeline load failed with HTTP ${response.status}`);
         }
+        const detail = (await response.json()) as StudioPipelineDetail;
+        if (pipelineDetailRequestRef.current !== requestId) {
+          return;
+        }
         setSelectedPipelineId(pipelineId);
-        setPipelineDetail((await response.json()) as StudioPipelineDetail);
+        setPipelineDetail(detail);
         await Promise.all([loadPipelineLogs(pipelineId), loadPipelineRuns(pipelineId)]);
       } catch (loadError) {
-        props.onError(errorMessage(loadError));
-        setPipelineDetail(undefined);
+        if (pipelineDetailRequestRef.current === requestId) {
+          props.onError(errorMessage(loadError));
+          setPipelineDetail(undefined);
+        }
       } finally {
-        setPipelineDetailLoadState("idle");
+        if (pipelineDetailRequestRef.current === requestId) {
+          setPipelineDetailLoadState("idle");
+        }
       }
     },
     [loadPipelineLogs, loadPipelineRuns, props.enabled, props.onError],

@@ -20,6 +20,7 @@ import {
   STUDIO_MODEL_METADATA_KEY,
   sessionModelRef,
 } from "./models";
+import { rawObservedStore } from "./observability";
 import type { ResolvedStores } from "./options";
 import type { createQuestionRuntime } from "./questions";
 import {
@@ -498,5 +499,6 @@ function normalizePromptMessage(message: string | CoreMessage): CoreMessage {
 }
 
 function usesStoreAsAgentMemory(agent: Agent, store: StudioSessionStore): boolean {
-  return agent.memory?.store === store;
+  const memoryStore = agent.memory?.store;
+  return memoryStore !== undefined && rawObservedStore(memoryStore) === rawObservedStore(store);
 }

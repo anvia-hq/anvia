@@ -51,9 +51,9 @@ describe("Studio UI routes", () => {
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get("location")).toBe(studioUiEntryPath(options));
 
-    const legacy = await app.request("http://studio.test/studio/tracing/trace_1");
+    const legacy = await app.request("http://studio.test/studio/tracing/trace_1?panel=events");
     expect(legacy.status).toBe(302);
-    expect(legacy.headers.get("location")).toBe("/tracing/trace_1");
+    expect(legacy.headers.get("location")).toBe("/tracing/trace_1?panel=events");
 
     const shell = await app.request("http://studio.test/tracing/trace_1");
     expect(shell.status).toBe(200);
@@ -97,7 +97,7 @@ describe("Studio UI routes", () => {
     expect(missing.status).toBe(404);
   });
 
-  it("serves root page routes while configured page paths redirect", async () => {
+  it("honors rootRoutes false while configured page paths redirect", async () => {
     const app = new Hono();
     registerStudioUi(
       app,
@@ -109,15 +109,15 @@ describe("Studio UI routes", () => {
     );
 
     expect((await app.request("http://studio.test/")).status).toBe(404);
-    expect((await app.request("http://studio.test/tracing")).status).toBe(200);
+    expect((await app.request("http://studio.test/tracing")).status).toBe(404);
     expect((await app.request("http://studio.test/studio/assets/client.js")).status).toBe(404);
 
-    const legacy = await app.request("http://studio.test/studio/knowledge/dynamic-context");
+    const legacy = await app.request(
+      "http://studio.test/studio/knowledge/dynamic-context?agent=chef",
+    );
     expect(legacy.status).toBe(302);
-    expect(legacy.headers.get("location")).toBe("/knowledge/dynamic-context");
+    expect(legacy.headers.get("location")).toBe("/knowledge/dynamic-context?agent=chef");
 
-    const shell = await app.request("http://studio.test/knowledge/dynamic-context");
-    expect(shell.status).toBe(200);
-    expect(await shell.text()).toContain("Anvia Studio");
+    expect((await app.request("http://studio.test/knowledge/dynamic-context")).status).toBe(404);
   });
 });

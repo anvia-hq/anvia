@@ -44,6 +44,7 @@ export function useAgentModels(props: {
       } catch (loadError) {
         if (!cancelled) {
           setAgentModels(undefined);
+          setSelectedModelRef("");
           onError(errorMessage(loadError));
         }
       }

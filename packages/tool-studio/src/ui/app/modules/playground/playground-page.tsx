@@ -209,7 +209,7 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label="Select agent"
-                        className="hidden h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:flex"
+                        className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
                       >
                         <SelectValue placeholder="Agent" />
                       </SelectTrigger>

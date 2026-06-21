@@ -18,6 +18,7 @@ type ObservabilitySubscription = {
 };
 
 const defaultBufferSize = 1000;
+const observedStoreTargets = new WeakMap<object, object>();
 
 export class StudioObservabilityHub {
   private readonly subscriptions = new Set<ObservabilitySubscription>();
@@ -142,7 +143,7 @@ function observeSessionStore(
   store: StudioSessionStore,
   hub: StudioObservabilityHub,
 ): StudioSessionStore {
-  return new Proxy(store, {
+  const proxy = new Proxy(store, {
     get(target, property, receiver) {
       if (property !== "appendSessionLog") {
         return boundProperty(target, property, receiver);
@@ -158,13 +159,15 @@ function observeSessionStore(
       };
     },
   });
+  observedStoreTargets.set(proxy, store);
+  return proxy;
 }
 
 function observePipelineLogStore(
   store: StudioPipelineLogStore,
   hub: StudioObservabilityHub,
 ): StudioPipelineLogStore {
-  return new Proxy(store, {
+  const proxy = new Proxy(store, {
     get(target, property, receiver) {
       if (property !== "appendPipelineLog") {
         return boundProperty(target, property, receiver);
@@ -177,10 +180,12 @@ function observePipelineLogStore(
       };
     },
   });
+  observedStoreTargets.set(proxy, store);
+  return proxy;
 }
 
 function observeTraceStore(store: StudioTraceStore, hub: StudioObservabilityHub): StudioTraceStore {
-  return new Proxy(store, {
+  const proxy = new Proxy(store, {
     get(target, property, receiver) {
       if (property !== "saveTrace") {
         return boundProperty(target, property, receiver);
@@ -193,6 +198,12 @@ function observeTraceStore(store: StudioTraceStore, hub: StudioObservabilityHub)
       };
     },
   });
+  observedStoreTargets.set(proxy, store);
+  return proxy;
+}
+
+export function rawObservedStore<T extends object>(store: T): T {
+  return (observedStoreTargets.get(store) as T | undefined) ?? store;
 }
 
 function boundProperty<T extends object>(

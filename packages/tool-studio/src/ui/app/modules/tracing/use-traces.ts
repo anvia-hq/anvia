@@ -38,21 +38,13 @@ export function useTraces(props: {
 
     setTraceLoadState("loading");
     try {
-      const params = new URLSearchParams({ limit: "50" });
+      const params = new URLSearchParams({ include: "detail", limit: "50" });
       const response = await fetch(`/traces?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Traces failed with HTTP ${response.status}`);
       }
-      const body = (await response.json()) as { traces: StudioTraceSummary[] };
-      const loaded = await Promise.all(
-        body.traces.map(async (trace) => {
-          const traceResponse = await fetch(`/traces/${encodeURIComponent(trace.id)}`);
-          if (!traceResponse.ok) {
-            throw new Error(`Trace load failed with HTTP ${traceResponse.status}`);
-          }
-          return (await traceResponse.json()) as StudioTrace;
-        }),
-      );
+      const body = (await response.json()) as { traces: StudioTrace[] };
+      const loaded = body.traces;
       if (selectedTraceId.length > 0 && !loaded.some((trace) => trace.id === selectedTraceId)) {
         const traceResponse = await fetch(`/traces/${encodeURIComponent(selectedTraceId)}`);
         if (traceResponse.ok) {
@@ -76,21 +68,13 @@ export function useTraces(props: {
 
       setTraceLoadState("loading");
       try {
-        const params = new URLSearchParams({ limit: "50", sessionId });
+        const params = new URLSearchParams({ include: "detail", limit: "50", sessionId });
         const response = await fetch(`/traces?${params.toString()}`);
         if (!response.ok) {
           throw new Error(`Session traces failed with HTTP ${response.status}`);
         }
-        const body = (await response.json()) as { traces: StudioTraceSummary[] };
-        const loaded = await Promise.all(
-          body.traces.map(async (trace) => {
-            const traceResponse = await fetch(`/traces/${encodeURIComponent(trace.id)}`);
-            if (!traceResponse.ok) {
-              throw new Error(`Trace load failed with HTTP ${traceResponse.status}`);
-            }
-            return (await traceResponse.json()) as StudioTrace;
-          }),
-        );
+        const body = (await response.json()) as { traces: StudioTrace[] };
+        const loaded = body.traces;
         const ordered = [...loaded].sort(
           (left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt),
         );

@@ -26,9 +26,12 @@ export function cloneAgent(
     hook: agent.hook,
     outputSchema: agent.outputSchema,
     observers: agent.observers,
+    approvals: agent.approvals,
     dynamicContexts: agent.dynamicContexts,
     dynamicTools: agent.dynamicTools,
+    middlewares: agent.middlewares,
     memory: agent.memory,
+    eventStore: agent.eventStore,
     ...overrides,
   });
 }

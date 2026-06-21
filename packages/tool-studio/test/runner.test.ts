@@ -3500,6 +3500,12 @@ describe("Anvia studio", () => {
     ).json()) as { traces: Array<{ id: string }> };
     expect(all.traces).toHaveLength(3);
 
+    const detailed = (await (
+      await runner.fetch(new Request("http://runner.test/traces?include=detail&limit=10"))
+    ).json()) as { traces: Array<{ id: string; observations: unknown[] }> };
+    expect(detailed.traces).toHaveLength(3);
+    expect(detailed.traces[0]?.observations).toBeInstanceOf(Array);
+
     const main = (await (
       await runner.fetch(new Request("http://runner.test/traces?agentId=main&limit=10"))
     ).json()) as { traces: Array<{ id: string }> };

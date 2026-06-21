@@ -45,48 +45,55 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
     app.get("/", (c) => c.redirect(studioUiEntryPath(options)));
   }
 
-  app.get(options.path, (c) => c.redirect(studioUiEntryPath(options)));
-  app.get(`${options.path}/playground`, (c) => c.redirect("/playground"));
+  const redirectWithQuery = (c: Context, target: string) => {
+    const search = new URL(c.req.url).search;
+    return c.redirect(search.length === 0 ? target : `${target}${search}`);
+  };
+
+  app.get(options.path, (c) => redirectWithQuery(c, studioUiEntryPath(options)));
+  app.get(`${options.path}/playground`, (c) => redirectWithQuery(c, "/playground"));
   app.get(`${options.path}/playground/:sessionId`, (c) =>
-    c.redirect(`/playground/${encodeURIComponent(c.req.param("sessionId"))}`),
+    redirectWithQuery(c, `/playground/${encodeURIComponent(c.req.param("sessionId"))}`),
   );
-  app.get(`${options.path}/tracing`, (c) => c.redirect("/tracing"));
+  app.get(`${options.path}/tracing`, (c) => redirectWithQuery(c, "/tracing"));
   app.get(`${options.path}/tracing/:traceId`, (c) =>
-    c.redirect(`/tracing/${encodeURIComponent(c.req.param("traceId"))}`),
+    redirectWithQuery(c, `/tracing/${encodeURIComponent(c.req.param("traceId"))}`),
   );
   app.get(`${options.path}/tracing/sessions/:sessionId`, (c) =>
-    c.redirect(`/tracing/sessions/${encodeURIComponent(c.req.param("sessionId"))}`),
+    redirectWithQuery(c, `/tracing/sessions/${encodeURIComponent(c.req.param("sessionId"))}`),
   );
-  app.get(`${options.path}/sessions`, (c) => c.redirect("/sessions"));
-  app.get(`${options.path}/agents`, (c) => c.redirect("/agents"));
-  app.get(`${options.path}/tools`, (c) => c.redirect("/tools"));
-  app.get(`${options.path}/mcps`, (c) => c.redirect("/mcps"));
-  app.get(`${options.path}/pipelines`, (c) => c.redirect("/pipelines"));
-  app.get(`${options.path}/evals`, (c) => c.redirect("/evals"));
-  app.get(`${options.path}/memory`, (c) => c.redirect("/memory"));
-  app.get(`${options.path}/status`, (c) => c.redirect("/status"));
-  app.get(`${options.path}/knowledge`, (c) => c.redirect("/knowledge"));
+  app.get(`${options.path}/sessions`, (c) => redirectWithQuery(c, "/sessions"));
+  app.get(`${options.path}/agents`, (c) => redirectWithQuery(c, "/agents"));
+  app.get(`${options.path}/tools`, (c) => redirectWithQuery(c, "/tools"));
+  app.get(`${options.path}/mcps`, (c) => redirectWithQuery(c, "/mcps"));
+  app.get(`${options.path}/pipelines`, (c) => redirectWithQuery(c, "/pipelines"));
+  app.get(`${options.path}/evals`, (c) => redirectWithQuery(c, "/evals"));
+  app.get(`${options.path}/memory`, (c) => redirectWithQuery(c, "/memory"));
+  app.get(`${options.path}/status`, (c) => redirectWithQuery(c, "/status"));
+  app.get(`${options.path}/knowledge`, (c) => redirectWithQuery(c, "/knowledge"));
   app.get(`${options.path}/knowledge/:tab`, (c) =>
-    c.redirect(`/knowledge/${encodeURIComponent(c.req.param("tab"))}`),
+    redirectWithQuery(c, `/knowledge/${encodeURIComponent(c.req.param("tab"))}`),
   );
 
-  app.get("/playground", async (c) => c.html(await renderShell()));
-  app.get("/playground/:sessionId", async (c) => c.html(await renderShell()));
-  app.get("/tracing", async (c) => c.html(await renderShell()));
-  app.get("/tracing/:traceId", async (c) => c.html(await renderShell()));
-  app.get("/tracing/sessions/:sessionId", async (c) => c.html(await renderShell()));
-  app.get("/tracing/*", async (c) => c.html(await renderShell()));
-  app.get("/sessions", shellWhenHtml(renderShell));
-  app.get("/agents", shellWhenHtml(renderShell));
-  app.get("/tools", async (c) => c.html(await renderShell()));
-  app.get("/mcps", async (c) => c.html(await renderShell()));
-  app.get("/pipelines", shellWhenHtml(renderShell));
-  app.get("/evals", shellWhenHtml(renderShell));
-  app.get("/memory", async (c) => c.html(await renderShell()));
-  app.get("/status", shellWhenHtml(renderShell));
-  app.get("/knowledge", shellWhenHtml(renderShell));
-  app.get("/knowledge/:tab", shellWhenKnowledgeTab(renderShell));
-  app.get("/knowledge/*", shellWhenHtml(renderShell));
+  if (options.rootRoutes) {
+    app.get("/playground", async (c) => c.html(await renderShell()));
+    app.get("/playground/:sessionId", async (c) => c.html(await renderShell()));
+    app.get("/tracing", async (c) => c.html(await renderShell()));
+    app.get("/tracing/:traceId", async (c) => c.html(await renderShell()));
+    app.get("/tracing/sessions/:sessionId", async (c) => c.html(await renderShell()));
+    app.get("/tracing/*", async (c) => c.html(await renderShell()));
+    app.get("/sessions", shellWhenHtml(renderShell));
+    app.get("/agents", shellWhenHtml(renderShell));
+    app.get("/tools", async (c) => c.html(await renderShell()));
+    app.get("/mcps", async (c) => c.html(await renderShell()));
+    app.get("/pipelines", shellWhenHtml(renderShell));
+    app.get("/evals", shellWhenHtml(renderShell));
+    app.get("/memory", async (c) => c.html(await renderShell()));
+    app.get("/status", shellWhenHtml(renderShell));
+    app.get("/knowledge", shellWhenHtml(renderShell));
+    app.get("/knowledge/:tab", shellWhenKnowledgeTab(renderShell));
+    app.get("/knowledge/*", shellWhenHtml(renderShell));
+  }
 
   app.get(scriptPath, async () => {
     if (options.clientScript === undefined) {

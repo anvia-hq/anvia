@@ -181,12 +181,25 @@ export function toFlow(
 function nodeDepths(graph: StudioPipelineDetail["graph"]): Map<string, number> {
   const depths = new Map<string, number>();
   for (const node of graph.nodes) {
-    const incoming = graph.edges.filter((edge) => edge.target === node.id);
-    const depth =
-      incoming.length === 0
-        ? 0
-        : Math.max(...incoming.map((edge) => (depths.get(edge.source) ?? 0) + 1));
-    depths.set(node.id, depth);
+    depths.set(node.id, 0);
+  }
+
+  for (let index = 0; index < graph.nodes.length; index += 1) {
+    let changed = false;
+    for (const edge of graph.edges) {
+      const sourceDepth = depths.get(edge.source);
+      if (sourceDepth === undefined || !depths.has(edge.target)) {
+        continue;
+      }
+      const nextDepth = sourceDepth + 1;
+      if (nextDepth > (depths.get(edge.target) ?? 0)) {
+        depths.set(edge.target, nextDepth);
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
   }
   return depths;
 }

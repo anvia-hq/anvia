@@ -32,6 +32,12 @@ export function registerTraceRoutes(app: Hono, traceStore: StudioTraceStore): vo
       limit,
       ...compact({ agentId, sessionId, status }),
     });
+    if (c.req.query("include") === "detail") {
+      const detailed = await Promise.all(
+        traces.map((trace) => Promise.resolve(traceStore.getTrace(trace.id))),
+      );
+      return c.json({ traces: detailed.filter((trace) => trace !== undefined) });
+    }
     return c.json({ traces });
   });
 

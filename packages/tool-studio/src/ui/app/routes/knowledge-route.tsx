@@ -6,12 +6,13 @@ import { knowledgeTabFromRoute, useActivatedRoute } from "./route-helpers";
 
 export function KnowledgeRoute() {
   const studio = useActivatedRoute("knowledge");
+  const { setKnowledgeTab } = studio;
   const params = useParams({ strict: false }) as { tab?: string };
   const tab = knowledgeTabFromRoute(params.tab);
 
   useEffect(() => {
-    studio.setKnowledgeTab(tab);
-  }, [studio, tab]);
+    setKnowledgeTab(tab);
+  }, [setKnowledgeTab, tab]);
 
   return (
     <Suspense fallback={<PageLoading />}>

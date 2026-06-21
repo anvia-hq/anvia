@@ -207,6 +207,10 @@ function isSupportedAttachment(mediaType: string, name: string): boolean {
 }
 
 function mediaTypeFromName(name: string): string {
+  if (/\.png$/i.test(name)) return "image/png";
+  if (/\.jpe?g$/i.test(name)) return "image/jpeg";
+  if (/\.webp$/i.test(name)) return "image/webp";
+  if (/\.gif$/i.test(name)) return "image/gif";
   if (/\.pdf$/i.test(name)) return "application/pdf";
   if (/\.md$/i.test(name)) return "text/markdown";
   if (/\.csv$/i.test(name)) return "text/csv";

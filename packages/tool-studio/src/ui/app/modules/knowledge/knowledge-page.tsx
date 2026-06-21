@@ -62,16 +62,17 @@ export function KnowledgePage(props: {
 
   const loadItems = useCallback(
     async (source: KnowledgeSourceRef, options: { append: boolean; cursor?: string }) => {
+      const sourceKey = source.key;
       setItemState((current) => ({
-        key: source.key,
+        key: sourceKey,
         loading: true,
         inspectable:
-          current?.key === source.key ? current.inspectable : source.source.inspectable === true,
-        items: options.append && current?.key === source.key ? current.items : [],
-        ...(options.append && current?.key === source.key && current.nextCursor !== undefined
+          current?.key === sourceKey ? current.inspectable : source.source.inspectable === true,
+        items: options.append && current?.key === sourceKey ? current.items : [],
+        ...(options.append && current?.key === sourceKey && current.nextCursor !== undefined
           ? { nextCursor: current.nextCursor }
           : {}),
-        ...(current?.key === source.key && current.totalCount !== undefined
+        ...(current?.key === sourceKey && current.totalCount !== undefined
           ? { totalCount: current.totalCount }
           : {}),
       }));
@@ -90,26 +91,33 @@ export function KnowledgePage(props: {
           throw new Error(`Knowledge items failed with HTTP ${response.status}`);
         }
         const page = (await response.json()) as StudioKnowledgeItemsPage;
-        setItemState((current) => ({
-          key: source.key,
-          loading: false,
-          inspectable: page.inspectable,
-          items:
-            options.append && current?.key === source.key
-              ? [...current.items, ...page.items]
-              : page.items,
-          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
-          ...(page.totalCount === undefined ? {} : { totalCount: page.totalCount }),
-          ...(page.message === undefined ? {} : { message: page.message }),
-        }));
+        setItemState((current) => {
+          if (current?.key !== sourceKey) {
+            return current;
+          }
+          return {
+            key: sourceKey,
+            loading: false,
+            inspectable: page.inspectable,
+            items: options.append ? [...current.items, ...page.items] : page.items,
+            ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+            ...(page.totalCount === undefined ? {} : { totalCount: page.totalCount }),
+            ...(page.message === undefined ? {} : { message: page.message }),
+          };
+        });
       } catch (error) {
-        setItemState((current) => ({
-          key: source.key,
-          loading: false,
-          inspectable: current?.inspectable ?? false,
-          items: current?.items ?? [],
-          error: error instanceof Error ? error.message : String(error),
-        }));
+        setItemState((current) => {
+          if (current?.key !== sourceKey) {
+            return current;
+          }
+          return {
+            key: sourceKey,
+            loading: false,
+            inspectable: current.inspectable,
+            items: current.items,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        });
       }
     },
     [],

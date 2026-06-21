@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioSession,
   StudioSessionLogEntry,
@@ -44,6 +44,7 @@ export function useStudioSessions(props: {
   const [sessionLogs, setSessionLogs] = useState<StudioSessionLogEntry[]>([]);
   const [sessionLoadState, setSessionLoadState] = useState<SessionLoadState>("idle");
   const [sessionLogLoadState, setSessionLogLoadState] = useState<SessionLoadState>("idle");
+  const sessionLoadRequestRef = useRef("");
 
   const loadAllSessions = useCallback(async () => {
     if (!enabled) {
@@ -130,6 +131,7 @@ export function useStudioSessions(props: {
         return;
       }
 
+      sessionLoadRequestRef.current = sessionId;
       setSessionLoadState("loading");
       onError("");
       try {
@@ -142,13 +144,20 @@ export function useStudioSessions(props: {
           loadSessionTraceSummaries(session.id),
           loadSessionLogs(session.id),
         ]);
+        if (sessionLoadRequestRef.current !== sessionId) {
+          return;
+        }
         setSelectedSessionId(session.id);
         onSessionLoaded(session, traceSummaries, options);
         onStatus("Connected");
       } catch (loadError) {
-        onError(errorMessage(loadError));
+        if (sessionLoadRequestRef.current === sessionId) {
+          onError(errorMessage(loadError));
+        }
       } finally {
-        setSessionLoadState("idle");
+        if (sessionLoadRequestRef.current === sessionId) {
+          setSessionLoadState("idle");
+        }
       }
     },
     [loadSessionLogs, loadSessionTraceSummaries, onError, onSessionLoaded, onStatus, runState],

@@ -303,7 +303,7 @@ function normalizeMarkdown(value) {
 
 function releaseNoteList(notes) {
   if (notes.length === 0) {
-    return "No changeset notes were found for this release.";
+    return "No release notes were found for this release.";
   }
 
   const maxLength = 1000;
@@ -314,6 +314,9 @@ function releaseNoteList(notes) {
     const line = `- ${packageLabel}: ${note.summary}`;
     const next = output.length === 0 ? line : `${output}\n${line}`;
     if (next.length > maxLength) {
+      if (output.length === 0) {
+        return `${line.slice(0, maxLength - 3)}...`;
+      }
       const remaining = notes.length - output.split("\n").length;
       return `${output}\nand ${remaining} more change${remaining === 1 ? "" : "s"}`;
     }
@@ -374,7 +377,12 @@ function readPublishedPackages() {
     return undefined;
   }
 
-  const releases = JSON.parse(readFileSync(filePath, "utf8"));
+  let releases;
+  try {
+    releases = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    return undefined;
+  }
   if (!Array.isArray(releases)) {
     return undefined;
   }

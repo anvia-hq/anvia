@@ -6,6 +6,7 @@ import {
 import { Mistral } from "@mistralai/mistralai";
 import { MistralCompletionModel } from "./completion";
 import { MistralEmbeddingModel, type MistralEmbeddingModelOptions } from "./embedding";
+import { MISTRAL_OCR_LATEST, MistralOcrModel } from "./ocr";
 
 export type MistralClientOptions = {
   apiKey?: string | undefined;
@@ -34,6 +35,10 @@ export class MistralClient implements ModelListingClient {
     options: MistralEmbeddingModelOptions = {},
   ): MistralEmbeddingModel {
     return new MistralEmbeddingModel(this.client, model, options);
+  }
+
+  ocrModel(model = MISTRAL_OCR_LATEST): MistralOcrModel {
+    return new MistralOcrModel(this.client, model);
   }
 
   async listModels(): Promise<ModelList> {

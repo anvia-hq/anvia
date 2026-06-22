@@ -40,6 +40,21 @@ const embeddings = client.embeddingModel("mistral-embed");
 const vectors = await embeddings.embedTexts(["Refunds take five business days."]);
 ```
 
+## OCR
+
+```ts
+const ocr = client.ocrModel();
+const result = await ocr.ocr({
+  source: {
+    type: "document_url",
+    url: "https://example.com/invoice.pdf",
+    documentName: "invoice.pdf",
+  },
+});
+
+console.log(result.markdown);
+```
+
 ## Model Listing
 
 ```ts
@@ -48,15 +63,22 @@ const models = await client.listModels();
 
 ## Capabilities
 
-The v1 adapter supports text completions, streaming, tools, tool choice, structured output, Mistral embeddings, and model listing. Image inputs, document file inputs, transcription, audio generation, and image generation are not implemented yet.
+The v1 adapter supports text completions, streaming, tools, tool choice, structured output, Mistral embeddings, OCR, and model listing. Chat image inputs, chat document file inputs, transcription, audio generation, and image generation are not implemented yet.
 
 ## Exports
 
 - `MistralClient`
 - `MistralCompletionModel`
 - `MistralEmbeddingModel`
+- `MistralOcrModel`
 - `MistralClientOptions`
 - `MistralEmbeddingModelOptions`
+- `MistralOcrRequest`
+- `MistralOcrResponse`
+- `MistralOcrSource`
+- `MistralOcrPage`
+- `MistralOcrUploadedFile`
+- `MISTRAL_OCR_LATEST`
 - `mistralMessageHelpers`
 - `mistral`
 

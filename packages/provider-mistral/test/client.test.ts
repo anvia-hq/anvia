@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { MistralClient, MistralCompletionModel, MistralEmbeddingModel } from "../src/index";
+import {
+  MistralClient,
+  MistralCompletionModel,
+  MistralEmbeddingModel,
+  MistralOcrModel,
+} from "../src/index";
 
 describe("MistralClient", () => {
   it("validates explicit Mistral credentials", () => {
@@ -8,11 +13,12 @@ describe("MistralClient", () => {
     );
   });
 
-  it("creates completion and embedding models with an injected SDK client", () => {
+  it("creates completion, embedding, and OCR models with an injected SDK client", () => {
     const client = new MistralClient({ client: fakeSdk() as never });
 
     expect(client.completionModel()).toBeInstanceOf(MistralCompletionModel);
     expect(client.embeddingModel()).toBeInstanceOf(MistralEmbeddingModel);
+    expect(client.ocrModel()).toBeInstanceOf(MistralOcrModel);
   });
 
   it("lists models from the Mistral SDK", async () => {
@@ -60,6 +66,12 @@ function fakeSdk() {
     },
     embeddings: {
       create: async () => ({ data: [] }),
+    },
+    files: {
+      upload: async () => ({ id: "file-test" }),
+    },
+    ocr: {
+      process: async () => ({}),
     },
   };
 }

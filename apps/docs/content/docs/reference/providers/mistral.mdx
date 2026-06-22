@@ -20,10 +20,11 @@ class MistralClient {
   listModels(): Promise<ModelList>;
   completionModel(model?: string): MistralCompletionModel;
   embeddingModel(model?: string, options?: MistralEmbeddingModelOptions): MistralEmbeddingModel;
+  ocrModel(model?: string): MistralOcrModel;
 }
 ```
 
-Purpose: factory for Mistral completion, embedding, and model listing.
+Purpose: factory for Mistral completion, embedding, OCR, and model listing.
 
 Return behavior: creates or uses a Mistral SDK client, then returns normalized Anvia model adapters. `listModels()` fetches Mistral's model list and returns a normalized `ModelList`.
 
@@ -67,6 +68,59 @@ Return behavior: returns one `Embedding` per input text.
 
 Notable errors: rejects on Mistral SDK errors or mismatched embedding counts.
 
+## MistralOcrModel
+
+```ts
+const MISTRAL_OCR_LATEST = "mistral-ocr-latest";
+
+type MistralOcrRequest = {
+  source: MistralOcrSource;
+};
+
+type MistralOcrSource =
+  | { type: "document_url"; url: string; documentName?: string }
+  | { type: "image_url"; url: string }
+  | { type: "file_id"; fileId: string }
+  | {
+      type: "bytes";
+      data: Uint8Array | ArrayBuffer;
+      filename: string;
+      expiry?: number | null;
+      visibility?: "workspace" | "user";
+    };
+
+type MistralOcrPage = {
+  index: number;
+  markdown: string;
+  images: unknown[];
+  tables?: unknown[];
+  hyperlinks?: string[];
+  header?: string | null;
+  footer?: string | null;
+  dimensions?: unknown;
+  confidenceScores?: unknown;
+};
+
+type MistralOcrUploadedFile = {
+  id: string;
+  filename?: string;
+  sizeBytes?: number;
+  purpose?: string;
+  rawResponse: unknown;
+};
+
+class MistralOcrModel {
+  constructor(client: Mistral, defaultModel?: string);
+  ocr(request: MistralOcrRequest): Promise<MistralOcrResponse>;
+}
+```
+
+Purpose: adapter for Mistral OCR document processing.
+
+Return behavior: returns combined markdown/text, normalized page entries, upload metadata for byte sources, and the raw Mistral OCR response.
+
+Notable errors: rejects empty byte sources before upload; rejects or yields Mistral SDK/provider errors for upload and OCR failures.
+
 ## mistral Namespace
 
 ```ts
@@ -74,6 +128,8 @@ namespace mistral {
   MistralClient;
   MistralCompletionModel;
   MistralEmbeddingModel;
+  MistralOcrModel;
+  MISTRAL_OCR_LATEST;
   toMistralChatParams;
   fromMistralChatResponse;
   fromMistralChatStreamChunk;

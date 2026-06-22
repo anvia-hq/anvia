@@ -1,9 +1,9 @@
 ---
 title: Mistral
-description: Use Mistral completion and embedding models with Anvia.
+description: Use Mistral completion, embedding, and OCR models with Anvia.
 ---
 
-Use `@anvia/mistral` when you want Mistral chat completion and embedding models through Anvia's normalized runtime.
+Use `@anvia/mistral` when you want Mistral chat completion, embedding, and OCR models through Anvia.
 
 ## Completion Model
 
@@ -38,6 +38,22 @@ const embedded = await embedDocuments(embeddings, documents, {
 
 Use embedding models for document preprocessing and retrieval.
 
+## OCR Model
+
+```ts
+const ocr = client.ocrModel();
+
+const result = await ocr.ocr({
+  source: {
+    type: "document_url",
+    url: "https://example.com/report.pdf",
+    documentName: "report.pdf",
+  },
+});
+```
+
+Use OCR models to extract markdown and page metadata from documents or images supported by Mistral OCR.
+
 ## Custom Client Options
 
 Use the constructor when credentials or a custom Mistral server URL come from your own configuration system.
@@ -57,6 +73,7 @@ You can also pass an existing Mistral SDK client when your app already owns prov
 | --- | --- |
 | Completion | `client.completionModel("mistral-large-latest")` |
 | Embeddings | `client.embeddingModel("mistral-embed")` |
+| OCR | `client.ocrModel("mistral-ocr-latest")` |
 | Custom server URL | `new MistralClient({ serverURL, apiKey })` |
 
-Mistral v1 support covers text completions, tools, tool choice, structured output, streaming, and embeddings. Image and document file attachments are intentionally rejected until Anvia adds full multimodal mapping for Mistral.
+Mistral v1 support covers text completions, tools, tool choice, structured output, streaming, embeddings, and OCR. Chat image and document file attachments are intentionally rejected until Anvia adds full multimodal mapping for Mistral.

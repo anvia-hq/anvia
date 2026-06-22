@@ -90,7 +90,7 @@ For large document collections, preprocess text into embeddings and use [RAG Con
 | OpenAI | Use provider models that support the attachment type you send |
 | Anthropic | Attachment support depends on the selected model and provider SDK mapping |
 | Gemini | Supports image and document attachments; selected model limits still apply |
-| Mistral | Current Anvia Mistral support intentionally rejects image and document file attachments |
+| Mistral | Current Anvia Mistral chat support intentionally rejects image and document file attachments; use `client.ocrModel()` for Mistral OCR |
 | Compatible providers | Treat support as endpoint-specific, even when the API shape is compatible |
 
 Unsupported attachments usually fail as provider validation errors. Handle them at the same application boundary where you handle model configuration or request failures.

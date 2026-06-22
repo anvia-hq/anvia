@@ -7,3 +7,12 @@ export {
   toMistralChatParams,
 } from "./completion";
 export { MistralEmbeddingModel, type MistralEmbeddingModelOptions } from "./embedding";
+export {
+  MISTRAL_OCR_LATEST,
+  MistralOcrModel,
+  type MistralOcrPage,
+  type MistralOcrRequest,
+  type MistralOcrResponse,
+  type MistralOcrSource,
+  type MistralOcrUploadedFile,
+} from "./ocr";

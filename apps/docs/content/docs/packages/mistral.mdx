@@ -1,9 +1,9 @@
 ---
 title: "@anvia/mistral"
-description: Mistral completion and embedding models.
+description: Mistral completion, embedding, and OCR models.
 ---
 
-`@anvia/mistral` adapts the Mistral SDK into Anvia's provider-neutral interfaces. It supports completions (streaming and non-streaming) and embeddings.
+`@anvia/mistral` adapts the Mistral SDK into Anvia provider interfaces. It supports completions (streaming and non-streaming), embeddings, and Mistral OCR.
 
 ## Install
 
@@ -93,6 +93,24 @@ const embeddings = await embeddingModel.embedTexts(["hello", "world"]);
 | Option | Default | Purpose |
 | --- | -- | --- |
 | `maxBatchSize` | `512` | Texts per API call |
+
+## OCR Model
+
+```ts
+const ocr = client.ocrModel();
+
+const result = await ocr.ocr({
+  source: {
+    type: "document_url",
+    url: "https://example.com/invoice.pdf",
+    documentName: "invoice.pdf",
+  },
+});
+
+console.log(result.markdown);
+```
+
+OCR supports Mistral document URLs, image URLs, existing file IDs, and byte uploads through the Mistral files API.
 
 ## Tool Use
 

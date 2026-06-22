@@ -1,5 +1,11 @@
 # @anvia/mistral
 
+## 0.3.0
+
+### Minor Changes
+
+- ce97135: Add a Mistral OCR model adapter with `client.ocrModel()`, support for document URLs, image URLs, file IDs, and byte uploads, plus normalized OCR response metadata.
+
 ## 0.2.12
 
 ### Patch Changes

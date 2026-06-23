@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.7.4
+
+### Patch Changes
+
+- f160948: Update Studio runtime and router dependencies.
+
 ## 0.7.3
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # @anvia/openai
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [3de3cce]
+- Updated dependencies [3de3cce]
+- Updated dependencies [3de3cce]
+- Updated dependencies [3de3cce]
+  - @anvia/core@0.8.0
+
 ## 0.3.13
 
 ### Patch Changes

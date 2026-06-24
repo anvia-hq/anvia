@@ -1,6 +1,6 @@
 {
   "name": "@anvia/chroma",
-  "version": "0.2.10",
+  "version": "1.0.0",
   "description": "ChromaDB vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -41,6 +41,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "^0.7.1"
+    "@anvia/core": "^0.8.0"
   }
 }

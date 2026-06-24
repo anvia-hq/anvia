@@ -1,6 +1,6 @@
 {
   "name": "@anvia/sandbox",
-  "version": "0.3.5",
+  "version": "1.0.0",
   "description": "Sandboxed workspace tools for Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -42,6 +42,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "^0.7.1"
+    "@anvia/core": "^0.8.0"
   }
 }

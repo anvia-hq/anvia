@@ -33,7 +33,9 @@
   "dependencies": {
     "@langfuse/otel": "^5.5.3",
     "@langfuse/tracing": "^5.5.3",
-    "@opentelemetry/sdk-node": "^0.219.0"
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

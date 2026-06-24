@@ -14,7 +14,9 @@ import {
   type AgentObserver,
   type AgentRunEndArgs,
   type AgentRunErrorArgs,
+  type AgentRunEventArgs,
   type AgentRunObserver,
+  type AgentRunPromptRef,
   type AgentRunStartArgs,
   type AgentToolEndArgs,
   type AgentToolErrorArgs,
@@ -381,6 +383,73 @@ describe("agent observability", () => {
         .send(),
     ).rejects.toThrow("observer failed");
   });
+
+  it("calls update on streaming observers once per delta", async () => {
+    const updates: Array<{ turn: number; delta: { type: string; delta?: string } }> = [];
+    const observer: AgentObserver = {
+      startRun(): AgentRunObserver {
+        return {
+          startGeneration: () => ({
+            update: (args) => {
+              updates.push(args);
+            },
+            end: () => {},
+          }),
+          end: () => {},
+        };
+      },
+    };
+    const model = new StreamingQueueModel([
+      [
+        { type: "text_delta", delta: "he" },
+        { type: "text_delta", delta: "llo" },
+      ],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).observe(observer).build();
+    await collect(agent.prompt("hi").stream());
+
+    expect(updates).toEqual([
+      { turn: 1, delta: { type: "text_delta", delta: "he" } },
+      { turn: 1, delta: { type: "text_delta", delta: "llo" } },
+    ]);
+  });
+
+  it("does not call update for non-streaming completions", async () => {
+    const updates: unknown[] = [];
+    const observer: AgentObserver = {
+      startRun(): AgentRunObserver {
+        return {
+          startGeneration: () => ({
+            update: (args) => {
+              updates.push(args);
+            },
+            end: () => {},
+          }),
+          end: () => {},
+        };
+      },
+    };
+    const model = new QueueModel([response([AssistantContent.text("ok")])]);
+    const agent = new AgentBuilder("test-agent", model).observe(observer).build();
+    await agent.prompt("hi").send();
+    expect(updates).toEqual([]);
+  });
+
+  it("honors observers that omit the optional update method", async () => {
+    const observer: AgentObserver = {
+      startRun(): AgentRunObserver {
+        return {
+          startGeneration: () => ({
+            end: () => {},
+          }),
+          end: () => {},
+        };
+      },
+    };
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hi" }]]);
+    const agent = new AgentBuilder("test-agent", model).observe(observer).build();
+    await expect(collect(agent.prompt("hi").stream())).resolves.toBeDefined();
+  });
 });
 
 describe("active agent observer groups", () => {
@@ -576,6 +645,84 @@ describe("active agent observer groups", () => {
     await expect(tool.end(toolEndArgs())).rejects.toThrow(error);
     await expect(tool.error(toolErrorArgs())).rejects.toThrow(error);
   });
+
+  it("fans out run event() to observers that implement it", async () => {
+    const seen: AgentRunEventArgs[] = [];
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                event(args) {
+                  seen.push(args);
+                },
+              }),
+          },
+        },
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                event(args) {
+                  seen.push(args);
+                },
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    const args: AgentRunEventArgs = {
+      name: "retrieval.done",
+      attributes: { docCount: 4 },
+    };
+    await expect(active.event(args)).resolves.toBeUndefined();
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toEqual(args);
+    expect(seen[1]).toEqual(args);
+  });
+
+  it("skips run observers that omit event?", async () => {
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () => createRunObserver({}),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    await expect(active.event({ name: "noop", attributes: { ok: true } })).resolves.toBeUndefined();
+  });
+
+  it("propagates event errors when failOnObserverError is set", async () => {
+    const error = new Error("event failed");
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                event() {
+                  throw error;
+                },
+              }),
+          },
+          failOnObserverError: true,
+        },
+      ],
+      runStartArgs(),
+      true,
+    );
+
+    await expect(active.event({ name: "validation.passed" })).rejects.toThrow(error);
+  });
 });
 
 function response(choice: CompletionResponse["choice"]): CompletionResponse {
@@ -702,3 +849,17 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   }
   return result;
 }
+
+describe("AgentRunPromptRef", () => {
+  it("is accepted on AgentRunStartArgs", () => {
+    const promptRef: AgentRunPromptRef = { name: "support.system", version: 3 };
+    const args: AgentRunStartArgs = {
+      prompt: { role: "user", content: [{ type: "text", text: "hi" }] },
+      history: [],
+      maxTurns: 1,
+      promptRef,
+    };
+    expect(args.promptRef?.name).toBe("support.system");
+    expect(args.promptRef?.version).toBe(3);
+  });
+});

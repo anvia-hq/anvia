@@ -40,8 +40,14 @@ type AgentRunStartArgs = {
   instructions?: string;
   trace?: AgentTraceOptions;
   prompt: Message;
+  promptRef?: AgentRunPromptRef;
   history: Message[];
   maxTurns: number;
+};
+
+type AgentRunPromptRef = {
+  name: string;
+  version?: number;
 };
 
 type AgentRunEndArgs = {
@@ -51,6 +57,13 @@ type AgentRunEndArgs = {
 };
 
 type AgentRunErrorArgs = { error: unknown; usage: Usage; messages: Message[] };
+
+type AgentRunEventArgs = {
+  name: string;
+  attributes?: Record<string, JsonValue | undefined>;
+  level?: "DEFAULT" | "WARNING" | "ERROR";
+  timestamp?: Date | string;
+};
 
 interface AgentRunObserver {
   readonly trace?: AgentTraceInfo;
@@ -62,6 +75,7 @@ interface AgentRunObserver {
   ): AgentToolObserver | undefined | Promise<AgentToolObserver | undefined>;
   end(args: AgentRunEndArgs): void | Promise<void>;
   error?(args: AgentRunErrorArgs): void | Promise<void>;
+  event?(args: AgentRunEventArgs): void | Promise<void>;
 }
 ```
 
@@ -81,10 +95,15 @@ type AgentGenerationEndArgs<RawResponse = unknown> = {
   firstDeltaMs?: number;
 };
 type AgentGenerationErrorArgs = { turn: number; error: unknown };
+type AgentGenerationUpdateArgs = {
+  turn: number;
+  delta: AgentDeltaEvent;
+};
 
 interface AgentGenerationObserver {
   end(args: AgentGenerationEndArgs): void | Promise<void>;
   error?(args: AgentGenerationErrorArgs): void | Promise<void>;
+  update?(args: AgentGenerationUpdateArgs): void | Promise<void>;
 }
 
 type AgentToolStartArgs = {

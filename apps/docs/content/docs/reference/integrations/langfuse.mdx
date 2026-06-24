@@ -14,10 +14,18 @@ type LangfuseTracingOptions = {
   baseUrl?: string;
   environment?: string;
   release?: string;
+  serviceName?: string;
+  timeoutMs?: number;
+  scoreBatchSize?: number;
+  scoreFlushIntervalMs?: number;
+  scoreMaxRetries?: number;
+  redactInputs?: LangfuseRedactionMode;
+  redactOutputs?: LangfuseRedactionMode;
+  redaction?: LangfuseRedactionOptions;
 };
 ```
 
-Purpose: configure Langfuse tracing and scoring.
+Purpose: configure Langfuse tracing, scoring, batching, and redaction.
 
 Return behavior: consumed by `langfuse.create(...)`.
 
@@ -30,25 +38,52 @@ type LangfuseTracing = AgentObserver & {
   flush(): Promise<void>;
   shutdown(): Promise<void>;
   score(args: LangfuseScoreArgs): Promise<void>;
+  flushScores(): Promise<void>;
+  scoreQueueDepth(): number;
+  getCurrentTrace(): LangfuseTraceHandle | undefined;
 };
 ```
 
-Purpose: Agent observer with Langfuse lifecycle and scoring methods.
+Purpose: Agent observer with Langfuse lifecycle, scoring, and trace-handle methods.
 
 Return behavior: can be passed to `AgentBuilder.observe(...)`.
 
 Notable errors: `score(...)` throws without a trace id or credentials and rejects on Langfuse API failures.
 
+## LangfuseTraceHandle
+
+```ts
+type LangfuseTraceHandle = {
+  readonly traceId: string;
+  readonly observationId: string;
+  addAttributes(attributes: Record<string, JsonValue | undefined>): void;
+  addEvent(name: string, attributes?: Record<string, JsonValue | undefined>): void;
+};
+```
+
+Purpose: record ad-hoc checkpoints and attach metadata to the active trace without threading the run observer through every function call.
+
+Return behavior: `addEvent(...)` creates an event observation under the active root; `addAttributes(...)` updates the root observation's metadata.
+
+Notable errors: calls after the run ends reject because the root observation no longer accepts children.
+
 ## LangfuseScoreArgs
 
 ```ts
+type LangfuseScoreDataType = "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
+
 type LangfuseScoreArgs = {
   traceId?: string;
   observationId?: string;
   name: string;
-  value: number;
+  value: number | string;
+  dataType?: LangfuseScoreDataType;
   comment?: string;
   metadata?: Record<string, JsonValue | undefined>;
+  configId?: string;
+  scoreConfigId?: string;
+  environment?: string;
+  timestamp?: Date | string;
 };
 ```
 
@@ -57,6 +92,17 @@ Purpose: submit Langfuse scores for a trace or observation.
 Return behavior: consumed by `LangfuseTracing.score(...)`.
 
 Notable errors: score submission requires a trace id and Langfuse credentials.
+
+## LangfuseScoreError
+
+```ts
+class LangfuseScoreError extends Error {
+  readonly scores: LangfuseScoreArgs[];
+  override readonly cause?: unknown;
+}
+```
+
+Purpose: raised when a queued score exhausts retries; carries the failed payloads on `scores`.
 
 ## langfuse
 
@@ -78,6 +124,9 @@ Notable errors: construction or later flush/shutdown can fail through OpenTeleme
 type LangfuseEvalReporterOptions = {
   publishInvalid?: boolean;
   strict?: boolean;
+  onMissingTrace?: "ignore" | "warn" | "throw";
+  truncateInputAt?: number;
+  includeMessages?: boolean;
 };
 
 function createLangfuseEvalReporter<Input = unknown, Output = unknown, Expected = unknown>(
@@ -90,4 +139,196 @@ Purpose: bridge core eval metric results to Langfuse scores.
 
 Return behavior: returns an `EvalReporter` for `runEvalSuite(...)`. Invalid outcomes are skipped unless `publishInvalid` is true.
 
-Notable errors: with `strict: true`, missing trace ids reject the reporter call; scoring errors reject through the supplied tracing object.
+Notable errors: with `strict: true` (or `onMissingTrace: "throw"`), missing trace ids reject the reporter call; scoring errors reject through the supplied tracing object.
+
+## Datasets and Experiments
+
+```ts
+type LangfuseDatasetClientOptions = {
+  baseUrl?: string;
+  publicKey?: string;
+  secretKey?: string;
+  pageSize?: number;
+  timeoutMs?: number;
+};
+
+type LangfuseDatasetItem<Input = unknown, Expected = unknown> = {
+  id: string;
+  input: Input;
+  expected?: Expected;
+  metadata?: Record<string, JsonValue | undefined>;
+};
+
+type LangfuseDataset<Input = unknown, Expected = unknown> = {
+  name: string;
+  description?: string;
+  metadata?: Record<string, JsonValue | undefined>;
+  items: LangfuseDatasetItem<Input, Expected>[];
+};
+
+type LangfuseRunItemResult<Output = unknown> = {
+  output: Output;
+  trace?: { traceId: string; observationId?: string };
+};
+
+type LangfuseRunItemError = {
+  itemId: string;
+  error: unknown;
+};
+
+type LangfuseRunExperimentOptions<Input = unknown, Output = unknown, Expected = unknown> = {
+  datasetName: string;
+  runName: string;
+  description?: string;
+  metadata?: Record<string, JsonValue | undefined>;
+  items?: LangfuseDatasetItem<Input, Expected>[];
+  run: (item: LangfuseDatasetItem<Input, Expected>) =>
+    | LangfuseRunItemResult<Output>
+    | Promise<LangfuseRunItemResult<Output>>;
+};
+
+type LangfuseRunExperimentResult = {
+  runName: string;
+  datasetName: string;
+  posted: number;
+  errors: LangfuseRunItemError[];
+};
+
+type LangfuseDatasetClient = {
+  createDataset(dataset: {
+    name: string;
+    description?: string;
+    metadata?: Record<string, JsonValue | undefined>;
+  }): Promise<LangfuseDataset<unknown, unknown>>;
+  getDataset<Input, Expected>(name: string): Promise<LangfuseDataset<Input, Expected>>;
+  upsertItems<Input, Expected>(
+    name: string,
+    items: LangfuseDatasetItem<Input, Expected>[],
+  ): Promise<void>;
+  runExperiment<Input, Output, Expected>(
+    options: LangfuseRunExperimentOptions<Input, Output, Expected>,
+  ): Promise<LangfuseRunExperimentResult>;
+};
+
+function createLangfuseDatasetClient(
+  tracing: Pick<LangfuseTracing, "score">,
+  options: LangfuseDatasetClientOptions,
+): LangfuseDatasetClient;
+```
+
+Purpose: manage Langfuse datasets and post batched dataset runs.
+
+Return behavior: `createDataset` / `getDataset` round-trip dataset metadata; `upsertItems` posts items to the dataset; `runExperiment` runs the supplied `run` per item and posts the successful results.
+
+Notable errors: non-2xx on the batched run POST throws, with item-level errors surfaced on the thrown error.
+
+## Eval Experiment Runner
+
+```ts
+type RunEvalAsExperimentOptions = {
+  tracing: Pick<LangfuseTracing, "score">;
+  datasetName: string;
+  runName: string;
+  description?: string;
+  metadata?: Record<string, JsonValue | undefined>;
+  reporters?: ReadonlyArray<EvalReporter<unknown, unknown, unknown>>;
+};
+
+type RunEvalAsExperimentResult = {
+  suite: EvalSuiteResult<unknown, unknown, unknown>;
+  datasetRun: LangfuseRunExperimentResult;
+};
+
+function runEvalAsExperiment(
+  evalOptions: RunEvalSuiteOptions<unknown, unknown, unknown>,
+  experimentOptions: RunEvalAsExperimentOptions,
+): Promise<RunEvalAsExperimentResult>;
+```
+
+Purpose: run an eval suite and post the results as a Langfuse dataset run alongside the metric scores.
+
+## Prompt Management
+
+```ts
+type LangfusePromptClientOptions = {
+  baseUrl?: string;
+  publicKey?: string;
+  secretKey?: string;
+  cacheTtlMs?: number;
+  timeoutMs?: number;
+};
+
+type LangfusePromptGetOptions = {
+  version?: number;
+  label?: string;
+  cacheTtlMs?: number;
+  refresh?: boolean;
+};
+
+type LangfuseChatMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+};
+
+type LangfusePrompt = {
+  name: string;
+  version: number;
+  labels: string[];
+  prompt: string | LangfuseChatMessage[];
+  type: "text" | "chat";
+  tags?: string[];
+  resolvedAt: Date;
+};
+
+type LangfusePromptClient = {
+  getPrompt(name: string, options?: LangfusePromptGetOptions): Promise<LangfusePrompt>;
+  getPromptText(name: string, options?: LangfusePromptGetOptions): Promise<string>;
+  getPromptChat(name: string, options?: LangfusePromptGetOptions): Promise<LangfuseChatMessage[]>;
+  refresh(): void;
+};
+
+function createLangfusePromptClient(
+  tracing: Pick<LangfuseTracing, "score">,
+  options: LangfusePromptClientOptions,
+): LangfusePromptClient;
+```
+
+Purpose: fetch prompts from Langfuse's prompt store with an in-memory TTL cache.
+
+Return behavior: `getPromptText` / `getPromptChat` throw if the resolved prompt is the other shape.
+
+Notable errors: invalid prompts throw; per-request timeouts throw via `AbortSignal.timeout`.
+
+## PII Redaction
+
+```ts
+type LangfuseRedactionMode = boolean | "deep";
+
+type RedactorPattern = {
+  name: string;
+  regex: RegExp;
+};
+
+type LangfuseRedactionOptions = {
+  patterns?: RedactorPattern[];
+  replacement?: string;
+};
+
+type PiiRedactor = {
+  redactString(input: string): string;
+  redactObject<T>(input: T): T;
+  redactMessages(input: Message[]): Message[];
+  patternNames(): string[];
+};
+
+const DEFAULT_PATTERNS: RedactorPattern[];
+
+function createPiiRedactor(options?: LangfuseRedactionOptions): PiiRedactor;
+```
+
+Purpose: mask personally identifiable information before it leaves the process.
+
+Return behavior: `redactString` runs configured patterns in order; `redactObject` recurses into nested values; `redactMessages` redacts the text parts of message content arrays.
+
+Notable errors: redaction failures propagate so callers can choose to retry or fall back.
+

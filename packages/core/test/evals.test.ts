@@ -8,6 +8,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   contains,
+  defineMetric,
   type Embedding,
   type EmbeddingModel,
   type EvalMetricArgs,
@@ -235,6 +236,32 @@ describe("evals", () => {
     });
 
     expect(result.invalid).toBe(1);
+  });
+});
+
+describe("defineMetric", () => {
+  it("returns the metric object unchanged and preserves annotations", async () => {
+    const metric = defineMetric({
+      name: "quality",
+      dataType: "CATEGORICAL" as const,
+      scoreConfigId: "sc-1",
+      metadata: { suite: "qa" },
+      evaluate: () => EvalOutcome.pass("good"),
+    });
+
+    expect(metric.name).toBe("quality");
+    expect(metric.dataType).toBe("CATEGORICAL");
+    expect(metric.scoreConfigId).toBe("sc-1");
+    expect(metric.metadata).toEqual({ suite: "qa" });
+    const args: EvalMetricArgs<string, string> = {
+      suiteName: "qa",
+      case: { id: "c", input: "x" },
+      output: "x",
+    };
+    await expect(Promise.resolve(metric.evaluate(args))).resolves.toEqual({
+      outcome: "pass",
+      score: "good",
+    });
   });
 });
 

@@ -348,6 +348,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
               throw event.error;
             }
             if (mapped !== undefined) {
+              await generationObservers.update?.({ turn: currentTurns, delta: mapped });
               yield await emit(addTurn(currentTurns, mapped));
             }
           }

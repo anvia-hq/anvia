@@ -3,9 +3,11 @@ import type {
   AgentGenerationErrorArgs,
   AgentGenerationObserver,
   AgentGenerationStartArgs,
+  AgentGenerationUpdateArgs,
   AgentObserverRegistration,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,
@@ -107,6 +109,19 @@ export class ActiveAgentRunObservers {
     }
   }
 
+  async event(args: AgentRunEventArgs): Promise<void> {
+    for (const runObserver of this.runObservers) {
+      if (runObserver.event === undefined) {
+        continue;
+      }
+      try {
+        await runObserver.event(args);
+      } catch (error) {
+        this.handleError(error);
+      }
+    }
+  }
+
   private handleError(error: unknown): void {
     if (this.failOnObserverError) {
       throw error;
@@ -137,6 +152,19 @@ export class ActiveGenerationObservers {
       }
       try {
         await observer.error(args);
+      } catch (error) {
+        this.handleError(error);
+      }
+    }
+  }
+
+  async update(args: AgentGenerationUpdateArgs): Promise<void> {
+    for (const observer of this.generationObservers) {
+      if (observer.update === undefined) {
+        continue;
+      }
+      try {
+        await observer.update(args);
       } catch (error) {
         this.handleError(error);
       }

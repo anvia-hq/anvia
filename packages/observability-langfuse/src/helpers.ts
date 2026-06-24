@@ -36,6 +36,8 @@ export function usageDetailsFromRecord(usage: Record<string, unknown>): Record<s
     totalTokens:
       numberValue(usage.totalTokens) ??
       (numberValue(usage.inputTokens) ?? 0) + (numberValue(usage.outputTokens) ?? 0),
+    cachedInputTokens: numberValue(usage.cachedInputTokens) ?? 0,
+    cacheCreationInputTokens: numberValue(usage.cacheCreationInputTokens) ?? 0,
   };
 }
 
@@ -74,6 +76,18 @@ function numberValue(value: unknown): number | undefined {
 
 export function emptyToUndefined(value: string | undefined): string | undefined {
   return value === undefined || value.length === 0 ? undefined : value;
+}
+
+/**
+ * Resolve an option value: prefer the explicit option, fall back to the
+ * env var, and treat empty strings as missing. Empty env vars are common
+ * when a process inherits a process manager that injects blank values.
+ */
+export function resolveOption(
+  option: string | undefined,
+  envVar: string | undefined,
+): string | undefined {
+  return emptyToUndefined(option) ?? emptyToUndefined(envVar);
 }
 
 export function errorMessage(error: unknown): string {

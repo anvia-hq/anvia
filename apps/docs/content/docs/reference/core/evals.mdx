@@ -36,6 +36,10 @@ Purpose: normalized metric result. Use `EvalOutcome.pass(...)`, `EvalOutcome.fai
 ```ts
 type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
   name: string;
+  dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
+  configId?: string;
+  scoreConfigId?: string;
+  metadata?: Record<string, JsonValue | undefined>;
   evaluate(args: EvalMetricArgs<Input, Output, Expected>): EvalOutcome<Score> | Promise<EvalOutcome<Score>>;
 };
 
@@ -57,9 +61,13 @@ type EvalCaseResult<Input, Output, Expected = unknown> = {
   targetError?: unknown;
   metrics: EvalMetricResult[];
 };
+
+function defineMetric<Input, Output, Score, Expected>(
+  metric: EvalMetric<Input, Output, Score, Expected>,
+): EvalMetric<Input, Output, Score, Expected>;
 ```
 
-Purpose: evaluates one case output and records normalized metric results.
+Purpose: evaluates one case output and records normalized metric results. `defineMetric` is an identity helper that preserves type inference and signals intent when adding optional annotations.
 
 ## EvalReporter
 

@@ -1,4 +1,5 @@
 export * from "./agent-target";
+export { defineMetric } from "./metric";
 export * from "./metrics";
 export * from "./outcome";
 export { runEvalSuite } from "./runner";

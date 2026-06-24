@@ -1,8 +1,10 @@
+import type { AgentDeltaEvent } from "../agent/stream-accumulator";
 import type {
   CompletionModelCapabilities,
   CompletionRequest,
   CompletionResponse,
   JsonObject,
+  JsonValue,
   Message,
   ToolCall,
   ToolDefinition,
@@ -27,12 +29,18 @@ export type AgentTraceOptions = {
   failOnObserverError?: boolean | undefined;
 };
 
+export type AgentRunPromptRef = {
+  name: string;
+  version?: number | undefined;
+};
+
 export type AgentRunStartArgs = {
   agentName?: string | undefined;
   agentDescription?: string | undefined;
   instructions?: string | undefined;
   trace?: AgentTraceOptions | undefined;
   prompt: Message;
+  promptRef?: AgentRunPromptRef | undefined;
   history: Message[];
   maxTurns: number;
 };
@@ -71,6 +79,18 @@ export type AgentGenerationErrorArgs = {
   error: unknown;
 };
 
+export type AgentGenerationUpdateArgs = {
+  turn: number;
+  delta: AgentDeltaEvent;
+};
+
+export type AgentRunEventArgs = {
+  name: string;
+  attributes?: Record<string, JsonValue | undefined> | undefined;
+  level?: "DEFAULT" | "WARNING" | "ERROR" | undefined;
+  timestamp?: Date | string | undefined;
+};
+
 export type AgentToolStartArgs = {
   turn: number;
   toolCall: ToolCall;
@@ -99,6 +119,7 @@ export type AgentToolStreamEventArgs = AgentToolStartArgs & {
 export interface AgentGenerationObserver {
   end(args: AgentGenerationEndArgs): void | Promise<void>;
   error?(args: AgentGenerationErrorArgs): void | Promise<void>;
+  update?(args: AgentGenerationUpdateArgs): void | Promise<void>;
 }
 
 export interface AgentToolObserver {
@@ -117,6 +138,7 @@ export interface AgentRunObserver {
   ): AgentToolObserver | undefined | Promise<AgentToolObserver | undefined>;
   end(args: AgentRunEndArgs): void | Promise<void>;
   error?(args: AgentRunErrorArgs): void | Promise<void>;
+  event?(args: AgentRunEventArgs): void | Promise<void>;
 }
 
 export interface AgentObserver {

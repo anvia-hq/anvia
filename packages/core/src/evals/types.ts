@@ -25,6 +25,10 @@ export type EvalMetricArgs<Input, Output, Expected = unknown> = {
 
 export type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
   name: string;
+  dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN" | undefined;
+  scoreConfigId?: string | undefined;
+  configId?: string | undefined;
+  metadata?: EvalMetadata | undefined;
   evaluate(
     args: EvalMetricArgs<Input, Output, Expected>,
   ): EvalOutcome<Score> | Promise<EvalOutcome<Score>>;

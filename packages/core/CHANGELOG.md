@@ -1,5 +1,44 @@
 # @anvia/core
 
+## 0.8.0
+
+### Minor Changes
+
+- 3de3cce: Add an optional `update?` hook on `AgentGenerationObserver` so
+  observability adapters can record streaming deltas as they arrive.
+
+  The agent loop now awaits `observer.update?.({ turn, delta })` for
+  every delta produced by the underlying completion stream. The new
+  method is optional, so existing adapters keep working. A new
+  `AgentGenerationUpdateArgs` type is exported alongside.
+
+- 3de3cce: Add an optional `event?` hook on `AgentRunObserver` so
+  observability adapters can record ad-hoc checkpoints (e.g.
+  retrieval, validation) during a run.
+
+  The new method accepts an `AgentRunEventArgs` value with a `name`,
+  optional `attributes` map, optional `level`, and optional
+  `timestamp`. The hook is optional, so existing adapters keep
+  working without modification.
+
+- 3de3cce: Add an optional `promptRef?: { name; version? }` field on
+  `AgentRunStartArgs`. Observability adapters can use this to
+  record the prompt name and version on the trace root and on
+  each generation in the run.
+
+  The new field is optional, so existing call sites keep
+  compiling. The `AgentRunPromptRef` type is also exported
+  alongside.
+
+- 3de3cce: Extend the `EvalMetric` type with optional Langfuse-related
+  annotations: `dataType`, `scoreConfigId`, `configId`, and
+  `metadata`. All fields are optional, so existing metric definitions
+  keep compiling unchanged.
+
+  Add a `defineMetric()` identity helper that wraps a metric
+  definition for clearer intent at call sites. Re-export it from
+  `@anvia/core/evals`.
+
 ## 0.7.1
 
 ### Patch Changes

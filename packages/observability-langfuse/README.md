@@ -149,12 +149,74 @@ retries are exhausted, the queue throws a `LangfuseScoreError` whose
 `scores` property contains the failed payloads so you can inspect
 what was lost.
 
+## Event observations & trace handle
+
+After a run starts, you can record ad-hoc checkpoints and attach
+extra attributes to the active trace without threading the run
+observer through every function call. The tracing instance exposes
+the most recent trace through `getCurrentTrace()`:
+
+```ts
+import { langfuse } from "@anvia/langfuse";
+
+const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+
+await tracing.startRun({
+  agentName: "support",
+  prompt: { role: "user", content: [{ type: "text", text: "hi" }] },
+  history: [],
+  maxTurns: 3,
+});
+
+const trace = tracing.getCurrentTrace();
+
+trace?.addEvent("retrieval.done", { docCount: 4 });
+trace?.addEvent("validation.passed");
+trace?.addAttributes({ quality: "high" });
+```
+
+`addEvent` creates a Langfuse `event` observation under the active
+root and ends it immediately. `addAttributes` updates the root
+observation's metadata. Both calls bubble up to Langfuse via the
+existing OpenTelemetry span processor.
+
+If you have the run observer returned by `startRun`, you can also
+use its `event?(...)` hook (added in `@anvia/core`) to record
+checkpoints:
+
+```ts
+const run = await tracing.startRun({
+  agentName: "support",
+  prompt: { role: "user", content: [{ type: "text", text: "hi" }] },
+  history: [],
+  maxTurns: 3,
+});
+
+await run.event?.({
+  name: "retrieval.done",
+  attributes: { docCount: 4 },
+});
+```
+
+The trace handle is cleared when the run `end`s or `error`s. If you
+call `addEvent` or `addAttributes` after that, the underlying
+Langfuse SDK will reject the call because the root observation is
+no longer accepting children. We let the error propagate so it is
+visible.
+
+`getCurrentTrace()` is per-tracing-instance and last-write-wins:
+when multiple runs start on the same instance, the handle always
+points at the most recent run. For true concurrency, manage your
+own context (e.g. capture the run observer or build your own
+mapping keyed on user/session).
+
 ## Exports
 
 - `langfuse`
 - `createLangfuseEvalReporter`
 - `LangfuseScoreError`
 - `LangfuseTracing`
+- `LangfuseTraceHandle`
 - `LangfuseTracingOptions`
 - `LangfuseScoreArgs`
 - `LangfuseScoreDataType`

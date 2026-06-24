@@ -4,6 +4,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   JsonObject,
+  JsonValue,
   Message,
   ToolCall,
   ToolDefinition,
@@ -77,6 +78,13 @@ export type AgentGenerationUpdateArgs = {
   delta: AgentDeltaEvent;
 };
 
+export type AgentRunEventArgs = {
+  name: string;
+  attributes?: Record<string, JsonValue | undefined> | undefined;
+  level?: "DEFAULT" | "WARNING" | "ERROR" | undefined;
+  timestamp?: Date | string | undefined;
+};
+
 export type AgentToolStartArgs = {
   turn: number;
   toolCall: ToolCall;
@@ -124,6 +132,7 @@ export interface AgentRunObserver {
   ): AgentToolObserver | undefined | Promise<AgentToolObserver | undefined>;
   end(args: AgentRunEndArgs): void | Promise<void>;
   error?(args: AgentRunErrorArgs): void | Promise<void>;
+  event?(args: AgentRunEventArgs): void | Promise<void>;
 }
 
 export interface AgentObserver {

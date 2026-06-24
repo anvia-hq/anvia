@@ -7,6 +7,7 @@ import type {
   AgentGenerationUpdateArgs,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,
@@ -40,7 +41,12 @@ import {
   usageDetailsFromRecord,
 } from "./helpers.js";
 import { ScoreQueue } from "./scoring.js";
-import type { LangfuseScoreArgs, LangfuseTracing, LangfuseTracingOptions } from "./types.js";
+import type {
+  LangfuseScoreArgs,
+  LangfuseTraceHandle,
+  LangfuseTracing,
+  LangfuseTracingOptions,
+} from "./types.js";
 
 export const langfuse = {
   create(options: LangfuseTracingOptions = {}): LangfuseTracing {
@@ -57,6 +63,7 @@ class LangfuseAgentObserver implements LangfuseTracing {
   private readonly serviceName: string | undefined;
   private readonly timeoutMs: number;
   private readonly queue: ScoreQueue | null;
+  private currentHandle: LangfuseTraceHandle | undefined;
 
   constructor(options: LangfuseTracingOptions) {
     this.publicKey = resolveOption(options.publicKey, process.env.LANGFUSE_PUBLIC_KEY);
@@ -138,10 +145,20 @@ class LangfuseAgentObserver implements LangfuseTracing {
     );
     applyTraceAttributes(root, args);
 
-    return new LangfuseRunObserver(root, {
+    const runObserver = new LangfuseRunObserver(root, {
       traceId: root.traceId,
       observationId: root.id,
     });
+    this.currentHandle = runObserver.getHandle();
+    runObserver.setCurrentHandle = (handle) => {
+      this.currentHandle = handle;
+    };
+    runObserver.clearCurrentHandle = () => {
+      if (this.currentHandle === runObserver.getHandle()) {
+        this.currentHandle = undefined;
+      }
+    };
+    return runObserver;
   }
 
   async flush(): Promise<void> {
@@ -160,6 +177,10 @@ class LangfuseAgentObserver implements LangfuseTracing {
 
   scoreQueueDepth(): number {
     return this.queue?.depth() ?? 0;
+  }
+
+  getCurrentTrace(): LangfuseTraceHandle | undefined {
+    return this.currentHandle;
   }
 
   async score(args: LangfuseScoreArgs): Promise<void> {
@@ -278,11 +299,18 @@ function serializeMetadataValue(value: unknown): string | undefined {
 
 class LangfuseRunObserver implements AgentRunObserver {
   private readonly turnSpans = new Map<number, LangfuseSpan>();
+  // Assigned by LangfuseAgentObserver.startRun so that the run can
+  // publish trace-handle updates back to the agent observer.
+  setCurrentHandle: ((handle: LangfuseTraceHandle) => void) | undefined;
+  clearCurrentHandle: (() => void) | undefined;
+  private handle: LangfuseTraceHandle;
 
   constructor(
     private readonly root: LangfuseAgent,
     readonly trace: AgentTraceInfo,
-  ) {}
+  ) {
+    this.handle = this.buildHandle();
+  }
 
   startGeneration(args: AgentGenerationStartArgs): AgentGenerationObserver {
     this.closeEarlierTurns(args.turn);
@@ -349,6 +377,7 @@ class LangfuseRunObserver implements AgentRunObserver {
         },
       })
       .end();
+    this.clearCurrentHandle?.();
   }
 
   error(args: AgentRunErrorArgs): void {
@@ -366,6 +395,32 @@ class LangfuseRunObserver implements AgentRunObserver {
         },
       })
       .end();
+    this.clearCurrentHandle?.();
+  }
+
+  event(args: AgentRunEventArgs): void {
+    const metadata: Record<string, unknown> = { ...(args.attributes ?? {}) };
+    this.root.startObservation(args.name, { metadata }, { asType: "event" }).end();
+  }
+
+  getHandle(): LangfuseTraceHandle {
+    return this.handle;
+  }
+
+  private buildHandle(): LangfuseTraceHandle {
+    return {
+      traceId: this.trace.traceId ?? "",
+      observationId: this.trace.observationId ?? "",
+      addAttributes: (attributes) => {
+        this.root.update({ metadata: attributes });
+        this.setCurrentHandle?.(this.handle);
+      },
+      addEvent: (name, attributes) => {
+        const metadata: Record<string, unknown> = { ...(attributes ?? {}) };
+        this.root.startObservation(name, { metadata }, { asType: "event" }).end();
+        this.setCurrentHandle?.(this.handle);
+      },
+    };
   }
 
   private turnSpan(turn: number): LangfuseSpan {

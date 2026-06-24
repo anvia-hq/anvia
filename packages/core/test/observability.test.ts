@@ -14,6 +14,7 @@ import {
   type AgentObserver,
   type AgentRunEndArgs,
   type AgentRunErrorArgs,
+  type AgentRunEventArgs,
   type AgentRunObserver,
   type AgentRunStartArgs,
   type AgentToolEndArgs,
@@ -642,6 +643,84 @@ describe("active agent observer groups", () => {
     await expect(tool.streamEvent(toolStreamEventArgs())).rejects.toThrow(error);
     await expect(tool.end(toolEndArgs())).rejects.toThrow(error);
     await expect(tool.error(toolErrorArgs())).rejects.toThrow(error);
+  });
+
+  it("fans out run event() to observers that implement it", async () => {
+    const seen: AgentRunEventArgs[] = [];
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                event(args) {
+                  seen.push(args);
+                },
+              }),
+          },
+        },
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                event(args) {
+                  seen.push(args);
+                },
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    const args: AgentRunEventArgs = {
+      name: "retrieval.done",
+      attributes: { docCount: 4 },
+    };
+    await expect(active.event(args)).resolves.toBeUndefined();
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toEqual(args);
+    expect(seen[1]).toEqual(args);
+  });
+
+  it("skips run observers that omit event?", async () => {
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () => createRunObserver({}),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+
+    await expect(active.event({ name: "noop", attributes: { ok: true } })).resolves.toBeUndefined();
+  });
+
+  it("propagates event errors when failOnObserverError is set", async () => {
+    const error = new Error("event failed");
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                event() {
+                  throw error;
+                },
+              }),
+          },
+          failOnObserverError: true,
+        },
+      ],
+      runStartArgs(),
+      true,
+    );
+
+    await expect(active.event({ name: "validation.passed" })).rejects.toThrow(error);
   });
 });
 

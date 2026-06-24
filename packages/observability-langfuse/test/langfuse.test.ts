@@ -1856,6 +1856,208 @@ describe("usageDetailsFromRecord", () => {
   });
 });
 
+describe("LangfuseTraceHandle", () => {
+  it("getCurrentTrace() returns undefined before any run", () => {
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    expect(tracing.getCurrentTrace()).toBeUndefined();
+  });
+
+  it("getCurrentTrace() returns a handle during a run and clears it after end", async () => {
+    const root = fakeObservation("root", "trace-7", "obs-root-7");
+    root.startObservation.mockReturnValue(root);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const runObserver = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    const handle = tracing.getCurrentTrace();
+    expect(handle).toBeDefined();
+    expect(handle?.traceId).toBe("trace-7");
+    expect(handle?.observationId).toBe("obs-root-7");
+    expect(handle?.traceId).toBe(runObserver.trace?.traceId);
+    expect(handle?.observationId).toBe(runObserver.trace?.observationId);
+
+    await runObserver.end({
+      output: "Done",
+      usage: usage(1, 2),
+      messages: [],
+    });
+    expect(tracing.getCurrentTrace()).toBeUndefined();
+  });
+
+  it("getCurrentTrace() returns undefined after a run errors", async () => {
+    const root = fakeObservation("root", "trace-8", "obs-root-8");
+    root.startObservation.mockReturnValue(root);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const runObserver = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    expect(tracing.getCurrentTrace()).toBeDefined();
+
+    await runObserver.error?.({
+      error: new Error("boom"),
+      usage: usage(0, 0),
+      messages: [],
+    });
+    expect(tracing.getCurrentTrace()).toBeUndefined();
+  });
+
+  it("addAttributes updates the root observation metadata", async () => {
+    const root = fakeObservation("root", "trace-9", "obs-root-9");
+    root.startObservation.mockReturnValue(root);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    tracing.getCurrentTrace()?.addAttributes({ quality: "high", score: 0.9 });
+    expect(root.update).toHaveBeenCalledWith({ metadata: { quality: "high", score: 0.9 } });
+  });
+
+  it("addEvent creates an event observation under the root and ends it", async () => {
+    const root = fakeObservation("root", "trace-10", "obs-root-10");
+    const event = fakeObservation("event", "trace-10", "obs-event-1");
+    root.startObservation.mockReturnValueOnce(event);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    tracing.getCurrentTrace()?.addEvent("retrieval.done", { docCount: 4 });
+    expect(root.startObservation).toHaveBeenCalledWith(
+      "retrieval.done",
+      { metadata: { docCount: 4 } },
+      { asType: "event" },
+    );
+    expect(event.end).toHaveBeenCalledOnce();
+  });
+
+  it("event? on the run observer creates an event observation", async () => {
+    const root = fakeObservation("root", "trace-11", "obs-root-11");
+    const event = fakeObservation("event", "trace-11", "obs-event-2");
+    root.startObservation.mockReturnValueOnce(event);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const runObserver = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await runObserver.event?.({
+      name: "validation.passed",
+      attributes: { checks: 3 },
+    });
+
+    expect(root.startObservation).toHaveBeenCalledWith(
+      "validation.passed",
+      { metadata: { checks: 3 } },
+      { asType: "event" },
+    );
+    expect(event.end).toHaveBeenCalledOnce();
+  });
+
+  it("multiple addEvent calls within one run all create observations", async () => {
+    const root = fakeObservation("root", "trace-12", "obs-root-12");
+    const eventA = fakeObservation("eventA", "trace-12", "obs-event-A");
+    const eventB = fakeObservation("eventB", "trace-12", "obs-event-B");
+    root.startObservation.mockReturnValueOnce(eventA).mockReturnValueOnce(eventB);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    const handle = tracing.getCurrentTrace();
+    handle?.addEvent("retrieval.done");
+    handle?.addEvent("validation.passed");
+
+    expect(root.startObservation).toHaveBeenCalledTimes(2);
+    expect(root.startObservation).toHaveBeenNthCalledWith(
+      1,
+      "retrieval.done",
+      { metadata: {} },
+      { asType: "event" },
+    );
+    expect(root.startObservation).toHaveBeenNthCalledWith(
+      2,
+      "validation.passed",
+      { metadata: {} },
+      { asType: "event" },
+    );
+    expect(eventA.end).toHaveBeenCalledOnce();
+    expect(eventB.end).toHaveBeenCalledOnce();
+  });
+
+  it("sequential runs replace the handle (last-write-wins)", async () => {
+    const rootA = fakeObservation("rootA", "trace-A", "obs-root-A");
+    const rootB = fakeObservation("rootB", "trace-B", "obs-root-B");
+    rootA.startObservation.mockReturnValue(rootA);
+    rootB.startObservation.mockReturnValue(rootB);
+    mocks.startObservation.mockReturnValueOnce(rootA).mockReturnValueOnce(rootB);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const runA = (await tracing.startRun({
+      agentName: "agent-a",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    const handleA = tracing.getCurrentTrace();
+    expect(handleA?.traceId).toBe("trace-A");
+
+    await runA.end({
+      output: "Done A",
+      usage: usage(1, 1),
+      messages: [],
+    });
+
+    const runB = (await tracing.startRun({
+      agentName: "agent-b",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    const handleB = tracing.getCurrentTrace();
+    expect(handleB?.traceId).toBe("trace-B");
+    expect(handleB).not.toBe(handleA);
+
+    await runB.end({
+      output: "Done B",
+      usage: usage(1, 1),
+      messages: [],
+    });
+    expect(tracing.getCurrentTrace()).toBeUndefined();
+  });
+});
+
 function fakeObservation(name: string, traceId: string, id: string) {
   const observation = {
     name,

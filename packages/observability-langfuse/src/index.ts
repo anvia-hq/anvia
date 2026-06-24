@@ -5,6 +5,7 @@ export type {
   LangfuseEvalReporterOptions,
   LangfuseScoreArgs,
   LangfuseScoreDataType,
+  LangfuseTraceHandle,
   LangfuseTracing,
   LangfuseTracingOptions,
 } from "./types.js";

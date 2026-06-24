@@ -8,6 +8,7 @@ export type {
   AgentObserverRegistration,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,

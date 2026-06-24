@@ -30,12 +30,20 @@ export type LangfuseScoreArgs = {
   timestamp?: Date | string | undefined;
 };
 
+export type LangfuseTraceHandle = {
+  readonly traceId: string;
+  readonly observationId: string;
+  addAttributes(attributes: Record<string, JsonValue | undefined>): void;
+  addEvent(name: string, attributes?: Record<string, JsonValue | undefined>): void;
+};
+
 export type LangfuseTracing = AgentObserver & {
   flush(): Promise<void>;
   shutdown(): Promise<void>;
   score(args: LangfuseScoreArgs): Promise<void>;
   flushScores(): Promise<void>;
   scoreQueueDepth(): number;
+  getCurrentTrace(): LangfuseTraceHandle | undefined;
 };
 
 export type LangfuseEvalReporterOptions = {

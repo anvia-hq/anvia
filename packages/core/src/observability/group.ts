@@ -7,6 +7,7 @@ import type {
   AgentObserverRegistration,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,
@@ -102,6 +103,19 @@ export class ActiveAgentRunObservers {
       }
       try {
         await runObserver.error(args);
+      } catch (error) {
+        this.handleError(error);
+      }
+    }
+  }
+
+  async event(args: AgentRunEventArgs): Promise<void> {
+    for (const runObserver of this.runObservers) {
+      if (runObserver.event === undefined) {
+        continue;
+      }
+      try {
+        await runObserver.event(args);
       } catch (error) {
         this.handleError(error);
       }

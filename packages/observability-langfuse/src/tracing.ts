@@ -40,8 +40,6 @@ import {
 } from "./helpers.js";
 import type { LangfuseScoreArgs, LangfuseTracing, LangfuseTracingOptions } from "./types.js";
 
-type LangfuseScoreDataType = NonNullable<LangfuseScoreArgs["dataType"]>;
-
 export const langfuse = {
   create(options: LangfuseTracingOptions = {}): LangfuseTracing {
     return new LangfuseAgentObserver(options);

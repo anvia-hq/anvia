@@ -71,6 +71,23 @@ const tracing = langfuse.create({
 });
 ```
 
+## Observation metadata
+
+The adapter records extra data on Langfuse observations so the UI
+shows everything the agent runtime emits:
+
+- **Generation observations** carry `providerRequest` and `modelInfo`
+  (with `provider`, `defaultModel`, and `capabilities`) on start, and
+  `firstDeltaMs` on end. `usageDetails` always includes
+  `cachedInputTokens` and `cacheCreationInputTokens`.
+- **Tool observations** carry `toolDefinition` and `toolMetadata` on
+  start, and `structuredResult` on end.
+- **Root run observation** carries `serviceName` and the configured
+  `metadata` from `AgentRunStartArgs`.
+
+User-supplied `trace.metadata` always wins over the built-in fields
+above (the spread order preserves it).
+
 ## Eval Scores
 
 ```ts

@@ -225,6 +225,18 @@ class LangfuseRunObserver implements AgentRunObserver {
           turn: args.turn,
           toolCount: args.request.tools.length,
           hasOutputSchema: args.request.outputSchema !== undefined,
+          ...(args.providerRequest !== undefined ? { providerRequest: args.providerRequest } : {}),
+          ...(args.modelInfo !== undefined
+            ? {
+                modelInfo: {
+                  provider: args.modelInfo.provider,
+                  defaultModel: args.modelInfo.defaultModel,
+                  ...(args.modelInfo.capabilities !== undefined
+                    ? { capabilities: args.modelInfo.capabilities }
+                    : {}),
+                },
+              }
+            : {}),
         },
       },
       { asType: "generation" },
@@ -245,6 +257,8 @@ class LangfuseRunObserver implements AgentRunObserver {
           turn: args.turn,
           internalCallId: args.internalCallId,
           toolCallId: args.toolCallId,
+          ...(args.toolDefinition !== undefined ? { toolDefinition: args.toolDefinition } : {}),
+          ...(args.toolMetadata !== undefined ? { toolMetadata: args.toolMetadata } : {}),
         },
       },
       { asType: "tool" },
@@ -330,6 +344,7 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
         usageDetails: usageDetails(args.response.usage),
         metadata: {
           turn: args.turn,
+          ...(args.firstDeltaMs !== undefined ? { firstDeltaMs: args.firstDeltaMs } : {}),
         },
       })
       .end();
@@ -495,6 +510,7 @@ class LangfuseToolObserver implements AgentToolObserver {
         internalCallId: args.internalCallId,
         toolCallId: args.toolCallId,
         skipped: args.skipped,
+        ...(args.structuredResult !== undefined ? { structuredResult: args.structuredResult } : {}),
       },
       level: args.skipped ? "WARNING" : "DEFAULT",
     };

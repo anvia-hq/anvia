@@ -216,6 +216,333 @@ describe("langfuse", () => {
     );
   });
 
+  it("records providerRequest and modelInfo on the generation observation", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const generation = fakeObservation("generation", "trace-1", "obs-generation");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.startGeneration?.({
+      turn: 1,
+      request: {
+        model: "gpt-4o",
+        chatHistory: [userMessage("hi")],
+        documents: [],
+        tools: [],
+        additionalParams: {},
+      },
+      providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
+      modelInfo: {
+        provider: "openai",
+        defaultModel: "gpt-4o",
+        capabilities: {
+          streaming: true,
+          tools: true,
+          toolChoice: true,
+          imageInput: false,
+          documentInput: false,
+          outputSchema: false,
+          reasoning: false,
+        },
+      },
+    });
+
+    expect(turn.startObservation).toHaveBeenCalledWith(
+      "model.turn.1",
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
+          modelInfo: {
+            provider: "openai",
+            defaultModel: "gpt-4o",
+            capabilities: {
+              streaming: true,
+              tools: true,
+              toolChoice: true,
+              imageInput: false,
+              documentInput: false,
+              outputSchema: false,
+              reasoning: false,
+            },
+          },
+        }),
+      }),
+      { asType: "generation" },
+    );
+  });
+
+  it("records modelInfo without capabilities when omitted", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const generation = fakeObservation("generation", "trace-1", "obs-generation");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.startGeneration?.({
+      turn: 1,
+      request: {
+        model: "gpt-4o",
+        chatHistory: [userMessage("hi")],
+        documents: [],
+        tools: [],
+        additionalParams: {},
+      },
+      modelInfo: { provider: "openai", defaultModel: "gpt-4o" },
+    });
+
+    const call = turn.startObservation.mock.calls[0]?.[1] as
+      | { metadata?: Record<string, unknown> }
+      | undefined;
+    expect(call?.metadata?.modelInfo).toEqual({
+      provider: "openai",
+      defaultModel: "gpt-4o",
+    });
+    expect(call?.metadata?.modelInfo).not.toHaveProperty("capabilities");
+  });
+
+  it("does not record providerRequest or modelInfo when absent", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const generation = fakeObservation("generation", "trace-1", "obs-generation");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.startGeneration?.(generationStartArgs());
+
+    const call = turn.startObservation.mock.calls[0]?.[1] as
+      | { metadata?: Record<string, unknown> }
+      | undefined;
+    expect(call?.metadata).not.toHaveProperty("providerRequest");
+    expect(call?.metadata).not.toHaveProperty("modelInfo");
+  });
+
+  it("records firstDeltaMs on generation end", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const generation = fakeObservation("generation", "trace-1", "obs-generation");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    const generationObserver = await run.startGeneration?.(generationStartArgs());
+    await generationObserver?.end({
+      turn: 1,
+      response: {
+        messageId: "msg-1",
+        choice: [AssistantContent.text("Done")],
+        usage: usage(2, 3),
+        rawResponse: {},
+      },
+      firstDeltaMs: 12,
+    });
+    expect(generation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ firstDeltaMs: 12 }),
+      }),
+    );
+  });
+
+  it("omits firstDeltaMs from generation end when absent", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const generation = fakeObservation("generation", "trace-1", "obs-generation");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    const generationObserver = await run.startGeneration?.(generationStartArgs());
+    await generationObserver?.end({
+      turn: 1,
+      response: {
+        messageId: "msg-1",
+        choice: [AssistantContent.text("Done")],
+        usage: usage(2, 3),
+        rawResponse: {},
+      },
+    });
+    const call = generation.update.mock.calls[0]?.[0] as
+      | { metadata?: Record<string, unknown> }
+      | undefined;
+    expect(call?.metadata).not.toHaveProperty("firstDeltaMs");
+  });
+
+  it("records toolDefinition and toolMetadata on tool start", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const tool = fakeObservation("tool", "trace-1", "obs-tool");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(tool);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.startTool?.({
+      turn: 1,
+      toolName: "get_ticket",
+      args: '{"id":"TICKET-1"}',
+      toolCall: AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" }),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+      toolDefinition: {
+        name: "get_ticket",
+        description: "Fetch a support ticket",
+        parameters: { type: "object", properties: { id: { type: "string" } } },
+      },
+      toolMetadata: { source: "cookbook" },
+    });
+
+    expect(turn.startObservation).toHaveBeenCalledWith(
+      "tool.get_ticket",
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          toolDefinition: {
+            name: "get_ticket",
+            description: "Fetch a support ticket",
+            parameters: { type: "object", properties: { id: { type: "string" } } },
+          },
+          toolMetadata: { source: "cookbook" },
+        }),
+      }),
+      { asType: "tool" },
+    );
+  });
+
+  it("records structuredResult on tool end", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const tool = fakeObservation("tool", "trace-1", "obs-tool");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(tool);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    const toolObserver = (await run.startTool?.({
+      turn: 1,
+      toolName: "get_ticket",
+      args: '{"id":"TICKET-1"}',
+      toolCall: AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" }),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    })) as AgentToolObserver | undefined;
+
+    await toolObserver?.end({
+      turn: 1,
+      toolName: "get_ticket",
+      args: '{"id":"TICKET-1"}',
+      toolCall: AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" }),
+      result: '{"id":"TICKET-1"}',
+      structuredResult: [{ type: "text", text: "TICKET-1" }],
+      skipped: false,
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+    expect(tool.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          structuredResult: [{ type: "text", text: "TICKET-1" }],
+        }),
+      }),
+    );
+  });
+
+  it("omits structuredResult from tool end when absent", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const tool = fakeObservation("tool", "trace-1", "obs-tool");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(tool);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    const toolObserver = (await run.startTool?.({
+      turn: 1,
+      toolName: "get_ticket",
+      args: '{"id":"TICKET-1"}',
+      toolCall: AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" }),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    })) as AgentToolObserver | undefined;
+
+    await toolObserver?.end({
+      turn: 1,
+      toolName: "get_ticket",
+      args: '{"id":"TICKET-1"}',
+      toolCall: AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" }),
+      result: '{"id":"TICKET-1"}',
+      skipped: false,
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+    const call = tool.update.mock.calls[0]?.[0] as
+      | { metadata?: Record<string, unknown> }
+      | undefined;
+    expect(call?.metadata).not.toHaveProperty("structuredResult");
+  });
+
   it("maps runs, generations, tools, and trace attributes to Langfuse observations", async () => {
     const root = fakeObservation("root", "trace-1", "obs-root");
     const turn = fakeObservation("turn", "trace-1", "obs-turn");
@@ -900,6 +1227,54 @@ describe("langfuse", () => {
       expect.objectContaining({ traceId: "trace-fallback", value: 1 }),
     );
     expect(score).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("usageDetailsFromRecord", () => {
+  it("includes cache token fields when present", async () => {
+    const { usageDetailsFromRecord } = await import("../src/helpers");
+    expect(
+      usageDetailsFromRecord({
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        cachedInputTokens: 4,
+        cacheCreationInputTokens: 5,
+      }),
+    ).toEqual({
+      inputTokens: 1,
+      outputTokens: 2,
+      totalTokens: 3,
+      cachedInputTokens: 4,
+      cacheCreationInputTokens: 5,
+    });
+  });
+
+  it("defaults cache token fields to 0 when absent", async () => {
+    const { usageDetailsFromRecord } = await import("../src/helpers");
+    expect(
+      usageDetailsFromRecord({
+        inputTokens: 1,
+        outputTokens: 2,
+      }),
+    ).toEqual({
+      inputTokens: 1,
+      outputTokens: 2,
+      totalTokens: 3,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    });
+  });
+
+  it("defaults every field to 0 when given an empty record", async () => {
+    const { usageDetailsFromRecord } = await import("../src/helpers");
+    expect(usageDetailsFromRecord({})).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    });
   });
 });
 

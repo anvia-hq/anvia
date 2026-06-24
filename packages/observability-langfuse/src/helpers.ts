@@ -36,6 +36,8 @@ export function usageDetailsFromRecord(usage: Record<string, unknown>): Record<s
     totalTokens:
       numberValue(usage.totalTokens) ??
       (numberValue(usage.inputTokens) ?? 0) + (numberValue(usage.outputTokens) ?? 0),
+    cachedInputTokens: numberValue(usage.cachedInputTokens) ?? 0,
+    cacheCreationInputTokens: numberValue(usage.cacheCreationInputTokens) ?? 0,
   };
 }
 

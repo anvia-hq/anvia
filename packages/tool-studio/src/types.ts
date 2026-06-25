@@ -212,8 +212,26 @@ export type StudioEvalSuiteConfig = {
   description?: string;
   caseCount: number;
   metricNames: string[];
+  casePreviewCount?: number;
+  casePreviews?: StudioEvalCasePreview[];
+  metricSummaries?: StudioEvalMetricSummary[];
   concurrency?: number;
   metadata?: JsonObject;
+};
+
+export type StudioEvalCasePreview = {
+  id: string;
+  input?: JsonValue;
+  expected?: JsonValue;
+  metadataKeys?: string[];
+};
+
+export type StudioEvalMetricSummary = {
+  name: string;
+  dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
+  configId?: string;
+  scoreConfigId?: string;
+  metadataKeys?: string[];
 };
 
 export type StudioEvalRunRequest = {

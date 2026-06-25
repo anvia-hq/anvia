@@ -347,8 +347,26 @@ type StudioEvalSuiteConfig = {
   description?: string;
   caseCount: number;
   metricNames: string[];
+  casePreviewCount?: number;
+  casePreviews?: StudioEvalCasePreview[];
+  metricSummaries?: StudioEvalMetricSummary[];
   concurrency?: number;
   metadata?: JsonObject;
+};
+
+type StudioEvalCasePreview = {
+  id: string;
+  input?: JsonValue;
+  expected?: JsonValue;
+  metadataKeys?: string[];
+};
+
+type StudioEvalMetricSummary = {
+  name: string;
+  dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
+  configId?: string;
+  scoreConfigId?: string;
+  metadataKeys?: string[];
 };
 
 type StudioEvalRunRequest = {
@@ -369,7 +387,7 @@ Purpose: response contracts for Memory, Status, direct tool runs, eval runs, and
 
 Return behavior: Memory routes summarize the active Studio session store; Status returns a compact runtime snapshot.
 
-Register eval suites with `new Studio(targets, { evals: [...] })`. Studio lists their case and metric counts and runs them through `POST /evals/:evalId/runs`.
+Register eval suites with `new Studio(targets, { evals: [...] })`. Studio lists their case and metric counts, includes bounded case and metric previews for the UI, and runs them through `POST /evals/:evalId/runs`.
 
 Notable errors: unsupported or missing stores return `unsupported_capability` or `not_found` from route handlers.
 

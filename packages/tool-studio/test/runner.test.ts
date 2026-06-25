@@ -3639,6 +3639,9 @@ describe("Anvia studio", () => {
   it("runs registered eval suites", async () => {
     const metric: EvalMetric<string, string, boolean, string> = {
       name: "uppercase_match",
+      dataType: "BOOLEAN",
+      configId: "uppercase-config",
+      metadata: { category: "format" },
       evaluate(args) {
         return args.output === args.case.expected
           ? EvalOutcome.pass(true)
@@ -3651,7 +3654,9 @@ describe("Anvia studio", () => {
           id: "uppercase-suite",
           name: "Uppercase Suite",
           description: "Checks a deterministic transform.",
-          cases: [{ id: "basic", input: "hello", expected: "HELLO" }],
+          cases: [
+            { id: "basic", input: "hello", expected: "HELLO", metadata: { topic: "greeting" } },
+          ],
           target: (input: string) => input.toUpperCase(),
           metrics: [metric],
         },
@@ -3673,6 +3678,23 @@ describe("Anvia studio", () => {
           name: "Uppercase Suite",
           caseCount: 1,
           metricNames: ["uppercase_match"],
+          casePreviewCount: 1,
+          casePreviews: [
+            {
+              id: "basic",
+              input: "hello",
+              expected: "HELLO",
+              metadataKeys: ["topic"],
+            },
+          ],
+          metricSummaries: [
+            {
+              name: "uppercase_match",
+              dataType: "BOOLEAN",
+              configId: "uppercase-config",
+              metadataKeys: ["category"],
+            },
+          ],
         },
       ],
     });

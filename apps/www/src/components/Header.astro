@@ -1,4 +1,6 @@
 ---
+import Button from "./ui/Button.astro";
+
 const menuGroups = [
   {
     label: "Docs",
@@ -21,10 +23,9 @@ const menuGroups = [
 ---
 
 <header class="sticky top-0 z-30 border-white/10 border-b bg-[#131314]/90 backdrop-blur-xl">
-  <div class="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-    <div class="flex shrink-0 items-center gap-2.5 font-semibold text-xl text-zinc-50">
-      <img src="/assets/logo.png" alt="" class="h-7 w-7" />
-      <span>Anvia</span>
+  <div class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+    <div class="flex shrink-0 items-center">
+      <img src="/assets/logo.png" alt="Anvia" class="h-[1.375rem] w-auto" />
     </div>
 
     <nav class="hidden items-center gap-7 font-medium text-sm lg:flex" aria-label="Primary">
@@ -35,14 +36,14 @@ const menuGroups = [
               group.href ? (
                 <a
                   href={group.href}
-                  class="inline-flex h-10 items-center gap-2 text-zinc-400 transition hover:text-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E9FF4E]"
+                  class="inline-flex h-10 items-center gap-2 text-zinc-400 transition hover:text-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2BF563]"
                 >
                   {group.label}
                 </a>
               ) : (
                 <button
                   type="button"
-                  class="inline-flex h-10 items-center gap-2 text-zinc-400 transition hover:text-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E9FF4E]"
+                  class="inline-flex h-10 items-center gap-2 text-zinc-400 transition hover:text-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2BF563]"
                   aria-haspopup={group.items.length > 0 ? "true" : undefined}
                 >
                   <span>{group.label}</span>
@@ -63,7 +64,7 @@ const menuGroups = [
                     {group.items.map((item) => (
                       <button
                         type="button"
-                        class="px-3 py-2.5 text-left font-medium text-sm text-zinc-400 transition hover:text-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E9FF4E]"
+                        class="px-3 py-2.5 text-left font-medium text-sm text-zinc-400 transition hover:text-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2BF563]"
                       >
                         {item}
                       </button>
@@ -78,18 +79,8 @@ const menuGroups = [
     </nav>
 
     <div class="hidden items-center gap-2.5 sm:flex">
-      <a
-        href="/docs"
-        class="rounded-lg border border-white/15 bg-white/5 px-4 py-2 font-medium text-sm text-zinc-100 shadow-sm transition hover:border-white/25 hover:bg-white/10 active:translate-y-px"
-      >
-        Read docs
-      </a>
-      <button
-        type="button"
-        class="inline-flex rounded-lg bg-[#E9FF4E] px-4 py-2 font-semibold text-[#131314] text-sm shadow-[0_8px_24px_rgba(233,255,78,0.22)] transition hover:bg-[#ddf447] active:translate-y-px"
-      >
-        Get started
-      </button>
+      <Button variant="outline" size="xs" href="/docs">Read docs</Button>
+      <Button size="xs">Get started</Button>
     </div>
 
     <details class="group relative lg:hidden">
@@ -107,7 +98,7 @@ const menuGroups = [
           {
             menuGroups.map((group) => (
               <section class="rounded-xl bg-white/[0.035] p-3">
-                <p class="font-mono text-[#E9FF4E]/65 text-[0.64rem] uppercase tracking-[0.16em]">
+                <p class="font-mono text-[#2BF563]/65 text-[0.64rem] uppercase tracking-[0.16em]">
                   {group.label}
                 </p>
                 {group.items.length > 0 && (
@@ -129,18 +120,8 @@ const menuGroups = [
           }
         </div>
         <div class="mt-3 grid grid-cols-2 gap-2">
-          <a
-            href="/docs"
-            class="rounded-lg border border-white/15 bg-white/5 px-3 py-2.5 font-medium text-sm text-zinc-100"
-          >
-            Read docs
-          </a>
-          <button
-            type="button"
-            class="rounded-lg bg-[#E9FF4E] px-3 py-2.5 font-semibold text-[#131314] text-sm"
-          >
-            Get started
-          </button>
+          <Button variant="outline" size="md" href="/docs">Read docs</Button>
+          <Button size="md">Get started</Button>
         </div>
       </div>
     </details>

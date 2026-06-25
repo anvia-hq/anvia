@@ -18,7 +18,7 @@ interface Props {
 }
 
 const { entry, docs } = Astro.props;
-const { Content } = await render(entry);
+const { Content, headings } = await render(entry);
 ---
 
 <DocsShell
@@ -27,13 +27,14 @@ const { Content } = await render(entry);
   entries={docs}
   activeSection={entry.data.section}
   currentId={entry.id}
+  headings={headings}
 >
   <article
-    class="docs-content max-w-3xl"
+    class="docs-content w-full max-w-none"
     data-pagefind-body
     data-pagefind-meta={`section:${entry.data.section}`}
   >
-    <p class="font-mono text-[#E9FF4E]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+    <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
       {sectionLabel(entry.data.section)}
     </p>
     <h1
@@ -51,11 +52,61 @@ const { Content } = await render(entry);
     </div>
 
     <footer class="mt-14 border-white/[0.08] border-t pt-6" data-pagefind-ignore>
-      <a href="/docs" class="font-semibold text-[#E9FF4E] text-sm transition hover:text-[#ddf447]">
+      <a href="/docs" class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
         Back to docs -&gt;
       </a>
     </footer>
   </article>
+
+  <script>
+    const codeBlocks = document.querySelectorAll<HTMLElement>(".docs-content pre");
+
+    codeBlocks.forEach((block) => {
+      if (block.parentElement?.classList.contains("docs-code-block")) {
+        return;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "docs-code-block";
+      block.parentNode?.insertBefore(wrapper, block);
+      wrapper.appendChild(block);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "docs-copy-button";
+      button.setAttribute("aria-label", "Copy code");
+      const setButtonLabel = (label: string) => {
+        button.innerHTML = `
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span>${label}</span>
+        `;
+      };
+
+      setButtonLabel("Copy");
+
+      button.addEventListener("click", async () => {
+        const code = block.querySelector("code")?.textContent ?? block.textContent ?? "";
+
+        try {
+          await navigator.clipboard.writeText(code.trimEnd());
+          setButtonLabel("Copied");
+          window.setTimeout(() => {
+            setButtonLabel("Copy");
+          }, 1400);
+        } catch {
+          setButtonLabel("Failed");
+          window.setTimeout(() => {
+            setButtonLabel("Copy");
+          }, 1400);
+        }
+      });
+
+      wrapper.appendChild(button);
+    });
+  </script>
 </DocsShell>
 
 <style>
@@ -90,16 +141,97 @@ const { Content } = await render(entry);
     list-style: disc;
   }
 
-  .docs-content :global(pre) {
+  .docs-content :global(ul li::marker) {
+    color: #2bf563;
+  }
+
+  .docs-content :global(ol) {
+    margin-top: 1.25rem;
+    display: grid;
+    gap: 0.65rem;
+    padding-left: 0;
+    color: rgb(212 212 216);
+    line-height: 1.7;
+    list-style: none;
+    counter-reset: docs-step;
+  }
+
+  .docs-content :global(ol > li) {
+    position: relative;
+    min-height: 3.25rem;
+    counter-increment: docs-step;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.025);
+    padding: 0.8rem 1rem 0.8rem 3.1rem;
+  }
+
+  .docs-content :global(ol > li::before) {
+    position: absolute;
+    top: 0.88rem;
+    left: 1rem;
+    display: grid;
+    width: 1.35rem;
+    height: 1.35rem;
+    place-items: center;
+    border-radius: 999px;
+    background: #2bf563;
+    color: #131314;
+    content: counter(docs-step);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .docs-content :global(.docs-code-block) {
+    position: relative;
     margin-top: 1rem;
+  }
+
+  .docs-content :global(pre) {
+    margin-top: 0;
     overflow-x: auto;
     border-radius: 0.9rem;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    background: #101011;
+    background-color: rgba(255, 255, 255, 0.025) !important;
     padding: 1rem;
     color: rgb(228 228 231);
     font-size: 0.875rem;
     line-height: 1.7;
+  }
+
+  .docs-content :global(.docs-copy-button) {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 0.45rem;
+    border: 0;
+    background: rgba(255, 255, 255, 0.075);
+    padding: 0.35rem 0.55rem;
+    color: rgb(212 212 216);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
+  }
+
+  .docs-content :global(.docs-copy-button svg) {
+    width: 0.82rem;
+    height: 0.82rem;
+    flex: none;
+  }
+
+  .docs-content :global(.docs-copy-button:hover) {
+    background: rgba(43, 245, 99, 0.12);
+    color: #2bf563;
   }
 
   .docs-content :global(code) {
@@ -110,12 +242,12 @@ const { Content } = await render(entry);
     border-radius: 0.35rem;
     background: rgba(255, 255, 255, 0.055);
     padding: 0.15rem 0.35rem;
-    color: #e9ff4e;
+    color: #2bf563;
     font-size: 0.9em;
   }
 
   .docs-content :global(a) {
-    color: #e9ff4e;
+    color: #2bf563;
     font-weight: 600;
   }
 </style>

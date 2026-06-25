@@ -3,10 +3,36 @@
 
 :root {
   color-scheme: dark;
+  scrollbar-color: #3f3f46 #131314;
+  scrollbar-width: thin;
 }
 
 body {
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  scrollbar-color: #3f3f46 #131314;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+::-webkit-scrollbar-track {
+  background: #131314;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid #131314;
+  border-radius: 999px;
+  background: #3f3f46;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
 }
 
 :where(h1, h2, h3, h4, h5, h6) {

@@ -1,25 +1,23 @@
 ---
 import { getCollection } from "astro:content";
-import DocsPreview from "../components/docs/DocsPreview.astro";
 import DocsShell from "../components/docs/DocsShell.astro";
 import { docHref, isPublishedDoc, sectionLabel, sortDocs } from "../lib/docs";
+import { packageCount } from "../lib/packages";
 
 const docs = sortDocs((await getCollection("docs")).filter(isPublishedDoc));
 const homeCards = docs
   .filter((entry) => entry.data.home?.card)
   .sort((a, b) => (a.data.home?.order ?? 999) - (b.data.home?.order ?? 999));
-
-const previewVariants = ["diagram", "terminal", "retrieval", "tracing"] as const;
 ---
 
 <DocsShell
   title="Anvia Docs"
   description="Learn how to build, deploy, observe, and extend TypeScript agents with the Anvia package stack."
   entries={docs}
-  activeSection="runtime"
+  activeSection="basics"
 >
   <section class="max-w-5xl">
-    <p class="font-mono text-[#E9FF4E]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+    <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
       Documentation
     </p>
     <h1 class="mt-4 max-w-4xl font-semibold text-4xl text-zinc-50 leading-[1.02] tracking-[-0.02em] sm:text-5xl">
@@ -32,11 +30,11 @@ const previewVariants = ["diagram", "terminal", "retrieval", "tracing"] as const
 
   <section class="mt-14 grid gap-x-7 gap-y-12 xl:grid-cols-2" aria-label="Documentation topics">
     {
-      homeCards.map((entry, index) => (
+      homeCards.map((entry) => (
         <article class="min-w-0">
-          <DocsPreview variant={previewVariants[index % previewVariants.length]} />
+          <div class="min-h-60 rounded-2xl border border-white/[0.1]" />
 
-          <p class="mt-6 font-mono text-[#E9FF4E]/65 text-[0.68rem] uppercase tracking-[0.16em]">
+          <p class="mt-6 font-mono text-[#2BF563]/65 text-[0.68rem] uppercase tracking-[0.16em]">
             {sectionLabel(entry.data.section)}
           </p>
           <h2 class="mt-2 font-semibold text-xl text-zinc-100 tracking-[-0.01em]">
@@ -46,15 +44,33 @@ const previewVariants = ["diagram", "terminal", "retrieval", "tracing"] as const
             {entry.data.description}
           </p>
           <div class="mt-5 flex gap-7">
-            <a href={docHref(entry)} class="font-semibold text-[#E9FF4E] text-sm transition hover:text-[#ddf447]">
+            <a href={docHref(entry)} class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
               Overview -&gt;
             </a>
-            <a href={docHref(entry)} class="font-semibold text-[#E9FF4E] text-sm transition hover:text-[#ddf447]">
+            <a href={docHref(entry)} class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
               Quickstart -&gt;
             </a>
           </div>
         </article>
       ))
     }
+  </section>
+
+  <section class="mt-16 max-w-4xl border-white/[0.08] border-t pt-10" aria-label="Package catalog">
+    <p class="font-mono text-[#2BF563]/65 text-[0.68rem] uppercase tracking-[0.16em]">
+      Package map
+    </p>
+    <h2 class="mt-2 font-semibold text-2xl text-zinc-100 tracking-[-0.01em]">
+      Browse every Anvia product package.
+    </h2>
+    <p class="mt-3 max-w-2xl text-base text-zinc-300 leading-7">
+      Explore {packageCount} runtime, provider, embedding, vector store, observability, and tooling packages by product family.
+    </p>
+    <a
+      href="/docs/packages"
+      class="mt-5 inline-flex font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]"
+    >
+      View package catalog -&gt;
+    </a>
   </section>
 </DocsShell>

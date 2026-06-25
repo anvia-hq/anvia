@@ -1,0 +1,61 @@
+---
+type ButtonVariant = "primary" | "outline" | "ghost";
+type ButtonSize = "xs" | "sm" | "md" | "lg";
+
+interface Props {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  href?: string;
+  type?: "button" | "submit" | "reset";
+  class?: string;
+}
+
+const {
+  variant = "primary",
+  size = "sm",
+  href,
+  type = "button",
+  class: className,
+  ...rest
+} = Astro.props as Props;
+
+const baseStyles =
+  "inline-flex items-center justify-center rounded-lg transition active:translate-y-px";
+
+const variantStyles: Record<ButtonVariant, string> = {
+  primary:
+    "border border-white/20 bg-linear-to-b from-[#2BF563] to-[#1FB84A] font-semibold text-[#131314] outline-2 outline-offset-2 outline-white/20 hover:from-[#32ff6c] hover:to-[#18a841]",
+  outline:
+    "border border-white/15 bg-[#1a1a1b] font-medium text-zinc-100 shadow-sm hover:border-white/25 hover:bg-[#202022]",
+  ghost:
+    "bg-white/[0.055] font-semibold text-zinc-100 hover:bg-white/[0.085]",
+};
+
+const sizeStyles: Record<ButtonSize, string> = {
+  xs: "px-3 py-1.5 text-sm",
+  sm: "px-4 py-2 text-sm",
+  md: "px-3 py-2.5 text-sm",
+  lg: "px-5 py-3 text-sm",
+};
+
+const classes = [
+  baseStyles,
+  variantStyles[variant],
+  sizeStyles[size],
+  className,
+]
+  .filter(Boolean)
+  .join(" ");
+---
+
+{
+  href ? (
+    <a href={href} class={classes} {...rest}>
+      <slot />
+    </a>
+  ) : (
+    <button type={type} class={classes} {...rest}>
+      <slot />
+    </button>
+  )
+}

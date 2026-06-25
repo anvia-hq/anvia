@@ -7,7 +7,7 @@ import { isRecord } from "./object";
 
 export function MarkdownText(props: { text: string }) {
   return (
-    <div className="prose prose-sm max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.92em] prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current">
+    <div className="prose prose-sm max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-sm prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current">
       <ReactMarkdown
         components={{
           table({ children }) {
@@ -33,7 +33,7 @@ export function MarkdownText(props: { text: string }) {
           th({ children }) {
             return (
               <th
-                className="border-b border-border px-4 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground first:pl-5 last:pr-5"
+                className="border-b border-border px-4 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground first:pl-5 last:pr-5"
                 style={{ paddingBottom: "0.625rem", paddingTop: "0.625rem" }}
               >
                 {children}
@@ -65,12 +65,12 @@ export function ToolPayload(props: { title: string; value: string }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border/80 bg-background/70">
       <div className="flex min-h-9 items-center gap-3 border-b border-border/80 bg-muted/20 px-3">
-        <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        <div className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           {props.title}
         </div>
       </div>
       <div className="min-w-0 overflow-x-auto">
-        <pre className="m-0 min-w-max p-3 font-mono text-[13px] leading-6 text-foreground">
+        <pre className="m-0 min-w-max p-3 text-sm leading-6 text-foreground">
           <code>
             <JsonSyntax text={display} />
           </code>
@@ -144,13 +144,13 @@ function jsonTokenKind(
 function jsonTokenClass(kind: ReturnType<typeof jsonTokenKind>): string {
   switch (kind) {
     case "key":
-      return "text-primary";
+      return "text-foreground";
     case "string":
       return "text-foreground dark:text-zinc-100";
     case "number":
-      return "text-chart-2 dark:text-sky-300";
+      return "text-muted-foreground dark:text-muted-foreground";
     case "boolean":
-      return "text-chart-5 dark:text-fuchsia-300";
+      return "text-destructive dark:text-destructive";
     case "null":
       return "text-muted-foreground";
     case "punctuation":
@@ -203,7 +203,7 @@ function JsonRow(props: { label: string; value: unknown }) {
       <div className="text-xs font-semibold text-muted-foreground [overflow-wrap:anywhere]">
         {props.label}
       </div>
-      <div className="min-w-0 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere] [&_.grid]:mt-2 [&_.grid]:border-l [&_.grid]:border-border [&_.grid]:pl-3">
+      <div className="min-w-0 text-sm leading-5 text-foreground [overflow-wrap:anywhere] [&_.grid]:mt-2 [&_.grid]:border-l [&_.grid]:border-border [&_.grid]:pl-3">
         {nested ? <JsonValueView value={props.value} /> : <JsonScalar value={props.value} />}
       </div>
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/studio",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Studio UI and HTTP runtime for Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -36,7 +36,8 @@
     "@anvia/react": "workspace:*",
     "@anvia/server": "workspace:*",
     "@hono/node-server": "^2.0.6",
-    "@phosphor-icons/react": "^2.1.10",
+    "@hugeicons/core-free-icons": "^4.2.1",
+    "@hugeicons/react": "^1.1.7",
     "@radix-ui/react-alert-dialog": "^1.1.17",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-scroll-area": "^1.2.12",

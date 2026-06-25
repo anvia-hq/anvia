@@ -1,17 +1,18 @@
 import {
-  ActivityIcon as Activity,
-  ChatText,
-  Database,
-  FlowArrow,
-  Gauge,
-  List,
-  type Icon as PhosphorIcon,
-  Plug,
-  Robot,
-  ShieldCheck,
-  Wrench,
-} from "@phosphor-icons/react";
+  Activity01Icon,
+  ChatIcon,
+  DatabaseIcon,
+  GaugeIcon,
+  ListViewIcon,
+  Plug01Icon,
+  Robot01Icon,
+  Shield01Icon,
+  WorkflowSquare01Icon,
+  Wrench01Icon,
+} from "@hugeicons/core-free-icons";
+import type { IconSvgElement } from "@hugeicons/react";
 import { Button } from "../../components/ui/button";
+import { StudioIcon } from "../../components/ui/icon";
 import { cn } from "../../lib/utils";
 
 export function NavButton(props: {
@@ -34,7 +35,7 @@ export function NavButton(props: {
       disabled={props.disabled}
       onClick={props.onClick}
     >
-      <Icon />
+      <StudioIcon icon={Icon} />
       <span>{props.label}</span>
     </Button>
   );
@@ -52,27 +53,27 @@ type IconName =
   | "wrench"
   | "workflow";
 
-function navIcon(name: IconName): PhosphorIcon {
+function navIcon(name: IconName): IconSvgElement {
   switch (name) {
     case "activity":
-      return Activity;
+      return Activity01Icon;
     case "bot":
-      return Robot;
+      return Robot01Icon;
     case "database":
-      return Database;
+      return DatabaseIcon;
     case "gauge":
-      return Gauge;
+      return GaugeIcon;
     case "list":
-      return List;
+      return ListViewIcon;
     case "message":
-      return ChatText;
+      return ChatIcon;
     case "plug":
-      return Plug;
+      return Plug01Icon;
     case "shield":
-      return ShieldCheck;
+      return Shield01Icon;
     case "wrench":
-      return Wrench;
+      return Wrench01Icon;
     case "workflow":
-      return FlowArrow;
+      return WorkflowSquare01Icon;
   }
 }

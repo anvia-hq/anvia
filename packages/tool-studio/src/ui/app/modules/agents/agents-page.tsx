@@ -42,7 +42,7 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
       <header className="bg-background/70 pb-5 pl-0 pr-6 pt-0 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
+            <div className=" text-xs font-semibold uppercase tracking-[0.24em] text-foreground">
               Studio registry
             </div>
             <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
@@ -96,7 +96,7 @@ function AgentDossier(props: {
     <article
       className={cn(
         "grid overflow-hidden rounded-xl border border-border/80 bg-card/45 p-2 shadow-sm transition duration-200 hover:border-border hover:bg-card/60",
-        props.active && "border-primary/35 bg-card/70 shadow-[inset_0_1px_0_hsl(0_0%_100%_/_0.08)]",
+        props.active && "border-border/80 bg-card/70 shadow-[inset_0_1px_0_hsl(0_0%_100%_/_0.08)]",
       )}
     >
       <div className="grid gap-2 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1fr)_minmax(280px,0.7fr)]">
@@ -106,12 +106,12 @@ function AgentDossier(props: {
               <Badge
                 className={cn(
                   "border-border/80 bg-muted/45 text-muted-foreground",
-                  props.active && "border-primary/35 bg-primary/10 text-primary",
+                  props.active && "border-border/80 bg-muted/45 text-foreground",
                 )}
               >
                 {props.active ? "selected" : "agent"}
               </Badge>
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <span className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 {props.agent.quickPrompts.length} prompts
               </span>
             </div>
@@ -119,12 +119,12 @@ function AgentDossier(props: {
               <h2 className="m-0 text-xl font-semibold leading-tight tracking-tight text-foreground text-balance">
                 {props.agent.name ?? props.agent.id}
               </h2>
-              <span className="min-w-0 break-all font-mono text-xs font-medium leading-5 text-muted-foreground">
+              <span className="min-w-0 break-all text-xs font-medium leading-5 text-muted-foreground">
                 {props.agent.id}
               </span>
             </div>
           </div>
-          <div className="h-px w-20 bg-primary/55" />
+          <div className="h-px w-20 bg-muted/55" />
         </section>
 
         <section className="grid content-start gap-5 rounded-lg bg-background/35 p-5">
@@ -147,7 +147,7 @@ function AgentDossier(props: {
                     className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 rounded-lg border border-border/70 bg-background/45 px-3 py-2 text-sm leading-6 text-foreground"
                     key={prompt}
                   >
-                    <span className="font-mono text-[11px] font-semibold text-muted-foreground">
+                    <span className=" text-xs font-semibold text-muted-foreground">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     <span className="min-w-0 [overflow-wrap:anywhere]">{prompt}</span>
@@ -189,11 +189,11 @@ function AgentDossier(props: {
               </div>
               {runtime.model === undefined ? null : (
                 <div className="grid min-w-0 gap-1 rounded-lg bg-muted/20 px-3 py-2 text-sm">
-                  <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     model
                   </span>
                   <span
-                    className="min-w-0 truncate font-mono text-xs text-foreground"
+                    className="min-w-0 truncate text-xs text-foreground"
                     title={formatMetadataValue(runtime.model)}
                   >
                     {formatMetadataValue(runtime.model)}
@@ -219,7 +219,7 @@ function AgentDossier(props: {
                     {key}
                   </span>
                   <span
-                    className="min-w-0 truncate font-mono text-xs text-foreground"
+                    className="min-w-0 truncate text-xs text-foreground"
                     title={formatMetadataValue(value)}
                   >
                     {formatMetadataValue(value)}
@@ -234,23 +234,23 @@ function AgentDossier(props: {
   );
 }
 
-const enabledBadge = "border-primary/35 bg-primary/10 text-primary";
+const enabledBadge = "border-border/80 bg-muted/45 text-foreground";
 const disabledBadge = "border-border/80 bg-muted/55 text-muted-foreground";
 
 function RuntimeMetric(props: { label: string; value: number }) {
   return (
     <div className="grid gap-1 rounded-lg bg-muted/20 px-3 py-2">
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <span className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         {props.label}
       </span>
-      <span className="font-mono text-lg font-semibold text-foreground">{props.value}</span>
+      <span className=" text-lg font-semibold text-foreground">{props.value}</span>
     </div>
   );
 }
 
 function SectionLabel(props: { children: string }) {
   return (
-    <h3 className="m-0 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+    <h3 className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
       {props.children}
     </h3>
   );

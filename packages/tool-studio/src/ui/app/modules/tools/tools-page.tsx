@@ -98,7 +98,7 @@ export function ToolsPage(props: {
       <header className="bg-background/70 pb-5 pl-0 pr-6 pt-0 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
+            <div className=" text-xs font-semibold uppercase tracking-[0.24em] text-foreground">
               Agent capabilities
             </div>
             <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
@@ -111,7 +111,7 @@ export function ToolsPage(props: {
           </div>
           {props.agents.length > 1 ? (
             <Select value={selectedAgent?.id ?? ""} onValueChange={props.onSelectAgent}>
-              <SelectTrigger className="h-9 min-h-9 w-64 rounded-lg border-border bg-card/80 font-mono text-xs max-md:w-full">
+              <SelectTrigger className="h-9 min-h-9 w-64 rounded-lg border-border bg-card/80 text-xs max-md:w-full">
                 <SelectValue placeholder="Agent" />
               </SelectTrigger>
               <SelectContent align="end">
@@ -149,7 +149,7 @@ export function ToolsPage(props: {
                     </p>
                   </div>
                   <Select value={selectedTool?.name ?? ""} onValueChange={setSelectedToolName}>
-                    <SelectTrigger className="h-9 min-h-9 rounded-lg border-border bg-background/80 font-mono text-xs">
+                    <SelectTrigger className="h-9 min-h-9 rounded-lg border-border bg-background/80 text-xs">
                       <SelectValue placeholder="Tool" />
                     </SelectTrigger>
                     <SelectContent>
@@ -162,7 +162,7 @@ export function ToolsPage(props: {
                   </Select>
                   {selectedTool === undefined ? null : (
                     <div className="grid gap-2 rounded-lg bg-background/45 p-3">
-                      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      <span className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                         selected definition
                       </span>
                       <p className="m-0 text-sm leading-6 text-muted-foreground">
@@ -181,17 +181,17 @@ export function ToolsPage(props: {
                 </div>
                 <div className="grid min-w-0 gap-3">
                   <Textarea
-                    className="min-h-40 resize-y rounded-lg border-border bg-background/70 p-3 font-mono text-xs leading-5"
+                    className="min-h-40 resize-y rounded-lg border-border bg-background/70 p-3 text-xs leading-5"
                     value={argsText}
                     spellCheck={false}
                     onChange={(event) => setArgsText(event.target.value)}
                   />
                   <div className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                    <span className="min-w-0 truncate text-xs text-muted-foreground">
                       Arguments must be valid JSON.
                     </span>
                     <Button
-                      className="h-9 min-h-9 rounded-lg px-4 font-mono text-xs"
+                      className="h-9 min-h-9 rounded-lg px-4 text-xs"
                       type="button"
                       disabled={runState === "running" || selectedTool === undefined}
                       onClick={() => void runSelectedTool()}
@@ -200,7 +200,7 @@ export function ToolsPage(props: {
                     </Button>
                   </div>
                   {runError.length > 0 ? (
-                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-xs leading-5 text-destructive">
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
                       {runError}
                     </div>
                   ) : null}
@@ -211,7 +211,7 @@ export function ToolsPage(props: {
               </section>
 
               <div className="grid gap-1 overflow-hidden rounded-xl border border-border/80 bg-card/55 p-2 shadow-sm">
-                <div className="grid min-h-10 grid-cols-[minmax(260px,0.75fr)_minmax(0,1fr)] items-center rounded-lg border border-border/60 bg-muted/20 px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground max-lg:hidden">
+                <div className="grid min-h-10 grid-cols-[minmax(260px,0.75fr)_minmax(0,1fr)] items-center rounded-lg border border-border/60 bg-muted/20 px-4 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground max-lg:hidden">
                   <span>Definition</span>
                   <span>Parameter schema</span>
                 </div>
@@ -233,10 +233,8 @@ function ToolDefinitionRow(props: { tool: StudioAgentToolMetadata }) {
     <article className="grid grid-cols-[minmax(300px,0.75fr)_minmax(0,1fr)] gap-2 rounded-lg border border-transparent bg-background/25 p-2 transition duration-200 hover:border-border/70 hover:bg-background/35 max-lg:grid-cols-1">
       <div className="grid content-start gap-4 rounded-lg bg-card/25 p-3">
         <div className="grid gap-1">
-          <h2 className="m-0 truncate font-mono text-[15px] font-semibold text-foreground">
-            {props.tool.name}
-          </h2>
-          <span className="truncate font-mono text-[11px] font-medium text-muted-foreground">
+          <h2 className="m-0 truncate text-sm font-semibold text-foreground">{props.tool.name}</h2>
+          <span className="truncate text-xs font-medium text-muted-foreground">
             {props.tool.agentId}
           </span>
         </div>
@@ -248,7 +246,7 @@ function ToolDefinitionRow(props: { tool: StudioAgentToolMetadata }) {
           <Badge
             className={cn(
               props.tool.approval.required
-                ? "border-primary/35 bg-primary/10 text-primary"
+                ? "border-border/80 bg-muted/45 text-foreground"
                 : "border-border/80 bg-muted/55 text-muted-foreground",
             )}
           >
@@ -259,7 +257,7 @@ function ToolDefinitionRow(props: { tool: StudioAgentToolMetadata }) {
           </Badge>
         </div>
         {props.tool.approval.reason === undefined ? null : (
-          <p className="m-0 rounded-lg bg-primary/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          <p className="m-0 rounded-lg bg-muted/45 px-3 py-2 text-xs leading-5 text-muted-foreground">
             {props.tool.approval.reason}
           </p>
         )}
@@ -273,15 +271,13 @@ function SchemaBlock(props: { value: unknown; title: string }) {
   return (
     <section className="grid min-w-0 content-start overflow-hidden rounded-lg bg-background/45">
       <div className="flex min-h-9 items-center justify-between gap-3 bg-muted/20 px-4">
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        <span className=" text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           {props.title}
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {schemaType(props.value)}
-        </span>
+        <span className=" text-xs text-muted-foreground">{schemaType(props.value)}</span>
       </div>
       <div className="min-w-0 overflow-x-auto">
-        <pre className="m-0 max-h-96 min-w-max p-4 font-mono text-[12px] leading-5 text-foreground">
+        <pre className="m-0 max-h-96 min-w-max p-4 text-xs leading-5 text-foreground">
           <code>
             <JsonSyntax text={formatSchema(props.value)} />
           </code>
@@ -304,7 +300,7 @@ function EmptyState(props: { title: string; message: string }) {
 
 function sourceBadgeClass(source: "static" | "dynamic"): string {
   return source === "dynamic"
-    ? "border-primary/35 bg-primary/10 text-primary"
+    ? "border-border/80 bg-muted/45 text-foreground"
     : "border-border/80 bg-muted/55 text-muted-foreground";
 }
 

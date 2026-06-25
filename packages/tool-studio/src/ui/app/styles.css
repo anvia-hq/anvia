@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Krona+One&display=swap");
+@import "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap";
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @source "./**/*.{ts,tsx}";
@@ -6,41 +6,42 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: hsl(82 20% 94%);
+  --background: hsl(220 8% 96%);
   --foreground: hsl(208 22% 12%);
-  --card: hsl(80 24% 99%);
+  --card: hsl(0 0% 100%);
   --card-foreground: hsl(208 22% 12%);
-  --popover: hsl(80 24% 99%);
+  --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(208 22% 12%);
-  --primary: hsl(68 76% 34%);
-  --primary-foreground: hsl(84 28% 97%);
-  --secondary: hsl(88 18% 91%);
+  --primary: hsl(208 8% 18%);
+  --primary-foreground: hsl(0 0% 98%);
+  --secondary: hsl(220 8% 92%);
   --secondary-foreground: hsl(206 20% 16%);
-  --muted: hsl(88 16% 89%);
+  --muted: hsl(220 8% 91%);
   --muted-foreground: hsl(205 10% 43%);
-  --accent: hsl(68 76% 34% / 10%);
-  --accent-foreground: hsl(68 82% 24%);
+  --accent: hsl(220 8% 91%);
+  --accent-foreground: hsl(208 22% 12%);
   --destructive: hsl(2 58% 48%);
-  --destructive-foreground: hsl(84 28% 97%);
+  --destructive-foreground: hsl(0 0% 98%);
   --border: hsl(205 18% 20% / 12%);
   --input: hsl(205 18% 20% / 16%);
-  --ring: hsl(68 76% 34%);
-  --chart-1: hsl(68 76% 34%);
-  --chart-2: hsl(185 28% 38%);
+  --ring: hsl(205 12% 42%);
+  --chart-1: hsl(205 10% 44%);
+  --chart-2: hsl(205 8% 56%);
   --chart-3: hsl(205 10% 43%);
   --chart-4: hsl(208 22% 18%);
   --chart-5: hsl(2 58% 48%);
-  --sidebar: hsl(82 20% 94%);
+  --sidebar: hsl(220 8% 96%);
   --sidebar-foreground: hsl(208 22% 12%);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: hsl(68 76% 34% / 10%);
-  --sidebar-accent-foreground: hsl(68 82% 24%);
+  --sidebar-accent: hsl(205 18% 20% / 9%);
+  --sidebar-accent-foreground: hsl(208 22% 12%);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
+  --font-heading:
+    Figtree, Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, ui-monospace, monospace;
   --radius: 0.5rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -61,41 +62,42 @@
 }
 
 .dark {
-  --background: hsl(210 8% 8%);
+  --background: #131314;
   --foreground: hsl(88 18% 91%);
-  --card: hsl(210 8% 9.5%);
+  --card: #121212;
   --card-foreground: hsl(88 18% 91%);
-  --popover: hsl(210 8% 10%);
+  --popover: #121212;
   --popover-foreground: hsl(88 18% 91%);
-  --primary: hsl(68 100% 56%);
+  --primary: hsl(0 0% 88%);
   --primary-foreground: hsl(0 0% 4%);
   --secondary: hsl(210 7% 13%);
   --secondary-foreground: hsl(88 18% 88%);
   --muted: hsl(210 7% 15%);
   --muted-foreground: hsl(88 8% 62%);
-  --accent: hsl(68 100% 56% / 10%);
-  --accent-foreground: hsl(68 100% 62%);
+  --accent: hsl(0 0% 100% / 8%);
+  --accent-foreground: hsl(0 0% 92%);
   --destructive: hsl(2 64% 61%);
   --destructive-foreground: hsl(210 22% 8%);
   --border: hsl(88 22% 88% / 8%);
   --input: hsl(88 22% 88% / 12%);
-  --ring: hsl(68 100% 56%);
-  --chart-1: hsl(68 100% 56%);
-  --chart-2: hsl(184 34% 56%);
-  --chart-3: hsl(88 8% 62%);
-  --chart-4: hsl(88 18% 86%);
+  --ring: hsl(0 0% 58%);
+  --chart-1: hsl(0 0% 86%);
+  --chart-2: hsl(0 0% 66%);
+  --chart-3: hsl(0 0% 54%);
+  --chart-4: hsl(0 0% 42%);
   --chart-5: hsl(2 64% 61%);
-  --sidebar: hsl(210 8% 8%);
+  --sidebar: #131314;
   --sidebar-foreground: hsl(88 18% 91%);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: hsl(68 100% 56% / 10%);
-  --sidebar-accent-foreground: hsl(68 100% 62%);
+  --sidebar-accent: hsl(0 0% 100% / 8%);
+  --sidebar-accent-foreground: hsl(88 18% 91%);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
+  --font-heading:
+    Figtree, Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, ui-monospace, monospace;
   --radius: 0.5rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -147,7 +149,6 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -193,13 +194,22 @@
     min-width: 320px;
     margin: 0;
     background:
-      radial-gradient(circle at 20% -10%, hsl(68 100% 56% / 7%), transparent 30rem),
-      radial-gradient(circle at 88% 8%, hsl(204 46% 61% / 5%), transparent 28rem), var(--background);
+      radial-gradient(circle at 20% -10%, hsl(0 0% 100% / 4%), transparent 30rem),
+      radial-gradient(circle at 88% 8%, hsl(0 0% 100% / 3%), transparent 28rem), var(--background);
     font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-variant-numeric: tabular-nums;
     letter-spacing: 0;
     text-rendering: geometricPrecision;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
   }
 
   body::before {
@@ -212,7 +222,7 @@
     background-image:
       linear-gradient(hsl(210 18% 91% / 0.032) 1px, transparent 1px),
       linear-gradient(90deg, hsl(210 18% 91% / 0.024) 1px, transparent 1px),
-      radial-gradient(circle at 25% 15%, hsl(68 100% 56% / 0.07), transparent 18rem);
+      radial-gradient(circle at 25% 15%, hsl(0 0% 100% / 0.05), transparent 18rem);
     background-size:
       84px 84px,
       84px 84px,
@@ -231,7 +241,7 @@
   }
 
   ::selection {
-    background: hsl(68 100% 56% / 28%);
+    background: hsl(0 0% 100% / 24%);
   }
 
   .shell-loading {
@@ -257,7 +267,7 @@
 
   .shell-loading .eyebrow {
     margin: 0;
-    color: var(--primary);
+    color: var(--muted-foreground);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.2em;
@@ -272,8 +282,8 @@
   }
 
   .anvia-wordmark {
-    font-family: "Krona One", var(--font-sans);
-    letter-spacing: -0.04em;
+    font-family: var(--font-heading);
+    letter-spacing: 0;
   }
 
   :focus-visible {
@@ -309,13 +319,13 @@
   }
 
   .pipeline-flow .react-flow__edge.pipeline-flow-edge .react-flow__edge-path {
-    stroke: var(--primary);
+    stroke: var(--muted-foreground);
     stroke-width: 1.6;
     opacity: 0.78;
   }
 
   .pipeline-flow .react-flow__edges marker path {
-    fill: var(--primary);
-    stroke: var(--primary);
+    fill: var(--muted-foreground);
+    stroke: var(--muted-foreground);
   }
 }

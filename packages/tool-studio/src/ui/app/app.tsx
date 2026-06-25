@@ -423,22 +423,6 @@ export function StudioConsole() {
     [navigateFallback, pageAvailability, traces],
   );
 
-  useEffect(() => {
-    if (config === undefined || hasAgents || activePage !== "playground") {
-      return;
-    }
-
-    const nextPage = fallbackActivePage("playground", pageAvailability);
-
-    resetTranscriptSequence();
-    sessions.clearSelectedSession();
-    setMessages([]);
-    setPrompt("");
-    setAttachments([]);
-    setActivePage(nextPage);
-    navigateFallback(nextPage);
-  }, [activePage, config, hasAgents, navigateFallback, pageAvailability, sessions, setMessages]);
-
   const contextValue = {
     activePage,
     agents,

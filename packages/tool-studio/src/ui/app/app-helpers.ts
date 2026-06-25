@@ -66,9 +66,7 @@ export function enrichTranscriptWithTraceIds(
     .map((trace) => trace.id);
   let traceIndex = 0;
   let pendingAssistantIndex: number | undefined;
-  const next = transcript.map((entry) =>
-    entry.kind === "message" && entry.role === "assistant" ? withoutTraceId(entry) : entry,
-  );
+  const next = [...transcript];
 
   function assignPendingTraceId() {
     if (pendingAssistantIndex === undefined) {
@@ -76,9 +74,11 @@ export function enrichTranscriptWithTraceIds(
     }
     const traceId = sortedTraceIds[traceIndex];
     traceIndex += 1;
-    if (traceId !== undefined) {
-      const entry = next[pendingAssistantIndex];
-      next[pendingAssistantIndex] = { ...entry, traceId } as TranscriptEntry;
+    const entry = next[pendingAssistantIndex];
+    if (entry?.kind === "message" && entry.role === "assistant" && entry.traceId === undefined) {
+      if (traceId !== undefined) {
+        next[pendingAssistantIndex] = { ...entry, traceId };
+      }
     }
     pendingAssistantIndex = undefined;
   }
@@ -95,11 +95,6 @@ export function enrichTranscriptWithTraceIds(
   assignPendingTraceId();
 
   return next;
-}
-
-function withoutTraceId(entry: Extract<TranscriptEntry, { kind: "message" }>): TranscriptEntry {
-  const { traceId: _traceId, ...rest } = entry;
-  return rest;
 }
 
 export function sessionModelRef(session: StudioSession): string {

@@ -1,4 +1,4 @@
-import { ArrowUp, Paperclip, X } from "@phosphor-icons/react";
+import { ArrowUp02Icon, AttachmentIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { type ChangeEvent, type KeyboardEvent, lazy, type RefObject, Suspense } from "react";
 import type { StudioConfig, StudioModelSummary, StudioSessionLogEntry } from "../../../../types";
 import {
@@ -7,6 +7,7 @@ import {
   supportedAttachmentTypes,
 } from "../../app-helpers";
 import { Button } from "../../components/ui/button";
+import { StudioIcon } from "../../components/ui/icon";
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import { StudioPageShell, StudioSurface } from "../../components/ui/studio";
 import { Textarea } from "../../components/ui/textarea";
 import { SessionLogsPanel } from "../session-logs/session-logs-panel";
 import type { RunState, TranscriptEntry } from "../shared/types";
@@ -60,9 +62,9 @@ export function PlaygroundPage(props: {
   onTranscriptScroll: () => void;
 }) {
   return (
-    <section className="grid h-full min-h-0 min-w-0 max-h-full max-w-full grid-cols-[minmax(0,1fr)_minmax(0,460px)] overflow-hidden bg-background/45 max-xl:grid-cols-1">
+    <StudioPageShell className="grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1">
       <div className="grid min-h-0 min-w-0 pb-6 pr-6">
-        <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-border/80 bg-card/70 p-2 shadow-sm">
+        <StudioSurface className="grid h-full grid-rows-[minmax(0,1fr)_auto] p-2">
           <section
             className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]"
             ref={props.transcriptScrollerRef}
@@ -72,7 +74,7 @@ export function PlaygroundPage(props: {
               {!props.hasMessages ? (
                 <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
                   <div className="grid max-w-xl gap-4 text-center">
-                    <div className="mx-auto h-px w-28 bg-primary/45" />
+                    <div className="mx-auto h-px w-28 bg-muted/55" />
                     <h1 className="m-0 text-4xl font-semibold leading-tight text-foreground text-balance">
                       What should this agent work on?
                     </h1>
@@ -109,7 +111,7 @@ export function PlaygroundPage(props: {
               <div className="mx-auto grid w-full max-w-235 grid-cols-3 gap-2 max-md:grid-cols-1">
                 {props.selectedAgentQuickPrompts.map((quickPrompt) => (
                   <Button
-                    className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-primary/45 hover:bg-primary/10 hover:text-primary"
+                    className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-border/80 hover:bg-muted/45 hover:text-foreground"
                     type="button"
                     variant="ghost"
                     disabled={props.runState === "running" || props.selectedAgentId.length === 0}
@@ -123,9 +125,9 @@ export function PlaygroundPage(props: {
                 ))}
               </div>
             )}
-            <div className="mx-auto grid w-full max-w-235 gap-2 rounded-lg border border-border/80 bg-card/95 p-2.5 shadow-xl shadow-black/35 backdrop-blur focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25">
+            <div className="mx-auto grid w-full max-w-235 gap-2 rounded-xl border border-border/80 bg-card/95 p-2.5 backdrop-blur">
               <Textarea
-                className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-[15px] leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
+                className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-sm leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
                 ref={props.promptRef}
                 rows={1}
                 value={props.prompt}
@@ -137,7 +139,7 @@ export function PlaygroundPage(props: {
                 <div className="flex min-w-0 flex-wrap gap-1.5 px-2">
                   {props.attachments.map((attachment) => (
                     <span
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-muted/55 px-2 py-1 font-mono text-[11px] font-medium text-muted-foreground"
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-muted/55 px-2 py-1 text-xs font-medium text-muted-foreground"
                       key={attachment.id}
                     >
                       <span className="min-w-0 truncate">
@@ -151,7 +153,7 @@ export function PlaygroundPage(props: {
                         variant="ghost"
                         onClick={() => props.onRemovePromptAttachment(attachment.id)}
                       >
-                        <X aria-hidden="true" />
+                        <StudioIcon icon={Cancel01Icon} aria-hidden="true" />
                       </Button>
                     </span>
                   ))}
@@ -176,7 +178,7 @@ export function PlaygroundPage(props: {
                     disabled={props.runState === "running"}
                     onClick={() => props.attachmentInputRef.current?.click()}
                   >
-                    <Paperclip aria-hidden="true" />
+                    <StudioIcon icon={AttachmentIcon} aria-hidden="true" />
                   </Button>
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
@@ -188,7 +190,7 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label="Select model"
-                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:max-w-72"
+                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:max-w-72"
                       >
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
@@ -209,7 +211,7 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label="Select agent"
-                        className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 font-mono text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                        className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
                       >
                         <SelectValue placeholder="Agent" />
                       </SelectTrigger>
@@ -221,31 +223,27 @@ export function PlaygroundPage(props: {
                         ))}
                       </SelectContent>
                     </Select>
-                  ) : (
-                    <span className="hidden max-w-60 truncate rounded-lg px-2 py-1 font-mono text-xs font-medium text-muted-foreground sm:block">
-                      {props.selectedAgent?.name ?? props.selectedAgent?.id ?? "Agent"}
-                    </span>
-                  )}
+                  ) : null}
                   <Button
                     aria-label={props.runState === "running" ? "Running" : "Send message"}
-                    className="h-9 min-h-9 w-9 rounded-lg border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+                    className="h-9 min-h-9 w-9 rounded-full border-white bg-white text-black hover:bg-white/90"
                     size="icon"
                     type="submit"
                     disabled={props.runState === "running" || props.selectedAgentId.length === 0}
                   >
-                    <ArrowUp />
+                    <StudioIcon icon={ArrowUp02Icon} />
                   </Button>
                 </div>
               </div>
             </div>
           </form>
-        </div>
+        </StudioSurface>
       </div>
       <SessionLogsPanel
         logs={props.sessionLogs}
         selectedSessionId={props.selectedSessionId}
         loading={props.sessionLogLoadState === "loading"}
       />
-    </section>
+    </StudioPageShell>
   );
 }

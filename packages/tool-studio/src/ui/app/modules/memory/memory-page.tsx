@@ -121,7 +121,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
       <header className="bg-background/70 pb-5 pl-0 pr-6 pt-0 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
+            <div className=" text-xs font-semibold uppercase tracking-[0.24em] text-foreground">
               Conversation store
             </div>
             <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
@@ -133,7 +133,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
             </p>
           </div>
           <Button
-            className="h-9 min-h-9 rounded-lg px-3 font-mono text-xs"
+            className="h-9 min-h-9 rounded-lg px-3 text-xs"
             type="button"
             variant="secondary"
             disabled={loading}
@@ -156,7 +156,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
             <section className="grid content-start gap-2 rounded-xl border border-border/80 bg-card/45 p-3">
               <PanelHeader title="Users" value={users.length} />
               <Button
-                className="h-auto min-h-9 justify-start rounded-lg px-3 py-2 text-left font-mono text-xs"
+                className="h-auto min-h-9 justify-start rounded-lg px-3 py-2 text-left text-xs"
                 type="button"
                 variant={selectedUserId.length === 0 ? "secondary" : "ghost"}
                 onClick={() => setSelectedUserId("")}
@@ -171,9 +171,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
                   onClick={() => setSelectedUserId(user.userId)}
                   key={user.userId}
                 >
-                  <span className="min-w-0 truncate font-mono text-xs font-semibold">
-                    {user.userId}
-                  </span>
+                  <span className="min-w-0 truncate text-xs font-semibold">{user.userId}</span>
                   <span className="min-w-0 truncate text-xs text-muted-foreground">
                     {user.conversationCount} conversations ·{" "}
                     {formatRelativeTime(user.lastInteractionAt)}
@@ -215,11 +213,11 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
                         <h2 className="m-0 min-w-0 truncate text-lg font-semibold text-foreground">
                           {selectedConversation.title ?? "Untitled conversation"}
                         </h2>
-                        <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
+                        <span className="min-w-0 break-all text-xs text-muted-foreground">
                           {selectedConversation.id}
                         </span>
                       </div>
-                      <Badge className="border-primary/35 bg-primary/10 text-primary">
+                      <Badge className="border-border/80 bg-muted/45 text-foreground">
                         {agentLabel(props.agents, selectedConversation.agentId)}
                       </Badge>
                     </div>
@@ -270,11 +268,11 @@ function ConversationButton(props: {
         <span className="min-w-0 truncate text-sm font-semibold text-foreground">
           {props.conversation.title ?? "Untitled conversation"}
         </span>
-        <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
           {props.agentName} · {props.conversation.userId}
         </span>
       </div>
-      <span className="font-mono text-[11px] text-muted-foreground">
+      <span className=" text-xs text-muted-foreground">
         {props.conversation.messageCount} messages ·{" "}
         {formatRelativeTime(props.conversation.updatedAt)}
       </span>
@@ -290,7 +288,7 @@ function JsonPanel(props: { title: string; value: unknown }) {
         <PanelHeader title={props.title} {...(count === undefined ? {} : { value: count })} />
       </div>
       <div className="min-w-0 overflow-x-auto">
-        <pre className="m-0 max-h-96 min-w-max p-4 font-mono text-[12px] leading-5 text-foreground">
+        <pre className="m-0 max-h-96 min-w-max p-4 text-xs leading-5 text-foreground">
           <code>
             <JsonSyntax text={JSON.stringify(props.value, null, 2)} />
           </code>
@@ -303,13 +301,11 @@ function JsonPanel(props: { title: string; value: unknown }) {
 function PanelHeader(props: { title: string; value?: number }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <h2 className="m-0 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+      <h2 className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
         {props.title}
       </h2>
       {props.value === undefined ? null : (
-        <span className="font-mono text-[10px] font-semibold text-muted-foreground">
-          {props.value}
-        </span>
+        <span className=" text-xs font-semibold text-muted-foreground">{props.value}</span>
       )}
     </div>
   );
@@ -318,13 +314,10 @@ function PanelHeader(props: { title: string; value?: number }) {
 function Fact(props: { label: string; value: string | number }) {
   return (
     <div className="grid min-w-0 gap-1 rounded-lg bg-background/45 px-3 py-2">
-      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <span className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         {props.label}
       </span>
-      <span
-        className="min-w-0 truncate font-mono text-xs text-foreground"
-        title={String(props.value)}
-      >
+      <span className="min-w-0 truncate text-xs text-foreground" title={String(props.value)}>
         {props.value}
       </span>
     </div>

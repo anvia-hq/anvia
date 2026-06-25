@@ -7,11 +7,12 @@ export const nodeTypes = {
 
 export type PipelineFlow = { nodes: Node[]; edges: Edge[] };
 
-const flowPrimaryColor = "var(--primary)";
+const flowEdgeColor = "var(--muted-foreground)";
+const flowSelectedColor = "var(--foreground)";
 const flowBackgroundColor = "var(--background)";
 export const flowMutedForegroundColor = "var(--muted-foreground)";
 const flowDestructiveColor = "var(--destructive)";
-const flowRunningColor = "hsl(38 96% 56%)";
+const flowRunningColor = "var(--foreground)";
 
 type PipelineNodeData = {
   label: string;
@@ -27,9 +28,9 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
     <article
       className={[
         "group relative min-h-[74px] w-[210px] rounded-xl border bg-card px-4 py-3 text-left shadow-[inset_0_1px_0_hsl(var(--foreground)/0.06)] transition duration-200",
-        props.selected ? "border-primary" : "border-border/80",
-        status === "running" ? "translate-y-[-1px] border-amber-400" : "",
-        status === "completed" ? "border-primary/70" : "",
+        props.selected ? "border-foreground" : "border-border/80",
+        status === "running" ? "translate-y-[-1px] border-foreground" : "",
+        status === "completed" ? "border-muted-foreground/70" : "",
         status === "failed" ? "border-destructive" : "",
       ].join(" ")}
     >
@@ -40,7 +41,7 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
       />
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold leading-5 tracking-tight text-foreground">
+          <div className="truncate text-sm font-semibold leading-5 tracking-tight text-foreground">
             {props.data.label}
           </div>
           <div className="mt-1 flex items-center gap-1.5">
@@ -48,14 +49,14 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
               className="h-1.5 w-1.5 rounded-lg"
               style={{ backgroundColor: props.data.statusColor }}
             />
-            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            <span className=" text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               {props.data.kind}
             </span>
           </div>
         </div>
         {status === undefined ? null : (
           <span
-            className="rounded-lg border border-border/70 bg-background/70 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em]"
+            className="rounded-lg border border-border/70 bg-background/70 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.08em]"
             style={{ color: props.data.statusColor }}
           >
             {status}
@@ -63,7 +64,7 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
         )}
       </div>
       {props.data.branchKey === undefined ? null : (
-        <div className="mt-2 truncate font-mono text-[10px] text-muted-foreground">
+        <div className="mt-2 truncate text-xs text-muted-foreground">
           branch: {props.data.branchKey}
         </div>
       )}
@@ -154,10 +155,10 @@ export function toFlow(
       type: MarkerType.ArrowClosed,
       width: 10,
       height: 10,
-      color: flowPrimaryColor,
+      color: flowEdgeColor,
     },
     style: {
-      stroke: flowPrimaryColor,
+      stroke: flowEdgeColor,
       strokeWidth: 1.6,
       opacity: 0.78,
     },
@@ -209,11 +210,11 @@ function statusColor(status: NodeStatus | undefined): string {
     case "running":
       return flowRunningColor;
     case "completed":
-      return flowPrimaryColor;
+      return flowEdgeColor;
     case "failed":
       return flowDestructiveColor;
     default:
-      return flowPrimaryColor;
+      return flowSelectedColor;
   }
 }
 

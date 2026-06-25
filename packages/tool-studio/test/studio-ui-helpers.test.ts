@@ -25,7 +25,7 @@ const baseAvailability: StudioPageAvailability = {
 };
 
 describe("Studio UI helpers", () => {
-  it("marks pages disabled when their runtime capability is missing", () => {
+  it("keeps pages enabled when their runtime capability is missing", () => {
     const availability = {
       ...baseAvailability,
       sessionsEnabled: false,
@@ -35,21 +35,21 @@ describe("Studio UI helpers", () => {
       knowledgeEnabled: false,
     };
 
-    expect(isActivePageEnabled("sessions", availability)).toBe(false);
-    expect(isActivePageEnabled("tracing", availability)).toBe(false);
-    expect(isActivePageEnabled("tools", availability)).toBe(false);
-    expect(isActivePageEnabled("mcps", availability)).toBe(false);
-    expect(isActivePageEnabled("knowledge", availability)).toBe(false);
+    expect(isActivePageEnabled("sessions", availability)).toBe(true);
+    expect(isActivePageEnabled("tracing", availability)).toBe(true);
+    expect(isActivePageEnabled("tools", availability)).toBe(true);
+    expect(isActivePageEnabled("mcps", availability)).toBe(true);
+    expect(isActivePageEnabled("knowledge", availability)).toBe(true);
     expect(isActivePageEnabled("agents", availability)).toBe(true);
   });
 
-  it("falls back to the first available operational page", () => {
+  it("preserves the preferred page instead of redirecting unavailable pages", () => {
     expect(
       fallbackActivePage("playground", {
         ...baseAvailability,
         hasAgents: false,
       }),
-    ).toBe("pipelines");
+    ).toBe("playground");
     expect(
       fallbackActivePage("playground", {
         ...baseAvailability,
@@ -59,7 +59,7 @@ describe("Studio UI helpers", () => {
         sessionsEnabled: false,
         tracesEnabled: false,
       }),
-    ).toBe("agents");
+    ).toBe("playground");
   });
 
   it("keeps transcript helper behavior deterministic", () => {

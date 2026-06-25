@@ -35,7 +35,7 @@ export function McpsPage(props: {
       <header className="bg-background/70 pb-5 pl-0 pr-6 pt-0 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.24em] text-primary">
+            <div className=" text-xs font-semibold uppercase tracking-[0.24em] text-foreground">
               External context
             </div>
             <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
@@ -51,7 +51,7 @@ export function McpsPage(props: {
             </Badge>
             {props.agents.length > 1 ? (
               <Select value={selectedAgent?.id ?? ""} onValueChange={props.onSelectAgent}>
-                <SelectTrigger className="h-9 min-h-9 w-64 rounded-lg border-border bg-card/80 font-mono text-xs max-md:w-full">
+                <SelectTrigger className="h-9 min-h-9 w-64 rounded-lg border-border bg-card/80 text-xs max-md:w-full">
                   <SelectValue placeholder="Agent" />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -92,10 +92,10 @@ function McpServerSection(props: { server: StudioAgentMcpServerMetadata }) {
     <section className="overflow-hidden rounded-xl border border-border/80 bg-card/55 p-2 shadow-sm">
       <header className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border border-border/60 bg-muted/20 px-4">
         <div className="grid min-w-0 gap-1">
-          <h2 className="m-0 truncate font-mono text-[15px] font-semibold text-foreground">
+          <h2 className="m-0 truncate text-sm font-semibold text-foreground">
             {props.server.name}
           </h2>
-          <span className="truncate font-mono text-[11px] font-medium text-muted-foreground">
+          <span className="truncate text-xs font-medium text-muted-foreground">
             {props.server.agentId}
           </span>
         </div>
@@ -117,12 +117,8 @@ function McpToolRow(props: { tool: StudioAgentMcpToolMetadata }) {
     <article className="grid grid-cols-[minmax(300px,0.75fr)_minmax(0,1fr)] gap-2 rounded-lg border border-transparent bg-background/25 p-2 transition duration-200 hover:border-border/70 hover:bg-background/35 max-lg:grid-cols-1">
       <div className="grid content-start gap-4 rounded-lg bg-card/25 p-3">
         <div className="grid gap-1">
-          <h3 className="m-0 truncate font-mono text-[15px] font-semibold text-foreground">
-            {props.tool.name}
-          </h3>
-          <span className="font-mono text-[11px] font-medium text-muted-foreground">
-            {props.tool.source}
-          </span>
+          <h3 className="m-0 truncate text-sm font-semibold text-foreground">{props.tool.name}</h3>
+          <span className=" text-xs font-medium text-muted-foreground">{props.tool.source}</span>
         </div>
         <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
           {props.tool.description}
@@ -143,15 +139,13 @@ function SchemaBlock(props: { value: unknown }) {
   return (
     <section className="grid min-w-0 content-start overflow-hidden rounded-lg bg-background/45">
       <div className="flex min-h-9 items-center justify-between gap-3 bg-muted/20 px-4">
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        <span className=" text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Parameter schema
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {schemaType(props.value)}
-        </span>
+        <span className=" text-xs text-muted-foreground">{schemaType(props.value)}</span>
       </div>
       <div className="min-w-0 overflow-x-auto">
-        <pre className="m-0 max-h-80 min-w-max p-4 font-mono text-[12px] leading-5 text-foreground">
+        <pre className="m-0 max-h-80 min-w-max p-4 text-xs leading-5 text-foreground">
           <code>
             <JsonSyntax text={formatSchema(props.value)} />
           </code>
@@ -174,7 +168,7 @@ function EmptyState(props: { title: string; message: string }) {
 
 function sourceBadgeClass(source: "static" | "dynamic"): string {
   return source === "dynamic"
-    ? "border-primary/35 bg-primary/10 text-primary"
+    ? "border-border/80 bg-muted/45 text-foreground"
     : "border-border/80 bg-muted/55 text-muted-foreground";
 }
 

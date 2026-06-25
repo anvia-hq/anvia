@@ -1,4 +1,4 @@
-import { ArrowLeft } from "@phosphor-icons/react";
+import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
   firstDeltaMsFromObservations,
@@ -38,6 +38,7 @@ import type { StudioConfig, StudioTrace } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
+import { StudioIcon } from "../../components/ui/icon";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { emptyFallback, formatDuration, formatTraceDate, traceAgentLabel } from "../shared/format";
@@ -110,7 +111,7 @@ function TraceTable(props: {
     >
       <ScrollArea className="h-full min-h-0">
         <div className="grid min-w-280 gap-1 p-2">
-          <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center gap-4 rounded-lg border border-border/60 bg-card/95 px-4 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+          <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center gap-4 rounded-lg border border-border/60 bg-card/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
             <span>Trace</span>
             <span>Session</span>
             <span>Agent</span>
@@ -132,18 +133,16 @@ function TraceTable(props: {
           ) : null}
           {props.traces.map((trace) => (
             <Button
-              className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-lg border border-transparent bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:border-primary/20 hover:bg-accent/70 hover:text-accent-foreground"
+              className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-lg border border-transparent bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:border-border/70 hover:bg-accent/70 hover:text-accent-foreground"
               type="button"
               variant="ghost"
               key={trace.id}
               onClick={() => props.onSelectTrace(trace.id)}
             >
-              <span className="min-w-0 truncate font-mono text-xs font-medium text-muted-foreground">
+              <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
                 {trace.id}
               </span>
-              <span className="min-w-0 truncate font-mono text-xs font-medium">
-                {trace.sessionId}
-              </span>
+              <span className="min-w-0 truncate text-xs font-medium">{trace.sessionId}</span>
               <span className="min-w-0 truncate text-xs font-medium">
                 {traceAgentLabel(props.agents, trace)}
               </span>
@@ -192,7 +191,7 @@ function TraceDetailRoute(props: {
           variant="ghost"
           onClick={props.onBack}
         >
-          <ArrowLeft aria-hidden="true" />
+          <StudioIcon icon={ArrowLeft02Icon} aria-hidden="true" />
         </Button>
         <div className="grid min-w-0 gap-1">
           <strong className="min-w-0 truncate text-sm font-semibold text-foreground">
@@ -218,14 +217,13 @@ function TraceDetailRoute(props: {
                   /
                 </span>
                 <span className="min-w-0 flex-1 truncate">
-                  Session{" "}
-                  <span className="font-mono font-semibold">{props.selectedTrace.sessionId}</span>
+                  Session <span className=" font-semibold">{props.selectedTrace.sessionId}</span>
                 </span>
               </>
             )}
           </span>
         </div>
-        <span className="hidden max-w-[42vw] truncate rounded-lg bg-muted px-2 py-1 font-mono text-xs font-medium text-muted-foreground md:block">
+        <span className="hidden max-w-[42vw] truncate rounded-lg bg-muted px-2 py-1 text-xs font-medium text-muted-foreground md:block">
           {props.selectedTraceId}
         </span>
       </header>
@@ -388,7 +386,7 @@ function TraceTreeRow(props: {
     <Button
       className={cn(
         "relative grid h-auto min-h-0 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-start justify-start gap-2 whitespace-normal rounded-lg border-0 bg-transparent px-3 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:bg-accent/70 hover:text-accent-foreground",
-        props.active && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
+        props.active && "bg-muted/45 text-foreground hover:bg-muted/45 hover:text-foreground",
       )}
       type="button"
       variant="ghost"
@@ -554,7 +552,7 @@ function TraceDetailPane(props: {
             <div className="flex min-w-0 items-center gap-3">
               <span
                 className={cn(
-                  "grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground [&_svg]:h-4 [&_svg]:w-4 [&_svg]:opacity-100",
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-foreground text-background [&_svg]:h-4 [&_svg]:w-4 [&_svg]:opacity-100",
                   selected.tone !== "trace" && "bg-muted text-foreground",
                   traceToneIconClass(selected.tone),
                 )}
@@ -565,7 +563,7 @@ function TraceDetailPane(props: {
                 <h2 className="m-0 min-w-0 truncate text-2xl font-semibold leading-none tracking-[-0.01em] text-foreground">
                   {selected.title}
                 </h2>
-                <div className="font-mono text-xs font-medium text-muted-foreground">
+                <div className=" text-xs font-medium text-muted-foreground">
                   {selected.startedAt}
                 </div>
               </div>
@@ -584,10 +582,10 @@ function TraceDetailPane(props: {
               type="button"
               onClick={() => props.onShowSessionTraces(props.trace.sessionId)}
             >
-              <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span className=" text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Session
               </span>
-              <span className="min-w-0 truncate font-mono text-sm font-semibold text-current">
+              <span className="min-w-0 truncate text-sm font-semibold text-current">
                 {props.trace.sessionId}
               </span>
             </button>
@@ -615,12 +613,10 @@ function TraceDetailPane(props: {
 function TraceMetric(props: { label: string; value: string }) {
   return (
     <div className="grid min-w-0 gap-1 rounded-lg bg-card/85 px-4 py-3">
-      <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+      <span className=" text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {props.label}
       </span>
-      <span className="min-w-0 truncate font-mono text-sm font-semibold text-foreground">
-        {props.value}
-      </span>
+      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{props.value}</span>
     </div>
   );
 }
@@ -652,7 +648,7 @@ function TraceDataSection(props: {
               )}
               key={`${item.label}-${item.text}`}
             >
-              <span className="flex min-w-0 items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 <TraceRowIcon label={item.label} />
                 {item.label}
               </span>
@@ -677,21 +673,23 @@ function TraceRowContent(props: {
         {historyItems.map((item) => (
           <div className="grid min-w-0 gap-2" key={`${item.index}-${item.role}-${item.text}`}>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="font-mono text-xs font-semibold tabular-nums text-muted-foreground">
+              <span className=" text-xs font-semibold tabular-nums text-muted-foreground">
                 {item.index}
               </span>
               <Badge
                 className={cn(
                   "px-1.5 py-0.5",
-                  item.role === "User" && "border-chart-2/40 bg-chart-2/15 text-chart-2",
-                  item.role === "Assistant" && "border-chart-1/40 bg-chart-1/15 text-chart-1",
-                  item.role === "Tool" && "border-chart-5/40 bg-chart-5/15 text-chart-5",
+                  item.role === "User" &&
+                    "border-border/80 bg-muted-foreground/15 text-muted-foreground",
+                  item.role === "Assistant" && "border-border/80 bg-foreground/15 text-foreground",
+                  item.role === "Tool" &&
+                    "border-destructive/40 bg-destructive/15 text-destructive",
                 )}
               >
                 {item.role}
               </Badge>
             </div>
-            <p className="m-0 whitespace-pre-wrap text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]">
+            <p className="m-0 whitespace-pre-wrap text-sm leading-7 text-foreground [overflow-wrap:anywhere]">
               {item.text}
             </p>
           </div>
@@ -703,9 +701,9 @@ function TraceRowContent(props: {
   return (
     <p
       className={cn(
-        "m-0 whitespace-pre-wrap text-[15px] leading-7 text-foreground [overflow-wrap:anywhere]",
-        props.compact && "font-mono text-[13px] leading-6",
-        props.tone === "success" && !isNeutralTraceRow(props.item) && "text-primary",
+        "m-0 whitespace-pre-wrap text-sm leading-7 text-foreground [overflow-wrap:anywhere]",
+        props.compact && " text-sm leading-6",
+        props.tone === "success" && !isNeutralTraceRow(props.item) && "text-foreground",
         props.tone === "error" && "text-destructive",
       )}
     >

@@ -1,7 +1,8 @@
-import { Path, Wrench } from "@phosphor-icons/react";
+import { PathIcon, Wrench01Icon } from "@hugeicons/core-free-icons";
 import { useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { StudioIcon } from "../../components/ui/icon";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import { approvalLabel } from "../shared/format";
@@ -57,7 +58,7 @@ export function TranscriptItem(props: {
         data-entry-id={String(props.entry.entryId)}
       >
         {props.entry.text.trim().length === 0 ? null : (
-          <div className="rounded-2xl bg-primary/10 px-4 py-2.5 shadow-sm shadow-primary/10">
+          <div className="rounded-2xl bg-muted/55 px-4 py-2.5 shadow-sm shadow-black/[0.04] dark:bg-white/[0.08] dark:shadow-black/20">
             <MarkdownText text={props.entry.text} />
           </div>
         )}
@@ -82,19 +83,19 @@ export function TranscriptItem(props: {
       {props.entry.text.trim().length === 0 ? null : <MarkdownText text={props.entry.text} />}
       {traceId !== undefined ? (
         <Button
-          className="group mt-3 h-7 min-h-7 max-w-full gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-2 py-1 font-mono text-xs font-semibold text-muted-foreground shadow-none transition duration-200 hover:border-primary/45 hover:bg-primary/15 hover:text-primary"
+          className="group mt-3 h-7 min-h-7 max-w-full gap-1.5 rounded-lg border border-border/80 bg-muted/35 px-2 py-1 text-xs font-semibold text-muted-foreground shadow-none transition duration-200 hover:border-border hover:bg-muted/55 hover:text-foreground"
           type="button"
           variant="ghost"
           onClick={() => props.onOpenTrace(traceId)}
         >
-          <span className="grid h-4 w-4 shrink-0 place-items-center text-primary [&_svg]:h-3 [&_svg]:w-3">
-            <Path aria-hidden="true" />
+          <span className="grid h-4 w-4 shrink-0 place-items-center text-muted-foreground transition-colors group-hover:text-foreground [&_svg]:h-3 [&_svg]:w-3">
+            <StudioIcon icon={PathIcon} aria-hidden="true" />
           </span>
-          <span className="font-sans text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+          <span className="font-sans text-xs font-semibold uppercase tracking-[0.14em] text-foreground/90">
             Trace
           </span>
-          <span className="h-4 w-px shrink-0 bg-primary/25" aria-hidden="true" />
-          <span className="min-w-0 truncate text-muted-foreground transition-colors group-hover:text-primary">
+          <span className="h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+          <span className="min-w-0 truncate text-muted-foreground transition-colors group-hover:text-foreground">
             {traceId}
           </span>
         </Button>
@@ -111,13 +112,11 @@ function AssistantLoadingIndicator() {
       role="status"
     >
       <span className="flex items-center gap-1" aria-hidden="true">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:300ms]" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground [animation-delay:150ms]" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground [animation-delay:300ms]" />
       </span>
-      <span className="font-mono text-[11px] font-semibold uppercase text-muted-foreground">
-        Thinking
-      </span>
+      <span className=" text-xs font-semibold uppercase text-muted-foreground">Thinking</span>
     </div>
   );
 }
@@ -141,7 +140,7 @@ function MessageAttachments(props: {
               key={key}
             >
               {src === undefined ? (
-                <div className="grid h-20 w-24 place-items-center px-2 text-center font-mono text-[10px] text-muted-foreground">
+                <div className="grid h-20 w-24 place-items-center px-2 text-center text-xs text-muted-foreground">
                   Image
                 </div>
               ) : (
@@ -156,7 +155,7 @@ function MessageAttachments(props: {
         }
         return (
           <span
-            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-card/80 px-2 py-1 font-mono text-[11px] font-medium text-muted-foreground"
+            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-card/80 px-2 py-1 text-xs font-medium text-muted-foreground"
             key={key}
           >
             <span className="min-w-0 truncate">
@@ -227,15 +226,15 @@ function ToolEntry(props: {
           onClick={() => setCollapsed((current) => !current)}
         >
           <span className="flex min-w-0 items-center gap-2">
-            <span className="grid h-6 w-4 shrink-0 place-items-center text-primary">
-              <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="grid h-6 w-4 shrink-0 place-items-center text-foreground">
+              <StudioIcon icon={Wrench01Icon} className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
             <strong className="min-w-0 truncate text-sm font-semibold text-foreground">
               {props.entry.toolName}
             </strong>
           </span>
           {pendingApproval ? null : (
-            <span className="ml-auto shrink-0 text-[11px] font-medium text-muted-foreground">
+            <span className="ml-auto shrink-0 text-xs font-medium text-muted-foreground">
               {collapsed ? "Show" : "Hide"}
             </span>
           )}
@@ -248,14 +247,14 @@ function ToolEntry(props: {
           />
         ) : null}
         {pendingQuestion ? (
-          <Badge className="border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase text-primary">
+          <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-foreground">
             Waiting for input
           </Badge>
         ) : null}
         {pendingApproval || pendingQuestion ? (
           <Button
             aria-expanded={!collapsed}
-            className="h-7 min-h-7 px-2 text-[11px] font-medium"
+            className="h-7 min-h-7 px-2 text-xs font-medium"
             size="sm"
             type="button"
             variant="ghost"
@@ -297,7 +296,7 @@ function ToolEntry(props: {
 function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvents"]> }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border/80 bg-background/65">
-      <div className="bg-muted/20 px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="bg-muted/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         Subagent activity
       </div>
       <div className="grid gap-3 p-3">
@@ -310,7 +309,7 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
                 key={`${event.kind}-${event.agentId}-${event.text}`}
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Badge className="border-border bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                  <Badge className="border-border bg-muted px-1.5 py-0.5 text-xs uppercase text-muted-foreground">
                     {event.kind === "reasoning" ? "Reasoning" : "Response"}
                   </Badge>
                   <span className="min-w-0 truncate text-xs font-semibold text-muted-foreground">
@@ -327,7 +326,7 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
               key={`${event.kind}-${event.agentId}-${event.toolName}-${event.callId ?? event.args ?? event.result ?? ""}`}
             >
               <div className="flex min-w-0 items-center gap-2">
-                <Badge className="border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase text-primary">
+                <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-foreground">
                   Tool
                 </Badge>
                 <span className="min-w-0 truncate text-xs font-semibold text-muted-foreground">
@@ -410,7 +409,7 @@ function ToolQuestionPanel(props: {
       />
       {pending ? (
         <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/20 px-3 py-2">
-          <div className="min-w-0 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {answeredCount}/{total} answered
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -442,7 +441,7 @@ function ToolQuestionPanel(props: {
         </div>
       ) : total > 1 ? (
         <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/20 px-3 py-2">
-          <div className="min-w-0 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+          <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.2em] text-foreground">
             Answered
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -484,7 +483,7 @@ function QuestionPromptControl(props: {
     <section className="grid gap-4 rounded-xl border border-border/80 bg-background/70 p-4">
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="grid min-w-0 gap-2">
-          <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          <div className=" text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             Question {props.index + 1} of {props.total}
           </div>
           <h3 className="m-0 text-base font-semibold leading-7 text-foreground [overflow-wrap:anywhere]">
@@ -493,8 +492,8 @@ function QuestionPromptControl(props: {
         </div>
         <span
           className={cn(
-            "shrink-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em]",
-            state === "Answered" && "text-primary",
+            "shrink-0 text-xs font-semibold uppercase tracking-[0.18em]",
+            state === "Answered" && "text-foreground",
             state === "Ready" && "text-foreground",
             state === "Waiting" && "text-muted-foreground",
           )}
@@ -503,7 +502,7 @@ function QuestionPromptControl(props: {
         </span>
       </div>
       {submittedAnswer === undefined ? null : (
-        <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm font-medium text-foreground">
+        <div className="rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-sm font-medium text-foreground">
           {submittedAnswer}
         </div>
       )}
@@ -514,7 +513,7 @@ function QuestionPromptControl(props: {
             return (
               <Button
                 key={choice.value}
-                className={cn("h-8 min-h-8 px-3 text-xs", active && "border-primary")}
+                className={cn("h-8 min-h-8 px-3 text-xs", active && "border-foreground/45")}
                 disabled={props.disabled}
                 size="sm"
                 type="button"

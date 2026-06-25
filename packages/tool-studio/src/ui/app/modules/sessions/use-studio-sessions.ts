@@ -97,7 +97,10 @@ export function useStudioSessions(props: {
   );
 
   const createSession = useCallback(
-    async (title: string): Promise<StudioSessionSummary> => {
+    async (
+      title: string,
+      options: { updatePath?: boolean } = {},
+    ): Promise<StudioSessionSummary> => {
       const response = await fetch("/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -118,7 +121,9 @@ export function useStudioSessions(props: {
       const session = (await response.json()) as StudioSessionSummary;
       setSelectedSessionId(session.id);
       setAllSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
-      onSessionCreated(session.id);
+      if (options.updatePath !== false) {
+        onSessionCreated(session.id);
+      }
       await loadSessionLogs(session.id);
       return session;
     },
@@ -221,6 +226,7 @@ export function useStudioSessions(props: {
       loadAllSessions,
       loadSession,
       loadSessionLogs,
+      openSessionPath: onSessionCreated,
       setSelectedSessionId,
     }),
     [
@@ -232,6 +238,7 @@ export function useStudioSessions(props: {
       loadAllSessions,
       loadSession,
       loadSessionLogs,
+      onSessionCreated,
       selectedSessionId,
       sessionLoadState,
       sessionLogLoadState,

@@ -160,7 +160,7 @@ export function usePipelines(props: {
         return;
       }
       if (isPipelineFinalEvent(event)) {
-        setPipelineRunOutput(JSON.stringify(event.output, null, 2));
+        setPipelineRunOutput(formatPipelineOutput(event.output));
         await nextPaint();
         return;
       }
@@ -283,4 +283,8 @@ export function usePipelines(props: {
     runPipeline,
     replayPipelineRun,
   };
+}
+
+function formatPipelineOutput(output: unknown): string {
+  return typeof output === "string" ? output : JSON.stringify(output, null, 2);
 }

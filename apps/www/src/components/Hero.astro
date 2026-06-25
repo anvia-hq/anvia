@@ -1,4 +1,6 @@
 ---
+import Button from "./ui/Button.astro";
+
 const supportedProducts = [
   { name: "OpenAI", logo: "/assets/integrations/openai.svg", invert: true },
   { name: "Anthropic", logo: "/assets/integrations/anthropic.svg", invert: true },
@@ -17,6 +19,11 @@ const supportedProducts = [
   { name: "Redis", logo: "/assets/integrations/redis.svg" },
   { name: "Weaviate", logo: "/assets/integrations/weaviate.svg" },
 ];
+
+const integrationRows = [
+  supportedProducts.slice(0, 8),
+  supportedProducts.slice(8),
+];
 ---
 
 <section id="products" class="relative isolate overflow-hidden bg-[#131314]">
@@ -29,7 +36,7 @@ const supportedProducts = [
         class="text-balance font-semibold text-5xl text-zinc-50 leading-[0.95] tracking-[-0.02em] sm:text-6xl lg:text-7xl"
       >
         The TypeScript stack for{" "}
-        <span class="text-[#E9FF4E]">production agents</span>
+        <span class="text-[#2BF563]">production agents</span>
       </h1>
 
       <p class="mx-auto mt-7 max-w-2xl text-balance text-lg text-zinc-400 leading-8 sm:text-xl">
@@ -37,39 +44,34 @@ const supportedProducts = [
       </p>
 
       <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <button
-          type="button"
-          class="inline-flex w-full justify-center rounded-lg bg-[#E9FF4E] px-6 py-3 font-semibold text-[#131314] text-base shadow-[0_14px_32px_rgba(233,255,78,0.22)] transition hover:bg-[#ddf447] active:translate-y-px sm:w-auto"
-        >
-          Explore packages
-        </button>
-        <a
-          href="/docs"
-          class="inline-flex w-full justify-center rounded-lg border border-white/15 bg-[#131314] px-6 py-3 font-semibold text-base text-zinc-100 shadow-sm transition hover:border-white/25 hover:bg-[#1a1a1b] active:translate-y-px sm:w-auto"
-        >
-          Read docs
-        </a>
+        <Button>Explore packages</Button>
+        <Button variant="outline" href="/docs">Read docs</Button>
       </div>
 
-      <div class="mx-auto mt-16 max-w-5xl">
-        <p class="font-mono text-[#E9FF4E]/60 text-[0.72rem] uppercase tracking-[0.18em]">
+      <div class="mx-auto mt-16 w-full max-w-5xl">
+        <p class="font-mono text-[#2BF563]/60 text-[0.72rem] uppercase tracking-[0.18em]">
           Supported integrations
         </p>
-        <div class="mt-6 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
+        <div class="integration-marquee mt-6" aria-label="Supported integrations">
           {
-            supportedProducts.map((product) => (
-              <div class="inline-flex items-center gap-2 text-zinc-500 transition hover:text-zinc-200" aria-label={product.name}>
-                <img
-                  src={product.logo}
-                  alt={product.wordmark ? product.name : ""}
-                  loading="lazy"
-                  class:list={[
-                    "opacity-80",
-                    product.wordmark ? "h-4 w-auto max-w-20" : "h-4 w-4 object-contain",
-                    product.invert && "brightness-0 invert",
-                  ]}
-                />
-                {!product.wordmark && <span class="font-semibold text-sm tracking-[-0.01em]">{product.name}</span>}
+            integrationRows.map((row, rowIndex) => (
+              <div class:list={["integration-marquee__row", rowIndex === 1 && "integration-marquee__row--reverse"]}>
+                <div class="integration-marquee__track" aria-hidden="true">
+                  {[...row, ...row].map((product) => (
+                    <div class="integration-marquee__item" data-invert={product.invert ? "true" : undefined}>
+                      <img
+                        src={product.logo}
+                        alt=""
+                        loading="lazy"
+                        class:list={[
+                          "integration-marquee__logo",
+                          product.wordmark ? "h-4 w-auto max-w-24" : "h-4 w-4 object-contain",
+                        ]}
+                      />
+                      {!product.wordmark && <span>{product.name}</span>}
+                    </div>
+                  ))}
+                </div>
               </div>
             ))
           }
@@ -83,13 +85,13 @@ const supportedProducts = [
 <style>
   .hero-field {
     background:
-      radial-gradient(ellipse 64rem 38rem at 50% 90%, rgba(233, 255, 78, 0.18), transparent 1px)
+      radial-gradient(ellipse 52rem 40rem at 50% 90%, rgba(43, 245, 99, 0.18), transparent 1px)
         50% 100% / 100% 100% no-repeat,
-      radial-gradient(ellipse 80rem 50rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.16) 55%, transparent 55.18%),
-      radial-gradient(ellipse 64rem 40rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.13) 55%, transparent 55.18%),
-      radial-gradient(ellipse 48rem 31rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.1) 55%, transparent 55.18%),
-      radial-gradient(ellipse 33rem 22rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.08) 55%, transparent 55.18%),
-      linear-gradient(to bottom, rgba(233, 255, 78, 0.035), transparent 42%);
+      radial-gradient(ellipse 64rem 50rem at 50% 96%, transparent 54.8%, rgba(43, 245, 99, 0.16) 55%, transparent 55.18%),
+      radial-gradient(ellipse 51rem 40rem at 50% 96%, transparent 54.8%, rgba(43, 245, 99, 0.13) 55%, transparent 55.18%),
+      radial-gradient(ellipse 39rem 31rem at 50% 96%, transparent 54.8%, rgba(43, 245, 99, 0.1) 55%, transparent 55.18%),
+      radial-gradient(ellipse 27rem 22rem at 50% 96%, transparent 54.8%, rgba(43, 245, 99, 0.08) 55%, transparent 55.18%),
+      linear-gradient(to bottom, rgba(43, 245, 99, 0.035), transparent 42%);
     background-color: #131314;
   }
 
@@ -108,8 +110,8 @@ const supportedProducts = [
       90deg,
       transparent 0,
       transparent calc(12.5% - 1px),
-      rgba(233, 255, 78, 0.075) calc(12.5% - 1px),
-      rgba(233, 255, 78, 0.075) 12.5%
+      rgba(43, 245, 99, 0.075) calc(12.5% - 1px),
+      rgba(43, 245, 99, 0.075) 12.5%
     );
     mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.5) 68%, transparent 94%);
   }
@@ -123,5 +125,68 @@ const supportedProducts = [
       rgba(19, 19, 20, 0.82) 48%,
       #131314 100%
     );
+  }
+
+  .integration-marquee {
+    position: relative;
+    display: grid;
+    gap: 0.75rem;
+    overflow: hidden;
+    padding-block: 0.125rem;
+    mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  }
+
+  .integration-marquee__row {
+    overflow: hidden;
+  }
+
+  .integration-marquee__track {
+    display: flex;
+    width: max-content;
+    min-width: 200%;
+    gap: 0.75rem;
+    animation: integration-marquee 18s linear infinite;
+    will-change: transform;
+  }
+
+  .integration-marquee__row--reverse .integration-marquee__track {
+    animation-duration: 22s;
+    animation-direction: reverse;
+  }
+
+  .integration-marquee__item {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 0.5rem;
+    min-width: max-content;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.025);
+    padding: 0.5rem 0.875rem;
+    color: rgba(212, 212, 216, 0.56);
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0;
+    filter: grayscale(1) saturate(0.12);
+  }
+
+  .integration-marquee__logo {
+    opacity: 0.68;
+  }
+
+  .integration-marquee__item[data-invert="true"] .integration-marquee__logo {
+    filter: brightness(0) invert(1);
+  }
+
+  @keyframes integration-marquee {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
   }
 </style>

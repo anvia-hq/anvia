@@ -28,7 +28,7 @@ const { variant } = Astro.props;
       <div class="overflow-hidden rounded-xl border border-white/[0.08] bg-[#131314]">
         <div class="flex h-10 items-center justify-between border-white/[0.08] border-b px-4">
           <span class="font-mono text-xs text-zinc-400">terminal</span>
-          <span class="font-mono text-xs text-[#E9FF4E]/70">anvia</span>
+          <span class="font-mono text-xs text-[#2BF563]/70">anvia</span>
         </div>
         <pre class="max-w-full overflow-x-auto p-5 font-mono text-sm text-zinc-300 leading-7"><code>$ pnpm add @anvia/core @anvia/openai
 
@@ -46,19 +46,19 @@ ready on http://localhost:3000</code></pre>
           <span class="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-mono text-xs text-zinc-400">
             embeddings
           </span>
-          <span class="font-mono text-[#E9FF4E]/65">-&gt;</span>
+          <span class="font-mono text-[#2BF563]/65">-&gt;</span>
           <span class="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-mono text-xs text-zinc-400">
             vector store
           </span>
         </div>
-        <div class="rounded-xl border border-[#E9FF4E]/20 bg-[#E9FF4E]/8 px-4 py-3 font-mono text-sm text-[#E9FF4E]">
+        <div class="rounded-xl border border-[#2BF563]/20 bg-[#2BF563]/8 px-4 py-3 font-mono text-sm text-[#2BF563]">
           retrieve(query, topK: 8)
         </div>
         <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <span class="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-mono text-xs text-zinc-400">
             context
           </span>
-          <span class="font-mono text-[#E9FF4E]/65">-&gt;</span>
+          <span class="font-mono text-[#2BF563]/65">-&gt;</span>
           <span class="rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 font-mono text-xs text-zinc-400">
             agent
           </span>
@@ -72,7 +72,7 @@ ready on http://localhost:3000</code></pre>
       <div class="grid h-full min-h-48 content-center gap-3">
         {["session.created", "model.completed", "tool.called", "trace.exported"].map((event) => (
           <div class="grid grid-cols-[7.5rem_1fr] gap-3 rounded-xl border border-white/[0.08] bg-white/[0.035] px-4 py-3">
-            <span class="font-mono text-xs text-[#E9FF4E]/65">event</span>
+            <span class="font-mono text-xs text-[#2BF563]/65">event</span>
             <span class="font-mono text-sm text-zinc-300">{event}</span>
           </div>
         ))}
@@ -84,7 +84,7 @@ ready on http://localhost:3000</code></pre>
 <style>
   .docs-preview {
     background-image:
-      linear-gradient(135deg, rgba(233, 255, 78, 0.035) 0 1px, transparent 1px 28px),
+      linear-gradient(135deg, rgba(43, 245, 99, 0.035) 0 1px, transparent 1px 28px),
       linear-gradient(to bottom, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0));
   }
 </style>

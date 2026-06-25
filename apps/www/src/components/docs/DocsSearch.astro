@@ -18,7 +18,7 @@
   >
     <div class="mx-auto max-w-2xl overflow-hidden rounded-2xl border border-white/[0.1] bg-[#131314] shadow-[0_32px_120px_rgba(0,0,0,0.55)]">
       <div class="flex items-center gap-3 border-white/[0.08] border-b px-4 py-3">
-        <span class="font-mono text-[#E9FF4E]/70">/</span>
+        <span class="font-mono text-[#2BF563]/70">/</span>
         <input
           type="search"
           placeholder="Search documentation..."
@@ -54,11 +54,10 @@
   let pagefindPromise;
 
   const sectionLabels = {
-    runtime: "Runtime",
-    providers: "Providers",
-    retrieval: "Retrieval",
-    tools: "Tools",
-    tracing: "Tracing",
+    basics: "Basics",
+    advanced: "Advanced",
+    examples: "Examples",
+    compare: "Compare",
   };
 
   function openDialog() {
@@ -147,7 +146,7 @@
 
         return `
           <a href="${url}" class="block rounded-xl px-3 py-3 transition hover:bg-white/[0.055]">
-            <span class="font-mono text-[#E9FF4E]/70 text-[0.66rem] uppercase tracking-[0.16em]">${section}</span>
+            <span class="font-mono text-[#2BF563]/70 text-[0.66rem] uppercase tracking-[0.16em]">${section}</span>
             <span class="mt-1 block font-semibold text-zinc-100">${title}</span>
             <span class="mt-1 line-clamp-2 block text-sm leading-6 text-zinc-300">${excerpt}</span>
           </a>

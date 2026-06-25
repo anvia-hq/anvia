@@ -1,4 +1,6 @@
 ---
+import Button from "./ui/Button.astro";
+
 const capabilities = [
   {
     label: "Models",
@@ -63,7 +65,7 @@ const gatewayNodes = [
   <div class="mx-auto max-w-7xl rounded-2xl border border-white/[0.08] bg-[#121211] px-6 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.22)] sm:px-8 lg:px-10 lg:py-10">
     <div class="grid items-center gap-10 lg:grid-cols-[0.86fr_1.14fr] lg:gap-14">
       <div>
-        <p class="font-mono text-[#E9FF4E]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+        <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
           Agent gateway
         </p>
         <h2 class="mt-4 max-w-2xl font-semibold text-4xl text-zinc-50 tracking-[-0.02em] sm:text-5xl">
@@ -74,18 +76,8 @@ const gatewayNodes = [
         </p>
 
         <div class="mt-8 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            class="inline-flex justify-center rounded-lg bg-[#E9FF4E] px-5 py-3 font-semibold text-[#131314] text-sm shadow-[0_14px_32px_rgba(233,255,78,0.18)] transition hover:bg-[#ddf447] active:translate-y-px"
-          >
-            Browse packages
-          </button>
-          <a
-            href="/docs"
-            class="inline-flex justify-center rounded-lg bg-white/[0.055] px-5 py-3 font-semibold text-sm text-zinc-100 transition hover:bg-white/[0.085] active:translate-y-px"
-          >
-            Read docs
-          </a>
+          <Button size="lg">Browse packages</Button>
+          <Button variant="ghost" size="lg" href="/docs">Read docs</Button>
         </div>
       </div>
 
@@ -123,7 +115,7 @@ const gatewayNodes = [
       {
         capabilities.map((capability) => (
           <article>
-            <p class="font-mono text-[#E9FF4E]/65 text-[0.68rem] uppercase tracking-[0.16em]">
+            <p class="font-mono text-[#2BF563]/65 text-[0.68rem] uppercase tracking-[0.16em]">
               {capability.label}
             </p>
             <h3 class="mt-3 font-semibold text-xl text-zinc-100 tracking-[-0.01em]">

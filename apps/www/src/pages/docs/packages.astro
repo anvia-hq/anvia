@@ -1,0 +1,120 @@
+---
+import { getCollection } from "astro:content";
+import type { MarkdownHeading } from "astro";
+import DocsShell from "../../components/docs/DocsShell.astro";
+import { isPublishedDoc, sortDocs } from "../../lib/docs";
+import { packageCount, packageFamilies } from "../../lib/packages";
+
+const docs = sortDocs((await getCollection("docs")).filter(isPublishedDoc));
+const headings: MarkdownHeading[] = packageFamilies.map((family) => ({
+  depth: 2,
+  slug: `${family.id}-heading`,
+  text: family.label,
+}));
+---
+
+<DocsShell
+  title="Package Catalog | Anvia Docs"
+  description="Explore every Anvia package by product family, with install commands and reference links."
+  entries={docs}
+  activeSection="basics"
+  currentId="packages"
+  headings={headings}
+>
+  <section class="max-w-5xl" data-pagefind-body data-pagefind-meta="section:packages">
+    <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+      Package catalog
+    </p>
+    <h1
+      class="mt-4 max-w-4xl font-semibold text-4xl text-zinc-50 leading-[1.02] tracking-[-0.02em] sm:text-5xl"
+      data-pagefind-meta="title"
+    >
+      Anvia packages by product family
+    </h1>
+    <p class="mt-4 max-w-3xl text-lg text-zinc-300 leading-8" data-pagefind-meta="description">
+      Browse {packageCount} packages across the runtime, providers, embeddings, vector stores,
+      observability, and developer tools.
+    </p>
+  </section>
+
+  <div class="mt-14 grid gap-14">
+    {
+      packageFamilies.map((family) => (
+        <section aria-labelledby={`${family.id}-heading`}>
+          <div class="max-w-3xl">
+            <p class="font-mono text-[#2BF563]/65 text-[0.68rem] uppercase tracking-[0.16em]">
+              {family.label}
+            </p>
+            <h2
+              id={`${family.id}-heading`}
+              class="mt-2 font-semibold text-2xl text-zinc-100 tracking-[-0.01em]"
+            >
+              {family.title}
+            </h2>
+            <p class="mt-3 text-base text-zinc-400 leading-7">{family.description}</p>
+          </div>
+
+          <div class="mt-6 grid gap-3 xl:grid-cols-2">
+            {family.packages.map((packageInfo) => (
+              <article class="min-w-0 rounded-lg border border-white/[0.08] bg-white/[0.025] p-5">
+                <div class="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <h3 class="font-mono text-base text-zinc-100">{packageInfo.name}</h3>
+                    <p class="mt-2 text-sm text-zinc-400 leading-6">{packageInfo.description}</p>
+                  </div>
+                  <a
+                    href={packageInfo.href}
+                    class="shrink-0 font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]"
+                  >
+                    Reference -&gt;
+                  </a>
+                </div>
+
+                <div class="mt-5 flex max-w-full items-center overflow-hidden rounded-lg bg-black/25">
+                  <code class="min-w-0 flex-1 overflow-x-auto px-3 py-2.5 font-mono text-[#2BF563] text-xs">
+                    {packageInfo.installCommand}
+                  </code>
+                  <button
+                    type="button"
+                    class="grid h-10 w-10 shrink-0 place-items-center border-white/10 border-l text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100 active:translate-y-px"
+                    aria-label={`Copy install command for ${packageInfo.name}`}
+                    title="Copy install command"
+                    data-copy-command={packageInfo.installCommand}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      class="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.8"
+                      viewBox="0 0 24 24"
+                    >
+                      <rect x="9" y="9" width="10" height="10" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))
+    }
+  </div>
+</DocsShell>
+
+<script>
+  document.querySelectorAll("[data-copy-command]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const command = button.getAttribute("data-copy-command");
+
+      if (!command || !navigator.clipboard) {
+        return;
+      }
+
+      await navigator.clipboard.writeText(command);
+    });
+  });
+</script>

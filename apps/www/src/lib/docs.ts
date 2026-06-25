@@ -4,12 +4,18 @@ export type DocsEntry = CollectionEntry<"docs">;
 export type DocsSection = DocsEntry["data"]["section"];
 
 export const docsSections: Array<{ id: DocsSection; label: string }> = [
-  { id: "runtime", label: "Runtime" },
-  { id: "providers", label: "Providers" },
-  { id: "retrieval", label: "Retrieval" },
-  { id: "tools", label: "Tools" },
-  { id: "tracing", label: "Tracing" },
+  { id: "basics", label: "Basics" },
+  { id: "advanced", label: "Advanced" },
+  { id: "examples", label: "Examples" },
+  { id: "compare", label: "Compare" },
 ];
+
+const sidebarGroupOrder: Partial<Record<DocsSection, string[]>> = {
+  basics: ["Runtime", "Capabilities", "App integration", "Tools and Studio"],
+  advanced: ["Advanced runtime"],
+  examples: ["Examples"],
+  compare: ["Compare"],
+};
 
 export function docHref(entry: DocsEntry) {
   return `/docs/${entry.id}`;
@@ -37,7 +43,10 @@ export function sortDocs(entries: DocsEntry[]) {
       return sectionOrder;
     }
 
-    const groupOrder = a.data.sidebar.group.localeCompare(b.data.sidebar.group);
+    const groupOrder =
+      getSidebarGroupOrder(a.data.section, a.data.sidebar.group) -
+        getSidebarGroupOrder(b.data.section, b.data.sidebar.group) ||
+      a.data.sidebar.group.localeCompare(b.data.sidebar.group);
 
     if (groupOrder !== 0) {
       return groupOrder;
@@ -45,6 +54,12 @@ export function sortDocs(entries: DocsEntry[]) {
 
     return a.data.sidebar.order - b.data.sidebar.order || a.data.title.localeCompare(b.data.title);
   });
+}
+
+function getSidebarGroupOrder(section: DocsSection, group: string) {
+  const order = sidebarGroupOrder[section]?.indexOf(group) ?? -1;
+
+  return order === -1 ? Number.MAX_SAFE_INTEGER : order;
 }
 
 export function getSectionLandingHref(entries: DocsEntry[], section: DocsSection) {

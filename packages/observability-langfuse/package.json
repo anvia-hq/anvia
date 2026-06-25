@@ -31,11 +31,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@langfuse/otel": "^5.5.3",
-    "@langfuse/tracing": "^5.5.3",
+    "@langfuse/otel": "^5.7.0",
+    "@langfuse/tracing": "^5.7.0",
     "@opentelemetry/resources": "^2.8.0",
     "@opentelemetry/sdk-node": "^0.219.0",
-    "@opentelemetry/semantic-conventions": "^1.40.0"
+    "@opentelemetry/semantic-conventions": "^1.41.1"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

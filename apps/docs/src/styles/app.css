@@ -174,17 +174,22 @@ body {
 
 .package-changelog-index table th:nth-child(1),
 .package-changelog-index table td:nth-child(1) {
-  width: 42%;
+  width: 36%;
 }
 
 .package-changelog-index table th:nth-child(2),
 .package-changelog-index table td:nth-child(2) {
-  width: 28%;
+  width: 20%;
 }
 
 .package-changelog-index table th:nth-child(3),
 .package-changelog-index table td:nth-child(3) {
-  width: 30%;
+  width: 18%;
+}
+
+.package-changelog-index table th:nth-child(4),
+.package-changelog-index table td:nth-child(4) {
+  width: 26%;
 }
 
 @media (max-width: 767px) {

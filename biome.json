@@ -23,6 +23,7 @@
       "!docs/dist",
       "!docs/src/routeTree.gen.ts",
       "!docs/src/**/*.astro",
+      "!apps/www/src/**/*.astro",
       "!pnpm-lock.yaml"
     ]
   },

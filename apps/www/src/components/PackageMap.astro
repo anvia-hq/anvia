@@ -1,0 +1,104 @@
+---
+const packageGroups = [
+  {
+    label: "Runtime",
+    title: "Agent core",
+    packages: ["@anvia/core", "@anvia/server", "@anvia/react"],
+  },
+  {
+    label: "Models",
+    title: "Provider adapters",
+    packages: ["@anvia/openai", "@anvia/anthropic", "@anvia/gemini", "@anvia/mistral"],
+  },
+  {
+    label: "Retrieval",
+    title: "Vector stores",
+    packages: ["@anvia/qdrant", "@anvia/pinecone", "@anvia/pgvector", "@anvia/redis"],
+  },
+  {
+    label: "Operations",
+    title: "Tools and tracing",
+    packages: ["@anvia/sandbox", "@anvia/studio", "@anvia/langfuse", "@anvia/otel"],
+  },
+];
+
+const installCommand = "pnpm add @anvia/core @anvia/openai";
+---
+
+<section id="packages" class="bg-[#131314] px-4 py-20 sm:px-6 lg:px-8">
+  <div class="mx-auto max-w-6xl text-left">
+    <div class="max-w-3xl">
+      <p class="font-mono text-[#E9FF4E]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+        Package map
+      </p>
+      <h2 class="mt-4 max-w-2xl font-semibold text-3xl text-zinc-100 tracking-[-0.02em] sm:text-4xl">
+        Start with core, add adapters.
+      </h2>
+      <p class="mt-4 max-w-xl text-base text-zinc-500 leading-7">
+        Install only what your agent needs, then swap providers or stores without changing your app.
+      </p>
+      <div class="mt-6 flex w-fit max-w-full items-center overflow-hidden rounded-lg bg-white/[0.04]">
+        <code class="overflow-x-auto px-4 py-3 font-mono text-[#E9FF4E] text-sm">
+          {installCommand}
+        </code>
+        <button
+          type="button"
+          class="grid h-11 w-11 shrink-0 place-items-center border-white/10 border-l text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100 active:translate-y-px"
+          aria-label="Copy install command"
+          title="Copy install command"
+          data-copy-command={installCommand}
+        >
+          <svg
+            aria-hidden="true"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.8"
+            viewBox="0 0 24 24"
+          >
+            <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+      {
+        packageGroups.map((group) => (
+          <section>
+            <p class="font-mono text-[#E9FF4E]/60 text-[0.68rem] uppercase tracking-[0.16em]">
+              {group.label}
+            </p>
+            <h3 class="mt-3 font-semibold text-xl text-zinc-200 tracking-[-0.01em]">
+              {group.title}
+            </h3>
+            <div class="mt-5 flex flex-wrap gap-2">
+              {group.packages.map((packageName) => (
+                <span class="rounded-md bg-white/[0.055] px-2.5 py-1.5 font-mono text-[0.72rem] text-zinc-400">
+                  {packageName}
+                </span>
+              ))}
+            </div>
+          </section>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll("[data-copy-command]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const command = button.getAttribute("data-copy-command");
+
+      if (!command || !navigator.clipboard) {
+        return;
+      }
+
+      await navigator.clipboard.writeText(command);
+    });
+  });
+</script>

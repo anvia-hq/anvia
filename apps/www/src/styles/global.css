@@ -1,1 +1,14 @@
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:where(h1, h2, h3, h4, h5, h6) {
+  font-family: "Figtree", "Inter", ui-sans-serif, system-ui, sans-serif;
+}

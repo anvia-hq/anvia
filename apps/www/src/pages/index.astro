@@ -1,4 +1,8 @@
 ---
+import Header from "../components/Header.astro";
+import Hero from "../components/Hero.astro";
+import AgentGateway from "../components/AgentGateway.astro";
+import PackageMap from "../components/PackageMap.astro";
 import "../styles/global.css";
 ---
 
@@ -9,9 +13,14 @@ import "../styles/global.css";
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
+		<title>Anvia Packages</title>
 	</head>
-	<body class="min-h-screen bg-white text-slate-950">
-		<h1 class="p-8 text-4xl font-semibold">Astro</h1>
+	<body class="min-h-screen bg-[#131314] text-zinc-50 antialiased">
+		<Header />
+		<main>
+			<Hero />
+			<AgentGateway />
+			<PackageMap />
+		</main>
 	</body>
 </html>

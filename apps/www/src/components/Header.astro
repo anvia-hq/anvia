@@ -1,0 +1,51 @@
+---
+const navItems = [
+  { label: "Products", href: "#products", hasMenu: true },
+  { label: "Packages", href: "#packages", hasMenu: true },
+  { label: "Developers", href: "#developers", hasMenu: true },
+  { label: "Docs", href: "/docs" },
+  { label: "Company", href: "#company" },
+];
+---
+
+<header class="sticky top-0 z-20 border-white/10 border-b bg-[#131314]/88 backdrop-blur-xl">
+  <div
+    class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
+  >
+    <a href="/" class="flex shrink-0 items-center gap-2.5 font-semibold text-xl text-zinc-50">
+      <img src="/assets/logo.png" alt="" class="h-7 w-7 rounded-md ring-1 ring-white/10" />
+      <span>Anvia</span>
+    </a>
+
+    <nav class="hidden items-center gap-8 font-medium text-sm text-zinc-300 lg:flex">
+      {
+        navItems.map((item) => (
+          <a href={item.href} class="group inline-flex items-center gap-1.5 hover:text-[#E9FF4E]">
+            <span>{item.label}</span>
+            {item.hasMenu && (
+              <span
+                aria-hidden="true"
+                class="mt-[-3px] h-1.5 w-1.5 rotate-45 border-zinc-500 border-r border-b transition group-hover:border-[#E9FF4E]"
+              />
+            )}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-2.5">
+      <a
+        href="/docs"
+        class="hidden rounded-lg border border-white/15 bg-white/5 px-4 py-2 font-medium text-sm text-zinc-100 shadow-sm transition hover:border-white/25 hover:bg-white/10 active:translate-y-px sm:inline-flex"
+      >
+        Read docs
+      </a>
+      <a
+        href="#packages"
+        class="inline-flex rounded-lg bg-[#E9FF4E] px-4 py-2 font-semibold text-[#131314] text-sm shadow-[0_8px_24px_rgba(233,255,78,0.22)] transition hover:bg-[#ddf447] active:translate-y-px"
+      >
+        Get started
+      </a>
+    </div>
+  </div>
+</header>

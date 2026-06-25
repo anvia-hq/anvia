@@ -1,0 +1,127 @@
+---
+const supportedProducts = [
+  { name: "OpenAI", logo: "/assets/integrations/openai.svg", invert: true },
+  { name: "Anthropic", logo: "/assets/integrations/anthropic.svg", invert: true },
+  { name: "Gemini", logo: "/assets/integrations/gemini.svg" },
+  { name: "Mistral", logo: "/assets/integrations/mistral.svg" },
+  { name: "FastEmbed", logo: "/assets/integrations/fastembed.svg" },
+  { name: "Transformers.js", logo: "/assets/integrations/huggingface.svg" },
+  { name: "Langfuse", logo: "/assets/integrations/langfuse.svg" },
+  { name: "OpenTelemetry", logo: "/assets/integrations/opentelemetry.svg", invert: true },
+  { name: "ChromaDB", logo: "/assets/integrations/chroma.svg" },
+  { name: "LanceDB", logo: "/assets/integrations/lancedb.svg", wordmark: true },
+  { name: "Milvus", logo: "/assets/integrations/milvus.svg" },
+  { name: "Postgres/pgvector", logo: "/assets/integrations/postgres.svg" },
+  { name: "Pinecone", logo: "/assets/integrations/pinecone.svg", invert: true },
+  { name: "Qdrant", logo: "/assets/integrations/qdrant.svg" },
+  { name: "Redis", logo: "/assets/integrations/redis.svg" },
+  { name: "Weaviate", logo: "/assets/integrations/weaviate.svg" },
+];
+---
+
+<section id="products" class="relative isolate overflow-hidden bg-[#131314]">
+  <div class="hero-field pointer-events-none absolute inset-x-0 top-0 h-full" aria-hidden="true">
+  </div>
+
+  <div class="relative mx-auto flex max-w-7xl flex-col items-center px-4 pt-24 pb-20 text-center sm:px-6 sm:pt-28 lg:px-8 lg:pt-32 lg:pb-24">
+    <div class="mx-auto max-w-4xl">
+      <h1
+        class="text-balance font-semibold text-5xl text-zinc-50 leading-[0.95] tracking-[-0.02em] sm:text-6xl lg:text-7xl"
+      >
+        The TypeScript stack for{" "}
+        <span class="text-[#E9FF4E]">production agents</span>
+      </h1>
+
+      <p class="mx-auto mt-7 max-w-2xl text-balance text-lg text-zinc-400 leading-8 sm:text-xl">
+        Anvia gives you one runtime for models, retrieval, tools, tracing, and UI transports.
+      </p>
+
+      <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="#packages"
+          class="inline-flex w-full justify-center rounded-lg bg-[#E9FF4E] px-6 py-3 font-semibold text-[#131314] text-base shadow-[0_14px_32px_rgba(233,255,78,0.22)] transition hover:bg-[#ddf447] active:translate-y-px sm:w-auto"
+        >
+          Explore packages
+        </a>
+        <a
+          href="/docs"
+          class="inline-flex w-full justify-center rounded-lg border border-white/15 bg-[#131314] px-6 py-3 font-semibold text-base text-zinc-100 shadow-sm transition hover:border-white/25 hover:bg-[#1a1a1b] active:translate-y-px sm:w-auto"
+        >
+          Read docs
+        </a>
+      </div>
+
+      <div class="mx-auto mt-16 max-w-5xl">
+        <p class="font-mono text-[#E9FF4E]/60 text-[0.72rem] uppercase tracking-[0.18em]">
+          Supported integrations
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
+          {
+            supportedProducts.map((product) => (
+              <div class="inline-flex items-center gap-2 text-zinc-500 transition hover:text-zinc-200" aria-label={product.name}>
+                <img
+                  src={product.logo}
+                  alt={product.wordmark ? product.name : ""}
+                  loading="lazy"
+                  class:list={[
+                    "opacity-80",
+                    product.wordmark ? "h-4 w-auto max-w-20" : "h-4 w-4 object-contain",
+                    product.invert && "brightness-0 invert",
+                  ]}
+                />
+                {!product.wordmark && <span class="font-semibold text-sm tracking-[-0.01em]">{product.name}</span>}
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<style>
+  .hero-field {
+    background:
+      radial-gradient(ellipse 64rem 38rem at 50% 90%, rgba(233, 255, 78, 0.18), transparent 1px)
+        50% 100% / 100% 100% no-repeat,
+      radial-gradient(ellipse 80rem 50rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.16) 55%, transparent 55.18%),
+      radial-gradient(ellipse 64rem 40rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.13) 55%, transparent 55.18%),
+      radial-gradient(ellipse 48rem 31rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.1) 55%, transparent 55.18%),
+      radial-gradient(ellipse 33rem 22rem at 50% 96%, transparent 54.8%, rgba(233, 255, 78, 0.08) 55%, transparent 55.18%),
+      linear-gradient(to bottom, rgba(233, 255, 78, 0.035), transparent 42%);
+    background-color: #131314;
+  }
+
+  .hero-field::before,
+  .hero-field::after {
+    position: absolute;
+    right: 0;
+    left: 0;
+    content: "";
+  }
+
+  .hero-field::before {
+    top: 0;
+    height: 100%;
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent calc(12.5% - 1px),
+      rgba(233, 255, 78, 0.075) calc(12.5% - 1px),
+      rgba(233, 255, 78, 0.075) 12.5%
+    );
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.5) 68%, transparent 94%);
+  }
+
+  .hero-field::after {
+    bottom: -1px;
+    height: 40%;
+    background: linear-gradient(
+      to bottom,
+      rgba(19, 19, 20, 0),
+      rgba(19, 19, 20, 0.82) 48%,
+      #131314 100%
+    );
+  }
+</style>

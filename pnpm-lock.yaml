@@ -238,6 +238,34 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/langfuse-ops:
+    dependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@anvia/langfuse':
+        specifier: workspace:*
+        version: link:../../packages/observability-langfuse
+      '@anvia/openai':
+        specifier: workspace:*
+        version: link:../../packages/provider-openai
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.12.2
+      tsx:
+        specifier: ^4.20.6
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   examples/peer-core-compat:
     dependencies:
       '@anvia/core':
@@ -7879,9 +7907,6 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.4.2:
-    resolution: {integrity: sha512-IynmDyxsEsb9RKzO3J9+4SxXnl2FTFSzNBaKKaMV6tsSk0rw9gYw9gs+JFCq/qk2LCZ78KDwyj+Z289TijSkUw==}
-
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
@@ -12610,7 +12635,7 @@ snapshots:
       unist-util-remove-position: 5.0.0
       unist-util-visit: 5.1.0
       vfile: 6.0.3
-      zod: 4.4.2
+      zod: 4.4.3
     optionalDependencies:
       '@types/mdast': 4.0.4
       '@types/mdx': 2.0.13
@@ -15467,8 +15492,6 @@ snapshots:
       zod: 4.4.3
 
   zod@3.25.76: {}
-
-  zod@4.4.2: {}
 
   zod@4.4.3: {}
 

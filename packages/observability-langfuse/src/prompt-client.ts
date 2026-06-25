@@ -1,4 +1,4 @@
-import { resolveOption } from "./helpers.js";
+import { getResolvedLangfuseConfig, resolveLangfuseConfig } from "./config.js";
 import { LangfuseScoreError } from "./scoring.js";
 import type {
   LangfuseChatMessage,
@@ -13,15 +13,15 @@ const DEFAULT_CACHE_TTL_MS = 60_000;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 export function createLangfusePromptClient(
-  _tracing: Pick<LangfuseTracing, "score">,
+  tracing: Pick<LangfuseTracing, "score">,
   options: LangfusePromptClientOptions = {},
 ): LangfusePromptClient {
-  const baseUrl =
-    resolveOption(options.baseUrl, process.env.LANGFUSE_BASE_URL) ?? "https://cloud.langfuse.com";
-  const publicKey = resolveOption(options.publicKey, process.env.LANGFUSE_PUBLIC_KEY);
-  const secretKey = resolveOption(options.secretKey, process.env.LANGFUSE_SECRET_KEY);
+  const resolvedConfig = resolveLangfuseConfig(options, getResolvedLangfuseConfig(tracing));
+  const baseUrl = resolvedConfig.baseUrl;
+  const publicKey = resolvedConfig.publicKey;
+  const secretKey = resolvedConfig.secretKey;
   const defaultTtl = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? resolvedConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const cache = new Map<string, { prompt: LangfusePrompt; expiresAt: number }>();
   const authHeader = buildAuthHeader(publicKey, secretKey);

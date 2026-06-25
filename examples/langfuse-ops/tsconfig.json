@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@anvia/core": ["../../packages/core/src/index.ts"],
+      "@anvia/core/agent": ["../../packages/core/src/agent/index.ts"],
+      "@anvia/core/tool": ["../../packages/core/src/tool/index.ts"],
+      "@anvia/core/observability": ["../../packages/core/src/observability/index.ts"],
+      "@anvia/core/evals": ["../../packages/core/src/evals/index.ts"],
+      "@anvia/core/completion": ["../../packages/core/src/completion/index.ts"],
+      "@anvia/core/internal/agent": ["../../packages/core/src/internal/agent.ts"],
+      "@anvia/core/*": ["../../packages/core/src/*/index.ts"],
+      "@anvia/openai": ["../../packages/provider-openai/src/index.ts"],
+      "@anvia/langfuse": ["../../packages/observability-langfuse/src/index.ts"]
+    }
+  },
+  "include": ["src/00-quickstart.ts", "src/_support/**/*.ts"]
+}

@@ -281,10 +281,7 @@ import {
 } from "@anvia/langfuse";
 
 const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-const client = createLangfuseDatasetClient(tracing, {
-  publicKey: "pk",
-  secretKey: "sk",
-});
+const client = createLangfuseDatasetClient(tracing);
 
 await client.createDataset({ name: "support-smoke" });
 await client.upsertItems("support-smoke", [
@@ -335,8 +332,8 @@ console.log(suite.passed, datasetRun.posted);
 ### Options
 
 - `createLangfuseDatasetClient(tracing, options)`:
-  - `publicKey`, `secretKey`, `baseUrl`: override the tracing
-    instance's resolved values. Falls back to env vars
+  - `publicKey`, `secretKey`, `baseUrl`: optionally override the
+    tracing instance's resolved values. Falls back to env vars
     (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`).
   - `pageSize` (default `50`): dataset item pagination.
   - `timeoutMs` (default `30_000`): per-request timeout via
@@ -367,10 +364,7 @@ when a prompt ref is configured.
 import { createLangfusePromptClient, langfuse } from "@anvia/langfuse";
 
 const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-const prompts = createLangfusePromptClient(tracing, {
-  publicKey: "pk",
-  secretKey: "sk",
-});
+const prompts = createLangfusePromptClient(tracing);
 
 const prompt = await prompts.getPrompt("support.system");
 console.log(prompt.prompt, prompt.version);

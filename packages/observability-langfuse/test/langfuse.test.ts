@@ -124,6 +124,16 @@ describe("langfuse", () => {
     });
   });
 
+  it("ignores legacy LANGFUSE_ENVIRONMENT in favor of LANGFUSE_TRACING_ENVIRONMENT", () => {
+    vi.stubEnv("LANGFUSE_ENVIRONMENT", "legacy");
+
+    langfuse.create();
+
+    const call = mocks.processorConstructor.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call).toBeDefined();
+    expect(call).not.toHaveProperty("environment");
+  });
+
   it("prefers explicit options over environment variables", () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "env-public");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "env-secret");
@@ -2509,6 +2519,59 @@ describe("LangfuseDatasetClient", () => {
     });
   });
 
+  it("reuses credentials and baseUrl from a langfuse tracing instance", async () => {
+    vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
+
+    const tracing = langfuse.create({
+      publicKey: "trace-pk",
+      secretKey: "trace-sk",
+      baseUrl: "https://trace.langfuse.test",
+    });
+    const client = createDatasetClient(tracing);
+    await client.createDataset({ name: "support-set" });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://trace.langfuse.test/api/public/datasets/support-set");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe(basicAuthHeader("trace-pk", "trace-sk"));
+  });
+
+  it("prefers explicit dataset client options over tracing config", async () => {
+    vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
+
+    const tracing = langfuse.create({
+      publicKey: "trace-pk",
+      secretKey: "trace-sk",
+      baseUrl: "https://trace.langfuse.test",
+    });
+    const client = createDatasetClient(tracing, {
+      publicKey: "option-pk",
+      secretKey: "option-sk",
+      baseUrl: "https://option.langfuse.test",
+    });
+    await client.createDataset({ name: "support-set" });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://option.langfuse.test/api/public/datasets/support-set");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe(basicAuthHeader("option-pk", "option-sk"));
+  });
+
+  it("falls back to env vars when given a custom tracing-like object", async () => {
+    vi.stubEnv("LANGFUSE_PUBLIC_KEY", "env-pk");
+    vi.stubEnv("LANGFUSE_SECRET_KEY", "env-sk");
+    vi.stubEnv("LANGFUSE_BASE_URL", "https://env.langfuse.test");
+    vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
+
+    const client = createLangfuseDatasetClient({ score: async () => undefined });
+    await client.createDataset({ name: "support-set" });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://env.langfuse.test/api/public/datasets/support-set");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe(basicAuthHeader("env-pk", "env-sk"));
+  });
+
   it("getDataset GETs the dataset and returns items", async () => {
     vi.mocked(fetch).mockReturnValueOnce(
       Promise.resolve(
@@ -2903,6 +2966,86 @@ describe("LangfusePromptClient", () => {
     expect(url).toContain("/api/public/v2/prompts/support.system");
     const headers = new Headers(init.headers);
     expect(headers.get("Authorization")).toBe(basicAuth("pk", "sk"));
+  });
+
+  it("reuses credentials and baseUrl from a langfuse tracing instance", async () => {
+    vi.mocked(fetch).mockReturnValueOnce(
+      Promise.resolve(
+        makePromptJson({
+          name: "support.system",
+          version: 3,
+          prompt: "You are a support agent.",
+          type: "text",
+        }),
+      ),
+    );
+
+    const tracing = langfuse.create({
+      publicKey: "trace-pk",
+      secretKey: "trace-sk",
+      baseUrl: "https://trace.langfuse.test",
+    });
+    const client = createPromptClient(tracing);
+    await client.getPrompt("support.system");
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://trace.langfuse.test/api/public/v2/prompts/support.system");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe(basicAuth("trace-pk", "trace-sk"));
+  });
+
+  it("prefers explicit prompt client options over tracing config", async () => {
+    vi.mocked(fetch).mockReturnValueOnce(
+      Promise.resolve(
+        makePromptJson({
+          name: "support.system",
+          version: 3,
+          prompt: "You are a support agent.",
+          type: "text",
+        }),
+      ),
+    );
+
+    const tracing = langfuse.create({
+      publicKey: "trace-pk",
+      secretKey: "trace-sk",
+      baseUrl: "https://trace.langfuse.test",
+    });
+    const client = createPromptClient(tracing, {
+      publicKey: "option-pk",
+      secretKey: "option-sk",
+      baseUrl: "https://option.langfuse.test",
+    });
+    await client.getPrompt("support.system");
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://option.langfuse.test/api/public/v2/prompts/support.system");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe(basicAuth("option-pk", "option-sk"));
+  });
+
+  it("falls back to env vars when given a custom tracing-like object", async () => {
+    vi.stubEnv("LANGFUSE_PUBLIC_KEY", "env-pk");
+    vi.stubEnv("LANGFUSE_SECRET_KEY", "env-sk");
+    vi.stubEnv("LANGFUSE_BASE_URL", "https://env.langfuse.test");
+    vi.mocked(fetch).mockReturnValueOnce(
+      Promise.resolve(
+        makePromptJson({
+          name: "support.system",
+          version: 3,
+          prompt: "You are a support agent.",
+          type: "text",
+        }),
+      ),
+    );
+
+    const client = createLangfusePromptClient({ score: async () => undefined });
+    await client.getPrompt("support.system");
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://env.langfuse.test/api/public/v2/prompts/support.system");
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe(basicAuth("env-pk", "env-sk"));
   });
 
   it("getPrompt includes ?version and ?label when supplied", async () => {

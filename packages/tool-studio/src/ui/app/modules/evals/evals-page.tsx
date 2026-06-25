@@ -22,19 +22,6 @@ export function EvalsPage(props: {
 }) {
   const selected = props.evals.find((suite) => suite.id === props.selectedEvalId) ?? props.evals[0];
 
-  if (!props.enabled) {
-    return (
-      <section className="grid min-h-0 place-items-center p-8 text-center">
-        <div className="grid max-w-lg gap-3">
-          <h1 className="m-0 text-2xl font-semibold text-foreground">Evals unavailable</h1>
-          <p className="m-0 text-sm leading-6 text-muted-foreground">
-            Register eval suites with Studio to run them from this workspace.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="grid min-h-0 overflow-auto bg-background/45">
       <div className="mx-auto grid w-full max-w-6xl content-start gap-5 p-6">
@@ -54,7 +41,7 @@ export function EvalsPage(props: {
           </div>
           <Button
             className="h-9 shrink-0 rounded-lg px-3 text-sm font-semibold"
-            disabled={selected === undefined || props.runState === "running"}
+            disabled={!props.enabled || selected === undefined || props.runState === "running"}
             onClick={props.onRun}
           >
             <StudioIcon icon={PlayIcon} className="mr-1.5 h-3.5 w-3.5" />
@@ -63,7 +50,7 @@ export function EvalsPage(props: {
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="grid content-start gap-4">
+          <aside className="grid content-start gap-4 border-r border-border/80 pr-5 max-lg:border-b max-lg:border-r-0 max-lg:pb-5 max-lg:pr-0">
             <label className="grid gap-2" htmlFor="eval-suite-select">
               <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 Suite
@@ -95,7 +82,11 @@ export function EvalsPage(props: {
           </aside>
 
           <main className="min-w-0">
-            {props.result === undefined ? (
+            {selected === undefined ? (
+              <div className="rounded-lg border border-border/80 bg-card/25 p-5 text-sm font-medium text-muted-foreground">
+                0 eval suite records are available in this Studio runtime.
+              </div>
+            ) : props.result === undefined ? (
               <div className="rounded-lg border border-border/80 bg-card/25 p-5 text-sm font-medium text-muted-foreground">
                 Run a suite to inspect pass, fail, invalid, and per-case metric results.
               </div>

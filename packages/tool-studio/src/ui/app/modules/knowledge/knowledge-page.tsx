@@ -16,7 +16,7 @@ import {
   tabCountLabel,
   tabLabel,
 } from "./knowledge-model";
-import { EmptyState, ItemBrowser, RetrievalLogPanel } from "./knowledge-panels";
+import { ItemBrowser, RetrievalLogPanel } from "./knowledge-panels";
 
 export function KnowledgePage(props: {
   activeTab: KnowledgeTab;
@@ -125,21 +125,12 @@ export function KnowledgePage(props: {
   );
 
   useEffect(() => {
-    if (selectedSource === undefined) {
+    if (!props.enabled || selectedSource === undefined) {
       setItemState(undefined);
       return;
     }
     void loadItems(selectedSource, { append: false });
-  }, [loadItems, selectedSource]);
-
-  if (!props.enabled) {
-    return (
-      <EmptyState
-        title="Knowledge unavailable"
-        text="No registered agent exposes inspectable context."
-      />
-    );
-  }
+  }, [loadItems, props.enabled, selectedSource]);
 
   return (
     <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55">
@@ -160,6 +151,7 @@ export function KnowledgePage(props: {
             className="h-8 min-h-8 gap-2"
             type="button"
             variant="secondary"
+            disabled={!props.enabled}
             onClick={props.onRefresh}
           >
             <StudioIcon icon={RefreshIcon} aria-hidden="true" />

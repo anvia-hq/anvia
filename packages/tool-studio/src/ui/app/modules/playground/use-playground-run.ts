@@ -150,10 +150,10 @@ export function usePlaygroundRun(props: {
     ]);
 
     try {
-      const sessionId =
-        sessionsEnabled && sessions.selectedSessionId.length === 0
-          ? (await sessions.createSession(titleFromText(trimmed))).id
-          : sessions.selectedSessionId;
+      const shouldCreateSession = sessionsEnabled && sessions.selectedSessionId.length === 0;
+      const sessionId = shouldCreateSession
+        ? (await sessions.createSession(titleFromText(trimmed), { updatePath: false })).id
+        : sessions.selectedSessionId;
       const history = sessionsEnabled ? undefined : toHistory(messages);
       playgroundRunErrorRef.current = undefined;
       playgroundVisibleEventRef.current = Promise.resolve();
@@ -184,6 +184,9 @@ export function usePlaygroundRun(props: {
           transcript.setMessages((current) =>
             enrichTranscriptWithTraceIds(current, traceSummaries),
           );
+          if (shouldCreateSession) {
+            sessions.openSessionPath(sessionId);
+          }
         }
         onStatus("Connected");
       }

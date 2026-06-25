@@ -16,11 +16,19 @@ export function PlaygroundRoute() {
     if (!studio.pageEnabled("playground")) {
       return;
     }
-    handledSessionIdRef.current = sessionId;
+    if (studio.runState === "running") {
+      handledSessionIdRef.current = sessionId;
+      return;
+    }
     if (sessionId === undefined) {
+      handledSessionIdRef.current = sessionId;
       studio.startNewChat({ updatePath: false });
       return;
     }
+    if (!studio.sessionsEnabled) {
+      return;
+    }
+    handledSessionIdRef.current = sessionId;
     if (sessionId !== studio.sessions.selectedSessionId) {
       void studio.sessions.loadSession(sessionId, { updatePath: false });
     }

@@ -7,11 +7,12 @@ export const nodeTypes = {
 
 export type PipelineFlow = { nodes: Node[]; edges: Edge[] };
 
-const flowPrimaryColor = "var(--primary)";
+const flowPrimaryColor = "var(--muted-foreground)";
+const flowSelectedColor = "var(--foreground)";
 const flowBackgroundColor = "var(--background)";
 export const flowMutedForegroundColor = "var(--muted-foreground)";
 const flowDestructiveColor = "var(--destructive)";
-const flowRunningColor = "hsl(38 96% 56%)";
+const flowRunningColor = "var(--foreground)";
 
 type PipelineNodeData = {
   label: string;
@@ -27,9 +28,9 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
     <article
       className={[
         "group relative min-h-[74px] w-[210px] rounded-xl border bg-card px-4 py-3 text-left shadow-[inset_0_1px_0_hsl(var(--foreground)/0.06)] transition duration-200",
-        props.selected ? "border-primary" : "border-border/80",
-        status === "running" ? "translate-y-[-1px] border-amber-400" : "",
-        status === "completed" ? "border-primary/70" : "",
+        props.selected ? "border-foreground" : "border-border/80",
+        status === "running" ? "translate-y-[-1px] border-foreground" : "",
+        status === "completed" ? "border-muted-foreground/70" : "",
         status === "failed" ? "border-destructive" : "",
       ].join(" ")}
     >
@@ -213,7 +214,7 @@ function statusColor(status: NodeStatus | undefined): string {
     case "failed":
       return flowDestructiveColor;
     default:
-      return flowPrimaryColor;
+      return flowSelectedColor;
   }
 }
 

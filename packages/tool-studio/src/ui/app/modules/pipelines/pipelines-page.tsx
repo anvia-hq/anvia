@@ -44,9 +44,11 @@ export function PipelinesPage(props: {
   runInput: string;
   runOutput: string;
   theme: "light" | "dark";
+  activeTab: PipelineSidebarTab;
   onSelectPipeline: (pipelineId: string) => void;
   onRunInputChange: (value: string) => void;
   onRun: () => void;
+  onTabChange: (tab: PipelineSidebarTab) => void;
   onReplayRun: (runId: string) => void;
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
@@ -64,100 +66,97 @@ export function PipelinesPage(props: {
     return toFlow(graph, nodeStatuses);
   }, [graph, nodeStatuses]);
 
-  if (!props.enabled) {
-    return (
-      <section className="grid min-h-0 place-items-center p-8 text-center">
-        <div className="grid max-w-lg gap-3">
-          <h1 className="m-0 text-2xl font-semibold text-foreground">Pipelines unavailable</h1>
-          <p className="m-0 text-sm leading-6 text-muted-foreground">
-            This Studio runner has no registered pipelines.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
   return (
-    <section className="grid min-h-0 min-w-0 grid-cols-[minmax(0,2fr)_minmax(0,1fr)] overflow-hidden bg-background/45 max-lg:grid-cols-1">
-      <div className="relative min-h-0 min-w-0 overflow-hidden bg-card/25">
-        {props.detailLoading && graph === undefined ? (
-          <div className="grid h-full min-h-96 place-items-center p-6">
-            <div className="grid w-full max-w-lg gap-3">
-              <div className="h-4 w-40 animate-pulse rounded-lg bg-muted" />
-              <div className="h-16 animate-pulse rounded-lg bg-muted/60" />
-              <div className="h-16 w-4/5 animate-pulse rounded-lg bg-muted/60" />
-            </div>
+    <section className="grid h-full min-h-0 min-w-0 max-h-full max-w-full overflow-hidden bg-background/45">
+      <div className="grid min-h-0 min-w-0 pb-6 pr-6">
+        <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,2fr)_minmax(0,1fr)] overflow-hidden rounded-2xl border border-border/80 bg-card/70 shadow-sm max-lg:grid-cols-1">
+          <div className="relative min-h-0 min-w-0 overflow-hidden border-r border-border/80 bg-card/25 max-lg:border-b max-lg:border-r-0">
+            {props.detailLoading && graph === undefined ? (
+              <div className="grid h-full min-h-96 place-items-center p-6">
+                <div className="grid w-full max-w-lg gap-3">
+                  <div className="h-4 w-40 animate-pulse rounded-lg bg-muted" />
+                  <div className="h-16 animate-pulse rounded-lg bg-muted/60" />
+                  <div className="h-16 w-4/5 animate-pulse rounded-lg bg-muted/60" />
+                </div>
+              </div>
+            ) : null}
+            {!props.detailLoading && graph === undefined ? (
+              <div className="grid h-full min-h-96 place-items-center p-8 text-center">
+                <div className="max-w-sm">
+                  <p className="m-0 text-sm font-semibold text-foreground">
+                    {props.pipelines.length === 0 ? "No pipelines" : "No pipeline selected"}
+                  </p>
+                  <p className="m-0 mt-2 text-sm leading-6 text-muted-foreground">
+                    {props.pipelines.length === 0
+                      ? "0 pipeline records are available in this Studio runtime."
+                      : "Choose a registered pipeline to inspect its graph and runtime logs."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {graph !== undefined ? (
+              <ReactFlow
+                nodes={flow.nodes}
+                edges={flow.edges}
+                className="pipeline-flow"
+                style={
+                  {
+                    "--xy-edge-stroke": "var(--muted-foreground)",
+                    "--xy-edge-stroke-width": "1.6",
+                    "--xy-edge-stroke-selected": "var(--foreground)",
+                  } as CSSProperties
+                }
+                fitView
+                fitViewOptions={{ padding: 0.18, maxZoom: 0.96 }}
+                minZoom={0.48}
+                maxZoom={1.35}
+                colorMode={props.theme}
+                nodeTypes={nodeTypes}
+                proOptions={{ hideAttribution: true }}
+                defaultEdgeOptions={{
+                  type: "smoothstep",
+                  focusable: true,
+                }}
+                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+              >
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={14}
+                  size={1.8}
+                  color={flowMutedForegroundColor}
+                  className="opacity-35"
+                />
+                <Controls showInteractive={false} />
+              </ReactFlow>
+            ) : null}
           </div>
-        ) : null}
-        {!props.detailLoading && graph === undefined ? (
-          <div className="grid h-full min-h-96 place-items-center p-8 text-center">
-            <div className="max-w-sm">
-              <p className="m-0 text-sm font-semibold text-foreground">No pipeline selected</p>
-              <p className="m-0 mt-2 text-sm leading-6 text-muted-foreground">
-                Choose a registered pipeline to inspect its graph and runtime logs.
-              </p>
-            </div>
-          </div>
-        ) : null}
-        {graph !== undefined ? (
-          <ReactFlow
-            nodes={flow.nodes}
-            edges={flow.edges}
-            className="pipeline-flow"
-            style={
-              {
-                "--xy-edge-stroke": "var(--primary)",
-                "--xy-edge-stroke-width": "1.6",
-                "--xy-edge-stroke-selected": "var(--primary)",
-              } as CSSProperties
+          <PipelineInspectorSidebar
+            pipelines={props.pipelines}
+            selectedPipelineId={props.selectedPipelineId}
+            detail={props.detail}
+            logs={props.logs}
+            runs={props.runs}
+            logsLoading={props.logsLoading}
+            runsLoading={props.runsLoading}
+            runState={props.runState}
+            runInput={props.runInput}
+            runOutput={props.runOutput}
+            activeTab={props.activeTab}
+            selectedNode={selectedNode}
+            selectedNodeStatus={
+              selectedNode?.id === undefined ? undefined : nodeStatuses.get(selectedNode.id)
             }
-            fitView
-            fitViewOptions={{ padding: 0.18, maxZoom: 0.96 }}
-            minZoom={0.48}
-            maxZoom={1.35}
-            colorMode={props.theme}
-            nodeTypes={nodeTypes}
-            proOptions={{ hideAttribution: true }}
-            defaultEdgeOptions={{
-              type: "smoothstep",
-              focusable: true,
+            onSelectPipeline={(pipelineId) => {
+              setSelectedNodeId(undefined);
+              props.onSelectPipeline(pipelineId);
             }}
-            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={14}
-              size={1.8}
-              color={flowMutedForegroundColor}
-              className="opacity-35"
-            />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        ) : null}
+            onRunInputChange={props.onRunInputChange}
+            onRun={props.onRun}
+            onTabChange={props.onTabChange}
+            onReplayRun={props.onReplayRun}
+          />
+        </div>
       </div>
-      <PipelineInspectorSidebar
-        pipelines={props.pipelines}
-        selectedPipelineId={props.selectedPipelineId}
-        detail={props.detail}
-        logs={props.logs}
-        runs={props.runs}
-        logsLoading={props.logsLoading}
-        runsLoading={props.runsLoading}
-        runState={props.runState}
-        runInput={props.runInput}
-        runOutput={props.runOutput}
-        selectedNode={selectedNode}
-        selectedNodeStatus={
-          selectedNode?.id === undefined ? undefined : nodeStatuses.get(selectedNode.id)
-        }
-        onSelectPipeline={(pipelineId) => {
-          setSelectedNodeId(undefined);
-          props.onSelectPipeline(pipelineId);
-        }}
-        onRunInputChange={props.onRunInputChange}
-        onRun={props.onRun}
-        onReplayRun={props.onReplayRun}
-      />
     </section>
   );
 }
@@ -173,14 +172,15 @@ function PipelineInspectorSidebar(props: {
   runState: "idle" | "running";
   runInput: string;
   runOutput: string;
+  activeTab: PipelineSidebarTab;
   selectedNode: NonNullable<StudioPipelineDetail["graph"]["nodes"][number]> | undefined;
   selectedNodeStatus: NodeStatus | undefined;
   onSelectPipeline: (pipelineId: string) => void;
   onRunInputChange: (value: string) => void;
   onRun: () => void;
+  onTabChange: (tab: PipelineSidebarTab) => void;
   onReplayRun: (runId: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<PipelineSidebarTab>("input");
   const graph = props.detail?.graph;
   const graphStats =
     graph === undefined
@@ -194,8 +194,8 @@ function PipelineInspectorSidebar(props: {
         };
 
   return (
-    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-border/80 bg-background/70 max-lg:border-l-0 max-lg:border-t">
-      <header className="grid gap-3 border-b border-border/80 bg-card/35 px-4 py-4">
+    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70">
+      <header className="grid gap-3 bg-card/35 px-4 py-4">
         <div className="grid gap-3">
           <div className="flex min-w-0 items-start justify-between gap-4">
             <div className="min-w-0">
@@ -213,7 +213,7 @@ function PipelineInspectorSidebar(props: {
             </span>
           </div>
           <Select value={props.selectedPipelineId} onValueChange={props.onSelectPipeline}>
-            <SelectTrigger className="h-8 w-full rounded-lg border-primary/55 bg-background font-mono text-[11px] hover:border-primary focus:border-primary focus:ring-primary/25">
+            <SelectTrigger className="h-8 w-full rounded-lg border-border/80 bg-background font-mono text-[11px] hover:border-muted-foreground/60 focus:border-muted-foreground/70 focus:ring-muted-foreground/20">
               <SelectValue placeholder="Select pipeline" />
             </SelectTrigger>
             <SelectContent>
@@ -225,15 +225,15 @@ function PipelineInspectorSidebar(props: {
             </SelectContent>
           </Select>
         </div>
-        <PipelineSidebarTabs activeTab={activeTab} onChange={setActiveTab} />
+        <PipelineSidebarTabs activeTab={props.activeTab} onChange={props.onTabChange} />
       </header>
       <div
         className={[
           "min-h-0 min-w-0 px-5 py-5",
-          activeTab === "logs" ? "grid overflow-hidden" : "overflow-auto",
+          props.activeTab === "logs" ? "grid overflow-hidden" : "overflow-auto",
         ].join(" ")}
       >
-        {activeTab === "input" ? (
+        {props.activeTab === "input" ? (
           <PipelineInputPanel
             runInput={props.runInput}
             runState={props.runState}
@@ -242,14 +242,14 @@ function PipelineInspectorSidebar(props: {
             onRun={props.onRun}
           />
         ) : null}
-        {activeTab === "metadata" ? (
+        {props.activeTab === "metadata" ? (
           <PipelineMetadataPanel
             graphStats={graphStats}
             selectedNode={props.selectedNode}
             selectedNodeStatus={props.selectedNodeStatus}
           />
         ) : null}
-        {activeTab === "runs" ? (
+        {props.activeTab === "runs" ? (
           <PipelineRunsPanel
             runs={props.runs}
             runOutput={props.runOutput}
@@ -258,7 +258,7 @@ function PipelineInspectorSidebar(props: {
             onReplayRun={props.onReplayRun}
           />
         ) : null}
-        {activeTab === "logs" ? (
+        {props.activeTab === "logs" ? (
           <PipelineLogsSection
             logs={props.logs}
             selectedPipelineId={props.selectedPipelineId}
@@ -270,7 +270,7 @@ function PipelineInspectorSidebar(props: {
   );
 }
 
-type PipelineSidebarTab = "input" | "metadata" | "runs" | "logs";
+export type PipelineSidebarTab = "input" | "metadata" | "runs" | "logs";
 
 const pipelineSidebarTabs: Array<{ id: PipelineSidebarTab; label: string }> = [
   { id: "input", label: "Input" },
@@ -295,8 +295,8 @@ function PipelineSidebarTabs(props: {
           className={[
             "h-8 rounded-lg px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] transition duration-200",
             props.activeTab === tab.id
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           ].join(" ")}
           key={tab.id}
           onClick={() => props.onChange(tab.id)}
@@ -342,9 +342,10 @@ function PipelineInputPanel(props: {
           </p>
         </div>
         <Button
-          className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold"
+          className="h-8 shrink-0 rounded-lg border border-white bg-white px-3 text-xs font-semibold text-black shadow-none hover:border-white hover:bg-white/90 hover:text-black disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
           disabled={props.runState === "running" || props.disabled}
           onClick={props.onRun}
+          variant="ghost"
         >
           <StudioIcon icon={PlayIcon} className="mr-1.5 h-3.5 w-3.5" />
           {props.runState === "running" ? "Running" : "Run"}
@@ -518,7 +519,7 @@ function pipelineRunOutputText(run: StudioPipelineRunRecord): string {
 function pipelineRunStatusClass(status: StudioPipelineRunRecord["status"]): string {
   switch (status) {
     case "success":
-      return "text-primary";
+      return "text-foreground";
     case "error":
       return "text-destructive";
     case "running":
@@ -555,7 +556,7 @@ function NodeInspector(props: {
         </div>
       </div>
       {props.node.description === undefined ? null : (
-        <p className="m-0 rounded-lg bg-primary/10 px-3 py-2 text-sm leading-6 text-muted-foreground">
+        <p className="m-0 rounded-lg bg-muted/35 px-3 py-2 text-sm leading-6 text-muted-foreground">
           {props.node.description}
         </p>
       )}
@@ -672,8 +673,7 @@ function PipelineLogRow(props: { log: StudioPipelineLogEntry }) {
   return (
     <article
       className={[
-        "min-w-full rounded-lg border-l-2 px-3 py-1.5 text-[11px] leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]",
-        logLevelBorderClass(props.log.level),
+        "min-w-full rounded-lg px-3 py-1.5 text-[11px] leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]",
       ].join(" ")}
       title={line}
     >
@@ -746,19 +746,6 @@ function formatMetadataValue(value: unknown): string {
   return "";
 }
 
-function logLevelBorderClass(level: StudioPipelineLogEntry["level"]): string {
-  switch (level) {
-    case "error":
-      return "border-destructive";
-    case "warn":
-      return "border-muted-foreground";
-    case "debug":
-      return "border-muted-foreground/45";
-    case "info":
-      return "border-primary/70";
-  }
-}
-
 function logLevelTextClass(level: StudioPipelineLogEntry["level"]): string {
   switch (level) {
     case "error":
@@ -768,6 +755,6 @@ function logLevelTextClass(level: StudioPipelineLogEntry["level"]): string {
     case "debug":
       return "text-muted-foreground";
     case "info":
-      return "text-primary";
+      return "text-foreground";
   }
 }

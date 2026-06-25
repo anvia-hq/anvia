@@ -28,7 +28,7 @@ export function PipelineLogsPanel(props: {
   }
 
   return (
-    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-border/80 bg-background/70 max-xl:hidden">
+    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70 max-xl:hidden">
       <header className="grid min-h-12 min-w-0 gap-1 border-b border-border/80 bg-card/35 px-5 py-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-sm font-semibold leading-tight text-foreground">Pipeline logs</h2>
@@ -91,8 +91,7 @@ function LogRow(props: { log: StudioPipelineLogEntry }) {
   return (
     <article
       className={cn(
-        "min-w-full rounded-lg border-l-2 px-4 py-1.5 text-[11px] leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]",
-        levelBorderClass(props.log.level),
+        "min-w-full rounded-lg px-4 py-1.5 text-[11px] leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]",
       )}
       title={line}
     >
@@ -124,28 +123,15 @@ function formatLogTime(value: string): string {
   });
 }
 
-function levelBorderClass(level: StudioPipelineLogEntry["level"]): string {
-  switch (level) {
-    case "error":
-      return "border-destructive";
-    case "warn":
-      return "border-yellow-500";
-    case "debug":
-      return "border-muted-foreground/45";
-    case "info":
-      return "border-primary/70";
-  }
-}
-
 function levelTextClass(level: StudioPipelineLogEntry["level"]): string {
   switch (level) {
     case "error":
       return "text-destructive";
     case "warn":
-      return "text-yellow-500";
+      return "text-muted-foreground";
     case "debug":
       return "text-muted-foreground";
     case "info":
-      return "text-primary";
+      return "text-foreground";
   }
 }

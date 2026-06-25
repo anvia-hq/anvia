@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Krona+One&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @source "./**/*.{ts,tsx}";
@@ -42,7 +42,7 @@
   --font-heading:
     Figtree, Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, ui-monospace, monospace;
+  --font-mono: Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --radius: 0.5rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -99,7 +99,7 @@
   --font-heading:
     Figtree, Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: Geist Mono, ui-monospace, monospace;
+  --font-mono: Inter, -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif, system-ui;
   --radius: 0.5rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -285,8 +285,8 @@
   }
 
   .anvia-wordmark {
-    font-family: "Krona One", var(--font-sans);
-    letter-spacing: -0.04em;
+    font-family: var(--font-heading);
+    letter-spacing: 0;
   }
 
   :focus-visible {

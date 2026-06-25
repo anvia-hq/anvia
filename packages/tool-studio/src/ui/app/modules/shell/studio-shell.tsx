@@ -1,10 +1,4 @@
-import {
-  ArchiveIcon,
-  ExternalLinkIcon,
-  Moon02Icon,
-  PlusSignCircleIcon,
-  Sun02Icon,
-} from "@hugeicons/core-free-icons";
+import { ArchiveIcon, ExternalLinkIcon, Moon02Icon, Sun02Icon } from "@hugeicons/core-free-icons";
 import type { StudioSessionSummary } from "../../../../types";
 import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
@@ -54,35 +48,30 @@ export function StudioSidebar(props: {
           active={props.activePage === "playground"}
           icon="message"
           label="Chat"
-          disabled={!props.hasAgents}
           onClick={() => props.onNavigate("playground")}
         />
         <NavButton
           active={props.activePage === "pipelines"}
           icon="workflow"
           label="Pipelines"
-          disabled={!props.pipelinesEnabled}
           onClick={() => props.onNavigate("pipelines")}
         />
         <NavButton
           active={props.activePage === "evals"}
           icon="gauge"
           label="Evals"
-          disabled={!props.evalsEnabled}
           onClick={() => props.onNavigate("evals")}
         />
         <NavButton
           active={props.activePage === "sessions"}
           icon="list"
           label="Sessions"
-          disabled={!props.sessionsEnabled}
           onClick={() => props.onNavigate("sessions")}
         />
         <NavButton
           active={props.activePage === "tracing"}
           icon="activity"
           label="Traces"
-          disabled={!props.tracesEnabled}
           onClick={() => props.onNavigate("tracing")}
         />
       </nav>
@@ -100,35 +89,30 @@ export function StudioSidebar(props: {
           active={props.activePage === "tools"}
           icon="wrench"
           label="Tools"
-          disabled={!props.toolsEnabled}
           onClick={() => props.onNavigate("tools")}
         />
         <NavButton
           active={props.activePage === "mcps"}
           icon="plug"
           label="MCPs"
-          disabled={!props.mcpsEnabled}
           onClick={() => props.onNavigate("mcps")}
         />
         <NavButton
           active={props.activePage === "knowledge"}
           icon="database"
           label="Knowledge"
-          disabled={!props.knowledgeEnabled}
           onClick={() => props.onNavigate("knowledge")}
         />
         <NavButton
           active={props.activePage === "memory"}
           icon="database"
           label="Memory"
-          disabled={!props.memoryEnabled}
           onClick={() => props.onNavigate("memory")}
         />
         <NavButton
           active={props.activePage === "status"}
           icon="gauge"
           label="Status"
-          disabled={!props.statusEnabled}
           onClick={() => props.onNavigate("status")}
         />
       </nav>
@@ -224,12 +208,12 @@ export function StudioHeader(props: {
             )}
           </Button>
           <Button
-            className="h-8 min-h-8 gap-1.5 rounded-lg border-white bg-white px-3 font-mono text-xs text-black hover:bg-white/90 disabled:bg-muted disabled:text-muted-foreground"
+            className="h-8 min-h-8 rounded-lg border border-white bg-white px-3 font-mono text-xs text-black shadow-none [box-shadow:none] hover:border-white hover:bg-white/90 hover:text-black focus-visible:ring-0 active:bg-white/85 disabled:bg-muted disabled:text-muted-foreground"
             type="button"
+            variant="ghost"
             disabled={!props.sessionsEnabled}
             onClick={props.onNewSession}
           >
-            <StudioIcon icon={PlusSignCircleIcon} aria-hidden="true" />
             New session
           </Button>
         </div>

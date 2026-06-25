@@ -1,6 +1,7 @@
 import type { StudioConfig } from "../../../../types";
 import { PipelinesPage } from "../../app-pages";
 import type { StudioTheme } from "../../app-theme";
+import type { PipelineSidebarTab } from "./pipelines-page";
 import { usePipelines } from "./use-pipelines";
 
 export function PipelinesContainer(props: {
@@ -8,8 +9,10 @@ export function PipelinesContainer(props: {
   enabled: boolean;
   pipelines: StudioConfig["pipelines"];
   theme: StudioTheme;
+  activeTab: PipelineSidebarTab;
   onError: (message: string) => void;
   onStatus: (status: string) => void;
+  onTabChange: (tab: PipelineSidebarTab) => void;
 }) {
   const pipelines = usePipelines({
     active: props.active,
@@ -35,9 +38,11 @@ export function PipelinesContainer(props: {
       runInput={pipelines.pipelineRunInput}
       runOutput={pipelines.pipelineRunOutput}
       theme={props.theme}
+      activeTab={props.activeTab}
       onSelectPipeline={pipelines.selectPipeline}
       onRunInputChange={pipelines.setPipelineRunInput}
       onRun={() => void pipelines.runPipeline()}
+      onTabChange={props.onTabChange}
       onReplayRun={(runId) => void pipelines.replayPipelineRun(runId)}
     />
   );

@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.7.5
+
+### Patch Changes
+
+- 9088549: Improve the Dynamic Tools knowledge view with structured tool reference cards, parameter tables, source details, and collapsed raw JSON metadata.
+
 ## 0.7.4
 
 ### Patch Changes

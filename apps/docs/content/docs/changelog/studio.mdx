@@ -9,6 +9,46 @@ Studio UI and HTTP runtime for Anvia agents.
 
 Source: [`packages/tool-studio/CHANGELOG.md`](https://github.com/anvia-hq/anvia/blob/main/packages/tool-studio/CHANGELOG.md)
 
+## 0.7.4
+
+### Patch Changes
+
+- f160948: Update Studio runtime and router dependencies.
+
+## 0.7.3
+
+### Patch Changes
+
+- ac55f41: Refactor Studio routing and modularize the UI/runtime internals while preserving existing Studio behavior.
+
+## 0.7.2
+
+### Patch Changes
+
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+- Updated dependencies [2559d04]
+  - @anvia/core@0.7.1
+
+## 0.7.1
+
+### Patch Changes
+
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+
+## 0.7.0
+
+### Minor Changes
+
+- ef5e727: Add centralized tool approval handling with tool-level approval policies and `.approvals(...)` decision handlers.
+
+  Add React `useChat` human-input state for tool approvals and `ask_question` prompts, including helpers for approving, rejecting, and answering pending human input.
+
+### Patch Changes
+
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+  - @anvia/react@0.5.0
+
 ## 0.6.1
 
 ### Patch Changes

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -41,6 +42,7 @@ const packages = discoverPackages()
     const groupDiff = groupRank(a.group) - groupRank(b.group);
     return groupDiff === 0 ? a.pkg.name.localeCompare(b.pkg.name) : groupDiff;
   });
+const releaseDateCache = new Map();
 
 rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
@@ -135,13 +137,13 @@ function createIndex(items) {
 
     sections.push(`## ${groupTitles.get(group) ?? titleCase(group)}
 
-| Package | Current version | Release notes |
-| --- | --- | --- |
+| Package | Current version | Released | Release notes |
+| --- | --- | --- | --- |
 ${groupItems
-  .map(
-    (item) =>
-      `| \`${item.pkg.name}\` | \`${item.pkg.version}\` | [View changelog](/docs/changelog/${item.slug}) |`,
-  )
+  .map((item) => {
+    const releaseDate = getCurrentReleaseDate(item) ?? "Unknown";
+    return `| \`${item.pkg.name}\` | \`${item.pkg.version}\` | ${releaseDate} | [View changelog](/docs/changelog/${item.slug}) |`;
+  })
   .join("\n")}`);
   }
 
@@ -190,7 +192,58 @@ function normalizeChangelog(content, packageName) {
     return "No release notes have been recorded yet.\n";
   }
 
-  return `${trimmed.replace(new RegExp(`^# ${escapeRegExp(packageName)}\\s*\\n+`), "")}\n`;
+  const withoutTitle = trimmed.replace(new RegExp(`^# ${escapeRegExp(packageName)}\\s*\\n+`), "");
+
+  return `${withoutTitle}\n`;
+}
+
+function getReleaseDate(packageName, version, body) {
+  const tag = `${packageName}@${version}`;
+  if (releaseDateCache.has(tag)) return releaseDateCache.get(tag);
+
+  let releaseDate = getGitDate(tag);
+
+  if (releaseDate === undefined) {
+    const match = body.match(/\b[0-9a-f]{7,40}\b/i);
+    if (match !== null) releaseDate = getGitDate(match[0]);
+  }
+
+  releaseDateCache.set(tag, releaseDate);
+  return releaseDateCache.get(tag);
+}
+
+function getCurrentReleaseDate(item) {
+  if (!existsSync(item.changelogPath)) return undefined;
+
+  const content = readFileSync(item.changelogPath, "utf8");
+  const body = getReleaseSectionBody(content, item.pkg.name, item.pkg.version);
+  return getReleaseDate(item.pkg.name, item.pkg.version, body ?? "");
+}
+
+function getReleaseSectionBody(content, packageName, version) {
+  const trimmed = content.trim();
+  const withoutTitle = trimmed.replace(new RegExp(`^# ${escapeRegExp(packageName)}\\s*\\n+`), "");
+
+  for (const section of withoutTitle.split(/(?=^## )/m)) {
+    const match = section.match(/^## ([^\n]+)\n([\s\S]*)$/);
+    if (match !== null && match[1].trim() === version) return match[2];
+  }
+
+  return undefined;
+}
+
+function getGitDate(ref) {
+  try {
+    const date = execFileSync("git", ["log", "-1", "--format=%cs", ref], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+
+    return date === "" ? undefined : date;
+  } catch {
+    return undefined;
+  }
 }
 
 function missingChangelog(item) {

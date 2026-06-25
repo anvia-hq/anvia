@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.11
+
+### Patch Changes
+
+- 0e33272: Update upstream runtime dependencies to their latest checked releases.
+
 ## 0.3.10
 
 ### Patch Changes

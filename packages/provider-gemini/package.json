@@ -1,6 +1,6 @@
 {
   "name": "@anvia/gemini",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Gemini provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 0.3.2
+
+### Patch Changes
+
+- 0e33272: Update upstream runtime dependencies to their latest checked releases.
+
 ## 0.3.1
 
 ### Patch Changes

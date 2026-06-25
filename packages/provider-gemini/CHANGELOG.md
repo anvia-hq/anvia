@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 0.2.9
+
+### Patch Changes
+
+- 0e33272: Update upstream runtime dependencies to their latest checked releases.
+
 ## 0.2.8
 
 ### Patch Changes

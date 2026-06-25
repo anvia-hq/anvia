@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 0.3.1
+
+### Patch Changes
+
+- 628afa4: Reuse resolved tracing configuration in Langfuse prompt and dataset clients, and standardize examples and docs on `LANGFUSE_TRACING_ENVIRONMENT`.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,0 +1,67 @@
+---
+const footerGroups = [
+  {
+    title: "Docs",
+    items: ["Getting started", "API reference", "Examples", "Guides"],
+  },
+  {
+    title: "Resources",
+    items: ["Best Practices", "Frameworks", "Changelog", "Studio"],
+  },
+  {
+    title: "For agents",
+    items: ["Runtime", "Providers", "Retrieval", "Tracing"],
+  },
+  {
+    title: "Sponsors",
+    items: ["Become a sponsor", "Partners", "Support", "Contact"],
+  },
+];
+---
+
+<footer class="border-white/[0.08] border-t bg-[#101011] py-14">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div class="grid gap-12 lg:grid-cols-[1.1fr_1.4fr]">
+      <div class="max-w-md">
+        <div class="flex items-center gap-2.5 font-semibold text-xl text-zinc-50">
+          <img src="/assets/logo.png" alt="" class="h-7 w-7" />
+          <span>Anvia</span>
+        </div>
+        <p class="mt-5 text-base text-zinc-400 leading-7">
+          A TypeScript foundation for building agents with clean provider adapters, retrieval modules, tools, tracing, and app transports.
+        </p>
+      </div>
+
+      <nav class="grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-4" aria-label="Footer">
+        {
+          footerGroups.map((group) => (
+            <section>
+              <h2 class="font-mono text-[#E9FF4E]/70 text-[0.72rem] uppercase tracking-[0.16em]">
+                {group.title}
+              </h2>
+              <div class="mt-4 grid gap-3">
+                {group.items.map((item) => (
+                  <button
+                    type="button"
+                    class="w-fit text-left font-medium text-sm text-zinc-400 transition hover:text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E9FF4E]"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))
+        }
+      </nav>
+    </div>
+
+    <div class="mt-14 flex flex-col gap-4 border-white/[0.08] border-t pt-6 text-sm text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+      <p>© 2026 Anvia. Built for agent products.</p>
+      <div class="flex flex-wrap gap-x-5 gap-y-2">
+        <button type="button" class="transition hover:text-zinc-300">Status</button>
+        <button type="button" class="transition hover:text-zinc-300">Privacy</button>
+        <button type="button" class="transition hover:text-zinc-300">Terms</button>
+      </div>
+    </div>
+  </div>
+</footer>

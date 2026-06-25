@@ -31,13 +31,17 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import {
+  type LangfuseResolvedConfig,
+  langfuseResolvedConfigSymbol,
+  resolveLangfuseConfig,
+} from "./config.js";
+import {
   agentLabel,
   childMetadata,
   errorMessage,
   generationKey,
   isRecord,
   modelParameters,
-  resolveOption,
   usageDetails,
   usageDetailsFromRecord,
 } from "./helpers.js";
@@ -60,6 +64,7 @@ export const langfuse = {
 class LangfuseAgentObserver implements LangfuseTracing {
   private readonly processor: LangfuseSpanProcessor;
   private readonly sdk: NodeSDK;
+  readonly [langfuseResolvedConfigSymbol]: LangfuseResolvedConfig;
   private readonly publicKey: string | undefined;
   private readonly secretKey: string | undefined;
   private readonly baseUrl: string;
@@ -72,24 +77,22 @@ class LangfuseAgentObserver implements LangfuseTracing {
   private readonly redactOutputs: LangfuseRedactionMode | undefined;
 
   constructor(options: LangfuseTracingOptions) {
-    this.publicKey = resolveOption(options.publicKey, process.env.LANGFUSE_PUBLIC_KEY);
-    this.secretKey = resolveOption(options.secretKey, process.env.LANGFUSE_SECRET_KEY);
-    this.baseUrl =
-      resolveOption(options.baseUrl, process.env.LANGFUSE_BASE_URL) ?? "https://cloud.langfuse.com";
-    this.serviceName = resolveOption(options.serviceName, process.env.LANGFUSE_SERVICE_NAME);
-    this.timeoutMs = options.timeoutMs ?? 30_000;
+    const resolvedConfig = resolveLangfuseConfig(options);
+    this[langfuseResolvedConfigSymbol] = resolvedConfig;
+    this.publicKey = resolvedConfig.publicKey;
+    this.secretKey = resolvedConfig.secretKey;
+    this.baseUrl = resolvedConfig.baseUrl;
+    this.serviceName = resolvedConfig.serviceName;
+    this.timeoutMs = resolvedConfig.timeoutMs;
     const processorOptions: ConstructorParameters<typeof LangfuseSpanProcessor>[0] = {
       baseUrl: this.baseUrl,
     };
     if (this.publicKey !== undefined) processorOptions.publicKey = this.publicKey;
     if (this.secretKey !== undefined) processorOptions.secretKey = this.secretKey;
-    const environment = resolveOption(
-      options.environment,
-      process.env.LANGFUSE_TRACING_ENVIRONMENT,
-    );
-    if (environment !== undefined) processorOptions.environment = environment;
-    const release = resolveOption(options.release, process.env.LANGFUSE_RELEASE);
-    if (release !== undefined) processorOptions.release = release;
+    if (resolvedConfig.environment !== undefined) {
+      processorOptions.environment = resolvedConfig.environment;
+    }
+    if (resolvedConfig.release !== undefined) processorOptions.release = resolvedConfig.release;
     this.processor = new LangfuseSpanProcessor(processorOptions);
     const sdkOptions: ConstructorParameters<typeof NodeSDK>[0] = {
       spanProcessors: [this.processor],

@@ -212,11 +212,16 @@ type LangfuseDatasetClient = {
 
 function createLangfuseDatasetClient(
   tracing: Pick<LangfuseTracing, "score">,
-  options: LangfuseDatasetClientOptions,
+  options?: LangfuseDatasetClientOptions,
 ): LangfuseDatasetClient;
 ```
 
 Purpose: manage Langfuse datasets and post batched dataset runs.
+
+Configuration: when `tracing` comes from `langfuse.create()`, the client reuses
+its resolved `publicKey`, `secretKey`, `baseUrl`, and `timeoutMs`. Explicit
+client options override those values; custom tracing-like objects fall back to
+options and env vars.
 
 Return behavior: `createDataset` / `getDataset` round-trip dataset metadata; `upsertItems` posts items to the dataset; `runExperiment` runs the supplied `run` per item and posts the successful results.
 
@@ -289,11 +294,16 @@ type LangfusePromptClient = {
 
 function createLangfusePromptClient(
   tracing: Pick<LangfuseTracing, "score">,
-  options: LangfusePromptClientOptions,
+  options?: LangfusePromptClientOptions,
 ): LangfusePromptClient;
 ```
 
 Purpose: fetch prompts from Langfuse's prompt store with an in-memory TTL cache.
+
+Configuration: when `tracing` comes from `langfuse.create()`, the client reuses
+its resolved `publicKey`, `secretKey`, `baseUrl`, and `timeoutMs`. Explicit
+client options override those values; custom tracing-like objects fall back to
+options and env vars.
 
 Return behavior: `getPromptText` / `getPromptChat` throw if the resolved prompt is the other shape.
 
@@ -331,4 +341,3 @@ Purpose: mask personally identifiable information before it leaves the process.
 Return behavior: `redactString` runs configured patterns in order; `redactObject` recurses into nested values; `redactMessages` redacts the text parts of message content arrays.
 
 Notable errors: redaction failures propagate so callers can choose to retry or fall back.
-

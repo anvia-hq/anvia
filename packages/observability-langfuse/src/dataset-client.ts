@@ -1,5 +1,5 @@
 import type { JsonValue } from "@anvia/core/completion";
-import { resolveOption } from "./helpers.js";
+import { getResolvedLangfuseConfig, resolveLangfuseConfig } from "./config.js";
 import { LangfuseScoreError } from "./scoring.js";
 import type {
   LangfuseDataset,
@@ -13,19 +13,18 @@ import type {
 } from "./types.js";
 
 const DEFAULT_PAGE_SIZE = 50;
-const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_PAGINATION_PAGES = 100;
 
 export function createLangfuseDatasetClient(
-  _tracing: Pick<LangfuseTracing, "score">,
+  tracing: Pick<LangfuseTracing, "score">,
   options: LangfuseDatasetClientOptions = {},
 ): LangfuseDatasetClient {
-  const baseUrl =
-    resolveOption(options.baseUrl, process.env.LANGFUSE_BASE_URL) ?? "https://cloud.langfuse.com";
-  const publicKey = resolveOption(options.publicKey, process.env.LANGFUSE_PUBLIC_KEY);
-  const secretKey = resolveOption(options.secretKey, process.env.LANGFUSE_SECRET_KEY);
+  const resolvedConfig = resolveLangfuseConfig(options, getResolvedLangfuseConfig(tracing));
+  const baseUrl = resolvedConfig.baseUrl;
+  const publicKey = resolvedConfig.publicKey;
+  const secretKey = resolvedConfig.secretKey;
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = resolvedConfig.timeoutMs;
 
   const fetchImpl: typeof fetch = (...args) =>
     fetch(args[0], { ...(args[1] ?? {}), signal: AbortSignal.timeout(timeoutMs) });

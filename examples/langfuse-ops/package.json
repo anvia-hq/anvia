@@ -1,0 +1,23 @@
+{
+  "name": "langfuse-ops",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "tsx -r dotenv/config src/00-quickstart.ts dotenv_config_path=../../.env",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/langfuse": "workspace:*",
+    "@anvia/openai": "workspace:*",
+    "dotenv": "^17.4.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

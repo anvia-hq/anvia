@@ -29,7 +29,19 @@ const tracing = langfuse.create({
 });
 ```
 
-`baseUrl`, `environment`, and `release` are optional.
+Every option can also come from the canonical Langfuse env block:
+
+```sh
+LANGFUSE_PUBLIC_KEY=pk-...
+LANGFUSE_SECRET_KEY=sk-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_TRACING_ENVIRONMENT=development
+LANGFUSE_RELEASE=0.0.0
+LANGFUSE_SERVICE_NAME=support-agent
+```
+
+`baseUrl`, `environment`, `release`, and `serviceName` are optional. Use
+`LANGFUSE_TRACING_ENVIRONMENT` for environment tagging.
 
 ## 3. Attach It to an Agent
 

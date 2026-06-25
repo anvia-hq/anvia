@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r build",
+    "www:build": "pnpm --filter www build",
+    "www:dev": "pnpm --filter www dev",
+    "www:preview": "pnpm --filter www preview",
     "docs:build": "pnpm --filter docs build",
     "docs:deploy": "pnpm --filter docs run deploy",
     "docs:dev": "pnpm --filter docs dev",

@@ -39,7 +39,7 @@ Agent streams include runtime events, not only model text:
 - `text_delta`: visible assistant text.
 - `tool_call`: the model requested a tool call.
 - `tool_result`: your app returned a tool result.
-- `final`: the completed run output, usage, messages, and trace.
+- `final`: the run id, completed output, usage, messages, and trace.
 - `error`: an error from the active run.
 
 ## Completion stream vs agent stream

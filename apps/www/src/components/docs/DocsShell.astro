@@ -32,6 +32,7 @@ const {
 const sidebarGroups = getSidebarGroups(entries, activeSection);
 const tableOfContents = headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
 const hasTableOfContents = tableOfContents.length > 0;
+const sidebarScrollKey = `anvia:docs-sidebar-scroll:${currentId === "packages" ? "packages" : activeSection}`;
 ---
 
 <html lang="en">
@@ -100,7 +101,12 @@ const hasTableOfContents = tableOfContents.length > 0;
           "xl:grid-cols-[18rem_minmax(0,1fr)_20rem] 2xl:grid-cols-[18rem_minmax(0,1fr)_22rem]",
       ]}
     >
-      <aside class="hidden h-full min-h-0 overflow-y-auto border-white/[0.08] border-r px-4 py-7 sm:px-5 lg:block lg:px-6" data-pagefind-ignore="all">
+      <aside
+        class="hidden h-full min-h-0 overflow-y-auto border-white/[0.08] border-r px-4 py-7 sm:px-5 lg:block lg:px-6"
+        data-pagefind-ignore="all"
+        data-docs-sidebar
+        data-docs-sidebar-key={sidebarScrollKey}
+      >
         <nav class="grid gap-8" aria-label="Docs sidebar">
           {
             sidebarGroups.map((section) => (
@@ -112,6 +118,7 @@ const hasTableOfContents = tableOfContents.length > 0;
                   {section.entries.map((entry) => (
                     <a
                       href={docHref(entry)}
+                      data-docs-sidebar-active={entry.id === currentId ? "true" : undefined}
                       class:list={[
                         "-mx-2.5 flex items-center justify-between rounded-lg px-2.5 py-2 font-medium text-sm transition hover:bg-white/[0.045] hover:text-zinc-100",
                         entry.id === currentId ? "bg-white/[0.055] text-zinc-50" : "text-zinc-300",
@@ -161,5 +168,80 @@ const hasTableOfContents = tableOfContents.length > 0;
         )
       }
     </div>
+
+    <script>
+      const sidebar = document.querySelector<HTMLElement>("[data-docs-sidebar]");
+
+      if (sidebar) {
+        const storageKey = sidebar.dataset.docsSidebarKey;
+        const activeLink = sidebar.querySelector<HTMLElement>("[data-docs-sidebar-active]");
+
+        const readStoredScroll = () => {
+          if (!storageKey) {
+            return undefined;
+          }
+
+          try {
+            const stored = sessionStorage.getItem(storageKey);
+            if (stored === null) {
+              return undefined;
+            }
+
+            const parsed = Number.parseInt(stored, 10);
+            return Number.isFinite(parsed) ? parsed : undefined;
+          } catch {
+            return undefined;
+          }
+        };
+
+        const writeStoredScroll = () => {
+          if (!storageKey) {
+            return;
+          }
+
+          try {
+            sessionStorage.setItem(storageKey, String(sidebar.scrollTop));
+          } catch {
+            // Storage may be unavailable in restricted browsing modes.
+          }
+        };
+
+        const restoreSidebarScroll = () => {
+          const storedScroll = readStoredScroll();
+
+          if (storedScroll !== undefined) {
+            sidebar.scrollTop = storedScroll;
+            return;
+          }
+
+          activeLink?.scrollIntoView({ block: "nearest" });
+        };
+
+        restoreSidebarScroll();
+        requestAnimationFrame(restoreSidebarScroll);
+
+        let pendingFrame = 0;
+        sidebar.addEventListener(
+          "scroll",
+          () => {
+            if (pendingFrame !== 0) {
+              cancelAnimationFrame(pendingFrame);
+            }
+
+            pendingFrame = requestAnimationFrame(() => {
+              writeStoredScroll();
+              pendingFrame = 0;
+            });
+          },
+          { passive: true },
+        );
+
+        sidebar.querySelectorAll("a[href]").forEach((link) => {
+          link.addEventListener("click", writeStoredScroll);
+        });
+
+        window.addEventListener("pagehide", writeStoredScroll);
+      }
+    </script>
   </body>
 </html>

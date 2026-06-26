@@ -106,6 +106,19 @@ const { Content, headings } = await render(entry);
 
       wrapper.appendChild(button);
     });
+
+    const tables = document.querySelectorAll<HTMLTableElement>(".docs-content table");
+
+    tables.forEach((table) => {
+      if (table.parentElement?.classList.contains("docs-table-block")) {
+        return;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "docs-table-block";
+      table.parentNode?.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
   </script>
 </DocsShell>
 
@@ -182,6 +195,54 @@ const { Content, headings } = await render(entry);
     font-size: 0.72rem;
     font-weight: 700;
     line-height: 1;
+  }
+
+  .docs-content :global(.docs-table-block) {
+    width: fit-content;
+    max-width: 100%;
+    margin-top: 1.35rem;
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.025);
+  }
+
+  .docs-content :global(table) {
+    width: auto;
+    border-spacing: 0;
+    color: rgb(212 212 216);
+    font-size: 0.875rem;
+    line-height: 1.65;
+  }
+
+  .docs-content :global(thead) {
+    background: rgba(255, 255, 255, 0.055);
+  }
+
+  .docs-content :global(tbody tr:not(:last-child)) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .docs-content :global(th),
+  .docs-content :global(td) {
+    padding: 0.7rem 0.85rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.07);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .docs-content :global(th:last-child),
+  .docs-content :global(td:last-child) {
+    border-right: 0;
+  }
+
+  .docs-content :global(th) {
+    color: rgb(244 244 245);
+    font-weight: 700;
+  }
+
+  .docs-content :global(td) {
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
   }
 
   .docs-content :global(.docs-code-block) {

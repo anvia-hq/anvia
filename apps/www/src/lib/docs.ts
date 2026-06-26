@@ -12,7 +12,14 @@ export const docsSections: Array<{ id: DocsSection; label: string }> = [
 
 const sidebarGroupOrder: Partial<Record<DocsSection, string[]>> = {
   basics: ["Runtime", "Capabilities", "App integration", "Tools and Studio"],
-  advanced: ["Advanced runtime"],
+  advanced: [
+    "Production architecture",
+    "Agent runtime",
+    "Tools and action safety",
+    "Knowledge and retrieval",
+    "Structured workflows",
+    "Quality and operations",
+  ],
   examples: ["Examples"],
   compare: ["Compare"],
 };

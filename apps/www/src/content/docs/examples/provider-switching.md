@@ -1,20 +1,57 @@
 ---
-title: "Provider switching"
-description: "Swap providers while keeping core application flow stable."
+title: Provider Switching
+description: The pattern for using multiple model providers without rewriting the app.
 section: examples
 sidebar:
-  group: "Providers and media"
-  order: 12
+  group: Runtime and Integration
+  order: 3
 ---
 
-## What this example will cover
+Provider switching belongs at the model selection boundary, not throughout the product workflow.
 
-This placeholder reserves the route and menu entry for a future recipe: swap providers while keeping core application flow stable.
+## Scenario
 
-## Planned ingredients
+Support chat uses a fast model by default, but falls back to a model with document input when the request includes a PDF.
 
-The final recipe should cover provider boundaries, shared agent code, capability differences, configuration switching.
+## Example
 
-## Implementation notes
+```ts
+export function selectSupportModel(input: SupportModelInput) {
+  if (input.attachments.some((file) => file.kind === "pdf")) {
+    return models.documentCapable;
+  }
 
-The finished page should include runnable code, required environment variables, expected output, and links to the deeper docs pages that explain the underlying behavior. It should adapt from current repo patterns instead of copying cookbook source text as-is.
+  if (input.channel === "internal") {
+    return models.highReasoning;
+  }
+
+  return models.fastDefault;
+}
+```
+
+The runner does not change shape:
+
+```ts
+const model = selectSupportModel({
+  channel: input.channel,
+  attachments: input.attachments,
+});
+
+const agent = createSupportAgent({
+  model,
+  user,
+  services: input.services,
+});
+```
+
+## Failure Modes
+
+- Provider-specific options leak into every runner.
+- Capability checks happen after building prompts with unsupported content.
+- Fallback model changes tool behavior without tests.
+- Traces do not record selected provider or model.
+
+## Next Patterns
+
+- [Agent Structure](/docs/examples/agent-structure)
+- [Testing Harness](/docs/examples/testing-harness)

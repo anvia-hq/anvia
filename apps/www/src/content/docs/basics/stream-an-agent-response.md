@@ -37,8 +37,11 @@ Agent streams include runtime events, not only model text:
 
 - `turn_start`: a model turn is starting.
 - `text_delta`: visible assistant text.
+- `reasoning_delta`: provider reasoning text when the model emits it.
 - `tool_call`: the model requested a tool call.
 - `tool_result`: your app returned a tool result.
+- `turn_end`: a model turn completed with a provider response.
+- `agent_tool_event`: a nested agent emitted an event while running as a tool.
 - `final`: the run id, completed output, usage, messages, and trace.
 - `error`: an error from the active run.
 

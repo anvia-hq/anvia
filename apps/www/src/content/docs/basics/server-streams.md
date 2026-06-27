@@ -25,9 +25,9 @@ Install `@anvia/server` and keep provider credentials on the server. The example
 import { createEventStream } from "@anvia/server";
 
 export async function POST(request: Request) {
-  const { input } = await request.json();
+  const { message } = await request.json();
 
-  return createEventStream(agent.prompt(input).stream(), {
+  return createEventStream(agent.prompt(message).stream(), {
     format: "jsonl",
   });
 }
@@ -40,7 +40,7 @@ JSONL is the default format and works well with Anvia React transports.
 Use SSE when you need `text/event-stream` compatibility:
 
 ```ts
-return createEventStream(agent.prompt(input).stream(), {
+return createEventStream(agent.prompt(message).stream(), {
   format: "sse",
 });
 ```

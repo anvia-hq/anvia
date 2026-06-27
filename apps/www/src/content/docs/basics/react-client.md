@@ -49,9 +49,19 @@ export function Chat() {
 
 ## What happens
 
-`useChat` creates a fetch-backed transport when you pass `endpoint`. It sends chat input, reads JSONL by default, and updates message state from runtime events.
+`useChat` creates a fetch-backed transport when you pass `endpoint`. It sends the default chat request body:
 
-Use custom transports when your app has a different request shape or event mapping.
+```ts
+type DefaultChatRequest = {
+  message: string;
+  history: ChatMessage[];
+  stream: true;
+};
+```
+
+It reads JSONL by default and updates message state from runtime events.
+
+Use `createRequest` or a custom transport when your server expects a different request shape or event mapping.
 
 ## Check yourself
 

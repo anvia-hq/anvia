@@ -329,10 +329,19 @@ const packageSidebarGroups =
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1;
+    opacity: 0;
+    pointer-events: none;
     transition:
       background-color 150ms ease,
       color 150ms ease,
-      border-color 150ms ease;
+      border-color 150ms ease,
+      opacity 150ms ease;
+  }
+
+  .docs-content :global(.docs-code-block:hover .docs-copy-button),
+  .docs-content :global(.docs-code-block:focus-within .docs-copy-button) {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .docs-content :global(.docs-copy-button svg) {

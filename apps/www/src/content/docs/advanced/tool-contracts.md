@@ -82,7 +82,9 @@ Descriptions should say when to use the tool and what it returns. Avoid hiding p
 
 ## Validation Boundaries
 
-Core validates tool input before `execute(...)` runs. If the model sends invalid JSON, the runtime raises a tool JSON error. If the parsed object fails the input schema, the tool call fails before product code runs.
+Core validates tool input before `execute(...)` runs. At the lower-level `ToolSet.call(...)` boundary, invalid JSON raises `ToolJsonError`, and schema or handler failures are wrapped in `ToolCallError` before product code can return a normal result.
+
+During agent prompt execution, tool errors are reported to `onToolError` and then passed back to the model as tool-result text unless the hook cancels the run. Use `onToolError` when a tool failure should stop normal execution instead of becoming model context.
 
 When `output` is provided, core validates the handler result before returning it to the runtime. Use output schemas for stable structured results and for catching accidental internal fields before they reach the model.
 

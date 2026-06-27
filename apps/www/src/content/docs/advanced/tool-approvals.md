@@ -104,7 +104,7 @@ try {
 }
 ```
 
-Use this pattern when the first run creates an approval task and a later run resumes after the decision is available.
+Use this pattern when the first request should only create an approval task. Core does not provide a resume token for a paused run; your application must start the later continuation with an approval handler or use a runtime that keeps the approval handler pending until a decision arrives.
 
 ## Hook-Driven Approval
 

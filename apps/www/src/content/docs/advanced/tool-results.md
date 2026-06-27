@@ -105,7 +105,7 @@ async execute({ orderId }) {
 }
 ```
 
-Throw for unexpected failures, broken dependencies, invalid service state, or policy failures that should stop normal execution. The runner should map raw errors into safe product responses.
+Throw for unexpected failures, broken dependencies, invalid service state, or policy failures. In an agent run, core reports the error to `onToolError` and then returns the error text as a tool result so the model can recover. If the failure must stop the run, cancel from `onToolError` and map the cancellation to a safe product response in your runner.
 
 ## Redaction
 

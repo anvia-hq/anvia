@@ -7,23 +7,33 @@ sidebar:
   order: 22
 ---
 
-Middleware transforms runtime data without changing the core tool contract. Use it for redaction, instrumentation, normalization, request shaping, and safe output filtering.
+Middleware transforms runtime data without changing the core tool contract. Use it for instrumentation, normalization, request shaping, large-result spillover, and safe output filtering.
 
 Use hooks when you need to decide whether a run continues. Use middleware when you need to transform requests or results.
 
 ## Create Middleware
 
 ```ts
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createMiddleware } from "@anvia/core";
 
-const redactToolOutput = createMiddleware({
-  onToolOutput({ toolName, result }) {
-    if (toolName !== "get_account") {
+const TOOL_OUTPUT_LIMIT = 4_000;
+const toolOutputDir = "/var/app/tool-outputs";
+
+const spillLargeToolOutput = createMiddleware({
+  async onToolOutput({ toolName, internalCallId, result }) {
+    if (result.length <= TOOL_OUTPUT_LIMIT) {
       return;
     }
 
+    await mkdir(toolOutputDir, { recursive: true });
+    const filename = `${toolName}-${internalCallId}.txt`;
+    const path = join(toolOutputDir, filename);
+    await writeFile(path, result, "utf8");
+
     return {
-      result: result.replaceAll(/\b\d{16}\b/g, "[redacted-card]"),
+      result: `Tool output was ${result.length} characters and was written to ${path}.`,
     };
   },
 });
@@ -33,7 +43,7 @@ Attach middleware to the agent when it should apply to every run:
 
 ```ts
 const agent = new AgentBuilder("support", model)
-  .middleware(redactToolOutput)
+  .middleware(spillLargeToolOutput)
   .build();
 ```
 
@@ -41,7 +51,7 @@ Attach middleware to one request when it is request-specific:
 
 ```ts
 const session = agent.session(threadId, { userId: user.id });
-const request = session.prompt(message).withMiddleware(redactToolOutput);
+const request = session.prompt(message).withMiddleware(spillLargeToolOutput);
 const response = await request.send();
 ```
 

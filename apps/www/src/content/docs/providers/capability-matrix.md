@@ -21,10 +21,12 @@ Always smoke test the exact provider model id, account, region, endpoint, and `a
 | Tool choice | yes | yes | yes | yes |
 | Structured output schema | yes | no | yes | yes |
 | Chat image input | yes | yes | yes | no |
-| Chat document input | Responses yes, Chat adapter no | yes | yes | no |
+| Chat document file input | Responses yes, Chat adapter no | yes | yes | no |
 | Reasoning content | yes | yes | yes | no |
 
 OpenAI has two completion adapters. `OpenAIResponsesCompletionModel` is the default for normal OpenAI API usage. `OpenAIChatCompletionModel` is available when a workflow needs the chat-completions adapter.
+
+Text document content and static context can still be represented as text. The document row above is about file or URL document attachments that require provider-native document input support.
 
 ## Non-Completion Capabilities
 

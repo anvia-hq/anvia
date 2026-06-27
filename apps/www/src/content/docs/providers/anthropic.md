@@ -46,7 +46,7 @@ export const agent = new AgentBuilder("research", model)
   .build();
 ```
 
-`AnthropicCompletionModel` supports streaming, tools, tool choice, image input, document input, and reasoning content at the Anvia contract level. It does not declare support for core output schemas, so use provider smoke tests before choosing it for schema-first extraction flows.
+`AnthropicCompletionModel` supports streaming, tools, tool choice, image input, document input, and reasoning content at the Anvia contract level. It does not declare support for core final output schemas, so avoid `createParsedCompletion(...)` or agent `.outputSchema(...)` workflows unless your target endpoint has been tested for that path. Core extractor workflows use a required `submit` tool instead of final output schemas, so smoke test the exact model for required tool calls when using Anthropic for extraction.
 
 ## Tools And Streaming
 

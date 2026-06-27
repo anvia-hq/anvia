@@ -19,50 +19,10 @@ const capabilities = [
   },
 ];
 
-const gatewayNodes = [
-  {
-    name: "OpenAI",
-    logo: "/assets/integrations/openai.svg",
-    x: "19.2%",
-    y: "26.4%",
-    invert: true,
-  },
-  {
-    name: "Anthropic",
-    logo: "/assets/integrations/anthropic.svg",
-    x: "19.2%",
-    y: "48.2%",
-    invert: true,
-  },
-  {
-    name: "Gemini",
-    logo: "/assets/integrations/gemini.svg",
-    x: "19.2%",
-    y: "70%",
-  },
-  {
-    name: "React",
-    logo: "/assets/integrations/react.svg",
-    x: "81%",
-    y: "26.4%",
-  },
-  {
-    name: "Langfuse",
-    logo: "/assets/integrations/langfuse.svg",
-    x: "81%",
-    y: "48.2%",
-  },
-  {
-    name: "Chroma",
-    logo: "/assets/integrations/chroma.svg",
-    x: "81%",
-    y: "70%",
-  },
-];
 ---
 
 <section id="gateway" class="bg-[#131314] px-4 py-16 sm:px-6 lg:px-8">
-  <div class="mx-auto max-w-7xl rounded-2xl border border-white/[0.08] bg-[#121211] px-6 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.22)] sm:px-8 lg:px-10 lg:py-10">
+  <div class="mx-auto max-w-7xl rounded-2xl border border-white/[0.08] bg-[#0F0F0D] px-6 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.22)] sm:px-8 lg:px-10 lg:py-10">
     <div class="grid items-center gap-10 lg:grid-cols-[0.86fr_1.14fr] lg:gap-14">
       <div>
         <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
@@ -83,31 +43,14 @@ const gatewayNodes = [
 
       <div class="relative -mx-4 sm:mx-0">
         <img
-          src="/assets/illustrations/agent-gateway-minimal.png"
-          alt="Minimal agent runtime diagram"
-          width="1808"
-          height="870"
+          src="/assets/illustrations/agent-gateway-card.png"
+          alt="Agent gateway connecting multiple app interfaces"
+          width="1265"
+          height="531"
           loading="lazy"
           decoding="async"
           class="relative w-full object-contain"
         />
-        <div class="pointer-events-none absolute inset-0" aria-hidden="true">
-          {
-            gatewayNodes.map((node) => (
-              <div
-                class="gateway-logo-node"
-                style={`--node-x: ${node.x}; --node-y: ${node.y};`}
-              >
-                <img
-                  src={node.logo}
-                  alt=""
-                  class:list={["h-5 w-5 object-contain", node.invert && "brightness-0 invert"]}
-                />
-                <span>{node.name}</span>
-              </div>
-            ))
-          }
-        </div>
       </div>
     </div>
 
@@ -140,39 +83,3 @@ const gatewayNodes = [
     });
   });
 </script>
-
-<style>
-  .gateway-logo-node {
-    position: absolute;
-    top: var(--node-y);
-    left: var(--node-x);
-    display: inline-flex;
-    min-width: clamp(6.2rem, 9vw, 8.75rem);
-    align-items: center;
-    gap: 0.55rem;
-    border-radius: 0.9rem;
-    background: rgba(23, 23, 24, 0.92);
-    padding: clamp(0.42rem, 0.8vw, 0.62rem) clamp(0.56rem, 1vw, 0.82rem);
-    color: rgb(228 228 231);
-    font-size: clamp(0.68rem, 1.15vw, 0.92rem);
-    font-weight: 650;
-    letter-spacing: -0.01em;
-    transform: translate(-50%, -50%);
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-      0 12px 36px rgba(0, 0, 0, 0.28);
-  }
-
-  @media (max-width: 520px) {
-    .gateway-logo-node {
-      min-width: 2.6rem;
-      justify-content: center;
-      padding: 0.5rem;
-      border-radius: 0.8rem;
-    }
-
-    .gateway-logo-node span {
-      display: none;
-    }
-  }
-</style>

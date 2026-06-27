@@ -1,25 +1,66 @@
 ---
 title: "@anvia/weaviate: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/weaviate at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/weaviate"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/weaviate example that can be read in one screen.
+## Minimal search
 
 ```ts
-// Placeholder example for @anvia/weaviate
-// Replace with package-specific code.
+import { WeaviateVectorStore } from "@anvia/weaviate";
+
+const store = await WeaviateVectorStore.connect({
+  className: "SupportDocs",
+  vectorSize: 1536,
+});
+const index = store.index(embeddingModel);
+
+const results = await index.search({
+  query: "enterprise support",
+  topK: 5,
+});
+
+console.log(results.map((result) => result.id));
 ```
+## Retrieval inside an agent
 
-## Product example
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { WeaviateVectorStore } from "@anvia/weaviate";
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+const store = await WeaviateVectorStore.connect({
+  className: "SupportDocs",
+  vectorSize: 1536,
+});
+const index = store.index(embeddingModel);
 
-## Test example
+const agent = new AgentBuilder("support", completionModel)
+  .instructions("Answer from retrieved support documentation when it is relevant.")
+  .dynamicContext(index, {
+    topK: 4,
+    threshold: 0.72,
+  })
+  .build();
+```
+## Harness shape
 
-Placeholder: add the smallest test or harness shape for this package.
+```ts
+import { describe, expect, it } from "vitest";
+
+describe("retrieval index", () => {
+  it("returns filtered ids", async () => {
+    const index = store.index(embeddingModel);
+    const matches = await index.searchIds({
+      query: "password reset",
+      topK: 3,
+      filter: { product: "support" },
+    });
+
+    expect(matches.length).toBeLessThanOrEqual(3);
+  });
+});
+```
+Use integration tests with disposable collections, tables, or namespaces. For agent tests, inject a fake `VectorSearchIndex` so prompt behavior can be tested without a live database.

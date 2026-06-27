@@ -1,25 +1,56 @@
 ---
 title: "@anvia/mistral: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/mistral at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/mistral"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/mistral example that can be read in one screen.
+## Minimal agent
 
 ```ts
-// Placeholder example for @anvia/mistral
-// Replace with package-specific code.
+import { AgentBuilder } from "@anvia/core";
+import { MistralClient } from "@anvia/mistral";
+
+const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
+const agent = new AgentBuilder("support", client.completionModel("mistral-large-latest"))
+  .instructions("Answer support questions clearly.")
+  .build();
+
+const response = await agent.prompt("Draft a short support reply.").send();
+console.log(response.output);
 ```
+## Product-shaped model boundary
 
-## Product example
+```ts
+import type { CompletionModel } from "@anvia/core";
+import { MistralClient } from "@anvia/mistral";
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+export function createSupportModel(): CompletionModel {
+  const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
+  return client.completionModel("mistral-large-latest");
+}
 
-## Test example
+export function createFallbackModel(): CompletionModel {
+  const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
+  return client.completionModel("mistral-large-latest");
+}
+```
+The application can now choose a model before building the agent while keeping the agent factory provider-neutral.
 
-Placeholder: add the smallest test or harness shape for this package.
+## Harness shape
+
+```ts
+import { describe, expect, it } from "vitest";
+
+describe("support model boundary", () => {
+  it("creates a completion model", () => {
+    const model = createSupportModel();
+
+    expect(model).toHaveProperty("completion");
+    expect(model).toHaveProperty("streamCompletion");
+  });
+});
+```
+Use live provider tests sparingly and gate them behind environment variables. Unit tests should usually check the model boundary and mock the model contract.

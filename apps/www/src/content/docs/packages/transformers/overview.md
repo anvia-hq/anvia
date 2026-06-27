@@ -1,6 +1,6 @@
 ---
 title: "@anvia/transformers: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Transformers.js embedding model adapter for local Anvia embedding workflows."
 section: packages
 sidebar:
   group: "@anvia/transformers"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Transformers.js embedding model adapter for Anvia.
+Transformers.js embedding model adapter for local Anvia embedding workflows.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/transformers when the application needs local embeddings that can feed Anvia vector stores or retrieval tools. It is one of the embedding adapters that create vectors before indexing or retrieval.
 
 ## Where it fits
 
-This package belongs to Embedding adapters. Use this section to explain how it composes with the runtime and adjacent packages.
+@anvia/transformers returns an `EmbeddingModel` compatible with `@anvia/core/embeddings`. Use the same model for indexing and querying so vector dimensions stay consistent.
+
+The package owns local feature-extraction embeddings through Transformers.js. Keep document chunking, source metadata, ingestion scheduling, and vector-store selection in application code.
+
+## Public surface
+
+The main documented exports are `DEFAULT_TRANSFORMERS_EMBEDDING_MODEL`, `Transformers Types`, `TransformersEmbeddingModel`, `createTransformersEmbeddingModel`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

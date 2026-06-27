@@ -1,20 +1,24 @@
 ---
 title: "@anvia/langfuse: Usage Patterns"
-description: "Common ways to compose the package with runtime, provider, transport, and adapter packages."
+description: "Common ways to compose @anvia/langfuse with adjacent Anvia packages."
 section: packages
 sidebar:
   group: "@anvia/langfuse"
   order: 3
   label: "Usage Patterns"
 ---
-## Runtime boundary
+## Package boundary
 
-Placeholder: explain what @anvia/langfuse owns and what should stay in application code.
+`@anvia/langfuse` owns Langfuse-specific tracing, scoring, prompt, dataset, redaction, and experiment integrations. Application code owns trace names, prompt policy, redaction policy, and Langfuse project configuration.
 
 ## Common composition
 
-Placeholder: show which runtime, provider, adapter, or tool packages usually appear beside @anvia/langfuse.
+- Attach `langfuse.create(...)` to agents with `AgentBuilder.observe(...)`.
+- Use `createLangfuseEvalReporter(...)` for eval scores.
+- Use prompt and dataset clients when prompts or cases are managed in Langfuse.
 
-## Placeholder notes
+## Do and do not
 
-Placeholder: add do and do-not guidance after the package API examples are finalized.
+Do call `flush()` or `shutdown()` in short-lived jobs. Do configure redaction before sending sensitive inputs or outputs. Do record environment, release, and service name.
+
+Do not assume missing traces should always fail evals; configure the reporter behavior. Do not publish raw case inputs if your data policy requires truncation or masking.

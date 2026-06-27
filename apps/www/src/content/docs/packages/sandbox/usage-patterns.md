@@ -1,20 +1,24 @@
 ---
 title: "@anvia/sandbox: Usage Patterns"
-description: "Common ways to compose the package with runtime, provider, transport, and adapter packages."
+description: "Common ways to compose @anvia/sandbox with adjacent Anvia packages."
 section: packages
 sidebar:
   group: "@anvia/sandbox"
   order: 3
   label: "Usage Patterns"
 ---
-## Runtime boundary
+## Package boundary
 
-Placeholder: explain what @anvia/sandbox owns and what should stay in application code.
+`@anvia/sandbox` owns Docker-backed execution and file tools. Application code owns when the agent is allowed to use those tools, what workspace policy applies, and which operations require approval.
 
 ## Common composition
 
-Placeholder: show which runtime, provider, adapter, or tool packages usually appear beside @anvia/sandbox.
+- Pair sandbox tools with `AgentBuilder.tools(...)` or a tool set.
+- Pair with tool approvals when commands or file writes need human review.
+- Pair with observability packages to record command lifecycle and failures.
 
-## Placeholder notes
+## Do and do not
 
-Placeholder: add do and do-not guidance after the package API examples are finalized.
+Do set explicit workspace, file-size, timeout, and lifecycle policy. Do keep secrets out of sandbox-visible files unless the task requires them. Do treat command execution as a privileged side effect.
+
+Do not mount broad host paths by default. Do not let model prompts override sandbox policy. Do not use the sandbox as the only production isolation boundary without infrastructure controls.

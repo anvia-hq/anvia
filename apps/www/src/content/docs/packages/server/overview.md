@@ -1,6 +1,6 @@
 ---
 title: "@anvia/server: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Server-side stream helpers for returning Anvia run events as JSONL or Server-Sent Events."
 section: packages
 sidebar:
   group: "@anvia/server"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Server-side event stream helpers for Anvia applications.
+Server-side stream helpers for returning Anvia run events as JSONL or Server-Sent Events.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/server when the application needs agent or completion stream events returned from a server route. It is one of the runtime packages that sit closest to application request handling.
 
 ## Where it fits
 
-This package belongs to Core runtime. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/server` belongs at the HTTP boundary. It receives an async iterable of Anvia events and returns a streaming `Response` in JSONL or SSE format.
+
+The package owns HTTP Response and ReadableStream conversion for event streams. Keep route authentication, rate limits, request validation, and agent construction in application code.
+
+## Public surface
+
+The main documented exports are `Types`, `createEventStream`, `createJsonlStream`, `createSseStream`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

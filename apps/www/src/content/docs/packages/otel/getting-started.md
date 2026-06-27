@@ -1,6 +1,6 @@
 ---
 title: "@anvia/otel: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/otel and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/otel"
@@ -10,19 +10,24 @@ sidebar:
 ## Install
 
 ```sh
-pnpm add @anvia/otel
+pnpm add @anvia/otel @anvia/core @opentelemetry/api
 ```
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/otel.
-
 ```ts
-import "@anvia/otel";
+import { AgentBuilder } from "@anvia/core";
+import { otel } from "@anvia/otel";
 
-// Placeholder: add the minimum working setup for this package.
+const tracing = otel.create({
+  tracerName: "support-agent",
+});
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .observe(tracing)
+  .build();
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/otel/usage-patterns).

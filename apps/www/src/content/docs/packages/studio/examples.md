@@ -1,25 +1,39 @@
 ---
 title: "@anvia/studio: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/studio at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/studio"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/studio example that can be read in one screen.
+## Minimal Studio server
 
 ```ts
-// Placeholder example for @anvia/studio
-// Replace with package-specific code.
+import { Studio } from "@anvia/studio";
+
+new Studio([agent]).start({ port: 4021 });
 ```
+## Product-shaped local runtime
 
-## Product example
+```ts
+import { Studio, createSqliteSessionStore } from "@anvia/studio";
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+new Studio([supportAgent, triagePipeline], {
+  stores: {
+    sessions: createSqliteSessionStore({ path: ".anvia/studio.sqlite" }),
+  },
+}).start({ port: Number(process.env.RUNNER_PORT ?? 4021) });
+```
+## Harness shape
 
-## Test example
+```ts
+import { describe, expect, it } from "vitest";
 
-Placeholder: add the smallest test or harness shape for this package.
+describe("@anvia/studio integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

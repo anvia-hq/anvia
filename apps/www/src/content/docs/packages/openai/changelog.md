@@ -1,6 +1,6 @@
 ---
 title: "@anvia/openai: Changelog"
-description: "Where to track package releases and update notes."
+description: "Concise release notes and upgrade checks for @anvia/openai."
 section: packages
 sidebar:
   group: "@anvia/openai"
@@ -9,12 +9,18 @@ sidebar:
 ---
 ## Current version
 
-`v0.3.14`
+The package metadata currently reports `@anvia/openai@0.3.14`. The latest local changelog section is `0.3.14`.
 
-## Changelog source
+## Latest local note
 
-Package release notes are tracked in `packages/provider-openai/CHANGELOG.md`.
+0e33272: Update upstream runtime dependencies to their latest checked releases.
 
-## Release notes placeholder
+## How to read this changelog
 
-Placeholder: summarize package-specific release notes here later instead of copying the full changelog.
+Use this page for a concise package-level summary, then inspect `packages/provider-openai/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+
+## Upgrade checks
+
+- Review the matching [Reference](/docs/packages/openai/reference) page for public exports used by your application.
+- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
+- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.

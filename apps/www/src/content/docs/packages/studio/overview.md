@@ -1,6 +1,6 @@
 ---
 title: "@anvia/studio: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Studio UI and HTTP runtime for Anvia agents, pipelines, tools, MCPs, memory, status, knowledge, and traces."
 section: packages
 sidebar:
   group: "@anvia/studio"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Studio UI and HTTP runtime for Anvia agents.
+Studio UI and HTTP runtime for Anvia agents, pipelines, tools, MCPs, memory, status, knowledge, and traces.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/studio when the application needs a local UI and HTTP runtime around agents, pipelines, tools, memory, traces, and knowledge. It is one of the developer workflow packages for tools, local runtime inspection, and controlled execution.
 
 ## Where it fits
 
-This package belongs to Developer tools. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/studio` wraps agents and pipelines with a local UI and HTTP runtime. It composes with `@anvia/core`, `@anvia/react`, and `@anvia/server` rather than replacing application runtime code.
+
+The package owns local browser UI, HTTP routes, run streaming, session/trace stores, and runtime inspectors. Keep agent definitions, model providers, auth boundary, deployment topology, and production persistence decisions in application code.
+
+## Public surface
+
+The main documented exports are `Public Imports`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

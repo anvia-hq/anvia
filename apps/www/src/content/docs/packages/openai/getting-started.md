@@ -1,6 +1,6 @@
 ---
 title: "@anvia/openai: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/openai and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/openai"
@@ -10,17 +10,39 @@ sidebar:
 ## Install
 
 ```sh
-pnpm add @anvia/openai
+pnpm add @anvia/openai @anvia/core
 ```
+## Configure credentials
+
+Set `OPENAI_API_KEY` in the server environment. Keep provider keys on the server side; browser clients should call an application route that owns the model request.
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/openai.
-
 ```ts
-import "@anvia/openai";
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
 
-// Placeholder: add the minimum working setup for this package.
+const client = new OpenAIClient({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const model = client.completionModel("gpt-5");
+
+const agent = new AgentBuilder("assistant", model)
+  .instructions("Answer clearly and concisely.")
+  .build();
+
+const response = await agent.prompt("Summarize this ticket.").send();
+console.log(response.output);
+```
+
+
+## Other model factories
+
+@anvia/openai also exposes an embedding model factory:
+```ts
+const embeddings = client.embeddingModel("text-embedding-3-small");
+const vectors = await embeddings.embedTexts(["Refunds take five business days."]);
 ```
 
 ## Next step

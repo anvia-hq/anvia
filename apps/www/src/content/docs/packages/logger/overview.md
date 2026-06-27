@@ -1,6 +1,6 @@
 ---
 title: "@anvia/logger: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Structured logger adapters that turn Anvia observer events into application logs."
 section: packages
 sidebar:
   group: "@anvia/logger"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Structured logger adapters for Anvia.
+Structured logger adapters that turn Anvia observer events into application logs.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/logger when the application needs agent lifecycle events written into a normal application logger. It is one of the runtime packages that sit closest to application request handling.
 
 ## Where it fits
 
-This package belongs to Core runtime. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/logger` attaches through `AgentBuilder.observe(...)`. It consumes observer events emitted by core and writes structured log records through console or Pino adapters.
+
+The package owns console and Pino logger adapters plus an agent observer. Keep log routing, retention, redaction policy, and alerting in application code.
+
+## Public surface
+
+The main documented exports are `Logger`, `LogLevel`, `LogContext`, `LoggerOptions`, `ConsoleLoggerOptions`, `createConsoleLogger`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

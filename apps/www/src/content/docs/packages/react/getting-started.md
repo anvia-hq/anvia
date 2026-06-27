@@ -1,6 +1,6 @@
 ---
 title: "@anvia/react: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/react and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/react"
@@ -15,14 +15,26 @@ pnpm add @anvia/react
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/react.
+```tsx
+import { useChat } from "@anvia/react";
 
-```ts
-import "@anvia/react";
+export function SupportChat() {
+  const chat = useChat({ endpoint: "/api/chat" });
 
-// Placeholder: add the minimum working setup for this package.
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void chat.send();
+      }}
+    >
+      <div>{chat.text}</div>
+      <input value={chat.input} onChange={(event) => chat.setInput(event.target.value)} />
+      <button disabled={chat.status === "streaming"}>Send</button>
+    </form>
+  );
+}
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/react/usage-patterns).

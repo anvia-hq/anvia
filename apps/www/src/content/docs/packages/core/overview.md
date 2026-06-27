@@ -1,6 +1,6 @@
 ---
 title: "@anvia/core: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Core runtime primitives for agents, tools, completions, extraction, pipelines, retrieval, streaming, MCP, skills, memory, and observability."
 section: packages
 sidebar:
   group: "@anvia/core"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Core runtime primitives for context-aware Anvia agents.
+Core runtime primitives for agents, tools, completions, extraction, pipelines, retrieval, streaming, MCP, skills, memory, and observability.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/core when the application needs provider-neutral runtime primitives before choosing any specific model provider. It is one of the runtime packages that sit closest to application request handling.
 
 ## Where it fits
 
-This package belongs to Core runtime. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/core` is the center of the package set. Provider packages supply models, storage packages supply indexes, and app packages add transport or UI around the core runtime.
+
+The package owns provider-neutral runtime contracts and orchestration primitives. Keep provider credentials, product data access, persistence policy, and deployment wiring in application code.
+
+## Public surface
+
+The main documented exports are `Import Paths`, `Root Export Notes`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

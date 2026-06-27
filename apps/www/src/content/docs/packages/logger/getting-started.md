@@ -1,6 +1,6 @@
 ---
 title: "@anvia/logger: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/logger and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/logger"
@@ -10,19 +10,25 @@ sidebar:
 ## Install
 
 ```sh
-pnpm add @anvia/logger
+pnpm add @anvia/logger @anvia/core
 ```
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/logger.
-
 ```ts
-import "@anvia/logger";
+import { AgentBuilder } from "@anvia/core";
+import { createLoggerObserver, createPinoLogger } from "@anvia/logger";
 
-// Placeholder: add the minimum working setup for this package.
+const logger = createPinoLogger({
+  name: "support-agent",
+  level: "info",
+});
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .observe(createLoggerObserver(logger))
+  .build();
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/logger/usage-patterns).

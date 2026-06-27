@@ -1,6 +1,6 @@
 ---
 title: "@anvia/otel: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "OpenTelemetry tracing adapter for Anvia agent observer events."
 section: packages
 sidebar:
   group: "@anvia/otel"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-OpenTelemetry tracing adapter for Anvia.
+OpenTelemetry tracing adapter for Anvia agent observer events.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/otel when the application needs Anvia run events emitted into an existing OpenTelemetry pipeline. It is one of the adapters that make Anvia runs visible in existing telemetry systems.
 
 ## Where it fits
 
-This package belongs to Tracing adapters. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/otel` attaches through `AgentBuilder.observe(...)` and uses the application OpenTelemetry SDK or global tracer provider.
+
+The package owns conversion from Anvia observer events to OpenTelemetry spans. Keep SDK startup, exporters, sampling, resource attributes, and process shutdown in application code.
+
+## Public surface
+
+The main documented exports are `OtelTracingOptions`, `OtelTracing`, `otel`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

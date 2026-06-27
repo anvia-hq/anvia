@@ -52,8 +52,8 @@ pnpm --filter './packages/*' build
 If docs changed, also run:
 
 ```sh
-pnpm --filter docs typecheck
-pnpm --filter docs build
+pnpm --filter www reference-check
+pnpm --filter www build
 ```
 
 ## Release Flow

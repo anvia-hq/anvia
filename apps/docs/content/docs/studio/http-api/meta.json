@@ -1,6 +1,0 @@
-{
-  "title": "HTTP API",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["endpoints", "test-without-a-port"]
-}

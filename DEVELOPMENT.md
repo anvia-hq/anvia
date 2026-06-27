@@ -19,7 +19,7 @@ pnpm install
 ```txt
 .
 ├── apps/
-│   └── docs/                     # Documentation app
+│   └── www/                      # Website and docs app
 ├── examples/
 │   ├── cli-agent/                # Example CLI agent
 │   └── cookbook/                 # Runnable learning path
@@ -69,8 +69,8 @@ pnpm --filter @anvia/studio typecheck
 pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
 
-pnpm --filter docs dev
-pnpm --filter docs typecheck
+pnpm --filter www dev
+pnpm --filter www build
 
 pnpm --filter cookbook typecheck
 ```
@@ -119,22 +119,22 @@ Some retrieval examples need local services. Start ChromaDB before running Chrom
 docker compose -f examples/cookbook/compose.cookbook.yml up -d
 ```
 
-## Docs App
+## WWW App
 
-Run the docs app locally:
-
-```sh
-pnpm docs:dev
-```
-
-Validate docs:
+Run the website and docs app locally:
 
 ```sh
-pnpm docs:typecheck
-pnpm docs:build
+pnpm www:dev
 ```
 
-The docs typecheck command runs generators. If generated files change, inspect the diff and commit it only when the generated output is intentional.
+Validate the website docs:
+
+```sh
+pnpm www:reference-check
+pnpm www:build
+```
+
+The reference check verifies package API documentation coverage before the Astro build.
 
 ## Package Development
 

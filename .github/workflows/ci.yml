@@ -46,8 +46,8 @@ jobs:
       - name: Test packages
         run: pnpm --filter './packages/**' test
 
-  docs:
-    name: Docs
+  www:
+    name: WWW
     runs-on: ubuntu-latest
 
     steps:
@@ -70,8 +70,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck docs
-        run: pnpm --filter docs typecheck
+      - name: Check www reference coverage
+        run: pnpm --filter www reference-check
 
-      - name: Build docs
-        run: pnpm --filter docs build
+      - name: Build www
+        run: pnpm --filter www build

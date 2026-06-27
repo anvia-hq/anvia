@@ -1,7 +1,0 @@
-{
-  "title": "Models",
-  "description": "Providers",
-  "icon": "Bot",
-  "root": true,
-  "pages": ["index", "embeddings", "model-listing", "providers", "compatible-gateways"]
-}

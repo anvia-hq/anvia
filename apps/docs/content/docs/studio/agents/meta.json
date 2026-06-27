@@ -1,6 +1,0 @@
-{
-  "title": "Agents",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["register-agents", "multiple-agents"]
-}

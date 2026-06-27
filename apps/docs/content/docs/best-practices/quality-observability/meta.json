@@ -1,6 +1,0 @@
-{
-  "title": "Quality and Observability",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["eval-strategy", "tracing-and-debugging"]
-}

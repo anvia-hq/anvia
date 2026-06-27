@@ -17,7 +17,7 @@ Good contributions usually fall into one of these areas:
 - Vector store or embedding adapter fixes in `packages/vector-*` and `packages/embedding-*`.
 - Studio runtime or UI fixes in `packages/tool-studio`.
 - Cookbook examples that clarify an existing workflow or introduce a missing one.
-- Documentation updates in `apps/docs` or package READMEs.
+- Documentation updates in `apps/www` or package READMEs.
 - Tests that capture bugs, edge cases, or public behavior.
 
 Keep changes scoped. Avoid mixing dependency updates, formatting churn, generated output, and feature work unless they are needed for the same change.

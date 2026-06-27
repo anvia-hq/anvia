@@ -1,6 +1,0 @@
-{
-  "title": "Completions",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["index", "messages", "structured-output", "streaming", "options"]
-}

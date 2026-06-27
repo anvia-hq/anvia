@@ -44,8 +44,8 @@ const integrationRows = [
       </p>
 
       <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <Button>Explore packages</Button>
-        <Button variant="outline" href="/docs">Read docs</Button>
+        <Button data-hero-cta="explore_packages">Explore packages</Button>
+        <Button variant="outline" href="/docs" data-hero-cta="read_docs">Read docs</Button>
       </div>
 
       <div class="mx-auto mt-16 w-full max-w-5xl">
@@ -81,6 +81,16 @@ const integrationRows = [
 
   </div>
 </section>
+
+<script is:inline>
+  document.querySelectorAll('[data-hero-cta]').forEach(function(el) {
+    el.addEventListener('click', function() {
+      window.posthog?.capture('hero_cta_clicked', {
+        cta: el.getAttribute('data-hero-cta')
+      });
+    });
+  });
+</script>
 
 <style>
   .hero-field {

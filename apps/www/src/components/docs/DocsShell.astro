@@ -1,6 +1,7 @@
 ---
 import type { MarkdownHeading } from "astro";
 import DocsSearch from "./DocsSearch.astro";
+import PostHog from "../posthog.astro";
 import {
   docHref,
   docLabel,
@@ -66,12 +67,14 @@ const sidebarScrollKey =
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content={description} />
     <title>{title}</title>
+    <PostHog />
   </head>
   <body class="flex h-dvh flex-col overflow-hidden bg-[#131314] text-zinc-50 antialiased">
     <header class="sticky top-0 z-40 shrink-0 border-white/10 border-b bg-[#131314]/95 backdrop-blur-xl" data-pagefind-ignore="all">

@@ -8,6 +8,25 @@ const docs = sortDocs((await getCollection("docs")).filter(isPublishedDoc));
 const homeCards = docs
   .filter((entry) => entry.data.home?.card)
   .sort((a, b) => (a.data.home?.order ?? 999) - (b.data.home?.order ?? 999));
+
+const homeCardImages: Record<
+  string,
+  { src: string; alt: string; width: number; height: number; backgroundClass?: string }
+> = {
+  "basics/direct-completion": {
+    src: "/assets/docs/direct-completion.png",
+    alt: "Direct completion request flowing through an Anvia runtime node",
+    width: 1672,
+    height: 941,
+  },
+  "basics/build-your-first-agent": {
+    src: "/assets/docs/build-your-first-agent.png",
+    alt: "Agent workflow nodes connected through an Anvia runtime",
+    width: 1672,
+    height: 941,
+    backgroundClass: "bg-[#0A0A0B]",
+  },
+};
 ---
 
 <DocsShell
@@ -30,29 +49,47 @@ const homeCards = docs
 
   <section class="mt-14 grid gap-x-7 gap-y-12 xl:grid-cols-2" aria-label="Documentation topics">
     {
-      homeCards.map((entry) => (
-        <article class="min-w-0">
-          <div class="min-h-60 rounded-2xl border border-white/[0.1]" />
+      homeCards.map((entry) => {
+        const cardImage = homeCardImages[entry.id];
 
-          <p class="mt-6 font-mono text-[#2BF563]/65 text-[0.68rem] uppercase tracking-[0.16em]">
-            {sectionLabel(entry.data.section)}
-          </p>
-          <h2 class="mt-2 font-semibold text-xl text-zinc-100 tracking-[-0.01em]">
-            {entry.data.title}
-          </h2>
-          <p class="mt-3 max-w-xl text-base text-zinc-300 leading-7">
-            {entry.data.description}
-          </p>
-          <div class="mt-5 flex gap-7">
-            <a href={docHref(entry)} class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
-              Overview -&gt;
-            </a>
-            <a href={docHref(entry)} class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
-              Quickstart -&gt;
-            </a>
-          </div>
-        </article>
-      ))
+        return (
+          <article class="min-w-0">
+            {
+              cardImage ? (
+                <img
+                  src={cardImage.src}
+                  alt={cardImage.alt}
+                  width={cardImage.width}
+                  height={cardImage.height}
+                  loading="lazy"
+                  decoding="async"
+                  class={`h-78 w-full rounded-2xl border border-white/[0.1] ${cardImage.backgroundClass ?? "bg-[#0C0C0C]"} object-contain`}
+                />
+              ) : (
+                <div class="min-h-78 rounded-2xl border border-white/[0.1] bg-[#0C0C0C]" />
+              )
+            }
+
+            <p class="mt-6 font-mono text-[#2BF563]/65 text-[0.68rem] uppercase tracking-[0.16em]">
+              {sectionLabel(entry.data.section)}
+            </p>
+            <h2 class="mt-2 font-semibold text-xl text-zinc-100 tracking-[-0.01em]">
+              {entry.data.title}
+            </h2>
+            <p class="mt-3 max-w-xl text-base text-zinc-300 leading-7">
+              {entry.data.description}
+            </p>
+            <div class="mt-5 flex gap-7">
+              <a href={docHref(entry)} class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
+                Overview -&gt;
+              </a>
+              <a href={docHref(entry)} class="font-semibold text-[#2BF563] text-sm transition hover:text-[#24dc59]">
+                Quickstart -&gt;
+              </a>
+            </div>
+          </article>
+        );
+      })
     }
   </section>
 

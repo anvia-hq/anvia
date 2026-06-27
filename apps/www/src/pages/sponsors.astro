@@ -1,0 +1,231 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import Button from "../components/ui/Button.astro";
+import PostHog from "../components/posthog.astro";
+import "../styles/global.css";
+
+const sponsors = [
+  {
+    name: "JATEVO.AI",
+    label: "Founding sponsor",
+    contribution: "AI token credits for development and testing",
+    description:
+      "jatevo.ai provides AI token credits that help Anvia run experiments, validate examples, test provider integrations, and improve agent development workflows.",
+    href: "https://jatevo.ai?ref=https://anvia.dev",
+    cta: "Visit sponsor",
+    logo: "/assets/jatevo-og.png",
+  },
+];
+
+const supportAreas = [
+  {
+    label: "Model coverage",
+    title: "Run real provider checks",
+    description:
+      "Credits cover examples, edge cases, and compatibility runs that keep integrations honest.",
+  },
+  {
+    label: "Documentation",
+    title: "Turn findings into guides",
+    description:
+      "Working patterns and failure cases become clearer docs, references, and example harnesses.",
+  },
+  {
+    label: "Maintenance",
+    title: "Keep the stack open",
+    description:
+      "Support funds the release work, testing, and follow-up that keep Anvia useful for teams.",
+  },
+];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta
+      name="description"
+      content="Sponsors helping Anvia development with AI token credits, infrastructure, and production feedback."
+    />
+    <title>Sponsors - Anvia</title>
+    <PostHog />
+  </head>
+  <body class="min-h-screen bg-[#131314] text-zinc-50 antialiased">
+    <Header />
+    <main>
+      <section class="relative isolate overflow-hidden border-white/[0.08] border-b bg-[#131314]">
+        <div class="sponsors-field pointer-events-none absolute inset-0" aria-hidden="true"></div>
+        <div class="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8 lg:py-28">
+          <div class="max-w-3xl">
+            <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+              Sponsors
+            </p>
+            <h1 class="mt-5 max-w-3xl font-semibold text-5xl text-zinc-50 leading-[0.98] tracking-[-0.02em] sm:text-6xl lg:text-7xl">
+              Companies helping Anvia move faster.
+            </h1>
+            <p class="mt-6 max-w-2xl text-lg text-zinc-400 leading-8">
+              Anvia is supported by companies contributing credits, infrastructure, and production feedback for AI development.
+            </p>
+            <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Button href="mailto:hello@anvia.dev" data-sponsor-cta="become_sponsor">Become a sponsor</Button>
+              <Button variant="outline" href="#current-sponsors">View sponsors</Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="current-sponsors" class="bg-[#131314] px-4 py-16 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-7xl">
+          <div class="max-w-3xl">
+            <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+              Current sponsors
+            </p>
+            <h2 class="mt-4 max-w-2xl font-semibold text-4xl text-zinc-50 tracking-[-0.02em] sm:text-5xl">
+              Support that improves the runtime.
+            </h2>
+          </div>
+
+          <div class="mt-10 grid gap-6">
+            {
+              sponsors.map((sponsor) => (
+                <article class="grid overflow-hidden rounded-2xl border border-white/[0.08] bg-[#121211] shadow-[0_24px_80px_rgba(0,0,0,0.18)] lg:grid-cols-[0.42fr_1fr]">
+                  <div class="flex items-center gap-5 border-white/[0.08] border-b p-6 sm:p-8 lg:border-r lg:border-b-0">
+                    <img
+                      src={sponsor.logo}
+                      alt=""
+                      width="400"
+                      height="400"
+                      loading="lazy"
+                      decoding="async"
+                      class="h-16 w-16 rounded-xl border border-white/[0.08] bg-white object-cover"
+                    />
+                    <div>
+                      <p class="font-mono text-[#2BF563]/70 text-[0.68rem] uppercase tracking-[0.16em]">
+                        {sponsor.label}
+                      </p>
+                      <h3 class="mt-2 font-semibold text-2xl text-zinc-100">{sponsor.name}</h3>
+                    </div>
+                  </div>
+
+                  <div class="p-6 sm:p-8">
+                    <p class="max-w-2xl text-lg text-zinc-100 leading-8">
+                      {sponsor.contribution}
+                    </p>
+                    <p class="mt-4 max-w-3xl text-base text-zinc-400 leading-7">
+                      {sponsor.description}
+                    </p>
+                    <a
+                      href={sponsor.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      class="mt-7 inline-flex w-fit font-semibold text-[#2BF563] text-sm transition hover:text-zinc-100"
+                      data-sponsor-link={sponsor.name}
+                    >
+                      {sponsor.cta} -&gt;
+                    </a>
+                  </div>
+                </article>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-[#131314] px-4 pb-20 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-7xl py-12 sm:py-14">
+          <div class="grid gap-10 lg:grid-cols-[0.72fr_1.28fr] lg:gap-16">
+            <div>
+              <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+                Sponsor impact
+              </p>
+              <h2 class="mt-4 max-w-xl font-semibold text-3xl text-zinc-50 tracking-[-0.02em] sm:text-4xl">
+                Practical support for the parts users actually feel.
+              </h2>
+              <p class="mt-5 max-w-xl text-base text-zinc-400 leading-7">
+                The goal is simple: more provider coverage, clearer examples, and fewer undocumented runtime surprises.
+              </p>
+            </div>
+
+            <div class="grid gap-8 md:grid-cols-3">
+              {
+                supportAreas.map((area) => (
+                  <article class="border-white/[0.1] border-t pt-5">
+                    <p class="font-mono text-zinc-500 text-[0.68rem] uppercase tracking-[0.16em]">
+                      {area.label}
+                    </p>
+                    <h3 class="mt-4 max-w-xs font-semibold text-xl text-zinc-100 tracking-[-0.01em]">
+                      {area.title}
+                    </h3>
+                    <p class="mt-4 max-w-xs text-sm text-zinc-500 leading-6">
+                      {area.description}
+                    </p>
+                  </article>
+                ))
+              }
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="border-white/[0.08] border-t bg-[#101011] px-4 py-14 sm:px-6 lg:px-8">
+        <div class="mx-auto flex max-w-7xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="font-mono text-zinc-500 text-[0.68rem] uppercase tracking-[0.16em]">
+              Sponsor Anvia
+            </p>
+            <h2 class="mt-2 font-semibold text-2xl text-zinc-100 tracking-[-0.01em]">
+              Interested in supporting development?
+            </h2>
+          </div>
+          <Button href="mailto:hello@anvia.dev">Contact hello@anvia.dev</Button>
+        </div>
+      </section>
+    </main>
+    <Footer />
+    <script is:inline>
+      document.querySelectorAll('[data-sponsor-link]').forEach(function(link) {
+        link.addEventListener('click', function() {
+          window.posthog?.capture('sponsor_link_clicked', {
+            sponsor_name: link.getAttribute('data-sponsor-link'),
+            sponsor_url: link.getAttribute('href')
+          });
+        });
+      });
+
+      document.querySelectorAll('[data-sponsor-cta]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          window.posthog?.capture('become_sponsor_clicked', {
+            cta: el.getAttribute('data-sponsor-cta')
+          });
+        });
+      });
+    </script>
+  </body>
+</html>
+
+<style>
+  .sponsors-field {
+    background:
+      radial-gradient(ellipse 42rem 28rem at 75% 42%, rgba(43, 245, 99, 0.13), transparent 65%),
+      linear-gradient(to bottom, rgba(43, 245, 99, 0.035), transparent 48%);
+  }
+
+  .sponsors-field::before {
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent calc(12.5% - 1px),
+      rgba(43, 245, 99, 0.055) calc(12.5% - 1px),
+      rgba(43, 245, 99, 0.055) 12.5%
+    );
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), transparent 86%);
+    content: "";
+  }
+</style>

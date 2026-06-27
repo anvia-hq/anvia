@@ -106,6 +106,8 @@
     resultsContainer.innerHTML = `<p class="px-3 py-8 text-center text-sm text-zinc-400">${message}</p>`;
   }
 
+  let searchDebounceTimer;
+
   async function runSearch(query) {
     if (!(resultsContainer instanceof HTMLElement)) {
       return;
@@ -133,6 +135,14 @@
 
     const results = await Promise.all(search.results.slice(0, 8).map((result) => result.data()));
 
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function() {
+      window.posthog?.capture('docs_searched', {
+        query: cleanQuery,
+        result_count: results.length
+      });
+    }, 600);
+
     if (results.length === 0) {
       renderMessage("No docs found.");
       return;
@@ -146,7 +156,7 @@
         const url = escapeHtml(result.url ?? "#");
 
         return `
-          <a href="${url}" class="block rounded-xl px-3 py-3 transition hover:bg-white/[0.055]">
+          <a href="${url}" class="block rounded-xl px-3 py-3 transition hover:bg-white/[0.055]" data-search-result-title="${title}" data-search-result-section="${section}">
             <span class="font-mono text-[#2BF563]/70 text-[0.66rem] uppercase tracking-[0.16em]">${section}</span>
             <span class="mt-1 block font-semibold text-zinc-100">${title}</span>
             <span class="mt-1 line-clamp-2 block text-sm leading-6 text-zinc-300">${excerpt}</span>
@@ -154,6 +164,17 @@
         `;
       })
       .join("");
+
+    resultsContainer.querySelectorAll('[data-search-result-title]').forEach(function(link) {
+      link.addEventListener('click', function() {
+        window.posthog?.capture('docs_search_result_clicked', {
+          query: cleanQuery,
+          result_title: link.getAttribute('data-search-result-title'),
+          result_section: link.getAttribute('data-search-result-section'),
+          result_url: link.getAttribute('href')
+        });
+      }, { once: true });
+    });
   }
 
   openButton?.addEventListener("click", openDialog);

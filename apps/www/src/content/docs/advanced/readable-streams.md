@@ -65,13 +65,13 @@ The stream writes one JSON object per line:
 
 The final event always includes the run id, final output, usage, and runtime messages. It may also include trace metadata when the request was traced.
 
-If the stream throws, the readable stream emits an error event line and closes:
+If a generic async iterable throws, `toReadableStream(...)` serializes the thrown error as an error event line and closes:
 
 ```json
 {"type":"error","error":{"name":"Error","message":"Provider request failed"}}
 ```
 
-Map raw errors before exposing them to users if they may contain provider details, tool arguments, or internal service names.
+`PromptRequest.stream()` also yields a runtime `error` event before rethrowing the failure. If you expose `request.readableStream()` directly, raw runtime error details can reach the client. Project or catch stream events before exposing them to users if errors may contain provider details, tool arguments, or internal service names.
 
 ## Client Projection
 

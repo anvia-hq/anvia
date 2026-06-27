@@ -90,7 +90,7 @@ Multiple provider packages can coexist because `@anvia/core` is provider-neutral
 
 ```ts
 const supportModel = openai.completionModel("gpt-5.5");
-const moderationModel = anthropic.completionModel("claude-sonnet");
+const moderationModel = anthropic.completionModel("claude-opus-4.8");
 ```
 
 Keep provider choice in configuration or model factories. Application workflows should depend on Anvia model interfaces, not directly on provider SDK calls.

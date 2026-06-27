@@ -28,7 +28,7 @@ Core loads prior messages before the run and appends new runtime messages accord
 
 ## Memory Store Contract
 
-A memory store implements four operations:
+A memory store implements three required operations. It can also implement `recordError(...)` for failed-run diagnostics:
 
 ```ts
 import type { MemoryStore } from "@anvia/core";
@@ -49,6 +49,7 @@ export const memoryStore: MemoryStore = {
   async clear(context) {
     await clearStoredSessionMessages(context.sessionId, context.userId);
   },
+  // Optional. Omit this method if failed runs do not need separate audit records.
   async recordError(input) {
     await recordFailedRun(input.context.sessionId, input.runId, input.error);
   },

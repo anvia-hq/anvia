@@ -1,6 +1,0 @@
-{
-  "title": "Runs",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["run-requests", "streaming-runs", "sessions", "traces"]
-}

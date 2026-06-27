@@ -1,6 +1,0 @@
-{
-  "title": "Providers",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["index", "openai", "anthropic", "gemini", "mistral"]
-}

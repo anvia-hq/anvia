@@ -1,6 +1,0 @@
-{
-  "title": "Inspect Context",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["knowledge", "memory"]
-}

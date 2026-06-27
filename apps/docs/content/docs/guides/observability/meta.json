@@ -1,6 +1,0 @@
-{
-  "title": "Observability",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["observers", "logging", "trace-groups", "tracing", "langfuse", "otel"]
-}

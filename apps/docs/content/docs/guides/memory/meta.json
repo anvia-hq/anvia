@@ -1,6 +1,0 @@
-{
-  "title": "Memory",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["index", "multi-agent", "raw-sql", "prisma", "drizzle"]
-}

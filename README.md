@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/docs/public/assets/logo.png" alt="Anvia logo" width="180" />
+  <img src="apps/www/public/assets/logo.png" alt="Anvia logo" width="180" />
 </p>
 
 <h1 align="center">Anvia</h1>
@@ -72,11 +72,11 @@ new Studio([agent]).start({ port: 4021 });
 ```
 
 <p align="center">
-  <img src="apps/docs/public/assets/anvia-readme-preview.png" alt="Anvia Studio preview" width="960" />
+  <img src="apps/www/public/assets/illustrations/agent-gateway-card.png" alt="Anvia agent gateway preview" width="960" />
 </p>
 
 <p align="center">
-  <em>Preview of Anvia Studio from <code>packages/tool-studio</code>.</em>
+  <em>Preview of the Anvia website and agent gateway.</em>
 </p>
 
 ## What You Can Build
@@ -110,11 +110,11 @@ pnpm cookbook:studio:01
 
 ## Learn More
 
-- [Introduction](apps/docs/content/docs/guides/index.mdx)
-- [Getting Started](apps/docs/content/docs/guides/getting-started.mdx)
-- [Cookbook Guide](apps/docs/content/docs/guides/cookbook.mdx)
-- [Comparison](apps/docs/content/docs/guides/comparison.mdx)
-- [Design Philosophy](apps/docs/content/docs/guides/design-philosophy.mdx)
+- [Docs Overview](apps/www/src/content/docs/basics/overview.md)
+- [Install Packages](apps/www/src/content/docs/basics/install-packages.md)
+- [Build your first agent](apps/www/src/content/docs/basics/build-your-first-agent.md)
+- [Examples](apps/www/src/content/docs/examples/overview.md)
+- [Packages](apps/www/src/content/docs/packages/core/overview.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Project Activity

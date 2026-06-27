@@ -1,8 +1,0 @@
-{
-  "title": "Sandbox",
-  "description": "Isolated Docker workspaces",
-  "createdAt": "2026-06-14",
-  "defaultOpen": false,
-  "collapsible": true,
-  "pages": ["index", "docker-sessions", "agent-tools", "testing"]
-}

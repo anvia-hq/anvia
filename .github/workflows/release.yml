@@ -110,10 +110,3 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_STABLE_RELEASE_WEBHOOK_URL }}
           PUBLISHED_PACKAGES_FILE: .published-packages.json
-
-  deploy-docs:
-    name: Deploy stable docs
-    if: github.event_name == 'workflow_dispatch'
-    needs: publish
-    uses: ./.github/workflows/docs-deploy.yml
-    secrets: inherit

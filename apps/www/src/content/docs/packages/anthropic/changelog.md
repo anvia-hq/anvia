@@ -1,26 +1,128 @@
 ---
 title: "@anvia/anthropic: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/anthropic."
+description: "Release history for @anvia/anthropic."
 section: packages
 sidebar:
   group: "@anvia/anthropic"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/anthropic@0.3.11`. The latest local changelog section is `0.3.11`.
+Release history mirrored from `packages/provider-anthropic/CHANGELOG.md`.
 
-## Latest local note
+## 0.3.11
 
-0e33272: Update upstream runtime dependencies to their latest checked releases.
+### Patch Changes
 
-## How to read this changelog
+- 0e33272: Update upstream runtime dependencies to their latest checked releases.
 
-Use this page for a concise package-level summary, then inspect `packages/provider-anthropic/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+## 0.3.10
 
-## Upgrade checks
+### Patch Changes
 
-- Review the matching [Reference](/docs/packages/anthropic/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+- Updated dependencies [2559d04]
+  - @anvia/core@0.7.1
+
+## 0.3.9
+
+### Patch Changes
+
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+
+## 0.3.8
+
+### Patch Changes
+
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
+## 0.3.7
+
+### Patch Changes
+
+- ae9296f: Report Anthropic Messages streaming usage from message start and delta events.
+
+## 0.3.6
+
+### Patch Changes
+
+- 3572881: Flatten package folders to the top-level `packages/*` workspace layout. This only updates repository layout metadata and does not change package behavior.
+
+## 0.3.5
+
+### Patch Changes
+
+- Updated dependencies [e54aece]
+  - @anvia/core@0.6.0
+
+## 0.3.4
+
+### Patch Changes
+
+- 4c76d8d: Harden non-OpenAI provider response validation and package-local build scripts.
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [4ab66c9]
+  - @anvia/core@0.5.0
+
+## 0.3.2
+
+### Patch Changes
+
+- 7eb7027: Update upstream wrapper dependencies to the latest available releases.
+
+## 0.3.1
+
+### Patch Changes
+
+- c9728d4: Update upstream runtime dependencies to their latest compatible releases.
+
+## 0.3.0
+
+### Minor Changes
+
+- e84d775: Clean up the `@anvia/core` public import surface by keeping common app-authoring APIs on the root export, moving advanced APIs to focused subpaths, and exposing runtime agent internals through `@anvia/core/internal/agent` for Anvia integration packages.
+
+### Patch Changes
+
+- Updated dependencies [e84d775]
+  - @anvia/core@0.4.0
+
+## 0.2.0
+
+### Minor Changes
+
+- 09c70f5: Add first-class multimodal tool result support.
+
+  Tools can now return `ToolResultContent[]` directly, or use `ToolOutput.content(...)`, and agent execution will pass structured text/image tool results to model turns instead of JSON-stringifying them. Tool middleware, hooks, observers, stream events, and Studio transcript surfaces keep the existing display string while exposing optional structured result content.
+
+  OpenAI Responses and Anthropic now serialize multimodal tool result images as provider-visible image blocks. Text-only provider fallbacks render image results as media-type placeholders instead of raw base64.
+
+  Update provider and tracing wrapper dependencies to the latest checked upstream releases.
+
+### Patch Changes
+
+- Updated dependencies [09c70f5]
+  - @anvia/core@0.3.0
+
+## 0.1.10
+
+### Patch Changes
+
+- 49e43a3: Update upstream runtime dependencies for Anthropic, Gemini, OpenAI, and Studio.
+
+## 0.1.9
+
+### Patch Changes
+
+- 896ae21: Update upstream provider and runtime dependencies.
+
+## 0.1.8
+
+### Patch Changes
+
+- 1ad360d: Fix Anthropic-compatible streaming tool inputs and update provider dependencies.

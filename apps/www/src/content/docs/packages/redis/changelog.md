@@ -1,26 +1,48 @@
 ---
 title: "@anvia/redis: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/redis."
+description: "Release history for @anvia/redis."
 section: packages
 sidebar:
   group: "@anvia/redis"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/redis@0.2.4`. The latest local changelog section is `0.2.4`.
+Release history mirrored from `packages/vector-redis/CHANGELOG.md`.
 
-## Latest local note
+## 0.2.4
 
-0e33272: Update upstream runtime dependencies to their latest checked releases.
+### Patch Changes
 
-## How to read this changelog
+- 0e33272: Update upstream runtime dependencies to their latest checked releases.
 
-Use this page for a concise package-level summary, then inspect `packages/vector-redis/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+## 0.2.3
 
-## Upgrade checks
+### Patch Changes
 
-- Review the matching [Reference](/docs/packages/redis/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+- Updated dependencies [2559d04]
+  - @anvia/core@0.7.1
+
+## 0.2.2
+
+### Patch Changes
+
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
+## 0.2.0
+
+### Minor Changes
+
+- 473af86: Add Weaviate, Redis, and LanceDB vector store adapters.
+
+  - `@anvia/weaviate` -- Weaviate v3 client adapter with `collections` API and `nearVector` queries.
+  - `@anvia/redis` -- Redis vector store using RediSearch `FT.CREATE`/`FT.SEARCH` with HNSW indexing.
+  - `@anvia/lancedb` -- Embedded LanceDB adapter with columnar storage and SQL-like filters.

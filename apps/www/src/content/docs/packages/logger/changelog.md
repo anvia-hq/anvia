@@ -1,26 +1,102 @@
 ---
 title: "@anvia/logger: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/logger."
+description: "Release history for @anvia/logger."
 section: packages
 sidebar:
   group: "@anvia/logger"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/logger@0.3.10`. The latest local changelog section is `0.3.10`.
+Release history mirrored from `packages/logger/CHANGELOG.md`.
 
-## Latest local note
+## 0.3.10
 
-94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+### Patch Changes
 
-## How to read this changelog
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
 
-Use this page for a concise package-level summary, then inspect `packages/logger/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+## 0.3.9
 
-## Upgrade checks
+### Patch Changes
 
-- Review the matching [Reference](/docs/packages/logger/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
+## 0.3.8
+
+### Patch Changes
+
+- Updated dependencies [369b6c4]
+  - @anvia/core@0.6.3
+
+## 0.3.7
+
+### Patch Changes
+
+- Updated dependencies [4806f3e]
+  - @anvia/core@0.6.2
+
+## 0.3.6
+
+### Patch Changes
+
+- Updated dependencies [2d039f6]
+  - @anvia/core@0.6.1
+
+## 0.3.5
+
+### Patch Changes
+
+- Updated dependencies [e54aece]
+  - @anvia/core@0.6.0
+
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies [4ab66c9]
+  - @anvia/core@0.5.0
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [4c1620d]
+  - @anvia/core@0.4.2
+
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [95712d8]
+  - @anvia/core@0.4.1
+
+## 0.3.1
+
+### Patch Changes
+
+- c9728d4: Update upstream runtime dependencies to their latest compatible releases.
+
+## 0.3.0
+
+### Minor Changes
+
+- e84d775: Clean up the `@anvia/core` public import surface by keeping common app-authoring APIs on the root export, moving advanced APIs to focused subpaths, and exposing runtime agent internals through `@anvia/core/internal/agent` for Anvia integration packages.
+
+### Patch Changes
+
+- Updated dependencies [e84d775]
+  - @anvia/core@0.4.0
+
+## 0.2.0
+
+### Minor Changes
+
+- c55f5cd: Add the first `@anvia/logger` release with structured logger types, console and Pino logger factories, and an agent observer that logs Anvia run, generation, and tool lifecycle events.
+
+## 0.1.0
+
+### Minor Changes
+
+- Initial release with structured logger types, console and Pino logger factories, and an agent observer that logs Anvia run, generation, and tool lifecycle events.

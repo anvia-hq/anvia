@@ -1,26 +1,43 @@
 ---
 title: "@anvia/react: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/react."
+description: "Release history for @anvia/react."
 section: packages
 sidebar:
   group: "@anvia/react"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/react@0.5.0`. The latest local changelog section is `0.5.0`.
+Release history mirrored from `packages/react/CHANGELOG.md`.
 
-## Latest local note
+## 0.5.0
 
-ef5e727: Add centralized tool approval handling with tool-level approval policies and `.approvals(...)` decision handlers.
+### Minor Changes
 
-## How to read this changelog
+- ef5e727: Add centralized tool approval handling with tool-level approval policies and `.approvals(...)` decision handlers.
 
-Use this page for a concise package-level summary, then inspect `packages/react/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+  Add React `useChat` human-input state for tool approvals and `ask_question` prompts, including helpers for approving, rejecting, and answering pending human input.
 
-## Upgrade checks
+## 0.4.0
 
-- Review the matching [Reference](/docs/packages/react/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+### Minor Changes
+
+- da736e9: Add `useCompletion` hook for single-prompt text completion streaming and `createDirectTransport` for in-process transport without HTTP.
+
+## 0.3.1
+
+### Patch Changes
+
+- b80f013: Refactor stream helpers into focused internal modules, add coverage-gated tests, and omit stack traces from default streamed server error events.
+
+## 0.3.0
+
+### Minor Changes
+
+- e84d775: Clean up the `@anvia/core` public import surface by keeping common app-authoring APIs on the root export, moving advanced APIs to focused subpaths, and exposing runtime agent internals through `@anvia/core/internal/agent` for Anvia integration packages.
+
+## 0.2.0
+
+### Minor Changes
+
+- eb90638: Add server stream response helpers and React client transports for JSONL and Server-Sent Event agent streams.

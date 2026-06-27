@@ -1,26 +1,58 @@
 ---
 title: "@anvia/milvus: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/milvus."
+description: "Release history for @anvia/milvus."
 section: packages
 sidebar:
   group: "@anvia/milvus"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/milvus@0.3.6`. The latest local changelog section is `0.3.6`.
+Release history mirrored from `packages/vector-milvus/CHANGELOG.md`.
 
-## Latest local note
+## 0.3.6
 
-2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+### Patch Changes
 
-## How to read this changelog
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+- Updated dependencies [2559d04]
+  - @anvia/core@0.7.1
 
-Use this page for a concise package-level summary, then inspect `packages/vector-milvus/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+## 0.3.5
 
-## Upgrade checks
+### Patch Changes
 
-- Review the matching [Reference](/docs/packages/milvus/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [369b6c4]
+  - @anvia/core@0.6.3
+
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [4806f3e]
+  - @anvia/core@0.6.2
+
+## 0.3.1
+
+### Patch Changes
+
+- 3572881: Flatten package folders to the top-level `packages/*` workspace layout. This only updates repository layout metadata and does not change package behavior.
+
+## 0.3.0
+
+### Minor Changes
+
+- ce25d82: Add Pinecone and Milvus vector store adapters following the existing pattern (Chroma, PgVector, Qdrant). Both implement the `VectorSearchIndex` interface with full filter translation, multi-embedding support, and `asTool()` integration.

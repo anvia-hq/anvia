@@ -1,26 +1,140 @@
 ---
 title: "@anvia/core: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/core."
+description: "Release history for @anvia/core."
 section: packages
 sidebar:
   group: "@anvia/core"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/core@0.8.0`. The latest local changelog section is `0.8.0`.
+Release history mirrored from `packages/core/CHANGELOG.md`.
 
-## Latest local note
+## 0.8.0
 
-3de3cce: Add an optional `update?` hook on `AgentGenerationObserver` so
+### Minor Changes
 
-## How to read this changelog
+- 3de3cce: Add an optional `update?` hook on `AgentGenerationObserver` so
+  observability adapters can record streaming deltas as they arrive.
 
-Use this page for a concise package-level summary, then inspect `packages/core/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+  The agent loop now awaits `observer.update?.({ turn, delta })` for
+  every delta produced by the underlying completion stream. The new
+  method is optional, so existing adapters keep working. A new
+  `AgentGenerationUpdateArgs` type is exported alongside.
 
-## Upgrade checks
+- 3de3cce: Add an optional `event?` hook on `AgentRunObserver` so
+  observability adapters can record ad-hoc checkpoints (e.g.
+  retrieval, validation) during a run.
 
-- Review the matching [Reference](/docs/packages/core/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+  The new method accepts an `AgentRunEventArgs` value with a `name`,
+  optional `attributes` map, optional `level`, and optional
+  `timestamp`. The hook is optional, so existing adapters keep
+  working without modification.
+
+- 3de3cce: Add an optional `promptRef?: { name; version? }` field on
+  `AgentRunStartArgs`. Observability adapters can use this to
+  record the prompt name and version on the trace root and on
+  each generation in the run.
+
+  The new field is optional, so existing call sites keep
+  compiling. The `AgentRunPromptRef` type is also exported
+  alongside.
+
+- 3de3cce: Extend the `EvalMetric` type with optional Langfuse-related
+  annotations: `dataType`, `scoreConfigId`, `configId`, and
+  `metadata`. All fields are optional, so existing metric definitions
+  keep compiling unchanged.
+
+  Add a `defineMetric()` identity helper that wraps a metric
+  definition for clearer intent at call sites. Re-export it from
+  `@anvia/core/evals`.
+
+## 0.7.1
+
+### Patch Changes
+
+- 2559d04: Refresh upstream runtime dependencies and make pipeline construction schema-first.
+
+## 0.7.0
+
+### Minor Changes
+
+- ef5e727: Add centralized tool approval handling with tool-level approval policies and `.approvals(...)` decision handlers.
+
+  Add React `useChat` human-input state for tool approvals and `ask_question` prompts, including helpers for approving, rejecting, and answering pending human input.
+
+## 0.6.3
+
+### Patch Changes
+
+- 369b6c4: Refactor internal code quality: consolidate duplicate utilities, eliminate conditional spread patterns, and improve file organization.
+
+## 0.6.2
+
+### Patch Changes
+
+- 4806f3e: Add `PromptRequest.steer()` for enqueueing user messages at safe model-turn boundaries during active prompt runs.
+
+## 0.6.1
+
+### Patch Changes
+
+- 2d039f6: Add ergonomic tool result message helpers and export `ToolContent` from the root entrypoint.
+
+## 0.6.0
+
+### Minor Changes
+
+- e54aece: Add direct completion helpers for non-streaming, streaming, and parsed structured output flows.
+
+  `createCompletion` now always returns a final completion result, `createCompletionStream` exposes raw normalized model stream events, and `createParsedCompletion` returns schema-validated data from direct completions.
+
+## 0.5.0
+
+### Minor Changes
+
+- 4ab66c9: Broaden agent runtime hooks and add general middleware for completion requests, completion responses, tool inputs, and tool outputs while keeping existing tool middleware APIs as deprecated aliases.
+
+## 0.4.2
+
+### Patch Changes
+
+- 4c1620d: Harden MCP connection cleanup and vector dimension validation, and organize loader internals without changing public loader APIs.
+
+## 0.4.1
+
+### Patch Changes
+
+- 95712d8: Refactor core internals for improved maintainability while preserving public API and behavior.
+
+## 0.4.0
+
+### Minor Changes
+
+- e84d775: Clean up the `@anvia/core` public import surface by keeping common app-authoring APIs on the root export, moving advanced APIs to focused subpaths, and exposing runtime agent internals through `@anvia/core/internal/agent` for Anvia integration packages.
+
+## 0.3.1
+
+### Patch Changes
+
+- b12932d: Update upstream dependencies for PDF loading, globbing, Langfuse tracing, and pgvector support.
+
+  The PDF loader now destroys the `pdfjs-dist` loading task after reading pages, matching the v6 cleanup API.
+
+## 0.3.0
+
+### Minor Changes
+
+- 09c70f5: Add first-class multimodal tool result support.
+
+  Tools can now return `ToolResultContent[]` directly, or use `ToolOutput.content(...)`, and agent execution will pass structured text/image tool results to model turns instead of JSON-stringifying them. Tool middleware, hooks, observers, stream events, and Studio transcript surfaces keep the existing display string while exposing optional structured result content.
+
+  OpenAI Responses and Anthropic now serialize multimodal tool result images as provider-visible image blocks. Text-only provider fallbacks render image results as media-type placeholders instead of raw base64.
+
+  Update provider and tracing wrapper dependencies to the latest checked upstream releases.
+
+## 0.2.4
+
+### Patch Changes
+
+- a0a5def: Preserve accumulated streamed tool arguments when a provider final response contains an empty tool input.

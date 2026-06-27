@@ -1,26 +1,70 @@
 ---
 title: "@anvia/sandbox: Changelog"
-description: "Concise release notes and upgrade checks for @anvia/sandbox."
+description: "Release history for @anvia/sandbox."
 section: packages
 sidebar:
   group: "@anvia/sandbox"
   order: 5
   label: "Changelog"
 ---
-## Current version
 
-The package metadata currently reports `@anvia/sandbox@0.3.5`. The latest local changelog section is `0.3.5`.
+Release history mirrored from `packages/tool-sandbox/CHANGELOG.md`.
 
-## Latest local note
+## 0.3.5
 
-94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
+### Patch Changes
 
-## How to read this changelog
+- 94362c9: Move @anvia/core to peer dependencies for packages that expose or consume core types, preventing duplicate private-type incompatibilities in consumer apps.
 
-Use this page for a concise package-level summary, then inspect `packages/tool-sandbox/CHANGELOG.md` for the full release history. Entries that only say `Updated dependencies` mean the package was republished with compatible Anvia workspace dependency updates and no package-specific API change was called out.
+## 0.3.4
 
-## Upgrade checks
+### Patch Changes
 
-- Review the matching [Reference](/docs/packages/sandbox/reference) page for public exports used by your application.
-- Re-run package-local tests around the integration boundary, especially provider calls, vector-store filters, stream formats, or observer payloads.
-- Check peer dependency ranges when combining multiple `@anvia/*` packages in one app.
+- Updated dependencies [ef5e727]
+  - @anvia/core@0.7.0
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [369b6c4]
+  - @anvia/core@0.6.3
+
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [4806f3e]
+  - @anvia/core@0.6.2
+
+## 0.3.1
+
+### Patch Changes
+
+- 3572881: Flatten package folders to the top-level `packages/*` workspace layout. This only updates repository layout metadata and does not change package behavior.
+
+## 0.3.0
+
+### Minor Changes
+
+- 18403b7: Add sandbox V2 controls for persistent workspaces, lifecycle cleanup, streaming command execution, file-size limits, observability hooks, language presets, and model-facing tool policies.
+
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [2d039f6]
+  - @anvia/core@0.6.1
+
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [e54aece]
+  - @anvia/core@0.6.0
+
+## 0.2.0
+
+### Minor Changes
+
+- 74797ba: Add a Docker-backed sandbox package for ephemeral agent workspaces.

@@ -10,6 +10,7 @@
     "build": "astro build && pagefind --site dist",
     "deploy": "pnpm run build && wrangler deploy",
     "reference-check": "node scripts/check-reference-coverage.mjs",
+    "generate:package-changelogs": "tsx scripts/generate-package-changelogs.ts",
     "generate:models-dev": "node scripts/generate-models-dev-snapshot.mjs",
     "preview": "astro preview",
     "astro": "astro"

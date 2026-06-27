@@ -11,6 +11,7 @@
     "www:deploy": "pnpm --filter www run deploy",
     "www:preview": "pnpm --filter www preview",
     "www:reference-check": "pnpm --filter www reference-check",
+    "www:generate-package-changelogs": "pnpm --filter www generate:package-changelogs",
     "cookbook:basics": "pnpm --filter cookbook basics",
     "cookbook:basics:01": "pnpm --filter cookbook basics:01",
     "cookbook:basics:02": "pnpm --filter cookbook basics:02",

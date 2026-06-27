@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build && pagefind --site dist",
+    "deploy": "pnpm run build && wrangler deploy",
     "reference-check": "node scripts/check-reference-coverage.mjs",
     "generate:models-dev": "node scripts/generate-models-dev-snapshot.mjs",
     "preview": "astro preview",
@@ -20,6 +21,7 @@
     "tailwindcss": "^4.3.1"
   },
   "devDependencies": {
-    "pagefind": "^1.5.2"
+    "pagefind": "^1.5.2",
+    "wrangler": "^4.87.0"
   }
 }

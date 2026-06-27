@@ -7,7 +7,7 @@ const installCommand = "pnpm add @anvia/core @anvia/openai";
 <section id="packages" class="bg-[#131314] py-20">
   <div class="mx-auto max-w-7xl px-4 text-left sm:px-6 lg:px-8">
     <div class="max-w-3xl">
-      <p class="font-mono text-[#2BF563]/70 text-[0.75rem] uppercase tracking-[0.18em]">
+      <p class="font-mono text-zinc-500 text-[0.75rem] uppercase tracking-[0.18em]">
         Package map
       </p>
       <h2 class="mt-4 max-w-2xl font-semibold text-3xl text-zinc-100 tracking-[-0.02em] sm:text-4xl">
@@ -48,7 +48,7 @@ const installCommand = "pnpm add @anvia/core @anvia/openai";
       {
         packageFamilies.map((group) => (
           <section>
-            <p class="font-mono text-[#2BF563]/60 text-[0.68rem] uppercase tracking-[0.16em]">
+            <p class="font-mono text-zinc-500 text-[0.68rem] uppercase tracking-[0.16em]">
               {group.label}
             </p>
             <h3 class="mt-3 font-semibold text-xl text-zinc-200 tracking-[-0.01em]">
@@ -81,6 +81,10 @@ const installCommand = "pnpm add @anvia/core @anvia/openai";
       }
 
       await navigator.clipboard.writeText(command);
+
+      window.posthog?.capture('install_command_copied', {
+        command
+      });
     });
   });
 </script>

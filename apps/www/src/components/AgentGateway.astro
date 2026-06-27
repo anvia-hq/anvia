@@ -76,8 +76,8 @@ const gatewayNodes = [
         </p>
 
         <div class="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Button size="lg">Browse packages</Button>
-          <Button variant="ghost" size="lg" href="/docs">Read docs</Button>
+          <Button size="lg" data-gateway-cta="browse_packages">Browse packages</Button>
+          <Button variant="ghost" size="lg" href="/docs" data-gateway-cta="read_docs">Read docs</Button>
         </div>
       </div>
 
@@ -130,6 +130,16 @@ const gatewayNodes = [
     </div>
   </div>
 </section>
+
+<script is:inline>
+  document.querySelectorAll('[data-gateway-cta]').forEach(function(el) {
+    el.addEventListener('click', function() {
+      window.posthog?.capture('gateway_cta_clicked', {
+        cta: el.getAttribute('data-gateway-cta')
+      });
+    });
+  });
+</script>
 
 <style>
   .gateway-logo-node {

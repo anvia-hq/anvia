@@ -4,17 +4,20 @@ import Hero from "../components/Hero.astro";
 import AgentGateway from "../components/AgentGateway.astro";
 import PackageMap from "../components/PackageMap.astro";
 import Footer from "../components/Footer.astro";
+import PostHog from "../components/posthog.astro";
 import "../styles/global.css";
 ---
 
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
+		<link rel="icon" type="image/png" href="/favicon.png" />
+		<link rel="apple-touch-icon" href="/favicon.png" />
+		<link rel="shortcut icon" href="/favicon.ico" />
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
 		<title>Anvia Packages</title>
+		<PostHog />
 	</head>
 	<body class="min-h-screen bg-[#131314] text-zinc-50 antialiased">
 		<Header />

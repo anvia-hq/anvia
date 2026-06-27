@@ -1,86 +1,42 @@
 ---
 title: Examples
-description: A compact pattern library for building Anvia applications.
+description: Common Anvia application patterns, organized by what you want to build.
 section: examples
 sidebar:
   group: Start Here
   order: 0
 ---
 
-Examples teach reusable application shapes. They are not a catalog of tiny scripts. Each page starts from a product scenario, shows a TypeScript shape, and calls out which boundary your application owns.
+Examples show common Anvia application shapes. They are not tiny API snippets and they are not long tutorials. Each page should answer a build question: "If I want to build this kind of agent, ingestion flow, tool boundary, or production loop, what does the Anvia shape look like?"
 
-## Example Anatomy
+The examples use concrete defaults where a full flow is easier to understand with real adapters: OpenAI `gpt-5.5` for support model examples, Anthropic `claude-opus-4.8` for escalation or judge examples, Mistral OCR for scanned documents, OpenAI `text-embedding-3-small` for embeddings, and Chroma for the primary vector store.
 
-Most pages follow this shape:
+## Build Goals
 
-```ts
-// Route, worker, or UI action
-const result = await runSupportTurn({
-  conversationId: body.conversationId,
-  message: body.message,
-  auth,
-  conversations,
-  services: { orders, tickets },
-});
-
-// Runner
-export async function runSupportTurn(input: SupportTurnInput) {
-  const user = await input.auth.requireUser();
-  const history = await input.conversations.loadMessages(input.conversationId);
-  const agent = createSupportAgent({ user, services: input.services });
-
-  const response = await agent
-    .prompt([...history, Message.user(input.message)])
-    .withTrace({ name: "support-chat", userId: user.id })
-    .send();
-
-  await input.conversations.append(input.conversationId, response.messages);
-  return { output: response.output };
-}
-```
-
-The exact framework can change. The pattern is the point: a thin transport calls a runner, the runner resolves product state, Anvia runs the model/tool loop, and the application persists the result.
-
-## Reading Order
-
-| Stage | Start with | Why |
+| If you want to build... | Start with | Then add |
 | --- | --- | --- |
-| Foundation | [Agent Harness](/docs/examples/agent-harness) | Establish the application-owned boundary around one model run. |
-| Request flow | [Request Runner](/docs/examples/request-runner) | Keep routes, jobs, and tests calling one explicit workflow function. |
-| Runtime shape | [Agent Structure](/docs/examples/agent-structure) | Separate stable agent configuration from request-local state. |
-| Context | [Context and Memory](/docs/examples/context-and-memory) | Decide which facts belong in instructions, messages, memory, or retrieval. |
-| Tooling | [Tool Boundaries](/docs/examples/tool-boundaries) | Wrap product behavior as narrow, permission-aware capabilities. |
-| Production | [Guarded Side Effects](/docs/examples/guarded-side-effects) | Add approvals, idempotency, audit, and retry safety before launch. |
+| An agent endpoint with auth, history, tools, traces, and persistence | [Agent App Flow](/docs/examples/agent-app-flow) | [Runtime State and Persistence](/docs/examples/runtime-state-persistence) |
+| An agent runtime assembled from model, instructions, tools, context, memory, and observers | [Agent Runtime Composition](/docs/examples/agent-runtime-composition) | [Context Assembly](/docs/examples/context-assembly) |
+| Tools that enforce user, tenant, and action permissions | [Permissioned Tools](/docs/examples/permissioned-tools) | [Tool Validation](/docs/examples/tool-validation), [Guarded Side Effects](/docs/examples/guarded-side-effects) |
+| Typed model output for classification, extraction, or workflow results | [Structured Results](/docs/examples/structured-results) | [Testing Harness](/docs/examples/testing-harness) |
+| RAG over PDFs, images, documents, and product knowledge | [RAG Ingestion](/docs/examples/rag-ingestion) | [Retrieval Agent](/docs/examples/retrieval-agent), [Document Grounding](/docs/examples/document-grounding) |
+| A support agent with account tools and policy evidence | [Support Agent](/docs/examples/support-agent) | [Permissioned Tools](/docs/examples/permissioned-tools), [Retrieval Agent](/docs/examples/retrieval-agent) |
+| A background document or research workflow | [Pipeline Worker](/docs/examples/pipeline-worker) | [Long-running Jobs](/docs/examples/long-running-jobs), [Eval Loop](/docs/examples/eval-loop) |
+| A coding or file agent with command boundaries | [Coding Agent](/docs/examples/coding-agent) | [Sandbox Execution](/docs/examples/sandbox-execution) |
+| A workflow that needs human approval before writes | [Guarded Side Effects](/docs/examples/guarded-side-effects) | [Human Input](/docs/examples/human-input) |
+| A production feedback loop for traces, events, tests, and evals | [Runtime State and Persistence](/docs/examples/runtime-state-persistence) | [Observability Loop](/docs/examples/observability-loop), [Production Readiness](/docs/examples/production-readiness) |
 
-## Pattern Map
+## Common Flows
 
-| Need | Pattern |
-| --- | --- |
-| Understand how this section is meant to be read | [How to Use Examples](/docs/examples/how-to-use-examples) |
-| Wrap one product request in an agent runtime boundary | [Agent Harness](/docs/examples/agent-harness) |
-| Wrap one route, job, action, or queue request | [Request Runner](/docs/examples/request-runner) |
-| Keep stable agent setup separate from request state | [Agent Structure](/docs/examples/agent-structure) |
-| Decide what enters the prompt, history, and memory | [Context and Memory](/docs/examples/context-and-memory) |
-| Expose product behavior through narrow tools | [Tool Boundaries](/docs/examples/tool-boundaries) |
-| Select relevant tools from a large catalog | [Dynamic Tool Catalogs](/docs/examples/dynamic-tool-catalogs) |
-| Validate tool inputs, outputs, and product states | [Tool Validation](/docs/examples/tool-validation) |
-| Ask a person before the workflow continues | [Human Input](/docs/examples/human-input) |
-| Build or refresh retrieval data | [RAG Ingestion](/docs/examples/rag-ingestion) |
-| Combine retrieval with an account-aware agent | [Retrieval Agent](/docs/examples/retrieval-agent) |
-| Ground model responses in selected documents | [Document Grounding](/docs/examples/document-grounding) |
-| Consume text, tool, and final stream events | [Streaming Events](/docs/examples/streaming-events) |
-| Run structured work outside the request path | [Pipeline Worker](/docs/examples/pipeline-worker) |
-| Track status, retries, and results for background work | [Long-running Jobs](/docs/examples/long-running-jobs) |
-| Coordinate specialist agents without losing the parent workflow | [Multi-agent Coordination](/docs/examples/multi-agent-coordination) |
-| Protect writes, approvals, and irreversible actions | [Guarded Side Effects](/docs/examples/guarded-side-effects) |
-| Combine app tools with MCP server tools | [MCP Agent](/docs/examples/mcp-agent) |
-| Run file and command work in an isolated workspace | [Sandbox Execution](/docs/examples/sandbox-execution) |
-| Swap providers without rewriting product code | [Provider Switching](/docs/examples/provider-switching) |
-| Test deterministic boundaries around model behavior | [Testing Harness](/docs/examples/testing-harness) |
-| Connect logs, traces, events, and evals into one feedback loop | [Observability Loop](/docs/examples/observability-loop) |
-| Build repeatable regression checks | [Eval Loop](/docs/examples/eval-loop) |
-| Review an agent workflow before launch | [Production Readiness](/docs/examples/production-readiness) |
-| Model common customer-support flows | [Support Agent](/docs/examples/support-agent) |
-| Model research and synthesis flows | [Research Agent](/docs/examples/research-agent) |
-| Model internal operations and admin flows | [Backoffice Agent](/docs/examples/backoffice-agent) |
-| Model codebase workflows with file and command boundaries | [Coding Agent](/docs/examples/coding-agent) |
+Agent applications usually start with [Agent App Flow](/docs/examples/agent-app-flow): a thin route or job calls a runner, the runner resolves product state, the agent runs with scoped tools and context, and the application persists the result.
+
+Knowledge applications usually combine [RAG Ingestion](/docs/examples/rag-ingestion), [Retrieval Agent](/docs/examples/retrieval-agent), and [Document Grounding](/docs/examples/document-grounding). The important flow is source documents to OCR or text extraction, chunks, embeddings, Chroma-backed vector index, dynamic context or retrieval tools, then cited answers.
+
+Action-taking applications usually combine [Permissioned Tools](/docs/examples/permissioned-tools), [Tool Validation](/docs/examples/tool-validation), [Guarded Side Effects](/docs/examples/guarded-side-effects), and [Human Input](/docs/examples/human-input). The model can request work, but application code owns permissions, approval, idempotency, audit, and safe output.
+
+Production applications usually add [Runtime State and Persistence](/docs/examples/runtime-state-persistence), [Testing Harness](/docs/examples/testing-harness), [Observability Loop](/docs/examples/observability-loop), [Eval Loop](/docs/examples/eval-loop), and [Production Readiness](/docs/examples/production-readiness).
+
+## More Maps
+
+- [Capability Map](/docs/examples/capability-map) maps Anvia features to the examples that use them.
+- [Example Anatomy](/docs/examples/example-anatomy) explains the format each example should follow.

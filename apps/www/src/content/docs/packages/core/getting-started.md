@@ -1,6 +1,6 @@
 ---
 title: "@anvia/core: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/core and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/core"
@@ -15,14 +15,21 @@ pnpm add @anvia/core
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/core.
-
 ```ts
-import "@anvia/core";
+import { AgentBuilder } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
 
-// Placeholder: add the minimum working setup for this package.
+const client = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
+const model = client.completionModel("gpt-5");
+
+const agent = new AgentBuilder("support", model)
+  .instructions("Answer support questions clearly.")
+  .defaultMaxTurns(4)
+  .build();
+
+const response = await agent.prompt("Draft a reply to this ticket.").send();
+console.log(response.output);
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/core/usage-patterns).

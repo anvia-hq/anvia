@@ -1,6 +1,6 @@
 ---
 title: "@anvia/gemini: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Gemini and Vertex AI provider adapter for Anvia completions, embeddings, image generation, transcription, and model listing."
 section: packages
 sidebar:
   group: "@anvia/gemini"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Gemini provider adapter for Anvia.
+Gemini and Vertex AI provider adapter for Anvia completions, embeddings, image generation, transcription, and model listing.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/gemini when the application needs Gemini models behind Anvia agents, completions, pipelines, or extraction flows. It is one of the provider adapters that turn provider SDKs into Anvia model contracts.
 
 ## Where it fits
 
-This package belongs to Provider adapters. Use this section to explain how it composes with the runtime and adjacent packages.
+@anvia/gemini plugs into `@anvia/core` by returning completion and related model objects from `GeminiClient`. Build agents, extractors, and pipelines against the Anvia model interfaces so provider-specific details stay at the model selection boundary.
+
+The package owns mapping Anvia contracts to Google GenAI and Vertex AI model calls. Keep project selection, auth mode, prompt policy, tool behavior, and product routing in application code.
+
+## Public surface
+
+The main documented exports are `GeminiClient`, `Multimodal Models`, `GeminiCompletionModel`, `GeminiEmbeddingModel`, `gemini Namespace`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

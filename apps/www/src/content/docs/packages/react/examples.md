@@ -1,25 +1,46 @@
 ---
 title: "@anvia/react: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/react at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/react"
   order: 4
   label: "Examples"
 ---
-## Basic example
+## Minimal chat
 
-Placeholder: add a minimal @anvia/react example that can be read in one screen.
+```tsx
+import { useChat } from "@anvia/react";
+
+export function Chat() {
+  const chat = useChat({ endpoint: "/api/chat" });
+
+  return <button onClick={() => void chat.send("Hello")}>{chat.status}</button>;
+}
+```
+## Product-shaped transport
+
+```tsx
+import { createChatTransport, useChat } from "@anvia/react";
+
+const transport = createChatTransport({
+  endpoint: "/api/support/chat",
+  headers: () => ({ "x-client": "support-console" }),
+});
+
+export function SupportChat() {
+  return useChat({ transport });
+}
+```
+## Harness shape
 
 ```ts
-// Placeholder example for @anvia/react
-// Replace with package-specific code.
+import { describe, expect, it } from "vitest";
+
+describe("@anvia/react integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
 ```
-
-## Product example
-
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
-
-## Test example
-
-Placeholder: add the smallest test or harness shape for this package.
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

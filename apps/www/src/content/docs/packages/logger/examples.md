@@ -1,25 +1,49 @@
 ---
 title: "@anvia/logger: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/logger at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/logger"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/logger example that can be read in one screen.
+## Minimal logger observer
 
 ```ts
-// Placeholder example for @anvia/logger
-// Replace with package-specific code.
+import { AgentBuilder } from "@anvia/core";
+import { createConsoleLogger, createLoggerObserver } from "@anvia/logger";
+
+const logger = createConsoleLogger({ name: "support", level: "debug" });
+const agent = new AgentBuilder("support", model)
+  .observe(createLoggerObserver(logger))
+  .build();
 ```
+## Product-shaped logger
 
-## Product example
+```ts
+import { createLoggerObserver, createPinoLogger } from "@anvia/logger";
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+export function createObservedAgent(input: { requestId: string }) {
+  const logger = createPinoLogger({
+    name: "support-agent",
+    level: "info",
+    base: { requestId: input.requestId },
+  });
 
-## Test example
+  return new AgentBuilder("support", model)
+    .observe(createLoggerObserver(logger, { includeInputs: false, includeOutputs: false }))
+    .build();
+}
+```
+## Harness shape
 
-Placeholder: add the smallest test or harness shape for this package.
+```ts
+import { describe, expect, it } from "vitest";
+
+describe("@anvia/logger integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

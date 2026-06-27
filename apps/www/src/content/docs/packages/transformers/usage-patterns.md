@@ -1,20 +1,26 @@
 ---
 title: "@anvia/transformers: Usage Patterns"
-description: "Common ways to compose the package with runtime, provider, transport, and adapter packages."
+description: "Common ways to compose @anvia/transformers with adjacent Anvia packages."
 section: packages
 sidebar:
   group: "@anvia/transformers"
   order: 3
   label: "Usage Patterns"
 ---
-## Runtime boundary
+## Package boundary
 
-Placeholder: explain what @anvia/transformers owns and what should stay in application code.
+@anvia/transformers owns local embedding generation. Application code owns source loading, chunking, metadata, indexing cadence, and storage.
+
+Use the same embedding model for document ingestion and query-time search. If a different model or dimensionality is used later, rebuild the index rather than mixing vectors.
 
 ## Common composition
 
-Placeholder: show which runtime, provider, adapter, or tool packages usually appear beside @anvia/transformers.
+- Pair with `@anvia/core/embeddings` to turn records into embedded documents.
+- Pair with `@anvia/core/vector-store` for local tests and prototypes.
+- Pair with `@anvia/qdrant`, `@anvia/pgvector`, `@anvia/chroma`, or another vector adapter for persistent retrieval.
 
-## Placeholder notes
+## Do and do not
 
-Placeholder: add do and do-not guidance after the package API examples are finalized.
+Do batch inputs with the package options when indexing many documents. Do log the model name and dimension used for an index. Do keep source text and metadata stable enough to reproduce an index.
+
+Do not generate embeddings inside the prompt path when they can be prepared ahead of time. Do not mix embedding models in one collection. Do not store secrets or tenant policy in embedding adapter configuration.

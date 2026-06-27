@@ -1,25 +1,64 @@
 ---
 title: "@anvia/sandbox: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/sandbox at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/sandbox"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/sandbox example that can be read in one screen.
+## Minimal sandbox tools
 
 ```ts
-// Placeholder example for @anvia/sandbox
-// Replace with package-specific code.
+import { AgentBuilder } from "@anvia/core";
+import { DockerSandbox, createSandboxTools } from "@anvia/sandbox";
+
+const sandbox = DockerSandbox.node({ network: false });
+const session = await sandbox.createSession({ id: "demo" });
+const tools = createSandboxTools(session);
+
+const agent = new AgentBuilder("workspace-agent", model).tools(tools).build();
 ```
+## Product-shaped approval boundary
 
-## Product example
+```ts
+const sandbox = DockerSandbox.node({
+  network: false,
+  limits: { timeoutMs: 30_000, maxOutputBytes: 64_000 },
+});
+const session = await sandbox.createSession({
+  id: request.id,
+  workspace: { mode: "persistent", id: request.id },
+});
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+const agent = new AgentBuilder("debugger", model)
+  .instructions("Inspect the sandbox and propose changes before writing files.")
+  .tools(
+    createSandboxTools(session, {
+      include: ["exec_command", "read_file", "list_files"],
+      exec: { allowedCommands: ["node", "pnpm", "ls", "cat"] },
+      readFile: { maxBytes: 64_000 },
+    }),
+  )
+  .approvals({
+    handler: async (approval) => {
+      return {
+        approved: await reviewSandboxAction(approval),
+        reason: "Reviewed before sandbox execution.",
+      };
+    },
+  })
+  .build();
+```
+## Harness shape
 
-## Test example
+```ts
+import { describe, expect, it } from "vitest";
 
-Placeholder: add the smallest test or harness shape for this package.
+describe("@anvia/sandbox integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

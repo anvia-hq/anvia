@@ -1,6 +1,6 @@
 ---
 title: "@anvia/anthropic: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Anthropic provider adapter for Anvia completion models and streaming Messages API responses."
 section: packages
 sidebar:
   group: "@anvia/anthropic"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Anthropic provider adapter for Anvia.
+Anthropic provider adapter for Anvia completion models and streaming Messages API responses.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/anthropic when the application needs Anthropic models behind Anvia agents, completions, pipelines, or extraction flows. It is one of the provider adapters that turn provider SDKs into Anvia model contracts.
 
 ## Where it fits
 
-This package belongs to Provider adapters. Use this section to explain how it composes with the runtime and adjacent packages.
+@anvia/anthropic plugs into `@anvia/core` by returning completion and related model objects from `AnthropicClient`. Build agents, extractors, and pipelines against the Anvia model interfaces so provider-specific details stay at the model selection boundary.
+
+The package owns mapping Anvia completion requests, tools, multimodal content, and stream events to Anthropic Messages. Keep prompt policy, tool behavior, credential management, and provider fallback decisions in application code.
+
+## Public surface
+
+The main documented exports are `AnthropicClient`, `AnthropicCompletionModel`, `Helper Namespaces`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

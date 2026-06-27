@@ -1,6 +1,6 @@
 ---
 title: "@anvia/fastembed: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/fastembed and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/fastembed"
@@ -10,18 +10,39 @@ sidebar:
 ## Install
 
 ```sh
-pnpm add @anvia/fastembed
+pnpm add @anvia/fastembed @anvia/core fastembed
 ```
-
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/fastembed.
-
 ```ts
-import "@anvia/fastembed";
+import { embedDocuments } from "@anvia/core/embeddings";
+import { InMemoryVectorStore } from "@anvia/core/vector-store";
+import { createFastEmbedEmbeddingModel } from "@anvia/fastembed";
 
-// Placeholder: add the minimum working setup for this package.
+const embeddingModel = await createFastEmbedEmbeddingModel();
+
+const documents = await embedDocuments(
+  embeddingModel,
+  [{ id: "password-reset", text: "Password reset links expire after 30 minutes." }],
+  {
+    id: (document) => document.id,
+    content: (document) => document.text,
+  },
+);
+
+const store = InMemoryVectorStore.fromDocuments(documents);
+const index = store.index(embeddingModel);
+
+const results = await index.search({
+  query: "How long does a reset link last?",
+  topK: 3,
+});
+
+console.log(results);
 ```
+## Default model
+
+Import `DEFAULT_FASTEMBED_EMBEDDING_MODEL` when the application needs to display or log the default embedding model. Pass an explicit model/options object to `createFastEmbedEmbeddingModel(...)` when dimensions, batching, pooling, or runtime behavior need to be controlled.
 
 ## Next step
 

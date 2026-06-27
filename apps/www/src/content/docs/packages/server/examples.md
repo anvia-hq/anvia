@@ -1,25 +1,43 @@
 ---
 title: "@anvia/server: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/server at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/server"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/server example that can be read in one screen.
+## Minimal route
 
 ```ts
-// Placeholder example for @anvia/server
-// Replace with package-specific code.
+import { createEventStream } from "@anvia/server";
+
+export async function POST(request: Request) {
+  const { message } = await request.json();
+  return createEventStream(agent.prompt(message).stream());
+}
 ```
+## Product-shaped endpoint
 
-## Product example
+```ts
+export async function POST(request: Request) {
+  const user = await requireUser(request);
+  const { message } = await parseChatRequest(request);
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+  return createEventStream(createSupportAgent(user).prompt(message).stream(), {
+    format: "jsonl",
+  });
+}
+```
+## Harness shape
 
-## Test example
+```ts
+import { describe, expect, it } from "vitest";
 
-Placeholder: add the smallest test or harness shape for this package.
+describe("@anvia/server integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

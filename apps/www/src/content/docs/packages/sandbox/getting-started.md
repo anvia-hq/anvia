@@ -1,6 +1,6 @@
 ---
 title: "@anvia/sandbox: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/sandbox and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/sandbox"
@@ -10,19 +10,34 @@ sidebar:
 ## Install
 
 ```sh
-pnpm add @anvia/sandbox
+pnpm add @anvia/sandbox @anvia/core
 ```
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/sandbox.
-
 ```ts
-import "@anvia/sandbox";
+import { AgentBuilder } from "@anvia/core";
+import { DockerSandbox, createSandboxTools } from "@anvia/sandbox";
 
-// Placeholder: add the minimum working setup for this package.
+const sandbox = DockerSandbox.node({
+  network: false,
+});
+const session = await sandbox.createSession({
+  id: "support-debug",
+});
+
+const sandboxTools = createSandboxTools(session, {
+  exec: {
+    maxTimeoutMs: 30_000,
+  },
+});
+
+const agent = new AgentBuilder("debugger", model)
+  .instructions("Inspect files only inside the sandbox workspace.")
+  .tools(sandboxTools)
+  .defaultMaxTurns(8)
+  .build();
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/sandbox/usage-patterns).

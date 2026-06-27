@@ -1,25 +1,54 @@
 ---
 title: "@anvia/core: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/core at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/core"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/core example that can be read in one screen.
+## Minimal direct completion
 
 ```ts
-// Placeholder example for @anvia/core
-// Replace with package-specific code.
+import { createCompletion } from "@anvia/core";
+
+const result = await createCompletion(model, {
+  input: "Summarize this ticket.",
+  instructions: "Answer in one sentence.",
+});
+
+console.log(result.text);
 ```
+## Product-shaped agent factory
 
-## Product example
+```ts
+import { AgentBuilder, createTool } from "@anvia/core";
+import { z } from "zod";
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+export function createSupportAgent(input: { model: CompletionModel; orders: OrderService }) {
+  const lookupOrder = createTool({
+    name: "lookup_order",
+    description: "Look up an order by id.",
+    input: z.object({ orderId: z.string() }),
+    execute: ({ orderId }) => input.orders.lookup(orderId),
+  });
 
-## Test example
+  return new AgentBuilder("support", input.model)
+    .instructions("Help customers with order questions.")
+    .tool(lookupOrder)
+    .defaultMaxTurns(4)
+    .build();
+}
+```
+## Harness shape
 
-Placeholder: add the smallest test or harness shape for this package.
+```ts
+import { describe, expect, it } from "vitest";
+
+describe("@anvia/core integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

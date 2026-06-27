@@ -1,25 +1,41 @@
 ---
 title: "@anvia/otel: Examples"
-description: "Small example shapes that show how this package should be taught in docs."
+description: "Small examples that show @anvia/otel at the package boundary."
 section: packages
 sidebar:
   group: "@anvia/otel"
   order: 4
   label: "Examples"
 ---
-## Basic example
-
-Placeholder: add a minimal @anvia/otel example that can be read in one screen.
+## Minimal tracing observer
 
 ```ts
-// Placeholder example for @anvia/otel
-// Replace with package-specific code.
+import { AgentBuilder } from "@anvia/core";
+import { otel } from "@anvia/otel";
+
+const tracing = otel.create({ tracerName: "support-agent" });
+const agent = new AgentBuilder("support", model).observe(tracing).build();
 ```
+## Product-shaped setup
 
-## Product example
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { otel } from "@anvia/otel";
 
-Placeholder: add a product-shaped example that shows the package inside an agent workflow.
+const sdk = new NodeSDK({ serviceName: "support-api" });
+sdk.start();
 
-## Test example
+export const tracing = otel.create({ tracerName: "support-api" });
+```
+## Harness shape
 
-Placeholder: add the smallest test or harness shape for this package.
+```ts
+import { describe, expect, it } from "vitest";
+
+describe("@anvia/otel integration", () => {
+  it("keeps the package boundary injectable", () => {
+    expect(true).toBe(true);
+  });
+});
+```
+Replace the assertion with a focused check around the package boundary: stream format for server/react, observer registration for logging/tracing, or runtime target registration for Studio.

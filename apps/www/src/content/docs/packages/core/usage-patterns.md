@@ -1,20 +1,26 @@
 ---
 title: "@anvia/core: Usage Patterns"
-description: "Common ways to compose the package with runtime, provider, transport, and adapter packages."
+description: "Common ways to compose @anvia/core with adjacent Anvia packages."
 section: packages
 sidebar:
   group: "@anvia/core"
   order: 3
   label: "Usage Patterns"
 ---
-## Runtime boundary
+## Package boundary
 
-Placeholder: explain what @anvia/core owns and what should stay in application code.
+`@anvia/core` owns runtime contracts and orchestration: agents, completion requests, tools, middleware, memory interfaces, extraction, pipelines, embeddings, vector-store contracts, streaming helpers, MCP, skills, evals, and observer events.
+
+Application code owns provider selection, credentials, product data access, route handlers, persistence, and deployment concerns.
 
 ## Common composition
 
-Placeholder: show which runtime, provider, adapter, or tool packages usually appear beside @anvia/core.
+- Pair with a provider package such as `@anvia/openai`, `@anvia/anthropic`, `@anvia/gemini`, or `@anvia/mistral`.
+- Pair with vector-store packages for retrieval-backed agents.
+- Pair with observability packages through `AgentBuilder.observe(...)`.
 
-## Placeholder notes
+## Do and do not
 
-Placeholder: add do and do-not guidance after the package API examples are finalized.
+Do build application code against the core interfaces when you want provider portability. Do keep tool execution small, typed, and observable. Do test agents through model boundaries and tool harnesses.
+
+Do not put provider SDK calls deep inside agent factories. Do not let tools bypass product authorization. Do not treat memory as a substitute for durable application records.

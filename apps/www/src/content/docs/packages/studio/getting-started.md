@@ -1,6 +1,6 @@
 ---
 title: "@anvia/studio: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/studio and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/studio"
@@ -10,19 +10,25 @@ sidebar:
 ## Install
 
 ```sh
-pnpm add @anvia/studio
+pnpm add @anvia/studio @anvia/core
 ```
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/studio.
-
 ```ts
-import "@anvia/studio";
+import { AgentBuilder } from "@anvia/core";
+import { Studio } from "@anvia/studio";
 
-// Placeholder: add the minimum working setup for this package.
+const agent = new AgentBuilder("support", model)
+  .name("Support")
+  .description("Answers support questions.")
+  .instructions("Answer support questions clearly.")
+  .build();
+
+new Studio([agent]).start({
+  port: 4021,
+});
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/studio/usage-patterns).

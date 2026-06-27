@@ -1,20 +1,27 @@
 ---
 title: "@anvia/pgvector: Usage Patterns"
-description: "Common ways to compose the package with runtime, provider, transport, and adapter packages."
+description: "Common ways to compose @anvia/pgvector with adjacent Anvia packages."
 section: packages
 sidebar:
   group: "@anvia/pgvector"
   order: 3
   label: "Usage Patterns"
 ---
-## Runtime boundary
+## Package boundary
 
-Placeholder: explain what @anvia/pgvector owns and what should stay in application code.
+@anvia/pgvector owns persistence and search against Postgres with pgvector. Application code owns document loading, chunking, embedding, ingestion scheduling, tenant scoping, and when search results are allowed into model context.
+
+The adapter exposes `search(...)`, `searchIds(...)`, `asTool(...)`, and optional inspection behavior through the Anvia vector-store contracts.
 
 ## Common composition
 
-Placeholder: show which runtime, provider, adapter, or tool packages usually appear beside @anvia/pgvector.
+- Pair with `@anvia/core/embeddings` to create embedded documents before upsert.
+- Pair with `@anvia/openai`, `@anvia/gemini`, `@anvia/fastembed`, or `@anvia/transformers` for embedding models.
+- Pair with `AgentBuilder.dynamicContext(...)` when every prompt should receive retrieved context.
+- Pair with `index.asTool(...)` when the model should decide whether to search.
 
-## Placeholder notes
+## Do and do not
 
-Placeholder: add do and do-not guidance after the package API examples are finalized.
+Do keep document ids stable across ingestion runs. Do apply metadata filters before results reach the prompt. Do keep vector dimensions aligned with the embedding model.
+
+Do not let agents choose collection names or database credentials. Do not use vector search as the only authorization boundary. Do not assume inspection support exists in every production adapter.

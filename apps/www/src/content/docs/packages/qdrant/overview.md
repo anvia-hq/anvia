@@ -1,6 +1,6 @@
 ---
 title: "@anvia/qdrant: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Qdrant vector store adapter for Anvia retrieval and semantic search."
 section: packages
 sidebar:
   group: "@anvia/qdrant"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Qdrant vector store adapter for Anvia.
+Qdrant vector store adapter for Anvia retrieval and semantic search.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/qdrant when the application needs Qdrant as the backing store for embedded documents and semantic search. It is one of the storage adapters that expose a provider-neutral VectorSearchIndex.
 
 ## Where it fits
 
-This package belongs to Storage adapters. Use this section to explain how it composes with the runtime and adjacent packages.
+@anvia/qdrant stores embedded documents in Qdrant and returns indexes that implement `VectorSearchIndex`. Agents can use the index as dynamic context or as a search tool without depending on the database client.
+
+The package owns connection setup, document upsert, metadata filter translation through `filterToQdrantFilter`, and search result mapping. Keep document loading, chunking, embedding model choice, tenant scoping, and ingestion jobs in application code.
+
+## Public surface
+
+The main documented exports are `QdrantVectorStoreConnectOptions`, `QdrantVectorStore`, `QdrantVectorIndex`, `filterToQdrantFilter`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

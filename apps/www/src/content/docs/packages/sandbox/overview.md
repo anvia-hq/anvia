@@ -1,6 +1,6 @@
 ---
 title: "@anvia/sandbox: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Docker-backed sandbox tools for running commands and file operations in controlled Anvia agent workspaces."
 section: packages
 sidebar:
   group: "@anvia/sandbox"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Sandboxed workspace tools for Anvia agents.
+Docker-backed sandbox tools for running commands and file operations in controlled Anvia agent workspaces.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/sandbox when the application needs agents to run commands or inspect files inside an isolated Docker workspace. It is one of the developer workflow packages for tools, local runtime inspection, and controlled execution.
 
 ## Where it fits
 
-This package belongs to Developer tools. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/sandbox` provides model-facing tools backed by Docker workspaces. Use it beside `@anvia/core` tools and approval policies when agents need controlled command or file access.
+
+The package owns sandbox lifecycle, command execution helpers, file limits, and model-facing tool definitions. Keep workspace policy, Docker availability, secret handling, network policy, and approval decisions in application code.
+
+## Public surface
+
+The main documented exports are `DockerSandbox`, `Sandbox Interfaces`, `Session Options`, `Docker Options`, `Execution`, `Files`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

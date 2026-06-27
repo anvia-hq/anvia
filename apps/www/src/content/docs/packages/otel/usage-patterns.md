@@ -1,20 +1,24 @@
 ---
 title: "@anvia/otel: Usage Patterns"
-description: "Common ways to compose the package with runtime, provider, transport, and adapter packages."
+description: "Common ways to compose @anvia/otel with adjacent Anvia packages."
 section: packages
 sidebar:
   group: "@anvia/otel"
   order: 3
   label: "Usage Patterns"
 ---
-## Runtime boundary
+## Package boundary
 
-Placeholder: explain what @anvia/otel owns and what should stay in application code.
+`@anvia/otel` owns span creation from Anvia observer events. The application owns OpenTelemetry SDK setup, exporters, resource attributes, sampling, and shutdown.
 
 ## Common composition
 
-Placeholder: show which runtime, provider, adapter, or tool packages usually appear beside @anvia/otel.
+- Attach `otel.create(...)` through `AgentBuilder.observe(...)`.
+- Use the same SDK/exporter setup as the rest of the service.
+- Pair with logs when run-level debugging needs both structured events and traces.
 
-## Placeholder notes
+## Do and do not
 
-Placeholder: add do and do-not guidance after the package API examples are finalized.
+Do start the OpenTelemetry SDK before agents run. Do use stable service and deployment attributes. Do sample intentionally for high-volume workloads.
+
+Do not expect this package to start or flush the SDK. Do not put raw secrets in span attributes.

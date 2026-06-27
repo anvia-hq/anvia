@@ -1,6 +1,6 @@
 ---
 title: "@anvia/langfuse: Overview"
-description: "What the package is for and where it fits in the Anvia package set."
+description: "Langfuse tracing, score publishing, dataset, prompt, redaction, and eval reporter adapter for Anvia."
 section: packages
 sidebar:
   group: "@anvia/langfuse"
@@ -9,13 +9,19 @@ sidebar:
 ---
 ## What it is
 
-Langfuse tracing adapter for Anvia.
+Langfuse tracing, score publishing, dataset, prompt, redaction, and eval reporter adapter for Anvia.
 
-Placeholder: replace this with package-specific intent, ownership, and runtime boundary notes.
+Use @anvia/langfuse when the application needs agent traces, eval scores, prompt metadata, and Langfuse datasets from Anvia runs. It is one of the adapters that make Anvia runs visible in existing telemetry systems.
 
 ## Where it fits
 
-This package belongs to Tracing adapters. Use this section to explain how it composes with the runtime and adjacent packages.
+`@anvia/langfuse` attaches through `AgentBuilder.observe(...)` and can also publish eval scores, prompts, datasets, and experiment runs through Langfuse APIs.
+
+The package owns Langfuse observer, score, dataset, prompt, redaction, and eval-reporting integration. Keep trace naming, data retention, privacy policy, and production Langfuse project configuration in application code.
+
+## Public surface
+
+The main documented exports are `LangfuseTracingOptions`, `LangfuseTracing`, `LangfuseTraceHandle`, `LangfuseScoreArgs`, `LangfuseScoreError`, `langfuse`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

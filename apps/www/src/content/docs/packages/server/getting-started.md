@@ -1,6 +1,6 @@
 ---
 title: "@anvia/server: Getting Started"
-description: "Install the package and wire it into an Anvia project."
+description: "Install @anvia/server and wire it into an Anvia project."
 section: packages
 sidebar:
   group: "@anvia/server"
@@ -15,14 +15,17 @@ pnpm add @anvia/server
 
 ## Minimum setup
 
-Placeholder: add the smallest import and initialization path for @anvia/server.
-
 ```ts
-import "@anvia/server";
+import { createEventStream } from "@anvia/server";
 
-// Placeholder: add the minimum working setup for this package.
+export async function POST(request: Request) {
+  const { message } = await request.json();
+
+  return createEventStream(agent.prompt(message).stream(), {
+    format: "jsonl",
+  });
+}
 ```
-
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/server/usage-patterns).

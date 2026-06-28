@@ -14,18 +14,18 @@ import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
-import {
-  Agent,
-  type AgentEventStore,
-  type AgentEventStoreOptions,
-  type AgentEventStoreRegistration,
-  type DynamicContextOptions,
-  type DynamicContextRegistration,
-  type DynamicToolOptions,
-  type DynamicToolRegistration,
-} from "./agent";
+import { Agent } from "./agent";
 import type { PromptHook } from "./hooks";
 import { normalizeAgentId } from "./ids";
+import type {
+  AgentEventStore,
+  AgentEventStoreOptions,
+  AgentEventStoreRegistration,
+  DynamicContextOptions,
+  DynamicContextRegistration,
+  DynamicToolOptions,
+  DynamicToolRegistration,
+} from "./types";
 
 export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private readonly agentId: string;

@@ -17,13 +17,6 @@ export type {
   ToolResultMiddlewareArgs,
 } from "../tool/middleware";
 export { createMiddleware, createToolMiddleware } from "../tool/middleware";
-export type {
-  AgentEventAppendInput,
-  AgentEventRecord,
-  AgentEventStore,
-  AgentEventStoreInclude,
-  AgentEventStoreOptions,
-} from "./agent";
 export { AgentBuilder } from "./builder";
 export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./errors";
 export type {
@@ -61,3 +54,10 @@ export type {
   AgentStreamEvent,
   PromptResponse,
 } from "./request-types";
+export type {
+  AgentEventAppendInput,
+  AgentEventRecord,
+  AgentEventStore,
+  AgentEventStoreInclude,
+  AgentEventStoreOptions,
+} from "./types";

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createEventStream, createJsonlStream, createSseStream } from "../src";
+import {
+  createEventStream,
+  createJsonlStream,
+  createSseStream,
+  createUIStreamResponse,
+} from "../src";
 
 describe("@anvia/server streams", () => {
   it("serializes async iterables as jsonl", async () => {
@@ -52,6 +57,22 @@ describe("@anvia/server streams", () => {
 
     expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(await response.text()).toBe('data: {"type":"one"}\n\n');
+  });
+
+  it("creates UI stream responses", async () => {
+    const response = createUIStreamResponse(
+      events([
+        {
+          type: "message_start",
+          message: { id: "msg_1", role: "assistant", parts: [] },
+        },
+      ]),
+    );
+
+    expect(response.headers.get("content-type")).toBe("application/x-ndjson; charset=utf-8");
+    expect(await response.text()).toBe(
+      '{"type":"message_start","message":{"id":"msg_1","role":"assistant","parts":[]}}\n',
+    );
   });
 
   it("supports custom jsonl serializers", async () => {

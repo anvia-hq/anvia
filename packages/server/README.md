@@ -3,9 +3,9 @@
 Server-side stream helpers for Anvia applications.
 
 ```ts
-import { createEventStream } from "@anvia/server";
+import { createUIStreamResponse } from "@anvia/server";
 
-return createEventStream(agent.prompt("Draft a reply.").stream(), {
+return createUIStreamResponse(uiEvents, {
   format: "jsonl",
 });
 ```
@@ -13,6 +13,7 @@ return createEventStream(agent.prompt("Draft a reply.").stream(), {
 ## Exports
 
 - `createEventStream(events, options)` returns a streaming `Response`.
+- `createUIStreamResponse(events, options)` returns a streaming `Response` for `UIStreamEvent` values.
 - `createJsonlStream(events, options)` returns a JSONL `ReadableStream<Uint8Array>`.
 - `createSseStream(events, options)` returns a Server-Sent Event `ReadableStream<Uint8Array>`.
 

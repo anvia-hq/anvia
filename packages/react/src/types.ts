@@ -1,3 +1,14 @@
+import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
+
+export type {
+  UIError,
+  UIMessage,
+  UIMessagePart,
+  UIMessageRole,
+  UIStreamEvent,
+  UIStreamRequest,
+} from "@anvia/core/ui";
+
 export type EventStreamFormat = "jsonl" | "sse";
 
 export type TransportOptions = {
@@ -7,15 +18,6 @@ export type TransportOptions = {
 
 export type EventTransport<TRequest, TEvent> = {
   send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
-};
-
-export type ChatRole = "system" | "user" | "assistant" | "tool";
-
-export type ChatMessage = {
-  id: string;
-  role: ChatRole;
-  content: string;
-  metadata?: unknown;
 };
 
 export type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out";
@@ -104,46 +106,48 @@ export type HumanInputState = {
   };
 };
 
-export type DefaultChatRequest = {
-  message: string;
-  history: ChatMessage[];
-  stream: true;
+export type SendMessageInput =
+  | string
+  | UIMessage
+  | {
+      id?: string;
+      text: string;
+      metadata?: UIMessage["metadata"];
+    };
+
+export type CreateChatRequestArgs = {
+  messages: UIMessage[];
 };
 
 export type UseChatStatus = "idle" | "streaming" | "error";
 
-export type UseChatOptions<
-  TRequest = DefaultChatRequest,
-  TEvent = unknown,
-  TMessage extends ChatMessage = ChatMessage,
-> = {
+export type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
   transport?: EventTransport<TRequest, TEvent>;
   endpoint?: string | URL;
   format?: EventStreamFormat;
-  initialMessages?: TMessage[];
-  createRequest?: (input: string, messages: TMessage[]) => TRequest;
+  initialMessages?: UIMessage[];
+  createRequest?: (args: CreateChatRequestArgs) => TRequest;
+  eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
   eventToDelta?: (event: TEvent) => string | undefined;
   eventToFinal?: (event: TEvent) => string | undefined;
-  humanInput?: HumanInputOptions<TEvent>;
   onEvent?: (event: TEvent) => void;
   onError?: (error: unknown) => void;
 };
 
-export type UseChatResult<TEvent = unknown, TMessage extends ChatMessage = ChatMessage> = {
-  messages: TMessage[];
+export type SetMessages = (
+  messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[]),
+) => void;
+
+export type UseChatResult<TEvent = UIStreamEvent> = {
+  messages: UIMessage[];
   events: TEvent[];
-  input: string;
-  setInput(input: string): void;
+  setMessages: SetMessages;
+  sendMessage(input: SendMessageInput): Promise<void>;
   send(input?: string): Promise<void>;
+  regenerate(): Promise<void>;
   stop(): void;
-  reset(messages?: TMessage[]): void;
+  reset(messages?: UIMessage[]): void;
   status: UseChatStatus;
   error: unknown;
   text: string;
-  humanInput: HumanInputState;
-  decidingApprovals: Set<string>;
-  answeringQuestions: Set<string>;
-  approveTool(approvalId: string, reason?: string): Promise<void>;
-  rejectTool(approvalId: string, reason?: string): Promise<void>;
-  answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]): Promise<void>;
 };

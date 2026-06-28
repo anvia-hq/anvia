@@ -96,6 +96,16 @@ for await (const event of createCompletionStream(model, {
 }
 ```
 
+Use `createCompletionUIStream` when a React UI sends standardized `UIMessage[]`:
+
+```ts
+import { createCompletionUIStream } from "@anvia/core/ui";
+
+const uiEvents = createCompletionUIStream(model, {
+  messages,
+});
+```
+
 Use `createParsedCompletion` when you want a direct completion to return schema-validated data:
 
 ```ts

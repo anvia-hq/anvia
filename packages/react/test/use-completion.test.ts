@@ -1,3 +1,4 @@
+import type { UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -10,20 +11,31 @@ afterEach(() => {
 });
 
 describe("@anvia/react useCompletion", () => {
-  it("streams deltas and replaces final output", async () => {
+  it("streams into UI messages and derives completion text", async () => {
     const onEvent = vi.fn();
-    const transport: EventTransport<
-      { prompt: string; stream: true },
-      { type: string; delta?: string; response?: { choice: { type: string; text: string }[] } }
-    > = {
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
       send: async function* (request) {
-        expect(request).toEqual({ prompt: "hello", stream: true });
-        yield { type: "text_delta", delta: "Hel" };
-        yield { type: "text_delta", delta: "lo" };
+        expect(request.messages).toMatchObject([
+          { role: "user", parts: [{ type: "text", text: "hello" }] },
+        ]);
+        expect(request.stream).toBe(true);
         yield {
-          type: "final",
-          response: { choice: [{ type: "text", text: "Hello, world!" }] },
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
         };
+        yield {
+          type: "text_delta",
+          messageId: "assistant_1",
+          partId: "assistant_1_text",
+          delta: "Hel",
+        };
+        yield {
+          type: "text_delta",
+          messageId: "assistant_1",
+          partId: "assistant_1_text",
+          delta: "lo",
+        };
+        yield { type: "message_end", messageId: "assistant_1" };
       },
     };
 
@@ -35,32 +47,72 @@ describe("@anvia/react useCompletion", () => {
 
     expect(result.current.status).toBe("idle");
     expect(result.current.error).toBeUndefined();
-    expect(result.current.completion).toBe("Hello, world!");
-    expect(onEvent).toHaveBeenCalledTimes(3);
+    expect(result.current.completion).toBe("Hello");
+    expect(result.current.messages).toMatchObject([
+      { role: "user", parts: [{ type: "text", text: "hello" }] },
+      { id: "assistant_1", role: "assistant", parts: [{ type: "text", text: "Hello" }] },
+    ]);
+    expect(onEvent).toHaveBeenCalledTimes(4);
   });
 
-  it("accumulates text deltas without final event", async () => {
-    const transport: EventTransport<unknown, { type: string; delta?: string }> = {
+  it("creates endpoint-backed transports with the standardized request shape", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(
+          streamFrom(
+            `${[
+              '{"type":"message_start","message":{"id":"assistant_1","role":"assistant","parts":[]}}',
+              '{"type":"text_delta","messageId":"assistant_1","partId":"assistant_1_text","delta":"hi"}',
+            ].join("\n")}\n`,
+          ),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() =>
+      useCompletion({ endpoint: "https://example.test/completion" }),
+    );
+
+    await act(async () => {
+      await result.current.complete("hello");
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      messages: [{ role: "user", parts: [{ type: "text", text: "hello" }] }],
+      stream: true,
+    });
+    expect(result.current.completion).toBe("hi");
+  });
+
+  it("supports custom event mapping for non-UI streams", async () => {
+    const transport: EventTransport<UIStreamRequest, { type: string; delta?: string }> = {
       send: async function* () {
-        yield { type: "text_delta", delta: "one" };
-        yield { type: "text_delta", delta: " two" };
+        yield { type: "token", delta: "one" };
+        yield { type: "token", delta: " two" };
       },
     };
 
-    const { result } = renderHook(() => useCompletion({ transport }));
+    const { result } = renderHook(() =>
+      useCompletion({
+        transport,
+        eventToDelta: (event) => (event.type === "token" ? event.delta : undefined),
+      }),
+    );
 
     await act(async () => {
       await result.current.complete("hi");
     });
 
     expect(result.current.completion).toBe("one two");
-    expect(result.current.status).toBe("idle");
   });
 
   it("does not send empty input", async () => {
-    const transport: EventTransport<unknown, unknown> = {
-      send: vi.fn(async function* () {
-        yield { type: "unexpected" };
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+      send: vi.fn(async function* (): AsyncIterable<UIStreamEvent> {
+        yield {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
       }),
     };
     const { result } = renderHook(() => useCompletion({ transport }));
@@ -83,35 +135,10 @@ describe("@anvia/react useCompletion", () => {
     ).rejects.toThrow("useCompletion requires either transport or endpoint");
   });
 
-  it("creates endpoint-backed transports", async () => {
-    const streamFrom = (text: string): ReadableStream<Uint8Array> =>
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(text));
-          controller.close();
-        },
-      });
-
-    const fetchMock = vi.fn(
-      async () => new Response(streamFrom('{"type":"text_delta","delta":"hi"}\n')),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const { result } = renderHook(() =>
-      useCompletion({ endpoint: "https://example.test/completion" }),
-    );
-
-    await act(async () => {
-      await result.current.complete("hello");
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith("https://example.test/completion", expect.any(Object));
-    expect(result.current.completion).toBe("hi");
-  });
-
   it("handles errors and reset", async () => {
     const error = new Error("failed");
     const onError = vi.fn();
-    const transport: EventTransport<unknown, unknown> = {
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
       send: () => failingEvents(error),
     };
     const { result } = renderHook(() =>
@@ -139,28 +166,16 @@ describe("@anvia/react useCompletion", () => {
     expect(result.current.completion).toBe("reset value");
   });
 
-  it("resets to empty string by default", async () => {
-    const { result } = renderHook(() => useCompletion({ initialCompletion: "initial" }));
-
-    expect(result.current.completion).toBe("initial");
-
-    act(() => {
-      result.current.reset();
-    });
-
-    expect(result.current.completion).toBe("");
-    expect(result.current.input).toBe("");
-    expect(result.current.status).toBe("idle");
-    expect(result.current.error).toBeUndefined();
-  });
-
   it("aborts active streams when stopped", async () => {
     let signal: AbortSignal | undefined;
     let completePromise!: Promise<void>;
-    const transport: EventTransport<unknown, unknown> = {
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
       send: async function* (_request, options) {
         signal = options?.signal;
-        yield { type: "text_delta", delta: "hi" };
+        yield {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
         await new Promise<void>((_resolve, reject) => {
           signal?.addEventListener(
             "abort",
@@ -188,26 +203,19 @@ describe("@anvia/react useCompletion", () => {
     expect(result.current.status).toBe("idle");
   });
 
-  it("ignores non-object default completion events", async () => {
-    const transport: EventTransport<unknown, unknown> = {
-      send: async function* () {
-        yield "plain";
-        yield null;
-      },
-    };
-    const { result } = renderHook(() => useCompletion({ transport }));
-
-    await act(async () => {
-      await result.current.complete("hi");
-    });
-
-    expect(result.current.completion).toBe("");
-  });
-
   it("supports controlled input", async () => {
-    const transport: EventTransport<unknown, { type: string; delta?: string }> = {
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
       send: async function* () {
-        yield { type: "text_delta", delta: "ok" };
+        yield {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
+        yield {
+          type: "text_delta",
+          messageId: "assistant_1",
+          partId: "assistant_1_text",
+          delta: "ok",
+        };
       },
     };
     const { result } = renderHook(() => useCompletion({ transport }));
@@ -227,7 +235,7 @@ describe("@anvia/react useCompletion", () => {
   });
 });
 
-function failingEvents(error: unknown): AsyncIterable<unknown> {
+function failingEvents(error: unknown): AsyncIterable<UIStreamEvent> {
   return {
     [Symbol.asyncIterator]() {
       return {
@@ -237,4 +245,13 @@ function failingEvents(error: unknown): AsyncIterable<unknown> {
       };
     },
   };
+}
+
+function streamFrom(text: string): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    },
+  });
 }

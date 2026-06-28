@@ -31,6 +31,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@anvia/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^24.9.1",
     "@vitest/coverage-v8": "4.1.5",

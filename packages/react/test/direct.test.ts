@@ -1,7 +1,13 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createDirectTransport, useChat, useCompletion } from "../src";
+import {
+  createDirectTransport,
+  type UIStreamEvent,
+  type UIStreamRequest,
+  useChat,
+  useCompletion,
+} from "../src";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -75,17 +81,24 @@ describe("@anvia/react createDirectTransport", () => {
   });
 
   it("works with useCompletion", async () => {
-    const transport = createDirectTransport<
-      { prompt: string; stream: true },
-      { type: string; delta?: string; response?: { choice: { type: string; text: string }[] } }
-    >(async function* (request) {
-      expect(request.prompt).toBe("hello");
-      yield { type: "text_delta", delta: "world" };
-      yield {
-        type: "final",
-        response: { choice: [{ type: "text", text: "world" }] },
-      };
-    });
+    const transport = createDirectTransport<UIStreamRequest, UIStreamEvent>(
+      async function* (request) {
+        expect(request.messages[0]).toMatchObject({
+          role: "user",
+          parts: [{ type: "text", text: "hello" }],
+        });
+        yield {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
+        yield {
+          type: "text_delta",
+          messageId: "assistant_1",
+          partId: "assistant_1_text",
+          delta: "world",
+        };
+      },
+    );
 
     const { result } = renderHook(() => useCompletion({ transport }));
 
@@ -98,14 +111,24 @@ describe("@anvia/react createDirectTransport", () => {
   });
 
   it("works with useChat", async () => {
-    const transport = createDirectTransport<
-      { message: string; history: unknown[]; stream: true },
-      { type: string; delta?: string; output?: string }
-    >(async function* (request) {
-      expect(request.message).toBe("hi");
-      yield { type: "text_delta", delta: "Hey" };
-      yield { type: "final", output: "Hey there" };
-    });
+    const transport = createDirectTransport<UIStreamRequest, UIStreamEvent>(
+      async function* (request) {
+        expect(request.messages[0]).toMatchObject({
+          role: "user",
+          parts: [{ type: "text", text: "hi" }],
+        });
+        yield {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
+        yield {
+          type: "text_delta",
+          messageId: "assistant_1",
+          partId: "assistant_1_text",
+          delta: "Hey there",
+        };
+      },
+    );
 
     const { result } = renderHook(() => useChat({ transport }));
 

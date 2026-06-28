@@ -92,6 +92,10 @@
       "types": "./dist/tool/index.d.ts",
       "import": "./dist/tool/index.js"
     },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    },
     "./transcription": {
       "types": "./dist/transcription/index.d.ts",
       "import": "./dist/transcription/index.js"
@@ -102,7 +106,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/ui/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

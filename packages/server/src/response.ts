@@ -1,3 +1,4 @@
+import type { UIStreamEvent } from "@anvia/core/ui";
 import { createJsonlStream } from "./jsonl";
 import { createSseStream } from "./sse";
 import type { CreateEventStreamOptions } from "./types";
@@ -40,4 +41,11 @@ export function createEventStream<TEvent>(
   }
 
   return new Response(body, responseInit);
+}
+
+export function createUIStreamResponse(
+  events: AsyncIterable<UIStreamEvent>,
+  options: CreateEventStreamOptions<UIStreamEvent> = {},
+): Response {
+  return createEventStream(events, options);
 }

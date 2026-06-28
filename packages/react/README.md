@@ -62,3 +62,10 @@ type EventTransport<TRequest, TEvent> = {
   send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
 };
 ```
+
+Default hooks can consume raw `createCompletionStream(...)` events, raw agent stream events, or
+`UIStreamEvent` records. A completion endpoint can return:
+
+```ts
+createEventStream(createCompletionStream(model, { messages: body.messages }));
+```

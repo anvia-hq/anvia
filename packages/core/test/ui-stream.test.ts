@@ -9,12 +9,13 @@ import {
   type CompletionResponse,
   type CompletionStreamEvent,
   createAgentUIStream,
+  createCompletion,
+  createCompletionStream,
   createCompletionUIStream,
   createTool,
   Message,
   type StreamingCompletionModel,
   type UIMessage,
-  type UIStreamEvent,
   Usage,
   uiMessagesToCoreMessages,
 } from "./helpers/imports";
@@ -37,7 +38,8 @@ class StreamModel implements StreamingCompletionModel {
 
   constructor(private readonly turns: CompletionStreamEvent[][]) {}
 
-  async completion(_request: CompletionRequest): Promise<CompletionResponse> {
+  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+    this.requests.push(request);
     return {
       choice: [AssistantContent.text("ok")],
       usage: Usage.empty(),
@@ -89,6 +91,65 @@ describe("UI message adapters", () => {
         "assistant_1",
       ),
     ]);
+  });
+
+  it("accepts UI messages in createCompletionStream options", async () => {
+    const model = new StreamModel([
+      [
+        {
+          type: "final",
+          response: {
+            choice: [AssistantContent.text("Hello")],
+            usage: Usage.empty(),
+            rawResponse: {},
+          },
+        },
+      ],
+    ]);
+
+    await collect(
+      createCompletionStream(model, {
+        messages: [
+          {
+            id: "user_1",
+            role: "user",
+            parts: [{ id: "part_1", type: "text", text: "Hello" }],
+          },
+        ],
+      }),
+    );
+
+    expect(model.requests[0]?.chatHistory).toEqual([Message.user("Hello")]);
+  });
+
+  it("accepts a UI message as createCompletion input", async () => {
+    const model = new StreamModel([]);
+
+    const result = await createCompletion(model, {
+      input: {
+        id: "user_1",
+        role: "user",
+        parts: [{ id: "part_1", type: "text", text: "Hello" }],
+      },
+    });
+
+    expect(result.text).toBe("ok");
+    expect(model.requests[0]?.chatHistory).toEqual([Message.user("Hello")]);
+  });
+
+  it("rejects mixed core and UI message arrays", () => {
+    const model = new StreamModel([]);
+    const uiMessage: UIMessage = {
+      id: "user_1",
+      role: "user",
+      parts: [{ id: "part_1", type: "text", text: "Hello" }],
+    };
+
+    expect(() =>
+      createCompletionStream(model, {
+        messages: [Message.user("Hi"), uiMessage] as never,
+      }),
+    ).toThrow("messages must contain only Message[] or only UIMessage[]");
   });
 
   it("normalizes completion streams into UI stream events", async () => {
@@ -231,9 +292,7 @@ describe("UI message adapters", () => {
   });
 });
 
-async function collect<TEvent extends UIStreamEvent>(
-  events: AsyncIterable<TEvent>,
-): Promise<TEvent[]> {
+async function collect<TEvent>(events: AsyncIterable<TEvent>): Promise<TEvent[]> {
   const collected: TEvent[] = [];
   for await (const event of events) {
     collected.push(event);

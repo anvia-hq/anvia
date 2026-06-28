@@ -281,11 +281,11 @@ Notable errors: throws `CompletionCapabilityError` for unsupported tools, tool c
 ## Direct Completion Helpers
 
 ```ts
-type CreateCompletionInput = string | Message | Message[];
+type CreateCompletionInput = string | Message | Message[] | UIMessage | UIMessage[];
 
 type CreateCompletionBaseOptions = {
   input?: CreateCompletionInput;
-  messages?: Message[];
+  messages?: Message[] | UIMessage[];
   instructions?: string;
   documents?: Document[];
   tools?: ToolDefinition[];
@@ -337,13 +337,15 @@ Return behavior: `createCompletion(...)` always returns a promise for the final 
 
 `createParsedCompletion(...)` converts `schema` to `outputSchema`, calls the model once, parses the assistant text as JSON, validates it with the same schema, and returns `data` plus the normal completion result fields.
 
-`messages` supplies an existing transcript. `input` accepts a string, one message, or multiple messages and is appended after `messages`. At least one of `input` or `messages` is required.
+`messages` supplies an existing transcript. It can be core `Message[]` or React-facing `UIMessage[]`. `input` accepts a string, one message, or multiple messages and is appended after `messages`. At least one of `input` or `messages` is required.
+
+`UIMessage[]` is normalized internally, so endpoints used by `@anvia/react` can pass `body.messages` directly to `createCompletion(...)`, `createCompletionStream(...)`, or `createParsedCompletion(...)`.
 
 `params` maps to `CompletionRequest.additionalParams` for provider-specific options.
 
 Notable errors: `createCompletion(...)` rejects if input is empty or the request uses unsupported model features. `createCompletionStream(...)` throws before returning the stream when validation fails or when the model does not support streaming. `createParsedCompletion(...)` also rejects when the response text is not valid JSON or does not match `schema`.
 
-Direct completion streams are raw model streams. They can include text deltas, reasoning deltas, tool call deltas, tool calls, message ids, final responses, and errors. They do not execute tools and do not emit agent stream events such as `turn_start`, `tool_result`, `agent_tool_event`, or agent `final` output.
+Direct completion streams are raw model streams. They can include text deltas, reasoning deltas, tool call deltas, tool calls, message ids, final responses, and errors. They do not execute tools and do not emit agent stream events such as `turn_start`, `tool_result`, `agent_tool_event`, or agent `final` output. `@anvia/react` hooks consume these raw completion streams by default.
 
 ## CompletionRequestBuilder
 

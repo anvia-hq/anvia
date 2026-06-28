@@ -1,4 +1,5 @@
-import type { UIMessage, UIMessagePart, UIStreamEvent } from "@anvia/core/ui";
+import type { JsonValue } from "@anvia/core/completion";
+import type { UIError, UIMessage, UIMessagePart, UIStreamEvent } from "@anvia/core/ui";
 import type { SendMessageInput } from "./types";
 
 export function createUserMessage(input: SendMessageInput): UIMessage | undefined {
@@ -78,6 +79,109 @@ export function applyUIStreamEvent(messages: UIMessage[], event: UIStreamEvent):
   return messages;
 }
 
+export function applyAnviaStreamEvent(
+  messages: UIMessage[],
+  event: unknown,
+): UIMessage[] | undefined {
+  const uiEvent = asUIStreamEvent(event);
+  if (uiEvent !== undefined) {
+    return applyUIStreamEvent(messages, uiEvent);
+  }
+
+  if (!isRecord(event) || typeof event.type !== "string") {
+    return undefined;
+  }
+
+  if (event.type === "text_delta" && typeof event.delta === "string") {
+    return appendAssistantDelta(messages, event.delta);
+  }
+
+  if (event.type === "reasoning_delta" && typeof event.delta === "string") {
+    return appendAssistantReasoningDelta(
+      messages,
+      event.delta,
+      typeof event.id === "string" ? event.id : undefined,
+    );
+  }
+
+  if (event.type === "tool_call_delta" && typeof event.id === "string") {
+    const part: UIMessagePart = {
+      id: toolPartId(event.id),
+      type: "tool",
+      toolName: typeof event.name === "string" ? event.name : "",
+      toolCallId: event.id,
+      ...(typeof event.callId === "string" ? { callId: event.callId } : {}),
+      state: "input-streaming",
+      ...(typeof event.argumentsDelta === "string" ? { input: event.argumentsDelta } : {}),
+    };
+    return updateAssistantToolPart(messages, part);
+  }
+
+  if (event.type === "tool_call" && isToolCall(event.toolCall)) {
+    const part: UIMessagePart = {
+      id: toolPartId(event.toolCall.id),
+      type: "tool",
+      toolName: event.toolCall.function.name,
+      toolCallId: event.toolCall.id,
+      ...(typeof event.toolCall.callId === "string" ? { callId: event.toolCall.callId } : {}),
+      state: "input-available",
+      input: event.toolCall.function.arguments,
+    };
+    return updateAssistantToolPart(messages, part);
+  }
+
+  if (event.type === "tool_result") {
+    const toolCallId =
+      typeof event.toolCallId === "string"
+        ? event.toolCallId
+        : typeof event.internalCallId === "string"
+          ? event.internalCallId
+          : undefined;
+    if (toolCallId === undefined || typeof event.toolName !== "string") {
+      return undefined;
+    }
+    const part: UIMessagePart = {
+      id: toolPartId(toolCallId),
+      type: "tool",
+      toolName: event.toolName,
+      toolCallId,
+      ...(typeof event.toolCallId === "string" ? { callId: event.toolCallId } : {}),
+      state: "output-available",
+      output: Array.isArray(event.structuredResult)
+        ? (event.structuredResult as JsonValue)
+        : valueToJson(event.result),
+    };
+    return updateAssistantToolPart(messages, part);
+  }
+
+  if (event.type === "message_id" && typeof event.id === "string") {
+    return setLastAssistantMetadata(messages, { providerMessageId: event.id });
+  }
+
+  if (event.type === "final") {
+    if (isRecord(event.response) && Array.isArray(event.response.choice)) {
+      const next = replaceAssistantText(messages, textFromAssistantContent(event.response.choice));
+      const providerMessageId = event.response.messageId;
+      return typeof providerMessageId === "string"
+        ? setLastAssistantMetadata(next, { providerMessageId })
+        : next;
+    }
+
+    if (typeof event.output === "string") {
+      const next = replaceAssistantText(messages, event.output);
+      return typeof event.runId === "string"
+        ? setLastAssistantMetadata(next, { runId: event.runId })
+        : next;
+    }
+  }
+
+  if (event.type === "error" && "error" in event) {
+    return appendAssistantError(messages, errorFromUnknown(event.error));
+  }
+
+  return undefined;
+}
+
 export function assistantText(messages: UIMessage[]): string {
   const assistant = [...messages].reverse().find((message) => message.role === "assistant");
   if (assistant === undefined) {
@@ -103,6 +207,28 @@ export function appendAssistantDelta(messages: UIMessage[], delta: string): UIMe
   });
 }
 
+export function appendAssistantReasoningDelta(
+  messages: UIMessage[],
+  delta: string,
+  reasoningId?: string,
+): UIMessage[] {
+  const current = ensureAssistantMessage(messages);
+  const assistant = current[current.length - 1];
+  if (assistant === undefined) {
+    return current;
+  }
+  const partId =
+    reasoningId === undefined
+      ? `${assistant.id}_reasoning`
+      : `${assistant.id}_reasoning_${reasoningId}`;
+  return updateMessagePart(current, assistant.id, {
+    id: partId,
+    type: "reasoning",
+    text: delta,
+    ...(reasoningId === undefined ? {} : { reasoningId }),
+  });
+}
+
 export function replaceAssistantText(messages: UIMessage[], text: string): UIMessage[] {
   const current = ensureAssistantMessage(messages);
   const assistant = current[current.length - 1];
@@ -110,12 +236,7 @@ export function replaceAssistantText(messages: UIMessage[], text: string): UIMes
     return current;
   }
   return current.map((message) =>
-    message.id === assistant.id
-      ? {
-          ...message,
-          parts: [{ id: `${assistant.id}_text`, type: "text", text }],
-        }
-      : message,
+    message.id === assistant.id ? { ...message, parts: replaceTextPart(message, text) } : message,
   );
 }
 
@@ -154,6 +275,50 @@ function updateMessagePart(
   });
 }
 
+function updateAssistantToolPart(messages: UIMessage[], part: UIMessagePart): UIMessage[] {
+  const current = ensureAssistantMessage(messages);
+  const assistant = current[current.length - 1];
+  return assistant === undefined ? current : updateMessagePart(current, assistant.id, part);
+}
+
+function appendAssistantError(messages: UIMessage[], error: UIError): UIMessage[] {
+  const messageId = createId("msg");
+  return [
+    ...messages,
+    {
+      id: messageId,
+      role: "assistant",
+      parts: [{ id: createId("part"), type: "error", error }],
+    },
+  ];
+}
+
+function setLastAssistantMetadata(messages: UIMessage[], metadata: JsonValue): UIMessage[] {
+  const current = ensureAssistantMessage(messages);
+  const assistant = current[current.length - 1];
+  if (assistant === undefined) {
+    return current;
+  }
+  return current.map((message) =>
+    message.id === assistant.id
+      ? { ...message, metadata: mergeMetadata(message.metadata, metadata) }
+      : message,
+  );
+}
+
+function replaceTextPart(message: UIMessage, text: string): UIMessagePart[] {
+  const index = message.parts.findIndex((part) => part.type === "text");
+  if (index === -1) {
+    return [...message.parts, { id: `${message.id}_text`, type: "text", text }];
+  }
+  const parts = [...message.parts];
+  const current = parts[index];
+  if (current?.type === "text") {
+    parts[index] = { ...current, text };
+  }
+  return parts;
+}
+
 function ensureAssistantMessage(messages: UIMessage[]): UIMessage[] {
   const last = messages.at(-1);
   if (last?.role === "assistant") {
@@ -183,4 +348,125 @@ function createId(prefix: string): string {
 
 function isUIMessage(input: SendMessageInput): input is UIMessage {
   return typeof input !== "string" && "role" in input && Array.isArray(input.parts);
+}
+
+function asUIStreamEvent(event: unknown): UIStreamEvent | undefined {
+  if (!isRecord(event) || typeof event.type !== "string") {
+    return undefined;
+  }
+
+  if (event.type === "message_start" && isStreamMessage(event.message)) {
+    return event as UIStreamEvent;
+  }
+  if (
+    (event.type === "text_delta" || event.type === "reasoning_delta") &&
+    typeof event.messageId === "string" &&
+    typeof event.partId === "string" &&
+    typeof event.delta === "string"
+  ) {
+    return event as UIStreamEvent;
+  }
+  if (
+    event.type === "tool_update" &&
+    typeof event.messageId === "string" &&
+    typeof event.partId === "string" &&
+    isUIMessagePart(event.part)
+  ) {
+    return event as UIStreamEvent;
+  }
+  if (event.type === "message_end" && typeof event.messageId === "string") {
+    return event as UIStreamEvent;
+  }
+  if (event.type === "error" && isUIError(event.error)) {
+    return event as UIStreamEvent;
+  }
+  return undefined;
+}
+
+function isStreamMessage(value: unknown): value is UIMessage {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.role === "string" &&
+    Array.isArray(value.parts)
+  );
+}
+
+function isUIMessagePart(value: unknown): value is UIMessagePart {
+  return isRecord(value) && typeof value.id === "string" && typeof value.type === "string";
+}
+
+function isUIError(value: unknown): value is UIError {
+  return isRecord(value) && typeof value.message === "string";
+}
+
+function isToolCall(value: unknown): value is {
+  id: string;
+  callId?: string;
+  function: { name: string; arguments: JsonValue };
+} {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isRecord(value.function) &&
+    typeof value.function.name === "string" &&
+    "arguments" in value.function
+  );
+}
+
+function textFromAssistantContent(content: unknown[]): string {
+  return content
+    .flatMap((item) =>
+      isRecord(item) && item.type === "text" && typeof item.text === "string" ? [item.text] : [],
+    )
+    .join("\n");
+}
+
+function errorFromUnknown(error: unknown): UIError {
+  if (error instanceof Error) {
+    return { name: error.name, message: error.message };
+  }
+  return { message: typeof error === "string" ? error : stringifyUnknown(error) };
+}
+
+function stringifyUnknown(value: unknown): string {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? String(value) : serialized;
+  } catch {
+    return String(value);
+  }
+}
+
+function valueToJson(value: unknown): JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    Array.isArray(value) ||
+    isRecord(value)
+  ) {
+    return value as JsonValue;
+  }
+  return stringifyUnknown(value);
+}
+
+function mergeMetadata(current: UIMessage["metadata"], next: JsonValue): JsonValue {
+  if (isJsonObject(current) && isJsonObject(next)) {
+    return { ...current, ...next };
+  }
+  return next;
+}
+
+function isJsonObject(value: unknown): value is Record<string, JsonValue | undefined> {
+  return isRecord(value) && !Array.isArray(value);
+}
+
+function toolPartId(toolCallId: string): string {
+  return `tool_${toolCallId}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

@@ -96,13 +96,17 @@ for await (const event of createCompletionStream(model, {
 }
 ```
 
-Use `createCompletionUIStream` when a React UI sends standardized `UIMessage[]`:
+React hooks send standardized `UIMessage[]` in their request body. Pass those messages directly to
+`createCompletionStream`; the helper normalizes them before calling the provider:
 
 ```ts
-import { createCompletionUIStream } from "@anvia/core/ui";
+import { createCompletionStream } from "@anvia/core";
+import type { UIStreamRequest } from "@anvia/core/ui";
 
-const uiEvents = createCompletionUIStream(model, {
-  messages,
+const body = (await request.json()) as UIStreamRequest;
+
+const events = createCompletionStream(model, {
+  messages: body.messages,
 });
 ```
 

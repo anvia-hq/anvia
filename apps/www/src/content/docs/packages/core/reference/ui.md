@@ -75,7 +75,7 @@ type CreateAgentUIStreamOptions = {
 };
 ```
 
-Purpose: shared UI protocol for single-turn completions and multi-turn agent runs. The request always carries `messages`, and the response always emits `UIStreamEvent` records that build assistant `UIMessage` state on the client.
+Purpose: shared UI message shape for React-facing completion and chat state. The request always carries `messages`. React hooks can consume raw completion streams, raw agent streams, or `UIStreamEvent` records.
 
 ## uiMessagesToCoreMessages
 
@@ -106,9 +106,11 @@ function createCompletionUIStream<Model extends StreamingCompletionModel>(
 ): AsyncIterable<UIStreamEvent>;
 ```
 
-Purpose: run `createCompletionStream(...)` from UI messages and adapt the completion stream into UI stream events.
+Purpose: advanced adapter that runs `createCompletionStream(...)` from UI messages and adapts the completion stream into UI stream events.
 
 Return behavior: yields an assistant `message_start`, text or reasoning deltas, tool updates, `message_end`, and error events.
+
+For normal React completion routes, prefer calling `createCompletionStream(model, { messages: body.messages })` directly.
 
 ## createAgentUIStream
 
@@ -119,7 +121,7 @@ function createAgentUIStream(
 ): AsyncIterable<UIStreamEvent>;
 ```
 
-Purpose: run an agent from UI messages and adapt the agent stream into the same UI stream protocol used by completions.
+Purpose: advanced adapter that runs an agent from UI messages and adapts the agent stream into the UI stream protocol.
 
 Return behavior: yields assistant message events that can be consumed by `useChat` or `useCompletion` from `@anvia/react`.
 

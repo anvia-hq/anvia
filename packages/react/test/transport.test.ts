@@ -1,3 +1,5 @@
+import type { AgentStreamEvent } from "@anvia/core/agent";
+import { AssistantContent, type CompletionStreamEvent, Usage } from "@anvia/core/completion";
 import type { UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -158,8 +160,8 @@ describe("@anvia/react useChat", () => {
         new Response(
           streamFrom(
             `${[
-              '{"type":"message_start","message":{"id":"assistant_1","role":"assistant","parts":[]}}',
-              '{"type":"text_delta","messageId":"assistant_1","partId":"assistant_1_text","delta":"hi"}',
+              '{"type":"text_delta","delta":"hi"}',
+              '{"type":"final","response":{"choice":[{"type":"text","text":"hi"}],"usage":{"inputTokens":0,"outputTokens":0,"totalTokens":0,"cachedInputTokens":0,"cacheCreationInputTokens":0},"rawResponse":{}}}',
             ].join("\n")}\n`,
           ),
           { headers: { "content-type": "application/x-ndjson" } },
@@ -178,6 +180,93 @@ describe("@anvia/react useChat", () => {
       stream: true,
     });
     expect(result.current.text).toBe("hi");
+  });
+
+  it("applies raw completion stream events", async () => {
+    const transport: EventTransport<UIStreamRequest, CompletionStreamEvent> = {
+      send: async function* () {
+        yield { type: "text_delta", delta: "Hel" };
+        yield { type: "text_delta", delta: "lo" };
+        yield {
+          type: "final",
+          response: {
+            choice: [AssistantContent.text("Hello")],
+            usage: Usage.empty(),
+            rawResponse: {},
+            messageId: "provider_1",
+          },
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    expect(result.current.text).toBe("Hello");
+    expect(result.current.messages).toMatchObject([
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "Hello" }],
+        metadata: { providerMessageId: "provider_1" },
+      },
+    ]);
+  });
+
+  it("applies raw agent stream events", async () => {
+    const transport: EventTransport<UIStreamRequest, AgentStreamEvent> = {
+      send: async function* () {
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall("tool_1", "add", { x: 2, y: 5 }, "call_1"),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "add",
+          toolCallId: "call_1",
+          internalCallId: "tool_1",
+          args: '{"x":2,"y":5}',
+          result: "7",
+        };
+        yield { type: "text_delta", turn: 1, delta: "7" };
+        yield {
+          type: "final",
+          runId: "run_1",
+          output: "7",
+          usage: Usage.empty(),
+          messages: [],
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("add");
+    });
+
+    expect(result.current.text).toBe("7");
+    expect(result.current.messages).toMatchObject([
+      { role: "user", parts: [{ type: "text", text: "add" }] },
+      {
+        role: "assistant",
+        metadata: { runId: "run_1" },
+      },
+    ]);
+    expect(result.current.messages[1]?.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool",
+          toolName: "add",
+          state: "output-available",
+          output: "7",
+        }),
+        expect.objectContaining({ type: "text", text: "7" }),
+      ]),
+    );
   });
 
   it("supports custom event mapping for non-UI streams", async () => {

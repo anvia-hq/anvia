@@ -1,4 +1,6 @@
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
+import { isUIMessage, uiMessagesToCoreMessages } from "../ui/messages";
+import type { UIMessage } from "../ui/types";
 import type {
   AssistantContent,
   CompletionModel,
@@ -16,11 +18,11 @@ import type {
 } from "./types";
 import { assertCompletionRequestSupported, Message, textFromAssistantContent } from "./types";
 
-export type CreateCompletionInput = string | MessageType | MessageType[];
+export type CreateCompletionInput = string | MessageType | MessageType[] | UIMessage | UIMessage[];
 
 export type CreateCompletionBaseOptions = {
   input?: CreateCompletionInput | undefined;
-  messages?: MessageType[] | undefined;
+  messages?: MessageType[] | UIMessage[] | undefined;
   instructions?: string | undefined;
   documents?: Document[] | undefined;
   tools?: ToolDefinition[] | undefined;
@@ -120,7 +122,10 @@ function toCompletionRequest(
   options: CreateCompletionBaseOptions,
   helperName = "createCompletion",
 ): CompletionRequest {
-  const chatHistory = [...(options.messages ?? []), ...messagesFromInput(options.input)];
+  const chatHistory = [
+    ...messagesFromMessages(options.messages),
+    ...messagesFromInput(options.input),
+  ];
 
   if (chatHistory.length === 0) {
     throw new Error(`${helperName} requires input or messages.`);
@@ -151,10 +156,62 @@ function messagesFromInput(input: CreateCompletionInput | undefined): MessageTyp
   if (typeof input === "string") {
     return [Message.user(input)];
   }
-  return Array.isArray(input) ? [...input] : [input];
+  if (Array.isArray(input)) {
+    return normalizeMessageArray(input, "input");
+  }
+  if (isUIMessage(input)) {
+    return uiMessagesToCoreMessages([input]);
+  }
+  return [input];
 }
 
-export function isStreamingCompletionModel(model: CompletionModel): model is StreamingCompletionModel {
+function messagesFromMessages(messages: MessageType[] | UIMessage[] | undefined): MessageType[] {
+  return messages === undefined ? [] : normalizeMessageArray(messages, "messages");
+}
+
+function normalizeMessageArray(
+  messages: (MessageType | UIMessage)[],
+  fieldName: "input" | "messages",
+): MessageType[] {
+  const hasUIMessage = messages.some(isUIMessage);
+  const hasCoreMessage = messages.some(isCoreMessage);
+
+  if (hasUIMessage && hasCoreMessage) {
+    throw new TypeError(`${fieldName} must contain only Message[] or only UIMessage[].`);
+  }
+
+  if (hasUIMessage) {
+    if (!messages.every(isUIMessage)) {
+      throw new TypeError(`${fieldName} must contain only UIMessage values.`);
+    }
+    return uiMessagesToCoreMessages(messages);
+  }
+
+  if (!messages.every(isCoreMessage)) {
+    throw new TypeError(`${fieldName} must contain only Message values.`);
+  }
+
+  return [...messages];
+}
+
+function isCoreMessage(value: unknown): value is MessageType {
+  return (
+    isRecord(value) &&
+    (value.role === "system" ||
+      value.role === "user" ||
+      value.role === "assistant" ||
+      value.role === "tool") &&
+    "content" in value
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function isStreamingCompletionModel(
+  model: CompletionModel,
+): model is StreamingCompletionModel {
   return typeof (model as { streamCompletion?: unknown }).streamCompletion === "function";
 }
 

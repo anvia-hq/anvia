@@ -5,6 +5,7 @@ import { createFetchTransport } from "./transport";
 import type { EventStreamFormat, EventTransport } from "./types";
 import {
   appendAssistantDelta,
+  applyAnviaStreamEvent,
   applyUIStreamEvent,
   assistantText,
   createUserMessage,
@@ -102,18 +103,30 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
 
   const applyEvent = useCallback(
     (event: TEvent) => {
-      const uiEvent =
-        options.eventToUIEvent === undefined
-          ? eventAsUIStreamEvent(event)
-          : options.eventToUIEvent(event);
-
-      if (uiEvent !== undefined) {
+      const mappedUIEvent = options.eventToUIEvent?.(event);
+      if (mappedUIEvent !== undefined) {
         setMessagesState((current) => {
-          const next = applyUIStreamEvent(current, uiEvent);
+          const next = applyUIStreamEvent(current, mappedUIEvent);
           messagesRef.current = next;
           return next;
         });
         return;
+      }
+
+      if (options.eventToUIEvent === undefined) {
+        let handled = false;
+        setMessagesState((current) => {
+          const next = applyAnviaStreamEvent(current, event);
+          if (next === undefined) {
+            return current;
+          }
+          handled = true;
+          messagesRef.current = next;
+          return next;
+        });
+        if (handled) {
+          return;
+        }
       }
 
       const delta = options.eventToDelta?.(event);
@@ -239,27 +252,6 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
   };
 }
 
-function eventAsUIStreamEvent(event: unknown): UIStreamEvent | undefined {
-  if (!isRecord(event) || typeof event.type !== "string") {
-    return undefined;
-  }
-  if (
-    event.type === "message_start" ||
-    event.type === "text_delta" ||
-    event.type === "reasoning_delta" ||
-    event.type === "tool_update" ||
-    event.type === "message_end" ||
-    event.type === "error"
-  ) {
-    return event as UIStreamEvent;
-  }
-  return undefined;
-}
-
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

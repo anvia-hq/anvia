@@ -1,3 +1,4 @@
+import { AssistantContent, type CompletionStreamEvent, Usage } from "@anvia/core/completion";
 import type { UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,29 +14,29 @@ afterEach(() => {
 describe("@anvia/react useCompletion", () => {
   it("streams into UI messages and derives completion text", async () => {
     const onEvent = vi.fn();
-    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+    const transport: EventTransport<UIStreamRequest, CompletionStreamEvent> = {
       send: async function* (request) {
         expect(request.messages).toMatchObject([
           { role: "user", parts: [{ type: "text", text: "hello" }] },
         ]);
         expect(request.stream).toBe(true);
-        yield {
-          type: "message_start",
-          message: { id: "assistant_1", role: "assistant", parts: [] },
-        };
+        yield { type: "message_id", id: "provider_1" };
         yield {
           type: "text_delta",
-          messageId: "assistant_1",
-          partId: "assistant_1_text",
           delta: "Hel",
         };
         yield {
           type: "text_delta",
-          messageId: "assistant_1",
-          partId: "assistant_1_text",
           delta: "lo",
         };
-        yield { type: "message_end", messageId: "assistant_1" };
+        yield {
+          type: "final",
+          response: {
+            choice: [AssistantContent.text("Hello")],
+            usage: Usage.empty(),
+            rawResponse: {},
+          },
+        };
       },
     };
 
@@ -50,7 +51,11 @@ describe("@anvia/react useCompletion", () => {
     expect(result.current.completion).toBe("Hello");
     expect(result.current.messages).toMatchObject([
       { role: "user", parts: [{ type: "text", text: "hello" }] },
-      { id: "assistant_1", role: "assistant", parts: [{ type: "text", text: "Hello" }] },
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "Hello" }],
+        metadata: { providerMessageId: "provider_1" },
+      },
     ]);
     expect(onEvent).toHaveBeenCalledTimes(4);
   });
@@ -61,8 +66,8 @@ describe("@anvia/react useCompletion", () => {
         new Response(
           streamFrom(
             `${[
-              '{"type":"message_start","message":{"id":"assistant_1","role":"assistant","parts":[]}}',
-              '{"type":"text_delta","messageId":"assistant_1","partId":"assistant_1_text","delta":"hi"}',
+              '{"type":"text_delta","delta":"hi"}',
+              '{"type":"final","response":{"choice":[{"type":"text","text":"hi"}],"usage":{"inputTokens":0,"outputTokens":0,"totalTokens":0,"cachedInputTokens":0,"cacheCreationInputTokens":0},"rawResponse":{}}}',
             ].join("\n")}\n`,
           ),
         ),

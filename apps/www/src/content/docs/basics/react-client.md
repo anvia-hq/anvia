@@ -23,24 +23,32 @@ Install `@anvia/react` and expose a server route that returns Anvia runtime even
 
 ```tsx
 import { useChat } from "@anvia/react";
+import { useState } from "react";
 
 export function Chat() {
   const chat = useChat({ endpoint: "/api/chat" });
+  const [input, setInput] = useState("");
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void chat.send();
+        void chat.sendMessage(input);
+        setInput("");
       }}
     >
       <div>
         {chat.messages.map((message) => (
-          <p key={message.id}>{message.content}</p>
+          <p key={message.id}>
+            {message.parts
+              .filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join("")}
+          </p>
         ))}
       </div>
 
-      <input value={chat.input} onChange={(event) => chat.setInput(event.target.value)} />
+      <input value={input} onChange={(event) => setInput(event.target.value)} />
       <button disabled={chat.status === "streaming"}>Send</button>
     </form>
   );
@@ -52,14 +60,14 @@ export function Chat() {
 `useChat` creates a fetch-backed transport when you pass `endpoint`. It sends the default chat request body:
 
 ```ts
-type DefaultChatRequest = {
-  message: string;
-  history: ChatMessage[];
+type UIStreamRequest = {
+  messages: UIMessage[];
   stream: true;
+  metadata?: JsonValue;
 };
 ```
 
-It reads JSONL by default and updates message state from runtime events.
+It reads JSONL by default and updates message state from raw completion streams, raw agent streams, or UI stream events.
 
 Use `createRequest` or a custom transport when your server expects a different request shape or event mapping.
 

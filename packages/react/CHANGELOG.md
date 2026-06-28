@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 0.7.2
+
+### Patch Changes
+
+- 4a3771d: Append `useCompletion` turns to existing message state before sending requests.
+
 ## 0.7.1
 
 ### Patch Changes

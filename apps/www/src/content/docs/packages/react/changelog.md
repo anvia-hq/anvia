@@ -10,6 +10,44 @@ sidebar:
 
 Release history mirrored from `packages/react/CHANGELOG.md`.
 
+## 0.7.2
+
+### Patch Changes
+
+- 4a3771d: Append `useCompletion` turns to existing message state before sending requests.
+
+## 0.7.1
+
+### Patch Changes
+
+- 4068a2a: Send converted core messages from React hooks and keep completion helpers limited to core `Message` input.
+- Updated dependencies [4068a2a]
+  - @anvia/core@0.11.0
+
+## 0.7.0
+
+### Minor Changes
+
+- 9e4de00: Improve completion stream DX by allowing `createCompletionStream()` and `createCompletion()` to accept UI messages directly, and by letting React hooks consume raw completion or agent stream events without a separate UI stream adapter.
+
+### Patch Changes
+
+- Updated dependencies [9e4de00]
+  - @anvia/core@0.10.0
+
+## 0.6.0
+
+### Minor Changes
+
+- ca25fca: Add the shared UI message stream protocol for React-facing completions and agents.
+
+  `@anvia/core` now exposes `@anvia/core/ui` with UI message types, core/UI message conversion helpers, and adapters for completion and agent streams. `@anvia/server` adds `createUIStreamResponse`. `@anvia/react` now standardizes `useChat` and `useCompletion` around `UIMessage[]` state and the `{ messages, stream: true }` request shape.
+
+### Patch Changes
+
+- Updated dependencies [ca25fca]
+  - @anvia/core@0.9.0
+
 ## 0.5.0
 
 ### Minor Changes

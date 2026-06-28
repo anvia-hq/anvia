@@ -4,7 +4,7 @@ description: A pattern for coordinating specialist agents inside one parent work
 section: examples
 sidebar:
   group: Workflow Patterns
-  order: 4
+  order: 5
 ---
 
 Multi-agent coordination should keep one parent workflow in charge. Specialists can do focused work, but the coordinator owns the final response, trace, turn limit, and product persistence.

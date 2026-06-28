@@ -19,7 +19,7 @@ The concrete RAG stack used in examples is Mistral OCR, OpenAI embeddings, and C
 | Runtime composition | [Agent Runtime Composition](/docs/examples/agent-runtime-composition) | Model, instructions, tools, context, memory, observers, and output contracts are assembled at the right boundary. |
 | Request runners | [Agent App Flow](/docs/examples/agent-app-flow), [Pipeline Worker](/docs/examples/pipeline-worker) | Routes, jobs, and tests call the same workflow function. |
 | Memory and sessions | [Context Assembly](/docs/examples/context-assembly), [Runtime State and Persistence](/docs/examples/runtime-state-persistence) | Conversation state is durable without becoming an authorization or audit system. |
-| Streaming events | [Streaming Events](/docs/examples/streaming-events) | UIs consume text, tool progress, and final events as workflow state. |
+| Streaming events | [Fullstack Streaming](/docs/examples/fullstack-streaming), [Streaming Events](/docs/examples/streaming-events) | Browser clients consume completion or agent streams, then product UIs treat text, tools, and final events as workflow state. |
 | Event store | [Runtime State and Persistence](/docs/examples/runtime-state-persistence), [Observability Loop](/docs/examples/observability-loop) | Runtime events are replayable for debugging and audit. |
 
 ## Tools And Actions

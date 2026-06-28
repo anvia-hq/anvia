@@ -4,7 +4,7 @@ description: A pattern for running structured work outside the request path.
 section: examples
 sidebar:
   group: Workflow Patterns
-  order: 2
+  order: 3
 ---
 
 Pipeline workers handle work that should not block the request path: research reports, enrichment jobs, document processing, batch analysis, and ingestion refreshes. The request creates a job; the worker runs the pipeline and persists status.

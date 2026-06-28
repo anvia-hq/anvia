@@ -21,6 +21,7 @@ The examples use concrete defaults where a full flow is easier to understand wit
 | Typed model output for classification, extraction, or workflow results | [Structured Results](/docs/examples/structured-results) | [Testing Harness](/docs/examples/testing-harness) |
 | RAG over PDFs, images, documents, and product knowledge | [RAG Ingestion](/docs/examples/rag-ingestion) | [Retrieval Agent](/docs/examples/retrieval-agent), [Document Grounding](/docs/examples/document-grounding) |
 | A support agent with account tools and policy evidence | [Support Agent](/docs/examples/support-agent) | [Permissioned Tools](/docs/examples/permissioned-tools), [Retrieval Agent](/docs/examples/retrieval-agent) |
+| A browser UI that streams completions and agents from server routes | [Fullstack Streaming](/docs/examples/fullstack-streaming) | [Streaming Events](/docs/examples/streaming-events), [Runtime State and Persistence](/docs/examples/runtime-state-persistence) |
 | A background document or research workflow | [Pipeline Worker](/docs/examples/pipeline-worker) | [Long-running Jobs](/docs/examples/long-running-jobs) |
 | A coding or file agent with command boundaries | [Coding Agent](/docs/examples/coding-agent) | [Sandbox Execution](/docs/examples/sandbox-execution) |
 | A workflow that needs human approval before writes | [Guarded Side Effects](/docs/examples/guarded-side-effects) | [Human Input](/docs/examples/human-input) |

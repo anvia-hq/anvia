@@ -4,7 +4,7 @@ description: A pattern for status, retries, and durable results around backgroun
 section: examples
 sidebar:
   group: Workflow Patterns
-  order: 3
+  order: 4
 ---
 
 Long-running jobs need durable status, retry policy, progress, and result storage outside the model run. BullMQ is a good queue backend for this shape, but the application job record is still the UI contract. Runtime events, traces, and BullMQ internals are debugging and operations data.

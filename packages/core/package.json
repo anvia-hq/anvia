@@ -1,6 +1,6 @@
 {
   "name": "@anvia/core",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Core runtime primitives for context-aware Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

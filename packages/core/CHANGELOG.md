@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.10.0
+
+### Minor Changes
+
+- 9e4de00: Improve completion stream DX by allowing `createCompletionStream()` and `createCompletion()` to accept UI messages directly, and by letting React hooks consume raw completion or agent stream events without a separate UI stream adapter.
+
 ## 0.9.0
 
 ### Minor Changes

@@ -174,9 +174,15 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
       if (userMessage === undefined) {
         return;
       }
-      const nextMessages = [...messagesRef.current, userMessage];
+      const previousAbortController = abortRef.current;
+      previousAbortController?.abort();
+      const currentMessages = messagesRef.current;
+      const baseMessages =
+        previousAbortController !== undefined && currentMessages.at(-1)?.role === "assistant"
+          ? currentMessages.slice(0, -1)
+          : currentMessages;
+      const nextMessages = [...baseMessages, userMessage];
 
-      abortRef.current?.abort();
       const abortController = new AbortController();
       abortRef.current = abortController;
 
@@ -210,7 +216,9 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
         }
       } catch (caught) {
         if (isAbortError(caught)) {
-          setStatus("idle");
+          if (abortRef.current === abortController) {
+            setStatus("idle");
+          }
           return;
         }
 

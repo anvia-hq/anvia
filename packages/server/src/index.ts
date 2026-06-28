@@ -1,5 +1,5 @@
 export { createJsonlStream } from "./jsonl";
-export { createEventStream } from "./response";
+export { createEventStream, createUIStreamResponse } from "./response";
 export { createSseStream } from "./sse";
 export type {
   CreateEventStreamOptions,

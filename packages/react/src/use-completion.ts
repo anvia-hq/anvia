@@ -1,54 +1,79 @@
+import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  defaultCompletionEventToDelta,
-  defaultCompletionEventToFinal,
-} from "./completion-defaults";
 import { createFetchTransport } from "./transport";
 import type { EventStreamFormat, EventTransport } from "./types";
-
-export type UseCompletionRequest = {
-  prompt: string;
-  stream: true;
-};
+import {
+  appendAssistantDelta,
+  applyUIStreamEvent,
+  assistantText,
+  createUserMessage,
+  replaceAssistantText,
+} from "./ui-messages";
 
 export type UseCompletionStatus = "idle" | "streaming" | "error";
 
-export type UseCompletionOptions<TEvent = unknown> = {
-  transport?: EventTransport<UseCompletionRequest, TEvent>;
+export type UseCompletionOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
+  transport?: EventTransport<TRequest, TEvent>;
   endpoint?: string | URL;
   format?: EventStreamFormat;
+  initialMessages?: UIMessage[];
   initialCompletion?: string;
+  createRequest?: (args: { messages: UIMessage[] }) => TRequest;
+  eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
   eventToDelta?: (event: TEvent) => string | undefined;
   eventToFinal?: (event: TEvent) => string | undefined;
   onEvent?: (event: TEvent) => void;
   onError?: (error: unknown) => void;
 };
 
-export type UseCompletionResult = {
+export type UseCompletionResult<TEvent = UIStreamEvent> = {
+  messages: UIMessage[];
   completion: string;
   input: string;
   setInput(input: string): void;
   complete(prompt?: string): Promise<void>;
   stop(): void;
-  reset(completion?: string): void;
+  reset(messagesOrCompletion?: UIMessage[] | string): void;
   status: UseCompletionStatus;
   error: unknown;
+  events: TEvent[];
 };
 
-export function useCompletion<TEvent = unknown>(
-  options: UseCompletionOptions<TEvent> = {},
-): UseCompletionResult {
-  const [completion, setCompletion] = useState(options.initialCompletion ?? "");
+export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
+  options: UseCompletionOptions<TRequest, TEvent> = {},
+): UseCompletionResult<TEvent> {
+  const initialMessages = useMemo(
+    () =>
+      options.initialMessages ??
+      (options.initialCompletion === undefined
+        ? []
+        : [
+            {
+              id: "initial_assistant",
+              role: "assistant" as const,
+              parts: [
+                {
+                  id: "initial_assistant_text",
+                  type: "text" as const,
+                  text: options.initialCompletion,
+                },
+              ],
+            },
+          ]),
+    [options.initialCompletion, options.initialMessages],
+  );
+  const [messages, setMessagesState] = useState<UIMessage[]>(() => [...initialMessages]);
   const [input, setInput] = useState("");
+  const [events, setEvents] = useState<TEvent[]>([]);
   const [status, setStatus] = useState<UseCompletionStatus>("idle");
   const [error, setError] = useState<unknown>();
   const abortRef = useRef<AbortController | undefined>(undefined);
-  const completionRef = useRef(completion);
+  const messagesRef = useRef(messages);
 
   useEffect(() => {
-    completionRef.current = completion;
-  }, [completion]);
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     return () => {
@@ -64,14 +89,53 @@ export function useCompletion<TEvent = unknown>(
       return undefined;
     }
 
-    return createFetchTransport<UseCompletionRequest, TEvent>({
+    return createFetchTransport<UIStreamRequest, UIStreamEvent>({
       endpoint: options.endpoint,
       format: options.format ?? "jsonl",
-    });
+    }) as EventTransport<TRequest, TEvent>;
   }, [options.transport, options.endpoint, options.format]);
 
-  const eventToDelta = options.eventToDelta ?? defaultCompletionEventToDelta<TEvent>;
-  const eventToFinal = options.eventToFinal ?? defaultCompletionEventToFinal<TEvent>;
+  const setMessages = useCallback((nextMessages: UIMessage[]) => {
+    messagesRef.current = nextMessages;
+    setMessagesState(nextMessages);
+  }, []);
+
+  const applyEvent = useCallback(
+    (event: TEvent) => {
+      const uiEvent =
+        options.eventToUIEvent === undefined
+          ? eventAsUIStreamEvent(event)
+          : options.eventToUIEvent(event);
+
+      if (uiEvent !== undefined) {
+        setMessagesState((current) => {
+          const next = applyUIStreamEvent(current, uiEvent);
+          messagesRef.current = next;
+          return next;
+        });
+        return;
+      }
+
+      const delta = options.eventToDelta?.(event);
+      if (delta !== undefined && delta.length > 0) {
+        setMessagesState((current) => {
+          const next = appendAssistantDelta(current, delta);
+          messagesRef.current = next;
+          return next;
+        });
+      }
+
+      const final = options.eventToFinal?.(event);
+      if (final !== undefined) {
+        setMessagesState((current) => {
+          const next = replaceAssistantText(current, final);
+          messagesRef.current = next;
+          return next;
+        });
+      }
+    },
+    [options],
+  );
 
   const complete = useCallback(
     async (nextInput?: string) => {
@@ -80,34 +144,33 @@ export function useCompletion<TEvent = unknown>(
       }
 
       const prompt = nextInput ?? input;
-      if (prompt.trim().length === 0) {
+      const userMessage = createUserMessage(prompt);
+      if (userMessage === undefined) {
         return;
       }
+      const nextMessages = [userMessage];
 
       abortRef.current?.abort();
       const abortController = new AbortController();
       abortRef.current = abortController;
 
-      const request: UseCompletionRequest = { prompt, stream: true };
+      const createRequest =
+        options.createRequest ??
+        ((args: { messages: UIMessage[] }) =>
+          ({ messages: args.messages, stream: true }) as TRequest);
+      const request = createRequest({ messages: nextMessages });
 
+      setMessages(nextMessages);
       setInput("");
+      setEvents([]);
       setError(undefined);
       setStatus("streaming");
-      setCompletion("");
 
       try {
         for await (const event of transport.send(request, { signal: abortController.signal })) {
+          setEvents((current) => [...current, event]);
           options.onEvent?.(event);
-
-          const delta = eventToDelta(event);
-          if (delta !== undefined && delta.length > 0) {
-            setCompletion((current) => `${current}${delta}`);
-          }
-
-          const final = eventToFinal(event);
-          if (final !== undefined) {
-            setCompletion(final);
-          }
+          applyEvent(event);
         }
 
         if (!abortController.signal.aborted) {
@@ -128,7 +191,7 @@ export function useCompletion<TEvent = unknown>(
         }
       }
     },
-    [eventToDelta, eventToFinal, input, options, transport],
+    [applyEvent, input, options, setMessages, transport],
   );
 
   const stop = useCallback(() => {
@@ -137,17 +200,34 @@ export function useCompletion<TEvent = unknown>(
     setStatus("idle");
   }, []);
 
-  const reset = useCallback((nextCompletion?: string) => {
-    abortRef.current?.abort();
-    abortRef.current = undefined;
-    setCompletion(nextCompletion ?? "");
-    setError(undefined);
-    setInput("");
-    setStatus("idle");
-  }, []);
+  const reset = useCallback(
+    (messagesOrCompletion?: UIMessage[] | string) => {
+      abortRef.current?.abort();
+      abortRef.current = undefined;
+      if (Array.isArray(messagesOrCompletion)) {
+        setMessages(messagesOrCompletion);
+      } else if (typeof messagesOrCompletion === "string") {
+        setMessages([
+          {
+            id: "reset_assistant",
+            role: "assistant",
+            parts: [{ id: "reset_assistant_text", type: "text", text: messagesOrCompletion }],
+          },
+        ]);
+      } else {
+        setMessages([]);
+      }
+      setEvents([]);
+      setError(undefined);
+      setInput("");
+      setStatus("idle");
+    },
+    [setMessages],
+  );
 
   return {
-    completion,
+    messages,
+    completion: assistantText(messages),
     input,
     setInput,
     complete,
@@ -155,9 +235,31 @@ export function useCompletion<TEvent = unknown>(
     reset,
     status,
     error,
+    events,
   };
+}
+
+function eventAsUIStreamEvent(event: unknown): UIStreamEvent | undefined {
+  if (!isRecord(event) || typeof event.type !== "string") {
+    return undefined;
+  }
+  if (
+    event.type === "message_start" ||
+    event.type === "text_delta" ||
+    event.type === "reasoning_delta" ||
+    event.type === "tool_update" ||
+    event.type === "message_end" ||
+    event.type === "error"
+  ) {
+    return event as UIStreamEvent;
+  }
+  return undefined;
 }
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

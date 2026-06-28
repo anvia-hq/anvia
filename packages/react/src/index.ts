@@ -5,13 +5,11 @@ export { readJsonlStream, readSseStream } from "./streams";
 export type { CreateFetchTransportOptions } from "./transport";
 export { createChatTransport, createFetchTransport } from "./transport";
 export type {
-  ChatMessage,
-  ChatRole,
-  DefaultChatRequest,
   EventStreamFormat,
   EventTransport,
   HumanInputOptions,
   HumanInputState,
+  SendMessageInput,
   ToolApproval,
   ToolApprovalDecisionInput,
   ToolApprovalStatus,
@@ -22,6 +20,12 @@ export type {
   ToolQuestionPrompt,
   ToolQuestionStatus,
   TransportOptions,
+  UIError,
+  UIMessage,
+  UIMessagePart,
+  UIMessageRole,
+  UIStreamEvent,
+  UIStreamRequest,
   UseChatOptions,
   UseChatResult,
   UseChatStatus,
@@ -29,7 +33,6 @@ export type {
 export { useChat } from "./use-chat";
 export type {
   UseCompletionOptions,
-  UseCompletionRequest,
   UseCompletionResult,
   UseCompletionStatus,
 } from "./use-completion";

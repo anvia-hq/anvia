@@ -15,4 +15,5 @@ export * from "../../src/skills";
 export * from "../../src/streaming";
 export * from "../../src/tool";
 export * from "../../src/transcription";
+export * from "../../src/ui";
 export * from "../../src/vector-store";

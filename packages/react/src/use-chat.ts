@@ -1,69 +1,29 @@
+import type { UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  createMessage,
-  defaultCreateRequest,
-  defaultEventToDelta,
-  defaultEventToFinal,
-} from "./chat-defaults";
-import {
-  defaultAnswerQuestion,
-  defaultDecideApproval,
-  defaultEventToApproval,
-  defaultEventToQuestion,
-  upsertById,
-} from "./human-input";
 import { createChatTransport } from "./transport";
-import type {
-  ChatMessage,
-  DefaultChatRequest,
-  ToolApproval,
-  ToolQuestion,
-  ToolQuestionAnswer,
-  UseChatOptions,
-  UseChatResult,
-} from "./types";
+import type { EventTransport, SendMessageInput, UseChatOptions, UseChatResult } from "./types";
+import {
+  appendAssistantDelta,
+  applyUIStreamEvent,
+  assistantText,
+  createUserMessage,
+  replaceAssistantText,
+} from "./ui-messages";
 
-export function useChat<
-  TRequest = DefaultChatRequest,
-  TEvent = unknown,
-  TMessage extends ChatMessage = ChatMessage,
->(options: UseChatOptions<TRequest, TEvent, TMessage> = {}): UseChatResult<TEvent, TMessage> {
-  const [messages, setMessages] = useState<TMessage[]>(() => [...(options.initialMessages ?? [])]);
+export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
+  options: UseChatOptions<TRequest, TEvent> = {},
+): UseChatResult<TEvent> {
+  const [messages, setMessagesState] = useState(() => [...(options.initialMessages ?? [])]);
   const [events, setEvents] = useState<TEvent[]>([]);
-  const [input, setInput] = useState("");
-  const [status, setStatus] = useState<UseChatResult<TEvent, TMessage>["status"]>("idle");
+  const [status, setStatus] = useState<UseChatResult<TEvent>["status"]>("idle");
   const [error, setError] = useState<unknown>();
-  const [approvals, setApprovals] = useState<ToolApproval[]>([]);
-  const [questions, setQuestions] = useState<ToolQuestion[]>([]);
-  const [decidingApprovals, setDecidingApprovals] = useState<Set<string>>(() => new Set());
-  const [answeringQuestions, setAnsweringQuestions] = useState<Set<string>>(() => new Set());
   const abortRef = useRef<AbortController | undefined>(undefined);
   const messagesRef = useRef(messages);
-  const approvalsRef = useRef(approvals);
-  const questionsRef = useRef(questions);
-  const decidingApprovalsRef = useRef(decidingApprovals);
-  const answeringQuestionsRef = useRef(answeringQuestions);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
-
-  useEffect(() => {
-    approvalsRef.current = approvals;
-  }, [approvals]);
-
-  useEffect(() => {
-    questionsRef.current = questions;
-  }, [questions]);
-
-  useEffect(() => {
-    decidingApprovalsRef.current = decidingApprovals;
-  }, [decidingApprovals]);
-
-  useEffect(() => {
-    answeringQuestionsRef.current = answeringQuestions;
-  }, [answeringQuestions]);
 
   useEffect(() => {
     return () => {
@@ -79,115 +39,71 @@ export function useChat<
       return undefined;
     }
 
-    return createChatTransport<TRequest, TEvent>({
+    return createChatTransport<UIStreamRequest, UIStreamEvent>({
       endpoint: options.endpoint,
       format: options.format ?? "jsonl",
-    });
+    }) as EventTransport<TRequest, TEvent>;
   }, [options.transport, options.endpoint, options.format]);
 
-  const createRequest = options.createRequest ?? defaultCreateRequest<TRequest, TMessage>;
-  const eventToDelta = options.eventToDelta ?? defaultEventToDelta<TEvent>;
-  const eventToFinal = options.eventToFinal ?? defaultEventToFinal<TEvent>;
-  const humanInputOptions = options.humanInput;
-  const eventToApproval = humanInputOptions?.eventToApproval ?? defaultEventToApproval<TEvent>;
-  const eventToQuestion = humanInputOptions?.eventToQuestion ?? defaultEventToQuestion<TEvent>;
-
-  const updateApproval = useCallback((approval: ToolApproval) => {
-    setApprovals((current) => {
-      const next = upsertById(current, approval);
-      approvalsRef.current = next;
+  const setMessages = useCallback<UseChatResult<TEvent>["setMessages"]>((nextMessages) => {
+    setMessagesState((current) => {
+      const next = typeof nextMessages === "function" ? nextMessages(current) : nextMessages;
+      messagesRef.current = next;
       return next;
     });
   }, []);
 
-  const updateQuestion = useCallback((question: ToolQuestion) => {
-    setQuestions((current) => {
-      const next = upsertById(current, question);
-      questionsRef.current = next;
-      return next;
-    });
-  }, []);
+  const applyEvent = useCallback(
+    (event: TEvent) => {
+      const uiEvent =
+        options.eventToUIEvent === undefined
+          ? eventAsUIStreamEvent(event)
+          : options.eventToUIEvent(event);
 
-  const clearHumanInput = useCallback(() => {
-    approvalsRef.current = [];
-    questionsRef.current = [];
-    decidingApprovalsRef.current = new Set();
-    answeringQuestionsRef.current = new Set();
-    setApprovals([]);
-    setQuestions([]);
-    setDecidingApprovals(new Set());
-    setAnsweringQuestions(new Set());
-  }, []);
-
-  const appendAssistantText = useCallback((assistantId: string, text: string) => {
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === assistantId
-          ? ({ ...message, content: `${message.content}${text}` } as TMessage)
-          : message,
-      ),
-    );
-  }, []);
-
-  const replaceAssistantText = useCallback((assistantId: string, text: string) => {
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === assistantId ? ({ ...message, content: text } as TMessage) : message,
-      ),
-    );
-  }, []);
-
-  const send = useCallback(
-    async (nextInput?: string) => {
-      if (transport === undefined) {
-        throw new Error("useChat requires either transport or endpoint");
+      if (uiEvent !== undefined) {
+        setMessages((current) => applyUIStreamEvent(current, uiEvent));
+        return;
       }
 
-      const content = nextInput ?? input;
-      if (content.trim().length === 0) {
-        return;
+      const delta = options.eventToDelta?.(event);
+      if (delta !== undefined && delta.length > 0) {
+        setMessages((current) => appendAssistantDelta(current, delta));
+      }
+
+      const final = options.eventToFinal?.(event);
+      if (final !== undefined) {
+        setMessages((current) => replaceAssistantText(current, final));
+      }
+    },
+    [options, setMessages],
+  );
+
+  const sendMessages = useCallback(
+    async (nextMessages: UIStreamRequest["messages"]) => {
+      if (transport === undefined) {
+        throw new Error("useChat requires either transport or endpoint");
       }
 
       abortRef.current?.abort();
       const abortController = new AbortController();
       abortRef.current = abortController;
 
-      const userMessage = createMessage<TMessage>("user", content);
-      const assistantMessage = createMessage<TMessage>("assistant", "");
-      const requestMessages = [...messagesRef.current, userMessage];
-      const request = createRequest(content, requestMessages);
+      const createRequest =
+        options.createRequest ??
+        ((args: { messages: UIStreamRequest["messages"] }) =>
+          ({ messages: args.messages, stream: true }) as TRequest);
+      const request = createRequest({ messages: nextMessages });
 
-      setInput("");
+      setMessages(nextMessages);
+      setEvents([]);
       setError(undefined);
       setStatus("streaming");
-      setEvents([]);
-      clearHumanInput();
-      setMessages([...requestMessages, assistantMessage]);
 
       try {
         for await (const event of transport.send(request, { signal: abortController.signal })) {
           setEvents((current) => [...current, event]);
-          if (humanInputOptions !== undefined) {
-            const approval = eventToApproval(event);
-            if (approval !== undefined) {
-              updateApproval(approval);
-            }
-            const question = eventToQuestion(event);
-            if (question !== undefined) {
-              updateQuestion(question);
-            }
-          }
           options.onEvent?.(event);
-
-          const delta = eventToDelta(event);
-          if (delta !== undefined && delta.length > 0) {
-            appendAssistantText(assistantMessage.id, delta);
-          }
-
-          const final = eventToFinal(event);
-          if (final !== undefined) {
-            replaceAssistantText(assistantMessage.id, final);
-          }
+          applyEvent(event);
         }
 
         if (!abortController.signal.aborted) {
@@ -208,110 +124,34 @@ export function useChat<
         }
       }
     },
-    [
-      appendAssistantText,
-      createRequest,
-      clearHumanInput,
-      eventToDelta,
-      eventToFinal,
-      eventToApproval,
-      eventToQuestion,
-      humanInputOptions,
-      input,
-      options,
-      replaceAssistantText,
-      transport,
-      updateApproval,
-      updateQuestion,
-    ],
+    [applyEvent, options, setMessages, transport],
   );
 
-  const decideToolApproval = useCallback(
-    async (approvalId: string, approved: boolean, reason?: string) => {
-      if (humanInputOptions === undefined) {
-        throw new Error("useChat humanInput is not configured");
-      }
-      if (decidingApprovalsRef.current.has(approvalId)) {
+  const sendMessage = useCallback(
+    async (input: SendMessageInput) => {
+      const message = createUserMessage(input);
+      if (message === undefined) {
         return;
       }
-
-      const nextDeciding = new Set(decidingApprovalsRef.current).add(approvalId);
-      decidingApprovalsRef.current = nextDeciding;
-      setDecidingApprovals(nextDeciding);
-      try {
-        const approval = approvalsRef.current.find((item) => item.id === approvalId);
-        const input = {
-          approvalId,
-          approved,
-          ...(reason === undefined ? {} : { reason }),
-          ...(approval === undefined ? {} : { approval }),
-        };
-        const result =
-          humanInputOptions.decideApproval === undefined
-            ? await defaultDecideApproval(input, humanInputOptions)
-            : await humanInputOptions.decideApproval(input);
-        if (result !== undefined) {
-          updateApproval(result);
-        }
-      } finally {
-        const next = new Set(decidingApprovalsRef.current);
-        next.delete(approvalId);
-        decidingApprovalsRef.current = next;
-        setDecidingApprovals(next);
-      }
+      await sendMessages([...messagesRef.current, message]);
     },
-    [humanInputOptions, updateApproval],
+    [sendMessages],
   );
 
-  const approveTool = useCallback(
-    async (approvalId: string, reason?: string) => {
-      await decideToolApproval(approvalId, true, reason);
+  const send = useCallback(
+    async (input = "") => {
+      await sendMessage(input);
     },
-    [decideToolApproval],
+    [sendMessage],
   );
 
-  const rejectTool = useCallback(
-    async (approvalId: string, reason?: string) => {
-      await decideToolApproval(approvalId, false, reason);
-    },
-    [decideToolApproval],
-  );
-
-  const answerToolQuestion = useCallback(
-    async (questionId: string, answers: ToolQuestionAnswer[]) => {
-      if (humanInputOptions === undefined) {
-        throw new Error("useChat humanInput is not configured");
-      }
-      if (answeringQuestionsRef.current.has(questionId)) {
-        return;
-      }
-
-      const nextAnswering = new Set(answeringQuestionsRef.current).add(questionId);
-      answeringQuestionsRef.current = nextAnswering;
-      setAnsweringQuestions(nextAnswering);
-      try {
-        const question = questionsRef.current.find((item) => item.id === questionId);
-        const input = {
-          questionId,
-          answers,
-          ...(question === undefined ? {} : { question }),
-        };
-        const result =
-          humanInputOptions.answerQuestion === undefined
-            ? await defaultAnswerQuestion(input, humanInputOptions)
-            : await humanInputOptions.answerQuestion(input);
-        if (result !== undefined) {
-          updateQuestion(result);
-        }
-      } finally {
-        const next = new Set(answeringQuestionsRef.current);
-        next.delete(questionId);
-        answeringQuestionsRef.current = next;
-        setAnsweringQuestions(next);
-      }
-    },
-    [humanInputOptions, updateQuestion],
-  );
+  const regenerate = useCallback(async () => {
+    const lastUserIndex = findLastUserIndex(messagesRef.current);
+    if (lastUserIndex === -1) {
+      return;
+    }
+    await sendMessages(messagesRef.current.slice(0, lastUserIndex + 1));
+  }, [sendMessages]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -320,55 +160,62 @@ export function useChat<
   }, []);
 
   const reset = useCallback(
-    (nextMessages?: TMessage[]) => {
-      const resetMessages = nextMessages ?? [];
-      messagesRef.current = resetMessages;
+    (nextMessages: UIStreamRequest["messages"] = []) => {
       abortRef.current?.abort();
       abortRef.current = undefined;
-      setMessages(resetMessages);
+      setMessages(nextMessages);
       setEvents([]);
-      clearHumanInput();
       setError(undefined);
-      setInput("");
       setStatus("idle");
     },
-    [clearHumanInput],
+    [setMessages],
   );
-
-  const text = messages
-    .filter((message) => message.role === "assistant")
-    .map((message) => message.content)
-    .join("");
 
   return {
     messages,
     events,
-    input,
-    setInput,
+    setMessages,
+    sendMessage,
     send,
+    regenerate,
     stop,
     reset,
     status,
     error,
-    text,
-    humanInput: {
-      approvals: {
-        all: approvals,
-        pending: approvals.filter((approval) => approval.status === "pending"),
-      },
-      questions: {
-        all: questions,
-        pending: questions.filter((question) => question.status === "pending"),
-      },
-    },
-    decidingApprovals,
-    answeringQuestions,
-    approveTool,
-    rejectTool,
-    answerToolQuestion,
+    text: assistantText(messages),
   };
+}
+
+function eventAsUIStreamEvent(event: unknown): UIStreamEvent | undefined {
+  if (!isRecord(event) || typeof event.type !== "string") {
+    return undefined;
+  }
+  if (
+    event.type === "message_start" ||
+    event.type === "text_delta" ||
+    event.type === "reasoning_delta" ||
+    event.type === "tool_update" ||
+    event.type === "message_end" ||
+    event.type === "error"
+  ) {
+    return event as UIStreamEvent;
+  }
+  return undefined;
+}
+
+function findLastUserIndex(messages: UIStreamRequest["messages"]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

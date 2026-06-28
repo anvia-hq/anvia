@@ -482,6 +482,10 @@ importers:
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.1.0(@types/node@24.12.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/react:
+    dependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@testing-library/react':
         specifier: ^16.3.2
@@ -518,6 +522,10 @@ importers:
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.1.0(@types/node@24.12.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/server:
+    dependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^24.9.1

@@ -2,7 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "outDir": "dist"
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@anvia/core": ["../core/src/index.ts"],
+      "@anvia/core/*": ["../core/src/*/index.ts"]
+    }
   },
   "include": ["src", "test", "vitest.config.ts"]
 }

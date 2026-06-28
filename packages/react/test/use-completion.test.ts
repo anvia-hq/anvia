@@ -96,7 +96,8 @@ describe("@anvia/react useCompletion", () => {
       stream: true;
     };
     const createRequest = vi.fn((args: UseCompletionRequestArgs) => ({
-      ...args,
+      messages: args.coreMessages,
+      uiMessages: args.uiMessages,
       stream: true as const,
     }));
     const transport: EventTransport<CustomRequest, UIStreamEvent> = {
@@ -123,13 +124,19 @@ describe("@anvia/react useCompletion", () => {
     });
 
     expect(createRequest).toHaveBeenCalledWith({
-      messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+      messages: [
+        expect.objectContaining({
+          role: "user",
+          parts: [expect.objectContaining({ type: "text", text: "hello" })],
+        }),
+      ],
       uiMessages: [
         expect.objectContaining({
           role: "user",
           parts: [expect.objectContaining({ type: "text", text: "hello" })],
         }),
       ],
+      coreMessages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
     });
   });
 

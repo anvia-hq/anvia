@@ -79,8 +79,9 @@ type SendMessageInput =
     };
 
 type CreateChatRequestArgs = {
-  messages: Message[];
+  messages: UIMessage[];
   uiMessages: UIMessage[];
+  coreMessages: Message[];
 };
 
 type UseChatStatus = "idle" | "streaming" | "error";
@@ -287,7 +288,7 @@ function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(options?: {
 
 Purpose: React chat state machine that sends `UIStreamRequest` by default and accumulates response events into `UIMessage[]`.
 
-Passing `endpoint` creates a default JSONL fetch transport. Passing `transport` makes the hook independent of HTTP. `sendMessage(...)` appends a user message, keeps the full UI message history in state, and sends the converted core message history. The hook applies raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records as the assistant response arrives.
+Passing `endpoint` creates a default JSONL fetch transport. Passing `transport` makes the hook independent of HTTP. `sendMessage(...)` appends a user message, keeps the full UI message history in state, and sends the converted core message history. Custom request factories receive the UI array as `messages` for compatibility and the converted array as `coreMessages`. The hook applies raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records as the assistant response arrives.
 
 ## useCompletion
 
@@ -295,8 +296,9 @@ Passing `endpoint` creates a default JSONL fetch transport. Passing `transport` 
 type UseCompletionStatus = "idle" | "streaming" | "error";
 
 type UseCompletionRequestArgs = {
-  messages: Message[];
+  messages: UIMessage[];
   uiMessages: UIMessage[];
+  coreMessages: Message[];
 };
 
 type UseCompletionOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
@@ -333,7 +335,7 @@ function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 
 Purpose: React hook for single-prompt text completion streaming that also exposes the underlying assistant `messages`.
 
-By default, `complete(prompt)` creates one user `UIMessage`, converts it to a core `Message`, sends `{ messages, stream: true }`, and consumes raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records. `completion` is a convenience string derived from assistant text parts.
+By default, `complete(prompt)` creates one user `UIMessage`, converts it to a core `Message`, sends `{ messages, stream: true }`, and consumes raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records. Custom request factories receive the UI array as `messages` for compatibility and the converted array as `coreMessages`. `completion` is a convenience string derived from assistant text parts.
 
 ## createDirectTransport
 

@@ -1,6 +1,6 @@
 import type { AgentStreamEvent } from "@anvia/core/agent";
 import { AssistantContent, type CompletionStreamEvent, Usage } from "@anvia/core/completion";
-import type { UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
+import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -190,7 +190,8 @@ describe("@anvia/react useChat", () => {
       stream: true;
     };
     const createRequest = vi.fn((args: CreateChatRequestArgs) => ({
-      ...args,
+      messages: args.coreMessages,
+      uiMessages: args.uiMessages,
       stream: true as const,
     }));
     const transport: EventTransport<CustomRequest, UIStreamEvent> = {
@@ -216,14 +217,53 @@ describe("@anvia/react useChat", () => {
     });
 
     expect(createRequest).toHaveBeenCalledWith({
-      messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+      messages: [
+        expect.objectContaining({
+          role: "user",
+          parts: [expect.objectContaining({ type: "text", text: "hello" })],
+        }),
+      ],
       uiMessages: [
         expect.objectContaining({
           role: "user",
           parts: [expect.objectContaining({ type: "text", text: "hello" })],
         }),
       ],
+      coreMessages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
     });
+  });
+
+  it("reports UI conversion errors before sending chat requests", async () => {
+    const onError = vi.fn();
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+      send: vi.fn(async function* (): AsyncIterable<UIStreamEvent> {
+        yield {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
+      }),
+    };
+    const invalidMessage: UIMessage = {
+      id: "bad_user",
+      role: "user",
+      parts: [{ id: "bad_part", type: "data", name: "custom", data: { value: 1 } }],
+    };
+    const { result } = renderHook(() =>
+      useChat({
+        transport,
+        initialMessages: [invalidMessage],
+        onError,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.send("hello");
+    });
+
+    expect(transport.send).not.toHaveBeenCalled();
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBeInstanceOf(TypeError);
+    expect(onError).toHaveBeenCalledWith(result.current.error);
   });
 
   it("applies raw completion stream events", async () => {

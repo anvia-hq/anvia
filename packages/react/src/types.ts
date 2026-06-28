@@ -117,8 +117,9 @@ export type SendMessageInput =
     };
 
 export type CreateChatRequestArgs = {
-  messages: Message[];
+  messages: UIMessage[];
   uiMessages: UIMessage[];
+  coreMessages: Message[];
 };
 
 export type UseChatStatus = "idle" | "streaming" | "error";

@@ -1,5 +1,5 @@
+import { uiMessagesToCoreMessages } from "@anvia/core";
 import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
-import { uiMessagesToCoreMessages } from "@anvia/core/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createChatTransport } from "./transport";
@@ -114,9 +114,8 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 
       const createRequest =
         options.createRequest ??
-        ((args: CreateChatRequestArgs) => ({ messages: args.messages, stream: true }) as TRequest);
-      const requestMessages = uiMessagesToCoreMessages(nextMessages);
-      const request = createRequest({ messages: requestMessages, uiMessages: nextMessages });
+        ((args: CreateChatRequestArgs) =>
+          ({ messages: args.coreMessages, stream: true }) as TRequest);
 
       setMessages(nextMessages);
       setEvents([]);
@@ -124,6 +123,13 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       setStatus("streaming");
 
       try {
+        const coreMessages = uiMessagesToCoreMessages(nextMessages);
+        const request = createRequest({
+          messages: nextMessages,
+          uiMessages: nextMessages,
+          coreMessages,
+        });
+
         for await (const event of transport.send(request, { signal: abortController.signal })) {
           setEvents((current) => [...current, event]);
           options.onEvent?.(event);

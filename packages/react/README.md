@@ -56,7 +56,8 @@ type UIStreamRequest = {
 ```
 
 Hooks convert their local `UIMessage[]` state into core messages before sending. Custom
-`createRequest` callbacks receive both `{ messages, uiMessages }`.
+`createRequest` callbacks receive `{ messages, uiMessages, coreMessages }`, where `messages` and
+`uiMessages` are UI-shaped for compatibility and `coreMessages` is the default wire payload.
 
 The shared boundary is:
 

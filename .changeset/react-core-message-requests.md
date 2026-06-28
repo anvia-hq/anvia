@@ -1,5 +1,5 @@
 ---
-"@anvia/core": patch
+"@anvia/core": minor
 "@anvia/react": patch
 ---
 

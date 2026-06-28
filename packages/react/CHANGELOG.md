@@ -1,5 +1,18 @@
 # @anvia/react
 
+## 0.6.0
+
+### Minor Changes
+
+- ca25fca: Add the shared UI message stream protocol for React-facing completions and agents.
+
+  `@anvia/core` now exposes `@anvia/core/ui` with UI message types, core/UI message conversion helpers, and adapters for completion and agent streams. `@anvia/server` adds `createUIStreamResponse`. `@anvia/react` now standardizes `useChat` and `useCompletion` around `UIMessage[]` state and the `{ messages, stream: true }` request shape.
+
+### Patch Changes
+
+- Updated dependencies [ca25fca]
+  - @anvia/core@0.9.0
+
 ## 0.5.0
 
 ### Minor Changes

@@ -133,6 +133,63 @@ describe("@anvia/react useCompletion", () => {
     ]);
   });
 
+  it("does not send aborted partial assistant text with the next completion", async () => {
+    const requests: UIStreamRequest[] = [];
+    const transport: EventTransport<UIStreamRequest, CompletionStreamEvent> = {
+      send: async function* (request, options) {
+        requests.push(request);
+
+        if (requests.length === 1) {
+          yield { type: "text_delta", delta: "partial" };
+          await new Promise<void>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          });
+          return;
+        }
+
+        yield { type: "text_delta", delta: "done" };
+        yield {
+          type: "final",
+          response: {
+            choice: [AssistantContent.text("done")],
+            usage: Usage.empty(),
+            rawResponse: {},
+            messageId: "provider_2",
+          },
+        };
+      },
+    };
+    const { result } = renderHook(() => useCompletion({ transport }));
+
+    let firstComplete!: Promise<void>;
+    act(() => {
+      firstComplete = result.current.complete("first");
+    });
+    await vi.waitFor(() => {
+      expect(result.current.completion).toBe("partial");
+    });
+
+    await act(async () => {
+      await result.current.complete("second");
+    });
+    await firstComplete;
+
+    expect(requests[1]?.messages).toMatchObject([
+      { role: "user", content: [{ type: "text", text: "first" }] },
+      { role: "user", content: [{ type: "text", text: "second" }] },
+    ]);
+    expect(requests[1]?.messages).toHaveLength(2);
+    expect(result.current.messages).toMatchObject([
+      { role: "user", parts: [{ type: "text", text: "first" }] },
+      { role: "user", parts: [{ type: "text", text: "second" }] },
+      { role: "assistant", parts: [{ type: "text", text: "done" }] },
+    ]);
+  });
+
   it("passes core and UI messages to custom completion request factories", async () => {
     type CustomRequest = {
       messages: unknown[];

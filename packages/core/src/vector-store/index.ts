@@ -7,62 +7,22 @@ import {
   embedText,
   type VectorMetadata,
 } from "../embeddings";
-import { compact } from "../internal/compact";
 import { createTool } from "../tool/create-tool";
 import type { Tool } from "../tool/tool";
-import { matchesVectorFilter, type VectorFilter } from "./filter";
-import { LshIndex, type LshOptions } from "./lsh";
+import { matchesVectorFilter } from "./filter";
+import { LshIndex } from "./lsh";
+import type {
+  IndexStrategy,
+  VectorInspectPage,
+  VectorInspectRequest,
+  VectorSearchIndex,
+  VectorSearchRequest,
+  VectorSearchResult,
+  VectorSearchToolOptions,
+} from "./types";
 
-export { type VectorFilter, vectorFilter } from "./filter";
-
-export type IndexStrategy = { type: "bruteForce" } | LshOptions;
-
-export type VectorSearchRequest = {
-  query: string;
-  topK: number;
-  threshold?: number | undefined;
-  filter?: VectorFilter | undefined;
-};
-
-export type VectorSearchResult<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = {
-  score: number;
-  id: string;
-  document: T;
-  metadata?: Metadata | undefined;
-};
-
-export type VectorInspectRequest = {
-  limit: number;
-  cursor?: string | undefined;
-  filter?: VectorFilter | undefined;
-};
-
-export type VectorInspectItem<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = {
-  id: string;
-  document: T;
-  metadata?: Metadata | undefined;
-};
-
-export type VectorInspectPage<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = {
-  items: Array<VectorInspectItem<T, Metadata>>;
-  nextCursor?: string | undefined;
-  totalCount?: number | undefined;
-};
-
-export interface VectorSearchIndex<T = unknown, Metadata extends VectorMetadata = VectorMetadata> {
-  search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
-  searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>>;
-  asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown>;
-  inspect?(request: VectorInspectRequest): Promise<VectorInspectPage<T, Metadata>>;
-}
-
-export type VectorSearchToolOptions = {
-  name: string;
-  description?: string | undefined;
-  topK?: number | undefined;
-  threshold?: number | undefined;
-  filter?: VectorFilter | undefined;
-};
+export { vectorFilter } from "./filter";
+export type * from "./types";
 
 type StoredDocument<T, Metadata extends VectorMetadata> = EmbeddedDocument<T, Metadata>;
 

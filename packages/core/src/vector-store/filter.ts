@@ -1,11 +1,7 @@
 import type { VectorMetadata, VectorMetadataValue } from "../embeddings";
+import type { VectorFilter } from "./types";
 
-export type VectorFilter =
-  | { type: "eq"; key: string; value: VectorMetadataValue }
-  | { type: "gt"; key: string; value: VectorMetadataValue }
-  | { type: "lt"; key: string; value: VectorMetadataValue }
-  | { type: "and"; filters: [VectorFilter, VectorFilter] }
-  | { type: "or"; filters: [VectorFilter, VectorFilter] };
+export type { VectorFilter } from "./types";
 
 export const vectorFilter = {
   eq(key: string, value: VectorMetadataValue): VectorFilter {

@@ -10,6 +10,33 @@ sidebar:
 
 Release history mirrored from `packages/server/CHANGELOG.md`.
 
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [4068a2a]
+  - @anvia/core@0.11.0
+
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [9e4de00]
+  - @anvia/core@0.10.0
+
+## 0.4.0
+
+### Minor Changes
+
+- ca25fca: Add the shared UI message stream protocol for React-facing completions and agents.
+
+  `@anvia/core` now exposes `@anvia/core/ui` with UI message types, core/UI message conversion helpers, and adapters for completion and agent streams. `@anvia/server` adds `createUIStreamResponse`. `@anvia/react` now standardizes `useChat` and `useCompletion` around `UIMessage[]` state and the `{ messages, stream: true }` request shape.
+
+### Patch Changes
+
+- Updated dependencies [ca25fca]
+  - @anvia/core@0.9.0
+
 ## 0.3.1
 
 ### Patch Changes

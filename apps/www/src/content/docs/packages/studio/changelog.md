@@ -10,6 +10,37 @@ sidebar:
 
 Release history mirrored from `packages/tool-studio/CHANGELOG.md`.
 
+## 0.7.9
+
+### Patch Changes
+
+- Updated dependencies [4a3771d]
+  - @anvia/react@0.7.2
+
+## 0.7.8
+
+### Patch Changes
+
+- Updated dependencies [4068a2a]
+  - @anvia/react@0.7.1
+  - @anvia/server@0.4.2
+
+## 0.7.7
+
+### Patch Changes
+
+- Updated dependencies [9e4de00]
+  - @anvia/react@0.7.0
+  - @anvia/server@0.4.1
+
+## 0.7.6
+
+### Patch Changes
+
+- Updated dependencies [ca25fca]
+  - @anvia/react@0.6.0
+  - @anvia/server@0.4.0
+
 ## 0.7.5
 
 ### Patch Changes

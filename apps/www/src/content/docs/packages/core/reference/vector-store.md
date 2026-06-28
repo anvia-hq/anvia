@@ -37,7 +37,14 @@ Notable errors: unsupported metadata comparison types do not match results.
 ## Search Types
 
 ```ts
-type IndexStrategy = { type: "bruteForce" } | { type: "lsh"; numTables: number; numHyperplanes: number; seed?: number };
+type LshOptions = {
+  type: "lsh";
+  numTables: number;
+  numHyperplanes: number;
+  seed?: number;
+};
+
+type IndexStrategy = { type: "bruteForce" } | LshOptions;
 
 type VectorSearchRequest = {
   query: string;

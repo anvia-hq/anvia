@@ -1,5 +1,13 @@
 # @anvia/react
 
+## 0.7.1
+
+### Patch Changes
+
+- 4068a2a: Send converted core messages from React hooks and keep completion helpers limited to core `Message` input.
+- Updated dependencies [4068a2a]
+  - @anvia/core@0.11.0
+
 ## 0.7.0
 
 ### Minor Changes

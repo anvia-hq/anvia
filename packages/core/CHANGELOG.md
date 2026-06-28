@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.11.0
+
+### Minor Changes
+
+- 4068a2a: Send converted core messages from React hooks and keep completion helpers limited to core `Message` input.
+
 ## 0.10.0
 
 ### Minor Changes

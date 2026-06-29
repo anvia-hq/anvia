@@ -5,6 +5,7 @@ import type {
   JsonValue,
   ToolChoice,
 } from "../completion/index";
+import type { PromptHook } from "../hooks";
 import type { MemoryRegistration } from "../memory";
 import type { AgentObserverRegistration } from "../observability";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
@@ -12,7 +13,6 @@ import type { AgentMiddleware } from "../tool/middleware";
 import type { ToolApprovalsOptions } from "../tool/tool";
 import type { ToolSet } from "../tool/tool-set";
 import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
-import type { PromptHook } from "./hooks";
 
 export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   id: string;

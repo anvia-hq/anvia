@@ -1,4 +1,3 @@
-import type { AgentStreamEvent } from "../agent/request-types";
 import {
   type Message as CoreMessage,
   type CreateCompletionStreamOptions,
@@ -8,6 +7,7 @@ import {
   textFromAssistantContent,
 } from "../completion";
 import type { CompletionStreamEvent, StreamingCompletionModel } from "../completion/types";
+import type { AgentStreamEvent } from "../request/types";
 import { uiMessagesToCoreMessages } from "./messages";
 import type { UIError, UIMessage, UIStreamEvent } from "./types";
 

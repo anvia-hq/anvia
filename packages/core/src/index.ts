@@ -1,18 +1,4 @@
 export { AgentBuilder } from "./agent/builder";
-export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./agent/errors";
-export {
-  cancelPrompt,
-  createHook,
-  requestToolApproval,
-  runControl,
-  skipTool,
-  toolCallControl,
-} from "./agent/hooks";
-export type {
-  AgentChildStreamEvent,
-  AgentStreamEvent,
-  PromptResponse,
-} from "./agent/request-types";
 export type {
   AssistantMessage,
   CompletionModel,
@@ -49,7 +35,21 @@ export {
   Usage,
   UserContent,
 } from "./completion/index";
+export {
+  cancelPrompt,
+  createHook,
+  requestToolApproval,
+  runControl,
+  skipTool,
+  toolCallControl,
+} from "./hooks";
 export type { MemoryStore } from "./memory";
+export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./request/errors";
+export type {
+  AgentChildStreamEvent,
+  AgentStreamEvent,
+  PromptResponse,
+} from "./request/types";
 export type { ZodSchema } from "./schema";
 export { loadSkills, SkillValidationError, skill } from "./skills";
 export type {

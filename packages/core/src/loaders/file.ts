@@ -1,11 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { err, ok, sortedGlob, toUint8Array } from "./shared";
-import type { FileReadWithPath, FileSource, LoaderResult } from "./types";
-
-type FileMode = "source" | "read" | "readWithPath";
-type LoaderValue<T> = T extends { ok: true; value: infer Value } ? Value : never;
-type UnwrapLoaderResult<T> = [LoaderValue<T>] extends [never] ? T : LoaderValue<T>;
+import type {
+  FileMode,
+  FileReadWithPath,
+  FileSource,
+  LoaderResult,
+  UnwrapLoaderResult,
+} from "./types";
 
 export class FileLoader<T = LoaderResult<FileSource>> implements AsyncIterable<T> {
   private constructor(

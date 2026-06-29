@@ -1,12 +1,8 @@
 import type { CompletionModel, Document, JsonObject, JsonValue, ToolChoice } from "../completion";
 import type { PromptHook } from "../hooks";
 import type { McpServer } from "../mcp";
-import {
-  type MemoryOptions,
-  type MemoryRegistration,
-  type MemoryStore,
-  resolveMemoryOptions,
-} from "../memory";
+import { resolveMemoryOptions } from "../memory/options";
+import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { SkillSet } from "../skills";

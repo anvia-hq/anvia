@@ -6,7 +6,7 @@ import type {
   ToolChoice,
 } from "../completion/index";
 import type { PromptHook } from "../hooks";
-import type { MemoryRegistration } from "../memory";
+import type { MemoryRegistration } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";

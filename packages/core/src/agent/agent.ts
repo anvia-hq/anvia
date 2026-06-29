@@ -9,7 +9,7 @@ import type {
 } from "../completion/index";
 import type { PromptHook } from "../hooks";
 import { compact } from "../internal/compact";
-import type { MemoryRegistration, SessionOptions } from "../memory";
+import type { MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import { PromptRequest } from "../request";
 import { isStreamingCompletionModel } from "../request/utils";

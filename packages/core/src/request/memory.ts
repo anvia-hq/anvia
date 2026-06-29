@@ -1,6 +1,6 @@
 import type { Agent } from "../agent/agent";
 import type { Message as MessageType } from "../completion/index";
-import type { MemoryContext, MemoryRegistration, MemorySavePolicy } from "../memory";
+import type { MemoryContext, MemoryRegistration, MemorySavePolicy } from "../memory/types";
 
 export class PromptRequestMemory {
   constructor(

@@ -17,7 +17,7 @@ import type { PromptHook } from "../hooks";
 import { runControl } from "../hooks";
 import { createAsyncQueue } from "../internal/async-queue";
 import { compact } from "../internal/compact";
-import type { MemoryContext } from "../memory";
+import type { MemoryContext } from "../memory/types";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
 import type { AgentTraceOptions } from "../observability/types";
 import { toReadableStream } from "../streaming";

@@ -17,6 +17,7 @@ The examples use concrete defaults where a full flow is easier to understand wit
 | --- | --- | --- |
 | An agent endpoint with auth, history, tools, traces, and persistence | [Agent App Flow](/docs/examples/agent-app-flow) | [Runtime State and Persistence](/docs/examples/runtime-state-persistence) |
 | An agent runtime assembled from model, instructions, tools, context, memory, and observers | [Agent Runtime Composition](/docs/examples/agent-runtime-composition) | [Context Assembly](/docs/examples/context-assembly) |
+| Durable memory and replayable runtime events in your application database | [Memory and Events](/docs/examples/memory-and-events) | [Prisma Agent Memory](/docs/examples/agent-memory-prisma), [Prisma Agent Event Store](/docs/examples/agent-event-store-prisma) |
 | Tools that enforce user, tenant, and action permissions | [Permissioned Tools](/docs/examples/permissioned-tools) | [Tool Validation](/docs/examples/tool-validation), [Guarded Side Effects](/docs/examples/guarded-side-effects) |
 | Typed model output for classification, extraction, or workflow results | [Structured Results](/docs/examples/structured-results) | [Testing Harness](/docs/examples/testing-harness) |
 | RAG over PDFs, images, documents, and product knowledge | [RAG Ingestion](/docs/examples/rag-ingestion) | [Retrieval Agent](/docs/examples/retrieval-agent), [Document Grounding](/docs/examples/document-grounding) |
@@ -31,6 +32,8 @@ The examples use concrete defaults where a full flow is easier to understand wit
 ## Common Flows
 
 Agent applications usually start with [Agent App Flow](/docs/examples/agent-app-flow): a thin route or job calls a runner, the runner resolves product state, the agent runs with scoped tools and context, and the application persists the result.
+
+Memory and event-backed applications usually start with [Memory and Events](/docs/examples/memory-and-events) to keep conversation context separate from replay/debug logs. Then choose the adapter that matches the product database layer: Prisma, Drizzle, or raw SQL.
 
 Knowledge applications usually combine [RAG Ingestion](/docs/examples/rag-ingestion), [Retrieval Agent](/docs/examples/retrieval-agent), and [Document Grounding](/docs/examples/document-grounding). The important flow is source documents to OCR or text extraction, chunks, embeddings, Chroma-backed vector index, dynamic context or retrieval tools, then cited answers.
 

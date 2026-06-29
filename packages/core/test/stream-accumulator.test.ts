@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CompletionStreamAccumulator } from "../src/agent/stream-accumulator";
 import { AssistantContent, Usage } from "../src/completion";
+import { CompletionStreamAccumulator } from "../src/request/stream-accumulator";
 
 describe("CompletionStreamAccumulator", () => {
   it("returns completed tool call stream events", () => {

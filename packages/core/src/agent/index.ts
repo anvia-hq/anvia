@@ -1,25 +1,4 @@
 export type {
-  ToolApprovalDecision,
-  ToolApprovalRequest,
-  ToolApprovalsOptions,
-} from "../tool";
-export type {
-  AgentMiddleware,
-  CompletionRequestMiddlewareArgs,
-  CompletionRequestMiddlewareResult,
-  CompletionResponseMiddlewareArgs,
-  CompletionResponseMiddlewareResult,
-  ToolInputMiddlewareArgs,
-  ToolInputMiddlewareResult,
-  ToolMiddleware,
-  ToolOutputMiddlewareArgs,
-  ToolOutputMiddlewareResult,
-  ToolResultMiddlewareArgs,
-} from "../tool/middleware";
-export { createMiddleware, createToolMiddleware } from "../tool/middleware";
-export { AgentBuilder } from "./builder";
-export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./errors";
-export type {
   CompletionCallHookArgs,
   CompletionErrorHookArgs,
   CompletionResponseHookArgs,
@@ -40,7 +19,7 @@ export type {
   ToolResultHookArgs,
   TurnEndHookArgs,
   TurnStartHookArgs,
-} from "./hooks";
+} from "../hooks";
 export {
   cancelPrompt,
   createHook,
@@ -48,12 +27,33 @@ export {
   runControl,
   skipTool,
   toolCallControl,
-} from "./hooks";
+} from "../hooks";
+export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "../request/errors";
 export type {
   AgentChildStreamEvent,
   AgentStreamEvent,
   PromptResponse,
-} from "./request-types";
+} from "../request/types";
+export type {
+  ToolApprovalDecision,
+  ToolApprovalRequest,
+  ToolApprovalsOptions,
+} from "../tool";
+export type {
+  AgentMiddleware,
+  CompletionRequestMiddlewareArgs,
+  CompletionRequestMiddlewareResult,
+  CompletionResponseMiddlewareArgs,
+  CompletionResponseMiddlewareResult,
+  ToolInputMiddlewareArgs,
+  ToolInputMiddlewareResult,
+  ToolMiddleware,
+  ToolOutputMiddlewareArgs,
+  ToolOutputMiddlewareResult,
+  ToolResultMiddlewareArgs,
+} from "../tool/middleware";
+export { createMiddleware, createToolMiddleware } from "../tool/middleware";
+export { AgentBuilder } from "./builder";
 export type {
   AgentEventAppendInput,
   AgentEventRecord,

@@ -7,9 +7,12 @@ import type {
   Message as MessageType,
   ToolChoice,
 } from "../completion/index";
+import type { PromptHook } from "../hooks";
 import { compact } from "../internal/compact";
 import type { MemoryRegistration, SessionOptions } from "../memory";
 import type { AgentObserverRegistration } from "../observability";
+import { PromptRequest } from "../request";
+import { isStreamingCompletionModel } from "../request/utils";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
@@ -23,9 +26,7 @@ import type {
 } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
-import type { PromptHook } from "./hooks";
 import { normalizeAgentId } from "./ids";
-import { PromptRequest } from "./request";
 import type {
   AgentEventStoreRegistration,
   AgentOptions,
@@ -33,7 +34,6 @@ import type {
   DynamicContextRegistration,
   DynamicToolRegistration,
 } from "./types";
-import { isStreamingCompletionModel } from "./utils";
 
 export const DEFAULT_MAX_TURNS = 20;
 

@@ -1,4 +1,5 @@
 import type { CompletionModel, Document, JsonObject, JsonValue, ToolChoice } from "../completion";
+import type { PromptHook } from "../hooks";
 import type { McpServer } from "../mcp";
 import {
   type MemoryOptions,
@@ -15,7 +16,6 @@ import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
 import { Agent } from "./agent";
-import type { PromptHook } from "./hooks";
 import { normalizeAgentId } from "./ids";
 import type {
   AgentEventStore,

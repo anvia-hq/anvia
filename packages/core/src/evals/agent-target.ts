@@ -1,6 +1,6 @@
 import type { Agent } from "../agent/agent";
-import type { PromptResponse } from "../agent/request-types";
 import type { Message } from "../completion";
+import type { PromptResponse } from "../request/types";
 import type { EvalCase, EvalTarget } from "./types";
 
 export type AgentEvalTargetOptions<Input, Output = PromptResponse> = {

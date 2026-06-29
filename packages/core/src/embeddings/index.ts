@@ -1,4 +1,3 @@
-import { compact } from "../internal/compact";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type {
   EmbedDocumentsOptions,

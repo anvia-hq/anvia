@@ -2,10 +2,10 @@ import type { JsonObject } from "@anvia/core/completion";
 import type { Context, Hono } from "hono";
 import type { StudioAgent, StudioSessionStore, StudioTraceStore } from "../types";
 import { compact } from "./compact";
-import { appendSessionLog, sessionCreatedLog } from "./session-logs";
-import { errorResponse, parseJsonBody, unsupportedCapability } from "./http";
-import { isJsonObject, isObject } from "./type-guards";
+import { errorResponse, unsupportedCapability } from "./http";
 import { optionalQueryString, parseAfter, parseLimit } from "./query";
+import { appendSessionLog, sessionCreatedLog } from "./session-logs";
+import { isJsonObject, isObject } from "./type-guards";
 
 export function registerSessionRoutes(
   app: Hono,

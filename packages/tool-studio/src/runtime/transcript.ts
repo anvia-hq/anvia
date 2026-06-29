@@ -18,13 +18,15 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
       let textEntryAdded = false;
       for (const content of message.content) {
         if (content.type === "text") {
-          transcript.push(compact({
-            entryId: transcript.length,
-            kind: "message" as const,
-            role: "user" as const,
-            text: content.text,
-            attachments: attachments.length === 0 ? undefined : attachments,
-          }) as StudioTranscriptEntry);
+          transcript.push(
+            compact({
+              entryId: transcript.length,
+              kind: "message" as const,
+              role: "user" as const,
+              text: content.text,
+              attachments: attachments.length === 0 ? undefined : attachments,
+            }) as StudioTranscriptEntry,
+          );
           textEntryAdded = true;
         }
       }
@@ -61,12 +63,14 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
       if (content.type === "text") {
         appendAssistantTranscriptText(transcript, content.text);
       } else if (content.type === "reasoning") {
-        transcript.push(compact({
-          entryId: transcript.length,
-          kind: "reasoning" as const,
-          reasoningId: content.id,
-          text: content.text,
-        }) as StudioTranscriptEntry);
+        transcript.push(
+          compact({
+            entryId: transcript.length,
+            kind: "reasoning" as const,
+            reasoningId: content.id,
+            text: content.text,
+          }) as StudioTranscriptEntry,
+        );
       } else if (content.type === "tool_call") {
         transcript.push({
           entryId: transcript.length,

@@ -213,21 +213,21 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             continue;
           }
 
-          await this.memoryRecorder.commitCompletedRun(
-            runId,
-            currentTurns,
-            newMessages,
-            pendingTurnMessages,
-          );
           const result: PromptResponse = {
             output: textFromAssistantContent(response.choice),
             usage,
             messages: [...newMessages],
             trace: runObservers.trace,
           };
-          this.runState = "completed";
           await this.runRunEndHook(result, newMessages);
           await runObservers.end(result);
+          await this.memoryRecorder.commitCompletedRun(
+            runId,
+            currentTurns,
+            newMessages,
+            pendingTurnMessages,
+          );
+          this.runState = "completed";
           return result;
         }
 
@@ -338,6 +338,8 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         const accumulator = new CompletionStreamAccumulator();
         const generationStartedAt = Date.now();
         let firstDeltaMs: number | undefined;
+        const bufferResponseEvents = this.shouldBufferStreamResponseEvents();
+        const emittedToolCallIds = new Set<string>();
         try {
           for await (const event of this.agent.model.streamCompletion(request)) {
             if (firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
@@ -349,7 +351,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             }
             if (mapped !== undefined) {
               await generationObservers.update?.({ turn: currentTurns, delta: mapped });
-              yield await emit(addTurn(currentTurns, mapped));
+              if (mapped.type === "tool_call") {
+                emittedToolCallIds.add(mapped.toolCall.id);
+              }
+              if (!bufferResponseEvents) {
+                yield await emit(addTurn(currentTurns, mapped));
+              }
             }
           }
         } catch (error) {
@@ -382,8 +389,16 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         const toolCalls = response.choice.filter(
           (item): item is ToolCall => item.type === "tool_call",
         );
-        for (const toolCall of toolCalls) {
-          yield await emit({ type: "tool_call", turn: currentTurns, toolCall });
+        if (bufferResponseEvents) {
+          for (const event of responseStreamEvents(currentTurns, response)) {
+            yield await emit(event);
+          }
+        } else {
+          for (const toolCall of toolCalls) {
+            if (!emittedToolCallIds.has(toolCall.id)) {
+              yield await emit({ type: "tool_call", turn: currentTurns, toolCall });
+            }
+          }
         }
         yield await emit({ type: "turn_end", turn: currentTurns, response });
 
@@ -395,24 +410,29 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             continue;
           }
 
-          const output = textFromAssistantContent(response.choice);
+          const result: PromptResponse = {
+            output: textFromAssistantContent(response.choice),
+            usage,
+            messages: [...newMessages],
+            trace: runObservers.trace,
+          };
+          await this.runRunEndHook(result, newMessages);
+          await runObservers.end(result);
           await this.memoryRecorder.commitCompletedRun(
             runId,
             currentTurns,
             newMessages,
             pendingTurnMessages,
           );
+          this.runState = "completed";
           yield await emit({
             type: "final",
             runId,
-            output,
-            usage,
-            messages: [...newMessages],
-            trace: runObservers.trace,
+            output: result.output,
+            usage: result.usage,
+            messages: result.messages,
+            trace: result.trace,
           });
-          this.runState = "completed";
-          await this.runRunEndHook({ output, usage, messages: [...newMessages] }, newMessages);
-          await runObservers.end({ output, usage, messages: [...newMessages] });
           return;
         }
 
@@ -746,6 +766,13 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     return [...this.agent.middlewares, ...this.requestMiddlewares];
   }
 
+  private shouldBufferStreamResponseEvents(): boolean {
+    return (
+      this.activeHook?.onCompletionResponse !== undefined ||
+      this.activeMiddlewares().some((middleware) => middleware.onCompletionResponse !== undefined)
+    );
+  }
+
   private async drainSteeringMessages(
     runId: string,
     turn: number,
@@ -763,9 +790,14 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   }
 
   private startRun(): void {
-    if (!this.isTerminal()) {
+    if (this.runState === "idle") {
       this.runState = "running";
+      return;
     }
+    if (this.runState === "running") {
+      throw new Error("PromptRequest is already running.");
+    }
+    throw new Error("PromptRequest has already been used.");
   }
 
   private isTerminal(): boolean {
@@ -807,4 +839,48 @@ function normalizeSteeringInput(input: string | MessageType | MessageType[]): Me
     return [Message.user(input)];
   }
   return Array.isArray(input) ? [...input] : [input];
+}
+
+function responseStreamEvents(turn: number, response: CompletionResponse): AgentStreamEvent[] {
+  const events: AgentStreamEvent[] = [];
+  for (const item of response.choice) {
+    if (item.type === "text") {
+      if (item.text.length > 0) {
+        events.push({ type: "text_delta", turn, delta: item.text });
+      }
+      continue;
+    }
+
+    if (item.type === "reasoning") {
+      if (item.content === undefined) {
+        if (item.text.length > 0) {
+          events.push(
+            compact({ type: "reasoning_delta" as const, turn, delta: item.text, id: item.id }),
+          );
+        }
+        continue;
+      }
+
+      for (const content of item.content) {
+        const delta =
+          content.type === "encrypted" || content.type === "redacted" ? content.data : content.text;
+        events.push(
+          compact({
+            type: "reasoning_delta" as const,
+            turn,
+            delta,
+            id: item.id,
+            contentType: content.type,
+            signature: content.type === "text" ? content.signature : undefined,
+          }),
+        );
+      }
+      continue;
+    }
+
+    if (item.type === "tool_call") {
+      events.push({ type: "tool_call", turn, toolCall: item });
+    }
+  }
+  return events;
 }

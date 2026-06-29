@@ -83,7 +83,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
     if (event.type === "tool_call") {
       this.upsertToolCall(event.toolCall);
-      return undefined;
+      return { type: "tool_call", toolCall: event.toolCall };
     }
 
     if (event.type === "message_id") {

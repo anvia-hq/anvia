@@ -138,17 +138,23 @@ export class ToolCallExecutor {
       } else {
         let approvalDecision: { approved: true } | { approved: false; result: string };
         try {
+          effectiveArgs = await this.runToolInputMiddlewares({
+            ...hookArgs,
+            turn: observation?.turn ?? 0,
+            originalArgs: args,
+          });
+          const effectiveHookArgs = { ...hookArgs, args: effectiveArgs };
           approvalDecision =
             callAction?.type === "approval_request"
-              ? await this.requestApproval(tool, hookArgs, callAction)
-              : ((await this.evaluateToolApproval(tool, hookArgs)) ?? { approved: true });
+              ? await this.requestApproval(tool, effectiveHookArgs, callAction)
+              : ((await this.evaluateToolApproval(tool, effectiveHookArgs)) ?? { approved: true });
         } catch (error) {
           await recordToolError(
             toolObservers,
             observation?.turn,
             toolCall,
             internalCallId,
-            args,
+            effectiveArgs,
             error,
           );
           throw error;
@@ -158,11 +164,6 @@ export class ToolCallExecutor {
           output = approvalDecision.result;
           skipped = true;
         } else {
-          effectiveArgs = await this.runToolInputMiddlewares({
-            ...hookArgs,
-            turn: observation?.turn ?? 0,
-            originalArgs: args,
-          });
           try {
             output = await this.agent.callTool(toolCall.function.name, effectiveArgs, {
               emitStreamEvent: async (event) => {

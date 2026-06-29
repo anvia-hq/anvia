@@ -1,6 +1,6 @@
-import type { Agent } from "../agent/agent";
-import type { Document, ToolDefinition } from "../completion/index";
-import { compact } from "../internal/compact";
+import type { Agent } from "../../agent/agent";
+import type { Document, ToolDefinition } from "../../completion/index";
+import { compact } from "../compact";
 
 export async function fetchDynamicContext(
   agent: Agent,

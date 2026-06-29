@@ -1,6 +1,4 @@
-import type { JsonValue, Message as MessageType } from "../completion/index";
-
-export { isStreamingCompletionModel } from "../completion/create-completion";
+import type { Message as MessageType } from "../completion/index";
 
 export function extractRagText(message: MessageType): string | undefined {
   if (message.role === "user") {
@@ -14,15 +12,4 @@ export function extractRagText(message: MessageType): string | undefined {
   }
 
   return undefined;
-}
-
-export function parseJsonValue(text: string): JsonValue {
-  if (text.trim().length === 0) {
-    return {};
-  }
-  try {
-    return JSON.parse(text) as JsonValue;
-  } catch {
-    return text;
-  }
 }

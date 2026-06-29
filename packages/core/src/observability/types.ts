@@ -10,7 +10,7 @@ import type {
   ToolResultContent,
   Usage,
 } from "../completion";
-import type { AgentDeltaEvent } from "../request/stream-accumulator";
+import type { AgentDeltaEvent } from "../request/types";
 import type { ToolCallStreamEvent } from "../tool";
 
 export type AgentTraceInfo = {

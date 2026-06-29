@@ -1,17 +1,17 @@
-import type { Agent } from "../agent/agent";
+import type { Agent } from "../../agent/agent";
 import type {
   JsonObject,
   ToolCall,
   ToolDefinition,
   ToolResult,
   ToolResultContent,
-} from "../completion";
-import { ToolContent } from "../completion";
-import type { PromptHook, ToolApprovalRequestOptions, ToolHookArgs } from "../hooks";
-import { runControl, toolCallControl } from "../hooks";
-import { compact } from "../internal/compact";
-import { mapWithConcurrency } from "../internal/concurrency";
-import type { ActiveAgentRunObservers, ActiveToolObservers } from "../observability/group";
+} from "../../completion";
+import { ToolContent } from "../../completion";
+import type { PromptHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
+import { runControl, toolCallControl } from "../../hooks";
+import type { ActiveAgentRunObservers, ActiveToolObservers } from "../../observability/group";
+import { ToolApprovalRequiredError } from "../../request/errors";
+import type { AgentChildStreamEvent } from "../../request/types";
 import type {
   AnyTool,
   NormalizedToolOutput,
@@ -21,15 +21,15 @@ import type {
   ToolApprovalRequest,
   ToolApprovalsOptions,
   ToolCallStreamEvent,
-} from "../tool";
-import { parseToolArgs, toolResultContentToText } from "../tool";
+} from "../../tool";
+import { parseToolArgs, toolResultContentToText } from "../../tool";
 import type {
   AgentMiddleware,
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
-} from "../tool/middleware";
-import { ToolApprovalRequiredError } from "./errors";
-import type { AgentChildStreamEvent } from "./types";
+} from "../../tool/middleware";
+import { compact } from "../compact";
+import { mapWithConcurrency } from "../concurrency";
 
 const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
 

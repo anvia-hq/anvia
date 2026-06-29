@@ -2,23 +2,12 @@ import type {
   AssistantContent as AssistantContentType,
   CompletionResponse,
   CompletionStreamEvent,
+  JsonValue,
   ReasoningContent,
-  ReasoningContentType,
   ToolCall,
-} from "../completion/index";
-import { Usage } from "../completion/index";
-import { parseJsonValue } from "./utils";
-
-export type AgentDeltaEvent =
-  | { type: "text_delta"; delta: string }
-  | {
-      type: "reasoning_delta";
-      delta: string;
-      id?: string;
-      contentType?: ReasoningContentType;
-      signature?: string;
-    }
-  | { type: "tool_call"; toolCall: ToolCall };
+} from "../../completion/index";
+import { Usage } from "../../completion/index";
+import type { AgentDeltaEvent } from "../../request/types";
 
 type ReasoningState = {
   text: string;
@@ -297,4 +286,15 @@ function isEmptyToolArguments(value: unknown): boolean {
     return Object.values(value).every((item) => item === undefined);
   }
   return false;
+}
+
+function parseJsonValue(text: string): JsonValue {
+  if (text.trim().length === 0) {
+    return {};
+  }
+  try {
+    return JSON.parse(text) as JsonValue;
+  } catch {
+    return text;
+  }
 }

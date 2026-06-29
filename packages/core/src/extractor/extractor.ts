@@ -11,7 +11,7 @@ import {
   type ToolChoice,
   Usage,
 } from "../completion/index";
-import { extractRagText } from "../request/utils";
+import { extractRagText } from "../internal/rag-text";
 import type { ZodSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/index";
 

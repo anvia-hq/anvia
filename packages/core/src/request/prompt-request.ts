@@ -1,4 +1,5 @@
 import type { Agent } from "../agent/agent";
+import { isStreamingCompletionModel } from "../completion/create-completion";
 import {
   assertCompletionRequestSupported,
   type CompletionModel,
@@ -17,6 +18,17 @@ import type { PromptHook } from "../hooks";
 import { runControl } from "../hooks";
 import { createAsyncQueue } from "../internal/async-queue";
 import { compact } from "../internal/compact";
+import { PromptRequestMemory } from "../internal/prompt-runtime/memory";
+import { fetchDynamicContext, fetchToolDefinitions } from "../internal/prompt-runtime/retrieval";
+import { CompletionStreamAccumulator } from "../internal/prompt-runtime/stream-accumulator";
+import { addTurn, isGenerationDeltaEvent } from "../internal/prompt-runtime/stream-events";
+import {
+  type AgentToolEventPayload,
+  ToolCallExecutor,
+  type ToolExecutionEventPayload,
+  type ToolResultEventPayload,
+} from "../internal/prompt-runtime/tool-execution";
+import { extractRagText } from "../internal/rag-text";
 import type { MemoryContext } from "../memory/types";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
 import type { AgentTraceOptions } from "../observability/types";
@@ -24,22 +36,7 @@ import { toReadableStream } from "../streaming";
 import type { ToolApprovalsOptions } from "../tool";
 import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
-import { PromptRequestMemory } from "./memory";
-import { fetchDynamicContext, fetchToolDefinitions } from "./retrieval";
-import { CompletionStreamAccumulator } from "./stream-accumulator";
-import {
-  type AgentToolEventPayload,
-  ToolCallExecutor,
-  type ToolExecutionEventPayload,
-  type ToolResultEventPayload,
-} from "./tool-execution";
-import {
-  type AgentStreamEvent,
-  addTurn,
-  isGenerationDeltaEvent,
-  type PromptResponse,
-} from "./types";
-import { extractRagText, isStreamingCompletionModel } from "./utils";
+import type { AgentStreamEvent, PromptResponse } from "./types";
 
 export class PromptRequest<M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];

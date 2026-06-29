@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isStreamingCompletionModel } from "../completion/create-completion";
 import type {
   CompletionModel,
   Document,
@@ -12,7 +13,6 @@ import { compact } from "../internal/compact";
 import type { MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import { PromptRequest } from "../request";
-import { isStreamingCompletionModel } from "../request/utils";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";

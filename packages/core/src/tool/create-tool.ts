@@ -50,8 +50,10 @@ export function createTool<
     ...compact({
       name: options.name,
       approval: options.approval,
-      inputGuardrails: options.inputGuardrails,
-      outputGuardrails: options.outputGuardrails,
+      inputGuardrails:
+        options.inputGuardrails === undefined ? undefined : [...options.inputGuardrails],
+      outputGuardrails:
+        options.outputGuardrails === undefined ? undefined : [...options.outputGuardrails],
     }),
     definition() {
       return {

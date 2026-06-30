@@ -111,6 +111,12 @@ describe("public exports", () => {
     expect(extractor).toHaveProperty("ExtractorBuilder");
     expect(guardrails).toHaveProperty("defineGuardrailPolicy");
     expect(guardrails).toHaveProperty("defineInputGuardrail");
+    expect(guardrails).toHaveProperty("defineToolGuardrail");
+    expect(guardrails).toHaveProperty("guardrails");
+    expect(guardrails.guardrails).toMatchObject({
+      blockText: expect.any(Function),
+      redactText: expect.any(Function),
+    });
     expect(imageGeneration).toHaveProperty("ImageGenerationRequestBuilder");
     expect(loaders).toHaveProperty("FileLoader");
     expect(mcp).toHaveProperty("connectMcp");
@@ -133,7 +139,11 @@ describe("public exports", () => {
   it("exposes guardrail helpers from the root entrypoint", () => {
     expect("defineGuardrailPolicy" in publicCore).toBe(true);
     expect("defineToolGuardrail" in publicCore).toBe(true);
-    expect("guardrails" in publicCore).toBe(true);
+    expect(publicCore).toHaveProperty("guardrails");
+    expect(publicCore.guardrails).toMatchObject({
+      blockText: expect.any(Function),
+      redactText: expect.any(Function),
+    });
   });
 
   it("exposes ToolContent from the root entrypoint", () => {

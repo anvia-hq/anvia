@@ -160,35 +160,39 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   async send(): Promise<PromptResponse> {
     this.startRun();
     const runId = globalThis.crypto.randomUUID();
-    const inputResult = await runInputGuardrails(this.guardrailPolicies, {
-      prompt: this.promptMessage,
-      history: this.chatHistory,
-      inputText: textFromMessage(this.promptMessage),
-      run: this.guardrailRunContext(runId),
-    });
-    this.guardrailDecisions.push(...inputResult.decisions);
-    this.promptMessage = inputResult.prompt;
-    if (inputResult.blocked) {
-      const output = inputResult.message ?? "The request was blocked by a guardrail.";
-      const messages = [this.promptMessage, Message.assistant(output)];
-      this.runState = "completed";
-      return {
-        output,
-        usage: Usage.empty(),
-        messages,
-        guardrails: [...this.guardrailDecisions],
-      };
-    }
-
-    const newMessages: MessageType[] = [this.promptMessage];
-    this.chatHistory = await this.memoryRecorder.prepareRun(runId, newMessages);
-    const pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
     let usage = Usage.empty();
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
+    let newMessages: MessageType[] = [this.promptMessage];
     const runObservers = await this.startRunObservers();
 
     try {
+      const inputResult = await runInputGuardrails(this.guardrailPolicies, {
+        prompt: this.promptMessage,
+        history: this.chatHistory,
+        inputText: textFromMessage(this.promptMessage),
+        run: this.guardrailRunContext(runId),
+      });
+      for (const decision of inputResult.decisions) {
+        await this.recordGuardrailDecision(decision, runObservers);
+      }
+      this.promptMessage = inputResult.prompt;
+      if (inputResult.blocked) {
+        const output = inputResult.message ?? "The request was blocked by a guardrail.";
+        const result: PromptResponse = {
+          output,
+          usage: Usage.empty(),
+          messages: [this.promptMessage, Message.assistant(output)],
+          guardrails: [...this.guardrailDecisions],
+        };
+        await runObservers.end(result);
+        this.runState = "completed";
+        return result;
+      }
+
+      newMessages = [this.promptMessage];
+      this.chatHistory = await this.memoryRecorder.prepareRun(runId, newMessages);
+      const pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
       while (currentTurns <= this.maxTurnCount + 1) {
         const prompt = newMessages.at(-1);
@@ -344,42 +348,49 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       await this.recordAgentEvent(runId, event);
       return event;
     };
-    const inputResult = await runInputGuardrails(this.guardrailPolicies, {
-      prompt: this.promptMessage,
-      history: this.chatHistory,
-      inputText: textFromMessage(this.promptMessage),
-      run: this.guardrailRunContext(runId),
-    });
-    this.guardrailDecisions.push(...inputResult.decisions);
-    for (const decision of inputResult.decisions) {
-      yield await emit({ type: "guardrail_decision", decision });
-    }
-    this.promptMessage = inputResult.prompt;
-    if (inputResult.blocked) {
-      const output = inputResult.message ?? "The request was blocked by a guardrail.";
-      const messages = [this.promptMessage, Message.assistant(output)];
-      this.runState = "completed";
-      yield await emit({
-        type: "final",
-        runId,
-        output,
-        usage: Usage.empty(),
-        messages,
-        guardrails: [...this.guardrailDecisions],
-      });
-      return;
-    }
-
-    const newMessages: MessageType[] = [this.promptMessage];
-    this.chatHistory = await this.memoryRecorder.prepareRun(runId, newMessages);
-    const pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
     let usage = Usage.empty();
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
+    let newMessages: MessageType[] = [this.promptMessage];
     const runObservers = await this.startRunObservers();
     const bufferOutputDeltas = hasEnforcedOutputGuardrails(this.guardrailPolicies);
 
     try {
+      const inputResult = await runInputGuardrails(this.guardrailPolicies, {
+        prompt: this.promptMessage,
+        history: this.chatHistory,
+        inputText: textFromMessage(this.promptMessage),
+        run: this.guardrailRunContext(runId),
+      });
+      for (const decision of inputResult.decisions) {
+        await this.recordGuardrailDecision(decision, runObservers);
+        yield await emit({ type: "guardrail_decision", decision });
+      }
+      this.promptMessage = inputResult.prompt;
+      if (inputResult.blocked) {
+        const output = inputResult.message ?? "The request was blocked by a guardrail.";
+        const result: PromptResponse = {
+          output,
+          usage: Usage.empty(),
+          messages: [this.promptMessage, Message.assistant(output)],
+          guardrails: [...this.guardrailDecisions],
+        };
+        await runObservers.end(result);
+        this.runState = "completed";
+        yield await emit({
+          type: "final",
+          runId,
+          output: result.output,
+          usage: result.usage,
+          messages: result.messages,
+          guardrails: result.guardrails,
+        });
+        return;
+      }
+
+      newMessages = [this.promptMessage];
+      this.chatHistory = await this.memoryRecorder.prepareRun(runId, newMessages);
+      const pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
       while (currentTurns <= this.maxTurnCount + 1) {
         const prompt = newMessages.at(-1);
@@ -487,6 +498,31 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         newMessages.push(assistantMessage);
 
         if (toolCalls.length === 0) {
+          let emittedTurnEnd = false;
+          if (!bufferOutputDeltas) {
+            if (bufferResponseEvents) {
+              for (const event of responseStreamEvents(currentTurns, response)) {
+                yield await emit(event);
+              }
+            }
+            yield await emit({ type: "turn_end", turn: currentTurns, response });
+            emittedTurnEnd = true;
+          }
+          if (this.steeringMessages.length > 0) {
+            await this.memoryRecorder.commitMessages(
+              runId,
+              currentTurns,
+              [assistantMessage],
+              pendingTurnMessages,
+            );
+          }
+          if (
+            await this.drainSteeringMessages(runId, currentTurns, newMessages, pendingTurnMessages)
+          ) {
+            await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
+            continue;
+          }
+
           const guardedOutput = await this.runOutputGuardrailsForResponse(
             runId,
             usage,
@@ -506,17 +542,13 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             [assistantMessage],
             pendingTurnMessages,
           );
-          if (bufferResponseEvents || bufferOutputDeltas) {
+          if (!emittedTurnEnd && (bufferResponseEvents || bufferOutputDeltas)) {
             for (const event of responseStreamEvents(currentTurns, response)) {
               yield await emit(event);
             }
           }
-          yield await emit({ type: "turn_end", turn: currentTurns, response });
-          if (
-            await this.drainSteeringMessages(runId, currentTurns, newMessages, pendingTurnMessages)
-          ) {
-            await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
-            continue;
+          if (!emittedTurnEnd) {
+            yield await emit({ type: "turn_end", turn: currentTurns, response });
           }
 
           const result: PromptResponse = {

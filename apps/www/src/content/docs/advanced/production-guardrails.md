@@ -70,7 +70,7 @@ const agent = new AgentBuilder("support", model)
 
 ## Boundaries
 
-Input guardrails run before memory and model work. Tool guardrails run before hooks, legacy approvals, middleware, and tool execution. Tool-result guardrails run before results return to the model. Output guardrails run before final responses are returned, streamed, or committed to memory.
+Input guardrails run before memory and model work. Tool guardrails run after tool-call hooks and tool input middleware, then before approvals and tool execution. Tool-result guardrails run before results return to the model. Output guardrails run before final responses are returned, streamed, or committed to memory.
 
 During streaming, enforced output guardrails buffer text and reasoning deltas until the final output is checked. This prevents unsafe raw output from being emitted before redaction or blocking.
 

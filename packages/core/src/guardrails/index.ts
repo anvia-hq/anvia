@@ -268,12 +268,8 @@ export function block(options: Omit<GuardrailBlock, "action">): GuardrailBlock {
 }
 
 export const guardrails = {
-  blockText(options: TextPatternGuardrailOptions) {
-    return textPatternGuardrail(options, "block");
-  },
-  redactText(options: TextPatternGuardrailOptions & { replacement?: string | undefined }) {
-    return textPatternGuardrail(options, "rewrite");
-  },
+  blockText,
+  redactText,
 };
 
 export function normalizeGuardrailPolicies(
@@ -628,18 +624,41 @@ function matchesTool(tool: string | string[] | undefined, toolName: string): boo
   return Array.isArray(tool) ? tool.includes(toolName) : tool === toolName;
 }
 
-type TextPatternGuardrailOptions = {
+type TextPatternBoundary = "input" | "output" | "tool_result";
+
+type TextPatternGuardrailFor<Boundary extends TextPatternBoundary> = Boundary extends "input"
+  ? InputGuardrail
+  : Boundary extends "output"
+    ? OutputGuardrail
+    : ToolResultGuardrail;
+
+type TextPatternGuardrailOptions<Boundary extends TextPatternBoundary = TextPatternBoundary> = {
   id: string;
-  boundary: "input" | "output" | "tool_result";
+  boundary: Boundary;
   patterns: Array<string | RegExp>;
   reason: string;
   message?: string | undefined;
 };
 
-function textPatternGuardrail(
-  options: TextPatternGuardrailOptions & { replacement?: string | undefined },
+type TextPatternRedactOptions<Boundary extends TextPatternBoundary = TextPatternBoundary> =
+  TextPatternGuardrailOptions<Boundary> & { replacement?: string | undefined };
+
+function blockText<Boundary extends TextPatternBoundary>(
+  options: TextPatternGuardrailOptions<Boundary>,
+): TextPatternGuardrailFor<Boundary> {
+  return textPatternGuardrail(options, "block");
+}
+
+function redactText<Boundary extends TextPatternBoundary>(
+  options: TextPatternRedactOptions<Boundary>,
+): TextPatternGuardrailFor<Boundary> {
+  return textPatternGuardrail(options, "rewrite");
+}
+
+function textPatternGuardrail<Boundary extends TextPatternBoundary>(
+  options: TextPatternRedactOptions<Boundary>,
   action: "block" | "rewrite",
-): InputGuardrail | OutputGuardrail | ToolResultGuardrail {
+): TextPatternGuardrailFor<Boundary> {
   if (options.boundary === "input") {
     return defineInputGuardrail({
       id: options.id,
@@ -648,7 +667,7 @@ function textPatternGuardrail(
           actions.rewrite({ inputText: value, reason: options.reason }),
         );
       },
-    });
+    }) as TextPatternGuardrailFor<Boundary>;
   }
   if (options.boundary === "output") {
     return defineOutputGuardrail({
@@ -658,7 +677,7 @@ function textPatternGuardrail(
           actions.rewrite({ outputText: value, reason: options.reason }),
         );
       },
-    });
+    }) as TextPatternGuardrailFor<Boundary>;
   }
   return defineToolResultGuardrail({
     id: options.id,
@@ -667,7 +686,7 @@ function textPatternGuardrail(
         actions.rewrite({ result: value, reason: options.reason }),
       );
     },
-  });
+  }) as TextPatternGuardrailFor<Boundary>;
 }
 
 function textPatternAction<TRewrite>(
@@ -676,9 +695,7 @@ function textPatternAction<TRewrite>(
   action: "block" | "rewrite",
   rewrite: (value: string) => TRewrite,
 ): GuardrailAllow | GuardrailBlock | TRewrite {
-  const matched = options.patterns.some((pattern) =>
-    typeof pattern === "string" ? text.includes(pattern) : pattern.test(text),
-  );
+  const matched = options.patterns.some((pattern) => textPatternMatches(text, pattern));
   if (!matched) {
     return allow();
   }
@@ -690,9 +707,29 @@ function textPatternAction<TRewrite>(
   }
   let current = text;
   for (const pattern of options.patterns) {
-    current = current.replace(pattern, options.replacement ?? "[redacted]");
+    current = replaceTextPattern(current, pattern, options.replacement ?? "[redacted]");
   }
   return rewrite(current);
+}
+
+function textPatternMatches(text: string, pattern: string | RegExp): boolean {
+  if (typeof pattern === "string") {
+    return text.includes(pattern);
+  }
+  pattern.lastIndex = 0;
+  const matched = pattern.test(text);
+  pattern.lastIndex = 0;
+  return matched;
+}
+
+function replaceTextPattern(text: string, pattern: string | RegExp, replacement: string): string {
+  if (typeof pattern === "string") {
+    return text.split(pattern).join(replacement);
+  }
+  pattern.lastIndex = 0;
+  const flags = pattern.flags.replace("y", "");
+  const globalFlags = flags.includes("g") ? flags : `${flags}g`;
+  return text.replace(new RegExp(pattern.source, globalFlags), replacement);
 }
 
 function textFromMessage(message: Message): string {
@@ -719,7 +756,13 @@ function rewriteMessageText(message: Message, text: string): Message {
   if (message.role === "user") {
     return {
       ...message,
-      content: [{ type: "text", text }, ...message.content.filter((item) => item.type !== "text")],
+      content: [
+        { type: "text", text },
+        ...message.content.filter(
+          (item) =>
+            item.type !== "text" && !(item.type === "document" && item.source.type === "text"),
+        ),
+      ],
     };
   }
   if (message.role === "assistant") {

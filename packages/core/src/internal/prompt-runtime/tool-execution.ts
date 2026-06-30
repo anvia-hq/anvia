@@ -141,101 +141,93 @@ export class ToolCallExecutor {
       let skipped = false;
       let effectiveArgs = args;
 
-      const inputGuardrailResult = await runToolGuardrails(
-        this.guardrails,
-        (tool?.inputGuardrails ?? []) as ToolGuardrail[],
-        toolGuardrailContext(tool, hookArgs, this.agent, this.runContext, observation?.turn ?? 0),
-      );
-      await this.recordGuardrailDecisions(inputGuardrailResult.decisions);
-      effectiveArgs = inputGuardrailResult.rawArgs;
-      hookArgs.args = effectiveArgs;
-      if (inputGuardrailResult.blocked) {
-        output = inputGuardrailResult.message ?? "Tool call blocked by guardrail.";
-        skipped = true;
-      } else if (inputGuardrailResult.approval !== undefined) {
-        const approvalDecision = await this.requestApproval(
-          tool,
-          hookArgs,
-          compact({
-            reason: inputGuardrailResult.approval.reason,
-            rejectMessage: inputGuardrailResult.approval.rejectMessage,
-          }),
+      const callAction = await this.activeHook?.onToolCall?.({
+        ...hookArgs,
+        tool: toolCallControl,
+      });
+      if (callAction?.type === "terminate") {
+        await recordToolError(
+          toolObservers,
+          observation?.turn,
+          toolCall,
+          internalCallId,
+          effectiveArgs,
+          callAction.reason,
         );
-        if (!approvalDecision.approved) {
-          output = approvalDecision.result;
-          skipped = true;
-        } else {
-          output = await this.runApprovedToolCall(
-            toolCall,
-            hookArgs,
-            effectiveArgs,
-            args,
-            toolObservers,
-            observation,
-            onStreamEvent,
-          );
-          effectiveArgs = hookArgs.args;
-        }
+        throw this.cancel(callAction.reason);
+      }
+      if (callAction?.type === "skip") {
+        output = callAction.reason;
+        skipped = true;
       } else {
-        const callAction = await this.activeHook?.onToolCall?.({
-          ...hookArgs,
-          tool: toolCallControl,
-        });
-        if (callAction?.type === "terminate") {
+        let approvalDecision: { approved: true } | { approved: false; result: string };
+        try {
+          effectiveArgs = await this.runToolInputMiddlewares({
+            ...hookArgs,
+            turn: observation?.turn ?? 0,
+            originalArgs: args,
+          });
+          hookArgs.args = effectiveArgs;
+
+          const inputGuardrailResult = await runToolGuardrails(
+            this.guardrails,
+            (tool?.inputGuardrails ?? []) as ToolGuardrail[],
+            toolGuardrailContext(
+              tool,
+              hookArgs,
+              this.agent,
+              this.runContext,
+              observation?.turn ?? 0,
+            ),
+          );
+          await this.recordGuardrailDecisions(inputGuardrailResult.decisions);
+          effectiveArgs = inputGuardrailResult.rawArgs;
+          hookArgs.args = effectiveArgs;
+
+          if (inputGuardrailResult.blocked) {
+            output = inputGuardrailResult.message ?? "Tool call blocked by guardrail.";
+            skipped = true;
+          } else {
+            approvalDecision =
+              inputGuardrailResult.approval !== undefined
+                ? await this.requestApproval(
+                    tool,
+                    hookArgs,
+                    compact({
+                      reason: inputGuardrailResult.approval.reason,
+                      rejectMessage: inputGuardrailResult.approval.rejectMessage,
+                    }),
+                  )
+                : callAction?.type === "approval_request"
+                  ? await this.requestApproval(tool, hookArgs, callAction)
+                  : ((await this.evaluateToolApproval(tool, hookArgs)) ?? { approved: true });
+            if (!approvalDecision.approved) {
+              output = approvalDecision.result;
+              skipped = true;
+            } else {
+              output = await this.runApprovedToolCall(
+                toolCall,
+                hookArgs,
+                effectiveArgs,
+                args,
+                toolObservers,
+                observation,
+                onStreamEvent,
+                false,
+              );
+              effectiveArgs = hookArgs.args;
+            }
+          }
+        } catch (error) {
           await recordToolError(
             toolObservers,
             observation?.turn,
             toolCall,
             internalCallId,
             effectiveArgs,
-            callAction.reason,
+            error,
           );
-          throw this.cancel(callAction.reason);
-        }
-        if (callAction?.type === "skip") {
-          output = callAction.reason;
-          skipped = true;
-        } else {
-          let approvalDecision: { approved: true } | { approved: false; result: string };
-          try {
-            effectiveArgs = await this.runToolInputMiddlewares({
-              ...hookArgs,
-              turn: observation?.turn ?? 0,
-              originalArgs: args,
-            });
-            hookArgs.args = effectiveArgs;
-            approvalDecision =
-              callAction?.type === "approval_request"
-                ? await this.requestApproval(tool, hookArgs, callAction)
-                : ((await this.evaluateToolApproval(tool, hookArgs)) ?? { approved: true });
-          } catch (error) {
-            await recordToolError(
-              toolObservers,
-              observation?.turn,
-              toolCall,
-              internalCallId,
-              effectiveArgs,
-              error,
-            );
-            throw error;
-          }
-
-          if (!approvalDecision.approved) {
-            output = approvalDecision.result;
-            skipped = true;
-          } else {
-            output = await this.runApprovedToolCall(
-              toolCall,
-              hookArgs,
-              effectiveArgs,
-              args,
-              toolObservers,
-              observation,
-              onStreamEvent,
-              false,
-            );
-            effectiveArgs = hookArgs.args;
-          }
+          throw error;
         }
       }
 
@@ -530,8 +522,7 @@ function toolGuardrailContext(
   run: ToolExecutionRunContext,
   turn: number,
 ): ToolGuardrailContext {
-  const rawParsedArgs = parseToolArgs(hookArgs.args);
-  const parsedArgs = tool?.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
+  const parsedArgs = parseGuardrailContextArgs(tool, hookArgs.args);
   return compact({
     toolName: hookArgs.toolName,
     args: parsedArgs,
@@ -552,8 +543,7 @@ function toolResultGuardrailContext(
   run: ToolExecutionRunContext,
   turn: number,
 ): ToolResultGuardrailContext {
-  const rawParsedArgs = parseToolArgs(hookArgs.args);
-  const parsedArgs = tool?.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
+  const parsedArgs = parseGuardrailContextArgs(tool, hookArgs.args);
   return compact({
     toolName: hookArgs.toolName,
     args: parsedArgs,
@@ -565,6 +555,23 @@ function toolResultGuardrailContext(
     turn,
     run: guardrailRunContext(agent, run),
   }) as ToolResultGuardrailContext;
+}
+
+function parseGuardrailContextArgs(tool: AnyTool | undefined, rawArgs: string): unknown {
+  const parsedArgs = parseGuardrailArgs(rawArgs);
+  try {
+    return tool?.parseApprovalArgs?.(parsedArgs) ?? parsedArgs;
+  } catch {
+    return parsedArgs;
+  }
+}
+
+function parseGuardrailArgs(args: string): unknown {
+  try {
+    return parseToolArgs(args);
+  } catch {
+    return args;
+  }
 }
 
 function guardrailRunContext(agent: Agent, run: ToolExecutionRunContext): GuardrailRunContext {

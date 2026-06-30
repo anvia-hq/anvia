@@ -69,7 +69,7 @@ input -> model request -> tool -> tool result -> model continuation -> output
 ```
 
 - input guardrails run before memory and model work
-- tool guardrails run before hooks, legacy tool approvals, middleware, and execution
+- tool guardrails run after tool-call hooks and tool input middleware, then before approvals and execution
 - tool-result guardrails run after tool output middleware and before the result returns to the model
 - output guardrails run before final response return, final stream event, and final assistant memory commit
 

@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.12
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.3.11
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/mistral
 
+## 0.3.2
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.3.1
 
 ### Patch Changes

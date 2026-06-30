@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 0.2.10
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.2.9
 
 ### Patch Changes

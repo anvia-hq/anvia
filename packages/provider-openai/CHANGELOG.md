@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.15
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.3.14
 
 ### Patch Changes

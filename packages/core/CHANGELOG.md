@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.11.3
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.11.2
 
 ### Patch Changes

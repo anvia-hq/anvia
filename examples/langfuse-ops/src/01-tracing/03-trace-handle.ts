@@ -3,7 +3,7 @@
 // `withHook` hook that reaches the handle via `tracing.getCurrentTrace()`
 // and emits ad-hoc checkpoint events + attributes from the run lifecycle.
 
-import { createHook } from "@anvia/core/agent";
+import { createHook } from "@anvia/core/hooks";
 import { buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentBuilder, createHook, skipTool } from "@anvia/core/agent";
+import { AgentBuilder } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionRequest,
@@ -18,6 +18,7 @@ import {
 } from "@anvia/core/completion";
 import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
 import { type EvalMetric, EvalOutcome } from "@anvia/core/evals";
+import { createHook, skipTool } from "@anvia/core/hooks";
 import { connectMcp, type McpClient } from "@anvia/core/mcp";
 import type {
   MemoryAppendInput,

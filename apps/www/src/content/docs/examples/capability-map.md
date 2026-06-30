@@ -18,9 +18,9 @@ The concrete RAG stack used in examples is Mistral OCR, OpenAI embeddings, and C
 | Agents | [Agent App Flow](/docs/examples/agent-app-flow), [Support Agent](/docs/examples/support-agent) | A product request can run through auth, tools, model calls, traces, and persistence. |
 | Runtime composition | [Agent Runtime Composition](/docs/examples/agent-runtime-composition) | Model, instructions, tools, context, memory, observers, and output contracts are assembled at the right boundary. |
 | Request runners | [Agent App Flow](/docs/examples/agent-app-flow), [Pipeline Worker](/docs/examples/pipeline-worker) | Routes, jobs, and tests call the same workflow function. |
-| Memory and sessions | [Context Assembly](/docs/examples/context-assembly), [Runtime State and Persistence](/docs/examples/runtime-state-persistence) | Conversation state is durable without becoming an authorization or audit system. |
+| Memory and sessions | [Memory and Events](/docs/examples/memory-and-events), [Prisma Agent Memory](/docs/examples/agent-memory-prisma), [Drizzle Agent Memory](/docs/examples/agent-memory-drizzle), [Raw SQL Agent Memory](/docs/examples/agent-memory-raw-sql) | Conversation messages are loaded and appended through scoped application storage adapters. |
 | Streaming events | [Fullstack Streaming](/docs/examples/fullstack-streaming), [Streaming Events](/docs/examples/streaming-events) | Browser clients consume completion or agent streams, then product UIs treat text, tools, and final events as workflow state. |
-| Event store | [Runtime State and Persistence](/docs/examples/runtime-state-persistence), [Observability Loop](/docs/examples/observability-loop) | Runtime events are replayable for debugging and audit. |
+| Event store | [Memory and Events](/docs/examples/memory-and-events), [Prisma Agent Event Store](/docs/examples/agent-event-store-prisma), [Drizzle Agent Event Store](/docs/examples/agent-event-store-drizzle), [Raw SQL Agent Event Store](/docs/examples/agent-event-store-raw-sql) | Runtime stream events are persisted by run id for replay, debugging, and audit. |
 
 ## Tools And Actions
 

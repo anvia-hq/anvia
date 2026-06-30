@@ -1,6 +1,6 @@
 {
   "name": "@anvia/core",
-  "version": "0.11.0",
+  "version": "0.11.2",
   "description": "Core runtime primitives for context-aware Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -64,6 +64,10 @@
       "types": "./dist/memory/index.d.ts",
       "import": "./dist/memory/index.js"
     },
+    "./hooks": {
+      "types": "./dist/hooks/index.d.ts",
+      "import": "./dist/hooks/index.js"
+    },
     "./model-listing": {
       "types": "./dist/model-listing/index.d.ts",
       "import": "./dist/model-listing/index.js"
@@ -75,6 +79,10 @@
     "./pipeline": {
       "types": "./dist/pipeline/index.d.ts",
       "import": "./dist/pipeline/index.js"
+    },
+    "./request": {
+      "types": "./dist/request/index.d.ts",
+      "import": "./dist/request/index.js"
     },
     "./skills": {
       "types": "./dist/skills/index.d.ts",
@@ -106,13 +114,13 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/ui/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/agent/index.ts src/hooks/index.ts src/request/index.ts src/internal/agent.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/ui/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "pdfjs-dist": "^6.0.227",
+    "pdfjs-dist": "^6.1.200",
     "tinyglobby": "^0.2.17",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

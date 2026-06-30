@@ -1,4 +1,3 @@
-import type { JsonValue } from "../completion/index";
 import { isRecord } from "../internal/compact";
 import type { McpToolCallContent, McpToolCallResult } from "./types";
 

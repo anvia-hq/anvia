@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate package changelog docs
+        run: pnpm --filter www generate:package-changelogs
+
       - name: Check www reference coverage
         run: pnpm --filter www reference-check
 

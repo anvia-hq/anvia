@@ -93,6 +93,11 @@ type ToolApprovalRequest<Args = unknown> = ToolApprovalContext<Args> & {
   reason?: string;
   rejectMessage?: string;
 };
+
+type ToolApprovalDecision =
+  | boolean
+  | { approved: true; reason?: string }
+  | { approved: false; reason?: string; rejectMessage?: string };
 ```
 
 Purpose: declare when a tool call requires approval and what approval prompt/rejection text should be used.

@@ -1,4 +1,3 @@
-import type { AgentDeltaEvent } from "../agent/stream-accumulator";
 import type {
   CompletionModelCapabilities,
   CompletionRequest,
@@ -11,6 +10,7 @@ import type {
   ToolResultContent,
   Usage,
 } from "../completion";
+import type { AgentDeltaEvent } from "../request/types";
 import type { ToolCallStreamEvent } from "../tool";
 
 export type AgentTraceInfo = {

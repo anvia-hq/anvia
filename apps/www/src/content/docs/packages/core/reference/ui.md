@@ -62,25 +62,9 @@ type UIStreamEvent =
   | { type: "message_end"; messageId: string; usage?: Usage; metadata?: JsonValue }
   | { type: "error"; error: UIError };
 
-type CreateCompletionUIStreamOptions = Omit<
-  CreateCompletionStreamOptions,
-  "input" | "messages"
-> & {
-  messages: UIMessage[];
-};
-
-type AgentLike = {
-  prompt(prompt: string | Message | Message[]): {
-    stream(): AsyncIterable<AgentStreamEvent>;
-  };
-};
-
-type CreateAgentUIStreamOptions = {
-  messages: UIMessage[];
-};
 ```
 
-Purpose: shared UI message shape for React-facing completion and chat state. The default request carries converted core `messages`. React hooks can consume raw completion streams, raw agent streams, or `UIStreamEvent` records.
+Purpose: shared UI message shape for React-facing completion and chat state. React hooks can consume raw completion streams, raw agent streams, or `UIStreamEvent` records.
 
 ## uiMessagesToCoreMessages
 
@@ -102,56 +86,4 @@ Purpose: convert existing core message history into the UI message shape used by
 
 Return behavior: generated IDs are assigned where the core message format does not already provide one.
 
-## createCompletionUIStream
-
-```ts
-function createCompletionUIStream<Model extends StreamingCompletionModel>(
-  model: Model,
-  options: CreateCompletionUIStreamOptions,
-): AsyncIterable<UIStreamEvent>;
-```
-
-Purpose: advanced adapter that runs `createCompletionStream(...)` from server-side UI messages and adapts the completion stream into UI stream events.
-
-Return behavior: yields an assistant `message_start`, text or reasoning deltas, tool updates, `message_end`, and error events.
-
-For normal React completion routes, the request already contains core messages, so prefer calling `createCompletionStream(model, { messages: body.messages })` directly.
-
-## createAgentUIStream
-
-```ts
-function createAgentUIStream(
-  agent: AgentLike,
-  options: CreateAgentUIStreamOptions,
-): AsyncIterable<UIStreamEvent>;
-```
-
-Purpose: advanced adapter that runs an agent from UI messages and adapts the agent stream into the UI stream protocol.
-
-Return behavior: yields assistant message events that can be consumed by `useChat` or `useCompletion` from `@anvia/react`.
-
-## completionStreamToUIStream
-
-```ts
-function completionStreamToUIStream(
-  events: AsyncIterable<CompletionStreamEvent>,
-  options?: { messageId?: string },
-): AsyncIterable<UIStreamEvent>;
-```
-
-Purpose: adapt an existing `CompletionStreamEvent` iterable into the standard UI stream protocol.
-
-Return behavior: preserves streamed deltas and emits any missing final text delta when the final response contains more text than was streamed.
-
-## agentStreamToUIStream
-
-```ts
-function agentStreamToUIStream(
-  events: AsyncIterable<AgentStreamEvent>,
-  options?: { messageId?: string },
-): AsyncIterable<UIStreamEvent>;
-```
-
-Purpose: adapt an existing agent stream iterable into the standard UI stream protocol.
-
-Return behavior: maps agent text, reasoning, tool call, tool result, final, and error events to `UIStreamEvent` records.
+Server handlers can pass converted core messages directly to completion or agent APIs. `@anvia/react` can consume raw completion streams, raw agent streams, or `UIStreamEvent` records.

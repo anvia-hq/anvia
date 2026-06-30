@@ -34,7 +34,9 @@ Use subpaths when the module has a specific responsibility. For example, a vecto
 
 | Import path | Use for |
 | --- | --- |
-| `@anvia/core/agent` | agent runtime types, hooks, run control, event stores |
+| `@anvia/core/agent` | agent builders, built-agent types, dynamic context/tool options, event stores |
+| `@anvia/core/hooks` | prompt lifecycle hooks, hook controls, hook helpers |
+| `@anvia/core/request` | prompt requests, stream events, responses, prompt errors |
 | `@anvia/core/completion` | messages, content parts, direct completions, model contracts |
 | `@anvia/core/tool` | tool sets, dynamic tools, serialization, tool errors |
 | `@anvia/core/memory` | durable session memory interfaces |
@@ -65,6 +67,7 @@ Integration code should stay narrow:
 
 ```ts
 import type { CompletionModel, CompletionRequest } from "@anvia/core/completion";
+import type { AgentStreamEvent } from "@anvia/core/request";
 import type { VectorSearchIndex } from "@anvia/core/vector-store";
 ```
 

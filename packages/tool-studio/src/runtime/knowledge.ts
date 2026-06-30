@@ -14,8 +14,8 @@ import type {
   StudioTraceStore,
 } from "../types";
 import { compact } from "./compact";
-import { compactJsonObject, toJsonValue } from "./json";
 import { errorResponse } from "./http";
+import { compactJsonObject, toJsonValue } from "./json";
 import { optionalQueryString, parseLimit } from "./query";
 
 type InspectableIndex = {
@@ -92,7 +92,12 @@ async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnow
     staticContext: agent.agent.staticContext.map((document) => ({
       id: document.id,
       text: document.text,
-      ...compact({ additionalProps: document.additionalProps !== undefined ? jsonObjectFromRecord(document.additionalProps) : undefined }),
+      ...compact({
+        additionalProps:
+          document.additionalProps !== undefined
+            ? jsonObjectFromRecord(document.additionalProps)
+            : undefined,
+      }),
     })),
   };
 }
@@ -246,9 +251,16 @@ function staticKnowledgeItemsPage(
       id: document.id,
       kind: "static_context",
       text: document.text,
-      ...compact({ metadata: document.additionalProps !== undefined ? jsonObjectFromRecord(document.additionalProps) : undefined }),
+      ...compact({
+        metadata:
+          document.additionalProps !== undefined
+            ? jsonObjectFromRecord(document.additionalProps)
+            : undefined,
+      }),
     })),
-    ...compact({ nextCursor: nextOffset < agent.agent.staticContext.length ? String(nextOffset) : undefined }),
+    ...compact({
+      nextCursor: nextOffset < agent.agent.staticContext.length ? String(nextOffset) : undefined,
+    }),
     totalCount: agent.agent.staticContext.length,
   };
 }
@@ -283,7 +295,9 @@ function dynamicContextItem(item: {
     id: item.id,
     kind: "dynamic_context",
     ...(text === undefined ? { document: toJsonValue(item.document) } : { text }),
-    ...compact({ metadata: item.metadata !== undefined ? jsonObjectFromRecord(item.metadata) : undefined }),
+    ...compact({
+      metadata: item.metadata !== undefined ? jsonObjectFromRecord(item.metadata) : undefined,
+    }),
   };
 }
 
@@ -308,7 +322,9 @@ function dynamicToolItem(item: {
     description,
     parameterKeys: parameterKeys(definition.parameters),
     document: toJsonValue(item.document),
-    ...compact({ metadata: item.metadata !== undefined ? jsonObjectFromRecord(item.metadata) : undefined }),
+    ...compact({
+      metadata: item.metadata !== undefined ? jsonObjectFromRecord(item.metadata) : undefined,
+    }),
   };
 }
 
@@ -471,9 +487,7 @@ function evidenceDocument(value: unknown): StudioKnowledgeEvidenceDocument[] {
   if (id === undefined && text === undefined && additionalProps === undefined) {
     return [];
   }
-  return [
-    compact({ id, text, additionalProps }),
-  ];
+  return [compact({ id, text, additionalProps })];
 }
 
 function evidenceToolName(value: unknown): string[] {

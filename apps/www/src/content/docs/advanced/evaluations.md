@@ -58,7 +58,7 @@ Use `agentEvalTarget(...)` when the target is an agent request:
 
 ```ts
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
-import type { PromptResponse } from "@anvia/core/agent";
+import type { PromptResponse } from "@anvia/core/request";
 
 const result = await runEvalSuite({
   name: "support-agent-answer-quality",

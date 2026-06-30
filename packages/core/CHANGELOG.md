@@ -1,5 +1,17 @@
 # @anvia/core
 
+## 0.11.2
+
+### Patch Changes
+
+- 730c23d: Clean up request internals by moving prompt runtime implementation details behind the internal source boundary while preserving the public request API.
+
+## 0.11.1
+
+### Patch Changes
+
+- 9fc55c9: Update upstream runtime dependencies to their latest npm releases.
+
 ## 0.11.0
 
 ### Minor Changes

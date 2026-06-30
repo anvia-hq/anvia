@@ -1,5 +1,5 @@
-import { createHook, type PromptHook } from "@anvia/core/agent";
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import { createHook, type PromptHook } from "@anvia/core/hooks";
 import { parseToolArgs } from "@anvia/core/tool";
 import type { Context, Hono } from "hono";
 import type {
@@ -142,12 +142,14 @@ async function parseQuestionAnswerRequest(
     if ("custom" in answer && typeof answer.custom !== "boolean") {
       return { error: errorResponse(c, 400, "bad_request", "custom must be a boolean") };
     }
-    answers.push(compact({
-      questionId: answer.questionId.trim(),
-      answer: answer.answer.trim(),
-      choice: typeof answer.choice === "string" ? answer.choice : undefined,
-      custom: typeof answer.custom === "boolean" ? answer.custom : undefined,
-    }) as StudioToolQuestionAnswer);
+    answers.push(
+      compact({
+        questionId: answer.questionId.trim(),
+        answer: answer.answer.trim(),
+        choice: typeof answer.choice === "string" ? answer.choice : undefined,
+        custom: typeof answer.custom === "boolean" ? answer.custom : undefined,
+      }) as StudioToolQuestionAnswer,
+    );
   }
 
   return { answers };
@@ -170,13 +172,17 @@ export function createQuestionRuntime(): QuestionRuntime {
             return control.skip(prompts.error);
           }
 
-          const answers = await requestQuestion(questions, context, compact({
-            toolName,
-            toolCallId,
-            internalCallId,
-            args,
-            questions: prompts.questions,
-          }) as QuestionRequest);
+          const answers = await requestQuestion(
+            questions,
+            context,
+            compact({
+              toolName,
+              toolCallId,
+              internalCallId,
+              args,
+              questions: prompts.questions,
+            }) as QuestionRequest,
+          );
 
           return control.skip(JSON.stringify({ answers }));
         },

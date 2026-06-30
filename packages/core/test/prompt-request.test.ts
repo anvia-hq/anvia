@@ -848,6 +848,57 @@ describe("PromptRequest", () => {
     );
   });
 
+  it("evaluates tool approval after tool input middleware changes args", async () => {
+    let executedAmount: number | undefined;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      input: z.object({ amount: z.number() }),
+      output: z.string(),
+      approval: {
+        when: ({ args }) => args.amount > 100,
+        reason: ({ args }) => `Approve ${args.amount}`,
+      },
+      execute({ amount }) {
+        executedAmount = amount;
+        return `approved ${amount}`;
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", { amount: 50 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const approvalRequests: unknown[] = [];
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(guardedTool)
+      .middleware(
+        createMiddleware({
+          onToolInput() {
+            return { args: { amount: 250 } };
+          },
+        }),
+      )
+      .approvals({
+        handler(request) {
+          approvalRequests.push(request);
+          return true;
+        },
+      })
+      .build();
+
+    await expect(agent.prompt("run guarded").send()).resolves.toMatchObject({ output: "done" });
+
+    expect(executedAmount).toBe(250);
+    expect(approvalRequests).toMatchObject([
+      {
+        toolName: "guarded",
+        args: { amount: 250 },
+        rawArgs: '{"amount":250}',
+        reason: "Approve 250",
+      },
+    ]);
+  });
+
   it("skips approval-protected tools when the handler rejects", async () => {
     let executed = false;
     const guardedTool = createTool({
@@ -1016,6 +1067,15 @@ describe("PromptRequest", () => {
       .prompt("hello");
     await expect(cancelRequest.send()).rejects.toBeInstanceOf(PromptCancelledError);
     expect(cancelRequest.steer("late")).toBe(false);
+  });
+
+  it("rejects reused prompt requests", async () => {
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const request = agent.prompt("hello");
+
+    await expect(request.send()).resolves.toMatchObject({ output: "done" });
+    await expect(request.send()).rejects.toThrow("PromptRequest has already been used.");
   });
 
   it("runs tool error hooks and keeps tool errors as model-visible results", async () => {

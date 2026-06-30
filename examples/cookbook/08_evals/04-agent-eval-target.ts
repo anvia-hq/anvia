@@ -1,5 +1,6 @@
-import { AgentBuilder, type PromptResponse } from "@anvia/core/agent";
+import { AgentBuilder } from "@anvia/core/agent";
 import { agentEvalTarget, contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
+import type { PromptResponse } from "@anvia/core/request";
 import { OpenAIClient } from "@anvia/openai";
 
 const openAIClient = new OpenAIClient({

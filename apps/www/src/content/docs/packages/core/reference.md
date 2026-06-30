@@ -14,7 +14,9 @@ sidebar:
 | Import path | Area |
 | --- | --- |
 | `@anvia/core` | Common app-authoring APIs for agents, tools, messages, hooks, skills, and errors |
-| `@anvia/core/agent` | Agent builders, hooks, run controls, errors, and run events |
+| `@anvia/core/agent` | Agent builders, built-agent types, dynamic context/tool options, and event stores |
+| `@anvia/core/hooks` | Prompt lifecycle hooks, hook controls, and hook helper functions |
+| `@anvia/core/request` | Prompt requests, stream events, prompt responses, and prompt-run errors |
 | `@anvia/core/completion` | Provider-facing completion messages, requests, responses, usage, and model contracts |
 | `@anvia/core/image-generation` | Provider-neutral image generation contracts and request builders |
 | `@anvia/core/audio-generation` | Provider-neutral audio generation contracts and request builders |
@@ -43,6 +45,7 @@ The root `@anvia/core` export is the convenient application import path. Subpath
 ```ts
 import { AgentBuilder, createTool, Message } from "@anvia/core";
 import type { CompletionModel } from "@anvia/core/completion";
+import type { AgentStreamEvent } from "@anvia/core/request";
 ```
 
 For workflow guidance, start with [SDK Fundamentals](/docs/advanced/runtime-boundaries).

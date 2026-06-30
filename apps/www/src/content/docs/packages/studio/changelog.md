@@ -10,6 +10,14 @@ sidebar:
 
 Release history mirrored from `packages/tool-studio/CHANGELOG.md`.
 
+## 0.7.10
+
+### Patch Changes
+
+- 9fc55c9: Update upstream runtime dependencies to their latest npm releases.
+  - @anvia/react@0.7.3
+  - @anvia/server@0.4.3
+
 ## 0.7.9
 
 ### Patch Changes

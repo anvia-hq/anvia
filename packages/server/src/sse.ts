@@ -80,8 +80,8 @@ function isValidRetry(value: number): boolean {
 function validateSseEventName(name: string): void {
   for (const character of name) {
     const code = character.charCodeAt(0);
-    if (code < 32 || code === 127) {
-      throw new TypeError("SSE event names must not contain line breaks or control characters");
+    if (code === 0 || code === 10 || code === 13) {
+      throw new TypeError("SSE event names must not contain null bytes or line breaks");
     }
   }
 }

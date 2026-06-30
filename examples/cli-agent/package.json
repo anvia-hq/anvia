@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "tsx src/cli.tsx",
-    "prebuild": "test -f ../../packages/provider-openai/dist/index.d.ts || pnpm --filter @anvia/openai build",
+    "prebuild": "pnpm --filter @anvia/openai build",
     "build": "tsup src/cli.tsx --format esm --platform node --target node20 --sourcemap --clean --out-dir dist && chmod +x dist/cli.js",
     "start": "node dist/cli.js",
-    "pretypecheck": "test -f ../../packages/provider-openai/dist/index.d.ts || pnpm --filter @anvia/openai build",
+    "pretypecheck": "pnpm --filter @anvia/openai build",
     "typecheck": "tsc --noEmit",
     "check": "biome check .",
     "check:fix": "biome check --write ."

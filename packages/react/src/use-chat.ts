@@ -46,6 +46,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   const questionsRef = useRef(questions);
   const decidingApprovalsRef = useRef(decidingApprovals);
   const answeringQuestionsRef = useRef(answeringQuestions);
+  const humanInputVersionRef = useRef(0);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -111,6 +112,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   }, []);
 
   const clearHumanInput = useCallback(() => {
+    humanInputVersionRef.current += 1;
     approvalsRef.current = [];
     questionsRef.current = [];
     decidingApprovalsRef.current = new Set();
@@ -220,6 +222,9 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
           setEvents((current) => [...current, event]);
           applyHumanInputEvent(event);
           options.onEvent?.(event);
+          if (abortRef.current !== abortController || abortController.signal.aborted) {
+            return;
+          }
           applyEvent(event);
         }
 
@@ -296,6 +301,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
         return;
       }
 
+      const humanInputVersion = humanInputVersionRef.current;
       const nextDeciding = new Set(decidingApprovalsRef.current).add(approvalId);
       decidingApprovalsRef.current = nextDeciding;
       setDecidingApprovals(nextDeciding);
@@ -311,14 +317,16 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
           humanInputOptions.decideApproval === undefined
             ? await defaultDecideApproval(input, humanInputOptions)
             : await humanInputOptions.decideApproval(input);
-        if (result !== undefined) {
+        if (result !== undefined && humanInputVersionRef.current === humanInputVersion) {
           updateApproval(result);
         }
       } finally {
-        const next = new Set(decidingApprovalsRef.current);
-        next.delete(approvalId);
-        decidingApprovalsRef.current = next;
-        setDecidingApprovals(next);
+        if (humanInputVersionRef.current === humanInputVersion) {
+          const next = new Set(decidingApprovalsRef.current);
+          next.delete(approvalId);
+          decidingApprovalsRef.current = next;
+          setDecidingApprovals(next);
+        }
       }
     },
     [options.humanInput, updateApproval],
@@ -348,6 +356,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
         return;
       }
 
+      const humanInputVersion = humanInputVersionRef.current;
       const nextAnswering = new Set(answeringQuestionsRef.current).add(questionId);
       answeringQuestionsRef.current = nextAnswering;
       setAnsweringQuestions(nextAnswering);
@@ -362,14 +371,16 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
           humanInputOptions.answerQuestion === undefined
             ? await defaultAnswerQuestion(input, humanInputOptions)
             : await humanInputOptions.answerQuestion(input);
-        if (result !== undefined) {
+        if (result !== undefined && humanInputVersionRef.current === humanInputVersion) {
           updateQuestion(result);
         }
       } finally {
-        const next = new Set(answeringQuestionsRef.current);
-        next.delete(questionId);
-        answeringQuestionsRef.current = next;
-        setAnsweringQuestions(next);
+        if (humanInputVersionRef.current === humanInputVersion) {
+          const next = new Set(answeringQuestionsRef.current);
+          next.delete(questionId);
+          answeringQuestionsRef.current = next;
+          setAnsweringQuestions(next);
+        }
       }
     },
     [options.humanInput, updateQuestion],
@@ -410,8 +421,8 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
         pending: questions.filter((question) => question.status === "pending"),
       },
     },
-    decidingApprovals,
-    answeringQuestions,
+    decidingApprovals: new Set(decidingApprovals),
+    answeringQuestions: new Set(answeringQuestions),
     approveTool,
     rejectTool,
     answerToolQuestion,

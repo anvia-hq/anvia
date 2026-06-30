@@ -110,7 +110,7 @@ describe("@anvia/server streams", () => {
       createSseStream(events([{ type: "one" }]), {
         eventName: "bad\nevent",
       }),
-    ).toThrow("SSE event names must not contain line breaks or control characters");
+    ).toThrow("SSE event names must not contain null bytes or line breaks");
   });
 
   it("emits an error event when iteration fails", async () => {

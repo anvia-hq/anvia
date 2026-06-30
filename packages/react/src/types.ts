@@ -155,8 +155,8 @@ export type UseChatResult<TEvent = UIStreamEvent> = {
   error: unknown;
   text: string;
   humanInput: HumanInputState;
-  decidingApprovals: Set<string>;
-  answeringQuestions: Set<string>;
+  decidingApprovals: ReadonlySet<string>;
+  answeringQuestions: ReadonlySet<string>;
   approveTool(approvalId: string, reason?: string): Promise<void>;
   rejectTool(approvalId: string, reason?: string): Promise<void>;
   answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]): Promise<void>;

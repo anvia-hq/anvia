@@ -537,6 +537,26 @@ describe("@anvia/react useChat", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("keeps synchronous message updates available to back-to-back sends", async () => {
+    const requests: UIStreamRequest[] = [];
+    const transport: EventTransport<UIStreamRequest, CompletionStreamEvent> = {
+      send: async function* (request) {
+        requests.push(request);
+        yield { type: "text_delta", delta: `reply-${requests.length}` };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await Promise.all([result.current.send("first"), result.current.send("second")]);
+    });
+
+    expect(requests[1]?.messages).toMatchObject([
+      { role: "user", content: [{ type: "text", text: "first" }] },
+      { role: "user", content: [{ type: "text", text: "second" }] },
+    ]);
+  });
+
   it("keeps a newer chat stream active when an older stream aborts", async () => {
     const requests: UIStreamRequest[] = [];
     let resolveSecond!: () => void;

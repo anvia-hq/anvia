@@ -88,11 +88,10 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   }, [options.transport, options.endpoint, options.format]);
 
   const setMessages = useCallback<UseChatResult<TEvent>["setMessages"]>((nextMessages) => {
-    setMessagesState((current) => {
-      const next = typeof nextMessages === "function" ? nextMessages(current) : nextMessages;
-      messagesRef.current = next;
-      return next;
-    });
+    const next =
+      typeof nextMessages === "function" ? nextMessages(messagesRef.current) : nextMessages;
+    messagesRef.current = next;
+    setMessagesState(next);
   }, []);
 
   const updateApproval = useCallback((approval: ToolApproval) => {

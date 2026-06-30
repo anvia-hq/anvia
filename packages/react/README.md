@@ -40,9 +40,9 @@ export function Chat() {
 - `readJsonlStream(stream)` parses newline-delimited JSON streams.
 - `readSseStream(stream)` parses Server-Sent Events with JSON `data:` payloads.
 - `fetchEventStream(url, options)` fetches JSONL or SSE streams as `AsyncIterable`.
-- `createFetchTransport(options)` creates an `EventTransport`.
+- `createFetchTransport(options)` creates an `EventTransport`; it defaults to POST JSON and omits implicit bodies for GET/HEAD.
 - `createChatTransport(options)` creates the default fetch-backed chat transport.
-- `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`.
+- `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`, including optional human-input approval/question state.
 - `useCompletion(options)` appends completion turns into `UIMessage[]` state and exposes derived `completion` text.
 
 Default hook requests use one shared wire shape:

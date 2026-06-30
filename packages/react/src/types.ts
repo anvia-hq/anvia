@@ -133,6 +133,7 @@ export type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> =
   eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
   eventToDelta?: (event: TEvent) => string | undefined;
   eventToFinal?: (event: TEvent) => string | undefined;
+  humanInput?: HumanInputOptions<TEvent>;
   onEvent?: (event: TEvent) => void;
   onError?: (error: unknown) => void;
 };
@@ -153,4 +154,10 @@ export type UseChatResult<TEvent = UIStreamEvent> = {
   status: UseChatStatus;
   error: unknown;
   text: string;
+  humanInput: HumanInputState;
+  decidingApprovals: Set<string>;
+  answeringQuestions: Set<string>;
+  approveTool(approvalId: string, reason?: string): Promise<void>;
+  rejectTool(approvalId: string, reason?: string): Promise<void>;
+  answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]): Promise<void>;
 };

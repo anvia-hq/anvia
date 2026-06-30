@@ -22,7 +22,7 @@ export function createFetchTransport<TRequest, TEvent = unknown>(
       const requestHeaders = await resolveHeaders(options.headers, request);
       const headers = mergeHeaders(requestHeaders, transportOptions.headers);
       const method = options.method ?? "POST";
-      const body = await resolveBody(options.body, request, headers);
+      const body = await resolveBody(options.body, request, headers, method);
       const init: FetchEventStreamOptions = {
         ...(options.init ?? {}),
         method,
@@ -64,9 +64,14 @@ async function resolveBody<TRequest>(
   body: CreateFetchTransportOptions<TRequest, unknown>["body"],
   request: TRequest,
   headers: Headers,
+  method: string,
 ): Promise<BodyInit | null | undefined> {
   if (body !== undefined) {
     return body(request);
+  }
+
+  if (!methodAllowsDefaultBody(method)) {
+    return undefined;
   }
 
   if (!headers.has("content-type")) {
@@ -74,6 +79,11 @@ async function resolveBody<TRequest>(
   }
 
   return JSON.stringify(request);
+}
+
+function methodAllowsDefaultBody(method: string): boolean {
+  const normalized = method.toUpperCase();
+  return normalized !== "GET" && normalized !== "HEAD";
 }
 
 function mergeHeaders(...values: (HeadersInit | undefined)[]): Headers {

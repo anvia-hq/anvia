@@ -70,15 +70,84 @@ describe("@anvia/react transports", () => {
   });
 
   it("creates fetch transports", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, init?: RequestInit) =>
+        new Response(streamFrom(`${JSON.stringify({ type: "body", body: init?.body })}\n`)),
+    );
     const transport = createFetchTransport<{ message: string }, { type: string }>({
       endpoint: "https://example.test/chat",
-      fetch: async (_input, init) =>
-        new Response(streamFrom(`${JSON.stringify({ type: "body", body: init?.body })}\n`)),
+      fetch: fetchMock,
     });
 
     const parsed = await collect(transport.send({ message: "hi" }));
 
     expect(parsed).toEqual([{ type: "body", body: '{"message":"hi"}' }]);
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(init?.method).toBe("POST");
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+  });
+
+  it("does not add an implicit body for GET or HEAD transports", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const fetchMock = vi.fn(
+        async (_input: string | URL | Request, _init?: RequestInit) =>
+          new Response(streamFrom('{"type":"ok"}\n')),
+      );
+      const transport = createFetchTransport<{ message: string }, { type: string }>({
+        endpoint: "https://example.test/events",
+        method,
+        fetch: fetchMock,
+      });
+
+      await collect(transport.send({ message: "hi" }));
+
+      const [, init] = fetchMock.mock.calls[0] ?? [];
+      expect(init?.method).toBe(method);
+      expect(init?.body).toBeUndefined();
+      expect(new Headers(init?.headers).has("content-type")).toBe(false);
+    }
+  });
+
+  it("passes custom fetch transport options and maps events", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(streamFrom('{"ok":true}\n')),
+    );
+    const transport = createFetchTransport<{ id: string }, { mapped: boolean }>({
+      endpoint: (request) => `https://example.test/items/${request.id}`,
+      method: "PATCH",
+      fetch: fetchMock,
+      headers: (request) => ({
+        "x-request": request.id,
+        "x-override": "base",
+      }),
+      body: (request) => `payload-${request.id}`,
+      init: { credentials: "include" },
+      mapEvent: (event) => ({ mapped: (event as { ok?: boolean }).ok === true }),
+    });
+
+    const parsed = await collect(
+      transport.send(
+        { id: "42" },
+        {
+          headers: {
+            "x-extra": "yes",
+            "x-override": "transport",
+          },
+        },
+      ),
+    );
+
+    const [input, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = new Headers(init?.headers);
+    expect(String(input)).toBe("https://example.test/items/42");
+    expect(init?.method).toBe("PATCH");
+    expect(init?.body).toBe("payload-42");
+    expect(init?.credentials).toBe("include");
+    expect(headers.get("x-request")).toBe("42");
+    expect(headers.get("x-extra")).toBe("yes");
+    expect(headers.get("x-override")).toBe("transport");
+    expect(parsed).toEqual([{ mapped: true }]);
   });
 
   it("creates chat transports as fetch transports", async () => {
@@ -466,6 +535,363 @@ describe("@anvia/react useChat", () => {
     expect(signal?.aborted).toBe(true);
     await sendPromise;
     expect(result.current.status).toBe("idle");
+  });
+
+  it("keeps a newer chat stream active when an older stream aborts", async () => {
+    const requests: UIStreamRequest[] = [];
+    let resolveSecond!: () => void;
+    const transport: EventTransport<UIStreamRequest, CompletionStreamEvent> = {
+      send: async function* (request, options) {
+        requests.push(request);
+
+        if (requests.length === 1) {
+          yield { type: "text_delta", delta: "partial" };
+          await new Promise<void>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          });
+          return;
+        }
+
+        yield { type: "text_delta", delta: "done" };
+        await new Promise<void>((resolve) => {
+          resolveSecond = resolve;
+        });
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    let firstSend!: Promise<void>;
+    act(() => {
+      firstSend = result.current.send("first");
+    });
+    await vi.waitFor(() => {
+      expect(result.current.text).toBe("partial");
+    });
+
+    let secondSend!: Promise<void>;
+    act(() => {
+      secondSend = result.current.send("second");
+    });
+    await vi.waitFor(() => {
+      expect(result.current.text).toBe("done");
+    });
+    await firstSend;
+
+    expect(result.current.status).toBe("streaming");
+    expect(requests[1]?.messages).toMatchObject([
+      { role: "user", content: [{ type: "text", text: "first" }] },
+      { role: "user", content: [{ type: "text", text: "second" }] },
+    ]);
+    expect(requests[1]?.messages).toHaveLength(2);
+
+    await act(async () => {
+      resolveSecond();
+      await secondSend;
+    });
+
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("tracks Studio approval and question events", async () => {
+    const transport: EventTransport<UIStreamRequest, unknown> = {
+      send: async function* () {
+        yield {
+          type: "tool_approval_request",
+          approval: {
+            id: "approval-1",
+            toolName: "issue_refund",
+            status: "pending",
+            reason: "Review refund.",
+          },
+        };
+        yield {
+          type: "tool_question_request",
+          question: {
+            id: "question-1",
+            toolName: "ask_question",
+            status: "pending",
+            questions: [
+              {
+                id: "priority",
+                question: "Priority?",
+                choices: [{ label: "High", value: "high" }],
+              },
+            ],
+          },
+        };
+        yield {
+          type: "tool_approval_result",
+          approval: {
+            id: "approval-1",
+            toolName: "issue_refund",
+            status: "approved",
+            reason: "Approved.",
+          },
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport, humanInput: { endpoint: "" } }));
+
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    expect(result.current.humanInput.approvals.all).toEqual([
+      expect.objectContaining({
+        id: "approval-1",
+        toolName: "issue_refund",
+        status: "approved",
+      }),
+    ]);
+    expect(result.current.humanInput.approvals.pending).toEqual([]);
+    expect(result.current.humanInput.questions.pending).toEqual([
+      expect.objectContaining({
+        id: "question-1",
+        toolName: "ask_question",
+        status: "pending",
+      }),
+    ]);
+  });
+
+  it("submits Studio approval decisions and question answers to default endpoints", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/approvals/approval-1/decision") {
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe(JSON.stringify({ approved: true, reason: "looks good" }));
+        return new Response(
+          JSON.stringify({
+            id: "approval-1",
+            toolName: "issue_refund",
+            status: "approved",
+          }),
+        );
+      }
+      if (url === "/questions/question-1/answer") {
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe(
+          JSON.stringify({
+            answers: [{ questionId: "priority", answer: "High", choice: "high" }],
+          }),
+        );
+        return new Response(
+          JSON.stringify({
+            id: "question-1",
+            toolName: "ask_question",
+            status: "answered",
+            questions: [],
+            answers: [{ questionId: "priority", answer: "High", choice: "high" }],
+          }),
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const transport: EventTransport<UIStreamRequest, unknown> = {
+      send: async function* () {
+        yield {
+          type: "tool_approval_request",
+          approval: { id: "approval-1", toolName: "issue_refund", status: "pending" },
+        };
+        yield {
+          type: "tool_question_request",
+          question: {
+            id: "question-1",
+            toolName: "ask_question",
+            status: "pending",
+            questions: [
+              {
+                id: "priority",
+                question: "Priority?",
+                choices: [{ label: "High", value: "high" }],
+              },
+            ],
+          },
+        };
+      },
+    };
+    const { result } = renderHook(() =>
+      useChat({ transport, humanInput: { endpoint: "", fetch: fetchMock as typeof fetch } }),
+    );
+
+    await act(async () => {
+      await result.current.send("hi");
+    });
+    await act(async () => {
+      await result.current.approveTool("approval-1", "looks good");
+      await result.current.answerToolQuestion("question-1", [
+        { questionId: "priority", answer: "High", choice: "high" },
+      ]);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.humanInput.approvals.pending).toEqual([]);
+    expect(result.current.humanInput.questions.pending).toEqual([]);
+    expect(result.current.humanInput.questions.all[0]?.answers).toEqual([
+      { questionId: "priority", answer: "High", choice: "high" },
+    ]);
+  });
+
+  it("supports custom human input event mapping and handlers", async () => {
+    const decideApproval = vi.fn(async () => ({
+      id: "a1",
+      toolName: "custom_tool",
+      status: "rejected" as const,
+    }));
+    const answerQuestion = vi.fn(async () => ({
+      id: "q1",
+      toolName: "custom_question",
+      status: "answered" as const,
+      questions: [],
+    }));
+    const transport: EventTransport<UIStreamRequest, { kind: string; payload: unknown }> = {
+      send: async function* () {
+        yield {
+          kind: "approval",
+          payload: { id: "a1", toolName: "custom_tool", status: "pending" },
+        };
+        yield {
+          kind: "question",
+          payload: { id: "q1", toolName: "custom_question", status: "pending", questions: [] },
+        };
+      },
+    };
+    const { result } = renderHook(() =>
+      useChat({
+        transport,
+        humanInput: {
+          eventToApproval: (event) =>
+            event.kind === "approval"
+              ? (event.payload as {
+                  id: string;
+                  toolName: string;
+                  status: "pending";
+                })
+              : undefined,
+          eventToQuestion: (event) =>
+            event.kind === "question"
+              ? (event.payload as {
+                  id: string;
+                  toolName: string;
+                  status: "pending";
+                  questions: [];
+                })
+              : undefined,
+          decideApproval,
+          answerQuestion,
+        },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.send("hi");
+    });
+    await act(async () => {
+      await result.current.rejectTool("a1", "no");
+      await result.current.answerToolQuestion("q1", []);
+    });
+
+    expect(decideApproval).toHaveBeenCalledWith({
+      approvalId: "a1",
+      approved: false,
+      reason: "no",
+      approval: { id: "a1", toolName: "custom_tool", status: "pending" },
+    });
+    expect(answerQuestion).toHaveBeenCalledWith({
+      questionId: "q1",
+      answers: [],
+      question: { id: "q1", toolName: "custom_question", status: "pending", questions: [] },
+    });
+    expect(result.current.humanInput.approvals.all[0]?.status).toBe("rejected");
+    expect(result.current.humanInput.questions.all[0]?.status).toBe("answered");
+  });
+
+  it("guards duplicate human input submissions while a request is in flight", async () => {
+    const pendingResponses: Array<(value: Response) => void> = [];
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          pendingResponses.push(resolve);
+        }),
+    );
+    const transport: EventTransport<UIStreamRequest, unknown> = {
+      send: async function* () {
+        yield {
+          type: "tool_approval_request",
+          approval: { id: "approval-1", toolName: "issue_refund", status: "pending" },
+        };
+        yield {
+          type: "tool_question_request",
+          question: {
+            id: "question-1",
+            toolName: "ask_question",
+            status: "pending",
+            questions: [],
+          },
+        };
+      },
+    };
+    const { result } = renderHook(() =>
+      useChat({ transport, humanInput: { endpoint: "", fetch: fetchMock as typeof fetch } }),
+    );
+
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    let first!: Promise<void>;
+    await act(async () => {
+      first = result.current.approveTool("approval-1");
+    });
+    expect(result.current.decidingApprovals.has("approval-1")).toBe(true);
+    await act(async () => {
+      await result.current.approveTool("approval-1");
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pendingResponses[0]?.(
+        new Response(
+          JSON.stringify({
+            id: "approval-1",
+            toolName: "issue_refund",
+            status: "approved",
+          }),
+        ),
+      );
+      await first;
+    });
+
+    expect(result.current.decidingApprovals.has("approval-1")).toBe(false);
+
+    let questionAnswer!: Promise<void>;
+    await act(async () => {
+      questionAnswer = result.current.answerToolQuestion("question-1", []);
+    });
+    expect(result.current.answeringQuestions.has("question-1")).toBe(true);
+    await act(async () => {
+      await result.current.answerToolQuestion("question-1", []);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      pendingResponses[1]?.(
+        new Response(
+          JSON.stringify({
+            id: "question-1",
+            toolName: "ask_question",
+            status: "answered",
+            questions: [],
+          }),
+        ),
+      );
+      await questionAnswer;
+    });
+
+    expect(result.current.answeringQuestions.has("question-1")).toBe(false);
   });
 });
 

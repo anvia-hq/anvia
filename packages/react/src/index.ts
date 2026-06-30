@@ -1,6 +1,12 @@
 export { createDirectTransport } from "./direct";
 export type { FetchEventStreamOptions } from "./fetch";
 export { EventStreamHttpError, fetchEventStream } from "./fetch";
+export {
+  defaultAnswerQuestion,
+  defaultDecideApproval,
+  defaultEventToApproval,
+  defaultEventToQuestion,
+} from "./human-input";
 export { readJsonlStream, readSseStream } from "./streams";
 export type { CreateFetchTransportOptions } from "./transport";
 export { createChatTransport, createFetchTransport } from "./transport";

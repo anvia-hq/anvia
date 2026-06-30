@@ -5,6 +5,7 @@ export function createSseStream<TEvent>(
   events: AsyncIterable<TEvent>,
   options: SseStreamOptions<TEvent> = {},
 ): ReadableStream<Uint8Array> {
+  validateSseOptions(options);
   const encoder = new TextEncoder();
   const iterator = events[Symbol.asyncIterator]();
   const serialize = options.serialize ?? serializeJson;
@@ -47,6 +48,7 @@ function formatSseEvent<TEvent>(
   const lines: string[] = [];
 
   if (name !== undefined && name.length > 0) {
+    validateSseEventName(name);
     lines.push(`event: ${name}`);
   }
 
@@ -60,4 +62,26 @@ function formatSseEvent<TEvent>(
 
 function serializeJson(value: unknown): string {
   return JSON.stringify(value);
+}
+
+function validateSseOptions<TEvent>(options: SseStreamOptions<TEvent>): void {
+  if (options.retry !== undefined && !isValidRetry(options.retry)) {
+    throw new TypeError("SSE retry must be a finite non-negative integer");
+  }
+  if (typeof options.eventName === "string") {
+    validateSseEventName(options.eventName);
+  }
+}
+
+function isValidRetry(value: number): boolean {
+  return Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+}
+
+function validateSseEventName(name: string): void {
+  for (const character of name) {
+    const code = character.charCodeAt(0);
+    if (code < 32 || code === 127) {
+      throw new TypeError("SSE event names must not contain line breaks or control characters");
+    }
+  }
 }

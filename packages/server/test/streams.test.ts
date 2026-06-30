@@ -99,6 +99,20 @@ describe("@anvia/server streams", () => {
     );
   });
 
+  it("rejects invalid sse retry values and event names", () => {
+    expect(() => createSseStream(events([{ type: "one" }]), { retry: -1 })).toThrow(
+      "SSE retry must be a finite non-negative integer",
+    );
+    expect(() => createSseStream(events([{ type: "one" }]), { retry: 1.5 })).toThrow(
+      "SSE retry must be a finite non-negative integer",
+    );
+    expect(() =>
+      createSseStream(events([{ type: "one" }]), {
+        eventName: "bad\nevent",
+      }),
+    ).toThrow("SSE event names must not contain line breaks or control characters");
+  });
+
   it("emits an error event when iteration fails", async () => {
     const text = await readText(
       createJsonlStream(

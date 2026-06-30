@@ -104,4 +104,6 @@ function createSseStream<TEvent>(
 
 Purpose: encode each event as a Server-Sent Event with JSON in `data:` fields.
 
+Validation behavior: `retry` must be a finite non-negative integer, and event names must not contain line breaks or control characters.
+
 For workflow guidance, see [Readable Streams](/docs/advanced/readable-streams).

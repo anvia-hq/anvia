@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 0.7.13
+
+### Patch Changes
+
+- Updated dependencies [264b92d]
+  - @anvia/react@0.7.6
+  - @anvia/server@0.4.6
+
 ## 0.7.12
 
 ### Patch Changes

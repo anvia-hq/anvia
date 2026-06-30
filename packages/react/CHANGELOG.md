@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 0.7.6
+
+### Patch Changes
+
+- 264b92d: Restore React human-input hook state, harden overlapping chat sends, make fetch transports avoid implicit GET/HEAD bodies, and validate server-sent event control fields.
+
 ## 0.7.5
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # peer-core-compat
 
+## 0.1.15
+
+### Patch Changes
+
+- @anvia/studio@0.7.13
+
 ## 0.1.14
 
 ### Patch Changes

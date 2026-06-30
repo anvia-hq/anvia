@@ -22,7 +22,7 @@ class AnthropicClient {
   readonly client: Anthropic;
   constructor(options?: AnthropicClientOptions);
   listModels(): Promise<ModelList>;
-  completionModel(model?: string): AnthropicCompletionModel;
+  completionModel(model?: AnthropicCompletionModelName): AnthropicCompletionModel;
 }
 ```
 
@@ -32,11 +32,21 @@ Return behavior: `completionModel(...)` returns a streaming Anvia completion mod
 
 Notable errors: constructor throws when neither `client` nor `apiKey` is supplied; `listModels()` rejects with `ModelListingError` when the provider request fails.
 
+## Model Name Types
+
+```ts
+type AnthropicCompletionModelName = ModelId<KnownAnthropicCompletionModelName>;
+```
+
+`KnownAnthropicCompletionModelName` is the union of known Anthropic completion model IDs used for autocomplete.
+
+Purpose: typed model identifiers for autocomplete while preserving support for custom strings.
+
 ## AnthropicCompletionModel
 
 ```ts
 class AnthropicCompletionModel implements StreamingCompletionModel {
-  constructor(client: Anthropic, defaultModel?: string);
+  constructor(client: Anthropic, defaultModel?: AnthropicCompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

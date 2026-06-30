@@ -22,9 +22,12 @@ class MistralClient {
   readonly client: Mistral;
   constructor(options?: MistralClientOptions);
   listModels(): Promise<ModelList>;
-  completionModel(model?: string): MistralCompletionModel;
-  embeddingModel(model?: string, options?: MistralEmbeddingModelOptions): MistralEmbeddingModel;
-  ocrModel(model?: string): MistralOcrModel;
+  completionModel(model?: MistralCompletionModelName): MistralCompletionModel;
+  embeddingModel(
+    model?: MistralEmbeddingModelName,
+    options?: MistralEmbeddingModelOptions,
+  ): MistralEmbeddingModel;
+  ocrModel(model?: MistralOcrModelName): MistralOcrModel;
 }
 ```
 
@@ -34,11 +37,23 @@ Return behavior: creates or uses a Mistral SDK client, then returns normalized A
 
 Notable errors: constructor throws when neither `client` nor `apiKey` is supplied; `listModels()` rejects with `ModelListingError` when the provider request fails.
 
+## Model Name Types
+
+```ts
+type MistralCompletionModelName = ModelId<KnownMistralCompletionModelName>;
+type MistralEmbeddingModelName = ModelId<KnownMistralEmbeddingModelName>;
+type MistralOcrModelName = ModelId<KnownMistralOcrModelName>;
+```
+
+Known model unions: `KnownMistralCompletionModelName`, `KnownMistralEmbeddingModelName`, and `KnownMistralOcrModelName`.
+
+Purpose: typed model identifiers for autocomplete while preserving support for custom strings.
+
 ## MistralCompletionModel
 
 ```ts
 class MistralCompletionModel implements StreamingCompletionModel {
-  constructor(client: Mistral, defaultModel?: string);
+  constructor(client: Mistral, defaultModel?: MistralCompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
@@ -61,7 +76,11 @@ type MistralEmbeddingModelOptions = {
 class MistralEmbeddingModel implements EmbeddingModel {
   readonly dimensions?: number;
   readonly maxBatchSize: number;
-  constructor(client: Mistral, model: string, options?: MistralEmbeddingModelOptions);
+  constructor(
+    client: Mistral,
+    model: MistralEmbeddingModelName,
+    options?: MistralEmbeddingModelOptions,
+  );
   embedTexts(texts: string[]): Promise<Embedding[]>;
 }
 ```
@@ -114,7 +133,7 @@ type MistralOcrUploadedFile = {
 };
 
 class MistralOcrModel {
-  constructor(client: Mistral, defaultModel?: string);
+  constructor(client: Mistral, defaultModel?: MistralOcrModelName);
   ocr(request: MistralOcrRequest): Promise<MistralOcrResponse>;
 }
 ```

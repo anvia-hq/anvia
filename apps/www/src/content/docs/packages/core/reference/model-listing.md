@@ -29,11 +29,15 @@ type ModelList = {
 interface ModelListingClient {
   listModels(): Promise<ModelList>;
 }
+
+type ModelId<KnownModel extends string> = KnownModel | (string & {});
 ```
 
 Purpose: normalized model-listing contracts shared by provider clients.
 
 Return behavior: provider clients fetch live provider model data and normalize known fields. Unknown fields remain omitted.
+
+`ModelId` is used by provider packages for model-name autocomplete. Known provider model unions stay suggested by TypeScript, while custom model IDs remain accepted as strings.
 
 ## ModelListingError
 

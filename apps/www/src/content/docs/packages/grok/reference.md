@@ -25,8 +25,10 @@ class GrokClient {
   readonly client: OpenAI;
   constructor(options?: GrokClientOptions);
   listModels(): Promise<ModelList>;
-  completionModel(model?: string): GrokResponsesCompletionModel | GrokChatCompletionModel;
-  imageGenerationModel(model?: string): GrokImageGenerationModel;
+  completionModel(
+    model?: GrokCompletionModelName,
+  ): GrokResponsesCompletionModel | GrokChatCompletionModel;
+  imageGenerationModel(model?: GrokImageGenerationModelName): GrokImageGenerationModel;
 }
 ```
 
@@ -36,19 +38,30 @@ Return behavior: `completionModel(...)` returns the Responses adapter by default
 
 Notable errors: constructor throws when neither `client` nor `apiKey` is supplied; `listModels()` rejects with `ModelListingError` when the provider request fails.
 
+## Model Name Types
+
+```ts
+type GrokCompletionModelName = ModelId<KnownGrokCompletionModelName>;
+type GrokImageGenerationModelName = ModelId<KnownGrokImageGenerationModelName>;
+```
+
+Known model unions: `KnownGrokCompletionModelName` and `KnownGrokImageGenerationModelName`.
+
+Purpose: typed model identifiers for autocomplete while preserving support for custom strings.
+
 ## Completion Models
 
 ```ts
 class GrokResponsesCompletionModel implements StreamingCompletionModel {
   readonly provider: "grok";
-  constructor(client: OpenAI, defaultModel?: string);
+  constructor(client: OpenAI, defaultModel?: GrokCompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
 
 class GrokChatCompletionModel implements StreamingCompletionModel {
   readonly provider: "grok-chat";
-  constructor(client: OpenAI, defaultModel?: string);
+  constructor(client: OpenAI, defaultModel?: GrokCompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
@@ -65,7 +78,11 @@ Notable errors: rejects unsupported requests through the delegated OpenAI-compat
 ```ts
 class GrokImageGenerationModel implements ImageGenerationModel {
   readonly provider: "grok";
-  constructor(client: OpenAI, defaultModel?: string, fetchFn?: typeof fetch);
+  constructor(
+    client: OpenAI,
+    defaultModel?: GrokImageGenerationModelName,
+    fetchFn?: typeof fetch,
+  );
   imageGeneration(request: ImageGenerationRequest): Promise<ImageGenerationResponse>;
 }
 ```

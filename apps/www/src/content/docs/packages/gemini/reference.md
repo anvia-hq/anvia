@@ -20,11 +20,14 @@ class GeminiClient {
   readonly client: GoogleGenAI;
   constructor(options?: GeminiClientOptions);
   listModels(): Promise<ModelList>;
-  completionModel(model?: string): GeminiCompletionModel;
-  embeddingModel(model?: string, options?: GeminiEmbeddingModelOptions): GeminiEmbeddingModel;
-  imageGenerationModel(model?: string): GeminiImageGenerationModel;
-  imagenGenerationModel(model?: string): GeminiImagenGenerationModel;
-  transcriptionModel(model?: string): GeminiTranscriptionModel;
+  completionModel(model?: GeminiCompletionModelName): GeminiCompletionModel;
+  embeddingModel(
+    model?: GeminiEmbeddingModelName,
+    options?: GeminiEmbeddingModelOptions,
+  ): GeminiEmbeddingModel;
+  imageGenerationModel(model?: GeminiImageGenerationModelName): GeminiImageGenerationModel;
+  imagenGenerationModel(model?: GeminiImageGenerationModelName): GeminiImagenGenerationModel;
+  transcriptionModel(model?: GeminiTranscriptionModelName): GeminiTranscriptionModel;
 }
 ```
 
@@ -33,6 +36,19 @@ Purpose: factory for Gemini API or Vertex AI-backed completion, embedding, image
 Return behavior: creates or uses a `GoogleGenAI` client, then returns Gemini completion and embedding models. `listModels()` fetches the Gemini model list and returns a normalized `ModelList`.
 
 Notable errors: underlying SDK calls can fail for missing credentials, invalid project/location, or API errors; `listModels()` rejects with `ModelListingError` when the provider request fails.
+
+## Model Name Types
+
+```ts
+type GeminiCompletionModelName = ModelId<KnownGeminiCompletionModelName>;
+type GeminiEmbeddingModelName = ModelId<KnownGeminiEmbeddingModelName>;
+type GeminiImageGenerationModelName = ModelId<KnownGeminiImageGenerationModelName>;
+type GeminiTranscriptionModelName = GeminiCompletionModelName;
+```
+
+Known model unions: `KnownGeminiCompletionModelName`, `KnownGeminiEmbeddingModelName`, and `KnownGeminiImageGenerationModelName`.
+
+Purpose: typed model identifiers for autocomplete while preserving support for custom strings.
 
 ## Multimodal Models
 
@@ -56,7 +72,7 @@ Gemini audio generation is not implemented in v1.
 
 ```ts
 class GeminiCompletionModel implements StreamingCompletionModel {
-  constructor(client: GoogleGenAI, defaultModel?: string);
+  constructor(client: GoogleGenAI, defaultModel?: GeminiCompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
@@ -92,7 +108,11 @@ type GeminiEmbeddingModelOptions = {
 class GeminiEmbeddingModel implements EmbeddingModel {
   readonly dimensions?: number;
   readonly maxBatchSize: number;
-  constructor(client: GoogleGenAI, model: string, options?: GeminiEmbeddingModelOptions);
+  constructor(
+    client: GoogleGenAI,
+    model: GeminiEmbeddingModelName,
+    options?: GeminiEmbeddingModelOptions,
+  );
   embedTexts(texts: string[]): Promise<Embedding[]>;
 }
 ```

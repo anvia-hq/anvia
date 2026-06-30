@@ -24,11 +24,14 @@ class OpenAIClient {
   readonly client: OpenAI;
   constructor(options?: OpenAIClientOptions);
   listModels(): Promise<ModelList>;
-  completionModel(model?: string): StreamingCompletionModel;
-  embeddingModel(model?: string, options?: ProviderEmbeddingModelOptions): OpenAIEmbeddingModel;
-  imageGenerationModel(model?: string): OpenAIImageGenerationModel;
-  audioGenerationModel(model?: string): OpenAIAudioGenerationModel;
-  transcriptionModel(model?: string): OpenAITranscriptionModel;
+  completionModel(model?: OpenAICompletionModelName): StreamingCompletionModel;
+  embeddingModel(
+    model?: OpenAIEmbeddingModelName,
+    options?: ProviderEmbeddingModelOptions,
+  ): OpenAIEmbeddingModel;
+  imageGenerationModel(model?: OpenAIImageGenerationModelName): OpenAIImageGenerationModel;
+  audioGenerationModel(model?: OpenAIAudioGenerationModelName): OpenAIAudioGenerationModel;
+  transcriptionModel(model?: OpenAITranscriptionModelName): OpenAITranscriptionModel;
 }
 ```
 
@@ -37,6 +40,20 @@ Purpose: factory for OpenAI completion, embedding, image generation, audio gener
 Return behavior: `completionModel(...)` returns a streaming model backed by Responses API by default or chat completions when `completionApi: "chat"` is set. `listModels()` fetches the configured OpenAI or OpenAI-compatible `/models` endpoint and returns a normalized `ModelList`.
 
 Notable errors: constructor throws when neither `client` nor `apiKey` is supplied; `listModels()` rejects with `ModelListingError` when the provider request fails.
+
+## Model Name Types
+
+```ts
+type OpenAICompletionModelName = ModelId<KnownOpenAICompletionModelName>;
+type OpenAIEmbeddingModelName = ModelId<KnownOpenAIEmbeddingModelName>;
+type OpenAIImageGenerationModelName = ModelId<KnownOpenAIImageGenerationModelName>;
+type OpenAIAudioGenerationModelName = ModelId<KnownOpenAIAudioGenerationModelName>;
+type OpenAITranscriptionModelName = ModelId<KnownOpenAITranscriptionModelName>;
+```
+
+Known model unions: `KnownOpenAICompletionModelName`, `KnownOpenAIEmbeddingModelName`, `KnownOpenAIImageGenerationModelName`, `KnownOpenAIAudioGenerationModelName`, and `KnownOpenAITranscriptionModelName`.
+
+Purpose: typed model identifiers for autocomplete while preserving support for custom strings and compatible gateway model IDs.
 
 ## Multimodal Models
 
@@ -66,7 +83,11 @@ type ProviderEmbeddingModelOptions = {
 class OpenAIEmbeddingModel implements EmbeddingModel {
   readonly dimensions?: number;
   readonly maxBatchSize: number;
-  constructor(client: OpenAI, model: string, options?: ProviderEmbeddingModelOptions);
+  constructor(
+    client: OpenAI,
+    model: OpenAIEmbeddingModelName,
+    options?: ProviderEmbeddingModelOptions,
+  );
   embedTexts(texts: string[]): Promise<Embedding[]>;
 }
 ```
@@ -81,7 +102,7 @@ Notable errors: rejects on OpenAI SDK errors or mismatched embedding counts.
 
 ```ts
 class OpenAIResponsesCompletionModel implements StreamingCompletionModel {
-  constructor(client: OpenAI, defaultModel?: string);
+  constructor(client: OpenAI, defaultModel?: OpenAICompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
@@ -97,7 +118,7 @@ Notable errors: rejects or yields errors from OpenAI Responses API calls.
 
 ```ts
 class OpenAIChatCompletionModel implements StreamingCompletionModel {
-  constructor(client: OpenAI, defaultModel?: string);
+  constructor(client: OpenAI, defaultModel?: OpenAICompletionModelName);
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

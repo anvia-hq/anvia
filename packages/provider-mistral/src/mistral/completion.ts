@@ -20,11 +20,14 @@ import {
 import type { Mistral } from "@mistralai/mistralai";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, parseJsonValue, schemaName, stringFrom } from "../utils";
+import type { MistralCompletionModelName } from "./models";
 
 type MistralChatParams = Record<string, unknown>;
 type MistralChatMessage = Record<string, unknown>;
 
-export class MistralCompletionModel implements StreamingCompletionModel {
+export class MistralCompletionModel
+  implements StreamingCompletionModel<unknown, MistralCompletionModelName>
+{
   readonly provider = "mistral";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -38,25 +41,29 @@ export class MistralCompletionModel implements StreamingCompletionModel {
 
   constructor(
     private readonly client: Mistral,
-    readonly defaultModel = "mistral-large-latest",
+    readonly defaultModel: MistralCompletionModelName = "mistral-large-latest",
   ) {}
 
   traceRequest(
-    request: CompletionRequest,
+    request: CompletionRequest<MistralCompletionModelName>,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params = toMistralChatParams(this.defaultModel, request);
     return providerRequestSummary(params, request, options);
   }
 
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+  async completion(
+    request: CompletionRequest<MistralCompletionModelName>,
+  ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toMistralChatParams(this.defaultModel, request);
     const response = await this.client.chat.complete(params as never);
     return fromMistralChatResponse(response);
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(
+    request: CompletionRequest<MistralCompletionModelName>,
+  ): AsyncIterable<CompletionStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = toMistralChatParams(this.defaultModel, request);
     const stream = await this.client.chat.stream(params as never);
@@ -69,8 +76,8 @@ export class MistralCompletionModel implements StreamingCompletionModel {
 }
 
 export function toMistralChatParams(
-  defaultModel: string,
-  request: CompletionRequest,
+  defaultModel: MistralCompletionModelName,
+  request: CompletionRequest<MistralCompletionModelName>,
 ): MistralChatParams {
   const params: MistralChatParams = {
     model: request.model ?? defaultModel,
@@ -113,7 +120,7 @@ export function toMistralChatParams(
 
 function providerRequestSummary(
   params: MistralChatParams,
-  request: CompletionRequest,
+  request: CompletionRequest<MistralCompletionModelName>,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   return compactJsonObject({
@@ -153,7 +160,7 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
   ) as JsonObject;
 }
 
-function requestMessages(request: CompletionRequest): MessageType[] {
+function requestMessages(request: CompletionRequest<MistralCompletionModelName>): MessageType[] {
   return orderedRequestMessages(request, { includeInstructionsAsSystem: true });
 }
 

@@ -18,6 +18,7 @@ import {
 } from "@anvia/core/completion";
 import type { GoogleGenAI } from "@google/genai";
 import { orderedRequestMessages } from "../request-messages";
+import type { GeminiCompletionModelName } from "./models";
 
 type GeminiGenerateParams = Record<string, unknown>;
 type GeminiConfig = Record<string, unknown>;
@@ -27,7 +28,9 @@ type GeminiContent = {
 };
 type GeminiPart = Record<string, unknown>;
 
-export class GeminiCompletionModel implements StreamingCompletionModel {
+export class GeminiCompletionModel
+  implements StreamingCompletionModel<unknown, GeminiCompletionModelName>
+{
   readonly provider = "gemini";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -41,25 +44,29 @@ export class GeminiCompletionModel implements StreamingCompletionModel {
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel = "gemini-2.5-flash",
+    readonly defaultModel: GeminiCompletionModelName = "gemini-2.5-flash",
   ) {}
 
   traceRequest(
-    request: CompletionRequest,
+    request: CompletionRequest<GeminiCompletionModelName>,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params = toGeminiGenerateContentParams(this.defaultModel, request);
     return providerRequestSummary(params, request, options);
   }
 
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+  async completion(
+    request: CompletionRequest<GeminiCompletionModelName>,
+  ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toGeminiGenerateContentParams(this.defaultModel, request);
     const response = await this.client.models.generateContent(params as never);
     return fromGeminiGenerateContentResponse(response);
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(
+    request: CompletionRequest<GeminiCompletionModelName>,
+  ): AsyncIterable<CompletionStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = toGeminiGenerateContentParams(this.defaultModel, request);
     const stream = await this.client.models.generateContentStream(params as never);
@@ -72,8 +79,8 @@ export class GeminiCompletionModel implements StreamingCompletionModel {
 }
 
 export function toGeminiGenerateContentParams(
-  defaultModel: string,
-  request: CompletionRequest,
+  defaultModel: GeminiCompletionModelName,
+  request: CompletionRequest<GeminiCompletionModelName>,
 ): GeminiGenerateParams {
   const messages = requestMessages(request);
   const config = geminiConfig(request, messages);
@@ -96,7 +103,7 @@ export function toGeminiGenerateContentParams(
 
 function providerRequestSummary(
   params: GeminiGenerateParams,
-  request: CompletionRequest,
+  request: CompletionRequest<GeminiCompletionModelName>,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   const config = isPlainObject(params.config) ? params.config : {};
@@ -139,11 +146,14 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
   ) as JsonObject;
 }
 
-function requestMessages(request: CompletionRequest): MessageType[] {
+function requestMessages(request: CompletionRequest<GeminiCompletionModelName>): MessageType[] {
   return orderedRequestMessages(request);
 }
 
-function geminiConfig(request: CompletionRequest, messages: MessageType[]): GeminiConfig {
+function geminiConfig(
+  request: CompletionRequest<GeminiCompletionModelName>,
+  messages: MessageType[],
+): GeminiConfig {
   const config: GeminiConfig = {};
   const systemInstruction = systemInstructionFrom(request, messages);
   if (systemInstruction !== undefined) {
@@ -169,7 +179,7 @@ function geminiConfig(request: CompletionRequest, messages: MessageType[]): Gemi
 }
 
 function systemInstructionFrom(
-  request: CompletionRequest,
+  request: CompletionRequest<GeminiCompletionModelName>,
   messages: MessageType[],
 ): string | undefined {
   const systemMessages = messages.flatMap((message) =>

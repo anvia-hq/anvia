@@ -1,5 +1,6 @@
 import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
 import type { GoogleGenAI } from "@google/genai";
+import type { GeminiEmbeddingModelName } from "./models";
 
 export type GeminiEmbeddingTaskType =
   | "TASK_TYPE_UNSPECIFIED"
@@ -27,7 +28,7 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
 
   constructor(
     private readonly client: GoogleGenAI,
-    private readonly model: string,
+    private readonly model: GeminiEmbeddingModelName,
     options: GeminiEmbeddingModelOptions = {},
   ) {
     this.dimensions = options.dimensions;

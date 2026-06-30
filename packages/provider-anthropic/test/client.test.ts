@@ -1,8 +1,23 @@
 import { Message } from "@anvia/core/completion";
-import { describe, expect, it } from "vitest";
-import { AnthropicClient, AnthropicCompletionModel } from "../src/index";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import {
+  AnthropicClient,
+  AnthropicCompletionModel,
+  type AnthropicCompletionModelName,
+} from "../src/index";
 
 describe("Anthropic client", () => {
+  it("types known Anthropic models while accepting custom model strings", () => {
+    const anthropic = new AnthropicClient({
+      client: { messages: { create: async () => ({}) } } as never,
+    });
+
+    expectTypeOf(
+      anthropic.completionModel("claude-sonnet-4-20250514").defaultModel,
+    ).toEqualTypeOf<AnthropicCompletionModelName>();
+    anthropic.completionModel("custom-messages-model");
+  });
+
   it("uses the Anthropic client for custom Messages base URLs", async () => {
     const calls: unknown[] = [];
     const client = {

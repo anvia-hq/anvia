@@ -1,8 +1,44 @@
 import type { ModelListingError } from "@anvia/core/model-listing";
-import { describe, expect, it } from "vitest";
-import { OpenAIClient } from "../src/index";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import {
+  OpenAIClient,
+  type OpenAICompletionModelName,
+  type OpenAIEmbeddingModelName,
+  type OpenAIImageGenerationModelName,
+  type OpenAITranscriptionModelName,
+} from "../src/index";
 
 describe("OpenAIClient", () => {
+  it("types known provider models while accepting custom model strings", () => {
+    const client = new OpenAIClient({
+      client: { models: { list: async () => ({ data: [] }) } } as never,
+    });
+
+    expectTypeOf(
+      client.completionModel("gpt-5").defaultModel,
+    ).toEqualTypeOf<OpenAICompletionModelName>();
+    client.completionModel("custom-completion-model");
+
+    expectTypeOf(client.embeddingModel("text-embedding-3-small")).toMatchTypeOf<{
+      embedTexts(texts: string[]): unknown;
+    }>();
+    expectTypeOf("text-embedding-3-small").toMatchTypeOf<OpenAIEmbeddingModelName>();
+    client.embeddingModel("custom-embedding-model");
+
+    expectTypeOf(
+      client.imageGenerationModel("gpt-image-2").defaultModel,
+    ).toEqualTypeOf<OpenAIImageGenerationModelName>();
+    client.imageGenerationModel("custom-image-model");
+
+    client.audioGenerationModel("tts-1-hd");
+    client.audioGenerationModel("custom-audio-model");
+
+    expectTypeOf(
+      client.transcriptionModel("whisper-1").defaultModel,
+    ).toEqualTypeOf<OpenAITranscriptionModelName>();
+    client.transcriptionModel("custom-transcription-model");
+  });
+
   it("lists OpenAI and compatible gateway models", async () => {
     const client = new OpenAIClient({
       client: {

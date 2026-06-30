@@ -9,6 +9,13 @@ import { OpenAIAudioGenerationModel, TTS_1 } from "./audio-generation";
 import { OpenAIChatCompletionModel } from "./chat-completion";
 import { OpenAIEmbeddingModel, type ProviderEmbeddingModelOptions } from "./embedding";
 import { GPT_IMAGE_1, OpenAIImageGenerationModel } from "./image-generation";
+import type {
+  OpenAIAudioGenerationModelName,
+  OpenAICompletionModelName,
+  OpenAIEmbeddingModelName,
+  OpenAIImageGenerationModelName,
+  OpenAITranscriptionModelName,
+} from "./models";
 import { OpenAIResponsesCompletionModel } from "./responses";
 import { OpenAITranscriptionModel, WHISPER_1 } from "./transcription";
 
@@ -36,28 +43,32 @@ export class OpenAIClient implements ModelListingClient {
       });
   }
 
-  completionModel(model = "gpt-5"): StreamingCompletionModel {
+  completionModel(
+    model: OpenAICompletionModelName = "gpt-5",
+  ): StreamingCompletionModel<unknown, OpenAICompletionModelName> {
     return this.completionApi === "chat"
       ? new OpenAIChatCompletionModel(this.client, model)
       : new OpenAIResponsesCompletionModel(this.client, model);
   }
 
   embeddingModel(
-    model = "text-embedding-3-small",
+    model: OpenAIEmbeddingModelName = "text-embedding-3-small",
     options: ProviderEmbeddingModelOptions = {},
   ): OpenAIEmbeddingModel {
     return new OpenAIEmbeddingModel(this.client, model, options);
   }
 
-  imageGenerationModel(model = GPT_IMAGE_1): OpenAIImageGenerationModel {
+  imageGenerationModel(
+    model: OpenAIImageGenerationModelName = GPT_IMAGE_1,
+  ): OpenAIImageGenerationModel {
     return new OpenAIImageGenerationModel(this.client, model);
   }
 
-  audioGenerationModel(model = TTS_1): OpenAIAudioGenerationModel {
+  audioGenerationModel(model: OpenAIAudioGenerationModelName = TTS_1): OpenAIAudioGenerationModel {
     return new OpenAIAudioGenerationModel(this.client, model);
   }
 
-  transcriptionModel(model = WHISPER_1): OpenAITranscriptionModel {
+  transcriptionModel(model: OpenAITranscriptionModelName = WHISPER_1): OpenAITranscriptionModel {
     return new OpenAITranscriptionModel(this.client, model);
   }
 

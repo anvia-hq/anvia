@@ -9,5 +9,17 @@ export {
   GPT_IMAGE_2,
   OpenAIImageGenerationModel,
 } from "./image-generation";
+export type {
+  KnownOpenAIAudioGenerationModelName,
+  KnownOpenAICompletionModelName,
+  KnownOpenAIEmbeddingModelName,
+  KnownOpenAIImageGenerationModelName,
+  KnownOpenAITranscriptionModelName,
+  OpenAIAudioGenerationModelName,
+  OpenAICompletionModelName,
+  OpenAIEmbeddingModelName,
+  OpenAIImageGenerationModelName,
+  OpenAITranscriptionModelName,
+} from "./models";
 export { OpenAIResponsesCompletionModel } from "./responses";
 export { OpenAITranscriptionModel, WHISPER_1 } from "./transcription";

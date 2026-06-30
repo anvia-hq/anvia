@@ -1,3 +1,5 @@
+export type ModelId<KnownModel extends string> = KnownModel | (string & {});
+
 export type ListedModel = {
   id: string;
   name?: string;

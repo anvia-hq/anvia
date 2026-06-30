@@ -1,5 +1,6 @@
 import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
 import type OpenAI from "openai";
+import type { OpenAIEmbeddingModelName } from "./models";
 
 export type ProviderEmbeddingModelOptions = {
   dimensions?: number | undefined;
@@ -14,7 +15,7 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
 
   constructor(
     private readonly client: OpenAI,
-    private readonly model: string,
+    private readonly model: OpenAIEmbeddingModelName,
     options: ProviderEmbeddingModelOptions = {},
   ) {
     this.dimensions = options.dimensions;

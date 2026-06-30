@@ -1,8 +1,38 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { toGoogleGenAIOptions } from "../src/gemini/client";
-import { GeminiClient, GeminiCompletionModel, GeminiEmbeddingModel } from "../src/index";
+import {
+  GeminiClient,
+  GeminiCompletionModel,
+  type GeminiCompletionModelName,
+  GeminiEmbeddingModel,
+  type GeminiImageGenerationModelName,
+  type GeminiTranscriptionModelName,
+} from "../src/index";
 
 describe("GeminiClient", () => {
+  it("types known Gemini models while accepting custom model strings", () => {
+    const client = new GeminiClient({ client: fakeSdk() as never });
+
+    expectTypeOf(
+      client.completionModel("gemini-2.5-flash").defaultModel,
+    ).toEqualTypeOf<GeminiCompletionModelName>();
+    client.completionModel("custom-gemini-model");
+
+    client.embeddingModel("gemini-embedding-001");
+    client.embeddingModel("custom-gemini-embedding");
+
+    expectTypeOf(
+      client.imageGenerationModel("gemini-2.5-flash-image").defaultModel,
+    ).toEqualTypeOf<GeminiImageGenerationModelName>();
+    client.imageGenerationModel("custom-gemini-image");
+    client.imagenGenerationModel("imagen-4.0-generate-001");
+
+    expectTypeOf(
+      client.transcriptionModel("gemini-2.5-flash").defaultModel,
+    ).toEqualTypeOf<GeminiTranscriptionModelName>();
+    client.transcriptionModel("custom-gemini-transcription");
+  });
+
   it("creates Gemini API SDK options from explicit apiKey", () => {
     expect(toGoogleGenAIOptions({ apiKey: "key" })).toEqual({ apiKey: "key" });
   });

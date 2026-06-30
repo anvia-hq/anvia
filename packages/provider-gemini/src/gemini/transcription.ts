@@ -5,16 +5,19 @@ import type {
   TranscriptionResponse,
 } from "@anvia/core/transcription";
 import type { GoogleGenAI } from "@google/genai";
+import type { GeminiTranscriptionModelName } from "./models";
 
 const TRANSCRIPTION_PREAMBLE =
   "Transcribe the provided audio exactly. Do not add additional information.";
 
-export class GeminiTranscriptionModel implements TranscriptionModel {
+export class GeminiTranscriptionModel
+  implements TranscriptionModel<unknown, GeminiTranscriptionModelName>
+{
   readonly provider = "gemini";
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel = "gemini-2.5-flash",
+    readonly defaultModel: GeminiTranscriptionModelName = "gemini-2.5-flash",
   ) {}
 
   async transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<unknown>> {

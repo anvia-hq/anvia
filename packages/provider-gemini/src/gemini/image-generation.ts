@@ -6,17 +6,20 @@ import type {
   ImageGenerationResponse,
 } from "@anvia/core/image-generation";
 import type { GoogleGenAI } from "@google/genai";
+import type { GeminiImageGenerationModelName } from "./models";
 
 export const GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image";
 export const GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview";
 export const IMAGEN_4_GENERATE = "imagen-4.0-generate-001";
 
-export class GeminiImageGenerationModel implements ImageGenerationModel {
+export class GeminiImageGenerationModel
+  implements ImageGenerationModel<unknown, GeminiImageGenerationModelName>
+{
   readonly provider = "gemini";
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel = GEMINI_2_5_FLASH_IMAGE,
+    readonly defaultModel: GeminiImageGenerationModelName = GEMINI_2_5_FLASH_IMAGE,
   ) {}
 
   async imageGeneration(
@@ -44,12 +47,14 @@ export class GeminiImageGenerationModel implements ImageGenerationModel {
   }
 }
 
-export class GeminiImagenGenerationModel implements ImageGenerationModel {
+export class GeminiImagenGenerationModel
+  implements ImageGenerationModel<unknown, GeminiImageGenerationModelName>
+{
   readonly provider = "gemini";
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel = IMAGEN_4_GENERATE,
+    readonly defaultModel: GeminiImageGenerationModelName = IMAGEN_4_GENERATE,
   ) {}
 
   async imageGeneration(

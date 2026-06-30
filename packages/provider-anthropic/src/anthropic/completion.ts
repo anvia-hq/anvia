@@ -23,6 +23,7 @@ import {
 } from "@anvia/core/completion";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, stringFrom } from "../utils";
+import type { AnthropicCompletionModelName } from "./models";
 
 type AnthropicCreateParams = Record<string, unknown>;
 type AnthropicMessage = Record<string, unknown>;
@@ -30,7 +31,9 @@ type AnthropicContentBlock = Record<string, unknown>;
 
 const DEFAULT_MAX_TOKENS = 1024;
 
-export class AnthropicCompletionModel implements StreamingCompletionModel {
+export class AnthropicCompletionModel
+  implements StreamingCompletionModel<unknown, AnthropicCompletionModelName>
+{
   readonly provider = "anthropic";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -44,11 +47,11 @@ export class AnthropicCompletionModel implements StreamingCompletionModel {
 
   constructor(
     private readonly client: Anthropic,
-    readonly defaultModel = "claude-sonnet-4-20250514",
+    readonly defaultModel: AnthropicCompletionModelName = "claude-sonnet-4-20250514",
   ) {}
 
   traceRequest(
-    request: CompletionRequest,
+    request: CompletionRequest<AnthropicCompletionModelName>,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params = toAnthropicMessagesParams(this.defaultModel, request);
@@ -58,14 +61,18 @@ export class AnthropicCompletionModel implements StreamingCompletionModel {
     return providerRequestSummary(params, request, options);
   }
 
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+  async completion(
+    request: CompletionRequest<AnthropicCompletionModelName>,
+  ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toAnthropicMessagesParams(this.defaultModel, request);
     const response = await this.client.messages.create(params as never);
     return fromAnthropicMessage(response);
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(
+    request: CompletionRequest<AnthropicCompletionModelName>,
+  ): AsyncIterable<CompletionStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = { ...toAnthropicMessagesParams(this.defaultModel, request), stream: true };
     const stream = await this.client.messages.create(params as never);
@@ -215,8 +222,8 @@ function copyUsage(usage: Usage): Usage {
 }
 
 export function toAnthropicMessagesParams(
-  defaultModel: string,
-  request: CompletionRequest,
+  defaultModel: AnthropicCompletionModelName,
+  request: CompletionRequest<AnthropicCompletionModelName>,
 ): AnthropicCreateParams {
   const messages = requestMessages(request);
   const system = systemFromMessages(request, messages);
@@ -251,7 +258,7 @@ export function toAnthropicMessagesParams(
 
 function providerRequestSummary(
   params: AnthropicCreateParams,
-  request: CompletionRequest,
+  request: CompletionRequest<AnthropicCompletionModelName>,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   return compactJsonObject({
@@ -291,12 +298,12 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
   ) as JsonObject;
 }
 
-function requestMessages(request: CompletionRequest): MessageType[] {
+function requestMessages(request: CompletionRequest<AnthropicCompletionModelName>): MessageType[] {
   return orderedRequestMessages(request);
 }
 
 function systemFromMessages(
-  request: CompletionRequest,
+  request: CompletionRequest<AnthropicCompletionModelName>,
   messages: MessageType[],
 ): string | undefined {
   const systemMessages = messages.flatMap((message) =>

@@ -11,8 +11,14 @@ import type {
 } from "./types";
 import { assertCompletionRequestSupported } from "./types";
 
+type ModelNameOf<M extends CompletionModel> =
+  M extends CompletionModel<unknown, infer ModelName> ? ModelName : string;
+
+type RawResponseOf<M extends CompletionModel> =
+  M extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+
 export class CompletionRequestBuilder<M extends CompletionModel = CompletionModel> {
-  private requestModel: string | undefined;
+  private requestModel: ModelNameOf<M> | undefined;
   private instructionBlocks: string[] = [];
   private history: MessageType[] = [];
   private docs: Document[] = [];
@@ -28,7 +34,7 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
     private readonly promptMessage: MessageType,
   ) {}
 
-  modelOverride(model: string | undefined): this {
+  modelOverride(model: ModelNameOf<M> | undefined): this {
     this.requestModel = model;
     return this;
   }
@@ -80,9 +86,9 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
     return this;
   }
 
-  build(): CompletionRequest {
+  build(): CompletionRequest<ModelNameOf<M>> {
     const instructions = this.buildInstructions();
-    const request: CompletionRequest = {
+    const request: CompletionRequest<ModelNameOf<M>> = {
       chatHistory: [...this.history, this.promptMessage],
       documents: [...this.docs],
       tools: [...this.toolDefs],
@@ -99,10 +105,10 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
     return request;
   }
 
-  async send(): Promise<CompletionResponse> {
+  async send(): Promise<CompletionResponse<RawResponseOf<M>>> {
     const request = this.build();
     assertCompletionRequestSupported(this.model, request);
-    return this.model.completion(request);
+    return this.model.completion(request) as Promise<CompletionResponse<RawResponseOf<M>>>;
   }
 
   private buildInstructions(): string | undefined {

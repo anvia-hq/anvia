@@ -24,11 +24,14 @@ import {
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, parseJsonValue, schemaName, stringFrom } from "../utils";
+import type { OpenAICompletionModelName } from "./models";
 
 type ResponsesCreateParams = Record<string, unknown>;
 type ResponsesInputItem = Record<string, unknown>;
 
-export class OpenAIResponsesCompletionModel implements StreamingCompletionModel {
+export class OpenAIResponsesCompletionModel
+  implements StreamingCompletionModel<unknown, OpenAICompletionModelName>
+{
   readonly provider = "openai";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -42,11 +45,11 @@ export class OpenAIResponsesCompletionModel implements StreamingCompletionModel 
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel = "gpt-5",
+    readonly defaultModel: OpenAICompletionModelName = "gpt-5",
   ) {}
 
   traceRequest(
-    request: CompletionRequest,
+    request: CompletionRequest<OpenAICompletionModelName>,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params = toOpenAIResponsesParams(this.defaultModel, request);
@@ -56,14 +59,18 @@ export class OpenAIResponsesCompletionModel implements StreamingCompletionModel 
     return providerRequestSummary(params, request, options);
   }
 
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+  async completion(
+    request: CompletionRequest<OpenAICompletionModelName>,
+  ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toOpenAIResponsesParams(this.defaultModel, request);
     const response = await this.client.responses.create(params as never);
     return fromOpenAIResponse(response);
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(
+    request: CompletionRequest<OpenAICompletionModelName>,
+  ): AsyncIterable<CompletionStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = { ...toOpenAIResponsesParams(this.defaultModel, request), stream: true };
     const stream = await this.client.responses.create(params as never);
@@ -77,8 +84,8 @@ export class OpenAIResponsesCompletionModel implements StreamingCompletionModel 
 }
 
 export function toOpenAIResponsesParams(
-  defaultModel: string,
-  request: CompletionRequest,
+  defaultModel: OpenAICompletionModelName,
+  request: CompletionRequest<OpenAICompletionModelName>,
 ): ResponsesCreateParams {
   const params: ResponsesCreateParams = {
     model: request.model ?? defaultModel,
@@ -125,7 +132,7 @@ export function toOpenAIResponsesParams(
 
 function providerRequestSummary(
   params: ResponsesCreateParams,
-  request: CompletionRequest,
+  request: CompletionRequest<OpenAICompletionModelName>,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   return compactJsonObject({
@@ -184,7 +191,7 @@ function toJsonValue(value: unknown): JsonValue {
   return String(value);
 }
 
-function requestMessages(request: CompletionRequest): MessageType[] {
+function requestMessages(request: CompletionRequest<OpenAICompletionModelName>): MessageType[] {
   return orderedRequestMessages(request);
 }
 

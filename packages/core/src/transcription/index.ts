@@ -14,9 +14,9 @@ export type TranscriptionResponse<RawResponse = unknown> = {
   rawResponse: RawResponse;
 };
 
-export interface TranscriptionModel<RawResponse = unknown> {
+export interface TranscriptionModel<RawResponse = unknown, ModelName extends string = string> {
   readonly provider?: string | undefined;
-  readonly defaultModel?: string | undefined;
+  readonly defaultModel?: ModelName | undefined;
   transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<RawResponse>>;
 }
 

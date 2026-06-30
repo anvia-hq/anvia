@@ -13,9 +13,9 @@ export type AudioGenerationResponse<RawResponse = unknown> = {
   rawResponse: RawResponse;
 };
 
-export interface AudioGenerationModel<RawResponse = unknown> {
+export interface AudioGenerationModel<RawResponse = unknown, ModelName extends string = string> {
   readonly provider?: string | undefined;
-  readonly defaultModel?: string | undefined;
+  readonly defaultModel?: ModelName | undefined;
   audioGeneration(request: AudioGenerationRequest): Promise<AudioGenerationResponse<RawResponse>>;
 }
 

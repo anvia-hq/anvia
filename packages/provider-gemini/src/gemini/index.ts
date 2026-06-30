@@ -12,4 +12,13 @@ export {
   GeminiImagenGenerationModel,
   IMAGEN_4_GENERATE,
 } from "./image-generation";
+export type {
+  GeminiCompletionModelName,
+  GeminiEmbeddingModelName,
+  GeminiImageGenerationModelName,
+  GeminiTranscriptionModelName,
+  KnownGeminiCompletionModelName,
+  KnownGeminiEmbeddingModelName,
+  KnownGeminiImageGenerationModelName,
+} from "./models";
 export { GeminiTranscriptionModel } from "./transcription";

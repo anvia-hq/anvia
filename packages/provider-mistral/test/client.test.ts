@@ -1,12 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   MistralClient,
   MistralCompletionModel,
+  type MistralCompletionModelName,
   MistralEmbeddingModel,
   MistralOcrModel,
+  type MistralOcrModelName,
 } from "../src/index";
 
 describe("MistralClient", () => {
+  it("types known Mistral models while accepting custom model strings", () => {
+    const client = new MistralClient({ client: fakeSdk() as never });
+
+    expectTypeOf(
+      client.completionModel("mistral-large-latest").defaultModel,
+    ).toEqualTypeOf<MistralCompletionModelName>();
+    client.completionModel("custom-mistral-model");
+
+    client.embeddingModel("mistral-embed");
+    client.embeddingModel("custom-mistral-embedding");
+
+    expectTypeOf(
+      client.ocrModel("mistral-ocr-latest").defaultModel,
+    ).toEqualTypeOf<MistralOcrModelName>();
+    client.ocrModel("custom-mistral-ocr");
+  });
+
   it("validates explicit Mistral credentials", () => {
     expect(() => new MistralClient()).toThrow(
       "Missing Mistral credentials. Pass apiKey when constructing MistralClient.",

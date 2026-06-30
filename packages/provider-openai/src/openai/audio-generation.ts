@@ -5,16 +5,19 @@ import type {
 } from "@anvia/core/audio-generation";
 import type { OpenAI } from "openai";
 import { isPlainObject } from "../utils";
+import type { OpenAIAudioGenerationModelName } from "./models";
 
 export const TTS_1 = "tts-1";
 export const TTS_1_HD = "tts-1-hd";
 
-export class OpenAIAudioGenerationModel implements AudioGenerationModel {
+export class OpenAIAudioGenerationModel
+  implements AudioGenerationModel<unknown, OpenAIAudioGenerationModelName>
+{
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel = TTS_1,
+    readonly defaultModel: OpenAIAudioGenerationModelName = TTS_1,
   ) {}
 
   async audioGeneration(

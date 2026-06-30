@@ -180,7 +180,10 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           .toolChoice(this.agent.toolChoice)
           .outputSchema(this.agent.outputSchema)
           .build();
-        request = await this.runCompletionRequestMiddlewares(request, currentTurns);
+        request = (await this.runCompletionRequestMiddlewares(
+          request,
+          currentTurns,
+        )) as typeof request;
 
         let response: CompletionResponse;
         try {
@@ -319,7 +322,10 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           .toolChoice(this.agent.toolChoice)
           .outputSchema(this.agent.outputSchema)
           .build();
-        request = await this.runCompletionRequestMiddlewares(request, currentTurns);
+        request = (await this.runCompletionRequestMiddlewares(
+          request,
+          currentTurns,
+        )) as typeof request;
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });

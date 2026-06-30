@@ -3,4 +3,6 @@ export {
   AnthropicClient,
   type AnthropicClientOptions,
   AnthropicCompletionModel,
+  type AnthropicCompletionModelName,
+  type KnownAnthropicCompletionModelName,
 } from "./anthropic/index";

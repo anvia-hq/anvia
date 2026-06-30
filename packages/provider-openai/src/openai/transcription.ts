@@ -6,15 +6,18 @@ import type {
 import type { OpenAI } from "openai";
 import { toFile } from "openai";
 import { isPlainObject } from "../utils";
+import type { OpenAITranscriptionModelName } from "./models";
 
 export const WHISPER_1 = "whisper-1";
 
-export class OpenAITranscriptionModel implements TranscriptionModel {
+export class OpenAITranscriptionModel
+  implements TranscriptionModel<unknown, OpenAITranscriptionModelName>
+{
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel = WHISPER_1,
+    readonly defaultModel: OpenAITranscriptionModelName = WHISPER_1,
   ) {}
 
   async transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<unknown>> {

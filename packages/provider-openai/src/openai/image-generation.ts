@@ -7,18 +7,21 @@ import type {
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
 import { isPlainObject } from "../utils";
+import type { OpenAIImageGenerationModelName } from "./models";
 
 export const DALL_E_2 = "dall-e-2";
 export const DALL_E_3 = "dall-e-3";
 export const GPT_IMAGE_1 = "gpt-image-1";
 export const GPT_IMAGE_2 = "gpt-image-2";
 
-export class OpenAIImageGenerationModel implements ImageGenerationModel {
+export class OpenAIImageGenerationModel
+  implements ImageGenerationModel<unknown, OpenAIImageGenerationModelName>
+{
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel = GPT_IMAGE_1,
+    readonly defaultModel: OpenAIImageGenerationModelName = GPT_IMAGE_1,
   ) {}
 
   async imageGeneration(

@@ -12,6 +12,12 @@ import {
   GeminiImagenGenerationModel,
   IMAGEN_4_GENERATE,
 } from "./image-generation";
+import type {
+  GeminiCompletionModelName,
+  GeminiEmbeddingModelName,
+  GeminiImageGenerationModelName,
+  GeminiTranscriptionModelName,
+} from "./models";
 import { GeminiTranscriptionModel } from "./transcription";
 
 type GeminiApiClientOptions = {
@@ -39,26 +45,32 @@ export class GeminiClient implements ModelListingClient {
     this.client = options.client ?? new GoogleGenAI(toGoogleGenAIOptions(options));
   }
 
-  completionModel(model = "gemini-2.5-flash"): GeminiCompletionModel {
+  completionModel(model: GeminiCompletionModelName = "gemini-2.5-flash"): GeminiCompletionModel {
     return new GeminiCompletionModel(this.client, model);
   }
 
   embeddingModel(
-    model = "gemini-embedding-001",
+    model: GeminiEmbeddingModelName = "gemini-embedding-001",
     options: GeminiEmbeddingModelOptions = {},
   ): GeminiEmbeddingModel {
     return new GeminiEmbeddingModel(this.client, model, options);
   }
 
-  imageGenerationModel(model = GEMINI_2_5_FLASH_IMAGE): GeminiImageGenerationModel {
+  imageGenerationModel(
+    model: GeminiImageGenerationModelName = GEMINI_2_5_FLASH_IMAGE,
+  ): GeminiImageGenerationModel {
     return new GeminiImageGenerationModel(this.client, model);
   }
 
-  imagenGenerationModel(model = IMAGEN_4_GENERATE): GeminiImagenGenerationModel {
+  imagenGenerationModel(
+    model: GeminiImageGenerationModelName = IMAGEN_4_GENERATE,
+  ): GeminiImagenGenerationModel {
     return new GeminiImagenGenerationModel(this.client, model);
   }
 
-  transcriptionModel(model = "gemini-2.5-flash"): GeminiTranscriptionModel {
+  transcriptionModel(
+    model: GeminiTranscriptionModelName = "gemini-2.5-flash",
+  ): GeminiTranscriptionModel {
     return new GeminiTranscriptionModel(this.client, model);
   }
 

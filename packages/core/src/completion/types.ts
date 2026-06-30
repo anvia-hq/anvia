@@ -380,8 +380,8 @@ export const Usage = {
   },
 };
 
-export type CompletionRequest = {
-  model?: string;
+export type CompletionRequest<ModelName extends string = string> = {
+  model?: ModelName;
   instructions?: string;
   chatHistory: Message[];
   documents: Document[];
@@ -410,15 +410,15 @@ export type CompletionModelCapabilities = {
   reasoning: boolean;
 };
 
-export interface CompletionModel<RawResponse = unknown> {
+export interface CompletionModel<RawResponse = unknown, ModelName extends string = string> {
   readonly provider: string;
-  readonly defaultModel: string;
+  readonly defaultModel: ModelName;
   readonly capabilities: CompletionModelCapabilities;
   traceRequest?(
-    request: CompletionRequest,
+    request: CompletionRequest<ModelName>,
     options?: { stream?: boolean | undefined },
   ): JsonObject | undefined;
-  completion(request: CompletionRequest): Promise<CompletionResponse<RawResponse>>;
+  completion(request: CompletionRequest<ModelName>): Promise<CompletionResponse<RawResponse>>;
 }
 
 export type CompletionStreamEvent<RawResponse = unknown> =
@@ -458,9 +458,11 @@ export type CompletionStreamEvent<RawResponse = unknown> =
       error: unknown;
     };
 
-export interface StreamingCompletionModel<RawResponse = unknown>
-  extends CompletionModel<RawResponse> {
-  streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent<RawResponse>>;
+export interface StreamingCompletionModel<RawResponse = unknown, ModelName extends string = string>
+  extends CompletionModel<RawResponse, ModelName> {
+  streamCompletion(
+    request: CompletionRequest<ModelName>,
+  ): AsyncIterable<CompletionStreamEvent<RawResponse>>;
 }
 
 export class CompletionCapabilityError extends Error {

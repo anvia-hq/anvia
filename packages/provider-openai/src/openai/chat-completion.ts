@@ -21,11 +21,14 @@ import {
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, parseJsonValue, schemaName, stringFrom } from "../utils";
+import type { OpenAICompletionModelName } from "./models";
 
 type ChatCompletionParams = Record<string, unknown>;
 type ChatMessage = Record<string, unknown>;
 
-export class OpenAIChatCompletionModel implements StreamingCompletionModel {
+export class OpenAIChatCompletionModel
+  implements StreamingCompletionModel<unknown, OpenAICompletionModelName>
+{
   readonly provider = "openai-chat";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -39,11 +42,11 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel {
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel = "openai/gpt-5.2",
+    readonly defaultModel: OpenAICompletionModelName = "openai/gpt-5.2",
   ) {}
 
   traceRequest(
-    request: CompletionRequest,
+    request: CompletionRequest<OpenAICompletionModelName>,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params: ChatCompletionParams = toOpenAIChatCompletionParams(this.defaultModel, request);
@@ -55,14 +58,18 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel {
     return providerRequestSummary(params, request, options);
   }
 
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+  async completion(
+    request: CompletionRequest<OpenAICompletionModelName>,
+  ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toOpenAIChatCompletionParams(this.defaultModel, request);
     const response = await this.client.chat.completions.create(params as never);
     return fromOpenAIChatCompletionResponse(response);
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(
+    request: CompletionRequest<OpenAICompletionModelName>,
+  ): AsyncIterable<CompletionStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params: ChatCompletionParams = {
       ...toOpenAIChatCompletionParams(this.defaultModel, request),
@@ -80,8 +87,8 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel {
 }
 
 export function toOpenAIChatCompletionParams(
-  defaultModel: string,
-  request: CompletionRequest,
+  defaultModel: OpenAICompletionModelName,
+  request: CompletionRequest<OpenAICompletionModelName>,
 ): ChatCompletionParams {
   const params: ChatCompletionParams = {
     model: request.model ?? defaultModel,
@@ -124,7 +131,7 @@ export function toOpenAIChatCompletionParams(
 
 function providerRequestSummary(
   params: ChatCompletionParams,
-  request: CompletionRequest,
+  request: CompletionRequest<OpenAICompletionModelName>,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   return compactJsonObject({
@@ -182,7 +189,7 @@ function toJsonValue(value: unknown): JsonValue {
   return String(value);
 }
 
-function requestMessages(request: CompletionRequest): MessageType[] {
+function requestMessages(request: CompletionRequest<OpenAICompletionModelName>): MessageType[] {
   return orderedRequestMessages(request, { includeInstructionsAsSystem: true });
 }
 

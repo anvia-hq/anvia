@@ -54,7 +54,7 @@ export type CreateParsedCompletionResult<
 };
 
 type RawResponseOf<Model> =
-  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
+  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
 
 export function createCompletion<Model extends CompletionModel>(
   model: Model,

@@ -1,6 +1,7 @@
 import type { JsonValue } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
 import { isPlainObject } from "../utils";
+import type { MistralOcrModelName } from "./models";
 
 export const MISTRAL_OCR_LATEST = "mistral-ocr-latest";
 
@@ -78,7 +79,7 @@ export class MistralOcrModel {
 
   constructor(
     private readonly client: Mistral,
-    readonly defaultModel = MISTRAL_OCR_LATEST,
+    readonly defaultModel: MistralOcrModelName = MISTRAL_OCR_LATEST,
   ) {}
 
   async ocr(request: MistralOcrRequest): Promise<MistralOcrResponse<unknown>> {

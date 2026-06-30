@@ -1,5 +1,6 @@
 import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
 import type { Mistral } from "@mistralai/mistralai";
+import type { MistralEmbeddingModelName } from "./models";
 
 export type MistralEmbeddingModelOptions = {
   dimensions?: number | undefined;
@@ -12,7 +13,7 @@ export class MistralEmbeddingModel implements EmbeddingModel {
 
   constructor(
     private readonly client: Mistral,
-    private readonly model: string,
+    private readonly model: MistralEmbeddingModelName,
     options: MistralEmbeddingModelOptions = {},
   ) {
     this.dimensions = options.dimensions;

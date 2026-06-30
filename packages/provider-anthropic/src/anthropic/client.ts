@@ -5,6 +5,7 @@ import {
   ModelListingError,
 } from "@anvia/core/model-listing";
 import { AnthropicCompletionModel } from "./completion";
+import type { AnthropicCompletionModelName } from "./models";
 
 export type AnthropicClientOptions = {
   apiKey?: string | undefined;
@@ -24,7 +25,9 @@ export class AnthropicClient implements ModelListingClient {
       });
   }
 
-  completionModel(model = "claude-sonnet-4-20250514"): AnthropicCompletionModel {
+  completionModel(
+    model: AnthropicCompletionModelName = "claude-sonnet-4-20250514",
+  ): AnthropicCompletionModel {
     return new AnthropicCompletionModel(this.client, model);
   }
 

@@ -6,6 +6,11 @@ import {
 import { Mistral } from "@mistralai/mistralai";
 import { MistralCompletionModel } from "./completion";
 import { MistralEmbeddingModel, type MistralEmbeddingModelOptions } from "./embedding";
+import type {
+  MistralCompletionModelName,
+  MistralEmbeddingModelName,
+  MistralOcrModelName,
+} from "./models";
 import { MISTRAL_OCR_LATEST, MistralOcrModel } from "./ocr";
 
 export type MistralClientOptions = {
@@ -26,18 +31,20 @@ export class MistralClient implements ModelListingClient {
       });
   }
 
-  completionModel(model = "mistral-large-latest"): MistralCompletionModel {
+  completionModel(
+    model: MistralCompletionModelName = "mistral-large-latest",
+  ): MistralCompletionModel {
     return new MistralCompletionModel(this.client, model);
   }
 
   embeddingModel(
-    model = "mistral-embed",
+    model: MistralEmbeddingModelName = "mistral-embed",
     options: MistralEmbeddingModelOptions = {},
   ): MistralEmbeddingModel {
     return new MistralEmbeddingModel(this.client, model, options);
   }
 
-  ocrModel(model = MISTRAL_OCR_LATEST): MistralOcrModel {
+  ocrModel(model: MistralOcrModelName = MISTRAL_OCR_LATEST): MistralOcrModel {
     return new MistralOcrModel(this.client, model);
   }
 

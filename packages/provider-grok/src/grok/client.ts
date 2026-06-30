@@ -30,6 +30,7 @@ export class GrokClient implements ModelListingClient {
         apiKey: requireApiKey(options.apiKey),
         baseURL: options.baseUrl ?? XAI_BASE_URL,
         defaultHeaders: options.headers,
+        fetch: options.fetch,
       });
     this.fetchFn = options.fetch ?? defaultFetch();
   }

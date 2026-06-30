@@ -89,4 +89,18 @@ describe("Grok image generation", () => {
     expect(aspectRatio(1920, 1080)).toBe("16:9");
     expect(aspectRatio(768, 1024)).toBe("3:4");
   });
+
+  it("rejects invalid aspect ratio dimensions", () => {
+    expect(() => aspectRatio(Number.NaN, 1024)).toThrow("width must be a finite positive number");
+    expect(() => aspectRatio(Number.POSITIVE_INFINITY, 1024)).toThrow(
+      "width must be a finite positive number",
+    );
+    expect(() => aspectRatio(1024, Number.NEGATIVE_INFINITY)).toThrow(
+      "height must be a finite positive number",
+    );
+    expect(() => aspectRatio(0, 1024)).toThrow("width must be a positive number");
+    expect(() => aspectRatio(-1, 1024)).toThrow("width must be a positive number");
+    expect(() => aspectRatio(1024, 0)).toThrow("height must be a positive number");
+    expect(() => aspectRatio(1024, -1)).toThrow("height must be a positive number");
+  });
 });

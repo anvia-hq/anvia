@@ -20,6 +20,13 @@ describe("GrokClient", () => {
     expect((client.client as unknown as { baseURL?: string }).baseURL).toBe(XAI_BASE_URL);
   });
 
+  it("passes custom fetch to the SDK client", () => {
+    const fetchFn = (async () => new Response()) as typeof fetch;
+    const client = new GrokClient({ apiKey: "key", fetch: fetchFn });
+
+    expect((client.client as unknown as { fetch?: typeof fetch }).fetch).toBe(fetchFn);
+  });
+
   it("creates Responses completion models by default", () => {
     const client = new GrokClient({ client: fakeSdk() as never });
     const model = client.completionModel();

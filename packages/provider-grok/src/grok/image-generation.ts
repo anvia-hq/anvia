@@ -77,10 +77,23 @@ export async function imageResponseFromGrok(
 }
 
 export function aspectRatio(width: number, height: number): string {
-  const normalizedWidth = Math.max(1, Math.trunc(width));
-  const normalizedHeight = Math.max(1, Math.trunc(height));
+  const normalizedWidth = validateDimension(width, "width");
+  const normalizedHeight = validateDimension(height, "height");
   const divisor = gcd(normalizedWidth, normalizedHeight);
   return `${normalizedWidth / divisor}:${normalizedHeight / divisor}`;
+}
+
+function validateDimension(value: number, name: "width" | "height"): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`Grok image generation ${name} must be a finite positive number.`);
+  }
+
+  const normalized = Math.trunc(value);
+  if (normalized <= 0) {
+    throw new Error(`Grok image generation ${name} must be a positive number.`);
+  }
+
+  return normalized;
 }
 
 async function fetchGeneratedImage(

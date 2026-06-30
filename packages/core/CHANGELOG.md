@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.0
+
+### Minor Changes
+
+- eed8b5f: Add experimental guardrail policies for input, tool calls, tool results, and final output.
+
 ## 0.11.3
 
 ### Patch Changes

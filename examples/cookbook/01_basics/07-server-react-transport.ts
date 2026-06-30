@@ -1,4 +1,4 @@
-import type { AgentStreamEvent } from "@anvia/core/agent";
+import type { AgentStreamEvent } from "@anvia/core/request";
 import { fetchEventStream } from "@anvia/react";
 import { createEventStream } from "@anvia/server";
 

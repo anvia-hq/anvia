@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { CompletionStreamAccumulator } from "../src/agent/stream-accumulator";
 import { AssistantContent, Usage } from "../src/completion";
+import { CompletionStreamAccumulator } from "../src/internal/prompt-runtime/stream-accumulator";
 
 describe("CompletionStreamAccumulator", () => {
+  it("returns completed tool call stream events", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    const toolCall = AssistantContent.toolCall("toolu_1", "Write", {
+      file_path: "src/main.tsx",
+    });
+
+    expect(accumulator.accept({ type: "tool_call", toolCall })).toEqual({
+      type: "tool_call",
+      toolCall,
+    });
+  });
+
   it("preserves accumulated streamed tool arguments when the final tool input is empty", () => {
     const accumulator = new CompletionStreamAccumulator();
     const rawResponse = { provider: "minimax" };

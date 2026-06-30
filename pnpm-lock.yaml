@@ -249,8 +249,8 @@ importers:
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
       pdfjs-dist:
-        specifier: ^6.0.227
-        version: 6.0.227
+        specifier: ^6.1.200
+        version: 6.1.200
       tinyglobby:
         specifier: ^0.2.17
         version: 0.2.17
@@ -343,11 +343,11 @@ importers:
   packages/observability-langfuse:
     dependencies:
       '@langfuse/otel':
-        specifier: ^5.7.0
-        version: 5.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
+        specifier: ^5.9.0
+        version: 5.9.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))
       '@langfuse/tracing':
-        specifier: ^5.7.0
-        version: 5.7.0(@opentelemetry/api@1.9.1)
+        specifier: ^5.9.0
+        version: 5.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources':
         specifier: ^2.8.0
         version: 2.8.0(@opentelemetry/api@1.9.1)
@@ -605,11 +605,11 @@ importers:
         specifier: ^2.0.6
         version: 2.0.6(hono@4.12.27)
       '@hugeicons/core-free-icons':
-        specifier: ^4.2.1
-        version: 4.2.1
+        specifier: ^4.2.2
+        version: 4.2.2
       '@hugeicons/react':
-        specifier: ^1.1.7
-        version: 1.1.7(react@19.2.7)
+        specifier: ^1.1.9
+        version: 1.1.9(react@19.2.7)
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.17
         version: 1.1.17(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -1112,8 +1112,8 @@ packages:
     resolution: {integrity: sha512-iY8yvjE0y651BixKNPgmv1WrQc+GZ142sb0z4gYnChDDY2YqI4P/jsSopBWrKfAt7LOJAkOXt7rC/hms+WclQQ==}
     engines: {node: '>=18.0.0'}
 
-  '@babel/code-frame@7.29.0':
-    resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
+  '@babel/code-frame@7.29.7':
+    resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
     engines: {node: '>=6.9.0'}
 
   '@babel/helper-string-parser@7.29.7':
@@ -1972,11 +1972,11 @@ packages:
     peerDependencies:
       hono: ^4
 
-  '@hugeicons/core-free-icons@4.2.1':
-    resolution: {integrity: sha512-75jYZKYyA9VwS35YRmmGUGzFedbY+Fl0Vxx5FzXR2CGDlIhNRumFeVqaaKoClf2MeYEJwPAVMEL9RwCYtOgnSw==}
+  '@hugeicons/core-free-icons@4.2.2':
+    resolution: {integrity: sha512-fjQW3p6cwoJmwK3oCnV8Z3PC5sHihDvr2jkAHax8cxqp62GaV/D7B/Rnao+JwicW8fmLZUQ6QrzWfoyMFOEQlQ==}
 
-  '@hugeicons/react@1.1.7':
-    resolution: {integrity: sha512-0q1gekPJvNtIsfqi6alVdKfqsLz0PGiZWOzxJDxOd55UpFwcgohBFU4CwTcJ7kg4hO3kwXuzxrn/JEj280GX3g==}
+  '@hugeicons/react@1.1.9':
+    resolution: {integrity: sha512-O+lWSWjbijoAvMCxn4K2bQWCGN5+mP1y5j+X99j23mXMj+s0X25fs71T6t9YJLaBodwmZdaewD27dzS/PiboQw==}
     peerDependencies:
       react: '>=16.0.0'
 
@@ -2240,13 +2240,13 @@ packages:
     peerDependencies:
       apache-arrow: 18.1.0
 
-  '@langfuse/core@5.7.0':
-    resolution: {integrity: sha512-kLFYagw3Js5QDesQbMLOzV4L4/0hYndSmAX6em6zDCmA4qMKfdRJMZ5F/fpl9LONFMTu7pU6WGLyUxM80hjYVQ==}
+  '@langfuse/core@5.9.0':
+    resolution: {integrity: sha512-b7sUIq+2h8muI293CQhxD+ACwdRwDoL3kn0r4ui2CHKEq6ohZt8gKGf0xzbuIDXU3OFqAhIMVzjwNU/b6jARbA==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
 
-  '@langfuse/otel@5.7.0':
-    resolution: {integrity: sha512-x5HANvvDV23btbTijz9eW2DzvX/sZ4orsahYXuwsCApOzEWSgEzd0ZrpHPSz4+epytps1RBe3M6e5gm2EgaAmA==}
+  '@langfuse/otel@5.9.0':
+    resolution: {integrity: sha512-285Z3iD69xklo6nQEUdpMS/QQnfL/ttu2hQYHksridVd0uJHBxG5d4JmarqKO8Bw0i7hFDM1fFvVKpc1Ksze9A==}
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
@@ -2254,8 +2254,8 @@ packages:
       '@opentelemetry/exporter-trace-otlp-http': '>=0.202.0 <1.0.0'
       '@opentelemetry/sdk-trace-base': ^2.0.1
 
-  '@langfuse/tracing@5.7.0':
-    resolution: {integrity: sha512-FCroWXE0510BUt2vHCEk64Wb+nywc3WVdx3+zaWyW1CI8mSa9i/yX+Oe2a956QRLPhVCeFgO27Y8Zlg7RaDWig==}
+  '@langfuse/tracing@5.9.0':
+    resolution: {integrity: sha512-3nPKqafrBdVa0QrIKCvrMJ1GlFaqhoknlUaU6tlWLprVbO8NXyNOvB3rRdlrMafOBCdJfGAeu+TRLcCHx0tAhw==}
     engines: {node: '>=20'}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
@@ -2287,79 +2287,79 @@ packages:
       '@cfworker/json-schema':
         optional: true
 
-  '@napi-rs/canvas-android-arm64@1.0.0':
-    resolution: {integrity: sha512-3hNKJObUK7JsCF9aJlVCs1J0/KE/gGfZNeK8MO1ge6bB3aicr5walGme9t9No1f/oyk9GgvdAT/rjSdsx3gbIw==}
+  '@napi-rs/canvas-android-arm64@1.0.1':
+    resolution: {integrity: sha512-d7ZCwJsgH4QNG50C7HQeVRsRG1gRDa1UeDUb1jEcqgLuiEJp6GVbGiZkFXPlmt0dEs2QHRQCPJoOv+bOkSQR/w==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [android]
 
-  '@napi-rs/canvas-darwin-arm64@1.0.0':
-    resolution: {integrity: sha512-ZIja19/BiGz2puhki+WUYSRriwFeFJ8Mi9eK3hZdSS85w4Y60cuEAJVhMCfKwswQkKkUtrnzdKMBuO7TupvexA==}
+  '@napi-rs/canvas-darwin-arm64@1.0.1':
+    resolution: {integrity: sha512-ppyVSzIHsVldc3B++mdh03ed0Q0hoVR2QDG9O/wEUR0PurJKwDEEYV87uBQDpbSumJBfLEINDndsOPzQj71qEQ==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [darwin]
 
-  '@napi-rs/canvas-darwin-x64@1.0.0':
-    resolution: {integrity: sha512-hImggWc82jqZVpEsFR9S7PE9OQYjq/H/D7vwCGB6X1jRH+UVBP1+1niJTPBOat1B154T6GKK7/kcFtoWgjgFzQ==}
+  '@napi-rs/canvas-darwin-x64@1.0.1':
+    resolution: {integrity: sha512-/BlXif9VOzf/WP32g9zxl612dO0KLvwqplBFqfRcyr3PyR5fhPrilTuJxSBq3zkwCKGKy82JsoPd2JeQI/HBlA==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [darwin]
 
-  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.0':
-    resolution: {integrity: sha512-hlJRy6d+kWLKVOG/+1rEvNQVURZ0DxxRPJsLmEWwhwiXZUJc0BF5o9esALHSEP4CoJK4wChRtj3hnyBgVx2oWA==}
+  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.1':
+    resolution: {integrity: sha512-JTGq93/Pje+iSNVjL+ggB0+pqEfu7nXvQGrHTvugz+Lp08wCDa5rjov4JeEljGDk16/inVBU9sp4N9f0/+o+9A==}
     engines: {node: '>= 10'}
     cpu: [arm]
     os: [linux]
 
-  '@napi-rs/canvas-linux-arm64-gnu@1.0.0':
-    resolution: {integrity: sha512-5Hru4T3RXkosRQafcjelv7AUzw9mXqmGYsxnzeDDOWveFCJyEPMSJltvGCM+jfH98seOCbfwm9KyFg6Jm5FhAA==}
+  '@napi-rs/canvas-linux-arm64-gnu@1.0.1':
+    resolution: {integrity: sha512-i74zqEh5yFmYwHkszFo+4EH4l5ATD4bSlJG21iW2j5kpqiN2b0WN9SG/xdq2O60MjZK0ZLSu3a/Z3aQAsmDQ5A==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@napi-rs/canvas-linux-arm64-musl@1.0.0':
-    resolution: {integrity: sha512-LTUl9jS8WsLSUGaxQZKQkxfluOJRpgvBuxxdM4pYcjib+di8AU4OzQc6+L6SzGMLcKc9H0RAjojRatBhTMqYdg==}
+  '@napi-rs/canvas-linux-arm64-musl@1.0.1':
+    resolution: {integrity: sha512-COqBxybXcKb6gNgEhjh04rPHrpsJB+n/5+p4ySPgQWl0i+xVNYHn4rvzCtUBIFqOgY6HEJ9UaP6c4W9EMwzfpQ==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@napi-rs/canvas-linux-riscv64-gnu@1.0.0':
-    resolution: {integrity: sha512-Iz931SAZf+WVDzpjk52Q3ffW3zw0YflFwEZMgs036Wfu1kX/LrwT9wGjsuSqyduqefUkl91/vTdAjn8hQu5ezA==}
+  '@napi-rs/canvas-linux-riscv64-gnu@1.0.1':
+    resolution: {integrity: sha512-1vdAZGpD85lMUo7K3qtEdoIWeMc0xcpUD5PagK3fVcMSdf8dkSL5bg/KE4Rwv5NF+PYx4plrgfn0KRMOqdKtwA==}
     engines: {node: '>= 10'}
     cpu: [riscv64]
     os: [linux]
     libc: [glibc]
 
-  '@napi-rs/canvas-linux-x64-gnu@1.0.0':
-    resolution: {integrity: sha512-pFEQ5eFK4JusgN1K6KkO9DKP/Hi1WMJOkF8Ch03/khTc4bFbCKkCCsJG4YcOMOW9bI4XbT2/eMAWxhO0xaWgPA==}
+  '@napi-rs/canvas-linux-x64-gnu@1.0.1':
+    resolution: {integrity: sha512-W/iC2qJZGqKKQJ0JrNo3QkhoAy/PvzlmdYLW8Yz5/L6XgT5d7t26dnqgP2rCbL58P3CbPw7ES0Rz8OG0gn7JeQ==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@napi-rs/canvas-linux-x64-musl@1.0.0':
-    resolution: {integrity: sha512-jnvr8NrLHiZ3NCiOKWqDbkI4Ah+QDrqtZ+sddPZBltEb1mQ2coSvCSJYfict+oAwcm0c970oTmVySpjKP/lnaA==}
+  '@napi-rs/canvas-linux-x64-musl@1.0.1':
+    resolution: {integrity: sha512-a5mmIVwxF92UGUe+1c7Ap32ZRnApbRMnQC/KgYyFB0AXZShBCHVGaURq+BDkiV7jvHhVwvvAP0Q/3aWNhqgVZg==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@napi-rs/canvas-win32-arm64-msvc@1.0.0':
-    resolution: {integrity: sha512-y2j9/Gfd5joqiqxdP/L1smqjQ+uAx3C4N0EC7bDHrnZEEH8ToM/OC5p3uHvtj4Lq591aHj+ArL01UDLNwT5HgQ==}
+  '@napi-rs/canvas-win32-arm64-msvc@1.0.1':
+    resolution: {integrity: sha512-rVnDhVvcXlqcHMsgnxxhZgdRkRIqVBlx+FJwSAHi4VbWWwsowvV5ldFEecEHD2+Ac/IL3fNWF/LB5CZTghNwRA==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [win32]
 
-  '@napi-rs/canvas-win32-x64-msvc@1.0.0':
-    resolution: {integrity: sha512-qwdhh9N6Gge/hC4pL9S1tQp0iKwhSl/dYjg7+RGp9k26iRGRi5MqqUyKGOXIWli0zOcuy5Y2wIH/jk2ry6i/jA==}
+  '@napi-rs/canvas-win32-x64-msvc@1.0.1':
+    resolution: {integrity: sha512-UMstkP/nZHbithgdSJv1EvYVrYhdao5B5N3szMVU2i5/b6ijMcVPXOEyrk0QXl0iPjv8Hkoow+Tap+MiOxppOQ==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [win32]
 
-  '@napi-rs/canvas@1.0.0':
-    resolution: {integrity: sha512-Jqxcy1XOIqj+lH9sl1GT+il6GR3uQv13vI2mrwubP3uT8Olak2ClDrK2RnxlQKjwv8BRr4b3ug0YR7c6hBX8wg==}
+  '@napi-rs/canvas@1.0.1':
+    resolution: {integrity: sha512-mPD43G7pXbQhIGa7z4IpT/vXm1jbF8cBM1oY5UqjL8LSaTCNGhNi2Lidc/0+LwKbNiqbv/Tq0JlBRwKu+LW3iw==}
     engines: {node: '>= 10'}
 
   '@napi-rs/wasm-runtime@1.1.4':
@@ -6125,8 +6125,8 @@ packages:
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
-  pdfjs-dist@6.0.227:
-    resolution: {integrity: sha512-/P6M4SXw+70waMVLUM7rdRtvo+dEzqE1t6W/zQNvBETo2MaRa5rrvCcAYdfWGiUzadTgM0lJmRApUrW0d9zgKg==}
+  pdfjs-dist@6.1.200:
+    resolution: {integrity: sha512-o8MolyzirkkLrcdsae/HEOiIcXWI7DS5zGpvqW8xTC2YUsW30rltFw2bDGvw/fskUdEMrQm2br68jzDS5BH2vw==}
     engines: {node: '>=22.13.0 || >=24'}
 
   pg-cloudflare@1.4.0:
@@ -7896,7 +7896,7 @@ snapshots:
 
   '@aws/lambda-invoke-store@0.2.4': {}
 
-  '@babel/code-frame@7.29.0':
+  '@babel/code-frame@7.29.7':
     dependencies:
       '@babel/helper-validator-identifier': 7.29.7
       js-tokens: 4.0.0
@@ -8541,9 +8541,9 @@ snapshots:
     dependencies:
       hono: 4.12.27
 
-  '@hugeicons/core-free-icons@4.2.1': {}
+  '@hugeicons/core-free-icons@4.2.2': {}
 
-  '@hugeicons/react@1.1.7(react@19.2.7)':
+  '@hugeicons/react@1.1.9(react@19.2.7)':
     dependencies:
       react: 19.2.7
 
@@ -8734,21 +8734,21 @@ snapshots:
       '@lancedb/lancedb-win32-arm64-msvc': 0.30.0
       '@lancedb/lancedb-win32-x64-msvc': 0.30.0
 
-  '@langfuse/core@5.7.0(@opentelemetry/api@1.9.1)':
+  '@langfuse/core@5.9.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@langfuse/otel@5.7.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))':
+  '@langfuse/otel@5.9.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.219.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.8.0(@opentelemetry/api@1.9.1))':
     dependencies:
-      '@langfuse/core': 5.7.0(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-trace-otlp-http': 0.219.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.8.0(@opentelemetry/api@1.9.1)
 
-  '@langfuse/tracing@5.7.0(@opentelemetry/api@1.9.1)':
+  '@langfuse/tracing@5.9.0(@opentelemetry/api@1.9.1)':
     dependencies:
-      '@langfuse/core': 5.7.0(@opentelemetry/api@1.9.1)
+      '@langfuse/core': 5.9.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/api': 1.9.1
 
   '@manypkg/find-root@1.1.0':
@@ -8831,52 +8831,52 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@napi-rs/canvas-android-arm64@1.0.0':
+  '@napi-rs/canvas-android-arm64@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-darwin-arm64@1.0.0':
+  '@napi-rs/canvas-darwin-arm64@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-darwin-x64@1.0.0':
+  '@napi-rs/canvas-darwin-x64@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.0':
+  '@napi-rs/canvas-linux-arm-gnueabihf@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-linux-arm64-gnu@1.0.0':
+  '@napi-rs/canvas-linux-arm64-gnu@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-linux-arm64-musl@1.0.0':
+  '@napi-rs/canvas-linux-arm64-musl@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-linux-riscv64-gnu@1.0.0':
+  '@napi-rs/canvas-linux-riscv64-gnu@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-linux-x64-gnu@1.0.0':
+  '@napi-rs/canvas-linux-x64-gnu@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-linux-x64-musl@1.0.0':
+  '@napi-rs/canvas-linux-x64-musl@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-win32-arm64-msvc@1.0.0':
+  '@napi-rs/canvas-win32-arm64-msvc@1.0.1':
     optional: true
 
-  '@napi-rs/canvas-win32-x64-msvc@1.0.0':
+  '@napi-rs/canvas-win32-x64-msvc@1.0.1':
     optional: true
 
-  '@napi-rs/canvas@1.0.0':
+  '@napi-rs/canvas@1.0.1':
     optionalDependencies:
-      '@napi-rs/canvas-android-arm64': 1.0.0
-      '@napi-rs/canvas-darwin-arm64': 1.0.0
-      '@napi-rs/canvas-darwin-x64': 1.0.0
-      '@napi-rs/canvas-linux-arm-gnueabihf': 1.0.0
-      '@napi-rs/canvas-linux-arm64-gnu': 1.0.0
-      '@napi-rs/canvas-linux-arm64-musl': 1.0.0
-      '@napi-rs/canvas-linux-riscv64-gnu': 1.0.0
-      '@napi-rs/canvas-linux-x64-gnu': 1.0.0
-      '@napi-rs/canvas-linux-x64-musl': 1.0.0
-      '@napi-rs/canvas-win32-arm64-msvc': 1.0.0
-      '@napi-rs/canvas-win32-x64-msvc': 1.0.0
+      '@napi-rs/canvas-android-arm64': 1.0.1
+      '@napi-rs/canvas-darwin-arm64': 1.0.1
+      '@napi-rs/canvas-darwin-x64': 1.0.1
+      '@napi-rs/canvas-linux-arm-gnueabihf': 1.0.1
+      '@napi-rs/canvas-linux-arm64-gnu': 1.0.1
+      '@napi-rs/canvas-linux-arm64-musl': 1.0.1
+      '@napi-rs/canvas-linux-riscv64-gnu': 1.0.1
+      '@napi-rs/canvas-linux-x64-gnu': 1.0.1
+      '@napi-rs/canvas-linux-x64-musl': 1.0.1
+      '@napi-rs/canvas-win32-arm64-msvc': 1.0.1
+      '@napi-rs/canvas-win32-x64-msvc': 1.0.1
     optional: true
 
   '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
@@ -10259,7 +10259,7 @@ snapshots:
 
   '@testing-library/dom@10.4.1':
     dependencies:
-      '@babel/code-frame': 7.29.0
+      '@babel/code-frame': 7.29.7
       '@babel/runtime': 7.29.7
       '@types/aria-query': 5.0.4
       aria-query: 5.3.0
@@ -12999,9 +12999,9 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  pdfjs-dist@6.0.227:
+  pdfjs-dist@6.1.200:
     optionalDependencies:
-      '@napi-rs/canvas': 1.0.0
+      '@napi-rs/canvas': 1.0.1
 
   pg-cloudflare@1.4.0:
     optional: true

@@ -1,5 +1,5 @@
-import type { AgentStreamEvent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
+import type { AgentStreamEvent } from "@anvia/core/request";
 import type { Context } from "hono";
 import type {
   AgentRunRequest,

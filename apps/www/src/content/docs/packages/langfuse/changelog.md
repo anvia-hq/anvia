@@ -10,6 +10,12 @@ sidebar:
 
 Release history mirrored from `packages/observability-langfuse/CHANGELOG.md`.
 
+## 0.3.3
+
+### Patch Changes
+
+- 9fc55c9: Update upstream runtime dependencies to their latest npm releases.
+
 ## 0.3.2
 
 ### Patch Changes

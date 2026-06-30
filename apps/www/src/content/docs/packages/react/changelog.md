@@ -10,6 +10,13 @@ sidebar:
 
 Release history mirrored from `packages/react/CHANGELOG.md`.
 
+## 0.7.3
+
+### Patch Changes
+
+- Updated dependencies [9fc55c9]
+  - @anvia/core@0.11.1
+
 ## 0.7.2
 
 ### Patch Changes

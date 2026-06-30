@@ -20,8 +20,12 @@ type LoaderResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: unknown };
 
+type LoaderValue<T> = T extends { ok: true; value: infer Value } ? Value : never;
+type UnwrapLoaderResult<T> = [LoaderValue<T>] extends [never] ? T : LoaderValue<T>;
+
 type FileSource = { path: string } | { path: "<memory>"; bytes: Uint8Array };
 type FileReadWithPath = { path: string; text: string };
+type FileMode = "source" | "read" | "readWithPath";
 
 type PdfSource = { path: string } | { path: "<memory>"; bytes: Uint8Array };
 type PdfReadWithPath = { path: string; text: string };

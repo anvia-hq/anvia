@@ -1,4 +1,5 @@
-import { AgentBuilder, type AgentStreamEvent } from "@anvia/core/agent";
+import { AgentBuilder } from "@anvia/core/agent";
+import type { AgentStreamEvent } from "@anvia/core/request";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({

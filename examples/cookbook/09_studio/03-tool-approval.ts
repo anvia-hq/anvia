@@ -1,4 +1,5 @@
-import { AgentBuilder, createHook } from "@anvia/core/agent";
+import { AgentBuilder } from "@anvia/core/agent";
+import { createHook } from "@anvia/core/hooks";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";

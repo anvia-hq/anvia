@@ -3,7 +3,7 @@ import {
   type HookAction,
   type PromptHook,
   type ToolCallHookAction,
-} from "@anvia/core/agent";
+} from "@anvia/core/hooks";
 import { Agent } from "@anvia/core/internal/agent";
 
 export function cloneAgent(

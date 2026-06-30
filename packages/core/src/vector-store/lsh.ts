@@ -1,9 +1,6 @@
-export type LshOptions = {
-  type: "lsh";
-  numTables: number;
-  numHyperplanes: number;
-  seed?: number | undefined;
-};
+import type { LshOptions } from "./types";
+
+export type { LshOptions } from "./types";
 
 export class LshIndex {
   private readonly hyperplanes: number[][];

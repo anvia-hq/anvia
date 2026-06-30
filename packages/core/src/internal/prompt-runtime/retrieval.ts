@@ -1,6 +1,6 @@
-import type { Document, ToolDefinition } from "../completion/index";
-import { compact } from "../internal/compact";
-import type { Agent } from "./agent";
+import type { Agent } from "../../agent/agent";
+import type { Document, ToolDefinition } from "../../completion/index";
+import { compact } from "../compact";
 
 export async function fetchDynamicContext(
   agent: Agent,
@@ -24,14 +24,16 @@ export async function fetchDynamicContext(
         documents.push(formatted);
       } else {
         const metadata = formatMetadata(result.metadata);
-        documents.push(compact({
-          id: result.id,
-          text:
-            typeof result.document === "string"
-              ? result.document
-              : JSON.stringify(result.document, null, 2),
-          additionalProps: metadata,
-        }) as Document);
+        documents.push(
+          compact({
+            id: result.id,
+            text:
+              typeof result.document === "string"
+                ? result.document
+                : JSON.stringify(result.document, null, 2),
+            additionalProps: metadata,
+          }) as Document,
+        );
       }
     }
   }

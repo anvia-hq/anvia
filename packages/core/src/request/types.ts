@@ -1,13 +1,12 @@
-import {
-  type CompletionResponse,
-  type Message as MessageType,
-  type ReasoningContentType,
-  type ToolCall,
-  type ToolResultContent,
+import type {
+  CompletionResponse,
+  Message as MessageType,
+  ReasoningContentType,
+  ToolCall,
+  ToolResultContent,
   Usage,
 } from "../completion/index";
 import type { AgentTraceInfo } from "../observability/types";
-import type { AgentDeltaEvent } from "./stream-accumulator";
 
 export type PromptResponse = {
   output: string;
@@ -15,6 +14,17 @@ export type PromptResponse = {
   messages: MessageType[];
   trace?: AgentTraceInfo | undefined;
 };
+
+export type AgentDeltaEvent =
+  | { type: "text_delta"; delta: string }
+  | {
+      type: "reasoning_delta";
+      delta: string;
+      id?: string;
+      contentType?: ReasoningContentType;
+      signature?: string;
+    }
+  | { type: "tool_call"; toolCall: ToolCall };
 
 export type AgentChildStreamEvent<RawResponse = unknown> =
   | {
@@ -81,26 +91,3 @@ export type AgentStreamEvent<RawResponse = unknown> =
       agentName?: string;
       event: AgentChildStreamEvent<RawResponse>;
     };
-
-export function addTurn(turn: number, event: AgentDeltaEvent): AgentStreamEvent {
-  if (event.type === "text_delta") {
-    return { type: "text_delta", turn, delta: event.delta };
-  }
-  if (event.type === "reasoning_delta") {
-    const mapped: AgentStreamEvent = { type: "reasoning_delta", turn, delta: event.delta };
-    if (event.id !== undefined) mapped.id = event.id;
-    if (event.contentType !== undefined) mapped.contentType = event.contentType;
-    if (event.signature !== undefined) mapped.signature = event.signature;
-    return mapped;
-  }
-  return { type: "tool_call", turn, toolCall: event.toolCall };
-}
-
-export function isGenerationDeltaEvent(type: string): boolean {
-  return (
-    type === "text_delta" ||
-    type === "reasoning_delta" ||
-    type === "tool_call_delta" ||
-    type === "tool_call"
-  );
-}

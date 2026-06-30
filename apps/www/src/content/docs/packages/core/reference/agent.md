@@ -1,90 +1,15 @@
 ---
 title: "Agent"
-description: "Agent runtime, builders, prompt requests, hooks, and run events."
+description: "Agent construction, built-agent behavior, dynamic context, and event-store contracts."
 section: packages
 sidebar:
   group: "Reference"
   order: 2
   label: "Agent"
 ---
-Import from `@anvia/core` or `@anvia/core/agent`.
+Import from `@anvia/core/agent` when a module specifically builds or configures agents. Use `@anvia/core` for application code that wants one convenient authoring import.
 
-## Agent
-
-```ts
-class Agent<M extends CompletionModel = CompletionModel> {
-  readonly id: string;
-  readonly name?: string;
-  readonly description?: string;
-  readonly model: M;
-  readonly instructions?: string;
-  readonly staticContext: Document[];
-  readonly temperature?: number;
-  readonly maxTokens?: number;
-  readonly additionalParams?: JsonValue;
-  readonly toolSet: ToolSet;
-  readonly toolChoice?: ToolChoice;
-  readonly defaultMaxTurns?: number;
-  readonly hook?: PromptHook;
-  readonly outputSchema?: JsonObject;
-  readonly observers: AgentObserverRegistration[];
-  readonly dynamicContexts: DynamicContextRegistration[];
-  readonly dynamicTools: DynamicToolRegistration[];
-  readonly middlewares: AgentMiddleware[];
-  /** @deprecated Use middlewares instead. */
-  readonly toolMiddlewares: ToolMiddleware[];
-  readonly memory?: MemoryRegistration;
-  readonly eventStore?: AgentEventStoreRegistration;
-
-  constructor(options: AgentOptions<M>);
-  prompt(prompt: string | Message | Message[]): PromptRequest<M>;
-  session(sessionId: string, options?: SessionOptions): AgentSession<M>;
-  asTool(options: AgentToolOptions): Tool<{ prompt: string }, string>;
-  getTool(toolName: string): Tool | undefined;
-  callTool(toolName: string, args: string, context?: ToolCallContext): Promise<string>;
-}
-```
-
-Purpose: immutable runnable agent configuration around one completion model.
-
-Return behavior: `prompt(...)` creates a mutable `PromptRequest`; `prompt(Message[])` treats the last message as the active prompt and earlier messages as stateless history; `session(...)` creates a durable memory-backed session; `asTool(...)` exposes the agent as a tool that returns the nested agent output string. `asTool({ stream: true })` forwards child stream events when the parent run uses `.stream()`.
-
-Notable errors: the constructor throws `TypeError` when `id` is not a non-empty string. `asTool(...)` forwards errors from the nested prompt run.
-
-## AgentOptions
-
-```ts
-type AgentOptions<M extends CompletionModel = CompletionModel> = {
-  id: string;
-  name?: string;
-  description?: string;
-  model: M;
-  instructions?: string;
-  staticContext?: Document[];
-  temperature?: number;
-  maxTokens?: number;
-  additionalParams?: JsonValue;
-  toolSet?: ToolSet;
-  toolChoice?: ToolChoice;
-  defaultMaxTurns?: number;
-  hook?: PromptHook;
-  outputSchema?: JsonObject;
-  observers?: AgentObserverRegistration[];
-  dynamicContexts?: DynamicContextRegistration[];
-  dynamicTools?: DynamicToolRegistration[];
-  middlewares?: AgentMiddleware[];
-  /** @deprecated Use middlewares instead. */
-  toolMiddlewares?: ToolMiddleware[];
-  memory?: MemoryRegistration;
-  eventStore?: AgentEventStoreRegistration;
-};
-```
-
-Purpose: constructor contract for `Agent`. Prefer `AgentBuilder` for application code.
-
-Return behavior: used only as input to `new Agent(...)`.
-
-Notable errors: invalid `id` is rejected by the `Agent` constructor.
+`@anvia/core/agent` is intentionally narrow. Prompt lifecycle hooks live in [`@anvia/core/hooks`](/docs/packages/core/reference/hooks). Prompt requests, stream events, responses, and prompt errors live in [`@anvia/core/request`](/docs/packages/core/reference/request). Tool approvals and middleware live in [`@anvia/core/tool`](/docs/packages/core/reference/tools).
 
 ## AgentBuilder
 
@@ -123,64 +48,48 @@ class AgentBuilder<M extends CompletionModel = CompletionModel> {
 }
 ```
 
-Purpose: fluent builder for agent configuration.
+Purpose: fluent builder for immutable runnable agent configuration.
 
-Return behavior: all mutator methods return `this`; `build()` returns an `Agent`.
+Return behavior: mutator methods return `this`; `build()` returns a built agent object. `Agent` is exported as a type for annotations, but the runtime constructor is internal.
 
 Notable errors: the constructor rejects an empty agent id. `outputSchema(...)` can throw if the schema cannot be converted to provider JSON schema.
+
+## Built Agent
+
+```ts
+type Agent<M extends CompletionModel = CompletionModel> = {
+  readonly id: string;
+  readonly name?: string;
+  readonly description?: string;
+  prompt(prompt: string | Message | Message[]): PromptRequest<M>;
+  session(sessionId: string, options?: SessionOptions): AgentSession<M>;
+  asTool(options: AgentToolOptions): Tool<{ prompt: string }, string>;
+  getTool(toolName: string): Tool | undefined;
+  callTool(toolName: string, args: string, context?: ToolCallContext): Promise<string>;
+};
+```
+
+Purpose: runnable agent returned by `AgentBuilder.build()`.
+
+Return behavior: `prompt(...)` creates a per-run prompt request; `session(...)` creates a durable memory-backed conversation scope; `asTool(...)` exposes the agent as a tool and can forward child-agent stream events when `stream: true`.
+
+Notable errors: `session(...)` throws when no memory store is configured or the session id is empty. Prompt-run errors are documented in [`Request`](/docs/packages/core/reference/request).
 
 ## AgentSession
 
 ```ts
-class AgentSession<M extends CompletionModel = CompletionModel> {
+type AgentSession<M extends CompletionModel = CompletionModel> = {
   prompt(prompt: string | Message): PromptRequest<M>;
   messages(): Promise<Message[]>;
   clear(): Promise<void>;
-}
+};
 ```
 
 Purpose: durable conversation scope created by `agent.session(sessionId, options?)`.
 
 Return behavior: `prompt(...)` loads messages from the configured memory store before the run and appends new messages according to the agent memory policy. Session prompts do not accept `Message[]`; use `agent.prompt(Message[])` for explicit stateless transcripts.
 
-Notable errors: `agent.session(...)` throws when no memory store is configured or when the session id is empty.
-
-## Memory
-
-```ts
-type MemorySavePolicy = "message" | "turn" | "run";
-
-type MemoryContext = {
-  sessionId: string;
-  userId?: string;
-  metadata?: JsonObject;
-};
-
-interface MemoryStore {
-  load(context: MemoryContext): Promise<Message[]>;
-  append(input: {
-    context: MemoryContext;
-    runId: string;
-    turn: number;
-    messages: Message[];
-  }): Promise<void>;
-  clear(context: MemoryContext): Promise<void>;
-  recordError?(input: {
-    context: MemoryContext;
-    runId: string;
-    error: unknown;
-    messages: Message[];
-  }): Promise<void>;
-}
-
-type MemoryOptions = {
-  savePolicy?: MemorySavePolicy;
-};
-```
-
-Purpose: configure durable conversation storage for `agent.session(...)`.
-
-Return behavior: `savePolicy` defaults to `"message"`. Core provides the interface; applications provide the storage implementation.
+Notable errors: methods throw when the built agent has no memory store configured.
 
 ## AgentEventStore
 
@@ -213,279 +122,13 @@ type AgentEventRecord = AgentEventAppendInput & {
 };
 ```
 
-Purpose: persist runtime stream events for replay, debugging, or local inspection.
+Purpose: persist agent stream events for replay, debugging, or local inspection.
 
-Return behavior: `include: "all"` stores parent and child stream events. `include: "agent_tool_events"` stores only nested child-agent events from streaming agent-tools. Event storage is separate from `MemoryStore`, which remains transcript-oriented.
+Return behavior: `include: "all"` stores parent and child stream events. `include: "agent_tool_events"` stores only nested child-agent events from streaming agent tools.
 
-## Dynamic Tools
-
-```ts
-type DynamicToolOptions = {
-  topK: number;
-  threshold?: number;
-  filter?: VectorFilter;
-};
-
-type DynamicToolRegistration = {
-  index: VectorSearchIndex<ToolSearchDocument>;
-  options: DynamicToolOptions;
-};
-```
-
-Purpose: retrieve relevant tool definitions before each model turn.
-
-Return behavior: static tools are always sent; matching dynamic tools are added after static tools and deduped by name.
-
-Notable errors: errors from the vector index surface before the model request is sent.
-
-## PromptRequest
+## Dynamic Context And Tools
 
 ```ts
-class PromptRequest<M extends CompletionModel = CompletionModel> {
-  static fromAgent<M extends CompletionModel>(
-    agent: Agent<M>,
-    prompt: string | Message | Message[],
-  ): PromptRequest<M>;
-
-  maxTurns(maxTurns: number): this;
-  withHook(hook: PromptHook): this;
-  /** @deprecated Use withHook instead. */
-  requestHook(hook: PromptHook): this;
-  withToolConcurrency(concurrency: number): this;
-  withMiddleware(middleware: AgentMiddleware): this;
-  withMiddlewares(middlewares: AgentMiddleware[]): this;
-  /** @deprecated Use withMiddleware instead. */
-  withToolMiddleware(middleware: ToolMiddleware): this;
-  /** @deprecated Use withMiddlewares instead. */
-  withToolMiddlewares(middlewares: ToolMiddleware[]): this;
-  withTrace(trace: AgentTraceOptions): this;
-  approvals(options: ToolApprovalsOptions): this;
-  send(): Promise<PromptResponse>;
-  stream(): AsyncIterable<AgentStreamEvent>;
-  readableStream(options?: ReadableStreamOptions): ReadableStream<AgentStreamEvent>;
-}
-```
-
-Purpose: per-run request state for an agent prompt.
-
-Return behavior: `send()` resolves a final `PromptResponse`; `stream()` yields run events and ends with a `final` event; `readableStream()` wraps the stream in a web stream.
-
-Notable errors: throws `MaxTurnsError` when the tool loop exceeds the configured turn limit, `PromptCancelledError` when a hook terminates the run, `ToolApprovalRequiredError` when a protected tool call has no approval handler, and a plain `Error` when streaming is requested for a non-streaming model.
-
-## PromptResponse
-
-```ts
-type PromptResponse = {
-  output: string;
-  usage: Usage;
-  messages: Message[];
-  trace?: AgentTraceInfo;
-};
-```
-
-Purpose: final non-streaming agent result.
-
-Return behavior: `messages` contains the new run messages, not the full prior history unless history was manually included.
-
-Notable errors: none directly.
-
-## AgentStreamEvent
-
-```ts
-type AgentChildStreamEvent = Exclude<AgentStreamEvent, { type: "agent_tool_event" }>;
-
-type AgentStreamEvent =
-  | { type: "turn_start"; turn: number; prompt: Message; history: Message[] }
-  | { type: "text_delta"; turn: number; delta: string }
-  | { type: "reasoning_delta"; turn: number; delta: string; id?: string; contentType?: "text" | "summary" | "encrypted" | "redacted"; signature?: string }
-  | { type: "tool_call"; turn: number; toolCall: ToolCall }
-  | { type: "tool_result"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; args: string; result: string }
-  | { type: "agent_tool_event"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; agentId: string; agentName?: string; event: AgentChildStreamEvent }
-  | { type: "turn_end"; turn: number; response: CompletionResponse }
-  | { type: "final"; runId: string; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo }
-  | { type: "error"; error: unknown };
-```
-
-Purpose: streaming event union for observing agent execution.
-
-Return behavior: emitted by `PromptRequest.stream()` and `readableStream()`. `agent_tool_event` appears when a child agent is exposed with `asTool({ stream: true })`. The terminal `final` event includes `runId`, which can be used with `AgentEventStore.load(...)`.
-
-Notable errors: terminal failures are yielded as `{ type: "error" }` and also originate from the same conditions as `send()`.
-
-## Hooks
-
-```ts
-type HookAction = { type: "continue" } | { type: "terminate"; reason: string };
-type ToolApprovalRequestOptions = {
-  reason?: string;
-  rejectMessage?: string;
-};
-
-type ToolCallHookAction =
-  | { type: "continue" }
-  | { type: "skip"; reason: string }
-  | { type: "terminate"; reason: string }
-  | ({ type: "approval_request" } & ToolApprovalRequestOptions);
-
-type RunControl = {
-  continue(): HookAction;
-  cancel(reason: string): HookAction;
-};
-
-type ToolCallControl = {
-  run(): ToolCallHookAction;
-  skip(reason: string): ToolCallHookAction;
-  cancel(reason: string): ToolCallHookAction;
-  requestApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
-};
-
-type HookResult = HookAction | undefined;
-type ToolCallHookResult = ToolCallHookAction | undefined;
-
-type CompletionCallHookArgs = {
-  prompt: Message;
-  history: Message[];
-  run: RunControl;
-};
-
-type RunStartHookArgs = {
-  prompt: Message;
-  history: Message[];
-  maxTurns: number;
-  run: RunControl;
-};
-
-type RunEndHookArgs = {
-  output: string;
-  usage: Usage;
-  messages: Message[];
-  run: RunControl;
-};
-
-type RunErrorHookArgs = {
-  error: unknown;
-  usage: Usage;
-  messages: Message[];
-  run: RunControl;
-};
-
-type TurnStartHookArgs = {
-  turn: number;
-  prompt: Message;
-  history: Message[];
-  run: RunControl;
-};
-
-type TurnEndHookArgs<RawResponse = unknown> = {
-  turn: number;
-  response: CompletionResponse<RawResponse>;
-  run: RunControl;
-};
-
-type CompletionResponseHookArgs<RawResponse = unknown> = {
-  prompt: Message;
-  response: CompletionResponse<RawResponse>;
-  run: RunControl;
-};
-
-type CompletionErrorHookArgs = {
-  prompt: Message;
-  error: unknown;
-  run: RunControl;
-};
-
-type ToolHookArgs = {
-  toolName: string;
-  toolCallId?: string;
-  internalCallId: string;
-  args: string;
-};
-
-type ToolCallHookArgs = ToolHookArgs & {
-  tool: ToolCallControl;
-};
-
-type ToolResultHookArgs = ToolHookArgs & {
-  result: string;
-  run: RunControl;
-};
-
-type ToolErrorHookArgs = ToolHookArgs & {
-  error: unknown;
-  run: RunControl;
-};
-
-const runControl: RunControl;
-const toolCallControl: ToolCallControl;
-
-function createHook<RawResponse = unknown>(hook: PromptHook<RawResponse>): PromptHook<RawResponse>;
-function cancelPrompt(reason: string): HookAction;
-function skipTool(reason: string): ToolCallHookAction;
-function requestToolApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
-```
-
-Purpose: intercept run lifecycle, turn lifecycle, completion calls, completion responses, completion errors, tool calls, tool results, and tool errors.
-
-Return behavior: callback controls such as `tool.run()`, `tool.skip(...)`, `tool.cancel(...)`, `tool.requestApproval(...)`, `run.continue()`, and `run.cancel(...)` create actions consumed by `PromptRequest`. The low-level `cancelPrompt(...)`, `skipTool(...)`, and `requestToolApproval(...)` helpers are also available.
-
-Notable errors: a terminating hook produces `PromptCancelledError`. If `tool.requestApproval(...)` reaches core without Studio or another approval handler, the request throws `ToolApprovalRequiredError`.
-
-## Tool Approvals
-
-```ts
-type ToolApprovalDecision =
-  | boolean
-  | { approved: true; reason?: string }
-  | { approved: false; reason?: string; rejectMessage?: string };
-
-type ToolApprovalsOptions = {
-  handler(request: ToolApprovalRequest): ToolApprovalDecision | Promise<ToolApprovalDecision>;
-};
-```
-
-Purpose: provide the decision source for `ToolApprovalPolicy` and hook-based `tool.requestApproval(...)` requests.
-
-Return behavior: configure with `AgentBuilder.approvals(...)` or per request with `prompt(...).approvals(...)`; request-level approvals override agent-level approvals. Approved decisions run the tool. Rejected decisions skip execution and return the rejection text as the tool result.
-
-Notable errors: if a tool call requires approval and no handler is configured, core throws `ToolApprovalRequiredError`.
-
-## Error Classes
-
-```ts
-class MaxTurnsError extends Error {
-  readonly maxTurns: number;
-  readonly chatHistory: Message[];
-  readonly prompt: Message;
-}
-
-class PromptCancelledError extends Error {
-  readonly chatHistory: Message[];
-  readonly reason: string;
-}
-
-class ToolApprovalRequiredError extends Error {
-  readonly request: ToolApprovalRequest;
-}
-```
-
-Purpose: typed agent-run failures.
-
-Return behavior: thrown by `PromptRequest`.
-
-Notable errors: these are the notable agent errors.
-
-## Constants and Small Types
-
-```ts
-const DEFAULT_MAX_TURNS = 20;
-
-type AgentToolOptions = {
-  name: string;
-  description?: string;
-  maxTurns?: number;
-  stream?: boolean;
-};
-
 type DynamicContextOptions<T = unknown> = {
   topK: number;
   threshold?: number;
@@ -493,16 +136,22 @@ type DynamicContextOptions<T = unknown> = {
   format?: (result: VectorSearchResult<T>) => Document;
 };
 
-type DynamicContextRegistration<T = unknown> = {
-  index: VectorSearchIndex<T>;
-  options: DynamicContextOptions<T>;
+type DynamicToolOptions = {
+  topK: number;
+  threshold?: number;
+  filter?: VectorFilter;
+};
+
+type AgentToolOptions = {
+  name: string;
+  description?: string;
+  maxTurns?: number;
+  stream?: boolean;
 };
 ```
 
-Purpose: defaults and supporting agent configuration types.
+Purpose: configure retrieval-backed context, retrieval-backed tool definitions, and agent-as-tool behavior.
 
-Return behavior: used as builder or constructor inputs.
+Return behavior: dynamic context documents and dynamic tool definitions are resolved before each model turn. `AgentToolOptions.stream` controls whether nested child-agent events are forwarded to the parent run.
 
-Notable errors: none directly.
-
-For workflow guidance, see [Creating Agents](/docs/advanced/agent-builder).
+For prompt request methods, stream events, and run errors, see [`Request`](/docs/packages/core/reference/request). For hook contracts, see [`Hooks`](/docs/packages/core/reference/hooks).

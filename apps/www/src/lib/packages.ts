@@ -111,7 +111,14 @@ export const packageReferencePagesBySlug: Record<string, PackageReferencePage[]>
       "reference/agent",
       "Agent",
       "Agent",
-      "Agent runtime, builders, prompt requests, hooks, and run events.",
+      "Agent construction, built-agent behavior, dynamic context, and event-store contracts.",
+    ),
+    defineReferencePage("reference/hooks", "Hooks", "Hooks", "Prompt lifecycle hooks."),
+    defineReferencePage(
+      "reference/request",
+      "Request",
+      "Request",
+      "Prompt requests, prompt responses, stream events, and prompt-run errors.",
     ),
     defineReferencePage(
       "reference/completion",

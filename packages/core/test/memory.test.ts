@@ -7,6 +7,8 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
+  cancelPrompt,
+  createHook,
   createTool,
   type MemoryAppendInput,
   type MemoryContext,
@@ -14,6 +16,7 @@ import {
   type MemoryStore,
   Message,
   type Message as MessageType,
+  PromptCancelledError,
   type StreamingCompletionModel,
   Usage,
 } from "./helpers/imports";
@@ -233,6 +236,28 @@ describe("agent memory", () => {
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user", "assistant"],
     ]);
+  });
+
+  it("does not commit run memory when the run end hook cancels", async () => {
+    const store = new RecordingMemoryStore();
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const agent = new AgentBuilder("test-agent", model)
+      .memory(store, { savePolicy: "run" })
+      .hook(
+        createHook({
+          onRunEnd() {
+            return cancelPrompt("blocked at end");
+          },
+        }),
+      )
+      .build();
+
+    await expect(agent.session("session_1").prompt("hello").send()).rejects.toBeInstanceOf(
+      PromptCancelledError,
+    );
+
+    expect(store.appendCalls).toHaveLength(0);
+    expect(store.errorCalls).toHaveLength(1);
   });
 
   it("does not save nested streaming agent-tool events as memory messages", async () => {

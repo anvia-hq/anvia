@@ -5,10 +5,10 @@ import type {
   StudioToolRunRequest,
   StudioToolRunResponse,
 } from "../types";
-import { serializeUnknown, toJsonValue } from "./json";
 import { errorResponse } from "./http";
-import { isJsonObject, isJsonValue } from "./type-guards";
+import { serializeUnknown, toJsonValue } from "./json";
 import { agentToolItems, approvalMetadata } from "./tool-metadata";
+import { isJsonObject, isJsonValue } from "./type-guards";
 
 export function registerToolRoutes(
   app: Hono,

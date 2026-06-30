@@ -10,9 +10,13 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
+  cancelPrompt,
+  createHook,
+  createMiddleware,
   createTool,
   createToolMiddleware,
   Message,
+  PromptCancelledError,
   type StreamingCompletionModel,
   ToolOutput,
   toReadableStream,
@@ -105,6 +109,75 @@ describe("PromptRequest streaming", () => {
     expect(events.at(-1)).toMatchObject({ type: "final", output: "hello" });
     expect(model.requests[0]?.instructions).toBe("system");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hi"));
+  });
+
+  it("streams post-middleware response content when response middleware is registered", async () => {
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "secret" }]]);
+    const agent = new AgentBuilder("test-agent", model)
+      .middleware(
+        createMiddleware({
+          onCompletionResponse({ response }) {
+            return {
+              response: {
+                ...response,
+                choice: [AssistantContent.text("safe")],
+              },
+            };
+          },
+        }),
+      )
+      .build();
+
+    const events = await collect(agent.prompt("hi").stream());
+    const textDeltas = events
+      .filter((event): event is Extract<AgentStreamEvent, { type: "text_delta" }> => {
+        return event.type === "text_delta";
+      })
+      .map((event) => event.delta);
+
+    expect(textDeltas).toEqual(["safe"]);
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "safe" });
+  });
+
+  it("does not emit final before the run end hook succeeds", async () => {
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const agent = new AgentBuilder("test-agent", model)
+      .hook(
+        createHook({
+          onRunEnd() {
+            return cancelPrompt("blocked at end");
+          },
+        }),
+      )
+      .build();
+    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+    const events: AgentStreamEvent[] = [];
+
+    events.push(await nextEvent(iterator));
+    events.push(await nextEvent(iterator));
+    events.push(await nextEvent(iterator));
+    events.push(await nextEvent(iterator));
+
+    expect(events.map((event) => event.type)).toEqual([
+      "turn_start",
+      "text_delta",
+      "turn_end",
+      "error",
+    ]);
+    await expect(iterator.next()).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  it("rejects concurrent stream execution on the same prompt request", async () => {
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const request = agent.prompt("hi");
+    const iterator = request.stream()[Symbol.asyncIterator]();
+
+    expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
+    await expect(collect(request.stream())).rejects.toThrow("PromptRequest is already running.");
+
+    const rest = await collectIterator(iterator);
+    expect(rest.at(-1)).toMatchObject({ type: "final", output: "done" });
   });
 
   it("continues when steering arrives before a no-tool response finalizes", async () => {

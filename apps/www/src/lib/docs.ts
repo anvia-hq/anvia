@@ -30,6 +30,7 @@ const sidebarGroupOrder: Partial<Record<DocsSection, string[]>> = {
   examples: [
     "Start Here",
     "Foundation Patterns",
+    "Memory and Events",
     "Tool Patterns",
     "Knowledge Patterns",
     "Workflow Patterns",

@@ -1,6 +1,5 @@
 import type { Agent } from "../agent/agent";
 import { AgentBuilder } from "../agent/builder";
-import { extractRagText } from "../agent/utils";
 import {
   CompletionCapabilityError,
   type CompletionModel,
@@ -12,6 +11,7 @@ import {
   type ToolChoice,
   Usage,
 } from "../completion/index";
+import { extractRagText } from "../internal/rag-text";
 import type { ZodSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/index";
 
@@ -176,5 +176,3 @@ function extractSubmittedData<T>(response: CompletionResponse, schema: ZodSchema
 
   return schema.parse(submitted.function.arguments);
 }
-
-

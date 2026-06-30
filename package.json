@@ -48,6 +48,7 @@
     "cookbook:providers:09": "pnpm --filter cookbook providers:09",
     "cookbook:providers:10": "pnpm --filter cookbook providers:10",
     "cookbook:providers:11": "pnpm --filter cookbook providers:11",
+    "cookbook:providers:12": "pnpm --filter cookbook providers:12",
     "cookbook:providers-and-multimodal": "pnpm --filter cookbook providers-and-multimodal",
     "cookbook:pipelines": "pnpm --filter cookbook pipelines",
     "cookbook:pipelines:01": "pnpm --filter cookbook pipelines:01",

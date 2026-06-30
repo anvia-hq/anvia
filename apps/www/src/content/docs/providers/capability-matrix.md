@@ -13,31 +13,32 @@ Always smoke test the exact provider model id, account, region, endpoint, and `a
 
 ## Completion Capabilities
 
-| Capability | OpenAI | Anthropic | Gemini | Mistral |
-| --- | --- | --- | --- | --- |
-| Text completion | yes | yes | yes | yes |
-| Streaming completion | yes | yes | yes | yes |
-| Tools | yes | yes | yes | yes |
-| Tool choice | yes | yes | yes | yes |
-| Structured output schema | yes | no | yes | yes |
-| Chat image input | yes | yes | yes | no |
-| Chat document file input | Responses yes, Chat adapter no | yes | yes | no |
-| Reasoning content | yes | yes | yes | no |
+| Capability | OpenAI | Anthropic | Gemini | Mistral | Grok |
+| --- | --- | --- | --- | --- | --- |
+| Text completion | yes | yes | yes | yes | yes |
+| Streaming completion | yes | yes | yes | yes | yes |
+| Tools | yes | yes | yes | yes | yes |
+| Tool choice | yes | yes | yes | yes | yes |
+| Structured output schema | yes | no | yes | yes | yes |
+| Chat image input | yes | yes | yes | no | yes |
+| Chat document file input | Responses yes, Chat adapter no | yes | yes | no | Responses yes, Chat adapter no |
+| Reasoning content | yes | yes | yes | no | yes |
 
 OpenAI has two completion adapters. `OpenAIResponsesCompletionModel` is the default for normal OpenAI API usage. `OpenAIChatCompletionModel` is available when a workflow needs the chat-completions adapter.
+Grok also exposes Responses and Chat adapters; Responses is the default.
 
 Text document content and static context can still be represented as text. The document row above is about file or URL document attachments that require provider-native document input support.
 
 ## Non-Completion Capabilities
 
-| Capability | OpenAI | Anthropic | Gemini | Mistral |
-| --- | --- | --- | --- | --- |
-| Embeddings | yes | no | yes | yes |
-| Image generation | yes | no | yes | no |
-| Audio generation | yes | no | no | no |
-| Transcription | yes | no | yes | no |
-| OCR | no | no | no | yes |
-| Model listing | yes | yes | yes | yes |
+| Capability | OpenAI | Anthropic | Gemini | Mistral | Grok |
+| --- | --- | --- | --- | --- | --- |
+| Embeddings | yes | no | yes | yes | no |
+| Image generation | yes | no | yes | no | yes |
+| Audio generation | yes | no | no | no | no |
+| Transcription | yes | no | yes | no | no |
+| OCR | no | no | no | yes | no |
+| Model listing | yes | yes | yes | yes | yes |
 
 Provider-specific model factories return objects that implement core contracts such as `EmbeddingModel`, `ImageGenerationModel`, `AudioGenerationModel`, `TranscriptionModel`, or `ModelListingClient`.
 

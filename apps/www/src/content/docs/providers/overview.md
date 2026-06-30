@@ -1,6 +1,6 @@
 ---
 title: Providers overview
-description: Connect Anvia's provider-neutral runtime to OpenAI, Anthropic, Gemini, and Mistral.
+description: Connect Anvia's provider-neutral runtime to OpenAI, Anthropic, Gemini, Mistral, and Grok.
 section: providers
 sidebar:
   group: Getting started
@@ -17,6 +17,7 @@ The current provider packages are:
 | `@anvia/anthropic` | `AnthropicClient` | Claude completions through Anthropic |
 | `@anvia/gemini` | `GeminiClient` | Gemini API and Vertex AI completions, embeddings, image generation, transcription, and model listing |
 | `@anvia/mistral` | `MistralClient` | Mistral completions, embeddings, OCR, and model listing |
+| `@anvia/grok` | `GrokClient` | xAI Grok completions, image generation, and model listing |
 
 ## Install Shape
 
@@ -29,7 +30,7 @@ pnpm add @anvia/core @anvia/openai
 Add more providers only when a workflow actually needs them:
 
 ```bash
-pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral @anvia/grok
 ```
 
 Most applications should keep provider clients in server-only modules. Browser code should call your product API or stream endpoint, not a provider SDK.
@@ -70,7 +71,7 @@ Keep provider choice in configuration or model factories. Application workflows 
 
 ## Provider Capabilities
 
-Provider packages expose different model factories because vendors expose different APIs. For example, OpenAI exposes audio generation, Gemini exposes both Gemini-native image generation and Imagen, and Mistral exposes OCR. Anthropic currently exposes completion and model listing only.
+Provider packages expose different model factories because vendors expose different APIs. For example, OpenAI exposes audio generation, Gemini exposes both Gemini-native image generation and Imagen, Mistral exposes OCR, and Grok exposes xAI image generation. Anthropic currently exposes completion and model listing only.
 
 Read [Capability matrix](/docs/providers/capability-matrix) before assuming a provider supports a workflow. Then test the exact model id you plan to run in production.
 

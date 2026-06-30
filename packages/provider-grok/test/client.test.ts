@@ -100,7 +100,7 @@ describe("GrokClient", () => {
     });
   });
 
-  it("wraps unexpected model listing payloads", async () => {
+  it("returns an empty model list for unexpected model listing payloads", async () => {
     const client = new GrokClient({
       client: {
         models: {
@@ -109,10 +109,7 @@ describe("GrokClient", () => {
       } as never,
     });
 
-    await expect(client.listModels()).rejects.toMatchObject({
-      name: "ModelListingError",
-      provider: "grok",
-    } satisfies Partial<ModelListingError>);
+    await expect(client.listModels()).resolves.toEqual({ data: [] });
   });
 
   it("wraps model listing failures", async () => {

@@ -3,7 +3,40 @@ import { describe, expect, it } from "vitest";
 import { aspectRatio, GrokImageGenerationModel, imageResponseFromGrok } from "../src/index";
 
 describe("Grok image generation", () => {
-  it("maps core image requests to xAI image generation params", async () => {
+  it("maps core image requests to default xAI image generation params", async () => {
+    const calls: unknown[] = [];
+    const model = new GrokImageGenerationModel(
+      {
+        images: {
+          generate: async (params: unknown) => {
+            calls.push(params);
+            return {
+              data: [{ b64_json: Buffer.from([1, 2, 3]).toString("base64") }],
+            };
+          },
+        },
+      } as never,
+      "grok-image-test",
+    );
+
+    await model.imageGeneration({
+      prompt: "draw a diagram",
+      width: 1024,
+      height: 768,
+    });
+
+    expect(calls).toEqual([
+      {
+        model: "grok-image-test",
+        prompt: "draw a diagram",
+        n: 1,
+        response_format: "b64_json",
+        aspect_ratio: "4:3",
+      },
+    ]);
+  });
+
+  it("maps core image requests while letting native image params override defaults", async () => {
     const calls: unknown[] = [];
     const model = new GrokImageGenerationModel(
       {
@@ -29,6 +62,8 @@ describe("Grok image generation", () => {
       width: 1024,
       height: 768,
       additionalParams: {
+        model: "ignored-model",
+        prompt: "ignored prompt",
         n: 2,
         aspect_ratio: "1:1",
         response_format: "url",
@@ -40,9 +75,9 @@ describe("Grok image generation", () => {
       {
         model: "grok-image-test",
         prompt: "draw a diagram",
-        n: 1,
-        response_format: "b64_json",
-        aspect_ratio: "4:3",
+        n: 2,
+        response_format: "url",
+        aspect_ratio: "1:1",
         resolution: "720p",
       },
     ]);

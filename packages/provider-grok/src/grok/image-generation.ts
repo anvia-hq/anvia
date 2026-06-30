@@ -24,12 +24,12 @@ export class GrokImageGenerationModel
     request: ImageGenerationRequest,
   ): Promise<ImageGenerationResponse<unknown>> {
     const params: Record<string, unknown> = {
-      ...sanitizedAdditionalParams(request.additionalParams),
       model: this.defaultModel,
       prompt: request.prompt,
       n: 1,
       response_format: "b64_json",
       aspect_ratio: aspectRatio(request.width, request.height),
+      ...providerAdditionalParams(request.additionalParams),
     };
 
     const response = await this.client.images.generate(params as never);
@@ -124,17 +124,14 @@ async function fetchGeneratedImage(
   };
 }
 
-function sanitizedAdditionalParams(value: unknown): Record<string, unknown> {
+function providerAdditionalParams(value: unknown): Record<string, unknown> {
   if (!isPlainObject(value)) {
     return {};
   }
 
-  const { model, prompt, n, response_format, aspect_ratio, ...params } = value;
-  void model;
-  void prompt;
-  void n;
-  void response_format;
-  void aspect_ratio;
+  const params = { ...value };
+  delete params.model;
+  delete params.prompt;
   return params;
 }
 

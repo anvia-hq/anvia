@@ -1,6 +1,6 @@
 ---
 title: "xAI"
-description: "Review xAI connection details and model capabilities."
+description: "Use xAI through @anvia/grok."
 section: providers
 sidebar:
   group: LLM Gateway
@@ -12,16 +12,33 @@ sidebar:
 
 | Field | Value |
 | --- | --- |
-| Anvia SDK | No dedicated package |
-| Compatibility | Provider metadata |
-| API URL | Not listed in models.dev |
+| Anvia SDK | `@anvia/grok` |
+| Compatibility | First-party xAI REST endpoint |
+| API URL | `https://api.x.ai/v1` |
 | Environment | `XAI_API_KEY` |
 | Provider docs | [https://docs.x.ai/docs/models](https://docs.x.ai/docs/models) |
 | Models | 8 |
 
 ## Anvia Usage
 
-Anvia does not currently ship a dedicated provider package for this endpoint. Use the connection details here for evaluation, then build a custom integration against `@anvia/core` completion contracts if you need to run it today.
+Use `GrokClient` from `@anvia/grok` for xAI completions, image generation, and model listing.
+
+```ts
+import { AgentBuilder } from "@anvia/core/agent";
+import { GrokClient } from "@anvia/grok";
+
+const grok = new GrokClient({
+  apiKey: process.env.XAI_API_KEY,
+});
+
+const model = grok.completionModel("grok-4.3");
+
+export const agent = new AgentBuilder("grok-agent", model)
+  .instructions("Answer clearly and concisely.")
+  .build();
+```
+
+Read the [Grok provider guide](/docs/providers/grok) for package setup and supported surfaces.
 
 ## Capabilities
 
@@ -50,4 +67,3 @@ Anvia does not currently ship a dedicated provider package for this endpoint. Us
 | `grok-imagine-video`<br />Grok Imagine Video | grok | image, pdf, text, video | video | - | context: 1024 / output: 0 | - | 2026-01-28 |
 
 Read [Gateway caveats](/docs/providers/gateway-caveats) before enabling this provider in production.
-

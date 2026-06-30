@@ -53,7 +53,7 @@ export class GrokClient implements ModelListingClient {
         .filter(isListedModel);
       return { data };
     } catch (error) {
-      throw toModelListingError("Grok", error);
+      throw toModelListingError("grok", error);
     }
   }
 }
@@ -87,7 +87,7 @@ async function collectModelsFromResponse(response: unknown): Promise<unknown[]> 
     return response.data;
   }
 
-  return [];
+  throw new Error("Unexpected Grok model listing response shape.");
 }
 
 function toListedModel(model: unknown): ModelList["data"][number] | undefined {

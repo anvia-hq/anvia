@@ -30,6 +30,8 @@ describe("Grok image generation", () => {
       height: 768,
       additionalParams: {
         n: 2,
+        aspect_ratio: "1:1",
+        response_format: "url",
         resolution: "720p",
       },
     });
@@ -38,7 +40,7 @@ describe("Grok image generation", () => {
       {
         model: "grok-image-test",
         prompt: "draw a diagram",
-        n: 2,
+        n: 1,
         response_format: "b64_json",
         aspect_ratio: "4:3",
         resolution: "720p",
@@ -78,6 +80,19 @@ describe("Grok image generation", () => {
     ).rejects.toThrow("no fetch implementation");
   });
 
+  it("rejects unsafe URL image responses before fetching", async () => {
+    const fetchFn = (async () => {
+      throw new Error("fetch should not be called");
+    }) as typeof fetch;
+
+    await expect(
+      imageResponseFromGrok({ data: [{ url: "http://imgen.x.ai/example.png" }] }, fetchFn),
+    ).rejects.toThrow("must use HTTPS");
+    await expect(
+      imageResponseFromGrok({ data: [{ url: "https://example.com/example.png" }] }, fetchFn),
+    ).rejects.toThrow("host is not allowed");
+  });
+
   it("rejects empty image responses", async () => {
     await expect(imageResponseFromGrok({ data: [] })).rejects.toThrow(
       "Grok image generation response contained no images.",
@@ -102,5 +117,7 @@ describe("Grok image generation", () => {
     expect(() => aspectRatio(-1, 1024)).toThrow("width must be a positive number");
     expect(() => aspectRatio(1024, 0)).toThrow("height must be a positive number");
     expect(() => aspectRatio(1024, -1)).toThrow("height must be a positive number");
+    expect(() => aspectRatio(1024.5, 1024)).toThrow("width must be an integer");
+    expect(() => aspectRatio(1024, 1024.5)).toThrow("height must be an integer");
   });
 });

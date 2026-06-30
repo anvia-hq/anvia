@@ -21,16 +21,13 @@ export class GrokImageGenerationModel implements ImageGenerationModel {
     request: ImageGenerationRequest,
   ): Promise<ImageGenerationResponse<unknown>> {
     const params: Record<string, unknown> = {
+      ...sanitizedAdditionalParams(request.additionalParams),
       model: this.defaultModel,
       prompt: request.prompt,
       n: 1,
       response_format: "b64_json",
       aspect_ratio: aspectRatio(request.width, request.height),
     };
-
-    if (isPlainObject(request.additionalParams)) {
-      Object.assign(params, request.additionalParams);
-    }
 
     const response = await this.client.images.generate(params as never);
     return imageResponseFromGrok(response, this.fetchFn);
@@ -88,12 +85,15 @@ function validateDimension(value: number, name: "width" | "height"): number {
     throw new Error(`Grok image generation ${name} must be a finite positive number.`);
   }
 
-  const normalized = Math.trunc(value);
-  if (normalized <= 0) {
+  if (value <= 0) {
     throw new Error(`Grok image generation ${name} must be a positive number.`);
   }
 
-  return normalized;
+  if (!Number.isInteger(value)) {
+    throw new Error(`Grok image generation ${name} must be an integer.`);
+  }
+
+  return value;
 }
 
 async function fetchGeneratedImage(
@@ -107,7 +107,9 @@ async function fetchGeneratedImage(
     );
   }
 
-  const response = await fetchFn(url);
+  const validatedUrl = validateGeneratedImageUrl(url);
+
+  const response = await fetchFn(validatedUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch Grok image URL: ${response.status}`);
   }
@@ -117,6 +119,40 @@ async function fetchGeneratedImage(
     data: new Uint8Array(await response.arrayBuffer()),
     mediaType,
   };
+}
+
+function sanitizedAdditionalParams(value: unknown): Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+
+  const { model, prompt, n, response_format, aspect_ratio, ...params } = value;
+  void model;
+  void prompt;
+  void n;
+  void response_format;
+  void aspect_ratio;
+  return params;
+}
+
+function validateGeneratedImageUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Grok image generation response contained an invalid image URL.");
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error("Grok image generation image URLs must use HTTPS.");
+  }
+
+  const allowedHosts = new Set(["imgen.x.ai", "api.x.ai"]);
+  if (!allowedHosts.has(parsed.hostname)) {
+    throw new Error("Grok image generation image URL host is not allowed.");
+  }
+
+  return parsed.toString();
 }
 
 function imageMediaType(item: Record<string, unknown>, raw: Record<string, unknown>): string {

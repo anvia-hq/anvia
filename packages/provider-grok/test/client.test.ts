@@ -84,6 +84,21 @@ describe("GrokClient", () => {
     });
   });
 
+  it("wraps unexpected model listing payloads", async () => {
+    const client = new GrokClient({
+      client: {
+        models: {
+          list: async () => ({ unexpected: [] }),
+        },
+      } as never,
+    });
+
+    await expect(client.listModels()).rejects.toMatchObject({
+      name: "ModelListingError",
+      provider: "grok",
+    } satisfies Partial<ModelListingError>);
+  });
+
   it("wraps model listing failures", async () => {
     const client = new GrokClient({
       client: {
@@ -97,7 +112,7 @@ describe("GrokClient", () => {
 
     await expect(client.listModels()).rejects.toMatchObject({
       name: "ModelListingError",
-      provider: "Grok",
+      provider: "grok",
       statusCode: 401,
     } satisfies Partial<ModelListingError>);
   });

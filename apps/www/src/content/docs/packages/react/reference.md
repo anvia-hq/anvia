@@ -171,6 +171,45 @@ type SetMessages = (
 ) => void;
 ```
 
+
+## defaultEventToApproval
+
+```ts
+function defaultEventToApproval<TEvent>(event: TEvent): ToolApproval | undefined;
+```
+
+Purpose: map Studio `tool_approval_request` and `tool_approval_result` stream events into tracked `ToolApproval` records for `useChat` human-input state.
+
+## defaultEventToQuestion
+
+```ts
+function defaultEventToQuestion<TEvent>(event: TEvent): ToolQuestion | undefined;
+```
+
+Purpose: map Studio `tool_question_request` and `tool_question_result` stream events into tracked `ToolQuestion` records for `useChat` human-input state.
+
+## defaultDecideApproval
+
+```ts
+function defaultDecideApproval(
+  input: ToolApprovalDecisionInput,
+  options: { endpoint?: string | URL; fetch?: typeof fetch },
+): Promise<ToolApproval | undefined>;
+```
+
+Purpose: submit a tool approval decision to the default human-input endpoint path, `approvals/:approvalId/decision`, and return an updated approval when the response contains JSON.
+
+## defaultAnswerQuestion
+
+```ts
+function defaultAnswerQuestion(
+  input: ToolQuestionAnswerInput,
+  options: { endpoint?: string | URL; fetch?: typeof fetch },
+): Promise<ToolQuestion | undefined>;
+```
+
+Purpose: submit tool-question answers to the default human-input endpoint path, `questions/:questionId/answer`, and return an updated question when the response contains JSON.
+
 ## EventTransport
 
 ```ts

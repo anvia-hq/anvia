@@ -1,15 +1,31 @@
 import type { ModelListingError } from "@anvia/core/model-listing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   GROK_4_3,
   GrokChatCompletionModel,
   GrokClient,
+  type GrokCompletionModelName,
   GrokImageGenerationModel,
+  type GrokImageGenerationModelName,
   GrokResponsesCompletionModel,
   XAI_BASE_URL,
 } from "../src/index";
 
 describe("GrokClient", () => {
+  it("types known Grok models while accepting custom model strings", () => {
+    const client = new GrokClient({ client: fakeSdk() as never });
+
+    expectTypeOf(
+      client.completionModel("grok-4.3").defaultModel,
+    ).toEqualTypeOf<GrokCompletionModelName>();
+    client.completionModel("custom-grok-model");
+
+    expectTypeOf(
+      client.imageGenerationModel("grok-imagine-image").defaultModel,
+    ).toEqualTypeOf<GrokImageGenerationModelName>();
+    client.imageGenerationModel("custom-grok-image-model");
+  });
+
   it("validates explicit Grok credentials", () => {
     expect(() => new GrokClient()).toThrow("Missing Grok credentials");
   });

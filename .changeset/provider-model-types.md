@@ -3,6 +3,7 @@
 "@anvia/openai": patch
 "@anvia/anthropic": patch
 "@anvia/gemini": patch
+"@anvia/grok": patch
 "@anvia/mistral": patch
 ---
 

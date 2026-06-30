@@ -14,3 +14,9 @@ export {
   GrokImageGenerationModel,
   imageResponseFromGrok,
 } from "./image-generation";
+export type {
+  GrokCompletionModelName,
+  GrokImageGenerationModelName,
+  KnownGrokCompletionModelName,
+  KnownGrokImageGenerationModelName,
+} from "./models";

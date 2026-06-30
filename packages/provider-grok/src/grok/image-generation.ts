@@ -7,13 +7,16 @@ import type {
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
 import { GROK_IMAGINE_IMAGE } from "./constants";
+import type { GrokImageGenerationModelName } from "./models";
 
-export class GrokImageGenerationModel implements ImageGenerationModel {
+export class GrokImageGenerationModel
+  implements ImageGenerationModel<unknown, GrokImageGenerationModelName>
+{
   readonly provider = "grok";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel = GROK_IMAGINE_IMAGE,
+    readonly defaultModel: GrokImageGenerationModelName = GROK_IMAGINE_IMAGE,
     private readonly fetchFn: typeof fetch | undefined = defaultFetch(),
   ) {}
 

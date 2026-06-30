@@ -10,8 +10,12 @@ export {
   GrokChatCompletionModel,
   GrokClient,
   type GrokClientOptions,
+  type GrokCompletionModelName,
   GrokImageGenerationModel,
+  type GrokImageGenerationModelName,
   GrokResponsesCompletionModel,
   imageResponseFromGrok,
+  type KnownGrokCompletionModelName,
+  type KnownGrokImageGenerationModelName,
   XAI_BASE_URL,
 } from "./grok/index";

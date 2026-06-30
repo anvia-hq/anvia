@@ -7,6 +7,7 @@ import OpenAI from "openai";
 import { GrokChatCompletionModel, GrokResponsesCompletionModel } from "./completion";
 import { GROK_4_3, GROK_IMAGINE_IMAGE, XAI_BASE_URL } from "./constants";
 import { GrokImageGenerationModel } from "./image-generation";
+import type { GrokCompletionModelName, GrokImageGenerationModelName } from "./models";
 
 export type GrokClientOptions = {
   apiKey?: string | undefined;
@@ -35,13 +36,17 @@ export class GrokClient implements ModelListingClient {
     this.fetchFn = options.fetch ?? defaultFetch();
   }
 
-  completionModel(model = GROK_4_3): GrokResponsesCompletionModel | GrokChatCompletionModel {
+  completionModel(
+    model: GrokCompletionModelName = GROK_4_3,
+  ): GrokResponsesCompletionModel | GrokChatCompletionModel {
     return this.completionApi === "chat"
       ? new GrokChatCompletionModel(this.client, model)
       : new GrokResponsesCompletionModel(this.client, model);
   }
 
-  imageGenerationModel(model = GROK_IMAGINE_IMAGE): GrokImageGenerationModel {
+  imageGenerationModel(
+    model: GrokImageGenerationModelName = GROK_IMAGINE_IMAGE,
+  ): GrokImageGenerationModel {
     return new GrokImageGenerationModel(this.client, model, this.fetchFn);
   }
 

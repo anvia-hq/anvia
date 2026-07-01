@@ -6,7 +6,7 @@ import {
   useChat,
 } from "@anvia/react";
 import { type RefObject, useEffect, useRef } from "react";
-import type { AgentRunStreamEvent, StudioConfig } from "../../../../types";
+import type { AgentRunStreamEvent, StudioConfig, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
   enrichTranscriptWithTraceIds,
@@ -54,6 +54,7 @@ export function usePlaygroundRun(props: {
   onError: (message: string) => void;
   onPromptChange: (prompt: string) => void;
   onRunStateChange: (runState: RunState) => void;
+  onSessionTraceSummariesChange: (traceSummaries: StudioTraceSummary[]) => void;
   onStatus: (status: string) => void;
 }) {
   const {
@@ -65,6 +66,7 @@ export function usePlaygroundRun(props: {
     onError,
     onPromptChange,
     onRunStateChange,
+    onSessionTraceSummariesChange,
     onStatus,
     promptRef,
     runState,
@@ -241,6 +243,7 @@ export function usePlaygroundRun(props: {
             traces.loadSessionTraceSummaries(sessionId),
             sessions.loadSessionLogs(sessionId),
           ]);
+          onSessionTraceSummariesChange(traceSummaries);
           transcript.setMessages((current) =>
             enrichTranscriptWithTraceIds(current, traceSummaries),
           );

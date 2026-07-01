@@ -1,6 +1,18 @@
 import { ArrowUp02Icon, AttachmentIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
-import { type ChangeEvent, type KeyboardEvent, lazy, type RefObject, Suspense } from "react";
-import type { StudioConfig, StudioModelSummary, StudioSessionLogEntry } from "../../../../types";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  lazy,
+  type RefObject,
+  Suspense,
+  useMemo,
+} from "react";
+import type {
+  StudioConfig,
+  StudioModelSummary,
+  StudioSessionLogEntry,
+  StudioTraceSummary,
+} from "../../../../types";
 import {
   modelSelectLabel,
   type PromptAttachment,
@@ -19,6 +31,7 @@ import { StudioPageShell, StudioSurface } from "../../components/ui/studio";
 import { Textarea } from "../../components/ui/textarea";
 import { SessionLogsPanel } from "../session-logs/session-logs-panel";
 import type { RunState, TranscriptEntry } from "../shared/types";
+import { assistantResponseMetricsByEntryId } from "./response-metrics";
 
 const TranscriptItem = lazy(() =>
   import("./transcript-item").then((module) => ({
@@ -43,6 +56,7 @@ export function PlaygroundPage(props: {
   selectedSessionId: string;
   sessionLogLoadState: "idle" | "loading";
   sessionLogs: StudioSessionLogEntry[];
+  sessionTraceSummaries: StudioTraceSummary[];
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   promptRef: RefObject<HTMLTextAreaElement | null>;
   transcriptScrollerRef: RefObject<HTMLElement | null>;
@@ -61,6 +75,16 @@ export function PlaygroundPage(props: {
   onSelectModel: (modelRef: string) => void;
   onTranscriptScroll: () => void;
 }) {
+  const responseMetricsByEntryId = useMemo(
+    () =>
+      assistantResponseMetricsByEntryId({
+        entries: props.messages,
+        traceSummaries: props.sessionTraceSummaries,
+        logs: props.sessionLogs,
+      }),
+    [props.messages, props.sessionLogs, props.sessionTraceSummaries],
+  );
+
   return (
     <StudioPageShell className="grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1">
       <div className="grid min-h-0 min-w-0 pb-6 pr-6">
@@ -90,6 +114,7 @@ export function PlaygroundPage(props: {
                   <TranscriptItem
                     key={message.entryId}
                     entry={message}
+                    metrics={responseMetricsByEntryId.get(message.entryId)}
                     decidingApprovals={props.decidingApprovals}
                     answeringQuestions={props.answeringQuestions}
                     onApprovalDecision={props.onApprovalDecision}

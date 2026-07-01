@@ -49,6 +49,7 @@ export function StudioConsole() {
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const transcript = usePlaygroundTranscript();
   const { messages, setMessages } = transcript;
+  const [sessionTraceSummaries, setSessionTraceSummaries] = useState<StudioTraceSummary[]>([]);
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [activePage, setActivePage] = useState<ActivePage>("playground");
@@ -214,6 +215,7 @@ export function StudioConsole() {
       setTranscriptSequence(nextSequence(session.transcript));
       setSelectedAgentId(session.agentId);
       setSelectedModelRef(sessionModelRef(session));
+      setSessionTraceSummaries(traceSummaries);
       setMessages(enrichTranscriptWithTraceIds(session.transcript, traceSummaries));
       setAttachments([]);
       if (options.updatePath !== false) {
@@ -231,6 +233,7 @@ export function StudioConsole() {
       }
       resetTranscriptSequence();
       setMessages([]);
+      setSessionTraceSummaries([]);
       setPrompt("");
       setAttachments([]);
       if (activePage === "playground") {
@@ -279,6 +282,7 @@ export function StudioConsole() {
     onError: setError,
     onPromptChange: setPrompt,
     onRunStateChange: setRunState,
+    onSessionTraceSummariesChange: setSessionTraceSummaries,
     onStatus: setStatus,
   });
 
@@ -290,6 +294,7 @@ export function StudioConsole() {
       resetTranscriptSequence();
       sessions.clearSelectedSession();
       setMessages([]);
+      setSessionTraceSummaries([]);
       setPrompt("");
       setAttachments([]);
       setActivePage("playground");
@@ -313,6 +318,7 @@ export function StudioConsole() {
       resetTranscriptSequence();
       sessions.clearSelectedSession();
       setMessages([]);
+      setSessionTraceSummaries([]);
       setPrompt("");
       setAttachments([]);
       setActivePage("playground");
@@ -449,6 +455,7 @@ export function StudioConsole() {
     selectedAgentModels,
     selectedAgentQuickPrompts,
     selectedModelRef,
+    sessionTraceSummaries,
     sessions,
     sessionsEnabled,
     status,

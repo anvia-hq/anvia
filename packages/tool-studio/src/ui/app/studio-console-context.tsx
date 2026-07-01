@@ -1,6 +1,11 @@
 import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import { createContext, useContext } from "react";
-import type { StudioConfig, StudioModelSummary, StudioSessionSummary } from "../../types";
+import type {
+  StudioConfig,
+  StudioModelSummary,
+  StudioSessionSummary,
+  StudioTraceSummary,
+} from "../../types";
 import type { PromptAttachment } from "./app-helpers";
 import type { StudioTheme } from "./app-theme";
 import type { useStudioSessions } from "./modules/sessions/use-studio-sessions";
@@ -36,6 +41,7 @@ export type StudioConsoleContextValue = {
   selectedAgentModels: StudioModelSummary[];
   selectedAgentQuickPrompts: string[];
   selectedModelRef: string;
+  sessionTraceSummaries: StudioTraceSummary[];
   sessions: StudioSessionsController;
   sessionsEnabled: boolean;
   status: string;

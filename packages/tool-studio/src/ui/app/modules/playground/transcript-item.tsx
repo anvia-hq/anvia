@@ -1,4 +1,10 @@
-import { PathIcon, Wrench01Icon } from "@hugeicons/core-free-icons";
+import {
+  ChartBarLineIcon,
+  Copy01Icon,
+  CopyCheckIcon,
+  PathIcon,
+  Wrench01Icon,
+} from "@hugeicons/core-free-icons";
 import { useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -8,9 +14,11 @@ import { cn } from "../../lib/utils";
 import { approvalLabel } from "../shared/format";
 import { MarkdownText, ToolPayload } from "../shared/renderers";
 import type { ToolApproval, ToolMessage, ToolQuestion, TranscriptEntry } from "../shared/types";
+import type { AssistantResponseMetrics, ResponseUsageMetrics } from "./response-metrics";
 
 export function TranscriptItem(props: {
   entry: TranscriptEntry;
+  metrics?: AssistantResponseMetrics | undefined;
   decidingApprovals: Set<string>;
   answeringQuestions: Set<string>;
   onApprovalDecision: (approvalId: string, approved: boolean) => void;
@@ -50,6 +58,8 @@ export function TranscriptItem(props: {
     props.entry.role === "assistant" && "tone" in props.entry && props.entry.tone === "error";
   const isPending =
     props.entry.role === "assistant" && "tone" in props.entry && props.entry.tone === "pending";
+  const showAssistantActions =
+    props.entry.role === "assistant" && !isPending && props.entry.text.trim().length > 0;
 
   if (props.entry.role === "user") {
     return (
@@ -83,27 +93,163 @@ export function TranscriptItem(props: {
       {props.entry.text.trim().length === 0 ? null : (
         <MarkdownText size="base" text={props.entry.text} />
       )}
-      {traceId !== undefined ? (
+      {showAssistantActions ? (
+        <AssistantResponseActions
+          metrics={props.metrics}
+          text={props.entry.text}
+          traceId={traceId}
+          onOpenTrace={props.onOpenTrace}
+        />
+      ) : null}
+    </article>
+  );
+}
+
+function AssistantResponseActions(props: {
+  metrics?: AssistantResponseMetrics | undefined;
+  text: string;
+  traceId?: string | undefined;
+  onOpenTrace: (traceId: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const traceId = props.traceId;
+
+  async function copyResponse() {
+    if (typeof navigator === "undefined" || navigator.clipboard === undefined) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(props.text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex min-w-0 items-center gap-1.5">
+      <Button
+        aria-label={copied ? "Response copied" : "Copy response"}
+        className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+        title={copied ? "Copied" : "Copy response"}
+        type="button"
+        variant="ghost"
+        onClick={() => void copyResponse()}
+      >
+        <StudioIcon icon={copied ? CopyCheckIcon : Copy01Icon} aria-hidden="true" />
+      </Button>
+      <div className="group relative">
         <Button
-          className="group mt-3 h-7 min-h-7 max-w-full gap-1.5 rounded-lg border border-border/80 bg-muted/35 px-2 py-1 text-xs font-semibold text-muted-foreground shadow-none transition duration-200 hover:border-border hover:bg-muted/55 hover:text-foreground"
+          aria-label="Response metrics"
+          className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+          title={metricsTitle(props.metrics)}
+          type="button"
+          variant="ghost"
+        >
+          <StudioIcon icon={ChartBarLineIcon} aria-hidden="true" />
+        </Button>
+        <div
+          className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-border/90 bg-popover p-3 text-popover-foreground shadow-xl shadow-black/25 group-focus-within:grid group-hover:grid"
+          role="tooltip"
+        >
+          <ResponseMetricsTooltip metrics={props.metrics} />
+        </div>
+      </div>
+      {traceId === undefined ? null : (
+        <Button
+          aria-label={`Open trace ${traceId}`}
+          className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+          title={`Open trace ${traceId}`}
           type="button"
           variant="ghost"
           onClick={() => props.onOpenTrace(traceId)}
         >
-          <span className="grid h-4 w-4 shrink-0 place-items-center text-muted-foreground transition-colors group-hover:text-foreground [&_svg]:h-3 [&_svg]:w-3">
-            <StudioIcon icon={PathIcon} aria-hidden="true" />
-          </span>
-          <span className="font-sans text-xs font-semibold uppercase tracking-[0.14em] text-foreground/90">
-            Trace
-          </span>
-          <span className="h-4 w-px shrink-0 bg-border" aria-hidden="true" />
-          <span className="min-w-0 truncate text-muted-foreground transition-colors group-hover:text-foreground">
-            {traceId}
-          </span>
+          <StudioIcon icon={PathIcon} aria-hidden="true" />
         </Button>
-      ) : null}
-    </article>
+      )}
+    </div>
   );
+}
+
+function ResponseMetricsTooltip(props: { metrics?: AssistantResponseMetrics | undefined }) {
+  const rows = responseMetricRows(props.metrics);
+  return (
+    <div className="grid min-w-0 gap-2 text-xs leading-5">
+      <div className="font-semibold text-foreground">Response metrics</div>
+      <div className="grid min-w-0 gap-1">
+        <MetricRow label="Cost" value="Unavailable" />
+        {rows.length === 0 ? (
+          <div className="text-muted-foreground">No usage metrics yet</div>
+        ) : (
+          rows.map((row) => <MetricRow label={row.label} value={row.value} key={row.label} />)
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricRow(props: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <span className="text-muted-foreground">{props.label}</span>
+      <span className="shrink-0 font-medium tabular-nums text-foreground">{props.value}</span>
+    </div>
+  );
+}
+
+function responseMetricRows(metrics: AssistantResponseMetrics | undefined): Array<{
+  label: string;
+  value: string;
+}> {
+  const rows: Array<{ label: string; value: string }> = [];
+  const usage = metrics?.usage;
+  if (usage?.totalTokens !== undefined) {
+    rows.push({ label: "Total", value: `${formatMetricNumber(usage.totalTokens)} tokens` });
+  }
+  if (usage?.inputTokens !== undefined) {
+    rows.push({ label: "Input", value: formatMetricNumber(usage.inputTokens) });
+  }
+  if (usage?.outputTokens !== undefined) {
+    rows.push({ label: "Output", value: formatMetricNumber(usage.outputTokens) });
+  }
+  pushOptionalUsageRow(rows, "Cached", usage, "cachedInputTokens");
+  pushOptionalUsageRow(rows, "Cache create", usage, "cacheCreationInputTokens");
+  if (metrics?.durationMs !== undefined) {
+    rows.push({ label: "Duration", value: formatResponseDuration(metrics.durationMs) });
+  }
+  return rows;
+}
+
+function pushOptionalUsageRow(
+  rows: Array<{ label: string; value: string }>,
+  label: string,
+  usage: ResponseUsageMetrics | undefined,
+  key: keyof ResponseUsageMetrics,
+) {
+  const value = usage?.[key];
+  if (value !== undefined && value > 0) {
+    rows.push({ label, value: formatMetricNumber(value) });
+  }
+}
+
+function metricsTitle(metrics: AssistantResponseMetrics | undefined): string {
+  const rows = responseMetricRows(metrics);
+  if (rows.length === 0) {
+    return "Cost unavailable. No usage metrics yet.";
+  }
+  return ["Cost unavailable", ...rows.map((row) => `${row.label}: ${row.value}`)].join(". ");
+}
+
+function formatMetricNumber(value: number): string {
+  return value.toLocaleString();
+}
+
+function formatResponseDuration(value: number): string {
+  if (value < 1000) {
+    return `${value}ms`;
+  }
+  return `${(value / 1000).toFixed(1)}s`;
 }
 
 function AssistantLoadingIndicator() {

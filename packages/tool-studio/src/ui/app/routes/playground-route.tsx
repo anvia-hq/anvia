@@ -52,6 +52,7 @@ export function PlaygroundRoute() {
       selectedSessionId={studio.sessions.selectedSessionId}
       sessionLogLoadState={studio.sessions.sessionLogLoadState}
       sessionLogs={studio.sessions.sessionLogs}
+      sessionTraceSummaries={studio.sessionTraceSummaries}
       attachmentInputRef={studio.attachmentInputRef}
       promptRef={studio.promptRef}
       transcriptScrollerRef={studio.transcriptScrollerRef}

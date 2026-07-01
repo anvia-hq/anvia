@@ -5,16 +5,26 @@ import { cn } from "../../lib/utils";
 import { parseToolDisplayValue } from "./format";
 import { isRecord } from "./object";
 
-export function MarkdownText(props: { text: string }) {
+export function MarkdownText(props: { text: string; size?: "sm" | "base" }) {
   return (
-    <div className="prose prose-sm max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-sm prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current">
+    <div
+      className={cn(
+        "prose max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-sm prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current",
+        props.size === "base" ? "text-base" : "prose-sm",
+      )}
+    >
       <ReactMarkdown
         components={{
           table({ children }) {
             return (
               <div className="my-4 w-full min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/90 shadow-sm">
                 <div className="min-w-0 overflow-x-auto">
-                  <table className="m-0 w-full min-w-full border-separate border-spacing-0 text-left text-sm">
+                  <table
+                    className={cn(
+                      "m-0 w-full min-w-full border-separate border-spacing-0 text-left",
+                      props.size === "base" ? "text-base" : "text-sm",
+                    )}
+                  >
                     {children}
                   </table>
                 </div>
@@ -43,7 +53,10 @@ export function MarkdownText(props: { text: string }) {
           td({ children }) {
             return (
               <td
-                className="border-b border-border/70 px-4 text-sm leading-6 text-foreground [overflow-wrap:anywhere] first:pl-5 last:pr-5 group-last/row:border-b-0"
+                className={cn(
+                  "border-b border-border/70 px-4 leading-6 text-foreground [overflow-wrap:anywhere] first:pl-5 last:pr-5 group-last/row:border-b-0",
+                  props.size === "base" ? "text-base" : "text-sm",
+                )}
                 style={{ paddingBottom: "0.75rem", paddingTop: "0.75rem" }}
               >
                 {children}

@@ -27,7 +27,7 @@ export function TranscriptItem(props: {
         data-entry-id={String(props.entry.entryId)}
       >
         <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Reasoning</div>
-        <MarkdownText text={props.entry.text} />
+        <MarkdownText size="base" text={props.entry.text} />
       </article>
     );
   }
@@ -59,7 +59,7 @@ export function TranscriptItem(props: {
       >
         {props.entry.text.trim().length === 0 ? null : (
           <div className="rounded-2xl bg-muted/55 px-4 py-2.5 shadow-sm shadow-black/[0.04] dark:bg-white/[0.08] dark:shadow-black/20">
-            <MarkdownText text={props.entry.text} />
+            <MarkdownText size="base" text={props.entry.text} />
           </div>
         )}
         {props.entry.attachments !== undefined ? (
@@ -80,7 +80,9 @@ export function TranscriptItem(props: {
       data-entry-id={String(props.entry.entryId)}
     >
       {isPending ? <AssistantLoadingIndicator /> : null}
-      {props.entry.text.trim().length === 0 ? null : <MarkdownText text={props.entry.text} />}
+      {props.entry.text.trim().length === 0 ? null : (
+        <MarkdownText size="base" text={props.entry.text} />
+      )}
       {traceId !== undefined ? (
         <Button
           className="group mt-3 h-7 min-h-7 max-w-full gap-1.5 rounded-lg border border-border/80 bg-muted/35 px-2 py-1 text-xs font-semibold text-muted-foreground shadow-none transition duration-200 hover:border-border hover:bg-muted/55 hover:text-foreground"
@@ -316,7 +318,7 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
                     {agentLabel}
                   </span>
                 </div>
-                <MarkdownText text={event.text} />
+                <MarkdownText size="base" text={event.text} />
               </div>
             );
           }

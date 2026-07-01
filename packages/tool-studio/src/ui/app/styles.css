@@ -340,8 +340,7 @@
 
 .studio-sidebar-nav-button {
   border-color: transparent;
-  outline: 1px solid transparent;
-  outline-offset: 2px;
+  outline: 2px solid transparent;
 }
 
 .studio-sidebar-nav-button:hover {
@@ -349,7 +348,7 @@
   background: linear-gradient(
     180deg,
     color-mix(in oklch, var(--sidebar-accent) 88%, transparent) 0%,
-    color-mix(in oklch, var(--sidebar-accent) 74%, black) 100%
+    color-mix(in oklch, var(--sidebar-accent) 86%, black) 100%
   );
 }
 
@@ -360,6 +359,6 @@
   background: linear-gradient(
     180deg,
     var(--sidebar-accent) 0%,
-    color-mix(in oklch, var(--sidebar-accent) 72%, black) 100%
+    color-mix(in oklch, var(--sidebar-accent) 84%, black) 100%
   );
 }

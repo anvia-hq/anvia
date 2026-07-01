@@ -344,21 +344,21 @@
 }
 
 .studio-sidebar-nav-button:hover {
-  border-color: color-mix(in oklch, var(--sidebar-foreground) 14%, transparent);
+  border-color: color-mix(in oklch, var(--sidebar-foreground) 15%, transparent);
   background: linear-gradient(
     180deg,
-    color-mix(in oklch, var(--sidebar-accent) 88%, transparent) 0%,
-    color-mix(in oklch, var(--sidebar-accent) 86%, black) 100%
+    color-mix(in oklch, var(--sidebar-accent) 98%, black) 0%,
+    color-mix(in oklch, var(--sidebar-accent) 85%, black) 100%
   );
 }
 
 .studio-sidebar-nav-button-active,
 .studio-sidebar-nav-button-active:hover {
-  border-color: color-mix(in oklch, var(--sidebar-foreground) 20%, transparent);
+  border-color: color-mix(in oklch, var(--sidebar-foreground) 21%, transparent);
   outline-color: hsl(0 0% 0% / 58%);
   background: linear-gradient(
     180deg,
-    var(--sidebar-accent) 0%,
-    color-mix(in oklch, var(--sidebar-accent) 84%, black) 100%
+    color-mix(in oklch, var(--sidebar-accent) 98%, black) 0%,
+    color-mix(in oklch, var(--sidebar-accent) 83%, black) 100%
   );
 }

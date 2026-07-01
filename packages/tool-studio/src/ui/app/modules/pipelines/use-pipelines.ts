@@ -1,3 +1,4 @@
+import { createFetchTransport, EventStreamHttpError } from "@anvia/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   StudioConfig,
@@ -5,11 +6,24 @@ import type {
   StudioPipelineLogEntry,
   StudioPipelineRunRecord,
 } from "../../../../types";
-import { responseErrorMessage } from "../../app-errors";
+import { eventStreamResponseErrorMessage } from "../../app-errors";
 import { isErrorStreamEvent, isPipelineFinalEvent, isPipelineLogEvent } from "../../app-helpers";
 import { errorMessage } from "../shared/format";
-import { nextPaint, readJsonl } from "../shared/transcript";
+import { nextPaint } from "../shared/transcript";
 import type { RunState } from "../shared/types";
+
+type PipelineRunStreamRequest = {
+  endpoint: string;
+  body: Record<string, unknown>;
+};
+
+const pipelineRunStreamTransport = createFetchTransport<PipelineRunStreamRequest, unknown>({
+  endpoint: (request) => request.endpoint,
+  method: "POST",
+  format: "jsonl",
+  headers: { "content-type": "application/json" },
+  body: (request) => JSON.stringify(request.body),
+});
 
 export function usePipelines(props: {
   active: boolean;
@@ -149,25 +163,25 @@ export function usePipelines(props: {
     }
   }, [props.active, props.pipelines, loadPipeline, selectedPipelineId]);
 
-  async function consumePipelineRunStream(body: ReadableStream<Uint8Array>) {
-    await readJsonl(body, async (event) => {
+  async function consumePipelineRunStream(events: AsyncIterable<unknown>) {
+    for await (const event of events) {
       if (isPipelineLogEvent(event)) {
         if (event.log.runId !== undefined) {
           setActivePipelineRunId((current) => current || event.log.runId || "");
         }
         appendPipelineLogEntry(event.log);
         await nextPaint();
-        return;
+        continue;
       }
       if (isPipelineFinalEvent(event)) {
         setPipelineRunOutput(formatPipelineOutput(event.output));
         await nextPaint();
-        return;
+        continue;
       }
       if (isErrorStreamEvent(event)) {
         throw new Error(JSON.stringify(event.error));
       }
-    });
+    }
   }
 
   async function runPipeline() {
@@ -189,25 +203,20 @@ export function usePipelines(props: {
     setActivePipelineRunId("");
     props.onError("");
     try {
-      const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}/runs`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          input,
-          stream: true,
-          metadata: { source: "anvia-studio" },
+      await consumePipelineRunStream(
+        pipelineRunStreamTransport.send({
+          endpoint: `/pipelines/${encodeURIComponent(pipelineId)}/runs`,
+          body: {
+            input,
+            stream: true,
+            metadata: { source: "anvia-studio" },
+          },
         }),
-      });
-
-      if (!response.ok || response.body === null) {
-        throw new Error(await responseErrorMessage(response, "Pipeline run failed"));
-      }
-
-      await consumePipelineRunStream(response.body);
+      );
       await Promise.all([loadPipelineLogs(pipelineId), loadPipelineRuns(pipelineId)]);
       props.onStatus("Connected");
     } catch (runError) {
-      props.onError(errorMessage(runError));
+      props.onError(pipelineStreamErrorMessage(runError, "Pipeline run failed"));
     } finally {
       setPipelineRunState("idle");
     }
@@ -224,27 +233,21 @@ export function usePipelines(props: {
     setActivePipelineRunId("");
     props.onError("");
     try {
-      const response = await fetch(
-        `/pipelines/${encodeURIComponent(pipelineId)}/runs/${encodeURIComponent(runId)}/replay`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+      await consumePipelineRunStream(
+        pipelineRunStreamTransport.send({
+          endpoint: `/pipelines/${encodeURIComponent(pipelineId)}/runs/${encodeURIComponent(
+            runId,
+          )}/replay`,
+          body: {
             stream: true,
             metadata: { source: "anvia-studio" },
-          }),
-        },
+          },
+        }),
       );
-
-      if (!response.ok || response.body === null) {
-        throw new Error(await responseErrorMessage(response, "Pipeline replay failed"));
-      }
-
-      await consumePipelineRunStream(response.body);
       await Promise.all([loadPipelineLogs(pipelineId), loadPipelineRuns(pipelineId)]);
       props.onStatus("Connected");
     } catch (runError) {
-      props.onError(errorMessage(runError));
+      props.onError(pipelineStreamErrorMessage(runError, "Pipeline replay failed"));
     } finally {
       setPipelineRunState("idle");
     }
@@ -283,6 +286,13 @@ export function usePipelines(props: {
     runPipeline,
     replayPipelineRun,
   };
+}
+
+function pipelineStreamErrorMessage(error: unknown, label: string): string {
+  if (error instanceof EventStreamHttpError) {
+    return eventStreamResponseErrorMessage(error, label);
+  }
+  return errorMessage(error);
 }
 
 function formatPipelineOutput(output: unknown): string {

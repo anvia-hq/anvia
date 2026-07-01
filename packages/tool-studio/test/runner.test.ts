@@ -1545,6 +1545,98 @@ describe("Anvia studio", () => {
     ]);
   });
 
+  it("accepts shared UI-style agent run requests", async () => {
+    const model = new QueueModel([response([AssistantContent.text("hello")])]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [Message.user("hi")],
+          metadata: { source: "test" },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(model.requests[0]?.chatHistory).toEqual([Message.user("hi")]);
+  });
+
+  it("normalizes UI-style agent run messages into history plus the latest prompt", async () => {
+    const model = new QueueModel([response([AssistantContent.text("next")])]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [Message.user("before"), Message.assistant("old"), Message.user("next")],
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(model.requests[0]?.chatHistory).toEqual([
+      Message.user("before"),
+      Message.assistant("old"),
+      Message.user("next"),
+    ]);
+  });
+
+  it("rejects UI-style history combined with a session id", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const runner = new Studio([agent]);
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId: "support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [Message.user("before"), Message.user("next")],
+          sessionId: session.id,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: "sessionId cannot be combined with history" },
+    });
+  });
+
+  it("keeps legacy message bodies authoritative when both request shapes are sent", async () => {
+    const model = new QueueModel([response([AssistantContent.text("legacy")])]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "legacy",
+          messages: [Message.user("ui")],
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(model.requests[0]?.chatHistory).toEqual([Message.user("legacy")]);
+  });
+
   it("pauses protected streaming tool calls until approval", async () => {
     let executed = false;
     const refundTool = createRefundTool(({ orderId, amount }) => {

@@ -31,13 +31,9 @@ export function StudioSidebar(props: {
   return (
     <aside className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
       <div className="flex h-15 items-center px-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <img className="h-7 w-7 shrink-0 object-contain" src={logoSrc} alt="" />
-          <span className="min-w-0 truncate">
-            <span className="anvia-wordmark text-lg font-semibold tracking-normal text-sidebar-foreground">
-              Anvia Studio
-            </span>
-          </span>
+        <div className="studio-logo-lockup min-w-0">
+          <img className="h-auto w-[92px] shrink-0 object-contain" src={logoSrc} alt="Anvia" />
+          <span className="studio-logo-badge">Studio</span>
         </div>
       </div>
       <nav className="grid gap-0.5 px-3 py-3" aria-label="Main">

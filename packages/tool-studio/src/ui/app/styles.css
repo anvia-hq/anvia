@@ -259,31 +259,39 @@
     font-family: var(--font-sans);
   }
 
-  .shell-loading > div {
-    display: grid;
-    justify-items: center;
-    gap: 0.75rem;
+  .studio-logo-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: center;
+    max-width: 100%;
   }
 
-  .shell-loading .eyebrow {
-    margin: 0;
-    color: var(--muted-foreground);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
+  .studio-logo-image {
+    display: block;
+    height: auto;
+    width: 10rem;
+    max-width: 52vw;
+    object-fit: contain;
   }
 
-  .shell-loading h1 {
-    margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    letter-spacing: 0;
-  }
-
-  .anvia-wordmark {
+  .studio-logo-badge {
+    display: inline-flex;
+    min-height: 1.375rem;
+    align-items: center;
+    border: 1px solid color-mix(in oklch, #25f66a 72%, white);
+    border-radius: 0.5rem;
+    padding: 0.1875rem 0.5rem;
+    background: #25f66a;
+    color: #031208;
     font-family: var(--font-heading);
-    letter-spacing: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    box-shadow: inset 0 0 0 1px hsl(0 0% 100% / 28%);
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
   :focus-visible {

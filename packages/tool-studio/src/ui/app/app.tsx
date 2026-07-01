@@ -24,7 +24,6 @@ import { useStudioTheme } from "./app-theme";
 import { useAgentModels } from "./modules/agents/use-agent-models";
 import { usePlaygroundRun } from "./modules/playground/use-playground-run";
 import { usePlaygroundTranscript } from "./modules/playground/use-playground-transcript";
-import { useToolInteractions } from "./modules/playground/use-tool-interactions";
 import { useStudioSessions } from "./modules/sessions/use-studio-sessions";
 import { errorMessage } from "./modules/shared/format";
 import {
@@ -49,7 +48,7 @@ export function StudioConsole() {
   const [config, setConfig] = useState<StudioConfig | undefined>();
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const transcript = usePlaygroundTranscript();
-  const { messages, setMessages, updateToolApproval, updateToolQuestion } = transcript;
+  const { messages, setMessages } = transcript;
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [activePage, setActivePage] = useState<ActivePage>("playground");
@@ -59,11 +58,6 @@ export function StudioConsole() {
   const [status, setStatus] = useState("Loading");
   const [, setError] = useState("");
   const [runState, setRunState] = useState<RunState>("idle");
-  const toolInteractions = useToolInteractions({
-    onError: setError,
-    onToolApprovalUpdate: updateToolApproval,
-    onToolQuestionUpdate: updateToolQuestion,
-  });
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const transcriptScrollerRef = useRef<HTMLElement | null>(null);
@@ -259,7 +253,13 @@ export function StudioConsole() {
     onStatus: setStatus,
   });
 
-  const { runPrompt } = usePlaygroundRun({
+  const {
+    answeringQuestions,
+    decidingApprovals,
+    answerToolQuestion,
+    decideToolApproval,
+    runPrompt,
+  } = usePlaygroundRun({
     attachments,
     messages,
     promptRef,
@@ -426,9 +426,9 @@ export function StudioConsole() {
   const contextValue = {
     activePage,
     agents,
-    answeringQuestions: toolInteractions.answeringQuestions,
+    answeringQuestions,
     attachments,
-    decidingApprovals: toolInteractions.decidingApprovals,
+    decidingApprovals,
     deleteCandidate,
     evals,
     evalsEnabled,
@@ -472,10 +472,10 @@ export function StudioConsole() {
     startNewChat,
     selectPlaygroundAgent,
     addPromptAttachments,
-    decideToolApproval: toolInteractions.decideToolApproval,
+    decideToolApproval,
     updatePrompt,
     handlePromptKeyDown,
-    answerToolQuestion: toolInteractions.answerToolQuestion,
+    answerToolQuestion,
     removePromptAttachment,
     runPrompt,
     toggleTheme,

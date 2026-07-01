@@ -642,7 +642,20 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
     return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
   }
 
-  if (!("message" in body) || !isMessageInput(body.message)) {
+  const request =
+    "message" in body ? parseLegacyRunRequestBody(c, body) : parseUiRunRequestBody(c, body);
+  if ("error" in request) {
+    return request;
+  }
+
+  return parseRunRequestOptions(c, body, request);
+}
+
+function parseLegacyRunRequestBody(
+  c: Context,
+  body: Record<string, unknown>,
+): AgentRunRequest | { error: Response } {
+  if (!isMessageInput(body.message)) {
     return {
       error: errorResponse(c, 400, "bad_request", "Request body requires a string or Message"),
     };
@@ -659,6 +672,45 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
     request.history = body.history;
   }
 
+  return request;
+}
+
+function parseUiRunRequestBody(
+  c: Context,
+  body: Record<string, unknown>,
+): AgentRunRequest | { error: Response } {
+  const messages = body.messages;
+  if (!Array.isArray(messages) || !messages.every(isMessage)) {
+    return {
+      error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
+    };
+  }
+
+  if (messages.length === 0) {
+    return {
+      error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
+    };
+  }
+
+  const message = messages.at(-1);
+  if (message === undefined) {
+    return {
+      error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
+    };
+  }
+
+  const history = messages.slice(0, -1);
+  return {
+    message,
+    ...(history.length === 0 ? {} : { history }),
+  };
+}
+
+function parseRunRequestOptions(
+  c: Context,
+  body: Record<string, unknown>,
+  request: AgentRunRequest,
+): AgentRunRequest | { error: Response } {
   if ("sessionId" in body) {
     if (typeof body.sessionId !== "string" || body.sessionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "sessionId must be a string") };

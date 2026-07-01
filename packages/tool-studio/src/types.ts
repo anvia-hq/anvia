@@ -1016,6 +1016,17 @@ export type AgentRunRequest = {
   trace?: AgentTraceOptions;
 };
 
+export type AgentRunUIRequest = {
+  messages: Message[];
+  sessionId?: string;
+  stream?: boolean;
+  maxTurns?: number;
+  toolConcurrency?: number;
+  model?: StudioModelRef;
+  metadata?: JsonObject;
+  trace?: AgentTraceOptions;
+};
+
 export type AgentRunResponse = PromptResponse;
 
 export type AgentRunStreamEvent =

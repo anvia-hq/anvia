@@ -31,6 +31,30 @@ export function agentRunErrorMessage(error: unknown): string {
   return errorMessage(error);
 }
 
+export function eventStreamResponseErrorMessage(
+  error: EventStreamHttpError,
+  label: string,
+): string {
+  let detail = "";
+  try {
+    const body = JSON.parse(error.body) as unknown;
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "object" &&
+      body.error !== null &&
+      "message" in body.error &&
+      typeof body.error.message === "string"
+    ) {
+      detail = `: ${body.error.message}`;
+    }
+  } catch {
+    // Ignore non-JSON error bodies.
+  }
+  return `${label} with HTTP ${error.response.status}${detail}`;
+}
+
 export function serializedStreamErrorText(error: unknown): string {
   if (typeof error === "string") {
     return error;

@@ -1,4 +1,5 @@
-import type { Message, UserContent } from "@anvia/core/completion";
+import type { JsonValue, Message, UserContent } from "@anvia/core/completion";
+import type { UIMessage } from "@anvia/core/ui";
 import type {
   StudioModelSummary,
   StudioPipelineLogEntry,
@@ -151,6 +152,10 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function userMessageWithAttachments(text: string, attachments: PromptAttachment[]): Message {
+  return { role: "user", content: userContentWithAttachments(text, attachments) };
+}
+
+function userContentWithAttachments(text: string, attachments: PromptAttachment[]): UserContent[] {
   const content: UserContent[] = [];
   if (text.length > 0) {
     content.push({ type: "text", text });
@@ -177,7 +182,27 @@ export function userMessageWithAttachments(text: string, attachments: PromptAtta
       },
     });
   }
-  return { role: "user", content };
+  return content;
+}
+
+export function userUIMessageWithAttachments(
+  text: string,
+  attachments: PromptAttachment[],
+): UIMessage {
+  return {
+    id: createPromptId("msg"),
+    role: "user",
+    parts: userContentWithAttachments(text, attachments).map((content) =>
+      content.type === "text"
+        ? { id: createPromptId("part"), type: "text", text: content.text }
+        : {
+            id: createPromptId("part"),
+            type: "data",
+            name: content.type,
+            data: content as JsonValue,
+          },
+    ),
+  };
 }
 
 export function transcriptAttachmentsForPrompt(
@@ -211,4 +236,15 @@ function mediaTypeFromName(name: string): string {
   if (/\.csv$/i.test(name)) return "text/csv";
   if (/\.json$/i.test(name)) return "application/json";
   return "text/plain";
+}
+
+let nextPromptId = 0;
+
+function createPromptId(prefix: string): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  if (random !== undefined) {
+    return `${prefix}_${random}`;
+  }
+  nextPromptId += 1;
+  return `${prefix}_${nextPromptId.toString(36)}`;
 }

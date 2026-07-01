@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.1
+
+### Patch Changes
+
+- 2735197: Remove experimental tool and tool-result guardrails. Guardrail policies now cover input and final output boundaries only; use tool approvals, hooks, middleware, and service-level validation for tool execution behavior.
+
 ## 0.12.0
 
 ### Minor Changes

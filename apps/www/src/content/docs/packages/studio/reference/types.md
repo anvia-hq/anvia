@@ -213,6 +213,7 @@ type StudioAgentToolMetadata = {
   description: string;
   parameters: JsonObject;
   source: StudioAgentToolSource;
+  mcpServerName?: string;
   approval: StudioAgentToolApprovalMetadata;
 };
 
@@ -243,6 +244,7 @@ type StudioAgentMcpToolMetadata = {
   description: string;
   parameters: JsonObject;
   source: StudioAgentToolSource;
+  approval: StudioAgentToolApprovalMetadata;
 };
 
 type StudioAgentMcpServerMetadata = {
@@ -268,11 +270,11 @@ type StudioTranscriptAttachment = {
 
 Purpose: metadata returned by `GET /agents/:agentId/tools` and used by the Studio Tools inspector.
 
-Return behavior: static tools come from `agent.toolSet`; dynamic tools are listed when the dynamic tool index exposes its underlying `ToolSet`. Direct tool runs use `POST /agents/:agentId/tools/:toolName/runs`.
+Return behavior: static tools come from `agent.toolSet`; dynamic tools are listed when the dynamic tool index exposes its underlying `ToolSet`. MCP tools registered through `.mcp(...)` are normal runnable tools and include `mcpServerName` in `GET /agents/:agentId/tools`. Direct tool runs use `POST /agents/:agentId/tools/:toolName/runs`.
 
 Notable errors: unknown agents return `not_found`.
 
-`GET /agents/:agentId/mcps` returns the MCP subset grouped by server name. MCP metadata is available for tools registered through `.mcp(...)`.
+`GET /agents/:agentId/mcps` returns the MCP subset grouped by server name. MCP metadata is available for tools registered through `.mcp(...)` and includes the same tool approval metadata used by the Tools inspector.
 
 ## Memory and Status Types
 

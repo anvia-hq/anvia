@@ -1260,6 +1260,7 @@ describe("Anvia studio", () => {
               name: "lookup_policy",
               description: "Look up policy documents",
               source: "static",
+              approval: { required: false },
               parameters: {
                 type: "object",
                 properties: {
@@ -1270,6 +1271,20 @@ describe("Anvia studio", () => {
             },
           ],
         },
+      ],
+    });
+
+    const toolsRes = await runner.fetch(new Request("http://runner.test/agents/support/tools"));
+    expect(toolsRes.status).toBe(200);
+    await expect(toolsRes.json()).resolves.toEqual({
+      agentId: "support",
+      tools: [
+        expect.objectContaining({
+          agentId: "support",
+          name: "lookup_policy",
+          source: "static",
+          mcpServerName: "policies",
+        }),
       ],
     });
   });

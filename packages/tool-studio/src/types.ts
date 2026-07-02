@@ -282,6 +282,7 @@ export type StudioAgentToolMetadata = {
   description: string;
   parameters: JsonObject;
   source: StudioAgentToolSource;
+  mcpServerName?: string;
   approval: StudioAgentToolApprovalMetadata;
 };
 
@@ -312,6 +313,7 @@ export type StudioAgentMcpToolMetadata = {
   description: string;
   parameters: JsonObject;
   source: StudioAgentToolSource;
+  approval: StudioAgentToolApprovalMetadata;
 };
 
 export type StudioAgentMcpServerMetadata = {

@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 0.7.16
+
+### Patch Changes
+
+- f6860b9: Redesign the Studio Knowledge dynamic tools, Memory, and Status inspector pages.
+- fff056f: Expose MCP server origin on Studio tool metadata and run MCP-backed tools directly from the Studio MCP screen.
+- edc4aeb: Accept shared UI-style agent run requests and reuse shared React stream and human-input helpers internally while preserving Studio's existing JSONL behavior.
+
 ## 0.7.15
 
 ### Patch Changes

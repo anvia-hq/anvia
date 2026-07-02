@@ -389,7 +389,6 @@ function ToolEntry(props: {
         </Button>
         {pendingApproval && approval !== undefined ? (
           <ToolApprovalActions
-            compact
             disabled={deciding}
             onDecision={(approved) => props.onApprovalDecision(approval.id, approved)}
           />
@@ -414,13 +413,7 @@ function ToolEntry(props: {
       </div>
       {collapsed || !hasPayload ? null : (
         <div className="grid gap-3 p-3">
-          {approval === undefined ? null : (
-            <ToolApprovalPanel
-              approval={approval}
-              disabled={deciding}
-              onDecision={(approved) => props.onApprovalDecision(approval.id, approved)}
-            />
-          )}
+          {approval === undefined ? null : <ToolApprovalPanel approval={approval} />}
           {question === undefined ? null : (
             <ToolQuestionPanel
               disabled={answering}
@@ -705,24 +698,22 @@ function questionDraftAnswer(value: QuestionDraft | undefined): string {
   return customAnswer.length > 0 ? customAnswer : (value?.answer?.trim() ?? "");
 }
 
-function ToolApprovalPanel(props: {
-  approval: ToolApproval;
-  disabled: boolean;
-  onDecision: (approved: boolean) => void;
-}) {
-  const pending = props.approval.status === "pending";
+function ToolApprovalPanel(props: { approval: ToolApproval }) {
   return (
-    <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/35 p-3">
-      <div className="flex min-w-0 items-center justify-between gap-3">
+    <div className="grid gap-2 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <Badge
+          className={cn(
+            "border-border/70 bg-background/60 px-1.5 py-0.5 text-xs uppercase text-muted-foreground",
+            props.approval.status === "approved" && "text-foreground",
+            props.approval.status === "rejected" && "text-destructive",
+          )}
+        >
+          Approval
+        </Badge>
         <div className="min-w-0">
-          <div className="text-xs font-semibold uppercase text-muted-foreground">Approval</div>
-          <div className="mt-0.5 text-sm font-medium text-foreground">
-            {approvalLabel(props.approval)}
-          </div>
+          <div className="text-sm font-medium text-foreground">{approvalLabel(props.approval)}</div>
         </div>
-        {pending ? (
-          <ToolApprovalActions disabled={props.disabled} onDecision={props.onDecision} />
-        ) : null}
       </div>
       {props.approval.reason === undefined ? null : (
         <div className="text-xs font-medium text-muted-foreground [overflow-wrap:anywhere]">
@@ -734,30 +725,29 @@ function ToolApprovalPanel(props: {
 }
 
 function ToolApprovalActions(props: {
-  compact?: boolean;
   disabled: boolean;
   onDecision: (approved: boolean) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border/80 bg-background/55 p-0.5">
       <Button
-        className={cn(props.compact ? "h-7 min-h-7 px-2 text-xs" : "h-8 min-h-8")}
+        className="h-7 min-h-7 rounded-md border-0 bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
+        disabled={props.disabled}
+        size="sm"
+        type="button"
+        variant="ghost"
+        onClick={() => props.onDecision(false)}
+      >
+        Reject
+      </Button>
+      <Button
+        className="h-7 min-h-7 rounded-md px-2.5 text-xs"
         disabled={props.disabled}
         size="sm"
         type="button"
         onClick={() => props.onDecision(true)}
       >
         Approve
-      </Button>
-      <Button
-        className={cn(props.compact ? "h-7 min-h-7 px-2 text-xs" : "h-8 min-h-8")}
-        disabled={props.disabled}
-        size="sm"
-        type="button"
-        variant="secondary"
-        onClick={() => props.onDecision(false)}
-      >
-        Reject
       </Button>
     </div>
   );

@@ -22,7 +22,6 @@ export function KnowledgeRoute() {
         enabled={studio.knowledgeEnabled}
         onError={studio.setError}
         onOpenTrace={studio.traces.selectTrace}
-        onSelectTab={studio.navigateKnowledgeTab}
       />
     </Suspense>
   );

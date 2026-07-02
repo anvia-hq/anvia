@@ -9,11 +9,9 @@ import {
   type ItemState,
   itemLimit,
   type KnowledgeSourceRef,
-  knowledgeTabs,
   sourceId,
   sourceKindForTab,
   sourceLabel,
-  tabCountLabel,
   tabLabel,
 } from "./knowledge-model";
 import { ItemBrowser, RetrievalLogPanel } from "./knowledge-panels";
@@ -25,7 +23,6 @@ export function KnowledgePage(props: {
   loading: boolean;
   onOpenTrace: (traceId: string) => void;
   onRefresh: () => void;
-  onSelectTab: (tab: KnowledgeTab) => void;
 }) {
   const [selectedKey, setSelectedKey] = useState("");
   const [itemState, setItemState] = useState<ItemState | undefined>();
@@ -134,17 +131,14 @@ export function KnowledgePage(props: {
 
   return (
     <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55">
-      <header className="bg-background/70 pb-5 pl-0 pr-6 pt-0 backdrop-blur">
+      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
-            <div className=" text-xs font-semibold uppercase tracking-[0.24em] text-foreground">
-              Agent context
-            </div>
             <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
-              Knowledge
+              {tabLabel(props.activeTab)}
             </h1>
             <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              Browse configured context, dynamic chunks, and retrieval evidence.
+              {knowledgePageDescription(props.activeTab)}
             </p>
           </div>
           <Button
@@ -159,13 +153,7 @@ export function KnowledgePage(props: {
           </Button>
         </div>
       </header>
-      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden pb-6 pl-0 pr-6 pt-0">
-        <KnowledgeTabs
-          activeTab={props.activeTab}
-          sources={sources}
-          evidenceCount={evidence.length}
-          onSelectTab={props.onSelectTab}
-        />
+      <div className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden pb-6 pl-4 pr-6 pt-0">
         {props.activeTab === "retrieval-log" ? (
           <RetrievalLogPanel evidence={evidence} onOpenTrace={props.onOpenTrace} />
         ) : (
@@ -198,43 +186,6 @@ export function KnowledgePage(props: {
   );
 }
 
-function KnowledgeTabs(props: {
-  activeTab: KnowledgeTab;
-  sources: KnowledgeSourceRef[];
-  evidenceCount: number;
-  onSelectTab: (tab: KnowledgeTab) => void;
-}) {
-  return (
-    <nav
-      className="flex min-w-0 gap-7 overflow-x-auto border-b border-border/80"
-      aria-label="Knowledge sections"
-    >
-      {knowledgeTabs.map((tab) => {
-        const active = props.activeTab === tab.id;
-        return (
-          <button
-            className={[
-              "flex min-h-10 shrink-0 items-center gap-2 border-b px-0 pb-2 pt-1 text-left transition duration-200 hover:text-foreground focus-visible:outline-none",
-              active
-                ? "border-foreground/45 text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border",
-            ].join(" ")}
-            key={tab.id}
-            type="button"
-            aria-current={active ? "page" : undefined}
-            onClick={() => props.onSelectTab(tab.id)}
-          >
-            <span className="text-sm font-semibold">{tab.label}</span>
-            <span className=" text-xs text-muted-foreground">
-              {tabCountLabel(tab.id, props.sources, props.evidenceCount)}
-            </span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
 function SourceWorkspace(props: {
   sources: KnowledgeSourceRef[];
   selectedKey: string;
@@ -252,8 +203,8 @@ function SourceWorkspace(props: {
       ].join(" ")}
     >
       {showSources ? (
-        <div className="min-w-0 overflow-x-auto rounded-xl border border-border/80 bg-card/55">
-          <div className="flex min-h-11 min-w-max items-center gap-2 px-3">
+        <div className="min-w-0 overflow-x-auto border-b border-border/80">
+          <div className="flex min-h-11 min-w-max items-center gap-2">
             <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {tabLabel(props.activeTab)}
             </span>
@@ -287,4 +238,17 @@ function SourceWorkspace(props: {
       {props.children}
     </div>
   );
+}
+
+function knowledgePageDescription(tab: KnowledgeTab): string {
+  switch (tab) {
+    case "static-context":
+      return "Browse configured static context exposed to agents.";
+    case "dynamic-context":
+      return "Inspect dynamic context chunks resolved at runtime.";
+    case "dynamic-tools":
+      return "Review dynamic tool definitions and parameters.";
+    case "retrieval-log":
+      return "Inspect retrieval evidence and jump into related traces.";
+  }
 }

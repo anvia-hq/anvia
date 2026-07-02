@@ -3,13 +3,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { isRecord } from "../shared/object";
 import { JsonSyntax, JsonValueView } from "../shared/renderers";
-import {
-  type ItemState,
-  itemKindLabel,
-  type KnowledgeSourceRef,
-  sourceId,
-  sourceLabel,
-} from "./knowledge-model";
+import { type ItemState, type KnowledgeSourceRef, sourceId, sourceLabel } from "./knowledge-model";
 
 export function ItemBrowser(props: {
   source: KnowledgeSourceRef | undefined;
@@ -18,24 +12,9 @@ export function ItemBrowser(props: {
 }) {
   const state = props.state;
   return (
-    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-border/80 bg-card/55">
-      <div className="border-b border-border/80 px-4 py-3">
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="m-0 truncate text-sm font-semibold text-foreground">
-              {props.source?.source.label ?? "Knowledge items"}
-            </h2>
-            <p className="m-0 mt-1 truncate text-xs text-muted-foreground">
-              {props.source === undefined
-                ? "No source selected"
-                : `${props.source.agentId} / ${sourceId(props.source.source)}`}
-            </p>
-          </div>
-          {state?.totalCount === undefined ? null : <Badge>{state.totalCount} total</Badge>}
-        </div>
-      </div>
+    <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <div className="min-h-0 overflow-auto">
-        <div className="p-4">
+        <div className="pb-4 pt-0">
           {props.source === undefined ? <MutedRow text="No knowledge source selected" /> : null}
           {state?.loading === true && state.items.length === 0 ? (
             <MutedRow text="Loading items" />
@@ -58,7 +37,7 @@ export function ItemBrowser(props: {
           </div>
         </div>
       </div>
-      <div className="flex min-h-12 items-center justify-between gap-3 bg-muted/10 px-4 py-2">
+      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border/80 bg-muted/10 py-2">
         <span className=" text-xs text-muted-foreground">
           {state === undefined ? "0 loaded" : `${state.items.length} loaded`}
         </span>
@@ -90,9 +69,6 @@ function KnowledgeItemCard(props: {
         <div className="min-w-0">
           <div className="truncate text-xs font-semibold text-foreground">
             {props.item.toolName ?? props.item.id}
-          </div>
-          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {itemKindLabel(props.item.kind)}
           </div>
         </div>
         {props.item.parameterKeys === undefined || props.item.parameterKeys.length === 0 ? null : (
@@ -150,9 +126,6 @@ function DynamicToolCard(props: {
           <h3 className="m-0 truncate text-base font-semibold text-foreground">
             {definition.name ?? props.item.toolName ?? props.item.id}
           </h3>
-          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Dynamic tool
-          </div>
         </div>
         <Badge>{parameters.length} params</Badge>
       </div>

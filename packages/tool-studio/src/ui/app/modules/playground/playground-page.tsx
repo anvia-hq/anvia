@@ -1,4 +1,10 @@
-import { ArrowUp02Icon, AttachmentIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArchiveIcon,
+  ArrowUp02Icon,
+  AttachmentIcon,
+  Cancel01Icon,
+  ChatIcon,
+} from "@hugeicons/core-free-icons";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -11,6 +17,7 @@ import type {
   StudioConfig,
   StudioModelSummary,
   StudioSessionLogEntry,
+  StudioSessionSummary,
   StudioTraceSummary,
 } from "../../../../types";
 import {
@@ -27,9 +34,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { StudioPageShell, StudioSurface } from "../../components/ui/studio";
+import { StudioPageShell } from "../../components/ui/studio";
 import { Textarea } from "../../components/ui/textarea";
-import { SessionLogsPanel } from "../session-logs/session-logs-panel";
+import { cn } from "../../lib/utils";
 import type { RunState, TranscriptEntry } from "../shared/types";
 import { assistantResponseMetricsByEntryId } from "./response-metrics";
 
@@ -41,6 +48,7 @@ const TranscriptItem = lazy(() =>
 
 export function PlaygroundPage(props: {
   agents: StudioConfig["agents"];
+  allSessions: StudioSessionSummary[];
   answeringQuestions: Set<string>;
   attachments: PromptAttachment[];
   decidingApprovals: Set<string>;
@@ -54,7 +62,6 @@ export function PlaygroundPage(props: {
   selectedAgentQuickPrompts: string[];
   selectedModelRef: string;
   selectedSessionId: string;
-  sessionLogLoadState: "idle" | "loading";
   sessionLogs: StudioSessionLogEntry[];
   sessionTraceSummaries: StudioTraceSummary[];
   attachmentInputRef: RefObject<HTMLInputElement | null>;
@@ -62,6 +69,8 @@ export function PlaygroundPage(props: {
   transcriptScrollerRef: RefObject<HTMLElement | null>;
   onAddPromptAttachments: (event: ChangeEvent<HTMLInputElement>) => void;
   onApprovalDecision: (approvalId: string, approved: boolean) => void;
+  onDeleteSession: (session: StudioSessionSummary) => void;
+  onLoadSession: (sessionId: string) => void;
   onOpenTrace: (traceId: string) => void;
   onPromptChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -87,8 +96,8 @@ export function PlaygroundPage(props: {
 
   return (
     <StudioPageShell className="grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1">
-      <div className="grid min-h-0 min-w-0 pb-6 pr-6">
-        <StudioSurface className="grid h-full grid-rows-[minmax(0,1fr)_auto] p-2">
+      <div className="grid min-h-0 min-w-0">
+        <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
           <section
             className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]"
             ref={props.transcriptScrollerRef}
@@ -262,13 +271,84 @@ export function PlaygroundPage(props: {
               </div>
             </div>
           </form>
-        </StudioSurface>
+        </div>
       </div>
-      <SessionLogsPanel
-        logs={props.sessionLogs}
+      <PlaygroundSessionsPanel
+        sessions={props.allSessions}
         selectedSessionId={props.selectedSessionId}
-        loading={props.sessionLogLoadState === "loading"}
+        runState={props.runState}
+        onDeleteSession={props.onDeleteSession}
+        onLoadSession={props.onLoadSession}
       />
     </StudioPageShell>
+  );
+}
+
+function PlaygroundSessionsPanel(props: {
+  sessions: StudioSessionSummary[];
+  selectedSessionId: string;
+  runState: RunState;
+  onDeleteSession: (session: StudioSessionSummary) => void;
+  onLoadSession: (sessionId: string) => void;
+}) {
+  return (
+    <aside
+      className="grid h-full min-h-0 min-w-0 max-h-full overflow-hidden border-l border-sidebar-border bg-sidebar text-sidebar-foreground max-xl:hidden"
+      aria-label="Sessions"
+    >
+      <nav
+        className="grid min-h-0 content-start gap-0.5 overflow-auto px-3 py-3"
+        aria-label="Sessions"
+      >
+        {props.sessions.map((session) => (
+          <PlaygroundSessionRow
+            session={session}
+            active={session.id === props.selectedSessionId}
+            disabled={props.runState === "running"}
+            onDeleteSession={props.onDeleteSession}
+            onLoadSession={props.onLoadSession}
+            key={session.id}
+          />
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+function PlaygroundSessionRow(props: {
+  session: StudioSessionSummary;
+  active: boolean;
+  disabled: boolean;
+  onDeleteSession: (session: StudioSessionSummary) => void;
+  onLoadSession: (sessionId: string) => void;
+}) {
+  const title = props.session.title ?? "Untitled chat";
+  return (
+    <div className="group relative min-w-0">
+      <Button
+        className={cn(
+          "studio-sidebar-nav-button h-9 min-h-9 w-full justify-start gap-3 rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-medium text-sidebar-foreground/62 shadow-none transition duration-200 hover:text-sidebar-foreground active:translate-y-px [&_svg]:h-[17px] [&_svg]:w-[17px]",
+          props.active && "studio-sidebar-nav-button-active text-sidebar-accent-foreground",
+        )}
+        type="button"
+        variant="ghost"
+        disabled={props.disabled}
+        onClick={() => props.onLoadSession(props.session.id)}
+      >
+        <StudioIcon icon={ChatIcon} aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+      </Button>
+      <Button
+        aria-label={`Delete ${title}`}
+        className="absolute right-1 top-1/2 hidden h-7 min-h-7 w-7 -translate-y-1/2 rounded-lg border-0 bg-transparent p-0 text-muted-foreground opacity-70 shadow-none hover:bg-sidebar-accent hover:text-destructive hover:opacity-100 group-hover:inline-flex group-focus-within:inline-flex [&_svg]:h-4 [&_svg]:w-4"
+        size="icon"
+        type="button"
+        variant="ghost"
+        disabled={props.disabled}
+        onClick={() => props.onDeleteSession(props.session)}
+      >
+        <StudioIcon icon={ArchiveIcon} aria-hidden="true" />
+      </Button>
+    </div>
   );
 }

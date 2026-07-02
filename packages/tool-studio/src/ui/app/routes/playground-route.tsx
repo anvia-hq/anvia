@@ -37,6 +37,7 @@ export function PlaygroundRoute() {
   return (
     <PlaygroundPage
       agents={studio.agents}
+      allSessions={studio.sessions.allSessions}
       answeringQuestions={studio.answeringQuestions}
       attachments={studio.attachments}
       decidingApprovals={studio.decidingApprovals}
@@ -50,7 +51,6 @@ export function PlaygroundRoute() {
       selectedAgentQuickPrompts={studio.selectedAgentQuickPrompts}
       selectedModelRef={studio.selectedModelRef}
       selectedSessionId={studio.sessions.selectedSessionId}
-      sessionLogLoadState={studio.sessions.sessionLogLoadState}
       sessionLogs={studio.sessions.sessionLogs}
       sessionTraceSummaries={studio.sessionTraceSummaries}
       attachmentInputRef={studio.attachmentInputRef}
@@ -58,6 +58,8 @@ export function PlaygroundRoute() {
       transcriptScrollerRef={studio.transcriptScrollerRef}
       onAddPromptAttachments={studio.addPromptAttachments}
       onApprovalDecision={studio.decideToolApproval}
+      onDeleteSession={studio.setDeleteCandidate}
+      onLoadSession={(sessionId) => void studio.sessions.loadSession(sessionId)}
       onOpenTrace={studio.traces.selectTrace}
       onPromptChange={studio.updatePrompt}
       onPromptKeyDown={studio.handlePromptKeyDown}

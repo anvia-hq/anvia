@@ -1,12 +1,16 @@
 import {
   Activity01Icon,
+  BookOpenTextIcon,
   ChatIcon,
   DatabaseIcon,
+  DatabaseLightningIcon,
   GaugeIcon,
   ListViewIcon,
   Plug01Icon,
   Robot01Icon,
+  SearchList01Icon,
   Shield01Icon,
+  ToolsIcon,
   WorkflowSquare01Icon,
   Wrench01Icon,
 } from "@hugeicons/core-free-icons";
@@ -43,12 +47,16 @@ export function NavButton(props: {
 type IconName =
   | "activity"
   | "bot"
+  | "book-open-text"
   | "database"
+  | "database-lightning"
   | "gauge"
   | "list"
   | "message"
   | "plug"
+  | "search-list"
   | "shield"
+  | "tools"
   | "wrench"
   | "workflow";
 
@@ -58,8 +66,12 @@ function navIcon(name: IconName): IconSvgElement {
       return Activity01Icon;
     case "bot":
       return Robot01Icon;
+    case "book-open-text":
+      return BookOpenTextIcon;
     case "database":
       return DatabaseIcon;
+    case "database-lightning":
+      return DatabaseLightningIcon;
     case "gauge":
       return GaugeIcon;
     case "list":
@@ -68,8 +80,12 @@ function navIcon(name: IconName): IconSvgElement {
       return ChatIcon;
     case "plug":
       return Plug01Icon;
+    case "search-list":
+      return SearchList01Icon;
     case "shield":
       return Shield01Icon;
+    case "tools":
+      return ToolsIcon;
     case "wrench":
       return Wrench01Icon;
     case "workflow":

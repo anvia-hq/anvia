@@ -127,7 +127,6 @@ export function KnowledgeContainer(props: {
   enabled: boolean;
   onError: (message: string) => void;
   onOpenTrace: (traceId: string) => void;
-  onSelectTab: (tab: KnowledgeTab) => void;
 }) {
   const [knowledge, setKnowledge] = useState<StudioKnowledgeSummary | undefined>();
   const [knowledgeLoadState, setKnowledgeLoadState] = useState<"idle" | "loading">("idle");
@@ -166,7 +165,6 @@ export function KnowledgeContainer(props: {
       loading={knowledgeLoadState === "loading"}
       onOpenTrace={props.onOpenTrace}
       onRefresh={() => void loadKnowledge()}
-      onSelectTab={props.onSelectTab}
     />
   );
 }

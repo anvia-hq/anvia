@@ -32,7 +32,7 @@ export function McpsPage(props: {
       className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
       aria-label="MCPs"
     >
-      <header className="bg-background/70 pb-5 pl-0 pr-6 pt-0 backdrop-blur">
+      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
             <div className=" text-xs font-semibold uppercase tracking-[0.24em] text-foreground">
@@ -67,7 +67,7 @@ export function McpsPage(props: {
         </div>
       </header>
 
-      <div className="min-h-0 overflow-auto pb-6 pl-0 pr-6">
+      <div className="min-h-0 overflow-auto pb-6 pl-4 pr-6">
         <div className="grid w-full gap-5">
           {!props.enabled ? (
             <EmptyState

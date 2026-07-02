@@ -1,5 +1,12 @@
 # langfuse-ops
 
+## 0.1.11
+
+### Patch Changes
+
+- Updated dependencies [7326e6a]
+  - @anvia/langfuse@0.3.4
+
 ## 0.1.10
 
 ### Patch Changes

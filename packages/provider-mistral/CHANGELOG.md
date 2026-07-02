@@ -1,5 +1,11 @@
 # @anvia/mistral
 
+## 0.3.3
+
+### Patch Changes
+
+- 7326e6a: Update upstream runtime dependencies for provider, vector store, observability, and Studio packages.
+
 ## 0.3.2
 
 ### Patch Changes

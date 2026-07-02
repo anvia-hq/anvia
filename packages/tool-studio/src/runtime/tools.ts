@@ -7,7 +7,7 @@ import type {
 } from "../types";
 import { errorResponse } from "./http";
 import { serializeUnknown, toJsonValue } from "./json";
-import { agentToolItems, approvalMetadata } from "./tool-metadata";
+import { agentToolItems, approvalMetadata, mcpServerName } from "./tool-metadata";
 import { isJsonObject, isJsonValue } from "./type-guards";
 
 export function registerToolRoutes(
@@ -123,12 +123,14 @@ export async function agentToolMetadata(agent: StudioAgent): Promise<StudioAgent
     }
     seen.add(key);
     const definition = await tool.definition("");
+    const serverName = mcpServerName(tool);
     metadata.push({
       agentId: agent.id,
       name: definition.name,
       description: definition.description,
       parameters: definition.parameters,
       source,
+      ...(serverName === undefined ? {} : { mcpServerName: serverName }),
       approval: approvalMetadata(tool),
     });
   }

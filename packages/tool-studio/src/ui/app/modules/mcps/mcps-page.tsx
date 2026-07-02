@@ -1,10 +1,14 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioAgentMcpServerMetadata,
   StudioAgentMcpsSummary,
   StudioAgentMcpToolMetadata,
+  StudioAgentToolMetadata,
   StudioConfig,
+  StudioToolRunResponse,
 } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import {
   Select,
   SelectContent,
@@ -12,7 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { JsonSyntax } from "../shared/renderers";
+import {
+  formatJson,
+  SchemaBlock,
+  schemaPropertyCount,
+  sourceBadgeClass,
+  ToolRunner,
+} from "../tools/tool-runner";
 
 export function McpsPage(props: {
   agents: StudioConfig["agents"];
@@ -26,6 +36,79 @@ export function McpsPage(props: {
     props.agents.find((agent) => agent.id === props.selectedAgentId) ?? props.agents[0];
   const servers = props.summary?.servers ?? [];
   const toolCount = servers.reduce((total, server) => total + server.toolCount, 0);
+  const runnableTools = useMemo(() => mcpRunnableTools(servers), [servers]);
+  const [selectedToolKey, setSelectedToolKey] = useState("");
+  const [argsText, setArgsText] = useState("{}");
+  const [runState, setRunState] = useState<"idle" | "running">("idle");
+  const [runResponse, setRunResponse] = useState<StudioToolRunResponse | undefined>();
+  const [runError, setRunError] = useState("");
+  const selectedTool = useMemo(
+    () => runnableTools.find((tool) => tool.key === selectedToolKey) ?? runnableTools[0],
+    [runnableTools, selectedToolKey],
+  );
+  const lastSelectedToolKeyRef = useRef("");
+
+  useEffect(() => {
+    if (runnableTools.length === 0) {
+      setSelectedToolKey("");
+      return;
+    }
+    if (!runnableTools.some((tool) => tool.key === selectedToolKey)) {
+      setSelectedToolKey(runnableTools[0]?.key ?? "");
+    }
+  }, [runnableTools, selectedToolKey]);
+
+  useEffect(() => {
+    const nextSelectedToolKey = selectedTool?.key ?? "";
+    if (lastSelectedToolKeyRef.current === nextSelectedToolKey) {
+      return;
+    }
+    lastSelectedToolKeyRef.current = nextSelectedToolKey;
+    setArgsText("{}");
+    setRunError("");
+    setRunResponse(undefined);
+  }, [selectedTool]);
+
+  async function runSelectedTool() {
+    if (selectedTool === undefined) {
+      return;
+    }
+    let args: unknown;
+    try {
+      args = JSON.parse(argsText);
+    } catch (parseError) {
+      setRunError(parseError instanceof Error ? parseError.message : String(parseError));
+      setRunResponse(undefined);
+      return;
+    }
+
+    setRunState("running");
+    setRunError("");
+    setRunResponse(undefined);
+    try {
+      const response = await fetch(
+        `/agents/${encodeURIComponent(selectedTool.agentId)}/tools/${encodeURIComponent(
+          selectedTool.name,
+        )}/runs`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ args }),
+        },
+      );
+      const body = (await response.json()) as StudioToolRunResponse;
+      setRunResponse(body);
+      if (!response.ok || body.status === "error") {
+        setRunError(formatJson(body.error ?? body));
+      }
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunState("idle");
+    }
+  }
 
   return (
     <section
@@ -79,7 +162,25 @@ export function McpsPage(props: {
           ) : servers.length === 0 ? (
             <EmptyState title="No MCPs" message="The selected agent has no registered MCP tools." />
           ) : (
-            servers.map((server) => <McpServerSection server={server} key={server.name} />)
+            servers.map((server) => (
+              <McpServerSection
+                selectedToolKey={selectedTool?.key ?? ""}
+                server={server}
+                key={server.name}
+                onSelectTool={setSelectedToolKey}
+              />
+            ))
+          )}
+          {runnableTools.length === 0 ? null : (
+            <ToolRunner
+              argsText={argsText}
+              runError={runError}
+              runResponse={runResponse}
+              runState={runState}
+              selectedTool={selectedTool}
+              onArgsTextChange={setArgsText}
+              onRun={() => void runSelectedTool()}
+            />
           )}
         </div>
       </div>
@@ -87,7 +188,11 @@ export function McpsPage(props: {
   );
 }
 
-function McpServerSection(props: { server: StudioAgentMcpServerMetadata }) {
+function McpServerSection(props: {
+  server: StudioAgentMcpServerMetadata;
+  selectedToolKey: string;
+  onSelectTool: (toolKey: string) => void;
+}) {
   return (
     <section className="overflow-hidden rounded-xl border border-border/80 bg-card/55 p-2 shadow-sm">
       <header className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border border-border/60 bg-muted/20 px-4">
@@ -105,14 +210,26 @@ function McpServerSection(props: { server: StudioAgentMcpServerMetadata }) {
       </header>
       <div className="mt-1 grid gap-1">
         {props.server.tools.map((tool) => (
-          <McpToolRow tool={tool} key={`${tool.source}:${tool.name}`} />
+          <McpToolRow
+            serverName={props.server.name}
+            active={props.selectedToolKey === mcpToolKey(props.server.name, tool)}
+            tool={tool}
+            key={`${tool.source}:${tool.name}`}
+            onSelectTool={props.onSelectTool}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function McpToolRow(props: { tool: StudioAgentMcpToolMetadata }) {
+function McpToolRow(props: {
+  serverName: string;
+  active: boolean;
+  tool: StudioAgentMcpToolMetadata;
+  onSelectTool: (toolKey: string) => void;
+}) {
+  const toolKey = mcpToolKey(props.serverName, props.tool);
   return (
     <article className="grid grid-cols-[minmax(300px,0.75fr)_minmax(0,1fr)] gap-2 rounded-lg border border-transparent bg-background/25 p-2 transition duration-200 hover:border-border/70 hover:bg-background/35 max-lg:grid-cols-1">
       <div className="grid content-start gap-4 rounded-lg bg-card/25 p-3">
@@ -129,29 +246,17 @@ function McpToolRow(props: { tool: StudioAgentMcpToolMetadata }) {
             {schemaPropertyCount(props.tool.parameters)} fields
           </Badge>
         </div>
+        <Button
+          className="h-8 min-h-8 w-fit rounded-md px-3 text-xs"
+          type="button"
+          variant="secondary"
+          onClick={() => props.onSelectTool(toolKey)}
+        >
+          {props.active ? "Selected" : "Use"}
+        </Button>
       </div>
-      <SchemaBlock value={props.tool.parameters} />
+      <SchemaBlock value={props.tool.parameters} title="Parameter schema" />
     </article>
-  );
-}
-
-function SchemaBlock(props: { value: unknown }) {
-  return (
-    <section className="grid min-w-0 content-start overflow-hidden rounded-lg bg-background/45">
-      <div className="flex min-h-9 items-center justify-between gap-3 bg-muted/20 px-4">
-        <span className=" text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Parameter schema
-        </span>
-        <span className=" text-xs text-muted-foreground">{schemaType(props.value)}</span>
-      </div>
-      <div className="min-w-0 overflow-x-auto">
-        <pre className="m-0 max-h-80 min-w-max p-4 text-xs leading-5 text-foreground">
-          <code>
-            <JsonSyntax text={formatSchema(props.value)} />
-          </code>
-        </pre>
-      </div>
-    </section>
   );
 }
 
@@ -166,34 +271,26 @@ function EmptyState(props: { title: string; message: string }) {
   );
 }
 
-function sourceBadgeClass(source: "static" | "dynamic"): string {
-  return source === "dynamic"
-    ? "border-border/80 bg-muted/45 text-foreground"
-    : "border-border/80 bg-muted/55 text-muted-foreground";
+type McpRunnableTool = StudioAgentToolMetadata & {
+  key: string;
+  mcpServerName: string;
+};
+
+function mcpRunnableTools(servers: StudioAgentMcpServerMetadata[]): McpRunnableTool[] {
+  return servers.flatMap((server) =>
+    server.tools.map((tool) => ({
+      key: mcpToolKey(server.name, tool),
+      agentId: server.agentId,
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      source: tool.source,
+      mcpServerName: server.name,
+      approval: tool.approval,
+    })),
+  );
 }
 
-function schemaType(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return "value";
-  }
-  const type = (value as { type?: unknown }).type;
-  return typeof type === "string" ? type : "object";
-}
-
-function schemaPropertyCount(value: unknown): number {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return 0;
-  }
-  const properties = (value as { properties?: unknown }).properties;
-  return typeof properties === "object" && properties !== null && !Array.isArray(properties)
-    ? Object.keys(properties).length
-    : 0;
-}
-
-function formatSchema(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
+function mcpToolKey(serverName: string, tool: StudioAgentMcpToolMetadata): string {
+  return `${serverName}:${tool.source}:${tool.name}`;
 }

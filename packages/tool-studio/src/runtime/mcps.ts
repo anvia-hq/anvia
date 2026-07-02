@@ -5,7 +5,7 @@ import type {
   StudioAgentMcpToolMetadata,
 } from "../types";
 import { errorResponse } from "./http";
-import { agentToolItems, mcpServerName } from "./tool-metadata";
+import { agentToolItems, approvalMetadata, mcpServerName } from "./tool-metadata";
 
 export function registerMcpRoutes(
   app: Hono,
@@ -52,6 +52,7 @@ export async function agentMcpMetadata(
       description: definition.description,
       parameters: definition.parameters,
       source,
+      approval: approvalMetadata(tool),
     });
     servers.set(serverName, tools);
   }

@@ -412,6 +412,17 @@ type AgentRunRequest = {
   trace?: AgentTraceOptions;
 };
 
+type AgentRunUIRequest = {
+  messages: Message[];
+  sessionId?: string;
+  model?: StudioModelRef;
+  stream?: boolean;
+  maxTurns?: number;
+  toolConcurrency?: number;
+  metadata?: JsonObject;
+  trace?: AgentTraceOptions;
+};
+
 type AgentRunResponse = PromptResponse;
 
 type AgentRunStreamEvent =

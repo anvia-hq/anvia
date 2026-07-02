@@ -6,6 +6,7 @@ export type DocsSection = DocsEntry["data"]["section"];
 export const docsSections: Array<{ id: DocsSection; label: string }> = [
   { id: "basics", label: "Basics" },
   { id: "advanced", label: "Advanced" },
+  { id: "studio", label: "Studio" },
   { id: "providers", label: "Providers" },
   { id: "examples", label: "Examples" },
 ];
@@ -27,6 +28,7 @@ const sidebarGroupOrder: Partial<Record<DocsSection, string[]>> = {
     "LLM Gateway",
     "Operational patterns",
   ],
+  studio: ["Start Here", "Agent Runtime", "Inspection", "Workflows", "Operations"],
   examples: [
     "Start Here",
     "Foundation Patterns",

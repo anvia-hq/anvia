@@ -21,6 +21,7 @@ export function StudioSidebar(props: {
   mcpsEnabled: boolean;
   memoryEnabled: boolean;
   pipelinesEnabled: boolean;
+  sessionsEnabled: boolean;
   status: string;
   statusEnabled: boolean;
   toolsEnabled: boolean;
@@ -43,30 +44,35 @@ export function StudioSidebar(props: {
         </div>
         <NavButton
           active={props.activePage === "playground"}
+          disabled={!props.hasAgents}
           icon="message"
           label="Chat"
           onClick={() => props.onNavigate("playground")}
         />
         <NavButton
           active={props.activePage === "pipelines"}
+          disabled={!props.pipelinesEnabled}
           icon="workflow"
           label="Pipelines"
           onClick={() => props.onNavigate("pipelines")}
         />
         <NavButton
           active={props.activePage === "evals"}
+          disabled={!props.evalsEnabled}
           icon="gauge"
           label="Evals"
           onClick={() => props.onNavigate("evals")}
         />
         <NavButton
           active={props.activePage === "sessions"}
+          disabled={!props.sessionsEnabled}
           icon="list"
           label="Sessions"
           onClick={() => props.onNavigate("sessions")}
         />
         <NavButton
           active={props.activePage === "tracing"}
+          disabled={!props.tracesEnabled}
           icon="activity"
           label="Traces"
           onClick={() => props.onNavigate("tracing")}
@@ -84,12 +90,14 @@ export function StudioSidebar(props: {
         />
         <NavButton
           active={props.activePage === "tools"}
+          disabled={!props.toolsEnabled}
           icon="wrench"
           label="Tools"
           onClick={() => props.onNavigate("tools")}
         />
         <NavButton
           active={props.activePage === "mcps"}
+          disabled={!props.mcpsEnabled}
           icon="plug"
           label="MCPs"
           onClick={() => props.onNavigate("mcps")}
@@ -97,6 +105,7 @@ export function StudioSidebar(props: {
         {knowledgeTabs.map((tab) => (
           <NavButton
             active={props.activePage === "knowledge" && props.knowledgeTab === tab.id}
+            disabled={!props.knowledgeEnabled}
             icon={knowledgeNavIcons[tab.id]}
             key={tab.id}
             label={tab.label}
@@ -105,12 +114,14 @@ export function StudioSidebar(props: {
         ))}
         <NavButton
           active={props.activePage === "memory"}
+          disabled={!props.memoryEnabled}
           icon="database"
           label="Memory"
           onClick={() => props.onNavigate("memory")}
         />
         <NavButton
           active={props.activePage === "status"}
+          disabled={!props.statusEnabled}
           icon="gauge"
           label="Status"
           onClick={() => props.onNavigate("status")}

@@ -3,6 +3,7 @@ import type { StudioAgentToolMetadata, StudioToolRunResponse } from "../../../..
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { parseToolDisplayValue } from "../shared/format";
+import { isRecord } from "../shared/object";
 import { JsonSyntax } from "../shared/renderers";
 import { SchemaArgumentEditor } from "./schema-argument-editor";
 
@@ -197,6 +198,31 @@ export function formatJson(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+export function parseStudioToolRunResponse(value: unknown): StudioToolRunResponse | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (typeof value.agentId !== "string" || value.agentId.length === 0) {
+    return undefined;
+  }
+  if (typeof value.toolName !== "string" || value.toolName.length === 0) {
+    return undefined;
+  }
+  if (value.status !== "success" && value.status !== "error") {
+    return undefined;
+  }
+  if (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs)) {
+    return undefined;
+  }
+  if (typeof value.startedAt !== "string" || typeof value.endedAt !== "string") {
+    return undefined;
+  }
+  if (!Array.isArray(value.events)) {
+    return undefined;
+  }
+  return value as StudioToolRunResponse;
 }
 
 function displayToolRunValue(value: unknown): unknown {

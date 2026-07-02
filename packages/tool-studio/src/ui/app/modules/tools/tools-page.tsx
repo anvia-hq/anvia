@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioAgentToolMetadata,
   StudioAgentToolsSummary,
@@ -18,6 +18,7 @@ import {
   approvalBadgeClass,
   formatJson,
   originBadgeClass,
+  parseStudioToolRunResponse,
   schemaPropertyCount,
   schemaType,
   ToolMetaPill,
@@ -45,6 +46,12 @@ export function ToolsPage(props: {
     () => tools.find((tool) => tool.name === selectedToolName) ?? tools[0],
     [selectedToolName, tools],
   );
+  const selectedToolRunKey =
+    selectedAgent === undefined || selectedTool === undefined
+      ? ""
+      : `${selectedAgent.id}:${selectedTool.name}`;
+  const selectedToolRunKeyRef = useRef(selectedToolRunKey);
+  const runRequestIdRef = useRef(0);
   const toolTotals = summarizeTools(tools);
 
   useEffect(() => {
@@ -56,6 +63,17 @@ export function ToolsPage(props: {
       setSelectedToolName(tools[0]?.name ?? "");
     }
   }, [selectedToolName, tools]);
+
+  useEffect(() => {
+    if (selectedToolRunKeyRef.current === selectedToolRunKey) {
+      return;
+    }
+    selectedToolRunKeyRef.current = selectedToolRunKey;
+    runRequestIdRef.current += 1;
+    setRunState("idle");
+    setRunError("");
+    setRunResponse(undefined);
+  }, [selectedToolRunKey]);
 
   async function runSelectedTool() {
     if (selectedAgent === undefined || selectedTool === undefined) {
@@ -73,6 +91,11 @@ export function ToolsPage(props: {
     setRunState("running");
     setRunError("");
     setRunResponse(undefined);
+    const runToolKey = selectedToolRunKey;
+    const requestId = runRequestIdRef.current + 1;
+    runRequestIdRef.current = requestId;
+    const isCurrentRun = () =>
+      runRequestIdRef.current === requestId && selectedToolRunKeyRef.current === runToolKey;
     try {
       const response = await fetch(
         `/agents/${encodeURIComponent(selectedAgent.id)}/tools/${encodeURIComponent(
@@ -86,15 +109,27 @@ export function ToolsPage(props: {
           body: JSON.stringify({ args }),
         },
       );
-      const body = (await response.json()) as StudioToolRunResponse;
+      const rawBody = await response.json();
+      if (!isCurrentRun()) {
+        return;
+      }
+      const body = parseStudioToolRunResponse(rawBody);
+      if (body === undefined) {
+        setRunError(`Unexpected Studio tool run response: ${formatJson(rawBody)}`);
+        return;
+      }
       setRunResponse(body);
       if (!response.ok || body.status === "error") {
         setRunError(formatJson(body.error ?? body));
       }
     } catch (error) {
-      setRunError(error instanceof Error ? error.message : String(error));
+      if (isCurrentRun()) {
+        setRunError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      setRunState("idle");
+      if (isCurrentRun()) {
+        setRunState("idle");
+      }
     }
   }
 

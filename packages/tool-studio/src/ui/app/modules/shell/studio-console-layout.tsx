@@ -17,6 +17,7 @@ export function StudioConsoleLayout() {
         mcpsEnabled={studio.mcpsEnabled}
         memoryEnabled={studio.memoryEnabled}
         pipelinesEnabled={studio.pipelinesEnabled}
+        sessionsEnabled={studio.sessionsEnabled}
         status={studio.status}
         statusEnabled={studio.statusEnabled}
         toolsEnabled={studio.toolsEnabled}

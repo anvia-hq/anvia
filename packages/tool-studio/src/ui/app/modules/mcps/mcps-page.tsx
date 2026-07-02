@@ -18,6 +18,7 @@ import {
 } from "../../components/ui/select";
 import {
   formatJson,
+  parseStudioToolRunResponse,
   SchemaBlock,
   schemaPropertyCount,
   sourceBadgeClass,
@@ -47,6 +48,7 @@ export function McpsPage(props: {
     [runnableTools, selectedToolKey],
   );
   const lastSelectedToolKeyRef = useRef("");
+  const runRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (runnableTools.length === 0) {
@@ -64,7 +66,9 @@ export function McpsPage(props: {
       return;
     }
     lastSelectedToolKeyRef.current = nextSelectedToolKey;
+    runRequestIdRef.current += 1;
     setArgsText("{}");
+    setRunState("idle");
     setRunError("");
     setRunResponse(undefined);
   }, [selectedTool]);
@@ -85,6 +89,11 @@ export function McpsPage(props: {
     setRunState("running");
     setRunError("");
     setRunResponse(undefined);
+    const runToolKey = selectedTool.key;
+    const requestId = runRequestIdRef.current + 1;
+    runRequestIdRef.current = requestId;
+    const isCurrentRun = () =>
+      runRequestIdRef.current === requestId && lastSelectedToolKeyRef.current === runToolKey;
     try {
       const response = await fetch(
         `/agents/${encodeURIComponent(selectedTool.agentId)}/tools/${encodeURIComponent(
@@ -98,15 +107,27 @@ export function McpsPage(props: {
           body: JSON.stringify({ args }),
         },
       );
-      const body = (await response.json()) as StudioToolRunResponse;
+      const rawBody = await response.json();
+      if (!isCurrentRun()) {
+        return;
+      }
+      const body = parseStudioToolRunResponse(rawBody);
+      if (body === undefined) {
+        setRunError(`Unexpected Studio tool run response: ${formatJson(rawBody)}`);
+        return;
+      }
       setRunResponse(body);
       if (!response.ok || body.status === "error") {
         setRunError(formatJson(body.error ?? body));
       }
     } catch (error) {
-      setRunError(error instanceof Error ? error.message : String(error));
+      if (isCurrentRun()) {
+        setRunError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      setRunState("idle");
+      if (isCurrentRun()) {
+        setRunState("idle");
+      }
     }
   }
 

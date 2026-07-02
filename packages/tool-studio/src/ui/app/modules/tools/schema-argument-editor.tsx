@@ -400,18 +400,13 @@ function ScalarFieldControl(props: {
 
   if (type === "number" || type === "integer") {
     return (
-      <Input
-        className="h-9 rounded-md border-border bg-background/45 text-sm"
+      <NumberFieldControl
         disabled={props.disabled}
-        inputMode={type === "integer" ? "numeric" : "decimal"}
-        step={type === "integer" ? 1 : "any"}
-        type="number"
-        value={typeof props.value === "number" ? String(props.value) : ""}
-        placeholder={schemaDefaultPlaceholder(props.schema)}
-        onChange={(event) => {
-          const nextValue = event.target.value.trim();
-          props.onChange(props.path, nextValue.length === 0 ? undefined : Number(nextValue));
-        }}
+        path={props.path}
+        schema={props.schema}
+        type={type}
+        value={props.value}
+        onChange={props.onChange}
       />
     );
   }
@@ -441,6 +436,53 @@ function ScalarFieldControl(props: {
       path={props.path}
       value={props.value}
       onChange={props.onChange}
+    />
+  );
+}
+
+function NumberFieldControl(props: {
+  schema: Record<string, unknown>;
+  type: "number" | "integer";
+  path: JsonPath;
+  value: unknown;
+  disabled: boolean;
+  onChange: (path: JsonPath, value: unknown | undefined) => void;
+}) {
+  const externalValue = typeof props.value === "number" ? String(props.value) : "";
+  const [draft, setDraft] = useState(externalValue);
+
+  useEffect(() => {
+    setDraft(externalValue);
+  }, [externalValue]);
+
+  return (
+    <Input
+      className="h-9 rounded-md border-border bg-background/45 text-sm"
+      disabled={props.disabled}
+      inputMode={props.type === "integer" ? "numeric" : "decimal"}
+      type="text"
+      value={draft}
+      placeholder={schemaDefaultPlaceholder(props.schema)}
+      onBlur={() => {
+        if (draft.trim().length === 0) {
+          setDraft("");
+          return;
+        }
+        const nextValue = parseNumberDraft(draft, props.type);
+        setDraft(nextValue.ok ? String(nextValue.value) : externalValue);
+      }}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        if (nextDraft.trim().length === 0) {
+          props.onChange(props.path, undefined);
+          return;
+        }
+        const nextValue = parseNumberDraft(nextDraft, props.type);
+        if (nextValue.ok) {
+          props.onChange(props.path, nextValue.value);
+        }
+      }}
     />
   );
 }
@@ -644,11 +686,43 @@ function setValueAtPath(root: unknown, path: JsonPath, value: unknown | undefine
 }
 
 function parseJson(value: string): ParseResult {
+  if (value.trim().length === 0) {
+    return { ok: true, value: undefined };
+  }
   try {
     return { ok: true, value: JSON.parse(value) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+type NumberParseResult = { ok: true; value: number } | { ok: false };
+
+function parseNumberDraft(value: string, type: "number" | "integer"): NumberParseResult {
+  const normalized = value.trim();
+  if (normalized.length === 0 || isIncompleteNumberDraft(normalized)) {
+    return { ok: false };
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return { ok: false };
+  }
+  if (type === "integer" && !Number.isInteger(parsed)) {
+    return { ok: false };
+  }
+  return { ok: true, value: parsed };
+}
+
+function isIncompleteNumberDraft(value: string): boolean {
+  return (
+    value === "-" ||
+    value === "+" ||
+    value === "." ||
+    value === "-." ||
+    value === "+." ||
+    /^[+-]?\d+\.$/.test(value) ||
+    /[eE][+-]?$/.test(value)
+  );
 }
 
 function fieldJsonValue(value: unknown): string {

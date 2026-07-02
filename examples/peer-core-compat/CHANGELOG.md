@@ -1,5 +1,14 @@
 # peer-core-compat
 
+## 0.1.18
+
+### Patch Changes
+
+- Updated dependencies [f6860b9]
+- Updated dependencies [fff056f]
+- Updated dependencies [edc4aeb]
+  - @anvia/studio@0.7.16
+
 ## 0.1.17
 
 ### Patch Changes

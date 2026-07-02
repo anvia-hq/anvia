@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.7.17
+
+### Patch Changes
+
+- 7326e6a: Update upstream runtime dependencies for provider, vector store, observability, and Studio packages.
+
 ## 0.7.16
 
 ### Patch Changes

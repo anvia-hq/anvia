@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "chromadb": "^3.4.3"
+    "chromadb": "^3.5.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

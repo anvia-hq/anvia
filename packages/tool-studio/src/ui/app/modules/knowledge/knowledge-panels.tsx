@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import type { StudioKnowledgeItem, StudioKnowledgeSummary } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -11,6 +12,12 @@ export function ItemBrowser(props: {
   onLoadMore: () => void;
 }) {
   const state = props.state;
+  if (props.source?.source.kind === "dynamic_tools") {
+    return (
+      <DynamicToolsBrowser source={props.source} state={state} onLoadMore={props.onLoadMore} />
+    );
+  }
+
   return (
     <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <div className="min-h-0 overflow-auto">
@@ -60,7 +67,11 @@ function KnowledgeItemCard(props: {
   source: KnowledgeSourceRef | undefined;
 }) {
   if (props.item.kind === "dynamic_tool") {
-    return <DynamicToolCard item={props.item} source={props.source} />;
+    return (
+      <article className="rounded-xl border border-border/80 bg-background/55 p-4">
+        <DynamicToolInspector item={props.item} source={props.source} />
+      </article>
+    );
   }
 
   return (
@@ -109,41 +120,183 @@ type DynamicToolParameter = {
   description: string | undefined;
 };
 
-function DynamicToolCard(props: {
+function DynamicToolsBrowser(props: {
+  source: KnowledgeSourceRef;
+  state: ItemState | undefined;
+  onLoadMore: () => void;
+}) {
+  const tools = useMemo(
+    () => (props.state?.items ?? []).filter(isDynamicToolItem),
+    [props.state?.items],
+  );
+  const [selectedId, setSelectedId] = useState("");
+  const selectedTool = tools.find((item) => item.id === selectedId) ?? tools[0];
+  const stats = useMemo(() => dynamicToolStats(tools), [tools]);
+
+  useEffect(() => {
+    if (tools.length === 0) {
+      setSelectedId("");
+      return;
+    }
+    if (!tools.some((item) => item.id === selectedId)) {
+      setSelectedId(tools[0]?.id ?? "");
+    }
+  }, [selectedId, tools]);
+
+  return (
+    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+      <header className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border/80 py-3 max-md:grid-cols-1">
+        <div className="grid min-w-0 gap-1">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Runtime tool index
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span className="font-semibold text-foreground">
+              {props.source.source.label ?? sourceLabel(props.source.source.kind)}
+            </span>
+            <span className="text-muted-foreground">{props.source.agentName}</span>
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
+          <KnowledgeMetric label="tools" value={tools.length} />
+          <KnowledgeMetric label="params" value={stats.parameterCount} />
+          <KnowledgeMetric label="required" value={stats.requiredCount} />
+        </div>
+      </header>
+
+      <div className="grid min-h-0 grid-cols-[minmax(270px,0.34fr)_minmax(0,1fr)] overflow-hidden max-lg:grid-cols-1 max-lg:grid-rows-[minmax(220px,0.44fr)_minmax(0,1fr)]">
+        <aside className="min-h-0 overflow-auto border-r border-border/80 pr-3 max-lg:border-b max-lg:border-r-0 max-lg:pr-0">
+          <div className="grid gap-1 py-3 pr-3 max-lg:pr-0">
+            {props.source === undefined ? <MutedRow text="No knowledge source selected" /> : null}
+            {props.state?.loading === true && tools.length === 0 ? (
+              <MutedRow text="Loading dynamic tools" />
+            ) : null}
+            {props.state?.error === undefined ? null : <MutedRow text={props.state.error} />}
+            {props.state?.inspectable === false ? (
+              <MutedRow
+                text={props.state.message ?? "This source does not expose browseable tools."}
+              />
+            ) : null}
+            {props.state?.inspectable !== false &&
+            props.state?.loading === false &&
+            tools.length === 0 ? (
+              <MutedRow text="No dynamic tools in this source" />
+            ) : null}
+            {tools.map((item) => (
+              <DynamicToolListItem
+                active={selectedTool?.id === item.id}
+                item={item}
+                key={item.id}
+                onSelect={() => setSelectedId(item.id)}
+              />
+            ))}
+          </div>
+        </aside>
+
+        <div className="min-h-0 overflow-auto py-4 pl-5 max-lg:pl-0">
+          {selectedTool === undefined ? (
+            <DynamicToolEmptyPanel />
+          ) : (
+            <DynamicToolInspector item={selectedTool} source={props.source} />
+          )}
+        </div>
+      </div>
+
+      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border/80 bg-background/30 py-2">
+        <span className="text-xs text-muted-foreground">
+          {props.state === undefined ? "0 loaded" : `${props.state.items.length} loaded`}
+        </span>
+        <Button
+          className="h-8 min-h-8"
+          type="button"
+          variant="secondary"
+          disabled={props.state?.loading === true || props.state?.nextCursor === undefined}
+          onClick={props.onLoadMore}
+        >
+          Load more
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function DynamicToolListItem(props: {
+  item: StudioKnowledgeItem;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const definition = dynamicToolDefinition(props.item);
+  const parameters = dynamicToolParameters(props.item);
+  const requiredCount = parameters.filter((parameter) => parameter.required).length;
+  const toolName = definition.name ?? props.item.toolName ?? props.item.id;
+
+  return (
+    <button
+      className={[
+        "grid min-w-0 gap-2 rounded-lg border border-transparent px-3 py-3 text-left transition duration-200 hover:border-border/80 hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none",
+        props.active ? "border-border/80 bg-muted/35 text-foreground" : "text-muted-foreground",
+      ].join(" ")}
+      type="button"
+      onClick={props.onSelect}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="min-w-0 truncate font-mono text-sm font-semibold text-foreground">
+          {toolName}
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {parameters.length}
+        </span>
+      </div>
+      <p className="m-0 line-clamp-2 text-xs leading-5 text-muted-foreground">
+        {definition.description ?? props.item.description ?? "No description"}
+      </p>
+      <div className="flex min-w-0 flex-wrap gap-2 text-[11px] font-medium text-muted-foreground">
+        <span>{requiredCount} required</span>
+        <span>{parameters.length - requiredCount} optional</span>
+      </div>
+    </button>
+  );
+}
+
+function DynamicToolInspector(props: {
   item: StudioKnowledgeItem;
   source: KnowledgeSourceRef | undefined;
 }) {
   const definition = dynamicToolDefinition(props.item);
   const parameters = dynamicToolParameters(props.item);
   const description = definition.description ?? props.item.description;
-  const hasDescription = description !== undefined && description.length > 0;
-  const hasStructuredBody = hasDescription || parameters.length > 0;
+  const toolName = definition.name ?? props.item.toolName ?? props.item.id;
 
   return (
-    <article className="grid gap-5 rounded-2xl border border-border/80 bg-background/55 p-5">
-      <div className="flex min-w-0 items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="m-0 truncate text-base font-semibold text-foreground">
-            {definition.name ?? props.item.toolName ?? props.item.id}
-          </h3>
+    <article className="grid min-w-0 gap-5">
+      <header className="grid gap-4 border-b border-border/80 pb-5">
+        <div className="flex min-w-0 items-start justify-between gap-4 max-md:grid">
+          <div className="grid min-w-0 gap-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Selected tool
+            </div>
+            <h2 className="m-0 truncate font-mono text-2xl font-semibold leading-none text-foreground">
+              {toolName}
+            </h2>
+          </div>
+          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
+            <Badge>{parameters.length} params</Badge>
+            <Badge>{parameters.filter((parameter) => parameter.required).length} required</Badge>
+          </div>
         </div>
-        <Badge>{parameters.length} params</Badge>
-      </div>
+        {description === undefined || description.length === 0 ? null : (
+          <p className="m-0 max-w-[72ch] text-base leading-7 text-muted-foreground [overflow-wrap:anywhere]">
+            {description}
+          </p>
+        )}
+        <div className="min-w-0 overflow-x-auto border-y border-border/80 bg-muted/15 px-3 py-2">
+          <code className="font-mono text-sm leading-6 text-foreground">
+            {dynamicToolSignature(toolName, parameters)}
+          </code>
+        </div>
+      </header>
 
-      {!hasDescription ? null : (
-        <p className="m-0 max-w-4xl text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
-          {description}
-        </p>
-      )}
-
-      {hasStructuredBody || props.item.text === undefined ? null : (
-        <p className="m-0 whitespace-pre-wrap text-sm leading-6 text-foreground [overflow-wrap:anywhere]">
-          {props.item.text}
-        </p>
-      )}
-
-      <DynamicToolParameters parameters={parameters} />
-
+      <DynamicToolParameterList parameters={parameters} />
       <DynamicToolSourceDetails item={props.item} source={props.source} />
 
       {props.item.document === undefined ? null : (
@@ -157,61 +310,42 @@ function DynamicToolCard(props: {
   );
 }
 
-function DynamicToolParameters(props: { parameters: DynamicToolParameter[] }) {
+function DynamicToolParameterList(props: { parameters: DynamicToolParameter[] }) {
   return (
-    <section className="grid gap-3 border-t border-border/70 pt-4">
+    <section className="grid gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h4 className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <h3 className="m-0 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Parameters
-        </h4>
+        </h3>
         <span className="text-xs font-medium text-muted-foreground">
           {props.parameters.length === 0 ? "No parameters" : `${props.parameters.length} defined`}
         </span>
       </div>
       {props.parameters.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/80 px-4 py-3 text-sm text-muted-foreground">
+        <div className="border-y border-dashed border-border/80 px-3 py-4 text-sm text-muted-foreground">
           This tool does not declare input parameters.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border/80 bg-card/35">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-full border-separate border-spacing-0 text-left">
-              <thead className="bg-muted/20">
-                <tr>
-                  <th className="border-b border-border/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Name
-                  </th>
-                  <th className="border-b border-border/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Type
-                  </th>
-                  <th className="border-b border-border/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Required
-                  </th>
-                  <th className="border-b border-border/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Description
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {props.parameters.map((parameter) => (
-                  <tr key={parameter.name}>
-                    <td className="border-b border-border/70 px-4 py-3 text-sm font-semibold leading-6 text-foreground [overflow-wrap:anywhere]">
-                      {parameter.name}
-                    </td>
-                    <td className="border-b border-border/70 px-4 py-3 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
-                      {parameter.type}
-                    </td>
-                    <td className="border-b border-border/70 px-4 py-3 text-sm leading-6 text-muted-foreground">
-                      {parameter.required ? "Yes" : "No"}
-                    </td>
-                    <td className="border-b border-border/70 px-4 py-3 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
-                      {parameter.description ?? "No description"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="min-w-0 overflow-hidden border-y border-border/80">
+          {props.parameters.map((parameter) => (
+            <div
+              className="grid min-w-0 grid-cols-[minmax(140px,0.24fr)_minmax(96px,0.14fr)_minmax(96px,0.14fr)_minmax(0,1fr)] gap-4 border-b border-border/70 py-3 last:border-b-0 max-md:grid-cols-1 max-md:gap-1"
+              key={parameter.name}
+            >
+              <div className="min-w-0 font-mono text-sm font-semibold text-foreground [overflow-wrap:anywhere]">
+                {parameter.name}
+              </div>
+              <div className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                {parameter.type}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {parameter.required ? "Required" : "Optional"}
+              </div>
+              <div className="text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+                {parameter.description ?? "No description"}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </section>
@@ -241,16 +375,13 @@ function DynamicToolSourceDetails(props: {
   }
 
   return (
-    <section className="grid gap-3 border-t border-border/70 pt-4">
-      <h4 className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <section className="grid gap-3 border-t border-border/80 pt-4">
+      <h3 className="m-0 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         Source
-      </h4>
-      <dl className="grid gap-2 sm:grid-cols-3">
+      </h3>
+      <dl className="grid border-y border-border/80 sm:grid-cols-3 sm:divide-x sm:divide-border/80">
         {details.map((detail) => (
-          <div
-            className="min-w-0 rounded-xl border border-border/70 bg-card/25 p-3"
-            key={detail.label}
-          >
+          <div className="min-w-0 px-3 py-3 first:pl-0 last:pr-0" key={detail.label}>
             <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               {detail.label}
             </dt>
@@ -260,6 +391,19 @@ function DynamicToolSourceDetails(props: {
           </div>
         ))}
       </dl>
+    </section>
+  );
+}
+
+function DynamicToolEmptyPanel() {
+  return (
+    <section className="grid h-full min-h-80 place-items-center border-y border-dashed border-border/80 px-6 text-center">
+      <div className="grid max-w-sm gap-2">
+        <h2 className="m-0 text-base font-semibold text-foreground">No dynamic tool selected</h2>
+        <p className="m-0 text-sm leading-6 text-muted-foreground">
+          Select a tool from the index to inspect its definition and parameters.
+        </p>
+      </div>
     </section>
   );
 }
@@ -315,6 +459,45 @@ function dynamicToolParameters(item: StudioKnowledgeItem): DynamicToolParameter[
       description: typeof property.description === "string" ? property.description : undefined,
     };
   });
+}
+
+function isDynamicToolItem(item: StudioKnowledgeItem): item is StudioKnowledgeItem & {
+  kind: "dynamic_tool";
+} {
+  return item.kind === "dynamic_tool";
+}
+
+function dynamicToolStats(items: StudioKnowledgeItem[]): {
+  parameterCount: number;
+  requiredCount: number;
+} {
+  return items.reduce(
+    (totals, item) => {
+      const parameters = dynamicToolParameters(item);
+      totals.parameterCount += parameters.length;
+      totals.requiredCount += parameters.filter((parameter) => parameter.required).length;
+      return totals;
+    },
+    { parameterCount: 0, requiredCount: 0 },
+  );
+}
+
+function dynamicToolSignature(toolName: string, parameters: DynamicToolParameter[]): string {
+  if (parameters.length === 0) {
+    return `${toolName}()`;
+  }
+  return `${toolName}({ ${parameters
+    .map((parameter) => `${parameter.name}${parameter.required ? "" : "?"}: ${parameter.type}`)
+    .join(", ")} })`;
+}
+
+function KnowledgeMetric(props: { label: string; value: number }) {
+  return (
+    <span className="inline-flex h-8 items-center gap-2 border border-border/70 bg-background/45 px-2.5 text-xs font-medium text-muted-foreground">
+      <span className="font-semibold tabular-nums text-foreground">{props.value}</span>
+      {props.label}
+    </span>
+  );
 }
 
 function schemaTypeLabel(value: unknown): string {

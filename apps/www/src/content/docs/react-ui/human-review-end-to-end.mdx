@@ -1,0 +1,169 @@
+---
+title: Human review end to end
+description: Render tool approvals and questions from human-input events and post decisions back to application routes.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 8
+  label: Human review end to end
+---
+
+Human review is a two-part contract:
+
+- the stream emits `tool_approval_request`, `tool_approval_result`, `tool_question_request`, or
+  `tool_question_result` events
+- the client posts decisions or answers back to application-owned routes
+
+`@anvia/react-ui` renders the review UI. Your application owns the durable approval/question
+runtime, permissions, reviewer identity, and audit log.
+
+## Configure the client
+
+Enable `humanInput` on the chat controller. The default handlers post to:
+
+- `/api/review/approvals/:approvalId/decision`
+- `/api/review/questions/:questionId/answer`
+
+```tsx
+import { useChat } from "@anvia/react";
+import { ChatProvider, Composer, HumanInput, Thread } from "@anvia/react-ui";
+
+export function ReviewedChat() {
+  const chat = useChat({
+    endpoint: "http://localhost:8787/api/chat",
+    humanInput: {
+      endpoint: "http://localhost:8787/api/review",
+    },
+  });
+
+  return (
+    <ChatProvider controller={chat}>
+      <Thread.Root>
+        <Thread.Viewport>
+          <Thread.Messages />
+        </Thread.Viewport>
+
+        <HumanInput.Panel className="review-panel">
+          <HumanInput.Status />
+          <HumanInput.Approvals />
+          <HumanInput.Questions />
+        </HumanInput.Panel>
+
+        <Composer.Root>
+          <Composer.Input />
+          <Composer.Submit />
+        </Composer.Root>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+```
+
+## Approval route shape
+
+Return the updated approval so the hook can update local state.
+
+```ts
+import type { ToolApproval } from "@anvia/react";
+
+export async function POST(request: Request, params: { approvalId: string }) {
+  const reviewer = await requireReviewer(request);
+  const body = (await request.json()) as {
+    approved: boolean;
+    reason?: string;
+  };
+
+  const approval = await approvalRuntime.decide({
+    approvalId: params.approvalId,
+    reviewerId: reviewer.id,
+    approved: body.approved,
+    reason: body.reason,
+  });
+
+  return Response.json(approval satisfies ToolApproval);
+}
+```
+
+## Question route shape
+
+Return the updated question after storing the answers.
+
+```ts
+import type { ToolQuestion, ToolQuestionAnswer } from "@anvia/react";
+
+export async function POST(request: Request, params: { questionId: string }) {
+  const reviewer = await requireReviewer(request);
+  const body = (await request.json()) as {
+    answers: ToolQuestionAnswer[];
+  };
+
+  const question = await questionRuntime.answer({
+    questionId: params.questionId,
+    reviewerId: reviewer.id,
+    answers: body.answers,
+  });
+
+  return Response.json(question satisfies ToolQuestion);
+}
+```
+
+## Custom approval layout
+
+```tsx
+<HumanInput.Approvals className="approvals">
+  {(approval) => (
+    <HumanInput.Approval className="approval-card">
+      <header>
+        <strong>{approval.toolName}</strong>
+        <span>{approval.status}</span>
+      </header>
+      {approval.args !== undefined ? <pre>{approval.args}</pre> : null}
+      <HumanInput.ApprovalReason placeholder="Reason for the audit log..." />
+      <div>
+        <HumanInput.Reject>Reject</HumanInput.Reject>
+        <HumanInput.Approve>Approve</HumanInput.Approve>
+      </div>
+    </HumanInput.Approval>
+  )}
+</HumanInput.Approvals>
+```
+
+## Custom question layout
+
+```tsx
+import { HumanInput, useQuestionPrompt } from "@anvia/react-ui";
+
+function PromptFields() {
+  const { prompt } = useQuestionPrompt();
+
+  return (
+    <div>
+      <p>{prompt.question}</p>
+      {prompt.choices.length > 0 ? (
+        prompt.choices.map((choice) => (
+          <HumanInput.QuestionChoice key={choice.value} value={choice.value}>
+            {choice.label}
+          </HumanInput.QuestionChoice>
+        ))
+      ) : (
+        <HumanInput.QuestionTextAnswer placeholder="Type an answer..." />
+      )}
+    </div>
+  );
+}
+
+<HumanInput.Questions>
+  <HumanInput.Question>
+    <HumanInput.QuestionPrompt>
+      <PromptFields />
+    </HumanInput.QuestionPrompt>
+    <HumanInput.QuestionSubmit>Submit answer</HumanInput.QuestionSubmit>
+  </HumanInput.Question>
+</HumanInput.Questions>;
+```
+
+## When to use Studio
+
+For local development, Studio already provides approval and question routes. For production, keep
+the same event and decision shape, but implement product-specific reviewer permissions, durable
+storage, notifications, and audit logging in your application.

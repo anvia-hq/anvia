@@ -78,4 +78,28 @@ Use attributes when styling should follow primitive state instead of a component
 }
 ```
 
+Common attributes:
+
+| Attribute | Emitted by | Use |
+| --- | --- | --- |
+| `data-anvia-thread` | `Thread.Root` | Root chat state. |
+| `data-anvia-thread-viewport` | `Thread.Viewport` | Scroll container state. |
+| `data-anvia-message` | `Message.Root` | Message row styling. |
+| `data-role` | `Message.Root` | `user`, `assistant`, `system`, or `tool` alignment. |
+| `data-anvia-part` | `Message.Part` | Per-part layout. |
+| `data-anvia-tool` | `Message.Tool` | Tool-call cards. |
+| `data-anvia-composer` | `Composer.Root` | Composer state. |
+| `data-anvia-submit` | `Composer.Submit` | Submit enabled/disabled state. |
+| `data-anvia-human-input-panel` | `HumanInput.Panel` | Review panel layout. |
+
+When using a design system, attach primitive behavior to your component with `asChild`:
+
+```tsx
+<Composer.Submit asChild>
+  <Button type="submit" variant="primary">
+    Send
+  </Button>
+</Composer.Submit>
+```
+
 For a complete copy-paste surface, see [Styling recipe](/docs/react-ui/examples/styling).

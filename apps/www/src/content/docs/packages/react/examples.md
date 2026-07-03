@@ -13,7 +13,7 @@ sidebar:
 import { useChat } from "@anvia/react";
 
 export function Chat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return <button onClick={() => void chat.send("Hello")}>{chat.status}</button>;
 }
@@ -24,7 +24,7 @@ export function Chat() {
 import { createChatTransport, useChat } from "@anvia/react";
 
 const transport = createChatTransport({
-  endpoint: "/api/support/chat",
+  endpoint: "http://localhost:8787/api/support/chat",
   headers: () => ({ "x-client": "support-console" }),
 });
 

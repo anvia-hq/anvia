@@ -22,12 +22,13 @@ Install `@anvia/server` and keep provider credentials on the server. The example
 ## Return a stream response
 
 ```ts
+import type { UIStreamRequest } from "@anvia/core";
 import { createEventStream } from "@anvia/server";
 
 export async function POST(request: Request) {
-  const { message } = await request.json();
+  const body = (await request.json()) as UIStreamRequest;
 
-  return createEventStream(agent.prompt(message).stream(), {
+  return createEventStream(agent.prompt(body.messages).stream(), {
     format: "jsonl",
   });
 }
@@ -40,7 +41,7 @@ JSONL is the default format and works well with Anvia React transports.
 Use SSE when you need `text/event-stream` compatibility:
 
 ```ts
-return createEventStream(agent.prompt(message).stream(), {
+return createEventStream(agent.prompt(body.messages).stream(), {
   format: "sse",
 });
 ```
@@ -48,6 +49,9 @@ return createEventStream(agent.prompt(message).stream(), {
 ## What happens
 
 `createEventStream` converts an async iterable of runtime events into a streaming `Response`.
+
+React clients send the default request shape `{ messages, stream: true }`. If your route is meant
+for `@anvia/react` or `@anvia/react-ui`, read `body.messages`, not a single `{ message }` string.
 
 ## Check yourself
 

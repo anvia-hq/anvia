@@ -14,6 +14,9 @@ import { messageRendererVariants } from "../../../../lib/react-ui-code-variants"
 This recipe keeps default rendering for most parts and customizes only the parts that usually need
 product UI: Markdown text, attachments, and tool cards.
 
+If you only need user/assistant alignment and ordinary text rendering, stay with
+`<Thread.Messages />` and style the emitted `data-role` attributes first.
+
 ## Full renderer
 
 <CodeVariants id="message-rendering-full" variants={messageRendererVariants} />

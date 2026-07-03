@@ -1,0 +1,136 @@
+---
+title: Tools end to end
+description: Define an Anvia tool, stream tool-call parts, and render default or custom tool cards.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 7
+  label: Tools end to end
+---
+
+Tool calls are streamed as assistant message parts. Start with the default renderer, then customize
+only the tool cards that need product-specific UI.
+
+## Define the tool on the server
+
+```ts
+import { AgentBuilder, createTool, type UIStreamRequest } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { createEventStream } from "@anvia/server";
+import { z } from "zod";
+
+const lookupOrder = createTool({
+  name: "lookup_order",
+  description: "Look up a customer order by id.",
+  input: z.object({
+    orderId: z.string(),
+  }),
+  output: z.object({
+    orderId: z.string(),
+    status: z.string(),
+    summary: z.string(),
+  }),
+  execute: ({ orderId }) => ({
+    orderId,
+    status: "blocked",
+    summary: "The order is waiting for warehouse allocation.",
+  }),
+});
+
+const client = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
+const model = client.completionModel("gpt-5");
+const agent = new AgentBuilder("orders", model)
+  .instructions("Use lookup_order when the user asks about an order.")
+  .tool(lookupOrder)
+  .build();
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+}
+```
+
+## Render default tool parts
+
+If you use `Thread.Messages` or `Message.Parts` without branching, tool calls already render.
+
+```tsx
+<Thread.Messages className="messages" />
+```
+
+Or inside an app-owned row:
+
+```tsx
+<Message.Content>
+  <Message.Parts />
+</Message.Content>
+```
+
+## Render a custom tool card
+
+Branch only for `part.type === "tool"` and keep `<Message.Part />` as the fallback.
+
+```tsx
+<Message.Parts>
+  {(part) =>
+    part.type === "tool" ? (
+      <Message.Part>
+        <Message.Tool className="tool-card" renderWhen="always">
+          <header className="tool-card-header">
+            <Message.ToolName />
+            <Message.ToolStatus />
+          </header>
+          <section>
+            <h3>Input</h3>
+            <Message.ToolInput />
+          </section>
+          <section>
+            <h3>Result</h3>
+            <Message.ToolOutput />
+            <Message.ToolError />
+          </section>
+        </Message.Tool>
+      </Message.Part>
+    ) : (
+      <Message.Part />
+    )
+  }
+</Message.Parts>
+```
+
+## Show only pending tools
+
+Use this for an activity strip while the main transcript hides noisy work.
+
+```tsx
+<Message.Parts filter={(part) => part.type === "tool" && part.state !== "output-available"}>
+  <Message.Part>
+    <Message.Tool renderWhen="pending" className="tool-activity" />
+  </Message.Part>
+</Message.Parts>
+```
+
+## Show only completed tools
+
+Use this when tool input should stay hidden until there is a result.
+
+```tsx
+<Message.Parts
+  filter={(part) => part.type !== "tool" || part.state === "output-available"}
+/>
+```
+
+## Tool part states
+
+| State | Meaning | Typical UI |
+| --- | --- | --- |
+| `input-streaming` | Tool input is still arriving. | Skeleton or "preparing". |
+| `input-available` | Tool input is complete. | Pending card. |
+| `output-available` | Tool result is available. | Completed card. |
+| `error` | Tool execution failed. | Error panel. |
+
+The tool UI is display only. Authorization, validation, retries, and idempotency belong inside the
+server-side tool implementation.

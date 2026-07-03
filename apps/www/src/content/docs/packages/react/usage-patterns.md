@@ -16,6 +16,11 @@ sidebar:
 - Pair `useChat(...)` with a JSONL or SSE endpoint built with `@anvia/server`.
 - Use `useCompletion(...)` for single-prompt streaming text surfaces.
 - Use `createDirectTransport(...)` for tests, demos, or in-process examples.
+- Use `@anvia/react-ui` when you want ready-made headless primitives for thread, message,
+  composer, completion, tool-call, and human-input UI.
+
+Default hook requests send `{ messages, stream: true }`. Server routes should read
+`body.messages` when they are called by `useChat(...)` or `useCompletion(...)`.
 
 ## Do and do not
 

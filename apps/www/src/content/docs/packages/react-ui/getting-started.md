@@ -17,11 +17,11 @@ pnpm add @anvia/react @anvia/react-ui
 
 ```tsx
 import { useChat } from "@anvia/react";
-import { ChatProvider, Composer, Message, Thread } from "@anvia/react-ui";
+import { ChatProvider, Composer, Thread } from "@anvia/react-ui";
 import "@anvia/react-ui/styles.css";
 
 export function SupportChat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return (
     <ChatProvider controller={chat}>
@@ -29,14 +29,7 @@ export function SupportChat() {
         <Thread.Viewport>
           <Thread.Empty>Start a conversation.</Thread.Empty>
           <Thread.Suggestions />
-          <Thread.Messages>
-            <Message.Root>
-              <Message.Content>
-                <Message.Parts />
-              </Message.Content>
-              <Message.Actions />
-            </Message.Root>
-          </Thread.Messages>
+          <Thread.Messages />
           <Thread.Error />
           <Thread.ScrollToBottom>Jump to latest</Thread.ScrollToBottom>
         </Thread.Viewport>
@@ -54,6 +47,9 @@ export function SupportChat() {
 }
 ```
 
+The API app endpoint should accept `{ messages, stream: true }` and stream Anvia events. For the
+full route setup, see [React UI server routes](/docs/react-ui/server-routes).
+
 ## Completion setup
 
 ```tsx
@@ -61,7 +57,7 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 
 export function DraftBox() {
-  const completion = useCompletion({ endpoint: "/api/completion" });
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
 
   return (
     <CompletionProvider controller={completion}>
@@ -80,4 +76,5 @@ export function DraftBox() {
 
 ## Next step
 
-Continue with [Usage Patterns](/docs/packages/react-ui/usage-patterns).
+Continue with [Usage Patterns](/docs/packages/react-ui/usage-patterns), or use the dedicated
+[React UI TanStack quickstart](/docs/react-ui/quickstart-tanstack).

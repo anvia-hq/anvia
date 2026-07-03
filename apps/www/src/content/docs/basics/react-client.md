@@ -19,6 +19,9 @@ The client sends user input to an endpoint and updates state as events arrive.
 
 Install `@anvia/react` and expose a server route that returns Anvia runtime events.
 
+For a component-based chat UI, use the same controller with
+[React UI](/docs/react-ui/overview).
+
 ## Use chat state
 
 ```tsx
@@ -26,7 +29,7 @@ import { useChat } from "@anvia/react";
 import { useState } from "react";
 
 export function Chat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
   const [input, setInput] = useState("");
 
   return (
@@ -70,6 +73,13 @@ type UIStreamRequest = {
 It converts local `UIMessage[]` state to core `Message[]` before sending, reads JSONL by default, and updates UI message state from raw completion streams, raw agent streams, or UI stream events.
 
 Use `createRequest` or a custom transport when your server expects a different request shape or event mapping.
+
+The matching server route should read `body.messages`:
+
+```ts
+const body = (await request.json()) as UIStreamRequest;
+return createEventStream(agent.prompt(body.messages).stream());
+```
 
 ## Check yourself
 

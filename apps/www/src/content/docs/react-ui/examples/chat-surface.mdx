@@ -15,6 +15,10 @@ This recipe starts from a `useChat(...)` controller and builds a complete app-ow
 It intentionally uses the default message renderer first. Add a custom message row only after you
 need custom Markdown, tool cards, attachments, or actions.
 
+The recipe assumes a compatible API app endpoint. If you do not have one yet, build the app from
+[TanStack quickstart](/docs/react-ui/quickstart-tanstack) or wire the endpoint with
+[Server routes](/docs/react-ui/server-routes).
+
 <CodeVariants id="full-chat-surface" variants={chatSurfaceVariants} />
 
 ## Add message actions

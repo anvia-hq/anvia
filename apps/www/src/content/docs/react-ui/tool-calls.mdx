@@ -25,6 +25,9 @@ without extra code.
 `Message.Tool` shows the tool name, status, input, output, and error content when each field is
 available.
 
+Tool parts come from server-side agent/tool streams. The UI does not execute tools in the browser.
+For the route and tool definition, see [Tools end to end](/docs/react-ui/tools-end-to-end).
+
 ## Pending and settled states
 
 Use `renderWhen` to decide when a tool call should appear.
@@ -58,6 +61,20 @@ itself.
       error={part.error}
     />
   )}
+</Message.Tool>
+```
+
+Use this when the tool output is domain-specific:
+
+```tsx
+<Message.Tool>
+  {(part) =>
+    part.toolName === "lookup_order" && part.output !== undefined ? (
+      <OrderLookupResult value={part.output} />
+    ) : (
+      <Message.ToolOutput />
+    )
+  }
 </Message.Tool>
 ```
 

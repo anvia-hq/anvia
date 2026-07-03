@@ -51,7 +51,7 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 
 export function CompletionPanel() {
-  const completion = useCompletion({ endpoint: "/api/completion" });
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
 
   return (
     <CompletionProvider controller={completion}>

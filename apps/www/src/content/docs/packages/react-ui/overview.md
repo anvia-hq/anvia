@@ -19,6 +19,9 @@ Use `@anvia/react-ui` when an application wants accessible, unstyled building bl
 
 The package is intentionally headless. It emits stable `data-anvia-*` attributes and provides an optional stylesheet at `@anvia/react-ui/styles.css`, but application code owns the final visual design.
 
+The browser still calls your application route. That route should accept the React request shape
+`{ messages, stream: true }` and return Anvia stream events.
+
 ## Public surface
 
 The main documented exports are `ChatProvider`, `CompletionProvider`, `Thread`, `Composer`, `Message`, `Completion`, and `HumanInput`. The reference page lists the package entrypoints and public symbols that are checked by the docs reference coverage script.
@@ -32,4 +35,5 @@ The main documented exports are `ChatProvider`, `CompletionProvider`, `Thread`, 
 - [Reference](/docs/packages/react-ui/reference)
 
 For the dedicated React UI docs menu, start at [React UI](/docs/react-ui/overview). For practical
-copy-paste recipes, see [React UI examples](/docs/react-ui/examples).
+copy-paste recipes, see [React UI examples](/docs/react-ui/examples). For a full Vite app, start
+with [TanStack quickstart](/docs/react-ui/quickstart-tanstack).

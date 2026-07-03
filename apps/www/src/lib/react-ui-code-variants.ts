@@ -190,7 +190,7 @@ export function ConfigurableComposer() {
   const [model, setModel] = useState("gpt-5");
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("medium");
   const chat = useChat<ChatRequest>({
-    endpoint: "/api/chat",
+    endpoint: "http://localhost:8787/api/chat",
     createRequest: ({ coreMessages }) => ({
       messages: coreMessages,
       stream: true,
@@ -255,7 +255,7 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 
 export function CompletionPanel() {
-  const completion = useCompletion({ endpoint: "/api/complete" });
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
 
   return (
     <CompletionProvider controller={completion}>
@@ -310,7 +310,7 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 
 export function CompletionPanel() {
-  const completion = useCompletion({ endpoint: "/api/complete" });
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
 
   return (
     <CompletionProvider controller={completion}>
@@ -474,7 +474,7 @@ import "@anvia/react-ui/styles.css";
 
 export function SupportChat() {
   const chat = useChat({
-    endpoint: "/api/chat",
+    endpoint: "http://localhost:8787/api/chat",
     suggestions: [
       { id: "summarize", label: "Summarize", prompt: "Summarize this thread." },
       { id: "next", label: "Next step", prompt: "What should I do next?" },
@@ -561,7 +561,7 @@ import { ChatProvider, Composer, Thread } from "@anvia/react-ui";
 import "@anvia/react-ui/styles.css";
 
 export function SupportChat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return (
     <ChatProvider controller={chat}>
@@ -1650,7 +1650,7 @@ import "@anvia/react-ui/styles.css";
 
 export function AgentChat() {
   const chat = useChat({
-    endpoint: "/api/chat",
+    endpoint: "http://localhost:8787/api/chat",
     suggestions: [
       { id: "summarize", label: "Summarize", prompt: "Summarize this conversation." },
       { id: "risks", label: "Find risks", prompt: "What are the risks in this plan?" },
@@ -1753,7 +1753,7 @@ import { ChatProvider, Composer, Thread } from "@anvia/react-ui";
 import "@anvia/react-ui/styles.css";
 
 export function AgentChat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return (
     <ChatProvider controller={chat}>
@@ -1802,7 +1802,7 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 
 export function ReleaseNoteDraft() {
-  const completion = useCompletion({ endpoint: "/api/completion" });
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
 
   return (
     <CompletionProvider controller={completion}>
@@ -1863,7 +1863,7 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 
 export function ReleaseNoteDraft() {
-  const completion = useCompletion({ endpoint: "/api/completion" });
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
 
   return (
     <CompletionProvider controller={completion}>
@@ -2215,7 +2215,7 @@ import { useChat } from "@anvia/react";
 import "@anvia/react-ui/styles.css";
 
 export function StyledChat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return (
     <ChatProvider controller={chat}>
@@ -2353,7 +2353,7 @@ import { useChat } from "@anvia/react";
 import "@anvia/react-ui/styles.css";
 
 export function StyledChat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return (
     <ChatProvider controller={chat}>

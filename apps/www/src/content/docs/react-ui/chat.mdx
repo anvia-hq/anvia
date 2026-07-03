@@ -20,11 +20,14 @@ import { useChat } from "@anvia/react";
 import { ChatProvider } from "@anvia/react-ui";
 
 export function ChatSurface() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
 
   return <ChatProvider controller={chat}>{/* thread and composer */}</ChatProvider>;
 }
 ```
+
+The endpoint must return an Anvia stream. If you are building it from scratch, start with
+[Server routes](/docs/react-ui/server-routes).
 
 ## Thread
 
@@ -48,10 +51,31 @@ renderer. With a function child it lets the app control each row.
 </Thread.Messages>
 ```
 
+Use `Thread.Status`, `Thread.Loading`, and `Thread.Error` when the surface needs explicit lifecycle
+UI:
+
+```tsx
+<Thread.Status className="thread-status">
+  {(status) => (status === "streaming" ? "Generating..." : "Ready")}
+</Thread.Status>
+<Thread.Loading className="loading-row">Assistant is writing...</Thread.Loading>
+<Thread.Error className="thread-error" />
+```
+
 ## Suggestions
 
 `Thread.Suggestions` renders prompts configured with `useChat({ suggestions })`. Suggestions
 unmount when empty unless `keepMounted` is enabled.
+
+```tsx
+const chat = useChat({
+  endpoint: "http://localhost:8787/api/chat",
+  suggestions: [
+    { id: "summarize", label: "Summarize", prompt: "Summarize this conversation." },
+    { id: "next", label: "Next step", prompt: "Suggest the next step." },
+  ],
+});
+```
 
 ```tsx
 <Thread.Suggestions className="suggestions">
@@ -86,6 +110,26 @@ Use controlled props when the draft or attachments need to be mirrored into app 
 </Composer.Root>
 ```
 
+Use `submitMessage` only when the submitted message itself needs custom metadata or attachment
+handling. For request-level options such as model or reasoning effort, prefer `createRequest` on
+`useChat(...)` as shown in [Request shape](/docs/react-ui/request-shape).
+
+```tsx
+<Composer.Root
+  submitMessage={async ({ input, attachments, chat: chatController, clear }) => {
+    await chatController.sendMessage({
+      text: input,
+      attachments,
+      metadata: { source: "support-composer" },
+    });
+    clear();
+  }}
+>
+  <Composer.Input />
+  <Composer.Submit />
+</Composer.Root>
+```
+
 ## Attachments
 
 Use `Composer.AddAttachment` for a ready-made file-picker button, `Composer.AttachmentInput` when a
@@ -103,3 +147,4 @@ design system owns the input trigger, and `Composer.AttachmentDropzone` for drag
 ```
 
 For a complete attachment recipe, see [Composer attachments](/docs/react-ui/examples/composer-attachments).
+For file handling across the route boundary, see [Attachments end to end](/docs/react-ui/attachments-end-to-end).

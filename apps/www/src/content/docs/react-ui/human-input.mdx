@@ -11,6 +11,26 @@ sidebar:
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
 import { reviewPanelVariants, approvalVariants } from "../../../lib/react-ui-code-variants";
 
+Human-input primitives render approval and question state from `useChat(...)`. They do not create
+the review workflow by themselves. Your stream must emit human-input events, and your app must
+provide decision or answer routes.
+
+```tsx
+const chat = useChat({
+  endpoint: "http://localhost:8787/api/chat",
+  humanInput: {
+    endpoint: "http://localhost:8787/api/review",
+  },
+});
+```
+
+The default human-input handlers post to:
+
+- `http://localhost:8787/api/review/approvals/:approvalId/decision`
+- `http://localhost:8787/api/review/questions/:questionId/answer`
+
+For the route contract, see [Human review end to end](/docs/react-ui/human-review-end-to-end).
+
 ## Panel
 
 `HumanInput.Panel` renders when pending approvals or questions exist. Use `HumanInput.Status` when
@@ -42,6 +62,9 @@ Use `filter="all"` when a review surface should show completed approvals too. Th
 ```tsx
 <HumanInput.Approvals filter="all" />
 ```
+
+Approval buttons call `chat.approveTool(...)` and `chat.rejectTool(...)` through context. Use
+`HumanInput.ApprovalReason` when the decision should include an audit note.
 
 ## Questions
 

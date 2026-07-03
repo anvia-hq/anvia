@@ -53,6 +53,8 @@ Subpath entrypoints are also available:
 
 - `Composer.Root` accepts uncontrolled defaults (`defaultInput`, `defaultAttachments`) and
   controlled state (`input`, `onInputChange`, `attachments`, `onAttachmentsChange`).
+- `Composer.Root` accepts `submitMessage` when an app needs to replace the default composer send
+  behavior with a custom message payload or metadata.
 - `Composer.Attachments`, `Thread.Messages`, `Thread.Suggestions`, `HumanInput.Approvals`, and
   `HumanInput.Questions` accept `keepMounted` to control whether an empty wrapper is rendered.
 - `useComposer()` exposes `setAttachments(...)` for custom attachment controls.

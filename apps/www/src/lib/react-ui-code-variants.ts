@@ -167,6 +167,85 @@ export function PromptComposer() {
   },
 ];
 
+export const modelControlComposerVariants: CodeVariant[] = [
+  {
+    label: "Component",
+    language: "tsx",
+    code: `
+import type { Message } from "@anvia/core/completion";
+import { useChat } from "@anvia/react";
+import { ChatProvider, Composer } from "@anvia/react-ui";
+import { useState } from "react";
+
+type ReasoningEffort = "low" | "medium" | "high";
+
+type ChatRequest = {
+  messages: Message[];
+  stream: true;
+  model: string;
+  reasoning: { effort: ReasoningEffort };
+};
+
+export function ConfigurableComposer() {
+  const [model, setModel] = useState("gpt-5");
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("medium");
+  const chat = useChat<ChatRequest>({
+    endpoint: "/api/chat",
+    createRequest: ({ coreMessages }) => ({
+      messages: coreMessages,
+      stream: true,
+      model,
+      reasoning: { effort: reasoningEffort },
+    }),
+  });
+
+  return (
+    <ChatProvider controller={chat}>
+      <Composer.Root
+        className="composer"
+        submitMessage={async ({ input, attachments, chat: chatController, clear }) => {
+          await chatController.sendMessage({
+            text: input,
+            attachments,
+            metadata: { model, reasoningEffort },
+          });
+          clear();
+        }}
+      >
+        <select
+          aria-label="Model"
+          disabled={chat.status === "streaming"}
+          value={model}
+          onChange={(event) => setModel(event.currentTarget.value)}
+        >
+          <option value="gpt-5">GPT-5</option>
+          <option value="gpt-5-mini">GPT-5 mini</option>
+        </select>
+        <select
+          aria-label="Reasoning effort"
+          disabled={chat.status === "streaming"}
+          value={reasoningEffort}
+          onChange={(event) => setReasoningEffort(event.currentTarget.value as ReasoningEffort)}
+        >
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <Composer.Attachments className="attachments" />
+        <Composer.AddAttachment accept="image/*,.pdf" multiple>
+          Attach
+        </Composer.AddAttachment>
+        <Composer.Input minRows={1} maxRows={6} placeholder="Message Anvia..." />
+        <Composer.Stop>Stop</Composer.Stop>
+        <Composer.Submit>Send</Composer.Submit>
+      </Composer.Root>
+    </ChatProvider>
+  );
+}
+`,
+  },
+];
+
 export const completionVariants: CodeVariant[] = [
   {
     label: "Component",

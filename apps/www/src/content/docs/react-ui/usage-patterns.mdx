@@ -76,6 +76,15 @@ renders pending attachments before the prompt is sent.
 
 <CodeVariants id="usage-attachments" variants={attachmentVariants} />
 
+## Add app-owned controls
+
+Keep model selectors, reasoning effort, temperature, provider choice, and similar controls in
+application state. Render them inside `Composer.Root` when they belong in the prompt bar, then pass
+their values through `useChat({ createRequest })`. Use `Composer.Root` `submitMessage` only when the
+message payload itself needs customization, such as per-message metadata.
+
+See [Composer controls](/docs/react-ui/examples/composer-controls) for a complete recipe.
+
 ## Control composer state
 
 Keep the composer uncontrolled for simple chat surfaces. Use controlled props when the draft or

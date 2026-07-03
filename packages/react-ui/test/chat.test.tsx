@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ComposerSubmitMessage } from "../src";
 import { ChatProvider, Composer, Thread } from "../src";
 import { createChatController, textMessage } from "./helpers";
 
@@ -281,6 +282,156 @@ describe("Chat primitives", () => {
     });
     expect(onInputChange).toHaveBeenLastCalledWith("");
     expect(onAttachmentsChange).toHaveBeenLastCalledWith([]);
+  });
+
+  it("supports custom composer submit from form submit and Enter", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const attachment: UIAttachment = {
+      id: "attachment_1",
+      type: "document",
+      name: "notes.txt",
+      mediaType: "text/plain",
+      data: "hello",
+    };
+    const submitMessage = vi.fn<ComposerSubmitMessage>(
+      async ({ input, attachments, chat, clear }) => {
+        await chat.sendMessage({
+          text: input,
+          attachments,
+          metadata: { source: "custom" },
+        });
+        clear();
+      },
+    );
+
+    const { container } = render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root
+          defaultAttachments={[attachment]}
+          defaultInput="button"
+          submitMessage={submitMessage}
+        >
+          <Composer.Attachments />
+          <Composer.Input />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(submitMessage.mock.calls[0]?.[0]).toMatchObject({
+      input: "button",
+      attachments: [attachment],
+      chat: expect.objectContaining({ sendMessage }),
+    });
+    expect(typeof submitMessage.mock.calls[0]?.[0].clear).toBe("function");
+    expect(sendMessage).toHaveBeenNthCalledWith(1, {
+      text: "button",
+      attachments: [attachment],
+      metadata: { source: "custom" },
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+    });
+    expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "enter" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledTimes(2);
+    });
+    expect(sendMessage).toHaveBeenNthCalledWith(2, {
+      text: "enter",
+      attachments: [],
+      metadata: { source: "custom" },
+    });
+  });
+
+  it("lets custom composer submit control when state is cleared", async () => {
+    const attachment: UIAttachment = {
+      id: "attachment_1",
+      type: "document",
+      name: "controlled.txt",
+      mediaType: "text/plain",
+      data: "hello",
+    };
+    const submitMessage = vi.fn<ComposerSubmitMessage>(async () => {});
+
+    function ControlledComposer() {
+      const [input, setInput] = useState("draft");
+      const [attachments, setAttachments] = useState<UIAttachment[]>([attachment]);
+
+      return (
+        <ChatProvider controller={createChatController()}>
+          <Composer.Root
+            attachments={attachments}
+            input={input}
+            onAttachmentsChange={setAttachments}
+            onInputChange={setInput}
+            submitMessage={submitMessage}
+          >
+            <Composer.Attachments />
+            <Composer.Input />
+            <Composer.Submit />
+          </Composer.Root>
+        </ChatProvider>
+      );
+    }
+
+    render(<ControlledComposer />);
+
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(submitMessage).toHaveBeenCalledTimes(1);
+    });
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("draft");
+    expect(screen.getByText("controlled.txt")).toBeTruthy();
+
+    submitMessage.mockImplementationOnce(async ({ clear }) => {
+      clear();
+    });
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+    });
+    expect(screen.queryByText("controlled.txt")).toBeNull();
+  });
+
+  it("does not call custom composer submit when empty or streaming", () => {
+    const submitMessage = vi.fn<ComposerSubmitMessage>(async () => {});
+    const { rerender } = render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root aria-label="Chat form" submitMessage={submitMessage}>
+          <Composer.Input />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.submit(screen.getByLabelText("Chat form"));
+
+    expect(submitMessage).not.toHaveBeenCalled();
+
+    rerender(
+      <ChatProvider controller={createChatController({ status: "streaming" })}>
+        <Composer.Root aria-label="Chat form" input="busy" submitMessage={submitMessage}>
+          <Composer.Input />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.submit(screen.getByLabelText("Chat form"));
+
+    expect(submitMessage).not.toHaveBeenCalled();
   });
 
   it("respects prevented composer submit and supports stop", () => {

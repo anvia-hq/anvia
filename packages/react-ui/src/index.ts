@@ -1,4 +1,5 @@
 export { Attachment, useAttachment } from "./attachment/index";
+export type { ComposerSubmitMessage, ComposerSubmitMessageArgs } from "./chat/index";
 export {
   ChatProvider,
   Composer,

@@ -15,6 +15,7 @@ import {
 } from "react";
 import { Attachment } from "../attachment/index";
 import {
+  type ChatController,
   type ComposerAttachmentInput as ComposerAttachmentInputValue,
   type ComposerAttachmentsUpdate,
   type ComposerContextValue,
@@ -32,7 +33,19 @@ type ComposerRootProps = PrimitiveProps<"form"> & {
   input?: string;
   onAttachmentsChange?: (attachments: UIAttachment[]) => void;
   onInputChange?: (input: string) => void;
+  submitMessage?: ComposerSubmitMessage;
 };
+
+export type ComposerSubmitMessageArgs<TEvent = unknown> = {
+  input: string;
+  attachments: UIAttachment[];
+  chat: ChatController<TEvent>;
+  clear(): void;
+};
+
+export type ComposerSubmitMessage<TEvent = unknown> = (
+  args: ComposerSubmitMessageArgs<TEvent>,
+) => Promise<void> | void;
 
 const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function ComposerRoot(
   {
@@ -42,6 +55,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     input: inputProp,
     onAttachmentsChange,
     onInputChange,
+    submitMessage,
     onSubmit,
     ...props
   },
@@ -106,9 +120,23 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     setAttachments([]);
   }, [setAttachments]);
 
+  const clear = useCallback(() => {
+    setInput("");
+    setAttachments([]);
+  }, [setAttachments, setInput]);
+
   const submit = useCallback(async () => {
     const prompt = input;
     if ((prompt.trim().length === 0 && attachments.length === 0) || chat.status === "streaming") {
+      return;
+    }
+    if (submitMessage !== undefined) {
+      await submitMessage({
+        input: prompt,
+        attachments,
+        chat,
+        clear,
+      });
       return;
     }
     if (attachments.length === 0) {
@@ -119,9 +147,8 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         attachments,
       });
     }
-    setInput("");
-    setAttachments([]);
-  }, [attachments, chat, input, setAttachments, setInput]);
+    clear();
+  }, [attachments, chat, clear, input, submitMessage]);
 
   const value = useMemo<ComposerContextValue>(
     () => ({

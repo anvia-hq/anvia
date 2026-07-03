@@ -5,22 +5,22 @@ export {
   useChatContext,
   useComposer,
   useThread,
-} from "./chat";
+} from "./chat/index";
 export {
   Completion,
   CompletionProvider,
   useCompletionContext,
   useCompletionInput,
-} from "./completion";
+} from "./completion/index";
 export {
   HumanInput,
   useApproval,
   useHumanInput,
   useQuestion,
   useQuestionPrompt,
-} from "./human-input";
-export type { MessagePartsFilter, MessageToolPart, MessageToolRenderWhen } from "./message";
-export { Message, useMessage, useMessagePart } from "./message";
+} from "./human-input/index";
+export type { MessagePartsFilter, MessageToolPart, MessageToolRenderWhen } from "./message/index";
+export { Message, useMessage, useMessagePart } from "./message/index";
 export type {
   ApprovalContextValue,
   ChatController,

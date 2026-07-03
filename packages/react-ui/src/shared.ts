@@ -8,12 +8,10 @@ export type {
   ComposerContextValue,
   MessageContextValue,
   MessagePartContextValue,
-  PrimitiveProps,
-  PrimitiveRef,
   QuestionContextValue,
   QuestionPromptContextValue,
   ThreadContextValue,
-} from "./internal";
+} from "./contexts";
 export {
   ChatProvider,
   CompletionProvider,
@@ -28,4 +26,5 @@ export {
   useQuestion,
   useQuestionPrompt,
   useThread,
-} from "./internal";
+} from "./contexts";
+export type { PrimitiveProps, PrimitiveRef } from "./primitives";

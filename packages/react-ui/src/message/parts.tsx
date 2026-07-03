@@ -1,67 +1,15 @@
-import type { UIMessage, UIMessagePart } from "@anvia/react";
-import {
-  forwardRef,
-  type MouseEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import type { UIMessagePart } from "@anvia/react";
+import { forwardRef, type ReactNode } from "react";
 
-import {
-  InternalMessagePartProvider,
-  messageText,
-  type PrimitiveProps,
-  renderPrimitive,
-  stringifyValue,
-  useChatContext,
-  useMessage,
-  useMessagePart,
-} from "./internal";
+import { InternalMessagePartProvider, useMessage, useMessagePart } from "../contexts";
+import { stringifyValue } from "../format";
+import { type PrimitiveProps, renderPrimitive } from "../primitives";
 
-type MessageChildren = ReactNode | ((message: UIMessage) => ReactNode);
 type MessagePartChildren = ReactNode | ((part: UIMessagePart) => ReactNode);
 export type MessagePartsFilter = (part: UIMessagePart) => boolean;
 export type MessageToolPart = Extract<UIMessagePart, { type: "tool" }>;
 type MessageToolChildren = ReactNode | ((part: MessageToolPart) => ReactNode);
 export type MessageToolRenderWhen = "always" | "pending" | "settled";
-
-type MessageRootProps = Omit<PrimitiveProps<"article">, "children"> & {
-  children?: MessageChildren;
-};
-
-const MessageRoot = forwardRef<HTMLElement, MessageRootProps>(function MessageRoot(
-  { children, ...props },
-  ref,
-) {
-  const { message } = useMessage();
-  const renderedChildren = typeof children === "function" ? children(message) : children;
-
-  return renderPrimitive(
-    "article",
-    {
-      ...props,
-      children: renderedChildren,
-      "data-anvia-message": "",
-      "data-role": message.role,
-    } as PrimitiveProps<"article">,
-    ref,
-  );
-});
-
-const MessageContent = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
-  function MessageContent(props, ref) {
-    return renderPrimitive(
-      "div",
-      {
-        ...props,
-        "data-anvia-message-content": "",
-      } as PrimitiveProps<"div">,
-      ref,
-    );
-  },
-);
 
 type MessagePartsProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: MessagePartChildren;
@@ -225,120 +173,6 @@ const MessageError = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   },
 );
 
-const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
-  function MessageActions(props, ref) {
-    return renderPrimitive(
-      "div",
-      {
-        ...props,
-        children: props.children ?? (
-          <>
-            <MessageCopy />
-            <MessageRegenerate />
-          </>
-        ),
-        "data-anvia-message-actions": "",
-      } as PrimitiveProps<"div">,
-      ref,
-    );
-  },
-);
-
-type MessageCopyState = "idle" | "copied" | "error";
-
-const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(function MessageCopy(
-  { onClick, ...props },
-  ref,
-) {
-  const { message } = useMessage();
-  const [copyState, setCopyState] = useState<MessageCopyState>("idle");
-  const text = messageText(message);
-  const previousTextRef = useRef(text);
-  const disabled = props.disabled ?? text.length === 0;
-
-  useEffect(() => {
-    if (previousTextRef.current !== text) {
-      previousTextRef.current = text;
-      setCopyState("idle");
-    }
-  }, [text]);
-
-  const handleClick = useCallback(
-    async (event: MouseEvent<HTMLButtonElement>) => {
-      onClick?.(event);
-      if (event.defaultPrevented || disabled) {
-        return;
-      }
-      const writeText = navigator.clipboard?.writeText;
-      if (writeText === undefined) {
-        setCopyState("error");
-        return;
-      }
-      try {
-        await writeText.call(navigator.clipboard, text);
-        setCopyState("copied");
-      } catch {
-        setCopyState("error");
-      }
-    },
-    [disabled, onClick, text],
-  );
-
-  return renderPrimitive(
-    "button",
-    {
-      ...props,
-      children: props.children ?? "Copy",
-      disabled,
-      onClick: handleClick,
-      type: props.type ?? "button",
-      "data-anvia-copy": "",
-      "data-state": copyState,
-    } as PrimitiveProps<"button">,
-    ref,
-  );
-});
-
-const MessageRegenerate = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
-  function MessageRegenerate({ onClick, ...props }, ref) {
-    const chat = useChatContext();
-    const { message } = useMessage();
-    const latestAssistantMessage = [...chat.messages]
-      .reverse()
-      .find((item) => item.role === "assistant");
-    const disabled =
-      props.disabled ??
-      (chat.status === "streaming" ||
-        message.role !== "assistant" ||
-        latestAssistantMessage?.id !== message.id);
-
-    const handleClick = useCallback(
-      (event: MouseEvent<HTMLButtonElement>) => {
-        onClick?.(event);
-        if (event.defaultPrevented || disabled) {
-          return;
-        }
-        void chat.regenerate();
-      },
-      [chat, disabled, onClick],
-    );
-
-    return renderPrimitive(
-      "button",
-      {
-        ...props,
-        children: props.children ?? "Regenerate",
-        disabled,
-        onClick: handleClick,
-        type: props.type ?? "button",
-        "data-anvia-regenerate": "",
-        "data-state": disabled ? "disabled" : "idle",
-      } as PrimitiveProps<"button">,
-      ref,
-    );
-  },
-);
-
 function defaultPart(part: UIMessagePart): ReactNode {
   if (part.type === "text") {
     return <MessageText />;
@@ -384,20 +218,12 @@ function shouldRenderTool(part: MessageToolPart, renderWhen: MessageToolRenderWh
   return part.state === "output-available" || part.state === "error";
 }
 
-export const Message = {
-  Root: MessageRoot,
-  Content: MessageContent,
-  Parts: MessageParts,
-  Part: MessagePart,
-  Text: MessageText,
-  Reasoning: MessageReasoning,
-  Tool: MessageTool,
-  Data: MessageData,
-  Error: MessageError,
-  Actions: MessageActions,
-  Copy: MessageCopy,
-  Regenerate: MessageRegenerate,
-} as const;
-
-export type { MessageContextValue, MessagePartContextValue } from "./internal";
-export { useChatContext, useMessage, useMessagePart };
+export {
+  MessageData,
+  MessageError,
+  MessagePart,
+  MessageParts,
+  MessageReasoning,
+  MessageText,
+  MessageTool,
+};

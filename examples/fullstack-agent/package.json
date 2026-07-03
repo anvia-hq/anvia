@@ -1,0 +1,35 @@
+{
+  "name": "fullstack-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "pnpm --filter @anvia/core build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/server build && pnpm --filter @anvia/react build && pnpm --filter @anvia/react-ui build",
+    "dev": "tsx -r dotenv/config src/dev.ts dotenv_config_path=../../.env",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/openai": "workspace:*",
+    "@anvia/react": "workspace:*",
+    "@anvia/react-ui": "workspace:*",
+    "@anvia/server": "workspace:*",
+    "@hono/node-server": "^2.0.8",
+    "dotenv": "^17.4.2",
+    "hono": "^4.12.27",
+    "lucide-react": "^0.561.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.10"
+  }
+}

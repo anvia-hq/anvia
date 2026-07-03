@@ -108,6 +108,7 @@
     "cookbook:integrations:05": "pnpm --filter cookbook integrations:05",
     "cookbook:integrations:06": "pnpm --filter cookbook integrations:06",
     "cookbook:integrations:07": "pnpm --filter cookbook integrations:07",
+    "fullstack-agent:dev": "pnpm --filter fullstack-agent dev",
     "cookbook:basic": "pnpm --filter cookbook basic",
     "cookbook:basic:01": "pnpm --filter cookbook basic:01",
     "cookbook:basic:02": "pnpm --filter cookbook basic:02",

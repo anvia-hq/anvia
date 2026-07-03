@@ -1,4 +1,4 @@
-import type { JsonValue, Message, Usage } from "../completion/types";
+import type { ImageDetail, JsonValue, Message, Usage } from "../completion/types";
 
 export type UIMessageRole = "system" | "user" | "assistant" | "tool";
 
@@ -12,6 +12,22 @@ export type UIMessage = {
   role: UIMessageRole;
   parts: UIMessagePart[];
   metadata?: JsonValue;
+};
+
+export type UIAttachment = {
+  id: string;
+  type: "image" | "document" | "file";
+  name?: string;
+  mediaType?: string;
+  url?: string;
+  data?: string;
+  text?: string;
+  detail?: ImageDetail;
+  metadata?: JsonValue;
+};
+
+export type CreateUIAttachment = Omit<UIAttachment, "id"> & {
+  id?: string;
 };
 
 export type UIMessagePart =
@@ -42,6 +58,11 @@ export type UIMessagePart =
       type: "data";
       name: string;
       data: JsonValue;
+    }
+  | {
+      id: string;
+      type: "attachment";
+      attachment: UIAttachment;
     }
   | {
       id: string;

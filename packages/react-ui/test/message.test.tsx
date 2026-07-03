@@ -34,6 +34,17 @@ describe("Message primitives", () => {
             input: { query: "anvia" },
             output: { ok: true },
           },
+          {
+            id: "attachment_1",
+            type: "attachment",
+            attachment: {
+              id: "image_1",
+              type: "image",
+              name: "photo.png",
+              mediaType: "image/png",
+              data: "aGVsbG8=",
+            },
+          },
           { id: "data_1", type: "data", name: "result", data: { count: 2 } },
           { id: "error_1", type: "error", error: { message: "Nope" } },
         ],
@@ -58,6 +69,7 @@ describe("Message primitives", () => {
     expect(screen.getByText("Thinking")).toBeTruthy();
     expect(screen.getByText("search")).toBeTruthy();
     expect(screen.getByText(/"query": "anvia"/)).toBeTruthy();
+    expect(screen.getByText("photo.png")).toBeTruthy();
     expect(screen.getByText(/"count": 2/)).toBeTruthy();
     expect(screen.getByText("Nope")).toBeTruthy();
   });
@@ -177,6 +189,104 @@ describe("Message primitives", () => {
     expect(screen.queryByText("pending_lookup")).toBeNull();
     expect(screen.getByText("done_lookup")).toBeTruthy();
     expect(screen.getAllByTestId("settled-tool")).toHaveLength(1);
+  });
+
+  it("renders granular tool primitives", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "assistant_1",
+        role: "assistant",
+        parts: [
+          {
+            id: "tool_1",
+            type: "tool",
+            toolName: "lookup",
+            toolCallId: "call_1",
+            state: "output-available",
+            input: { id: "A-100" },
+            output: { status: "shipped" },
+          },
+        ],
+      },
+    ];
+
+    render(
+      <ChatProvider controller={createChatController({ messages })}>
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Parts>
+                <Message.Part>
+                  <Message.Tool>
+                    <Message.ToolName />
+                    <Message.ToolStatus />
+                    <Message.ToolInput />
+                    <Message.ToolOutput />
+                    <Message.ToolError />
+                  </Message.Tool>
+                </Message.Part>
+              </Message.Parts>
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(screen.getByText("lookup")).toBeTruthy();
+    expect(screen.getByText("Done")).toBeTruthy();
+    expect(screen.getByText(/"id": "A-100"/)).toBeTruthy();
+    expect(screen.getByText(/"status": "shipped"/)).toBeTruthy();
+  });
+
+  it("renders markdown with overridable code components", () => {
+    const messages = [
+      textMessage("assistant_1", "assistant", "Use `pnpm`.\n\n```ts\nconst ok = true;\n```"),
+    ];
+
+    render(
+      <ChatProvider controller={createChatController({ messages })}>
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Markdown
+                components={{
+                  code({ children, className }) {
+                    return (
+                      <code className={className} data-testid="custom-code">
+                        {children}
+                      </code>
+                    );
+                  },
+                }}
+              />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(screen.getByText(/Use/)).toBeTruthy();
+    expect(screen.getAllByTestId("custom-code")).toHaveLength(2);
+  });
+
+  it("renders default markdown code blocks without nested pre elements", () => {
+    const messages = [textMessage("assistant_1", "assistant", "```ts\nconst ok = true;\n```")];
+
+    const { container } = render(
+      <ChatProvider controller={createChatController({ messages })}>
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Markdown />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(container.querySelectorAll("[data-anvia-code-block]")).toHaveLength(1);
+    expect(container.querySelector("[data-anvia-code-block] pre")).toBeNull();
+    expect(screen.getByText("const ok = true;")).toBeTruthy();
   });
 
   it("sets copied state when clipboard write succeeds", async () => {

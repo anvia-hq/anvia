@@ -47,3 +47,7 @@ export function useMessagePart(): MessagePartContextValue {
   }
   return value;
 }
+
+export function useOptionalMessagePart(): MessagePartContextValue | undefined {
+  return useContext(MessagePartContext);
+}

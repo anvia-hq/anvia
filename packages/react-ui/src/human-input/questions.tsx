@@ -1,5 +1,13 @@
 import type { ToolQuestion, ToolQuestionAnswer, ToolQuestionPrompt } from "@anvia/react";
-import { forwardRef, type MouseEvent, type ReactNode, useCallback, useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  forwardRef,
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   InternalQuestionPromptProvider,
@@ -141,6 +149,42 @@ const HumanInputQuestionChoice = forwardRef<HTMLButtonElement, HumanInputQuestio
   },
 );
 
+const HumanInputQuestionTextAnswer = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea">>(
+  function HumanInputQuestionTextAnswer({ onChange, ...props }, ref) {
+    const { prompt } = useQuestionPrompt();
+    const question = useQuestion();
+    const value = question.answers[prompt.id]?.answer ?? "";
+
+    const handleChange = useCallback(
+      (event: ChangeEvent<HTMLTextAreaElement>) => {
+        onChange?.(event);
+        if (event.defaultPrevented) {
+          return;
+        }
+        const answer = event.currentTarget.value;
+        question.setAnswer(prompt, {
+          questionId: prompt.id,
+          answer,
+          custom: true,
+        });
+      },
+      [onChange, prompt, question],
+    );
+
+    return renderPrimitive(
+      "textarea",
+      {
+        ...props,
+        "aria-label": props["aria-label"] ?? prompt.question,
+        onChange: handleChange,
+        value,
+        "data-anvia-question-text-answer": "",
+      } as PrimitiveProps<"textarea">,
+      ref,
+    );
+  },
+);
+
 const HumanInputQuestionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   function HumanInputQuestionSubmit({ onClick, ...props }, ref) {
     const chat = useChatContext();
@@ -149,7 +193,7 @@ const HumanInputQuestionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"b
       () =>
         question.question.questions.flatMap((prompt) => {
           const answer = question.answers[prompt.id];
-          return answer === undefined ? [] : [answer];
+          return answer === undefined || answer.answer.trim().length === 0 ? [] : [answer];
         }),
       [question],
     );
@@ -222,13 +266,17 @@ function defaultQuestionPrompt(prompt: ToolQuestionPrompt): ReactNode {
   return (
     <>
       <div data-anvia-question-text="">{prompt.question}</div>
-      <div data-anvia-question-choices="">
-        {prompt.choices.map((choice) => (
-          <HumanInputQuestionChoice key={choice.value} value={choice.value}>
-            {choice.label}
-          </HumanInputQuestionChoice>
-        ))}
-      </div>
+      {prompt.choices.length > 0 ? (
+        <div data-anvia-question-choices="">
+          {prompt.choices.map((choice) => (
+            <HumanInputQuestionChoice key={choice.value} value={choice.value}>
+              {choice.label}
+            </HumanInputQuestionChoice>
+          ))}
+        </div>
+      ) : (
+        <HumanInputQuestionTextAnswer />
+      )}
     </>
   );
 }
@@ -240,4 +288,5 @@ export {
   HumanInputQuestionPrompt,
   HumanInputQuestionSubmit,
   HumanInputQuestions,
+  HumanInputQuestionTextAnswer,
 };

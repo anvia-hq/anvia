@@ -102,6 +102,8 @@ export type {
 } from "./tool/middleware";
 export { createMiddleware, createToolMiddleware } from "./tool/middleware";
 export type {
+  CreateUIAttachment,
+  UIAttachment,
   UIError,
   UIMessage,
   UIMessagePart,

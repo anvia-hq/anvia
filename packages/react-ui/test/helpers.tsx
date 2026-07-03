@@ -21,6 +21,7 @@ export function createChatController(
   return {
     messages: [],
     events: [],
+    suggestions: [],
     setMessages: vi.fn(),
     sendMessage: vi.fn(async () => {}),
     send: vi.fn(async () => {}),

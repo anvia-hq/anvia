@@ -32,6 +32,7 @@ Every primitive supports `className` and stable `data-anvia-*` attributes. Butto
 - `text`
 - `reasoning`
 - `tool`
+- `attachment`
 - `data`
 - `error`
 
@@ -48,6 +49,10 @@ For custom rendering, pass children to `Message.Part` or use `useMessagePart()`.
             <ToolCard name={tool.toolName} input={tool.input} output={tool.output} />
           )}
         </Message.Tool>
+      </Message.Part>
+    ) : part.type === "attachment" ? (
+      <Message.Part>
+        <Message.Attachment />
       </Message.Part>
     ) : (
       <Message.Part />
@@ -72,3 +77,10 @@ or filter tool parts before wrappers are created:
 ## Human input
 
 `HumanInput.Approvals` and `HumanInput.Questions` read `useChat` human-input state and call the matching controller actions. They are meant for tool approval and question workflows emitted by Anvia agents or Studio-compatible streams.
+
+## Attachments and Markdown
+
+Use `Composer.Attachments`, `Composer.AddAttachment`, and `Composer.AttachmentDropzone` for pending
+file attachments. `Composer.Input` auto-resizes from `minRows` to `maxRows` rows, with `maxRows`
+defaulting to `6`. Use `Message.Markdown` when text parts should render GitHub-flavored Markdown;
+pass `components` to replace code blocks or other Markdown elements with app-owned components.

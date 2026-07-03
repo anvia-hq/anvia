@@ -1,3 +1,5 @@
+export type { AttachmentContextValue } from "./attachment";
+export { InternalAttachmentProvider, useAttachment } from "./attachment";
 export type { ChatController, ChatProviderProps } from "./chat";
 export { ChatProvider, useChatContext, useHumanInput } from "./chat";
 export type { CompletionController, CompletionProviderProps } from "./completion";
@@ -25,6 +27,7 @@ export {
   InternalMessageProvider,
   useMessage,
   useMessagePart,
+  useOptionalMessagePart,
 } from "./message";
 export type { ThreadContextValue } from "./thread";
 export { InternalThreadProvider, useThread } from "./thread";

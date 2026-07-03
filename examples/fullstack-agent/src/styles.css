@@ -297,24 +297,98 @@ pre {
 
 .composer {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: end;
-  gap: 8px;
+  display: block;
   margin-bottom: 18px;
-  padding: 10px;
+  padding: 0;
   border: 1px solid #d9d9d9;
   border-radius: 26px;
   background: #ffffff;
   box-shadow: 0 10px 30px rgb(0 0 0 / 8%);
+  overflow: hidden;
+}
+
+.composer-dropzone {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 25px;
+}
+
+.composer-dropzone[data-dragging] {
+  background: #f6faf8;
+  outline: 2px solid #2f6f5f;
+  outline-offset: -2px;
+}
+
+[data-anvia-composer-attachments] {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+[data-anvia-attachment] {
+  padding: 6px 8px;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fafafa;
+  color: #4b4b4b;
+  font-size: 0.85rem;
+}
+
+.composer-attachment {
+  max-width: min(260px, 100%);
+}
+
+[data-anvia-message-attachment] [data-anvia-attachment] {
+  max-width: min(320px, 100%);
+}
+
+[data-anvia-attachment-preview] img {
+  display: block;
+  width: auto;
+  max-width: 140px;
+  max-height: 140px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+[data-anvia-attachment-name] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #777777;
+  cursor: pointer;
+}
+
+.attachment-remove:not(:disabled):hover {
+  background: #eeeeee;
+  color: #171717;
 }
 
 .composer textarea {
+  width: 100%;
+  min-width: 0;
   min-height: 40px;
-  max-height: 180px;
   padding: 9px 10px;
   border: 0;
   outline: none;
+  overflow-y: hidden;
   resize: none;
   background: transparent;
   color: #171717;
@@ -364,6 +438,7 @@ pre {
   display: none;
 }
 
+[data-anvia-human-input-panel],
 [data-anvia-approvals],
 [data-anvia-questions] {
   width: min(760px, calc(100vw - 32px));
@@ -381,6 +456,7 @@ pre {
 
   .thread-viewport > [data-anvia-thread-messages],
   .composer,
+  [data-anvia-human-input-panel],
   [data-anvia-approvals],
   [data-anvia-questions] {
     width: min(100vw - 20px, 760px);

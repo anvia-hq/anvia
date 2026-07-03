@@ -3,6 +3,8 @@ export {
   uiMessagesToCoreMessages,
 } from "./messages";
 export type {
+  CreateUIAttachment,
+  UIAttachment,
   UIError,
   UIMessage,
   UIMessagePart,

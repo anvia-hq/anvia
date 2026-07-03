@@ -13,6 +13,7 @@ Subpath entrypoints are also available:
 
 - `@anvia/react-ui/chat`
 - `@anvia/react-ui/completion`
+- `@anvia/react-ui/attachment`
 - `@anvia/react-ui/human-input`
 - `@anvia/react-ui/message`
 - `@anvia/react-ui/shared`
@@ -24,16 +25,38 @@ Subpath entrypoints are also available:
 const Thread: {
   Root: React.ForwardRefExoticComponent<...>;
   Viewport: React.ForwardRefExoticComponent<...>;
+  ViewportFooter: React.ForwardRefExoticComponent<...>;
   Messages: React.ForwardRefExoticComponent<...>;
   Empty: React.ForwardRefExoticComponent<...>;
+  Status: React.ForwardRefExoticComponent<...>;
+  Loading: React.ForwardRefExoticComponent<...>;
+  Error: React.ForwardRefExoticComponent<...>;
+  Suggestions: React.ForwardRefExoticComponent<...>;
+  Suggestion: React.ForwardRefExoticComponent<...>;
   ScrollToBottom: React.ForwardRefExoticComponent<...>;
 };
 
 const Composer: {
   Root: React.ForwardRefExoticComponent<...>;
-  Input: React.ForwardRefExoticComponent<...>;
+  Input: React.ForwardRefExoticComponent<
+    React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+      autoResize?: boolean;
+      maxRows?: number;
+      minRows?: number;
+    }
+  >;
+  Attachments: React.ForwardRefExoticComponent<...>;
+  AddAttachment: React.ForwardRefExoticComponent<...>;
+  AttachmentDropzone: React.ForwardRefExoticComponent<...>;
   Submit: React.ForwardRefExoticComponent<...>;
   Stop: React.ForwardRefExoticComponent<...>;
+};
+
+const Attachment: {
+  Root: React.ForwardRefExoticComponent<...>;
+  Name: React.ForwardRefExoticComponent<...>;
+  Preview: React.ForwardRefExoticComponent<...>;
+  Remove: React.ForwardRefExoticComponent<...>;
 };
 
 const Message: {
@@ -42,8 +65,16 @@ const Message: {
   Parts: React.ForwardRefExoticComponent<...>;
   Part: React.ForwardRefExoticComponent<...>;
   Text: React.ForwardRefExoticComponent<...>;
+  Markdown: React.ForwardRefExoticComponent<...>;
+  CodeBlock: React.ForwardRefExoticComponent<...>;
   Reasoning: React.ForwardRefExoticComponent<...>;
   Tool: React.ForwardRefExoticComponent<...>;
+  ToolName: React.ForwardRefExoticComponent<...>;
+  ToolInput: React.ForwardRefExoticComponent<...>;
+  ToolOutput: React.ForwardRefExoticComponent<...>;
+  ToolError: React.ForwardRefExoticComponent<...>;
+  ToolStatus: React.ForwardRefExoticComponent<...>;
+  Attachment: React.ForwardRefExoticComponent<...>;
   Data: React.ForwardRefExoticComponent<...>;
   Error: React.ForwardRefExoticComponent<...>;
   Actions: React.ForwardRefExoticComponent<...>;
@@ -61,14 +92,18 @@ const Completion: {
 };
 
 const HumanInput: {
+  Panel: React.ForwardRefExoticComponent<...>;
+  Status: React.ForwardRefExoticComponent<...>;
   Approvals: React.ForwardRefExoticComponent<...>;
   Approval: React.ForwardRefExoticComponent<...>;
+  ApprovalReason: React.ForwardRefExoticComponent<...>;
   Approve: React.ForwardRefExoticComponent<...>;
   Reject: React.ForwardRefExoticComponent<...>;
   Questions: React.ForwardRefExoticComponent<...>;
   Question: React.ForwardRefExoticComponent<...>;
   QuestionPrompt: React.ForwardRefExoticComponent<...>;
   QuestionChoice: React.ForwardRefExoticComponent<...>;
+  QuestionTextAnswer: React.ForwardRefExoticComponent<...>;
   QuestionSubmit: React.ForwardRefExoticComponent<...>;
 };
 ```
@@ -118,6 +153,10 @@ type ThreadContextValue = {
 type ComposerContextValue = {
   input: string;
   setInput(input: string): void;
+  attachments: UIAttachment[];
+  addAttachment(attachment: File | CreateUIAttachment): Promise<void>;
+  removeAttachment(id: string): void;
+  clearAttachments(): void;
   submit(): Promise<void>;
   stop(): void;
   status: ChatController["status"];
@@ -144,17 +183,27 @@ function useCompletionContext<TEvent = unknown>(): CompletionController<TEvent>;
 function useThread(): ThreadContextValue;
 function useComposer(): ComposerContextValue;
 function useCompletionInput(): CompletionInputContextValue;
+function useAttachment(): AttachmentContextValue;
 
 type MessageContextValue = { message: UIMessage };
 type MessagePartContextValue = { part: UIMessagePart };
 type MessagePartsFilter = (part: UIMessagePart) => boolean;
 type MessageToolPart = Extract<UIMessagePart, { type: "tool" }>;
+type MessageAttachmentPart = Extract<UIMessagePart, { type: "attachment" }>;
 type MessageToolRenderWhen = "always" | "pending" | "settled";
 
 function useMessage(): MessageContextValue;
 function useMessagePart(): MessagePartContextValue;
 
-type ApprovalContextValue = { approval: ToolApproval };
+type ApprovalContextValue = {
+  approval: ToolApproval;
+  reason: string;
+  setReason(reason: string): void;
+};
+type AttachmentContextValue = {
+  attachment: UIAttachment;
+  remove?(): void;
+};
 type QuestionContextValue = {
   question: ToolQuestion;
   answers: Record<string, ToolQuestionAnswer>;

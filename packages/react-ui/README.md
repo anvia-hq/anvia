@@ -14,6 +14,7 @@ export function SupportChat() {
       <Thread.Root>
         <Thread.Viewport>
           <Thread.Empty>Start a conversation.</Thread.Empty>
+          <Thread.Suggestions />
           <Thread.Messages>
             <Message.Root>
               <Message.Content>
@@ -22,10 +23,13 @@ export function SupportChat() {
               <Message.Actions />
             </Message.Root>
           </Thread.Messages>
+          <Thread.Error />
           <Thread.ScrollToBottom>Jump to latest</Thread.ScrollToBottom>
         </Thread.Viewport>
         <Composer.Root>
-          <Composer.Input placeholder="Send a message..." />
+          <Composer.Attachments />
+          <Composer.AddAttachment>Attach</Composer.AddAttachment>
+          <Composer.Input maxRows={6} placeholder="Send a message..." />
           <Composer.Stop>Stop</Composer.Stop>
           <Composer.Submit>Send</Composer.Submit>
         </Composer.Root>

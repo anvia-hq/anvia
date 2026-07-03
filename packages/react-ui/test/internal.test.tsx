@@ -2,6 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  Attachment,
   ChatProvider,
   Completion,
   CompletionProvider,
@@ -92,5 +93,9 @@ describe("shared internals", () => {
         </ChatProvider>,
       ),
     ).toThrow("Question choice primitives must be used inside HumanInput.QuestionPrompt.");
+
+    expect(() => render(<Attachment.Name />)).toThrow(
+      "Attachment primitives must be used inside Attachment.Root.",
+    );
   });
 });

@@ -52,3 +52,18 @@ one application-specific component.
   )}
 </Message.Tool>
 ```
+
+For design-system layouts, compose the smaller tool primitives instead of formatting the part
+manually.
+
+```tsx
+<Message.Tool className="tool-card">
+  <header>
+    <Message.ToolName />
+    <Message.ToolStatus />
+  </header>
+  <Message.ToolInput />
+  <Message.ToolOutput />
+  <Message.ToolError />
+</Message.Tool>
+```

@@ -1,5 +1,6 @@
 export type {
   ApprovalContextValue,
+  AttachmentContextValue,
   ChatController,
   ChatProviderProps,
   CompletionController,
@@ -16,6 +17,7 @@ export {
   ChatProvider,
   CompletionProvider,
   useApproval,
+  useAttachment,
   useChatContext,
   useCompletionContext,
   useCompletionInput,

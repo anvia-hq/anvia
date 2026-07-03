@@ -252,6 +252,56 @@ describe("@anvia/react useChat", () => {
     expect(result.current.text).toBe("hi");
   });
 
+  it("sends attachment-only messages", async () => {
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+      send: async function* (request) {
+        expect(request.messages).toEqual([
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", data: "aGVsbG8=", mediaType: "image/png" },
+              },
+            ],
+          },
+        ]);
+        yield* [];
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.sendMessage({
+        attachments: [
+          {
+            type: "image",
+            mediaType: "image/png",
+            data: "aGVsbG8=",
+          },
+        ],
+      });
+    });
+
+    expect(result.current.messages[0]?.parts).toEqual([
+      expect.objectContaining({
+        type: "attachment",
+        attachment: expect.objectContaining({
+          type: "image",
+          mediaType: "image/png",
+          data: "aGVsbG8=",
+        }),
+      }),
+    ]);
+  });
+
+  it("exposes configured chat suggestions", () => {
+    const suggestions = [{ id: "s1", prompt: "Summarize this", label: "Summarize" }];
+    const { result } = renderHook(() => useChat({ suggestions }));
+
+    expect(result.current.suggestions).toBe(suggestions);
+  });
+
   it("passes core and UI messages to custom chat request factories", async () => {
     type CustomRequest = {
       messages: unknown[];

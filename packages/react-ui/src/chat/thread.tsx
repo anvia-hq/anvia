@@ -1,5 +1,6 @@
-import type { UIMessage } from "@anvia/react";
+import type { ChatSuggestion, UIMessage, UseChatStatus } from "@anvia/react";
 import {
+  Fragment,
   forwardRef,
   type MouseEvent,
   type ReactNode,
@@ -22,6 +23,7 @@ import { Message } from "../message/index";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type ThreadMessagesChildren = ReactNode | ((message: UIMessage) => ReactNode);
+type ThreadSuggestionChildren = ReactNode | ((suggestion: ChatSuggestion) => ReactNode);
 
 const ThreadRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadRoot(props, ref) {
@@ -104,6 +106,19 @@ const ThreadViewport = forwardRef<HTMLDivElement, ThreadViewportProps>(function 
   );
 });
 
+const ThreadViewportFooter = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
+  function ThreadViewportFooter(props, ref) {
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        "data-anvia-thread-viewport-footer": "",
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
+
 const ThreadEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadEmpty(props, ref) {
     const chat = useChatContext();
@@ -121,6 +136,74 @@ const ThreadEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
     );
   },
 );
+
+type ThreadStatusProps = Omit<PrimitiveProps<"div">, "children"> & {
+  children?: ReactNode | ((status: UseChatStatus) => ReactNode);
+};
+
+const ThreadStatus = forwardRef<HTMLDivElement, ThreadStatusProps>(function ThreadStatus(
+  { children, ...props },
+  ref,
+) {
+  const chat = useChatContext();
+  const renderedChildren = typeof children === "function" ? children(chat.status) : children;
+
+  return renderPrimitive(
+    "div",
+    {
+      ...props,
+      children: renderedChildren ?? chat.status,
+      "data-anvia-thread-status": "",
+      "data-state": chat.status,
+    } as PrimitiveProps<"div">,
+    ref,
+  );
+});
+
+const ThreadLoading = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
+  function ThreadLoading(props, ref) {
+    const chat = useChatContext();
+    if (chat.status !== "streaming") {
+      return null;
+    }
+
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        children: props.children ?? "Loading",
+        "data-anvia-thread-loading": "",
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
+
+type ThreadErrorProps = Omit<PrimitiveProps<"div">, "children"> & {
+  children?: ReactNode | ((error: unknown) => ReactNode);
+};
+
+const ThreadError = forwardRef<HTMLDivElement, ThreadErrorProps>(function ThreadError(
+  { children, ...props },
+  ref,
+) {
+  const chat = useChatContext();
+  if (chat.status !== "error" && chat.error === undefined) {
+    return null;
+  }
+  const renderedChildren = typeof children === "function" ? children(chat.error) : children;
+
+  return renderPrimitive(
+    "div",
+    {
+      ...props,
+      children: renderedChildren ?? errorMessage(chat.error),
+      "data-anvia-thread-error": "",
+      role: props.role ?? "alert",
+    } as PrimitiveProps<"div">,
+    ref,
+  );
+});
 
 type ThreadMessagesProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: ThreadMessagesChildren;
@@ -146,6 +229,74 @@ const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function 
     ref,
   );
 });
+
+type ThreadSuggestionsProps = Omit<PrimitiveProps<"div">, "children"> & {
+  children?: ThreadSuggestionChildren;
+};
+
+const ThreadSuggestions = forwardRef<HTMLDivElement, ThreadSuggestionsProps>(
+  function ThreadSuggestions({ children, ...props }, ref) {
+    const chat = useChatContext();
+
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        children: (chat.suggestions ?? []).map((suggestion) =>
+          typeof children === "function" ? (
+            <Fragment key={suggestion.id}>{children(suggestion)}</Fragment>
+          ) : (
+            <ThreadSuggestion key={suggestion.id} suggestion={suggestion}>
+              {children}
+            </ThreadSuggestion>
+          ),
+        ),
+        "data-anvia-thread-suggestions": "",
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
+
+type ThreadSuggestionProps = Omit<PrimitiveProps<"button">, "children"> & {
+  children?: ReactNode;
+  prompt?: string;
+  suggestion?: ChatSuggestion;
+};
+
+const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
+  function ThreadSuggestion({ onClick, prompt, suggestion, ...props }, ref) {
+    const chat = useChatContext();
+    const suggestionPrompt = prompt ?? suggestion?.prompt ?? "";
+    const disabled =
+      props.disabled ?? (suggestionPrompt.length === 0 || chat.status === "streaming");
+
+    const handleClick = useCallback(
+      (event: MouseEvent<HTMLButtonElement>) => {
+        onClick?.(event);
+        if (event.defaultPrevented || disabled) {
+          return;
+        }
+        void chat.sendMessage(suggestionPrompt);
+      },
+      [chat, disabled, onClick, suggestionPrompt],
+    );
+
+    return renderPrimitive(
+      "button",
+      {
+        ...props,
+        children: props.children ?? suggestion?.label ?? suggestionPrompt,
+        disabled,
+        onClick: handleClick,
+        type: props.type ?? "button",
+        "data-anvia-thread-suggestion": "",
+        "data-state": disabled ? "disabled" : "enabled",
+      } as PrimitiveProps<"button">,
+      ref,
+    );
+  },
+);
 
 const ThreadScrollToBottom = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   function ThreadScrollToBottom({ onClick, ...props }, ref) {
@@ -190,10 +341,26 @@ function defaultMessage(): ReactNode {
   );
 }
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return "Something went wrong.";
+}
+
 export const Thread = {
   Root: ThreadRoot,
   Viewport: ThreadViewport,
+  ViewportFooter: ThreadViewportFooter,
   Messages: ThreadMessages,
   Empty: ThreadEmpty,
+  Status: ThreadStatus,
+  Loading: ThreadLoading,
+  Error: ThreadError,
+  Suggestions: ThreadSuggestions,
+  Suggestion: ThreadSuggestion,
   ScrollToBottom: ThreadScrollToBottom,
 } as const;

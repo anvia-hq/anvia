@@ -33,6 +33,22 @@ type UIMessage = {
   metadata?: unknown;
 };
 
+type UIAttachment = {
+  id: string;
+  type: "image" | "document" | "file";
+  name?: string;
+  mediaType?: string;
+  url?: string;
+  data?: string;
+  text?: string;
+  detail?: "auto" | "low" | "high";
+  metadata?: unknown;
+};
+
+type CreateUIAttachment = Omit<UIAttachment, "id"> & {
+  id?: string;
+};
+
 type UIMessagePart =
   | { id: string; type: "text"; text: string }
   | { id: string; type: "reasoning"; text: string; reasoningId?: string }
@@ -48,6 +64,7 @@ type UIMessagePart =
       error?: UIError;
     }
   | { id: string; type: "data"; name: string; data: unknown }
+  | { id: string; type: "attachment"; attachment: UIAttachment }
   | { id: string; type: "error"; error: UIError };
 
 type UIStreamRequest = {
@@ -74,9 +91,17 @@ type SendMessageInput =
   | UIMessage
   | {
       id?: string;
-      text: string;
+      text?: string;
+      attachments?: CreateUIAttachment[];
       metadata?: UIMessage["metadata"];
     };
+
+type ChatSuggestion = {
+  id: string;
+  prompt: string;
+  label?: string;
+  metadata?: UIMessage["metadata"];
+};
 
 type CreateChatRequestArgs = {
   messages: UIMessage[];
@@ -296,6 +321,7 @@ type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
   eventToDelta?: (event: TEvent) => string | undefined;
   eventToFinal?: (event: TEvent) => string | undefined;
   humanInput?: HumanInputOptions<TEvent>;
+  suggestions?: ChatSuggestion[];
   onEvent?: (event: TEvent) => void;
   onError?: (error: unknown) => void;
 };
@@ -303,6 +329,7 @@ type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
 type UseChatResult<TEvent = UIStreamEvent> = {
   messages: UIMessage[];
   events: TEvent[];
+  suggestions?: ChatSuggestion[];
   setMessages: SetMessages;
   sendMessage(input: SendMessageInput): Promise<void>;
   send(input?: string): Promise<void>;
@@ -330,6 +357,7 @@ function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(options?: {
   eventToDelta?: (event: TEvent) => string | undefined;
   eventToFinal?: (event: TEvent) => string | undefined;
   humanInput?: HumanInputOptions<TEvent>;
+  suggestions?: ChatSuggestion[];
   onEvent?: (event: TEvent) => void;
   onError?: (error: unknown) => void;
 }): UseChatResult<TEvent>;

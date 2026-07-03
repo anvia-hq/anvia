@@ -4,10 +4,20 @@ import type {
   ToolQuestionAnswer,
   ToolQuestionPrompt,
 } from "@anvia/react";
-import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  createElement,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 
 export type ApprovalContextValue = {
   approval: ToolApproval;
+  reason: string;
+  setReason(reason: string): void;
 };
 
 export type QuestionContextValue = {
@@ -31,7 +41,13 @@ export function InternalApprovalProvider({
   approval: ToolApproval;
   children?: ReactNode;
 }): ReactElement {
-  return createElement(ApprovalContext.Provider, { value: { approval } }, children);
+  const [reason, setReason] = useState("");
+  const value = useMemo<ApprovalContextValue>(
+    () => ({ approval, reason, setReason }),
+    [approval, reason],
+  );
+
+  return createElement(ApprovalContext.Provider, { value }, children);
 }
 
 export function InternalQuestionProvider({

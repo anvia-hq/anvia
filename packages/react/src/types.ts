@@ -1,7 +1,9 @@
 import type { Message } from "@anvia/core/completion";
-import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
+import type { CreateUIAttachment, UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 
 export type {
+  CreateUIAttachment,
+  UIAttachment,
   UIError,
   UIMessage,
   UIMessagePart,
@@ -107,12 +109,20 @@ export type HumanInputState = {
   };
 };
 
+export type ChatSuggestion = {
+  id: string;
+  prompt: string;
+  label?: string;
+  metadata?: UIMessage["metadata"];
+};
+
 export type SendMessageInput =
   | string
   | UIMessage
   | {
       id?: string;
-      text: string;
+      text?: string;
+      attachments?: CreateUIAttachment[];
       metadata?: UIMessage["metadata"];
     };
 
@@ -134,6 +144,7 @@ export type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> =
   eventToDelta?: (event: TEvent) => string | undefined;
   eventToFinal?: (event: TEvent) => string | undefined;
   humanInput?: HumanInputOptions<TEvent>;
+  suggestions?: ChatSuggestion[];
   onEvent?: (event: TEvent) => void;
   onError?: (error: unknown) => void;
 };
@@ -145,6 +156,7 @@ export type SetMessages = (
 export type UseChatResult<TEvent = UIStreamEvent> = {
   messages: UIMessage[];
   events: TEvent[];
+  suggestions?: ChatSuggestion[];
   setMessages: SetMessages;
   sendMessage(input: SendMessageInput): Promise<void>;
   send(input?: string): Promise<void>;

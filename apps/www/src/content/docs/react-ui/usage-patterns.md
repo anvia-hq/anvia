@@ -38,8 +38,25 @@ the default rendering only where the product needs custom layout.
     if (part.type === "tool") {
       return <ToolCallCard part={part} />;
     }
+    if (part.type === "attachment") {
+      return <AttachmentPreview attachment={part.attachment} />;
+    }
 
     return <Message.Part />;
   }}
 </Message.Parts>
+```
+
+## Attach files in the composer
+
+`Composer.AddAttachment` opens a file picker, `Composer.AttachmentDropzone` accepts dropped files,
+and `Composer.Attachments` renders the pending attachments before the prompt is sent.
+
+```tsx
+<Composer.Root>
+  <Composer.Attachments />
+  <Composer.AddAttachment />
+  <Composer.Input minRows={1} maxRows={6} />
+  <Composer.Submit />
+</Composer.Root>
 ```

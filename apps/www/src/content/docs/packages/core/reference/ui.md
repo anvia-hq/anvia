@@ -26,6 +26,22 @@ type UIMessage = {
   metadata?: JsonValue;
 };
 
+type UIAttachment = {
+  id: string;
+  type: "image" | "document" | "file";
+  name?: string;
+  mediaType?: string;
+  url?: string;
+  data?: string;
+  text?: string;
+  detail?: "auto" | "low" | "high";
+  metadata?: JsonValue;
+};
+
+type CreateUIAttachment = Omit<UIAttachment, "id"> & {
+  id?: string;
+};
+
 type UIMessagePart =
   | { id: string; type: "text"; text: string }
   | { id: string; type: "reasoning"; text: string; reasoningId?: string }
@@ -41,6 +57,7 @@ type UIMessagePart =
       error?: UIError;
     }
   | { id: string; type: "data"; name: string; data: JsonValue }
+  | { id: string; type: "attachment"; attachment: UIAttachment }
   | { id: string; type: "error"; error: UIError };
 
 type UIStreamRequest = {
@@ -74,7 +91,7 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): Message[];
 
 Purpose: convert client-facing UI messages into core completion messages before calling completion or agent APIs.
 
-Return behavior: text, reasoning, tool call, and tool output parts are mapped into the closest core message representation.
+Return behavior: text, attachment, reasoning, tool call, and tool output parts are mapped into the closest core message representation.
 
 ## coreMessagesToUIMessages
 

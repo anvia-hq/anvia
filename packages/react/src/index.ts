@@ -11,7 +11,9 @@ export { readJsonlStream, readSseStream } from "./streams";
 export type { CreateFetchTransportOptions } from "./transport";
 export { createChatTransport, createFetchTransport } from "./transport";
 export type {
+  ChatSuggestion,
   CreateChatRequestArgs,
+  CreateUIAttachment,
   EventStreamFormat,
   EventTransport,
   HumanInputOptions,
@@ -27,6 +29,7 @@ export type {
   ToolQuestionPrompt,
   ToolQuestionStatus,
   TransportOptions,
+  UIAttachment,
   UIError,
   UIMessage,
   UIMessagePart,

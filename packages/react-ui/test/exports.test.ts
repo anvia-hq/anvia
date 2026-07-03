@@ -1,9 +1,10 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
+import { Attachment } from "../src/attachment";
 import { ChatProvider, Composer, Thread } from "../src/chat";
 import { Completion, CompletionProvider } from "../src/completion";
 import { HumanInput } from "../src/human-input";
-import type { MessageToolPart } from "../src/message";
+import type { MessageAttachmentPart, MessageToolPart } from "../src/message";
 import { Message } from "../src/message";
 import {
   ChatProvider as SharedChatProvider,
@@ -12,6 +13,7 @@ import {
 
 describe("public entrypoints", () => {
   it("exports namespace barrels from subpaths", () => {
+    expect(Attachment.Root).toBeTypeOf("object");
     expect(Thread.Root).toBeTypeOf("object");
     expect(Composer.Root).toBeTypeOf("object");
     expect(Message.Root).toBeTypeOf("object");
@@ -26,5 +28,6 @@ describe("public entrypoints", () => {
 
   it("exports public helper types from domain barrels", () => {
     expectTypeOf<MessageToolPart>().toMatchTypeOf<{ type: "tool" }>();
+    expectTypeOf<MessageAttachmentPart>().toMatchTypeOf<{ type: "attachment" }>();
   });
 });

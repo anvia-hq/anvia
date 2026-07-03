@@ -1,3 +1,4 @@
+export { Attachment, useAttachment } from "./attachment/index";
 export {
   ChatProvider,
   Composer,
@@ -19,10 +20,16 @@ export {
   useQuestion,
   useQuestionPrompt,
 } from "./human-input/index";
-export type { MessagePartsFilter, MessageToolPart, MessageToolRenderWhen } from "./message/index";
+export type {
+  MessageAttachmentPart,
+  MessagePartsFilter,
+  MessageToolPart,
+  MessageToolRenderWhen,
+} from "./message/index";
 export { Message, useMessage, useMessagePart } from "./message/index";
 export type {
   ApprovalContextValue,
+  AttachmentContextValue,
   ChatController,
   ChatProviderProps,
   CompletionController,

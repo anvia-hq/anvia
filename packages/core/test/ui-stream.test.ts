@@ -101,6 +101,55 @@ describe("UI message adapters", () => {
     expect(uiMessagesToCoreMessages(coreMessagesToUIMessages(coreMessages))).toEqual(coreMessages);
   });
 
+  it("converts user attachment parts into core multimodal content", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "user_1",
+        role: "user",
+        parts: [
+          { id: "text_1", type: "text", text: "review" },
+          {
+            id: "attachment_1",
+            type: "attachment",
+            attachment: {
+              id: "image_1",
+              type: "image",
+              url: "https://example.test/image.png",
+              detail: "high",
+            },
+          },
+          {
+            id: "attachment_2",
+            type: "attachment",
+            attachment: {
+              id: "doc_1",
+              type: "document",
+              name: "brief.txt",
+              mediaType: "text/plain",
+              text: "details",
+            },
+          },
+        ],
+      },
+    ];
+
+    expect(uiMessagesToCoreMessages(messages)).toEqual([
+      Message.user([
+        UserContent.text("review"),
+        UserContent.imageUrl("https://example.test/image.png", { detail: "high" }),
+        {
+          type: "document",
+          source: {
+            type: "text",
+            text: "details",
+            mediaType: "text/plain",
+            filename: "brief.txt",
+          },
+        },
+      ]),
+    ]);
+  });
+
   it("rejects unsupported user UI parts instead of dropping them", () => {
     const messages: UIMessage[] = [
       {
@@ -111,7 +160,7 @@ describe("UI message adapters", () => {
     ];
 
     expect(() => uiMessagesToCoreMessages(messages)).toThrow(
-      "User UI messages can only be converted from text parts",
+      "User UI messages can only be converted from text, attachment, or image/document data parts.",
     );
   });
 

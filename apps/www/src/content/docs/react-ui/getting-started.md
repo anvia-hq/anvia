@@ -31,10 +31,14 @@ export function SupportChat() {
       <Thread.Root className="chat">
         <Thread.Viewport className="chat-scroll">
           <Thread.Empty>Start a conversation.</Thread.Empty>
+          <Thread.Suggestions />
           <Thread.Messages />
+          <Thread.Error />
         </Thread.Viewport>
 
         <Composer.Root className="composer">
+          <Composer.Attachments />
+          <Composer.AddAttachment />
           <Composer.Input placeholder="Ask a question..." />
           <Composer.Submit />
           <Composer.Stop />

@@ -1,5 +1,12 @@
 import type { JsonValue } from "@anvia/core/completion";
-import type { UIError, UIMessage, UIMessagePart, UIStreamEvent } from "@anvia/core/ui";
+import type {
+  CreateUIAttachment,
+  UIAttachment,
+  UIError,
+  UIMessage,
+  UIMessagePart,
+  UIStreamEvent,
+} from "@anvia/core/ui";
 import type { SendMessageInput } from "./types";
 
 type UIToolMessagePart = Extract<UIMessagePart, { type: "tool" }>;
@@ -9,18 +16,39 @@ export function createUserMessage(input: SendMessageInput): UIMessage | undefine
     return input;
   }
 
-  const text = typeof input === "string" ? input : input.text;
-  if (text.trim().length === 0) {
+  const text = typeof input === "string" ? input : (input.text ?? "");
+  const attachments = typeof input === "string" ? [] : (input.attachments ?? []);
+  if (text.trim().length === 0 && attachments.length === 0) {
     return undefined;
+  }
+
+  const parts: UIMessagePart[] = [];
+  if (text.trim().length > 0) {
+    parts.push({ id: createId("part"), type: "text", text });
+  }
+  for (const attachment of attachments) {
+    const normalized = createAttachment(attachment);
+    parts.push({
+      id: createId("part"),
+      type: "attachment",
+      attachment: normalized,
+    });
   }
 
   return {
     id: typeof input === "string" || input.id === undefined ? createId("msg") : input.id,
     role: "user",
-    parts: [{ id: createId("part"), type: "text", text }],
+    parts,
     ...(typeof input === "string" || input.metadata === undefined
       ? {}
       : { metadata: input.metadata }),
+  };
+}
+
+function createAttachment(attachment: CreateUIAttachment): UIAttachment {
+  return {
+    ...attachment,
+    id: attachment.id ?? createId("attachment"),
   };
 }
 

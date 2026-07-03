@@ -10,6 +10,11 @@
   min-height: 0;
 }
 
+[data-anvia-thread-viewport-footer] {
+  position: sticky;
+  bottom: 0;
+}
+
 [data-anvia-thread-messages] {
   display: grid;
   gap: 0.75rem;
@@ -33,6 +38,7 @@
 
 [data-anvia-message-content],
 [data-anvia-part],
+[data-anvia-attachment],
 [data-anvia-approval],
 [data-anvia-question] {
   border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
@@ -46,6 +52,7 @@
 }
 
 [data-anvia-reasoning] pre,
+[data-anvia-code-block],
 [data-anvia-tool-input],
 [data-anvia-tool-output],
 [data-anvia-data],
@@ -59,7 +66,10 @@
 
 [data-anvia-message-actions],
 [data-anvia-composer],
+[data-anvia-composer-attachments],
+[data-anvia-attachment],
 [data-anvia-completion-form],
+[data-anvia-thread-suggestions],
 [data-anvia-approvals],
 [data-anvia-questions],
 [data-anvia-question-choices] {
@@ -75,17 +85,40 @@
 }
 
 [data-anvia-composer-input],
-[data-anvia-completion-input] {
+[data-anvia-completion-input],
+[data-anvia-approval-reason],
+[data-anvia-question-text-answer] {
   flex: 1 1 16rem;
   min-height: 2.75rem;
+}
+
+[data-anvia-composer-input] {
+  min-width: 0;
+  overflow-y: hidden;
+  resize: none;
+}
+
+[data-anvia-completion-input],
+[data-anvia-approval-reason],
+[data-anvia-question-text-answer] {
   resize: vertical;
+}
+
+[data-anvia-attachment-preview] img {
+  display: block;
+  max-width: 8rem;
+  max-height: 8rem;
+  object-fit: contain;
 }
 
 [data-anvia-submit],
 [data-anvia-stop],
+[data-anvia-add-attachment],
+[data-anvia-attachment-remove],
 [data-anvia-copy],
 [data-anvia-regenerate],
 [data-anvia-scroll-to-bottom],
+[data-anvia-thread-suggestion],
 [data-anvia-approve],
 [data-anvia-reject],
 [data-anvia-question-choice],

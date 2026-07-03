@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatProvider, Composer, Thread } from "../src";
@@ -6,6 +6,7 @@ import { createChatController, textMessage } from "./helpers";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("Chat primitives", () => {
@@ -91,6 +92,104 @@ describe("Chat primitives", () => {
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 100, behavior: "smooth" });
   });
 
+  it("renders status, loading, error, and suggestions", () => {
+    const sendMessage = vi.fn(async () => {});
+
+    const { rerender } = render(
+      <ChatProvider
+        controller={createChatController({
+          sendMessage,
+          status: "streaming",
+          suggestions: [{ id: "s1", prompt: "Summarize", label: "Summarize this" }],
+        })}
+      >
+        <Thread.Root>
+          <Thread.Status />
+          <Thread.Loading />
+          <Thread.Error />
+          <Thread.Suggestions />
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(screen.getByText("streaming")).toBeTruthy();
+    expect(screen.getByText("Loading")).toBeTruthy();
+    expect((screen.getByText("Summarize this") as HTMLButtonElement).disabled).toBe(true);
+
+    rerender(
+      <ChatProvider
+        controller={createChatController({
+          sendMessage,
+          status: "error",
+          error: new Error("Request failed"),
+          suggestions: [{ id: "s1", prompt: "Summarize", label: "Summarize this" }],
+        })}
+      >
+        <Thread.Root>
+          <Thread.Status />
+          <Thread.Loading />
+          <Thread.Error />
+          <Thread.Suggestions />
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(screen.queryByText("Loading")).toBeNull();
+    expect(screen.getByText("Request failed")).toBeTruthy();
+    fireEvent.click(screen.getByText("Summarize this"));
+
+    expect(sendMessage).toHaveBeenCalledWith("Summarize");
+  });
+
+  it("adds file attachments and submits them with composer input", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const file = new File(["hello"], "hello.txt", { type: "text/plain" });
+
+    const { container } = render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root>
+          <Composer.AddAttachment />
+          <Composer.Attachments />
+          <Composer.Input />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+
+    const input = container.querySelector("[data-anvia-attachment-input]");
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(container.querySelector("[data-anvia-composer-attachments]")).toBeInstanceOf(
+        HTMLDivElement,
+      );
+      expect(screen.getByText("hello.txt")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "read this" } });
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "read this",
+        attachments: [
+          expect.objectContaining({
+            type: "document",
+            name: "hello.txt",
+            mediaType: "text/plain",
+          }),
+        ],
+      });
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+    });
+  });
+
   it("respects prevented composer submit and supports stop", () => {
     const sendMessage = vi.fn(async () => {});
     const stop = vi.fn();
@@ -145,5 +244,50 @@ describe("Chat primitives", () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith("hello");
+  });
+
+  it("auto-resizes composer input up to the configured max rows", () => {
+    const computedStyle = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      borderBottomWidth: "1px",
+      borderTopWidth: "1px",
+      boxSizing: "border-box",
+      fontSize: "16px",
+      lineHeight: "20px",
+      paddingBottom: "4px",
+      paddingTop: "4px",
+    } as CSSStyleDeclaration);
+    let scrollHeight = 48;
+
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root>
+          <Composer.Input
+            maxRows={3}
+            minRows={2}
+            ref={(node) => {
+              if (node === null) {
+                return;
+              }
+              Object.defineProperty(node, "scrollHeight", {
+                configurable: true,
+                get: () => scrollHeight,
+              });
+            }}
+          />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(input.getAttribute("rows")).toBe("2");
+    expect(input.style.height).toBe("50px");
+    expect(input.style.overflowY).toBe("hidden");
+
+    scrollHeight = 96;
+    fireEvent.change(input, { target: { value: "one\ntwo\nthree\nfour" } });
+
+    expect(input.style.height).toBe("70px");
+    expect(input.style.overflowY).toBe("auto");
+    expect(computedStyle).toHaveBeenCalled();
   });
 });

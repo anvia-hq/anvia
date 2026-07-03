@@ -2,6 +2,9 @@ import {
   AssistantContent,
   type AssistantContent as AssistantContentType,
   type Message as CoreMessage,
+  type DocumentContent,
+  type ImageContent,
+  type ImageDetail,
   type JsonValue,
   Message,
   reasoningDisplayText,
@@ -12,7 +15,7 @@ import {
   UserContent,
   type UserContent as UserContentType,
 } from "../completion/types";
-import type { UIMessage, UIMessagePart } from "./types";
+import type { UIAttachment, UIMessage, UIMessagePart } from "./types";
 
 export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
   const coreMessages: CoreMessage[] = [];
@@ -34,12 +37,16 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
           content.push(UserContent.text(part.text));
           continue;
         }
+        if (part.type === "attachment") {
+          content.push(attachmentToUserContent(part.attachment));
+          continue;
+        }
         if (part.type === "data" && isUserContent(part.data)) {
           content.push(part.data);
           continue;
         }
         throw new TypeError(
-          "User UI messages can only be converted from text parts or image/document data parts.",
+          "User UI messages can only be converted from text, attachment, or image/document data parts.",
         );
       }
       if (content.length > 0) {
@@ -136,9 +143,8 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
         } else {
           parts.push({
             id: createId("part"),
-            type: "data",
-            name: content.type,
-            data: content as JsonValue,
+            type: "attachment",
+            attachment: userContentToAttachment(content),
           });
         }
       }
@@ -231,6 +237,100 @@ function textFromUIParts(parts: UIMessagePart[]): string {
 
 function outputToToolResultContent(output: JsonValue | undefined): ToolResultContent[] {
   return [{ type: "text", text: serializeToolResultOutput(output ?? null) }];
+}
+
+function attachmentToUserContent(attachment: UIAttachment): UserContentType {
+  if (attachment.type === "image" || isImageFileAttachment(attachment)) {
+    if (attachment.url !== undefined) {
+      return UserContent.imageUrl(attachment.url, imageOptions(attachment));
+    }
+    if (attachment.data !== undefined && attachment.mediaType !== undefined) {
+      return UserContent.imageBase64(
+        attachment.data,
+        attachment.mediaType,
+        imageOptions(attachment),
+      );
+    }
+    throw new TypeError("Image attachments require a url or base64 data with mediaType.");
+  }
+
+  if (attachment.text !== undefined) {
+    return {
+      type: "document",
+      source: {
+        type: "text",
+        text: attachment.text,
+        ...(attachment.mediaType === undefined ? {} : { mediaType: attachment.mediaType }),
+        ...(attachment.name === undefined ? {} : { filename: attachment.name }),
+      },
+    };
+  }
+
+  const mediaType = attachment.mediaType ?? "application/octet-stream";
+  if (attachment.url !== undefined) {
+    return UserContent.documentUrl(attachment.url, mediaType, documentOptions(attachment));
+  }
+  if (attachment.data !== undefined) {
+    return UserContent.documentBase64(attachment.data, mediaType, documentOptions(attachment));
+  }
+
+  throw new TypeError("Document attachments require a url, base64 data, or text.");
+}
+
+function userContentToAttachment(content: ImageContent | DocumentContent): UIAttachment {
+  if (content.type === "image") {
+    const attachment: UIAttachment = {
+      id: createId("attachment"),
+      type: "image",
+      ...(content.detail === undefined ? {} : { detail: content.detail }),
+    };
+    if (content.source.type === "url") {
+      attachment.url = content.source.url;
+    } else {
+      attachment.data = content.source.data;
+      attachment.mediaType = content.source.mediaType;
+    }
+    return attachment;
+  }
+
+  const attachment: UIAttachment = {
+    id: createId("attachment"),
+    type: "document",
+  };
+  if (content.source.type === "url") {
+    attachment.url = content.source.url;
+    attachment.mediaType = content.source.mediaType;
+    if (content.source.filename !== undefined) {
+      attachment.name = content.source.filename;
+    }
+  } else if (content.source.type === "base64") {
+    attachment.data = content.source.data;
+    attachment.mediaType = content.source.mediaType;
+    if (content.source.filename !== undefined) {
+      attachment.name = content.source.filename;
+    }
+  } else {
+    attachment.text = content.source.text;
+    if (content.source.mediaType !== undefined) {
+      attachment.mediaType = content.source.mediaType;
+    }
+    if (content.source.filename !== undefined) {
+      attachment.name = content.source.filename;
+    }
+  }
+  return attachment;
+}
+
+function isImageFileAttachment(attachment: UIAttachment): boolean {
+  return attachment.type === "file" && attachment.mediaType?.startsWith("image/") === true;
+}
+
+function imageOptions(attachment: UIAttachment): { detail?: ImageDetail } {
+  return attachment.detail === undefined ? {} : { detail: attachment.detail };
+}
+
+function documentOptions(attachment: UIAttachment): { filename?: string } {
+  return attachment.name === undefined ? {} : { filename: attachment.name };
 }
 
 function toolResultContentToJson(content: ToolResultContent[]): JsonValue {

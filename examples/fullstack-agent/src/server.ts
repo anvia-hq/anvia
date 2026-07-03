@@ -35,7 +35,9 @@ const agentModel = client.completionModel("gpt-5.5");
 const agent = new AgentBuilder("support-operations", agentModel)
   .name("Support Operations")
   .description("Answers operational questions with short, concrete summaries.")
-  .instructions("Use tools when useful. Keep answers concise and action-oriented.")
+  .instructions(
+    "Use tools when useful. Use attached images or PDFs when the user provides them. Keep answers concise and action-oriented.",
+  )
   .tool(getOrder)
   .defaultMaxTurns(50)
   .build();

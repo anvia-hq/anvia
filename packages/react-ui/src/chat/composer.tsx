@@ -1,21 +1,27 @@
+import type { CreateUIAttachment, UIAttachment } from "@anvia/react";
 import {
   type ChangeEvent,
+  type DragEvent,
   type FormEvent,
   forwardRef,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-
+import { Attachment } from "../attachment/index";
 import {
   type ComposerContextValue,
+  InternalAttachmentProvider,
   InternalComposerProvider,
   useChatContext,
   useComposer,
 } from "../contexts";
-import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
 const ComposerRoot = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(function ComposerRoot(
   { onSubmit, ...props },
@@ -23,29 +29,69 @@ const ComposerRoot = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(functio
 ) {
   const chat = useChatContext();
   const [input, setInput] = useState("");
-  const canSubmit = input.trim().length > 0 && chat.status !== "streaming";
+  const [attachments, setAttachments] = useState<UIAttachment[]>([]);
+  const canSubmit =
+    (input.trim().length > 0 || attachments.length > 0) && chat.status !== "streaming";
   const canStop = chat.status === "streaming";
+
+  const addAttachment = useCallback(async (attachment: File | CreateUIAttachment) => {
+    const normalized = isFileAttachmentInput(attachment)
+      ? await attachmentFromFile(attachment)
+      : createAttachment(attachment);
+    setAttachments((current) => [...current, normalized]);
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }, []);
+
+  const clearAttachments = useCallback(() => {
+    setAttachments([]);
+  }, []);
 
   const submit = useCallback(async () => {
     const prompt = input;
-    if (prompt.trim().length === 0 || chat.status === "streaming") {
+    if ((prompt.trim().length === 0 && attachments.length === 0) || chat.status === "streaming") {
       return;
     }
+    if (attachments.length === 0) {
+      await chat.sendMessage(prompt);
+    } else {
+      await chat.sendMessage({
+        text: prompt,
+        attachments,
+      });
+    }
     setInput("");
-    await chat.sendMessage(prompt);
-  }, [chat, input]);
+    setAttachments([]);
+  }, [attachments, chat, input]);
 
   const value = useMemo<ComposerContextValue>(
     () => ({
       input,
       setInput,
+      attachments,
+      addAttachment,
+      removeAttachment,
+      clearAttachments,
       submit,
       stop: chat.stop,
       status: chat.status,
       canSubmit,
       canStop,
     }),
-    [canStop, canSubmit, chat.status, chat.stop, input, submit],
+    [
+      addAttachment,
+      attachments,
+      canStop,
+      canSubmit,
+      chat.status,
+      chat.stop,
+      clearAttachments,
+      input,
+      removeAttachment,
+      submit,
+    ],
   );
 
   const handleSubmit = useCallback(
@@ -76,52 +122,146 @@ const ComposerRoot = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(functio
   );
 });
 
-const ComposerInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea">>(
-  function ComposerInput({ onChange, onKeyDown, ...props }, ref) {
-    const composer = useComposer();
+type ComposerInputProps = PrimitiveProps<"textarea"> & {
+  autoResize?: boolean;
+  maxRows?: number;
+  minRows?: number;
+};
 
-    const handleChange = useCallback(
-      (event: ChangeEvent<HTMLTextAreaElement>) => {
-        onChange?.(event);
-        if (!event.defaultPrevented) {
-          composer.setInput(event.currentTarget.value);
-        }
-      },
-      [composer, onChange],
-    );
-
-    const handleKeyDown = useCallback(
-      (event: KeyboardEvent<HTMLTextAreaElement>) => {
-        onKeyDown?.(event);
-        if (
-          event.defaultPrevented ||
-          event.key !== "Enter" ||
-          event.shiftKey ||
-          event.nativeEvent.isComposing
-        ) {
-          return;
-        }
-        event.preventDefault();
-        void composer.submit();
-      },
-      [composer, onKeyDown],
-    );
-
-    return renderPrimitive(
-      "textarea",
-      {
-        ...props,
-        "aria-label": props["aria-label"] ?? "Message",
-        disabled: props.disabled ?? composer.status === "streaming",
-        onChange: handleChange,
-        onKeyDown: handleKeyDown,
-        value: composer.input,
-        "data-anvia-composer-input": "",
-      } as PrimitiveProps<"textarea">,
-      ref,
-    );
+const ComposerInput = forwardRef<HTMLTextAreaElement, ComposerInputProps>(function ComposerInput(
+  {
+    autoResize = true,
+    maxRows: maxRowsProp,
+    minRows: minRowsProp,
+    onChange,
+    onKeyDown,
+    rows,
+    ...props
   },
-);
+  ref,
+) {
+  const composer = useComposer();
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const wasAutoResizeRef = useRef(autoResize);
+  const composedInputRef = useMemo(() => composeRefs(inputRef, ref), [ref]);
+  const minRows = normalizeRows(minRowsProp ?? rows ?? 1, 1);
+  const maxRows = normalizeRows(maxRowsProp ?? 6, minRows);
+
+  useEffect(() => {
+    const wasAutoResize = wasAutoResizeRef.current;
+    wasAutoResizeRef.current = autoResize;
+    if (!autoResize) {
+      if (wasAutoResize) {
+        resetComposerInputSize(inputRef.current);
+      }
+      return;
+    }
+    resizeComposerInput(inputRef.current, { maxRows, minRows });
+  });
+
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      onChange?.(event);
+      if (!event.defaultPrevented) {
+        composer.setInput(event.currentTarget.value);
+        if (autoResize) {
+          resizeComposerInput(event.currentTarget, { maxRows, minRows });
+        }
+      }
+    },
+    [autoResize, composer, maxRows, minRows, onChange],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      onKeyDown?.(event);
+      if (
+        event.defaultPrevented ||
+        event.key !== "Enter" ||
+        event.shiftKey ||
+        event.nativeEvent.isComposing
+      ) {
+        return;
+      }
+      event.preventDefault();
+      void composer.submit();
+    },
+    [composer, onKeyDown],
+  );
+
+  return renderPrimitive(
+    "textarea",
+    {
+      ...props,
+      "aria-label": props["aria-label"] ?? "Message",
+      disabled: props.disabled ?? composer.status === "streaming",
+      onChange: handleChange,
+      onKeyDown: handleKeyDown,
+      rows: autoResize ? minRows : rows,
+      value: composer.input,
+      "data-anvia-composer-input": "",
+    } as PrimitiveProps<"textarea">,
+    composedInputRef,
+  );
+});
+
+type ComposerInputResizeOptions = {
+  maxRows: number;
+  minRows: number;
+};
+
+function resizeComposerInput(
+  input: HTMLTextAreaElement | null,
+  { maxRows, minRows }: ComposerInputResizeOptions,
+): void {
+  if (input === null) {
+    return;
+  }
+
+  const style = getComputedStyle(input);
+  const lineHeight = lineHeightFromStyle(style);
+  const paddingHeight = pixelValue(style.paddingTop) + pixelValue(style.paddingBottom);
+  const borderHeight = pixelValue(style.borderTopWidth) + pixelValue(style.borderBottomWidth);
+  const minContentHeight = lineHeight * minRows;
+  const maxContentHeight = Math.max(minContentHeight, lineHeight * maxRows);
+
+  input.style.height = "auto";
+  const scrollContentHeight = Math.max(input.scrollHeight - paddingHeight, 0);
+  const contentHeight = clamp(scrollContentHeight, minContentHeight, maxContentHeight);
+  const nextHeight =
+    style.boxSizing === "border-box" ? contentHeight + paddingHeight + borderHeight : contentHeight;
+
+  input.style.height = `${Math.ceil(nextHeight)}px`;
+  input.style.overflowY = scrollContentHeight > maxContentHeight ? "auto" : "hidden";
+}
+
+function resetComposerInputSize(input: HTMLTextAreaElement | null): void {
+  if (input === null) {
+    return;
+  }
+  input.style.height = "";
+  input.style.overflowY = "";
+}
+
+function normalizeRows(value: number, min: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.max(min, Math.floor(value));
+}
+
+function lineHeightFromStyle(style: CSSStyleDeclaration): number {
+  return pixelValue(style.lineHeight) || (pixelValue(style.fontSize) || 16) * 1.2;
+}
+
+function pixelValue(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 const ComposerSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   function ComposerSubmit(props, ref) {
@@ -176,9 +316,228 @@ const ComposerStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(fun
   );
 });
 
+type ComposerAttachmentsChildren = ReactNode | ((attachment: UIAttachment) => ReactNode);
+
+type ComposerAttachmentsProps = Omit<PrimitiveProps<"div">, "children"> & {
+  children?: ComposerAttachmentsChildren;
+};
+
+const ComposerAttachments = forwardRef<HTMLDivElement, ComposerAttachmentsProps>(
+  function ComposerAttachments({ children, ...props }, ref) {
+    const composer = useComposer();
+    if (composer.attachments.length === 0) {
+      return null;
+    }
+
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        children: composer.attachments.map((attachment) => (
+          <InternalAttachmentProvider
+            key={attachment.id}
+            value={{
+              attachment,
+              remove: () => {
+                composer.removeAttachment(attachment.id);
+              },
+            }}
+          >
+            {typeof children === "function"
+              ? children(attachment)
+              : (children ?? <Attachment.Root />)}
+          </InternalAttachmentProvider>
+        )),
+        "data-anvia-composer-attachments": "",
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
+
+type ComposerAddAttachmentProps = PrimitiveProps<"button"> & {
+  accept?: string;
+  multiple?: boolean;
+};
+
+const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmentProps>(
+  function ComposerAddAttachment({ accept, multiple = false, onClick, ...props }, ref) {
+    const composer = useComposer();
+    const inputRef = useRef<HTMLInputElement | null>(null);
+    const disabled = props.disabled ?? composer.status === "streaming";
+
+    const handleClick = useCallback(
+      (event: MouseEvent<HTMLButtonElement>) => {
+        onClick?.(event);
+        if (event.defaultPrevented || disabled) {
+          return;
+        }
+        inputRef.current?.click();
+      },
+      [disabled, onClick],
+    );
+
+    const handleChange = useCallback(
+      async (event: ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(event.currentTarget.files ?? []);
+        event.currentTarget.value = "";
+        for (const file of files) {
+          await composer.addAttachment(file);
+        }
+      },
+      [composer],
+    );
+
+    return (
+      <>
+        {renderPrimitive(
+          "button",
+          {
+            ...props,
+            children: props.children ?? "Attach",
+            disabled,
+            onClick: handleClick,
+            type: props.type ?? "button",
+            "data-anvia-add-attachment": "",
+            "data-state": disabled ? "disabled" : "enabled",
+          } as PrimitiveProps<"button">,
+          ref,
+        )}
+        <input
+          accept={accept}
+          aria-hidden="true"
+          data-anvia-attachment-input=""
+          hidden
+          multiple={multiple}
+          onChange={(event) => {
+            void handleChange(event);
+          }}
+          ref={inputRef}
+          tabIndex={-1}
+          type="file"
+        />
+      </>
+    );
+  },
+);
+
+type ComposerAttachmentDropzoneProps = PrimitiveProps<"div"> & {
+  disabled?: boolean;
+};
+
+const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachmentDropzoneProps>(
+  function ComposerAttachmentDropzone(
+    { disabled: disabledProp = false, onDragLeave, onDragOver, onDrop, ...props },
+    ref,
+  ) {
+    const composer = useComposer();
+    const [dragging, setDragging] = useState(false);
+    const disabled = disabledProp || composer.status === "streaming";
+
+    const handleDragOver = useCallback(
+      (event: DragEvent<HTMLDivElement>) => {
+        onDragOver?.(event);
+        if (event.defaultPrevented || disabled) {
+          return;
+        }
+        event.preventDefault();
+        setDragging(true);
+      },
+      [disabled, onDragOver],
+    );
+
+    const handleDragLeave = useCallback(
+      (event: DragEvent<HTMLDivElement>) => {
+        onDragLeave?.(event);
+        if (!event.defaultPrevented) {
+          setDragging(false);
+        }
+      },
+      [onDragLeave],
+    );
+
+    const handleDrop = useCallback(
+      (event: DragEvent<HTMLDivElement>) => {
+        onDrop?.(event);
+        if (event.defaultPrevented || disabled) {
+          return;
+        }
+        event.preventDefault();
+        setDragging(false);
+        const files = Array.from(event.dataTransfer.files);
+        void Promise.all(files.map((file) => composer.addAttachment(file)));
+      },
+      [composer, disabled, onDrop],
+    );
+
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        onDragLeave: handleDragLeave,
+        onDragOver: handleDragOver,
+        onDrop: handleDrop,
+        "data-anvia-attachment-dropzone": "",
+        "data-dragging": dragging ? "" : undefined,
+        "data-state": disabled ? "disabled" : "enabled",
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
+
+function createAttachment(attachment: CreateUIAttachment): UIAttachment {
+  return {
+    ...attachment,
+    id: attachment.id ?? createAttachmentId(),
+  };
+}
+
+function isFileAttachmentInput(attachment: File | CreateUIAttachment): attachment is File {
+  return typeof File !== "undefined" && attachment instanceof File;
+}
+
+async function attachmentFromFile(file: File): Promise<UIAttachment> {
+  return {
+    id: createAttachmentId(),
+    type: file.type.startsWith("image/") ? "image" : "document",
+    name: file.name,
+    mediaType: file.type.length > 0 ? file.type : "application/octet-stream",
+    data: await readFileData(file),
+  };
+}
+
+async function readFileData(file: File): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      resolve(String(reader.result ?? ""));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read attachment."));
+    });
+    reader.readAsDataURL(file);
+  });
+  return dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : dataUrl;
+}
+
+let nextAttachmentId = 0;
+
+function createAttachmentId(): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  if (random !== undefined) {
+    return `attachment_${random}`;
+  }
+  nextAttachmentId += 1;
+  return `attachment_${nextAttachmentId.toString(36)}`;
+}
+
 export const Composer = {
   Root: ComposerRoot,
   Input: ComposerInput,
+  Attachments: ComposerAttachments,
+  AddAttachment: ComposerAddAttachment,
+  AttachmentDropzone: ComposerAttachmentDropzone,
   Submit: ComposerSubmit,
   Stop: ComposerStop,
 } as const;

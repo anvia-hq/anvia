@@ -1,10 +1,16 @@
+import type { CreateUIAttachment, UIAttachment } from "@anvia/react";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
-
 import type { ChatController } from "./chat";
+
+export type ComposerAttachmentInput = File | CreateUIAttachment;
 
 export type ComposerContextValue = {
   input: string;
   setInput(input: string): void;
+  attachments: UIAttachment[];
+  addAttachment(attachment: ComposerAttachmentInput): Promise<void>;
+  removeAttachment(id: string): void;
+  clearAttachments(): void;
   submit(): Promise<void>;
   stop(): void;
   status: ChatController["status"];

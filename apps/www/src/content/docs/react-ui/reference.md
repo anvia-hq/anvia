@@ -14,6 +14,7 @@ Subpath entrypoints are also available:
 
 - `@anvia/react-ui/chat`
 - `@anvia/react-ui/completion`
+- `@anvia/react-ui/attachment`
 - `@anvia/react-ui/human-input`
 - `@anvia/react-ui/message`
 - `@anvia/react-ui/shared`
@@ -21,10 +22,11 @@ Subpath entrypoints are also available:
 
 ## Namespaces
 
-- `Thread`: `Root`, `Viewport`, `Messages`, `Empty`, `ScrollToBottom`
-- `Composer`: `Root`, `Input`, `Submit`, `Stop`
-- `Message`: `Root`, `Content`, `Parts`, `Part`, `Text`, `Reasoning`, `Tool`, `Data`, `Error`, `Actions`, `Copy`, `Regenerate`
-- `HumanInput`: `Approvals`, `Approval`, `Approve`, `Reject`, `Questions`, `Question`, `QuestionPrompt`, `QuestionChoice`, `QuestionSubmit`
+- `Attachment`: `Root`, `Name`, `Preview`, `Remove`
+- `Thread`: `Root`, `Viewport`, `ViewportFooter`, `Messages`, `Empty`, `Status`, `Loading`, `Error`, `Suggestions`, `Suggestion`, `ScrollToBottom`
+- `Composer`: `Root`, `Input` (`minRows`, `maxRows`, `autoResize`), `Attachments`, `AddAttachment`, `AttachmentDropzone`, `Submit`, `Stop`
+- `Message`: `Root`, `Content`, `Parts`, `Part`, `Text`, `Markdown`, `CodeBlock`, `Reasoning`, `Tool`, `ToolName`, `ToolInput`, `ToolOutput`, `ToolError`, `ToolStatus`, `Attachment`, `Data`, `Error`, `Actions`, `Copy`, `Regenerate`
+- `HumanInput`: `Panel`, `Status`, `Approvals`, `Approval`, `ApprovalReason`, `Approve`, `Reject`, `Questions`, `Question`, `QuestionPrompt`, `QuestionChoice`, `QuestionTextAnswer`, `QuestionSubmit`
 - `Completion`: `Root`, `Output`, `Form`, `Input`, `Submit`, `Stop`
 
 ## Providers
@@ -37,6 +39,7 @@ Subpath entrypoints are also available:
 - `useChatContext`
 - `useComposer`
 - `useThread`
+- `useAttachment`
 - `useMessage`
 - `useMessagePart`
 - `useHumanInput`

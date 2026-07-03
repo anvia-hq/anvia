@@ -1,8 +1,7 @@
 import { useChat } from "@anvia/react";
-import { ChatProvider, Composer, HumanInput, Message, Thread } from "@anvia/react-ui";
+import { Attachment, ChatProvider, Composer, HumanInput, Message, Thread } from "@anvia/react-ui";
 import "@anvia/react-ui/styles.css";
-import type { MessageToolPart } from "@anvia/react-ui";
-import { ArrowDown, ArrowUp, Copy, Plus, RotateCcw, Square } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Paperclip, Plus, RotateCcw, Square, X } from "lucide-react";
 
 const suggestions = [
   "Where is order A-100?",
@@ -14,6 +13,7 @@ export function App() {
   const chat = useChat({
     endpoint: "/api/chat",
     format: "jsonl",
+    suggestions: suggestions.map((prompt) => ({ id: prompt, prompt })),
   });
   const hasMessages = chat.messages.length > 0;
 
@@ -39,20 +39,15 @@ export function App() {
               <Thread.Empty className="empty-state">
                 <div className="welcome">
                   <h1>What can I help with?</h1>
-                  <div className="suggestions">
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
+                  <Thread.Suggestions className="suggestions">
+                    {(suggestion) => (
+                      <Thread.Suggestion
+                        key={suggestion.id}
                         className="suggestion"
-                        type="button"
-                        onClick={() => {
-                          void chat.sendMessage(suggestion);
-                        }}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
+                        suggestion={suggestion}
+                      />
+                    )}
+                  </Thread.Suggestions>
                 </div>
               </Thread.Empty>
               <Thread.Messages>
@@ -63,8 +58,16 @@ export function App() {
                         part.type === "tool" ? (
                           <Message.Part>
                             <Message.Tool className="tool-card" renderWhen="always">
-                              {(tool) => <ToolCard tool={tool} />}
+                              <ToolCard />
                             </Message.Tool>
+                          </Message.Part>
+                        ) : part.type === "text" ? (
+                          <Message.Part>
+                            <Message.Markdown />
+                          </Message.Part>
+                        ) : part.type === "attachment" ? (
+                          <Message.Part>
+                            <Message.Attachment className="message-attachment" />
                           </Message.Part>
                         ) : (
                           <Message.Part />
@@ -90,19 +93,40 @@ export function App() {
               </Thread.ScrollToBottom>
             </Thread.Viewport>
 
-            <HumanInput.Approvals />
-            <HumanInput.Questions />
+            <HumanInput.Panel />
 
             <Composer.Root className="composer">
-              <Composer.Input placeholder="Message Fullstack Agent" rows={1} />
-              <Composer.Stop className="icon-button composer-control">
-                <Square size={14} fill="currentColor" aria-hidden="true" />
-                <span className="sr-only">Stop</span>
-              </Composer.Stop>
-              <Composer.Submit className="icon-button send-button">
-                <ArrowUp size={18} aria-hidden="true" />
-                <span className="sr-only">Send</span>
-              </Composer.Submit>
+              <Composer.AttachmentDropzone className="composer-dropzone">
+                <Composer.Attachments>
+                  {(attachment) => (
+                    <Attachment.Root className="composer-attachment">
+                      <Attachment.Preview />
+                      <Attachment.Name />
+                      <Attachment.Remove className="attachment-remove">
+                        <X size={14} aria-hidden="true" />
+                        <span className="sr-only">Remove {attachment.name ?? "attachment"}</span>
+                      </Attachment.Remove>
+                    </Attachment.Root>
+                  )}
+                </Composer.Attachments>
+                <Composer.AddAttachment
+                  accept="image/*,.pdf"
+                  className="icon-button composer-control"
+                  multiple
+                >
+                  <Paperclip size={16} aria-hidden="true" />
+                  <span className="sr-only">Attach image or PDF</span>
+                </Composer.AddAttachment>
+                <Composer.Input placeholder="Message Fullstack Agent" rows={1} />
+                <Composer.Stop className="icon-button composer-control">
+                  <Square size={14} fill="currentColor" aria-hidden="true" />
+                  <span className="sr-only">Stop</span>
+                </Composer.Stop>
+                <Composer.Submit className="icon-button send-button">
+                  <ArrowUp size={18} aria-hidden="true" />
+                  <span className="sr-only">Send</span>
+                </Composer.Submit>
+              </Composer.AttachmentDropzone>
             </Composer.Root>
           </Thread.Root>
         </section>
@@ -111,53 +135,24 @@ export function App() {
   );
 }
 
-function ToolCard({ tool }: { tool: MessageToolPart }) {
+function ToolCard() {
   return (
     <>
       <div className="tool-card-header">
-        <span data-anvia-tool-name="">{tool.toolName}</span>
-        <span className="tool-card-state">{toolStateLabel(tool.state)}</span>
+        <Message.ToolName />
+        <Message.ToolStatus className="tool-card-state" />
       </div>
       <div className="tool-card-body">
-        {tool.input !== undefined ? (
-          <section className="tool-card-section">
-            <div className="tool-card-label">Input</div>
-            <pre data-anvia-tool-input="">{formatValue(tool.input)}</pre>
-          </section>
-        ) : null}
-        {tool.output !== undefined ? (
-          <section className="tool-card-section">
-            <div className="tool-card-label">Result</div>
-            <pre data-anvia-tool-output="">{formatValue(tool.output)}</pre>
-          </section>
-        ) : null}
-        {tool.error !== undefined ? (
-          <div data-anvia-tool-error="" role="alert">
-            {tool.error.message}
-          </div>
-        ) : null}
+        <section className="tool-card-section">
+          <div className="tool-card-label">Input</div>
+          <Message.ToolInput />
+        </section>
+        <section className="tool-card-section">
+          <div className="tool-card-label">Result</div>
+          <Message.ToolOutput />
+        </section>
+        <Message.ToolError />
       </div>
     </>
   );
-}
-
-function toolStateLabel(state: MessageToolPart["state"]): string {
-  if (state === "output-available") {
-    return "Done";
-  }
-  if (state === "error") {
-    return "Error";
-  }
-  return "Running";
-}
-
-function formatValue(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }

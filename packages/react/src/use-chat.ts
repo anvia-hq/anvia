@@ -406,6 +406,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   return {
     messages,
     events,
+    suggestions: options.suggestions ?? [],
     setMessages,
     sendMessage,
     send,

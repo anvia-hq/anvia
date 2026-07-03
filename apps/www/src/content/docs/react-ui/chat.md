@@ -18,17 +18,28 @@ import { useChat } from "@anvia/react";
 import { ChatProvider, Composer, Thread } from "@anvia/react-ui";
 
 export function ChatSurface() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({
+    endpoint: "/api/chat",
+    suggestions: [
+      { id: "summarize", label: "Summarize", prompt: "Summarize this conversation." },
+    ],
+  });
 
   return (
     <ChatProvider controller={chat}>
       <Thread.Root className="chat">
         <Thread.Viewport className="chat-scroll">
           <Thread.Empty>No messages yet.</Thread.Empty>
+          <Thread.Suggestions />
           <Thread.Messages />
+          <Thread.ViewportFooter>
+            <Thread.ScrollToBottom />
+          </Thread.ViewportFooter>
         </Thread.Viewport>
 
         <Composer.Root className="composer">
+          <Composer.Attachments />
+          <Composer.AddAttachment />
           <Composer.Input placeholder="Message Anvia..." />
           <Composer.Submit />
           <Composer.Stop />
@@ -60,9 +71,16 @@ message layout. With a function child it lets the app control each row.
 ```
 
 Use `Thread.ScrollToBottom` when the viewport can be scrolled away from the latest message.
+Use `Thread.Status`, `Thread.Loading`, and `Thread.Error` for streaming and failure states.
+Use `Thread.Suggestions` to render prompts configured with `useChat({ suggestions })`.
 
 ## Composer primitives
 
-`Composer.Root` owns the draft text for a single prompt. `Composer.Input` submits on Enter, keeps
-Shift+Enter for new lines, and disables while the chat is streaming. `Composer.Submit` and
-`Composer.Stop` reflect whether submit or stop is currently available.
+`Composer.Root` owns the draft text for a single prompt. `Composer.Input` auto-resizes from
+`minRows` to `maxRows` rows (`maxRows` defaults to `6`), submits on Enter, keeps Shift+Enter for new
+lines, and disables while the chat is streaming. `Composer.Submit` and `Composer.Stop` reflect
+whether submit or stop is currently available.
+
+`Composer.Attachments`, `Composer.AddAttachment`, and `Composer.AttachmentDropzone` add browser file
+attachments to the next submitted user message. Files are normalized into Anvia UI attachments and
+sent with the prompt.

@@ -31,7 +31,7 @@ differently.
 ## Parts
 
 `Message.Parts` renders every part from `message.parts`. The default renderer selects the matching
-primitive for text, reasoning, tool, data, and error parts.
+primitive for text, reasoning, tool, attachment, data, and error parts.
 
 ```tsx
 <Message.Parts filter={(part) => part.type !== "reasoning"}>
@@ -45,8 +45,32 @@ primitive for text, reasoning, tool, data, and error parts.
 </Message.Parts>
 ```
 
-Focused primitives are available for `Message.Text`, `Message.Reasoning`, `Message.Tool`,
-`Message.Data`, and `Message.Error`.
+Focused primitives are available for `Message.Text`, `Message.Markdown`, `Message.Reasoning`,
+`Message.Tool`, `Message.Attachment`, `Message.Data`, and `Message.Error`.
+
+Use `Message.Markdown` when assistant text should be rendered as Markdown. It uses GitHub-flavored
+Markdown by default and accepts `components` overrides, so applications can provide their own code
+block highlighter.
+
+```tsx
+<Message.Parts>
+  {(part) =>
+    part.type === "text" ? (
+      <Message.Part>
+        <Message.Markdown
+          components={{
+            code(props) {
+              return <CodeBlock {...props} />;
+            },
+          }}
+        />
+      </Message.Part>
+    ) : (
+      <Message.Part />
+    )
+  }
+</Message.Parts>
+```
 
 ## Actions
 

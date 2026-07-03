@@ -44,3 +44,44 @@ export function ApprovalQueue() {
   );
 }
 ```
+
+## Markdown messages
+
+```tsx
+import { Message } from "@anvia/react-ui";
+
+export function MarkdownMessage() {
+  return (
+    <Message.Root>
+      <Message.Parts>
+        {(part) =>
+          part.type === "text" ? (
+            <Message.Part>
+              <Message.Markdown />
+            </Message.Part>
+          ) : (
+            <Message.Part />
+          )
+        }
+      </Message.Parts>
+    </Message.Root>
+  );
+}
+```
+
+## Composer attachments
+
+```tsx
+import { Composer } from "@anvia/react-ui";
+
+export function AttachmentComposer() {
+  return (
+    <Composer.Root>
+      <Composer.Attachments />
+      <Composer.AddAttachment>Attach</Composer.AddAttachment>
+      <Composer.Input />
+      <Composer.Submit />
+    </Composer.Root>
+  );
+}
+```

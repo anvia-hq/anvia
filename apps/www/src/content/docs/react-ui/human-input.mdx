@@ -8,18 +8,18 @@ sidebar:
   label: Human input
 ---
 
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { reviewPanelVariants, approvalVariants } from "../../../lib/react-ui-code-variants";
+
 ## Panel
 
 `HumanInput.Panel` renders when pending approvals or questions exist. Use `HumanInput.Status` when
 the surface should show a pending count.
 
-```tsx
-<HumanInput.Panel className="human-input-panel">
-  <HumanInput.Status />
-  <HumanInput.Approvals />
-  <HumanInput.Questions />
-</HumanInput.Panel>
-```
+<ReactUiPreview variant="review" />
+
+<CodeVariants id="human-input-panel" variants={reviewPanelVariants} />
 
 If your application wants a persistent review lane, render the collections directly with
 `keepMounted`.
@@ -37,24 +37,7 @@ If your application wants a persistent review lane, render the collections direc
 `HumanInput.Approvals` reads approvals from the chat controller. Each approval gets its own context
 so `HumanInput.Approve` and `HumanInput.Reject` know which request to resolve.
 
-```tsx
-<HumanInput.Approvals className="approvals">
-  {(approval) => (
-    <HumanInput.Approval className="approval">
-      <header>
-        <strong>{approval.toolName}</strong>
-        <span>{approval.status}</span>
-      </header>
-      {approval.args !== undefined ? <pre>{approval.args}</pre> : null}
-      <HumanInput.ApprovalReason placeholder="Why approve or reject?" />
-      <div className="approval-actions">
-        <HumanInput.Reject>Reject</HumanInput.Reject>
-        <HumanInput.Approve>Approve</HumanInput.Approve>
-      </div>
-    </HumanInput.Approval>
-  )}
-</HumanInput.Approvals>
-```
+<CodeVariants id="human-input-approvals" variants={approvalVariants} />
 
 Use `filter="all"` when a review surface should show completed approvals too. The default filter is
 `"pending"`.

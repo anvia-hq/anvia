@@ -8,7 +8,11 @@ sidebar:
   label: Usage patterns
 ---
 
-## Pair it with @anvia/react
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { defaultToCustomVariants, attachmentVariants } from "../../../lib/react-ui-code-variants";
+
+## Pair controllers with providers
 
 `@anvia/react-ui` expects controllers from `@anvia/react`.
 
@@ -45,8 +49,8 @@ support `asChild`, so applications can attach Anvia behavior to design-system co
 </Composer.Submit>
 ```
 
-Use `data-anvia-*` selectors when the styling should follow primitive state instead of component
-names.
+Use `data-anvia-*`, `data-role`, and `data-state` selectors when styling should follow primitive
+state instead of component names.
 
 ```css
 [data-anvia-message][data-role="user"] {
@@ -58,36 +62,14 @@ names.
 }
 ```
 
-## Render streamed parts directly
+## Start default, then specialize
 
-`Message.Parts` renders Anvia `UIMessagePart` values by default. Use a child function to replace
-only the parts that need product-specific UI.
+The default message renderer is useful longer than it first looks. Keep it for ordinary parts, and
+branch only for product-specific tools, attachment layouts, or Markdown components.
 
-```tsx
-<Message.Parts>
-  {(part) => {
-    if (part.type === "tool") {
-      return (
-        <Message.Part>
-          <Message.Tool>
-            {(tool) => <ToolCallCard tool={tool} />}
-          </Message.Tool>
-        </Message.Part>
-      );
-    }
+<ReactUiPreview variant="message" />
 
-    if (part.type === "attachment") {
-      return (
-        <Message.Part>
-          <Message.Attachment className="attachment-preview" />
-        </Message.Part>
-      );
-    }
-
-    return <Message.Part />;
-  }}
-</Message.Parts>
-```
+<CodeVariants id="usage-default-to-custom" variants={defaultToCustomVariants} />
 
 ## Attach files in the composer
 
@@ -95,18 +77,9 @@ only the parts that need product-specific UI.
 underlying input, `Composer.AttachmentDropzone` accepts dropped files, and `Composer.Attachments`
 renders pending attachments before the prompt is sent.
 
-```tsx
-<Composer.Root>
-  <Composer.AttachmentDropzone className="dropzone">
-    <Composer.Attachments className="attachment-list" />
-    <Composer.AddAttachment accept="image/*,.pdf" multiple>
-      Attach
-    </Composer.AddAttachment>
-    <Composer.Input minRows={1} maxRows={6} />
-    <Composer.Submit />
-  </Composer.AttachmentDropzone>
-</Composer.Root>
-```
+<ReactUiPreview variant="attachments" />
+
+<CodeVariants id="usage-attachments" variants={attachmentVariants} />
 
 ## Control composer state
 
@@ -143,21 +116,4 @@ when your app CSS needs a stable wrapper.
 <Composer.Attachments keepMounted />
 <HumanInput.Approvals keepMounted />
 <HumanInput.Questions keepMounted />
-```
-
-## Split default and custom rendering
-
-You can mix default primitives and custom product components. A common pattern is to keep
-`Message.Part` as the fallback and specialize only expensive or domain-specific parts.
-
-```tsx
-<Message.Parts filter={(part) => part.type !== "reasoning"}>
-  {(part) => {
-    if (part.type === "tool" && part.toolName === "searchDocs") {
-      return <SearchResultTool part={part} />;
-    }
-
-    return <Message.Part />;
-  }}
-</Message.Parts>
 ```

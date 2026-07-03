@@ -22,8 +22,9 @@ Most applications start with a chat surface:
 1. Create a `useChat(...)` controller in the app.
 2. Wrap the UI in `ChatProvider`.
 3. Render `Thread.Root`, `Thread.Viewport`, `Thread.Messages`, and `Composer.Root`.
-4. Add product-specific message rendering, attachments, tool cards, and human-input controls.
-5. Move layout, colors, spacing, and cards into application CSS.
+4. Keep the default message renderer until a part needs product-specific UI.
+5. Add custom Markdown, attachment, tool-card, and human-input rendering one piece at a time.
+6. Move layout, colors, spacing, and cards into application CSS or Tailwind classes.
 
 The primitives give you state, accessibility-friendly defaults, and stable attributes. They do not
 try to own your design system.
@@ -55,10 +56,10 @@ Application code still owns:
 - [Usage patterns](/docs/react-ui/usage-patterns)
 - [Chat and composer](/docs/react-ui/chat)
 - [Messages](/docs/react-ui/messages)
+- [Styling](/docs/react-ui/styling)
 - [Tool calls](/docs/react-ui/tool-calls)
 - [Human input](/docs/react-ui/human-input)
 - [Completion](/docs/react-ui/completion)
-- [Styling](/docs/react-ui/styling)
 - [Examples](/docs/react-ui/examples)
 - [Reference](/docs/react-ui/reference)
 - [Changelog](/docs/react-ui/changelog)

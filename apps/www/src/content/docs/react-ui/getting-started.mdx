@@ -1,0 +1,48 @@
+---
+title: Getting started
+description: Install @anvia/react-ui, wire it to useChat, and render a styled chat surface.
+section: react-ui
+sidebar:
+  group: Start Here
+  order: 2
+  label: Getting started
+---
+
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { starterChatVariants } from "../../../lib/react-ui-code-variants";
+
+Install the UI package beside the React hook package.
+
+```sh
+pnpm add @anvia/react @anvia/react-ui
+```
+
+## Build the first chat
+
+`@anvia/react` owns the `useChat(...)` controller. `@anvia/react-ui` reads that controller through
+`ChatProvider` and renders the thread, messages, suggestions, errors, scrolling, attachments, and
+composer controls.
+
+<ReactUiPreview variant="chat" size="tall" />
+
+<CodeVariants id="getting-started-chat" variants={starterChatVariants} />
+
+## What happened
+
+The example uses the default message renderer through `<Thread.Messages />`. That means the package
+renders every supported `UIMessagePart` for you: text, reasoning, tool calls, attachments, data, and
+errors.
+
+The app still owns:
+
+- The `/api/chat` route.
+- Authentication and persistence.
+- Page layout and final visual styling.
+- Custom message, tool-call, or attachment components when the defaults are not enough.
+
+## Next steps
+
+- Learn the renderer levels in [Messages](/docs/react-ui/messages).
+- Add file inputs and dropzones in [Composer attachments](/docs/react-ui/examples/composer-attachments).
+- Build a complete app-owned surface in [Full chat surface](/docs/react-ui/examples/chat-surface).

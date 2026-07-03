@@ -1,0 +1,103 @@
+---
+title: Messages
+description: Start with the default message renderer, then customize text, Markdown, tool, attachment, data, and error parts.
+section: react-ui
+sidebar:
+  group: Primitives
+  order: 2
+  label: Messages
+---
+
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { defaultRendererVariants, messageRowVariants, customRendererVariants, markdownVariants } from "../../../lib/react-ui-code-variants";
+
+`Message.Root` renders one Anvia `UIMessage`. `Message.Parts` renders the message's streamed
+parts. Start with the default renderer, then replace only the parts that need product-specific UI.
+
+## Renderer levels
+
+| Level | Use it when | What you write |
+| --- | --- | --- |
+| Default renderer | You want the package to render every supported part. | `<Thread.Messages />` or `<Message.Parts />` |
+| Styled default renderer | You like the default part behavior but need app layout and actions. | `Message.Root`, `Message.Content`, `Message.Parts`, `Message.Actions` |
+| Custom renderer | Text, tools, attachments, or errors need product-specific markup. | `Message.Parts` with a child function |
+
+## Default renderer
+
+`Thread.Messages` can render a complete list without a child function. Internally, each row uses
+`Message.Root`, `Message.Content`, and `Message.Parts`. The emitted attributes let your app style
+user and assistant messages without taking over rendering.
+
+<ReactUiPreview variant="message" />
+
+<CodeVariants id="messages-default-renderer" variants={defaultRendererVariants} />
+
+This is the renderer version to reach for first. It supports text, reasoning, tool calls,
+attachments, data, and errors through `Message.Part`.
+
+## Styled message rows
+
+Add a child function to `Thread.Messages` when the row needs app-owned layout, copy/regenerate
+actions, or design-system wrappers. The part renderer can still stay default.
+
+<CodeVariants id="messages-row-renderer" variants={messageRowVariants} />
+
+`Message.Root` emits `data-role`, so one row component can style `user`, `assistant`, `system`, and
+`tool` messages differently.
+
+## Custom part rendering
+
+Use a `Message.Parts` child function when one part type needs a richer component. Keep
+`<Message.Part />` as the fallback so new part types still render.
+
+<CodeVariants id="messages-custom-renderer" variants={customRendererVariants} />
+
+The focused primitives are:
+
+- `Message.Text` and `Message.Markdown` for text parts.
+- `Message.Reasoning` for reasoning parts.
+- `Message.Tool`, `Message.ToolName`, `Message.ToolStatus`, `Message.ToolInput`,
+  `Message.ToolOutput`, and `Message.ToolError` for tool parts.
+- `Message.Attachment` for attachment parts.
+- `Message.Data` for structured data parts.
+- `Message.Error` for error parts.
+
+## Markdown text
+
+Use `Message.Markdown` when assistant text should render GitHub-flavored Markdown. It accepts
+`components` for links, headings, code blocks, and other Markdown elements.
+
+<CodeVariants id="messages-markdown" variants={markdownVariants} />
+
+## Filtering parts
+
+`Message.Parts` accepts `filter` when a surface should hide reasoning, show only pending tools, or
+split parts between two panels.
+
+```tsx
+<Message.Parts filter={(part) => part.type !== "reasoning"}>
+  {(part) => (part.type === "tool" ? <ToolActivity part={part} /> : <Message.Part />)}
+</Message.Parts>
+```
+
+Use filtering for layout decisions, not data mutation. The source message stays unchanged.
+
+## Actions
+
+`Message.Copy` copies text from the current message. `Message.Regenerate` calls the chat
+controller's `regenerate()` action and enables only for the latest assistant message while the chat
+is idle.
+
+```tsx
+<Message.Actions className="message-actions">
+  <Message.Copy asChild>
+    <button type="button">Copy answer</button>
+  </Message.Copy>
+  <Message.Regenerate asChild>
+    <button type="button">Try again</button>
+  </Message.Regenerate>
+</Message.Actions>
+```
+
+For a larger message recipe, see [Message rendering](/docs/react-ui/examples/message-rendering).

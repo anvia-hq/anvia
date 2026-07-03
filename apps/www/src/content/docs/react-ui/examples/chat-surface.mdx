@@ -1,0 +1,46 @@
+---
+title: Full chat surface
+description: Compose a complete @anvia/react-ui chat surface with messages, suggestions, scrolling, and composer controls.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 1
+  label: Full chat surface
+---
+
+import CodeVariants from "../../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../../components/docs/ReactUiPreview.astro";
+import { chatSurfaceVariants } from "../../../../lib/react-ui-code-variants";
+
+This recipe starts from a `useChat(...)` controller and builds a complete app-owned chat screen.
+It intentionally uses the default message renderer first. Add a custom message row only after you
+need custom Markdown, tool cards, attachments, or actions.
+
+<ReactUiPreview variant="chat" />
+
+<CodeVariants id="full-chat-surface" variants={chatSurfaceVariants} />
+
+## Add message actions
+
+If you need copy or regenerate controls, switch `Thread.Messages` to a child function and keep
+`Message.Parts` as the renderer.
+
+```tsx
+<Thread.Messages className="messages">
+  {(message) => (
+    <Message.Root className="message">
+      <Message.Content className="message-content">
+        <Message.Parts />
+      </Message.Content>
+      {message.role === "assistant" ? (
+        <Message.Actions className="message-actions">
+          <Message.Copy>Copy</Message.Copy>
+          <Message.Regenerate>Regenerate</Message.Regenerate>
+        </Message.Actions>
+      ) : null}
+    </Message.Root>
+  )}
+</Thread.Messages>
+```
+
+For deeper message customization, continue to [Message rendering](/docs/react-ui/examples/message-rendering).

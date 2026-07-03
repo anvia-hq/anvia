@@ -1,0 +1,84 @@
+---
+title: Styling
+description: Style headless Anvia React UI primitives with class names, data attributes, Vanilla CSS, or Tailwind CSS.
+section: react-ui
+sidebar:
+  group: Primitives
+  order: 6
+  label: Styling
+---
+
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { chatShellVariants, messageStyleVariants, composerStyleVariants } from "../../../lib/react-ui-code-variants";
+
+`@anvia/react-ui` is headless. The package owns behavior, state, context, and stable attributes.
+Your application owns layout, spacing, color, typography, and design-system integration.
+
+## What the package styles
+
+The optional stylesheet is for prototypes and functional defaults:
+
+```tsx
+import "@anvia/react-ui/styles.css";
+```
+
+It keeps textarea resizing, disabled states, media bounds, code wrapping, and basic overflow sane.
+It does not try to create your final chat layout.
+
+## What your app styles
+
+Your app should style:
+
+- Page and viewport height.
+- Scroll container padding.
+- Message list width and gaps.
+- User and assistant message alignment.
+- Bubbles, cards, tool-call panels, and attachment previews.
+- Composer width, controls, and action states.
+
+## Chat shell
+
+Start by making the thread and composer behave like one surface.
+
+<ReactUiPreview variant="chat" />
+
+<CodeVariants id="styling-chat-shell" variants={chatShellVariants} />
+
+## Message rows
+
+Use `data-role` on `Message.Root` for role-specific alignment and bubbles. This works for both the
+default part renderer and custom part renderers.
+
+<CodeVariants id="styling-message-rows" variants={messageStyleVariants} />
+
+## Composer
+
+Composer primitives emit state attributes, so the submit and stop controls can change based on
+whether the chat is idle, submitting, or streaming.
+
+<CodeVariants id="styling-composer" variants={composerStyleVariants} />
+
+## Data attributes
+
+Use attributes when styling should follow primitive state instead of a component name.
+
+```css
+[data-anvia-message][data-role="user"] {
+  justify-items: end;
+}
+
+[data-anvia-tool][data-state="output-available"] {
+  border-color: #22c55e;
+}
+
+[data-anvia-composer][data-state="streaming"] [data-anvia-submit] {
+  display: none;
+}
+
+[data-anvia-scroll-to-bottom][data-state="bottom"] {
+  visibility: hidden;
+}
+```
+
+For a complete copy-paste surface, see [Styling recipe](/docs/react-ui/examples/styling).

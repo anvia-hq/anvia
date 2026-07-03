@@ -6,13 +6,7 @@ export type PackageFamilyId =
   | "observability"
   | "tools-studio";
 
-export type PackageDocPageId =
-  | "overview"
-  | "getting-started"
-  | "usage-patterns"
-  | "examples"
-  | "changelog"
-  | "reference";
+export type PackageDocPageId = string;
 
 export interface PackageInfo {
   name: string;
@@ -47,6 +41,16 @@ export interface PackageReferencePage {
   label: string;
   title: string;
   description: string;
+}
+
+export interface PackageDocMenuEntry {
+  id: PackageDocPageId;
+  label: string;
+}
+
+export interface PackageDocMenuGroup {
+  title: string;
+  entries: PackageDocMenuEntry[];
 }
 
 type PackageDefinition = Omit<PackageInfo, "family" | "href" | "installCommand">;
@@ -537,6 +541,38 @@ export function getPackageDocPage(pageId: string) {
 
 export function getPackageReferencePages(packageSlug: string) {
   return packageReferencePagesBySlug[packageSlug] ?? [];
+}
+
+export function getPackageDocMenuGroups(
+  packageSlug: string,
+  packageName: string,
+): PackageDocMenuGroup[] {
+  const packageReferencePages = getPackageReferencePages(packageSlug);
+  const visiblePackageDocPages =
+    packageReferencePages.length > 0
+      ? packageDocPages.filter((page) => page.id !== "reference")
+      : packageDocPages;
+
+  return [
+    {
+      title: packageName,
+      entries: visiblePackageDocPages.map((page) => ({
+        id: page.id,
+        label: page.label,
+      })),
+    },
+    ...(packageReferencePages.length > 0
+      ? [
+          {
+            title: "Reference",
+            entries: packageReferencePages.map((page) => ({
+              id: page.id,
+              label: page.label,
+            })),
+          },
+        ]
+      : []),
+  ];
 }
 
 export function packageDocHref(packageSlug: string, pageId: PackageDocPageId) {

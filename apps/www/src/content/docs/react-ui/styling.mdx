@@ -9,7 +9,6 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { chatShellVariants, messageStyleVariants, composerStyleVariants } from "../../../lib/react-ui-code-variants";
 
 `@anvia/react-ui` is headless. The package owns behavior, state, context, and stable attributes.
@@ -40,8 +39,6 @@ Your app should style:
 ## Chat shell
 
 Start by making the thread and composer behave like one surface.
-
-<ReactUiPreview variant="chat" />
 
 <CodeVariants id="styling-chat-shell" variants={chatShellVariants} />
 

@@ -9,13 +9,10 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { completionVariants } from "../../../lib/react-ui-code-variants";
 
 `CompletionProvider` binds a `useCompletion(...)` controller to completion primitives. Use it for
 prompt-to-text panels, draft generators, rewrite tools, and other one-shot text generation flows.
-
-<ReactUiPreview variant="completion" />
 
 <CodeVariants id="completion-panel" variants={completionVariants} />
 

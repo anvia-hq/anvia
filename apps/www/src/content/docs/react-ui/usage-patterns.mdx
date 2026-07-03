@@ -9,7 +9,6 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { defaultToCustomVariants, attachmentVariants } from "../../../lib/react-ui-code-variants";
 
 ## Pair controllers with providers
@@ -67,8 +66,6 @@ state instead of component names.
 The default message renderer is useful longer than it first looks. Keep it for ordinary parts, and
 branch only for product-specific tools, attachment layouts, or Markdown components.
 
-<ReactUiPreview variant="message" />
-
 <CodeVariants id="usage-default-to-custom" variants={defaultToCustomVariants} />
 
 ## Attach files in the composer
@@ -76,8 +73,6 @@ branch only for product-specific tools, attachment layouts, or Markdown componen
 `Composer.AddAttachment` opens a file picker, `Composer.AttachmentInput` gives direct access to the
 underlying input, `Composer.AttachmentDropzone` accepts dropped files, and `Composer.Attachments`
 renders pending attachments before the prompt is sent.
-
-<ReactUiPreview variant="attachments" />
 
 <CodeVariants id="usage-attachments" variants={attachmentVariants} />
 

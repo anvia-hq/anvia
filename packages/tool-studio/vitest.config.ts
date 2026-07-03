@@ -19,6 +19,7 @@ export default defineConfig({
       "@anvia/core/pipeline": new URL("../core/src/pipeline/index.ts", import.meta.url).pathname,
       "@anvia/core/request": new URL("../core/src/request/index.ts", import.meta.url).pathname,
       "@anvia/core/tool": new URL("../core/src/tool/index.ts", import.meta.url).pathname,
+      "@anvia/core/ui": new URL("../core/src/ui/index.ts", import.meta.url).pathname,
       "@anvia/core/vector-store": new URL("../core/src/vector-store/index.ts", import.meta.url)
         .pathname,
       "@anvia/core": new URL("../core/src/index.ts", import.meta.url).pathname,

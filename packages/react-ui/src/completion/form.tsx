@@ -4,59 +4,17 @@ import {
   forwardRef,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactNode,
   useCallback,
   useMemo,
 } from "react";
 
 import {
   type CompletionInputContextValue,
-  CompletionProvider,
   InternalCompletionInputProvider,
-  type PrimitiveProps,
-  renderPrimitive,
   useCompletionContext,
   useCompletionInput,
-} from "./internal";
-
-type CompletionOutputChildren = ReactNode | ((completion: string) => ReactNode);
-
-const CompletionRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
-  function CompletionRoot(props, ref) {
-    const completion = useCompletionContext();
-    return renderPrimitive(
-      "div",
-      {
-        ...props,
-        "data-anvia-completion": "",
-        "data-state": completion.status,
-      } as PrimitiveProps<"div">,
-      ref,
-    );
-  },
-);
-
-type CompletionOutputProps = PrimitiveProps<"div"> & {
-  children?: CompletionOutputChildren;
-};
-
-const CompletionOutput = forwardRef<HTMLDivElement, CompletionOutputProps>(
-  function CompletionOutput({ children, ...props }, ref) {
-    const completion = useCompletionContext();
-    const renderedChildren =
-      typeof children === "function" ? children(completion.completion) : children;
-
-    return renderPrimitive(
-      "div",
-      {
-        ...props,
-        children: renderedChildren ?? completion.completion,
-        "data-anvia-completion-output": "",
-      } as PrimitiveProps<"div">,
-      ref,
-    );
-  },
-);
+} from "../contexts";
+import { type PrimitiveProps, renderPrimitive } from "../primitives";
 
 const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(function CompletionForm(
   { onSubmit, ...props },
@@ -221,18 +179,4 @@ const CompletionStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   },
 );
 
-export const Completion = {
-  Root: CompletionRoot,
-  Output: CompletionOutput,
-  Form: CompletionForm,
-  Input: CompletionInput,
-  Submit: CompletionSubmit,
-  Stop: CompletionStop,
-} as const;
-
-export type {
-  CompletionController,
-  CompletionInputContextValue,
-  CompletionProviderProps,
-} from "./internal";
-export { CompletionProvider, useCompletionContext, useCompletionInput };
+export { CompletionForm, CompletionInput, CompletionStop, CompletionSubmit };

@@ -25,20 +25,20 @@
       "import": "./dist/index.js"
     },
     "./chat": {
-      "types": "./dist/chat.d.ts",
-      "import": "./dist/chat.js"
+      "types": "./dist/chat/index.d.ts",
+      "import": "./dist/chat/index.js"
     },
     "./completion": {
-      "types": "./dist/completion.d.ts",
-      "import": "./dist/completion.js"
+      "types": "./dist/completion/index.d.ts",
+      "import": "./dist/completion/index.js"
     },
     "./human-input": {
-      "types": "./dist/human-input.d.ts",
-      "import": "./dist/human-input.js"
+      "types": "./dist/human-input/index.d.ts",
+      "import": "./dist/human-input/index.js"
     },
     "./message": {
-      "types": "./dist/message.d.ts",
-      "import": "./dist/message.js"
+      "types": "./dist/message/index.d.ts",
+      "import": "./dist/message/index.js"
     },
     "./shared": {
       "types": "./dist/shared.d.ts",
@@ -47,7 +47,7 @@
     "./styles.css": "./dist/styles.css"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/chat.tsx src/completion.tsx src/human-input.tsx src/message.tsx src/shared.ts --format esm --dts --sourcemap --clean --external react && cp src/styles.css dist/styles.css",
+    "build": "tsup src/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/message/index.ts src/shared.ts --format esm --dts --sourcemap --clean --external react && cp src/styles.css dist/styles.css",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

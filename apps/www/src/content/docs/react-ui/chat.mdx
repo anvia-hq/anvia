@@ -1,0 +1,110 @@
+---
+title: Chat and composer
+description: Compose chat threads, message lists, scroll controls, and prompt input with @anvia/react-ui.
+section: react-ui
+sidebar:
+  group: Primitives
+  order: 1
+  label: Chat and composer
+---
+
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { threadVariants, composerVariants } from "../../../lib/react-ui-code-variants";
+
+`ChatProvider` binds a `useChat(...)` controller from `@anvia/react` to the UI primitives.
+Everything inside the provider reads from the same messages, status, errors, suggestions, human
+input state, and actions.
+
+```tsx
+import { useChat } from "@anvia/react";
+import { ChatProvider } from "@anvia/react-ui";
+
+export function ChatSurface() {
+  const chat = useChat({ endpoint: "/api/chat" });
+
+  return <ChatProvider controller={chat}>{/* thread and composer */}</ChatProvider>;
+}
+```
+
+## Thread
+
+`Thread.Root` owns thread state. `Thread.Viewport` registers the scroll container, tracks whether
+the user is at the bottom, and auto-scrolls while new messages arrive.
+
+<ReactUiPreview variant="chat" />
+
+<CodeVariants id="chat-thread" variants={threadVariants} />
+
+`Thread.Messages` renders the current messages. With no children it uses the default message
+renderer. With a function child it lets the app control each row.
+
+```tsx
+<Thread.Messages className="messages">
+  {(message) => (
+    <Message.Root className="message">
+      <Message.Content>
+        <Message.Parts />
+      </Message.Content>
+    </Message.Root>
+  )}
+</Thread.Messages>
+```
+
+## Suggestions
+
+`Thread.Suggestions` renders prompts configured with `useChat({ suggestions })`. Suggestions
+unmount when empty unless `keepMounted` is enabled.
+
+```tsx
+<Thread.Suggestions className="suggestions">
+  {(suggestion) => (
+    <Thread.Suggestion className="suggestion" suggestion={suggestion}>
+      {suggestion.label}
+    </Thread.Suggestion>
+  )}
+</Thread.Suggestions>
+```
+
+## Composer
+
+`Composer.Root` owns the draft text and pending attachments by default. `Composer.Input`
+auto-resizes from `minRows` to `maxRows`, submits on Enter, keeps Shift+Enter for new lines, and
+disables while the chat is streaming.
+
+<ReactUiPreview variant="composer" />
+
+<CodeVariants id="chat-composer" variants={composerVariants} />
+
+Use controlled props when the draft or attachments need to be mirrored into app state.
+
+```tsx
+<Composer.Root
+  input={draft}
+  onInputChange={setDraft}
+  attachments={attachments}
+  onAttachmentsChange={setAttachments}
+>
+  <Composer.Attachments keepMounted />
+  <Composer.Input />
+  <Composer.Submit />
+</Composer.Root>
+```
+
+## Attachments
+
+Use `Composer.AddAttachment` for a ready-made file-picker button, `Composer.AttachmentInput` when a
+design system owns the input trigger, and `Composer.AttachmentDropzone` for drag-and-drop.
+
+```tsx
+<Composer.AttachmentDropzone className="dropzone">
+  <Composer.Attachments className="attachments" />
+  <Composer.AddAttachment accept="image/*,.pdf" multiple>
+    Attach image or PDF
+  </Composer.AddAttachment>
+  <Composer.Input />
+  <Composer.Submit />
+</Composer.AttachmentDropzone>
+```
+
+For a complete attachment recipe, see [Composer attachments](/docs/react-ui/examples/composer-attachments).

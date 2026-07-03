@@ -1,0 +1,41 @@
+---
+title: Styling recipe
+description: Application-owned CSS and Tailwind CSS for a practical @anvia/react-ui chat surface.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 5
+  label: Styling recipe
+---
+
+import CodeVariants from "../../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../../components/docs/ReactUiPreview.astro";
+import { fullStylingVariants } from "../../../../lib/react-ui-code-variants";
+
+The optional package stylesheet handles functional defaults. This recipe shows the layout and
+visual styling that should live in the app.
+
+<ReactUiPreview variant="chat" />
+
+<CodeVariants id="styling-recipe-full" variants={fullStylingVariants} />
+
+## State selectors
+
+Use `data-state`, `data-role`, and `data-anvia-*` selectors for state-specific styling.
+
+```css
+[data-anvia-composer][data-state="streaming"] [data-anvia-submit] {
+  display: none;
+}
+
+[data-anvia-scroll-to-bottom][data-state="bottom"] {
+  visibility: hidden;
+}
+
+[data-anvia-tool][data-state="error"] {
+  border-color: #fb7185;
+}
+```
+
+Keep the package stylesheet imported for behavior, then put product layout and visual rules in your
+app CSS or Tailwind classes.

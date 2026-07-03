@@ -1,0 +1,194 @@
+---
+import { Code } from "astro:components";
+
+interface CodeVariant {
+  label: string;
+  language: string;
+  code: string;
+}
+
+interface Props {
+  variants: CodeVariant[];
+  defaultLabel?: string;
+  id?: string;
+}
+
+const { variants, defaultLabel, id } = Astro.props;
+const defaultIndex = Math.max(
+  0,
+  variants.findIndex((variant) => variant.label === defaultLabel),
+);
+const baseId = id ?? `code-variants-${hashString(JSON.stringify(variants))}`;
+
+function hashString(input: string) {
+  let hash = 0;
+
+  for (const char of input) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+
+  return hash.toString(36);
+}
+---
+
+<div class="code-variants" data-code-variants>
+  <div class="code-variant-tabs" role="tablist" aria-label="Code variants">
+    {
+      variants.map((variant, index) => {
+        const selected = index === defaultIndex;
+        const tabId = `${baseId}-tab-${index}`;
+        const panelId = `${baseId}-panel-${index}`;
+
+        return (
+          <button
+            type="button"
+            id={tabId}
+            class="code-variant-tab"
+            role="tab"
+            aria-selected={selected ? "true" : "false"}
+            aria-controls={panelId}
+            tabindex={selected ? "0" : "-1"}
+            data-code-variant-tab
+            data-active={selected ? "true" : undefined}
+          >
+            {variant.label}
+          </button>
+        );
+      })
+    }
+  </div>
+
+  {
+    variants.map((variant, index) => {
+      const selected = index === defaultIndex;
+      const tabId = `${baseId}-tab-${index}`;
+      const panelId = `${baseId}-panel-${index}`;
+
+      return (
+        <div
+          id={panelId}
+          class="code-variant-panel"
+          role="tabpanel"
+          aria-labelledby={tabId}
+          hidden={!selected}
+          data-code-variant-panel
+        >
+          <Code code={variant.code.trim()} lang={variant.language} theme="vesper" />
+        </div>
+      );
+    })
+  }
+</div>
+
+<script>
+  const variantGroups = document.querySelectorAll<HTMLElement>("[data-code-variants]");
+
+  variantGroups.forEach((group) => {
+    if (group.dataset.initialized === "true") {
+      return;
+    }
+
+    group.dataset.initialized = "true";
+
+    const tabs = Array.from(
+      group.querySelectorAll<HTMLButtonElement>("[data-code-variant-tab]"),
+    );
+    const panels = Array.from(
+      group.querySelectorAll<HTMLElement>("[data-code-variant-panel]"),
+    );
+
+    const selectTab = (nextIndex: number) => {
+      tabs.forEach((tab, index) => {
+        const selected = index === nextIndex;
+        tab.dataset.active = selected ? "true" : "false";
+        tab.setAttribute("aria-selected", selected ? "true" : "false");
+        tab.tabIndex = selected ? 0 : -1;
+      });
+
+      panels.forEach((panel, index) => {
+        panel.hidden = index !== nextIndex;
+      });
+    };
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => {
+        selectTab(index);
+      });
+
+      tab.addEventListener("keydown", (event) => {
+        const currentIndex = tabs.indexOf(tab);
+        let nextIndex = currentIndex;
+
+        if (event.key === "ArrowRight") {
+          nextIndex = (currentIndex + 1) % tabs.length;
+        } else if (event.key === "ArrowLeft") {
+          nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabs.length - 1;
+        } else {
+          return;
+        }
+
+        event.preventDefault();
+        selectTab(nextIndex);
+        tabs[nextIndex]?.focus();
+      });
+    });
+  });
+</script>
+
+<style>
+  .code-variants {
+    margin-top: 1.25rem;
+  }
+
+  .code-variant-tabs {
+    display: flex;
+    width: fit-content;
+    max-width: 100%;
+    gap: 0.25rem;
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.035);
+    padding: 0.25rem;
+  }
+
+  .code-variant-tab {
+    border: 0;
+    border-radius: 0.55rem;
+    background: transparent;
+    padding: 0.45rem 0.7rem;
+    color: rgb(161 161 170);
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .code-variant-tab:hover,
+  .code-variant-tab:focus-visible {
+    color: rgb(244 244 245);
+  }
+
+  .code-variant-tab:focus-visible {
+    outline: 2px solid #2bf563;
+    outline-offset: 2px;
+  }
+
+  .code-variant-tab[data-active="true"] {
+    background: rgba(43, 245, 99, 0.13);
+    color: #2bf563;
+  }
+
+  .code-variant-panel {
+    margin-top: 0.85rem;
+  }
+</style>

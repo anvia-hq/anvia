@@ -8,10 +8,14 @@ sidebar:
   label: Tool calls
 ---
 
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { toolCardVariants } from "../../../lib/react-ui-code-variants";
+
 ## Default rendering
 
-`Message.Tool` renders tool-call message parts. By default it shows the tool name, input, output,
-and error content when each field is available.
+`Message.Part` delegates tool parts to `Message.Tool`, so most chat surfaces get tool rendering
+without extra code.
 
 ```tsx
 <Message.Parts>
@@ -19,8 +23,8 @@ and error content when each field is available.
 </Message.Parts>
 ```
 
-The default `Message.Part` renderer delegates tool parts to `Message.Tool`, so most chat surfaces
-get tool rendering without extra code.
+`Message.Tool` shows the tool name, status, input, output, and error content when each field is
+available.
 
 ## Pending and settled states
 
@@ -37,8 +41,14 @@ means output is available or the tool call ended in an error.
 
 ## Custom tool cards
 
-The child function receives the full tool part, so consumers can merge input, output, and error into
-one application-specific component.
+Compose the smaller tool primitives when the design system owns the card layout.
+
+<ReactUiPreview variant="tool" />
+
+<CodeVariants id="tool-card" variants={toolCardVariants} />
+
+The child function receives the full tool part when a product component wants to format everything
+itself.
 
 ```tsx
 <Message.Tool>
@@ -51,25 +61,6 @@ one application-specific component.
       error={part.error}
     />
   )}
-</Message.Tool>
-```
-
-For design-system layouts, compose the smaller tool primitives instead of formatting the part
-manually.
-
-```tsx
-<Message.Tool className="tool-card">
-  <header className="tool-card-header">
-    <Message.ToolName />
-    <Message.ToolStatus />
-  </header>
-  <section className="tool-card-section">
-    <Message.ToolInput />
-  </section>
-  <section className="tool-card-section">
-    <Message.ToolOutput />
-    <Message.ToolError />
-  </section>
 </Message.Tool>
 ```
 

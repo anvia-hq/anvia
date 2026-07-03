@@ -1,0 +1,63 @@
+---
+title: Composer attachments
+description: Add file picker, direct input, dropzone, and controlled attachments to @anvia/react-ui composer surfaces.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 2
+  label: Composer attachments
+---
+
+import CodeVariants from "../../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../../components/docs/ReactUiPreview.astro";
+import { attachmentListVariants, dropzoneVariants } from "../../../../lib/react-ui-code-variants";
+
+Use `Composer.Attachments` for pending files before submit. It can render the default attachment
+row or a design-system row with `Attachment` primitives.
+
+## Attachment list
+
+<ReactUiPreview variant="attachments" />
+
+<CodeVariants id="attachments-list" variants={attachmentListVariants} />
+
+## Dropzone
+
+Use `Composer.AttachmentDropzone` when the whole composer or an inner region should accept dropped
+files. It emits `data-dragging` while a valid drag is over the zone.
+
+<CodeVariants id="attachments-dropzone" variants={dropzoneVariants} />
+
+## Direct input trigger
+
+Use `Composer.AttachmentInput` when an app-owned label or button should trigger the underlying file
+input.
+
+```tsx
+<label className="file-trigger">
+  Upload files
+  <Composer.AttachmentInput className="sr-only" accept="image/*,.pdf" multiple />
+</label>
+```
+
+## Controlled attachments
+
+Use controlled props when pending attachments must be mirrored into local form state, stored before
+submit, or validated by application code.
+
+```tsx
+const [attachments, setAttachments] = useState<UIAttachment[]>([]);
+
+return (
+  <Composer.Root
+    className="composer"
+    attachments={attachments}
+    onAttachmentsChange={setAttachments}
+  >
+    <Composer.Attachments keepMounted className="attachment-list" />
+    <Composer.AttachmentInput multiple />
+    <Composer.Input />
+    <Composer.Submit />
+  </Composer.Root>
+);
+```

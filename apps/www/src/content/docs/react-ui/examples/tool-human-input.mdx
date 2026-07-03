@@ -1,0 +1,44 @@
+---
+title: Tool and human input
+description: Combine tool-call rendering with approval and question controls in @anvia/react-ui.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 4
+  label: Tool and human input
+---
+
+import CodeVariants from "../../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../../components/docs/ReactUiPreview.astro";
+import { toolReviewVariants } from "../../../../lib/react-ui-code-variants";
+
+Tool calls usually live inside assistant messages. Human-input controls usually live near the
+composer or in a side panel.
+
+<ReactUiPreview variant="review" />
+
+<CodeVariants id="tool-human-input" variants={toolReviewVariants} />
+
+## Pending-only activity
+
+Render a compact activity strip by filtering message parts to pending tools.
+
+```tsx
+<Message.Parts filter={(part) => part.type === "tool" && part.state !== "output-available"}>
+  <Message.Part>
+    <Message.Tool renderWhen="pending" className="tool-activity" />
+  </Message.Part>
+</Message.Parts>
+```
+
+## Persistent review lane
+
+Use `keepMounted` when empty approval or question wrappers should still occupy a stable layout area.
+
+```tsx
+<aside className="review-lane">
+  <HumanInput.Status />
+  <HumanInput.Approvals keepMounted />
+  <HumanInput.Questions keepMounted />
+</aside>
+```

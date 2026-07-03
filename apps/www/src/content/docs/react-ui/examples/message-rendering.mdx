@@ -1,0 +1,48 @@
+---
+title: Message rendering
+description: Render default message parts first, then customize Markdown, attachments, tool cards, and actions.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 3
+  label: Message rendering
+---
+
+import CodeVariants from "../../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../../components/docs/ReactUiPreview.astro";
+import { messageRendererVariants } from "../../../../lib/react-ui-code-variants";
+
+This recipe keeps default rendering for most parts and customizes only the parts that usually need
+product UI: Markdown text, attachments, and tool cards.
+
+## Full renderer
+
+<ReactUiPreview variant="message" />
+
+<CodeVariants id="message-rendering-full" variants={messageRendererVariants} />
+
+## Role-aware layout
+
+`Message.Root` emits `data-role`, so the same component can style user and assistant messages
+differently. Keep the user bubble small and let assistant content use the main reading width.
+
+## Copy and regenerate controls
+
+Actions can use regular buttons or design-system components with `asChild`.
+
+```tsx
+<Message.Actions className="message-actions">
+  <Message.Copy asChild>
+    <button type="button">Copy answer</button>
+  </Message.Copy>
+  <Message.Regenerate asChild>
+    <button type="button">Regenerate</button>
+  </Message.Regenerate>
+</Message.Actions>
+```
+
+## When to branch
+
+Branch inside `Message.Parts` only for part types that need a different experience. For ordinary
+data, reasoning, and error parts, keep `<Message.Part />` as the fallback so the default renderer
+continues to work.

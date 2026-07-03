@@ -1,0 +1,47 @@
+---
+title: Examples
+description: Recipe-style examples for building @anvia/react-ui surfaces.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 0
+  label: Examples
+---
+
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { minimalMessageVariants, minimalComposerVariants } from "../../../lib/react-ui-code-variants";
+
+These examples show complete composition patterns rather than isolated primitives. Use them as
+starting points for app-owned chat, completion, tool-call, and review experiences.
+
+## Recipes
+
+- [Full chat surface](/docs/react-ui/examples/chat-surface): thread layout, suggestions, default
+  message rendering, composer, and scroll controls.
+- [Message rendering](/docs/react-ui/examples/message-rendering): default renderer, Markdown,
+  custom code blocks, attachments, tool cards, and actions.
+- [Styling recipe](/docs/react-ui/examples/styling): complete Vanilla CSS and Tailwind chat
+  styling.
+- [Composer attachments](/docs/react-ui/examples/composer-attachments): file picker, direct file
+  input, dropzone, controlled attachments, and custom attachment rows.
+- [Tool and human input](/docs/react-ui/examples/tool-human-input): tool cards, pending/settled
+  filtering, approvals, and questions.
+- [Completion panel](/docs/react-ui/examples/completion): prompt-to-text completion surface with
+  custom output rendering.
+
+## Minimal message row
+
+Use this when `Thread.Messages` has a child function and the app owns each row.
+
+<ReactUiPreview variant="message" />
+
+<CodeVariants id="examples-minimal-message" variants={minimalMessageVariants} />
+
+## Minimal composer
+
+Use this as the base for a product composer. Add attachment controls and custom buttons as needed.
+
+<ReactUiPreview variant="composer" />
+
+<CodeVariants id="examples-minimal-composer" variants={minimalComposerVariants} />

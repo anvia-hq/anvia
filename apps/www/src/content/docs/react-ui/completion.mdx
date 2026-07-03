@@ -1,0 +1,51 @@
+---
+title: Completion
+description: Build prompt-to-text completion surfaces with @anvia/react-ui.
+section: react-ui
+sidebar:
+  group: Primitives
+  order: 5
+  label: Completion
+---
+
+import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
+import { completionVariants } from "../../../lib/react-ui-code-variants";
+
+`CompletionProvider` binds a `useCompletion(...)` controller to completion primitives. Use it for
+prompt-to-text panels, draft generators, rewrite tools, and other one-shot text generation flows.
+
+<ReactUiPreview variant="completion" />
+
+<CodeVariants id="completion-panel" variants={completionVariants} />
+
+## Custom output
+
+`Completion.Output` renders plain output by default. Use a child function when your app needs a
+custom empty, loading, or result view.
+
+```tsx
+<Completion.Output>
+  {(output) => (
+    <article className="completion-result" aria-live="polite">
+      {output.length > 0 ? output : "Your draft will appear here."}
+    </article>
+  )}
+</Completion.Output>
+```
+
+## Form controls
+
+`Completion.Form` submits through the controller. `Completion.Input` tracks prompt text,
+`Completion.Submit` disables when the prompt cannot be submitted, and `Completion.Stop` stops a
+streaming completion.
+
+```tsx
+<Completion.Form className="completion-form">
+  <Completion.Input placeholder="Write a launch note..." />
+  <Completion.Stop>Stop</Completion.Stop>
+  <Completion.Submit>Generate</Completion.Submit>
+</Completion.Form>
+```
+
+For a complete completion panel, see [Completion panel](/docs/react-ui/examples/completion).

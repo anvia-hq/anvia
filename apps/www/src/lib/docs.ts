@@ -7,6 +7,7 @@ export const docsSections: Array<{ id: DocsSection; label: string }> = [
   { id: "basics", label: "Basics" },
   { id: "advanced", label: "Advanced" },
   { id: "studio", label: "Studio" },
+  { id: "react-ui", label: "React UI" },
   { id: "providers", label: "Providers" },
   { id: "examples", label: "Examples" },
 ];
@@ -29,6 +30,7 @@ const sidebarGroupOrder: Partial<Record<DocsSection, string[]>> = {
     "Operational patterns",
   ],
   studio: ["Start Here", "Agent Runtime", "Inspection", "Workflows", "Operations"],
+  "react-ui": ["Start Here", "Primitives", "Resources"],
   examples: [
     "Start Here",
     "Foundation Patterns",

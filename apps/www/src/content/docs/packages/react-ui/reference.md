@@ -1,11 +1,11 @@
 ---
-title: "React UI"
+title: "@anvia/react-ui: Reference"
 description: "Composable UI primitives from @anvia/react-ui."
 section: packages
 sidebar:
-  group: "react-ui"
+  group: "@anvia/react-ui"
   order: 6
-  label: "React UI"
+  label: "Reference"
 ---
 Import from `@anvia/react-ui`.
 

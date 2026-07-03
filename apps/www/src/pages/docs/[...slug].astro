@@ -4,10 +4,8 @@ import DocsShell from "../../components/docs/DocsShell.astro";
 import { docHref, isPublishedDoc, sectionLabel, sortDocs } from "../../lib/docs";
 import {
   getPackageBySlug,
-  getPackageReferencePages,
+  getPackageDocMenuGroups,
   packageDocHref,
-  packageDocPages,
-  packageReferenceHref,
 } from "../../lib/packages";
 
 export async function getStaticPaths() {
@@ -30,11 +28,9 @@ const packageSlug = entry.data.section === "packages" ? entry.id.split("/")[1] :
 const packageRelativePageId =
   entry.data.section === "packages" ? entry.id.split("/").slice(2).join("/") : undefined;
 const packageInfo = packageSlug ? getPackageBySlug(packageSlug) : undefined;
-const packageReferencePages = packageInfo ? getPackageReferencePages(packageInfo.slug) : [];
-const visiblePackageDocPages =
-  packageReferencePages.length > 0
-    ? packageDocPages.filter((page) => page.id !== "reference")
-    : packageDocPages;
+const packageDocMenuGroups = packageInfo
+  ? getPackageDocMenuGroups(packageInfo.slug, packageInfo.name)
+  : [];
 const packageSidebarGroups =
   packageInfo && packageRelativePageId
     ? [
@@ -42,26 +38,14 @@ const packageSidebarGroups =
           title: "Packages",
           entries: [{ id: "all-packages", href: "/docs/packages", label: "All packages" }],
         },
-        {
-          title: packageInfo.name,
-          entries: visiblePackageDocPages.map((page) => ({
+        ...packageDocMenuGroups.map((group) => ({
+          title: group.title,
+          entries: group.entries.map((page) => ({
             id: page.id,
             href: packageDocHref(packageInfo.slug, page.id),
             label: page.label,
           })),
-        },
-        ...(packageReferencePages.length > 0
-          ? [
-              {
-                title: "Reference",
-                entries: packageReferencePages.map((page) => ({
-                  id: page.id,
-                  href: packageReferenceHref(packageInfo.slug, page.id),
-                  label: page.label,
-                })),
-              },
-            ]
-          : []),
+        })),
       ]
     : undefined;
 ---

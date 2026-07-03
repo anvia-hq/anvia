@@ -1,6 +1,8 @@
 export type {
   ChatController,
   ChatProviderProps,
+  ComposerAttachmentInput,
+  ComposerAttachmentsUpdate,
   ComposerContextValue,
   ThreadContextValue,
 } from "../contexts";

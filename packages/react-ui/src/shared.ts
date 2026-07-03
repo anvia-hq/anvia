@@ -6,6 +6,8 @@ export type {
   CompletionController,
   CompletionInputContextValue,
   CompletionProviderProps,
+  ComposerAttachmentInput,
+  ComposerAttachmentsUpdate,
   ComposerContextValue,
   MessageContextValue,
   MessagePartContextValue,

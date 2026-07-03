@@ -3,11 +3,15 @@ import { createContext, createElement, type ReactElement, type ReactNode, useCon
 import type { ChatController } from "./chat";
 
 export type ComposerAttachmentInput = File | CreateUIAttachment;
+export type ComposerAttachmentsUpdate =
+  | UIAttachment[]
+  | ((attachments: UIAttachment[]) => UIAttachment[]);
 
 export type ComposerContextValue = {
   input: string;
   setInput(input: string): void;
   attachments: UIAttachment[];
+  setAttachments(update: ComposerAttachmentsUpdate): void;
   addAttachment(attachment: ComposerAttachmentInput): Promise<void>;
   removeAttachment(id: string): void;
   clearAttachments(): void;

@@ -207,13 +207,18 @@ const ThreadError = forwardRef<HTMLDivElement, ThreadErrorProps>(function Thread
 
 type ThreadMessagesProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: ThreadMessagesChildren;
+  keepMounted?: boolean;
 };
 
 const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function ThreadMessages(
-  { children, ...props },
+  { children, keepMounted = true, ...props },
   ref,
 ) {
   const chat = useChatContext();
+  const empty = chat.messages.length === 0;
+  if (empty && !keepMounted) {
+    return null;
+  }
 
   return renderPrimitive(
     "div",
@@ -225,6 +230,7 @@ const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function 
         </InternalMessageProvider>
       )),
       "data-anvia-thread-messages": "",
+      "data-empty": empty ? "" : undefined,
     } as PrimitiveProps<"div">,
     ref,
   );
@@ -232,17 +238,23 @@ const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function 
 
 type ThreadSuggestionsProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: ThreadSuggestionChildren;
+  keepMounted?: boolean;
 };
 
 const ThreadSuggestions = forwardRef<HTMLDivElement, ThreadSuggestionsProps>(
-  function ThreadSuggestions({ children, ...props }, ref) {
+  function ThreadSuggestions({ children, keepMounted = false, ...props }, ref) {
     const chat = useChatContext();
+    const suggestions = chat.suggestions ?? [];
+    const empty = suggestions.length === 0;
+    if (empty && !keepMounted) {
+      return null;
+    }
 
     return renderPrimitive(
       "div",
       {
         ...props,
-        children: (chat.suggestions ?? []).map((suggestion) =>
+        children: suggestions.map((suggestion) =>
           typeof children === "function" ? (
             <Fragment key={suggestion.id}>{children(suggestion)}</Fragment>
           ) : (
@@ -252,6 +264,7 @@ const ThreadSuggestions = forwardRef<HTMLDivElement, ThreadSuggestionsProps>(
           ),
         ),
         "data-anvia-thread-suggestions": "",
+        "data-empty": empty ? "" : undefined,
       } as PrimitiveProps<"div">,
       ref,
     );

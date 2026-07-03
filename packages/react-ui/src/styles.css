@@ -1,54 +1,6 @@
-[data-anvia-thread] {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  min-height: 0;
-  gap: 0.75rem;
-}
-
 [data-anvia-thread-viewport] {
   overflow: auto;
   min-height: 0;
-}
-
-[data-anvia-thread-viewport-footer] {
-  position: sticky;
-  bottom: 0;
-}
-
-[data-anvia-thread-messages] {
-  display: grid;
-  gap: 0.75rem;
-}
-
-[data-anvia-message] {
-  display: grid;
-  gap: 0.375rem;
-  max-width: min(100%, 48rem);
-}
-
-[data-anvia-message][data-role="user"] {
-  justify-self: end;
-}
-
-[data-anvia-message][data-role="assistant"],
-[data-anvia-message][data-role="tool"],
-[data-anvia-message][data-role="system"] {
-  justify-self: start;
-}
-
-[data-anvia-message-content],
-[data-anvia-part],
-[data-anvia-attachment],
-[data-anvia-approval],
-[data-anvia-question] {
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  border-radius: 8px;
-  padding: 0.75rem;
-}
-
-[data-anvia-message-parts] {
-  display: grid;
-  gap: 0.5rem;
 }
 
 [data-anvia-reasoning] pre,
@@ -64,31 +16,10 @@
   word-break: break-word;
 }
 
-[data-anvia-message-actions],
-[data-anvia-composer],
-[data-anvia-composer-attachments],
-[data-anvia-attachment],
-[data-anvia-completion-form],
-[data-anvia-thread-suggestions],
-[data-anvia-approvals],
-[data-anvia-questions],
-[data-anvia-question-choices] {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-[data-anvia-composer],
-[data-anvia-completion-form] {
-  align-items: end;
-}
-
 [data-anvia-composer-input],
 [data-anvia-completion-input],
 [data-anvia-approval-reason],
 [data-anvia-question-text-answer] {
-  flex: 1 1 16rem;
   min-height: 2.75rem;
 }
 
@@ -111,28 +42,6 @@
   object-fit: contain;
 }
 
-[data-anvia-submit],
-[data-anvia-stop],
-[data-anvia-add-attachment],
-[data-anvia-attachment-remove],
-[data-anvia-copy],
-[data-anvia-regenerate],
-[data-anvia-scroll-to-bottom],
-[data-anvia-thread-suggestion],
-[data-anvia-approve],
-[data-anvia-reject],
-[data-anvia-question-choice],
-[data-anvia-question-submit],
-[data-anvia-completion-submit],
-[data-anvia-completion-stop] {
-  min-height: 2.25rem;
-}
-
 [data-state="disabled"] {
   opacity: 0.55;
-}
-
-[data-anvia-error],
-[data-anvia-tool-error] {
-  color: #b42318;
 }

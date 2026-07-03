@@ -1,10 +1,14 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-
+import type {
+  ComposerAttachmentInput,
+  ComposerAttachmentsUpdate,
+  MessageAttachmentPart,
+  MessageToolPart,
+} from "../src";
 import { Attachment } from "../src/attachment";
 import { ChatProvider, Composer, Thread } from "../src/chat";
 import { Completion, CompletionProvider } from "../src/completion";
 import { HumanInput } from "../src/human-input";
-import type { MessageAttachmentPart, MessageToolPart } from "../src/message";
 import { Message } from "../src/message";
 import {
   ChatProvider as SharedChatProvider,
@@ -16,6 +20,7 @@ describe("public entrypoints", () => {
     expect(Attachment.Root).toBeTypeOf("object");
     expect(Thread.Root).toBeTypeOf("object");
     expect(Composer.Root).toBeTypeOf("object");
+    expect(Composer.AttachmentInput).toBeTypeOf("object");
     expect(Message.Root).toBeTypeOf("object");
     expect(HumanInput.Approvals).toBeTypeOf("object");
     expect(Completion.Root).toBeTypeOf("object");
@@ -29,5 +34,14 @@ describe("public entrypoints", () => {
   it("exports public helper types from domain barrels", () => {
     expectTypeOf<MessageToolPart>().toMatchTypeOf<{ type: "tool" }>();
     expectTypeOf<MessageAttachmentPart>().toMatchTypeOf<{ type: "attachment" }>();
+    expectTypeOf<File>().toMatchTypeOf<ComposerAttachmentInput>();
+    expectTypeOf<
+      Array<{ id: string; type: "image" | "document" | "file" }>
+    >().toMatchTypeOf<ComposerAttachmentsUpdate>();
+    expectTypeOf<
+      (
+        attachments: Array<{ id: string; type: "image" | "document" | "file" }>,
+      ) => Array<{ id: string; type: "image" | "document" | "file" }>
+    >().toMatchTypeOf<ComposerAttachmentsUpdate>();
   });
 });

@@ -1,13 +1,17 @@
 ---
 title: "@anvia/react-ui: Examples"
-description: "Small examples that show @anvia/react-ui at the package boundary."
+description: "Small examples and links for @anvia/react-ui."
 section: packages
 sidebar:
   group: "@anvia/react-ui"
   order: 4
   label: "Examples"
 ---
-## Custom message layout
+
+The package page stays concise for package-reference coverage. The richer recipe set lives in the
+dedicated [React UI examples](/docs/react-ui/examples).
+
+## Quick examples
 
 ```tsx
 import { Message } from "@anvia/react-ui";
@@ -27,49 +31,6 @@ export function ChatMessage() {
 }
 ```
 
-## Human approval controls
-
-```tsx
-import { HumanInput } from "@anvia/react-ui";
-
-export function PendingApprovals() {
-  return (
-    <HumanInput.Approvals>
-      <HumanInput.Approval>
-        <HumanInput.Approve>Approve</HumanInput.Approve>
-        <HumanInput.Reject>Reject</HumanInput.Reject>
-      </HumanInput.Approval>
-    </HumanInput.Approvals>
-  );
-}
-```
-
-## Markdown messages
-
-```tsx
-import { Message } from "@anvia/react-ui";
-
-export function MarkdownMessage() {
-  return (
-    <Message.Root>
-      <Message.Parts>
-        {(part) =>
-          part.type === "text" ? (
-            <Message.Part>
-              <Message.Markdown />
-            </Message.Part>
-          ) : (
-            <Message.Part />
-          )
-        }
-      </Message.Parts>
-    </Message.Root>
-  );
-}
-```
-
-## Composer attachments
-
 ```tsx
 import { Composer } from "@anvia/react-ui";
 
@@ -78,14 +39,12 @@ export function AttachmentComposer() {
     <Composer.Root>
       <Composer.Attachments />
       <Composer.AddAttachment>Attach</Composer.AddAttachment>
-      <Composer.Input />
-      <Composer.Submit />
+      <Composer.Input maxRows={6} />
+      <Composer.Submit>Send</Composer.Submit>
     </Composer.Root>
   );
 }
 ```
-
-## Completion surface
 
 ```tsx
 import { useCompletion } from "@anvia/react";
@@ -107,3 +66,12 @@ export function CompletionPanel() {
   );
 }
 ```
+
+## Recipe links
+
+- [Full chat surface](/docs/react-ui/examples/chat-surface)
+- [Composer attachments](/docs/react-ui/examples/composer-attachments)
+- [Message rendering](/docs/react-ui/examples/message-rendering)
+- [Tool and human input](/docs/react-ui/examples/tool-human-input)
+- [Styling recipe](/docs/react-ui/examples/styling)
+- [Completion panel](/docs/react-ui/examples/completion)

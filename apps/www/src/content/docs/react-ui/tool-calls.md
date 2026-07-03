@@ -27,6 +27,7 @@ get tool rendering without extra code.
 Use `renderWhen` to decide when a tool call should appear.
 
 ```tsx
+<Message.Tool renderWhen="always" className="tool-call" />
 <Message.Tool renderWhen="pending" className="tool-call pending" />
 <Message.Tool renderWhen="settled" className="tool-call settled" />
 ```
@@ -34,9 +35,9 @@ Use `renderWhen` to decide when a tool call should appear.
 `renderWhen="always"` is the default. Pending means the input is streaming or available. Settled
 means output is available or the tool call ended in an error.
 
-## Custom tool components
+## Custom tool cards
 
-The child function receives the full tool part, so consumers can merge input, result, and error into
+The child function receives the full tool part, so consumers can merge input, output, and error into
 one application-specific component.
 
 ```tsx
@@ -58,12 +59,36 @@ manually.
 
 ```tsx
 <Message.Tool className="tool-card">
-  <header>
+  <header className="tool-card-header">
     <Message.ToolName />
     <Message.ToolStatus />
   </header>
-  <Message.ToolInput />
-  <Message.ToolOutput />
-  <Message.ToolError />
+  <section className="tool-card-section">
+    <Message.ToolInput />
+  </section>
+  <section className="tool-card-section">
+    <Message.ToolOutput />
+    <Message.ToolError />
+  </section>
 </Message.Tool>
 ```
+
+## Filtering noisy tools
+
+Use `Message.Parts` filtering when a surface should hide tool calls until a result is available.
+
+```tsx
+<Message.Parts
+  filter={(part) => part.type !== "tool" || part.state === "output-available"}
+/>
+```
+
+Use the inverse for an activity panel that only shows pending tool work.
+
+```tsx
+<Message.Parts filter={(part) => part.type === "tool" && part.state !== "output-available"}>
+  <Message.Part />
+</Message.Parts>
+```
+
+For a combined tool and review flow, see [Tool and human input](/docs/react-ui/examples/tool-human-input).

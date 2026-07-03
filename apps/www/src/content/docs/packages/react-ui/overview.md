@@ -31,4 +31,5 @@ The main documented exports are `ChatProvider`, `CompletionProvider`, `Thread`, 
 - [Changelog](/docs/packages/react-ui/changelog)
 - [Reference](/docs/packages/react-ui/reference)
 
-For the dedicated React UI docs menu, start at [React UI](/docs/react-ui/overview).
+For the dedicated React UI docs menu, start at [React UI](/docs/react-ui/overview). For practical
+copy-paste recipes, see [React UI examples](/docs/react-ui/examples).

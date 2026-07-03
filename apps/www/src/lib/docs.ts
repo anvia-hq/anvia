@@ -30,7 +30,7 @@ const sidebarGroupOrder: Partial<Record<DocsSection, string[]>> = {
     "Operational patterns",
   ],
   studio: ["Start Here", "Agent Runtime", "Inspection", "Workflows", "Operations"],
-  "react-ui": ["Start Here", "Primitives", "Resources"],
+  "react-ui": ["Start Here", "Primitives", "Examples", "Resources"],
   examples: [
     "Start Here",
     "Foundation Patterns",

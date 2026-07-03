@@ -32,13 +32,21 @@ const HumanInputStatus = forwardRef<HTMLDivElement, HumanInputStatusProps>(
 
 type HumanInputApprovalsProps = PrimitiveProps<"div"> & {
   filter?: HumanInputFilter;
+  keepMounted?: boolean;
   children?: ApprovalChildren;
 };
 
 const HumanInputApprovals = forwardRef<HTMLDivElement, HumanInputApprovalsProps>(
-  function HumanInputApprovals({ children, filter = "pending", ...props }, ref) {
+  function HumanInputApprovals(
+    { children, filter = "pending", keepMounted = false, ...props },
+    ref,
+  ) {
     const humanInput = useHumanInput();
     const approvals = filter === "all" ? humanInput.approvals.all : humanInput.approvals.pending;
+    const empty = approvals.length === 0;
+    if (empty && !keepMounted) {
+      return null;
+    }
 
     return renderPrimitive(
       "div",
@@ -52,6 +60,7 @@ const HumanInputApprovals = forwardRef<HTMLDivElement, HumanInputApprovalsProps>
           </InternalApprovalProvider>
         )),
         "data-anvia-approvals": "",
+        "data-empty": empty ? "" : undefined,
       } as PrimitiveProps<"div">,
       ref,
     );

@@ -131,7 +131,7 @@ const ThreadEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   },
 );
 
-type ThreadMessagesProps = PrimitiveProps<"div"> & {
+type ThreadMessagesProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: ThreadMessagesChildren;
 };
 

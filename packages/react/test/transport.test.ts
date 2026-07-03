@@ -407,14 +407,14 @@ describe("@anvia/react useChat", () => {
         yield {
           type: "tool_call",
           turn: 1,
-          toolCall: AssistantContent.toolCall("tool_1", "add", { x: 2, y: 5 }, "call_1"),
+          toolCall: AssistantContent.toolCall("fc_1", "add", { x: 2, y: 5 }, "call_1"),
         };
         yield {
           type: "tool_result",
           turn: 1,
           toolName: "add",
           toolCallId: "call_1",
-          internalCallId: "tool_1",
+          internalCallId: "internal_1",
           args: '{"x":2,"y":5}',
           result: "7",
           structuredResult: { value: 7 },
@@ -448,7 +448,7 @@ describe("@anvia/react useChat", () => {
       expect.objectContaining({
         type: "tool",
         toolName: "add",
-        toolCallId: "tool_1",
+        toolCallId: "fc_1",
         callId: "call_1",
         state: "output-available",
         input: { x: 2, y: 5 },

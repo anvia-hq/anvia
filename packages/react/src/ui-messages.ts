@@ -133,12 +133,10 @@ export function applyAnviaStreamEvent(
   }
 
   if (event.type === "tool_result") {
-    const toolCallId =
-      typeof event.internalCallId === "string"
-        ? event.internalCallId
-        : typeof event.toolCallId === "string"
-          ? event.toolCallId
-          : undefined;
+    const providerCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
+    const internalCallId =
+      typeof event.internalCallId === "string" ? event.internalCallId : undefined;
+    const toolCallId = providerCallId ?? internalCallId;
     if (toolCallId === undefined || typeof event.toolName !== "string") {
       return undefined;
     }
@@ -147,14 +145,14 @@ export function applyAnviaStreamEvent(
       type: "tool",
       toolName: event.toolName,
       toolCallId,
-      ...(typeof event.toolCallId === "string" ? { callId: event.toolCallId } : {}),
+      ...(providerCallId === undefined ? {} : { callId: providerCallId }),
       state: "output-available",
       output:
         "structuredResult" in event && event.structuredResult !== undefined
           ? valueToJson(event.structuredResult)
           : valueToJson(event.result),
     };
-    return updateAssistantToolPart(messages, part);
+    return updateAssistantToolPart(messages, part, [providerCallId, internalCallId]);
   }
 
   if (event.type === "message_id" && typeof event.id === "string") {
@@ -282,10 +280,53 @@ function updateMessagePart(
   });
 }
 
-function updateAssistantToolPart(messages: UIMessage[], part: UIToolMessagePart): UIMessage[] {
+function updateAssistantToolPart(
+  messages: UIMessage[],
+  part: UIToolMessagePart,
+  aliases: Array<string | undefined> = [],
+): UIMessage[] {
   const current = ensureAssistantMessage(messages);
   const assistant = current[current.length - 1];
-  return assistant === undefined ? current : updateMessagePart(current, assistant.id, part);
+  if (assistant === undefined) {
+    return current;
+  }
+
+  const existingPart = findMatchingToolPart(assistant, part, aliases);
+  const nextPart =
+    existingPart === undefined
+      ? part
+      : {
+          ...part,
+          id: existingPart.id,
+          toolCallId: existingPart.toolCallId,
+          ...(existingPart.callId !== undefined
+            ? { callId: existingPart.callId }
+            : part.callId !== undefined
+              ? { callId: part.callId }
+              : {}),
+        };
+
+  return updateMessagePart(current, assistant.id, nextPart);
+}
+
+function findMatchingToolPart(
+  message: UIMessage,
+  part: UIToolMessagePart,
+  aliases: Array<string | undefined>,
+): UIToolMessagePart | undefined {
+  const candidates = new Set(
+    [part.toolCallId, part.callId, ...aliases].filter(
+      (candidate): candidate is string => candidate !== undefined && candidate.length > 0,
+    ),
+  );
+
+  return message.parts.find(
+    (item): item is UIToolMessagePart =>
+      item.type === "tool" &&
+      (item.id === part.id ||
+        candidates.has(item.toolCallId) ||
+        (item.callId !== undefined && candidates.has(item.callId))),
+  );
 }
 
 function mergeToolPart(

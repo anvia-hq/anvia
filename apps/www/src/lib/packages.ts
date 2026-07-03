@@ -310,6 +310,14 @@ const packageDefinitions: PackageFamilyDefinition[] = [
         true,
       ),
       definePackage(
+        "@anvia/react-ui",
+        "react-ui",
+        "0.1.0",
+        "packages/react-ui",
+        "Composable React UI primitives for Anvia chat and completion experiences.",
+        true,
+      ),
+      definePackage(
         "@anvia/logger",
         "logger",
         "0.3.10",

@@ -1,0 +1,74 @@
+---
+title: "@anvia/react-ui: Usage Patterns"
+description: "Common ways to compose @anvia/react-ui with @anvia/react."
+section: packages
+sidebar:
+  group: "@anvia/react-ui"
+  order: 3
+  label: "Usage Patterns"
+---
+## Pair with @anvia/react
+
+`@anvia/react-ui` expects controllers from `@anvia/react`.
+
+- Use `useChat(...)` with `ChatProvider`, `Thread`, `Message`, `Composer`, and `HumanInput`.
+- Use `useCompletion(...)` with `CompletionProvider` and `Completion`.
+- Keep server routes, auth, persistence, and model selection outside the UI package.
+
+## Use as headless primitives
+
+Every primitive supports `className` and stable `data-anvia-*` attributes. Button-like primitives also support `asChild`, so applications can attach behavior to design-system components.
+
+```tsx
+<Composer.Submit asChild>
+  <button className="primary-action">Send</button>
+</Composer.Submit>
+```
+
+## Render Anvia agent parts
+
+`Message.Parts` renders Anvia `UIMessagePart` values by default:
+
+- `text`
+- `reasoning`
+- `tool`
+- `data`
+- `error`
+
+For custom rendering, pass children to `Message.Part` or use `useMessagePart()`.
+`Message.Tool` also accepts a render function for merged tool-call input/result cards:
+
+```tsx
+<Message.Parts>
+  {(part) =>
+    part.type === "tool" ? (
+      <Message.Part>
+        <Message.Tool>
+          {(tool) => (
+            <ToolCard name={tool.toolName} input={tool.input} output={tool.output} />
+          )}
+        </Message.Tool>
+      </Message.Part>
+    ) : (
+      <Message.Part />
+    )
+  }
+</Message.Parts>
+```
+
+Tool rendering is not locked to one timing. Render immediately, only while pending, only when settled,
+or filter tool parts before wrappers are created:
+
+```tsx
+<Message.Tool renderWhen="always" />
+<Message.Tool renderWhen="pending" />
+<Message.Tool renderWhen="settled" />
+
+<Message.Parts
+  filter={(part) => part.type !== "tool" || part.state === "output-available"}
+/>
+```
+
+## Human input
+
+`HumanInput.Approvals` and `HumanInput.Questions` read `useChat` human-input state and call the matching controller actions. They are meant for tool approval and question workflows emitted by Anvia agents or Studio-compatible streams.

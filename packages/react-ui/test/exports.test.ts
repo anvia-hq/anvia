@@ -2,10 +2,13 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   ComposerAttachmentInput,
   ComposerAttachmentsUpdate,
+  ComposerSubmitMessage,
+  ComposerSubmitMessageArgs,
   MessageAttachmentPart,
   MessageToolPart,
 } from "../src";
 import { Attachment } from "../src/attachment";
+import type { ComposerSubmitMessage as ChatComposerSubmitMessage } from "../src/chat";
 import { ChatProvider, Composer, Thread } from "../src/chat";
 import { Completion, CompletionProvider } from "../src/completion";
 import { HumanInput } from "../src/human-input";
@@ -43,5 +46,12 @@ describe("public entrypoints", () => {
         attachments: Array<{ id: string; type: "image" | "document" | "file" }>,
       ) => Array<{ id: string; type: "image" | "document" | "file" }>
     >().toMatchTypeOf<ComposerAttachmentsUpdate>();
+    expectTypeOf<ComposerSubmitMessageArgs>().toMatchTypeOf<{
+      input: string;
+      attachments: Array<{ id: string; type: "image" | "document" | "file" }>;
+      clear(): void;
+    }>();
+    expectTypeOf<ComposerSubmitMessage>().parameters.toMatchTypeOf<[ComposerSubmitMessageArgs]>();
+    expectTypeOf<ChatComposerSubmitMessage>().toEqualTypeOf<ComposerSubmitMessage>();
   });
 });

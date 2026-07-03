@@ -180,10 +180,23 @@ type ComposerAttachmentInput = File | CreateUIAttachment;
 type ComposerAttachmentsUpdate =
   | UIAttachment[]
   | ((attachments: UIAttachment[]) => UIAttachment[]);
+
+type ComposerSubmitMessageArgs<TEvent = unknown> = {
+  input: string;
+  attachments: UIAttachment[];
+  chat: ChatController<TEvent>;
+  clear(): void;
+};
+
+type ComposerSubmitMessage<TEvent = unknown> = (
+  args: ComposerSubmitMessageArgs<TEvent>,
+) => Promise<void> | void;
 ```
 
 `Composer.Root` also accepts `defaultInput`, `defaultAttachments`, `input`, `onInputChange`,
-`attachments`, and `onAttachmentsChange` for uncontrolled or controlled composer state.
+`attachments`, and `onAttachmentsChange` for uncontrolled or controlled composer state. Use
+`submitMessage` to replace the default send behavior when an app needs custom message payloads or
+metadata.
 
 ## Context hooks
 

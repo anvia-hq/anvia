@@ -1,0 +1,30 @@
+---
+title: Composer controls
+description: Add app-owned model selectors, reasoning controls, and custom submit behavior to @anvia/react-ui composers.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 2.5
+  label: Composer controls
+---
+
+import CodeVariants from "../../../../components/docs/CodeVariants.astro";
+import { modelControlComposerVariants } from "../../../../lib/react-ui-code-variants";
+
+Model selection, reasoning effort, temperature, provider choice, and similar controls belong to
+application state. Render those controls inside `Composer.Root` when they are part of the prompt
+bar, then include their values in `useChat({ createRequest })`.
+
+<CodeVariants id="composer-model-controls" variants={modelControlComposerVariants} />
+
+## Request options
+
+Use `createRequest` for request-level options. The example sends `model` and `reasoning` next to
+the converted core messages, so the server route can read them from the request body alongside
+`messages`.
+
+## Custom submit
+
+Use `Composer.Root`'s `submitMessage` when the composer should send a custom message payload, such
+as metadata that records the selected model or reasoning effort. A custom submit handler replaces
+the default send behavior, so call `clear()` after the message is accepted.

@@ -9,7 +9,6 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { defaultRendererVariants, messageRowVariants, customRendererVariants, markdownVariants } from "../../../lib/react-ui-code-variants";
 
 `Message.Root` renders one Anvia `UIMessage`. `Message.Parts` renders the message's streamed
@@ -28,8 +27,6 @@ parts. Start with the default renderer, then replace only the parts that need pr
 `Thread.Messages` can render a complete list without a child function. Internally, each row uses
 `Message.Root`, `Message.Content`, and `Message.Parts`. The emitted attributes let your app style
 user and assistant messages without taking over rendering.
-
-<ReactUiPreview variant="message" />
 
 <CodeVariants id="messages-default-renderer" variants={defaultRendererVariants} />
 

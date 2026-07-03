@@ -9,14 +9,11 @@ sidebar:
 ---
 
 import CodeVariants from "../../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../../components/docs/ReactUiPreview.astro";
 import { chatSurfaceVariants } from "../../../../lib/react-ui-code-variants";
 
 This recipe starts from a `useChat(...)` controller and builds a complete app-owned chat screen.
 It intentionally uses the default message renderer first. Add a custom message row only after you
 need custom Markdown, tool cards, attachments, or actions.
-
-<ReactUiPreview variant="chat" />
 
 <CodeVariants id="full-chat-surface" variants={chatSurfaceVariants} />
 

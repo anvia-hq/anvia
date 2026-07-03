@@ -9,15 +9,12 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { reviewPanelVariants, approvalVariants } from "../../../lib/react-ui-code-variants";
 
 ## Panel
 
 `HumanInput.Panel` renders when pending approvals or questions exist. Use `HumanInput.Status` when
 the surface should show a pending count.
-
-<ReactUiPreview variant="review" />
 
 <CodeVariants id="human-input-panel" variants={reviewPanelVariants} />
 

@@ -9,7 +9,6 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { minimalMessageVariants, minimalComposerVariants } from "../../../lib/react-ui-code-variants";
 
 These examples show complete composition patterns rather than isolated primitives. Use them as
@@ -34,14 +33,10 @@ starting points for app-owned chat, completion, tool-call, and review experience
 
 Use this when `Thread.Messages` has a child function and the app owns each row.
 
-<ReactUiPreview variant="message" />
-
 <CodeVariants id="examples-minimal-message" variants={minimalMessageVariants} />
 
 ## Minimal composer
 
 Use this as the base for a product composer. Add attachment controls and custom buttons as needed.
-
-<ReactUiPreview variant="composer" />
 
 <CodeVariants id="examples-minimal-composer" variants={minimalComposerVariants} />

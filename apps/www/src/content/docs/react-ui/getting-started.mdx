@@ -9,7 +9,6 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { starterChatVariants } from "../../../lib/react-ui-code-variants";
 
 Install the UI package beside the React hook package.
@@ -23,8 +22,6 @@ pnpm add @anvia/react @anvia/react-ui
 `@anvia/react` owns the `useChat(...)` controller. `@anvia/react-ui` reads that controller through
 `ChatProvider` and renders the thread, messages, suggestions, errors, scrolling, attachments, and
 composer controls.
-
-<ReactUiPreview variant="chat" size="tall" />
 
 <CodeVariants id="getting-started-chat" variants={starterChatVariants} />
 

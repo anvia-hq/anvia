@@ -9,7 +9,6 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
-import ReactUiPreview from "../../../components/docs/ReactUiPreview.astro";
 import { threadVariants, composerVariants } from "../../../lib/react-ui-code-variants";
 
 `ChatProvider` binds a `useChat(...)` controller from `@anvia/react` to the UI primitives.
@@ -31,8 +30,6 @@ export function ChatSurface() {
 
 `Thread.Root` owns thread state. `Thread.Viewport` registers the scroll container, tracks whether
 the user is at the bottom, and auto-scrolls while new messages arrive.
-
-<ReactUiPreview variant="chat" />
 
 <CodeVariants id="chat-thread" variants={threadVariants} />
 
@@ -71,8 +68,6 @@ unmount when empty unless `keepMounted` is enabled.
 `Composer.Root` owns the draft text and pending attachments by default. `Composer.Input`
 auto-resizes from `minRows` to `maxRows`, submits on Enter, keeps Shift+Enter for new lines, and
 disables while the chat is streaming.
-
-<ReactUiPreview variant="composer" />
 
 <CodeVariants id="chat-composer" variants={composerVariants} />
 

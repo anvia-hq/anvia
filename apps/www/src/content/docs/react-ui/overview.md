@@ -15,6 +15,19 @@ React UI is the Anvia package for building application-owned AI interfaces. It s
 Use it when you want ChatGPT-style chat surfaces, completion forms, tool call renderers, approval
 controls, and question flows without giving up control of markup and styling.
 
+## What to build first
+
+Most applications start with a chat surface:
+
+1. Create a `useChat(...)` controller in the app.
+2. Wrap the UI in `ChatProvider`.
+3. Render `Thread.Root`, `Thread.Viewport`, `Thread.Messages`, and `Composer.Root`.
+4. Add product-specific message rendering, attachments, tool cards, and human-input controls.
+5. Move layout, colors, spacing, and cards into application CSS.
+
+The primitives give you state, accessibility-friendly defaults, and stable attributes. They do not
+try to own your design system.
+
 ## Package boundary
 
 `@anvia/react-ui` is headless. It provides primitives such as `Thread`, `Composer`, `Message`,
@@ -26,6 +39,15 @@ Application code still owns:
 - Auth, persistence, and tenancy.
 - Final visual design and design-system integration.
 - Custom rendering for domain-specific tool calls.
+
+## Example surfaces
+
+- [Full chat surface](/docs/react-ui/examples/chat-surface)
+- [Composer attachments](/docs/react-ui/examples/composer-attachments)
+- [Message rendering](/docs/react-ui/examples/message-rendering)
+- [Tool and human input](/docs/react-ui/examples/tool-human-input)
+- [Styling recipe](/docs/react-ui/examples/styling)
+- [Completion panel](/docs/react-ui/examples/completion)
 
 ## Next pages
 

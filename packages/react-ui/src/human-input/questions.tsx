@@ -25,13 +25,21 @@ type QuestionChildren = ReactNode | ((question: ToolQuestion) => ReactNode);
 
 type HumanInputQuestionsProps = PrimitiveProps<"div"> & {
   filter?: HumanInputFilter;
+  keepMounted?: boolean;
   children?: QuestionChildren;
 };
 
 const HumanInputQuestions = forwardRef<HTMLDivElement, HumanInputQuestionsProps>(
-  function HumanInputQuestions({ children, filter = "pending", ...props }, ref) {
+  function HumanInputQuestions(
+    { children, filter = "pending", keepMounted = false, ...props },
+    ref,
+  ) {
     const humanInput = useHumanInput();
     const questions = filter === "all" ? humanInput.questions.all : humanInput.questions.pending;
+    const empty = questions.length === 0;
+    if (empty && !keepMounted) {
+      return null;
+    }
 
     return renderPrimitive(
       "div",
@@ -45,6 +53,7 @@ const HumanInputQuestions = forwardRef<HTMLDivElement, HumanInputQuestionsProps>
           </QuestionProvider>
         )),
         "data-anvia-questions": "",
+        "data-empty": empty ? "" : undefined,
       } as PrimitiveProps<"div">,
       ref,
     );

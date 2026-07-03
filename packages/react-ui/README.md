@@ -41,3 +41,7 @@ export function SupportChat() {
 
 Import `@anvia/react-ui/styles.css` for a small default stylesheet, or style the stable
 `data-anvia-*` attributes directly.
+
+The primitives are headless by default: pass `className` or `asChild` for design-system
+integration, control `Composer.Root` with `input`/`attachments` props when needed, and use
+`keepMounted` on optional collections when empty wrappers are useful for layout.

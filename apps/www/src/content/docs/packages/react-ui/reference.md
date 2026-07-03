@@ -46,6 +46,7 @@ const Composer: {
     }
   >;
   Attachments: React.ForwardRefExoticComponent<...>;
+  AttachmentInput: React.ForwardRefExoticComponent<...>;
   AddAttachment: React.ForwardRefExoticComponent<...>;
   AttachmentDropzone: React.ForwardRefExoticComponent<...>;
   Submit: React.ForwardRefExoticComponent<...>;
@@ -154,6 +155,7 @@ type ComposerContextValue = {
   input: string;
   setInput(input: string): void;
   attachments: UIAttachment[];
+  setAttachments(update: ComposerAttachmentsUpdate): void;
   addAttachment(attachment: File | CreateUIAttachment): Promise<void>;
   removeAttachment(id: string): void;
   clearAttachments(): void;
@@ -173,7 +175,15 @@ type CompletionInputContextValue = {
   canSubmit: boolean;
   canStop: boolean;
 };
+
+type ComposerAttachmentInput = File | CreateUIAttachment;
+type ComposerAttachmentsUpdate =
+  | UIAttachment[]
+  | ((attachments: UIAttachment[]) => UIAttachment[]);
 ```
+
+`Composer.Root` also accepts `defaultInput`, `defaultAttachments`, `input`, `onInputChange`,
+`attachments`, and `onAttachmentsChange` for uncontrolled or controlled composer state.
 
 ## Context hooks
 
@@ -230,6 +240,11 @@ Purpose: read primitive-local state when composing custom renderers.
 `Message.Tool` also accepts `renderWhen?: MessageToolRenderWhen`, and `Message.Parts` accepts
 `filter?: MessagePartsFilter`.
 
+`Composer.Attachments`, `Thread.Messages`, `Thread.Suggestions`, `HumanInput.Approvals`, and
+`HumanInput.Questions` accept `keepMounted?: boolean` for layout control when their collection is
+empty.
+
 ## Styling
 
-Import `@anvia/react-ui/styles.css` for default styling, or target the emitted `data-anvia-*` attributes directly.
+Import `@anvia/react-ui/styles.css` for functional prototype styling, or target the emitted
+`data-anvia-*` attributes directly. Application CSS owns layout, spacing, colors, and cards.

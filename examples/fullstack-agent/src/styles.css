@@ -118,6 +118,11 @@ button {
   margin: 0 auto;
 }
 
+.thread-viewport > [data-anvia-thread-messages] {
+  display: grid;
+  gap: 12px;
+}
+
 .empty-state {
   min-height: 100%;
   display: grid;
@@ -168,6 +173,7 @@ h1 {
 .message {
   width: 100%;
   max-width: 100%;
+  display: grid;
   gap: 6px;
 }
 
@@ -198,6 +204,7 @@ h1 {
 }
 
 [data-anvia-message-parts] {
+  display: grid;
   gap: 8px;
 }
 
@@ -277,6 +284,8 @@ pre {
 
 .message-actions {
   min-height: 28px;
+  display: flex;
+  gap: 4px;
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -331,6 +340,9 @@ pre {
 }
 
 [data-anvia-attachment] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 8px;
   border: 1px solid #e5e5e5;
   border-radius: 10px;

@@ -6,7 +6,11 @@ export type { CompletionController, CompletionProviderProps } from "./completion
 export { CompletionProvider, useCompletionContext } from "./completion";
 export type { CompletionInputContextValue } from "./completion-input";
 export { InternalCompletionInputProvider, useCompletionInput } from "./completion-input";
-export type { ComposerContextValue } from "./composer";
+export type {
+  ComposerAttachmentInput,
+  ComposerAttachmentsUpdate,
+  ComposerContextValue,
+} from "./composer";
 export { InternalComposerProvider, useComposer } from "./composer";
 export type {
   ApprovalContextValue,

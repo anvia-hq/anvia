@@ -15,6 +15,8 @@ import {
 } from "react";
 import { Attachment } from "../attachment/index";
 import {
+  type ComposerAttachmentInput as ComposerAttachmentInputValue,
+  type ComposerAttachmentsUpdate,
   type ComposerContextValue,
   InternalAttachmentProvider,
   InternalComposerProvider,
@@ -23,31 +25,86 @@ import {
 } from "../contexts";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
-const ComposerRoot = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(function ComposerRoot(
-  { onSubmit, ...props },
+type ComposerRootProps = PrimitiveProps<"form"> & {
+  attachments?: UIAttachment[];
+  defaultAttachments?: UIAttachment[];
+  defaultInput?: string;
+  input?: string;
+  onAttachmentsChange?: (attachments: UIAttachment[]) => void;
+  onInputChange?: (input: string) => void;
+};
+
+const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function ComposerRoot(
+  {
+    attachments: attachmentsProp,
+    defaultAttachments,
+    defaultInput = "",
+    input: inputProp,
+    onAttachmentsChange,
+    onInputChange,
+    onSubmit,
+    ...props
+  },
   ref,
 ) {
   const chat = useChatContext();
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<UIAttachment[]>([]);
+  const [uncontrolledInput, setUncontrolledInput] = useState(defaultInput);
+  const [uncontrolledAttachments, setUncontrolledAttachments] = useState<UIAttachment[]>(() => [
+    ...(defaultAttachments ?? []),
+  ]);
+  const input = inputProp ?? uncontrolledInput;
+  const attachments = attachmentsProp ?? uncontrolledAttachments;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const inputControlled = inputProp !== undefined;
+  const attachmentsControlled = attachmentsProp !== undefined;
   const canSubmit =
     (input.trim().length > 0 || attachments.length > 0) && chat.status !== "streaming";
   const canStop = chat.status === "streaming";
 
-  const addAttachment = useCallback(async (attachment: File | CreateUIAttachment) => {
-    const normalized = isFileAttachmentInput(attachment)
-      ? await attachmentFromFile(attachment)
-      : createAttachment(attachment);
-    setAttachments((current) => [...current, normalized]);
-  }, []);
+  const setInput = useCallback(
+    (nextInput: string) => {
+      if (!inputControlled) {
+        setUncontrolledInput(nextInput);
+      }
+      onInputChange?.(nextInput);
+    },
+    [inputControlled, onInputChange],
+  );
 
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
-  }, []);
+  const setAttachments = useCallback(
+    (update: ComposerAttachmentsUpdate) => {
+      const nextAttachments =
+        typeof update === "function" ? update(attachmentsRef.current) : update;
+      attachmentsRef.current = nextAttachments;
+      if (!attachmentsControlled) {
+        setUncontrolledAttachments(nextAttachments);
+      }
+      onAttachmentsChange?.(nextAttachments);
+    },
+    [attachmentsControlled, onAttachmentsChange],
+  );
+
+  const addAttachment = useCallback(
+    async (attachment: ComposerAttachmentInputValue) => {
+      const normalized = isFileAttachmentInput(attachment)
+        ? await attachmentFromFile(attachment)
+        : createAttachment(attachment);
+      setAttachments((current) => [...current, normalized]);
+    },
+    [setAttachments],
+  );
+
+  const removeAttachment = useCallback(
+    (id: string) => {
+      setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+    },
+    [setAttachments],
+  );
 
   const clearAttachments = useCallback(() => {
     setAttachments([]);
-  }, []);
+  }, [setAttachments]);
 
   const submit = useCallback(async () => {
     const prompt = input;
@@ -64,13 +121,14 @@ const ComposerRoot = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(functio
     }
     setInput("");
     setAttachments([]);
-  }, [attachments, chat, input]);
+  }, [attachments, chat, input, setAttachments, setInput]);
 
   const value = useMemo<ComposerContextValue>(
     () => ({
       input,
       setInput,
       attachments,
+      setAttachments,
       addAttachment,
       removeAttachment,
       clearAttachments,
@@ -90,6 +148,8 @@ const ComposerRoot = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(functio
       clearAttachments,
       input,
       removeAttachment,
+      setAttachments,
+      setInput,
       submit,
     ],
   );
@@ -320,12 +380,14 @@ type ComposerAttachmentsChildren = ReactNode | ((attachment: UIAttachment) => Re
 
 type ComposerAttachmentsProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: ComposerAttachmentsChildren;
+  keepMounted?: boolean;
 };
 
 const ComposerAttachments = forwardRef<HTMLDivElement, ComposerAttachmentsProps>(
-  function ComposerAttachments({ children, ...props }, ref) {
+  function ComposerAttachments({ children, keepMounted = false, ...props }, ref) {
     const composer = useComposer();
-    if (composer.attachments.length === 0) {
+    const empty = composer.attachments.length === 0;
+    if (empty && !keepMounted) {
       return null;
     }
 
@@ -349,6 +411,7 @@ const ComposerAttachments = forwardRef<HTMLDivElement, ComposerAttachmentsProps>
           </InternalAttachmentProvider>
         )),
         "data-anvia-composer-attachments": "",
+        "data-empty": empty ? "" : undefined,
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -359,6 +422,45 @@ type ComposerAddAttachmentProps = PrimitiveProps<"button"> & {
   accept?: string;
   multiple?: boolean;
 };
+
+type ComposerAttachmentInputProps = PrimitiveProps<"input">;
+
+const ComposerAttachmentInput = forwardRef<HTMLInputElement, ComposerAttachmentInputProps>(
+  function ComposerAttachmentInput({ onChange, ...props }, ref) {
+    const composer = useComposer();
+    const disabled = props.disabled ?? composer.status === "streaming";
+
+    const handleChange = useCallback(
+      async (event: ChangeEvent<HTMLInputElement>) => {
+        onChange?.(event);
+        if (event.defaultPrevented) {
+          return;
+        }
+        const files = Array.from(event.currentTarget.files ?? []);
+        event.currentTarget.value = "";
+        for (const file of files) {
+          await composer.addAttachment(file);
+        }
+      },
+      [composer, onChange],
+    );
+
+    return renderPrimitive(
+      "input",
+      {
+        ...props,
+        disabled,
+        onChange: (event) => {
+          void handleChange(event);
+        },
+        type: "file",
+        "data-anvia-attachment-input": "",
+        "data-state": disabled ? "disabled" : "enabled",
+      } as PrimitiveProps<"input">,
+      ref,
+    );
+  },
+);
 
 const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmentProps>(
   function ComposerAddAttachment({ accept, multiple = false, onClick, ...props }, ref) {
@@ -377,17 +479,6 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
       [disabled, onClick],
     );
 
-    const handleChange = useCallback(
-      async (event: ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.currentTarget.files ?? []);
-        event.currentTarget.value = "";
-        for (const file of files) {
-          await composer.addAttachment(file);
-        }
-      },
-      [composer],
-    );
-
     return (
       <>
         {renderPrimitive(
@@ -403,18 +494,13 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
           } as PrimitiveProps<"button">,
           ref,
         )}
-        <input
+        <ComposerAttachmentInput
           accept={accept}
           aria-hidden="true"
-          data-anvia-attachment-input=""
           hidden
           multiple={multiple}
-          onChange={(event) => {
-            void handleChange(event);
-          }}
           ref={inputRef}
           tabIndex={-1}
-          type="file"
         />
       </>
     );
@@ -537,6 +623,7 @@ export const Composer = {
   Input: ComposerInput,
   Attachments: ComposerAttachments,
   AddAttachment: ComposerAddAttachment,
+  AttachmentInput: ComposerAttachmentInput,
   AttachmentDropzone: ComposerAttachmentDropzone,
   Submit: ComposerSubmit,
   Stop: ComposerStop,

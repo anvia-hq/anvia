@@ -14,19 +14,33 @@ sidebar:
 `Thread.Messages`, but the message primitives can still be rearranged into any layout.
 
 ```tsx
-<Message.Root className="message">
-  <Message.Content>
-    <Message.Parts />
-  </Message.Content>
-  <Message.Actions>
-    <Message.Copy />
-    <Message.Regenerate />
-  </Message.Actions>
-</Message.Root>
+<Thread.Messages>
+  {(message) => (
+    <Message.Root className="message">
+      <Message.Content className="message-content">
+        <Message.Parts />
+      </Message.Content>
+      <Message.Actions className="message-actions">
+        <Message.Copy>Copy</Message.Copy>
+        <Message.Regenerate>Retry</Message.Regenerate>
+      </Message.Actions>
+    </Message.Root>
+  )}
+</Thread.Messages>
 ```
 
-`Message.Root` exposes `data-role` so CSS can treat user, assistant, system, and tool messages
+`Message.Root` exposes `data-role`, so CSS can treat user, assistant, system, and tool messages
 differently.
+
+```css
+.message[data-role="user"] {
+  justify-items: end;
+}
+
+.message[data-role="assistant"] {
+  justify-items: start;
+}
+```
 
 ## Parts
 
@@ -37,7 +51,11 @@ primitive for text, reasoning, tool, attachment, data, and error parts.
 <Message.Parts filter={(part) => part.type !== "reasoning"}>
   {(part) => {
     if (part.type === "text") {
-      return <Message.Text className="prose" />;
+      return (
+        <Message.Part className="text-part">
+          <Message.Text />
+        </Message.Part>
+      );
     }
 
     return <Message.Part className="message-part" />;
@@ -48,9 +66,10 @@ primitive for text, reasoning, tool, attachment, data, and error parts.
 Focused primitives are available for `Message.Text`, `Message.Markdown`, `Message.Reasoning`,
 `Message.Tool`, `Message.Attachment`, `Message.Data`, and `Message.Error`.
 
-Use `Message.Markdown` when assistant text should be rendered as Markdown. It uses GitHub-flavored
-Markdown by default and accepts `components` overrides, so applications can provide their own code
-block highlighter.
+## Markdown
+
+Use `Message.Markdown` when assistant text should render GitHub-flavored Markdown. Pass
+`components` when code blocks, links, or headings should use app-owned components.
 
 ```tsx
 <Message.Parts>
@@ -62,6 +81,9 @@ block highlighter.
             code(props) {
               return <CodeBlock {...props} />;
             },
+            a(props) {
+              return <a {...props} target="_blank" rel="noreferrer" />;
+            },
           }}
         />
       </Message.Part>
@@ -72,8 +94,43 @@ block highlighter.
 </Message.Parts>
 ```
 
+## Attachments and data
+
+Attachment parts can use the default renderer or a custom attachment layout.
+
+```tsx
+<Message.Parts>
+  {(part) =>
+    part.type === "attachment" ? (
+      <Message.Part className="attachment-part">
+        <Message.Attachment className="attachment-card" />
+      </Message.Part>
+    ) : part.type === "data" ? (
+      <Message.Part className="data-part">
+        <Message.Data />
+      </Message.Part>
+    ) : (
+      <Message.Part />
+    )
+  }
+</Message.Parts>
+```
+
 ## Actions
 
-`Message.Copy` copies the text content from the current message. `Message.Regenerate` calls the
-chat controller's `regenerate()` action and is only enabled for assistant messages when the chat is
-not streaming.
+`Message.Copy` copies text content from the current message. `Message.Regenerate` calls the chat
+controller's `regenerate()` action and is only enabled for assistant messages when the chat is not
+streaming.
+
+```tsx
+<Message.Actions className="message-actions">
+  <Message.Copy asChild>
+    <button type="button">Copy answer</button>
+  </Message.Copy>
+  <Message.Regenerate asChild>
+    <button type="button">Try again</button>
+  </Message.Regenerate>
+</Message.Actions>
+```
+
+For a larger message recipe, see [Message rendering](/docs/react-ui/examples/message-rendering).

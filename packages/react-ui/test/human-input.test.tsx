@@ -9,6 +9,22 @@ afterEach(() => {
 });
 
 describe("HumanInput primitives", () => {
+  it("unmounts empty lists by default and keeps them mounted when requested", () => {
+    render(
+      <ChatProvider controller={createChatController()}>
+        <HumanInput.Approvals data-testid="approvals" />
+        <HumanInput.Approvals data-testid="approvals-mounted" keepMounted />
+        <HumanInput.Questions data-testid="questions" />
+        <HumanInput.Questions data-testid="questions-mounted" keepMounted />
+      </ChatProvider>,
+    );
+
+    expect(screen.queryByTestId("approvals")).toBeNull();
+    expect(screen.queryByTestId("questions")).toBeNull();
+    expect(screen.getByTestId("approvals-mounted").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("questions-mounted").getAttribute("data-empty")).toBe("");
+  });
+
   it("approves and rejects pending tool approvals", () => {
     const approval = pendingApproval();
     const approveTool = vi.fn(async () => {});

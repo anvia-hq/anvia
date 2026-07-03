@@ -80,7 +80,27 @@ or filter tool parts before wrappers are created:
 
 ## Attachments and Markdown
 
-Use `Composer.Attachments`, `Composer.AddAttachment`, and `Composer.AttachmentDropzone` for pending
-file attachments. `Composer.Input` auto-resizes from `minRows` to `maxRows` rows, with `maxRows`
-defaulting to `6`. Use `Message.Markdown` when text parts should render GitHub-flavored Markdown;
-pass `components` to replace code blocks or other Markdown elements with app-owned components.
+Use `Composer.Attachments`, `Composer.AttachmentInput`, `Composer.AddAttachment`, and
+`Composer.AttachmentDropzone` for pending file attachments. `Composer.Input` auto-resizes from
+`minRows` to `maxRows` rows, with `maxRows` defaulting to `6`.
+
+Keep `Composer.Root` uncontrolled for simple chat surfaces. Use `input`, `onInputChange`,
+`attachments`, and `onAttachmentsChange` when the draft or pending attachments need to sync with
+application state.
+
+```tsx
+<Composer.Root
+  input={draft}
+  onInputChange={setDraft}
+  attachments={attachments}
+  onAttachmentsChange={setAttachments}
+>
+  <Composer.Attachments keepMounted />
+  <Composer.AttachmentInput multiple />
+  <Composer.Input />
+  <Composer.Submit />
+</Composer.Root>
+```
+
+Use `Message.Markdown` when text parts should render GitHub-flavored Markdown; pass `components` to
+replace code blocks or other Markdown elements with app-owned components.

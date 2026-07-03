@@ -1,4 +1,6 @@
+import type { UIAttachment } from "@anvia/react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatProvider, Composer, Thread } from "../src";
@@ -141,6 +143,25 @@ describe("Chat primitives", () => {
     expect(sendMessage).toHaveBeenCalledWith("Summarize");
   });
 
+  it("controls optional thread collection wrappers with keepMounted", () => {
+    const { container } = render(
+      <ChatProvider controller={createChatController()}>
+        <Thread.Root>
+          <Thread.Messages data-testid="messages" />
+          <Thread.Messages data-testid="messages-unmounted" keepMounted={false} />
+          <Thread.Suggestions data-testid="suggestions" />
+          <Thread.Suggestions data-testid="suggestions-mounted" keepMounted />
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(screen.getByTestId("messages").getAttribute("data-empty")).toBe("");
+    expect(screen.queryByTestId("messages-unmounted")).toBeNull();
+    expect(screen.queryByTestId("suggestions")).toBeNull();
+    expect(screen.getByTestId("suggestions-mounted").getAttribute("data-empty")).toBe("");
+    expect(container.querySelector("[data-anvia-thread-suggestions]")).toBeTruthy();
+  });
+
   it("adds file attachments and submits them with composer input", async () => {
     const sendMessage = vi.fn(async () => {});
     const file = new File(["hello"], "hello.txt", { type: "text/plain" });
@@ -188,6 +209,78 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
     });
+  });
+
+  it("supports controlled composer input and attachments", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const onInputChange = vi.fn();
+    const onAttachmentsChange = vi.fn();
+    const file = new File(["hello"], "controlled.txt", { type: "text/plain" });
+
+    function ControlledComposer() {
+      const [input, setInput] = useState("draft");
+      const [attachments, setAttachments] = useState<UIAttachment[]>([]);
+
+      return (
+        <ChatProvider controller={createChatController({ sendMessage })}>
+          <Composer.Root
+            attachments={attachments}
+            input={input}
+            onAttachmentsChange={(nextAttachments) => {
+              onAttachmentsChange(nextAttachments);
+              setAttachments(nextAttachments);
+            }}
+            onInputChange={(nextInput) => {
+              onInputChange(nextInput);
+              setInput(nextInput);
+            }}
+          >
+            <Composer.Attachments />
+            <Composer.AttachmentInput data-testid="attachment-input" />
+            <Composer.Input />
+            <Composer.Submit />
+          </Composer.Root>
+        </ChatProvider>
+      );
+    }
+
+    render(<ControlledComposer />);
+
+    const input = screen.getByLabelText("Message");
+    expect((input as HTMLTextAreaElement).value).toBe("draft");
+    fireEvent.change(input, { target: { value: "controlled" } });
+
+    expect(onInputChange).toHaveBeenCalledWith("controlled");
+
+    fireEvent.change(screen.getByTestId("attachment-input"), { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("controlled.txt")).toBeTruthy();
+    });
+
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        type: "document",
+        name: "controlled.txt",
+        mediaType: "text/plain",
+      }),
+    ]);
+
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "controlled",
+        attachments: [
+          expect.objectContaining({
+            type: "document",
+            name: "controlled.txt",
+          }),
+        ],
+      });
+    });
+    expect(onInputChange).toHaveBeenLastCalledWith("");
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith([]);
   });
 
   it("respects prevented composer submit and supports stop", () => {

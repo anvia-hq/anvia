@@ -1,5 +1,13 @@
 import type { UIMessage, UIMessagePart } from "@anvia/react";
-import { forwardRef, type MouseEvent, type ReactNode, useCallback, useState } from "react";
+import {
+  forwardRef,
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   InternalMessagePartProvider,
@@ -245,7 +253,15 @@ const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(func
   const { message } = useMessage();
   const [copyState, setCopyState] = useState<MessageCopyState>("idle");
   const text = messageText(message);
+  const previousTextRef = useRef(text);
   const disabled = props.disabled ?? text.length === 0;
+
+  useEffect(() => {
+    if (previousTextRef.current !== text) {
+      previousTextRef.current = text;
+      setCopyState("idle");
+    }
+  }, [text]);
 
   const handleClick = useCallback(
     async (event: MouseEvent<HTMLButtonElement>) => {

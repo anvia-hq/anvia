@@ -5,7 +5,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatProvider, Message, Thread } from "../src";
 import { createChatController, textMessage } from "./helpers";
 
-afterEach(() => cleanup());
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+
+afterEach(() => {
+  cleanup();
+  if (originalClipboardDescriptor === undefined) {
+    Reflect.deleteProperty(navigator, "clipboard");
+  } else {
+    Object.defineProperty(navigator, "clipboard", originalClipboardDescriptor);
+  }
+});
 
 describe("Message primitives", () => {
   it("renders chat messages and all supported message part kinds", () => {
@@ -202,9 +211,12 @@ describe("Message primitives", () => {
   });
 
   it("sets error state when clipboard write fails", async () => {
+    const writeText = vi.fn(async () => {
+      throw new Error("denied");
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
-      value: { writeText: vi.fn(async () => Promise.reject(new Error("denied"))) },
+      value: { writeText },
     });
 
     render(
@@ -226,7 +238,46 @@ describe("Message primitives", () => {
     fireEvent.click(screen.getByText("Copy"));
 
     await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("Copy me");
       expect(screen.getByText("Copy").getAttribute("data-state")).toBe("error");
+    });
+  });
+
+  it("resets copy state when message text changes", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const renderThread = (text: string) => (
+      <ChatProvider
+        controller={createChatController({
+          messages: [textMessage("assistant_1", "assistant", text)],
+        })}
+      >
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Copy />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>
+    );
+
+    const { rerender } = render(renderThread("Copy me"));
+
+    fireEvent.click(screen.getByText("Copy"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Copy").getAttribute("data-state")).toBe("copied");
+    });
+
+    rerender(renderThread("Updated copy"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Copy").getAttribute("data-state")).toBe("idle");
     });
   });
 

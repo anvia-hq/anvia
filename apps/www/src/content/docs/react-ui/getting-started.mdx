@@ -4,17 +4,54 @@ description: Install @anvia/react-ui, wire it to useChat, and render a styled ch
 section: react-ui
 sidebar:
   group: Start Here
-  order: 2
+  order: 3
   label: Getting started
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
 import { starterChatVariants } from "../../../lib/react-ui-code-variants";
 
-Install the UI package beside the React hook package.
+Install the UI package beside the React hook package:
 
 ```sh
 pnpm add @anvia/react @anvia/react-ui
+```
+
+If you do not already have a React app and API route, start with
+[TanStack quickstart](/docs/react-ui/quickstart-tanstack). This page focuses on the UI composition once a
+compatible API endpoint exists.
+
+## Route requirement
+
+The endpoint is the API app URL, not a frontend route. For local development:
+
+```tsx
+const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+```
+
+That call posts the default React request body:
+
+```ts
+type UIStreamRequest = {
+  messages: Message[];
+  stream: true;
+  metadata?: JsonValue;
+};
+```
+
+The route should read `body.messages` and return an Anvia stream:
+
+```ts
+import type { UIStreamRequest } from "@anvia/core";
+import { createEventStream } from "@anvia/server";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+}
 ```
 
 ## Build the first chat
@@ -33,13 +70,16 @@ errors.
 
 The app still owns:
 
-- The `/api/chat` route.
+- The API app route at `/api/chat`.
+- The API app origin and CORS policy.
 - Authentication and persistence.
 - Page layout and final visual styling.
 - Custom message, tool-call, or attachment components when the defaults are not enough.
 
 ## Next steps
 
+- Build the route in [Server routes](/docs/react-ui/server-routes).
+- Customize request options in [Request shape](/docs/react-ui/request-shape).
 - Learn the renderer levels in [Messages](/docs/react-ui/messages).
 - Add file inputs and dropzones in [Composer attachments](/docs/react-ui/examples/composer-attachments).
 - Build a complete app-owned surface in [Full chat surface](/docs/react-ui/examples/chat-surface).

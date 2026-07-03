@@ -14,6 +14,27 @@ import { defaultRendererVariants, messageRowVariants, customRendererVariants, ma
 `Message.Root` renders one Anvia `UIMessage`. `Message.Parts` renders the message's streamed
 parts. Start with the default renderer, then replace only the parts that need product-specific UI.
 
+One message can contain many parts:
+
+```ts
+const message = {
+  id: "assistant-1",
+  role: "assistant",
+  parts: [
+    { id: "text-1", type: "text", text: "Order A-100 is blocked." },
+    {
+      id: "tool-1",
+      type: "tool",
+      toolName: "lookup_order",
+      toolCallId: "call_1",
+      state: "output-available",
+      input: { orderId: "A-100" },
+      output: { status: "blocked" },
+    },
+  ],
+};
+```
+
 ## Renderer levels
 
 | Level | Use it when | What you write |
@@ -60,6 +81,24 @@ The focused primitives are:
 - `Message.Data` for structured data parts.
 - `Message.Error` for error parts.
 
+Use the fallback renderer for part types that your app does not explicitly customize:
+
+```tsx
+<Message.Parts>
+  {(part) => {
+    if (part.type === "text") {
+      return (
+        <Message.Part>
+          <Message.Markdown />
+        </Message.Part>
+      );
+    }
+
+    return <Message.Part />;
+  }}
+</Message.Parts>
+```
+
 ## Markdown text
 
 Use `Message.Markdown` when assistant text should render GitHub-flavored Markdown. It accepts
@@ -98,3 +137,4 @@ is idle.
 ```
 
 For a larger message recipe, see [Message rendering](/docs/react-ui/examples/message-rendering).
+For server-side tools that produce tool parts, see [Tools end to end](/docs/react-ui/tools-end-to-end).

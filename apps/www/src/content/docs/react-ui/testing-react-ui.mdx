@@ -1,0 +1,116 @@
+---
+title: Testing React UI
+description: Test route contracts, fake streams, component states, and human-input flows.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 11
+  label: Testing React UI
+---
+
+Test the boundary in layers: route contract, stream parsing, component states, and product-specific
+rendering.
+
+## Route contract
+
+A React-facing route should accept `UIStreamRequest` and return a JSONL or SSE stream.
+
+```ts
+import { describe, expect, it } from "vitest";
+
+describe("POST /api/chat", () => {
+  it("accepts the React UI request shape", async () => {
+    const response = await POST(
+      new Request("http://test.local/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Hello" }],
+          stream: true,
+        }),
+      }),
+    );
+
+    expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+  });
+});
+```
+
+## Fake direct transport
+
+Use `createDirectTransport(...)` when the test should avoid fetch and server routes.
+
+```tsx
+import { createDirectTransport, useChat } from "@anvia/react";
+import type { UIStreamEvent, UIStreamRequest } from "@anvia/react";
+
+const transport = createDirectTransport<UIStreamRequest, UIStreamEvent>(async function* () {
+  yield {
+    type: "text_delta",
+    messageId: "assistant-1",
+    partId: "text-1",
+    delta: "Hello",
+  };
+});
+
+function TestChat() {
+  const chat = useChat({ transport });
+  return <ChatProvider controller={chat}>{/* render test UI */}</ChatProvider>;
+}
+```
+
+## Component state checks
+
+Prefer visible behavior over implementation details:
+
+- submit is disabled while streaming
+- stop is enabled while streaming
+- errors render in `Thread.Error`
+- user messages align with `data-role="user"`
+- tool cards render `data-state="output-available"` after a result
+- attachment names truncate instead of resizing the composer
+
+## Human-input tests
+
+When testing approvals or questions, feed the hook stream events and assert that the panel appears.
+
+```ts
+const approvalEvent = {
+  type: "tool_approval_request",
+  approval: {
+    id: "approval_1",
+    toolName: "issue_refund",
+    args: "{\"amountCents\":7500}",
+    status: "pending",
+  },
+};
+```
+
+Then test the decision handler separately:
+
+```ts
+await chat.approveTool("approval_1", "Approved by support lead.");
+expect(decideApproval).toHaveBeenCalledWith(
+  expect.objectContaining({
+    approvalId: "approval_1",
+    approved: true,
+  }),
+);
+```
+
+## Build validation
+
+For docs changes, run:
+
+```sh
+pnpm --filter www reference-check
+pnpm --filter www build
+```
+
+For package behavior changes, also run:
+
+```sh
+pnpm --filter @anvia/react typecheck
+pnpm --filter @anvia/react-ui typecheck
+pnpm --filter @anvia/react-ui test
+```

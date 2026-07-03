@@ -1,0 +1,318 @@
+---
+title: TanStack quickstart
+description: Build a TanStack Router React frontend, a separate Hono API app, and a streaming React UI chat.
+section: react-ui
+sidebar:
+  group: Start Here
+  order: 2
+  label: TanStack quickstart
+---
+
+This quickstart builds the smallest useful React UI setup as two dedicated apps:
+
+- `frontend`: a TanStack Router React app that renders `@anvia/react-ui`.
+- `api`: a Hono server that owns provider credentials, tools, agents, and streaming routes.
+
+The same shape is used by the runnable repository example at `examples/fullstack-agent`.
+
+## Install
+
+Create the two app folders:
+
+```sh
+mkdir anvia-react-ui
+cd anvia-react-ui
+pnpm dlx @tanstack/cli@latest create --router-only
+mkdir -p api/src
+```
+
+When the TanStack CLI asks for the app location, create it as `frontend`.
+
+Install frontend packages:
+
+```sh
+cd frontend
+pnpm add @anvia/react @anvia/react-ui
+```
+
+Create `api/package.json`:
+
+```json
+{
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts"
+  }
+}
+```
+
+Install API packages:
+
+```sh
+cd ../api
+pnpm add @anvia/core @anvia/openai @anvia/server
+pnpm add @hono/node-server hono zod dotenv
+pnpm add -D tsx typescript @types/node
+```
+
+Set the provider key on the server side:
+
+```sh
+OPENAI_API_KEY=...
+```
+
+## API server
+
+Create `api/src/server.ts`. The important part is the request body: React sends
+`{ messages, stream: true }`, so the route reads `body.messages`.
+
+```ts
+import { AgentBuilder, createTool, type UIStreamRequest } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
+import { createEventStream } from "@anvia/server";
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { z } from "zod";
+import "dotenv/config";
+
+const client = new OpenAIClient({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const getOrder = createTool({
+  name: "get_order",
+  description: "Read an order summary from local application state.",
+  input: z.object({
+    id: z.string().describe("The order id to read."),
+  }),
+  output: z.object({
+    id: z.string(),
+    status: z.enum(["processing", "blocked", "shipped"]),
+    customer: z.string(),
+    notes: z.string(),
+  }),
+  execute: ({ id }) => ({
+    id,
+    status: "blocked" as const,
+    customer: "Delta Kit Labs",
+    notes: "Payment review is complete, but warehouse allocation is still pending.",
+  }),
+});
+
+const model = client.completionModel("gpt-5");
+const agent = new AgentBuilder("support-operations", model)
+  .name("Support Operations")
+  .instructions("Answer operational questions clearly. Use tools when they help.")
+  .tool(getOrder)
+  .build();
+
+const app = new Hono();
+const frontendOrigin = process.env.FRONTEND_ORIGIN ?? "http://localhost:5173";
+
+app.use("/api/*", cors({ origin: frontendOrigin }));
+app.get("/api/health", (c) => c.json({ ok: true }));
+
+app.post("/api/chat", async (c) => {
+  const body = (await c.req.json()) as UIStreamRequest;
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+});
+
+serve({
+  fetch: app.fetch,
+  hostname: "127.0.0.1",
+  port: Number(process.env.API_PORT ?? 8787),
+});
+```
+
+## Frontend API URL
+
+The frontend calls the API app directly.
+
+Create `frontend/.env.local`:
+
+```sh
+VITE_ANVIA_API_URL=http://localhost:8787
+```
+
+## Chat UI
+
+Create or replace `frontend/src/App.tsx`:
+
+```tsx
+import { useChat } from "@anvia/react";
+import { ChatProvider, Composer, Message, Thread } from "@anvia/react-ui";
+import "@anvia/react-ui/styles.css";
+
+const suggestions = [
+  { id: "order", prompt: "Where is order A-100?", label: "Find order A-100" },
+  { id: "next", prompt: "What should support do next?", label: "Suggest next step" },
+];
+
+const API_BASE_URL = import.meta.env.VITE_ANVIA_API_URL ?? "http://localhost:8787";
+
+export function App() {
+  const chat = useChat({
+    endpoint: `${API_BASE_URL}/api/chat`,
+    format: "jsonl",
+    suggestions,
+  });
+
+  return (
+    <ChatProvider controller={chat}>
+      <main className="chat-shell">
+        <Thread.Root className="thread">
+          <Thread.Viewport className="thread-viewport">
+            <Thread.Empty className="empty-state">
+              <h1>Ask the support agent</h1>
+              <Thread.Suggestions className="suggestions" />
+            </Thread.Empty>
+
+            <Thread.Messages className="messages">
+              {(message) => (
+                <Message.Root className="message">
+                  <Message.Content className="message-content">
+                    <Message.Parts>
+                      {(part) =>
+                        part.type === "text" ? (
+                          <Message.Part>
+                            <Message.Markdown />
+                          </Message.Part>
+                        ) : part.type === "tool" ? (
+                          <Message.Part>
+                            <Message.Tool className="tool-card" />
+                          </Message.Part>
+                        ) : (
+                          <Message.Part />
+                        )
+                      }
+                    </Message.Parts>
+                  </Message.Content>
+                </Message.Root>
+              )}
+            </Thread.Messages>
+
+            <Thread.Error className="thread-error" />
+            <Thread.ScrollToBottom className="scroll-button">Latest</Thread.ScrollToBottom>
+          </Thread.Viewport>
+
+          <Composer.Root className="composer">
+            <Composer.Input placeholder="Ask about an order..." maxRows={6} />
+            <Composer.Stop>Stop</Composer.Stop>
+            <Composer.Submit>Send</Composer.Submit>
+          </Composer.Root>
+        </Thread.Root>
+      </main>
+    </ChatProvider>
+  );
+}
+```
+
+Add enough CSS for a usable layout:
+
+```css
+.chat-shell {
+  min-height: 100vh;
+  background: #0f1014;
+  color: #f4f4f5;
+}
+
+.thread {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.thread-viewport {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 16px;
+}
+
+.messages,
+.empty-state,
+.thread-error {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.messages {
+  display: grid;
+  gap: 16px;
+}
+
+.message {
+  display: grid;
+  gap: 8px;
+}
+
+.message[data-role="user"] {
+  justify-items: end;
+}
+
+.message[data-role="user"] .message-content {
+  max-width: min(620px, 88%);
+  border-radius: 18px;
+  background: #27272a;
+  padding: 10px 14px;
+}
+
+.tool-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #3f3f46;
+  border-radius: 10px;
+  background: #18181b;
+  padding: 12px;
+}
+
+.composer {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  border: 1px solid #3f3f46;
+  border-radius: 18px;
+  background: #18181b;
+  padding: 8px;
+}
+
+.composer [data-anvia-composer-input] {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+}
+```
+
+## Run it
+
+Run the API app in one terminal:
+
+```sh
+cd api
+OPENAI_API_KEY=... pnpm dev
+```
+
+Run the frontend app in another terminal:
+
+```sh
+cd frontend
+pnpm dev
+```
+
+Ask "Where is order A-100?" and confirm that:
+
+- the browser posts to `http://localhost:8787/api/chat`
+- the API server allows the frontend origin with CORS
+- the route reads `body.messages`
+- the response streams JSONL
+- the UI shows assistant text and tool-call output
+
+For a complete repo-native version with a combined dev script, see `examples/fullstack-agent`.

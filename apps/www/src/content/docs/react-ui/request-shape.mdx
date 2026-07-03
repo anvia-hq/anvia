@@ -1,0 +1,157 @@
+---
+title: Request shape
+description: Understand the default React wire shape, createRequest, metadata, and stream formats.
+section: react-ui
+sidebar:
+  group: Start Here
+  order: 5
+  label: Request shape
+---
+
+`@anvia/react-ui` renders a controller from `@anvia/react`. The controller decides what gets sent to
+your route.
+
+The examples use a separate API app at `http://localhost:8787`, so endpoints are full URLs. Replace
+that origin with your deployed API origin in production.
+
+By default, both `useChat(...)` and `useCompletion(...)` send:
+
+```ts
+type UIStreamRequest = {
+  messages: Message[];
+  stream: true;
+  metadata?: JsonValue;
+};
+```
+
+The `messages` field is already converted from browser-side `UIMessage[]` into core Anvia
+`Message[]`.
+
+## What createRequest receives
+
+Use `createRequest` when the server needs request-level options such as model, reasoning effort,
+provider, temperature, tenant, or feature flags.
+
+```tsx
+import type { Message } from "@anvia/core/completion";
+import { useChat } from "@anvia/react";
+
+type ChatRequest = {
+  messages: Message[];
+  stream: true;
+  metadata: {
+    model: string;
+    reasoningEffort: "low" | "medium" | "high";
+  };
+};
+
+const chat = useChat<ChatRequest>({
+  endpoint: "http://localhost:8787/api/chat",
+  createRequest: ({ coreMessages }) => ({
+    messages: coreMessages,
+    stream: true,
+    metadata: {
+      model,
+      reasoningEffort,
+    },
+  }),
+});
+```
+
+`createRequest` receives three message views:
+
+| Field | Shape | Use |
+| --- | --- | --- |
+| `coreMessages` | Anvia core `Message[]` | Send to ordinary server routes. |
+| `messages` | `UIMessage[]` | Backward-compatible UI-shaped message state. |
+| `uiMessages` | `UIMessage[]` | Same as `messages`; use this name when code needs clarity. |
+
+Prefer `coreMessages` for server requests unless your endpoint explicitly expects UI messages.
+
+## Custom request body
+
+If your server already has a product-specific contract, type that request and build it in
+`createRequest`.
+
+```tsx
+type SupportChatRequest = {
+  threadId: string;
+  messages: Message[];
+  options: {
+    model: string;
+    temperature: number;
+  };
+};
+
+const chat = useChat<SupportChatRequest>({
+  endpoint: "http://localhost:8787/api/support/chat",
+  createRequest: ({ coreMessages }) => ({
+    threadId,
+    messages: coreMessages,
+    options: {
+      model,
+      temperature,
+    },
+  }),
+});
+```
+
+Then the server should validate that product shape before running the model:
+
+```ts
+export async function POST(request: Request) {
+  const body = await parseSupportChatRequest(request);
+  const agent = createSupportAgent({
+    model: requireAllowedModel(body.options.model),
+  });
+
+  return createEventStream(agent.prompt(body.messages).stream());
+}
+```
+
+## Metadata vs message metadata
+
+Use request `metadata` for options that affect the whole request:
+
+- selected model
+- tenant or workspace id
+- reasoning effort
+- feature flags
+- trace labels
+
+Use per-message metadata when the value belongs to one submitted message:
+
+```tsx
+await chat.sendMessage({
+  text: input,
+  metadata: {
+    source: "composer",
+    selectedModel: model,
+  },
+});
+```
+
+## Formats
+
+The default transport reads JSONL:
+
+```tsx
+const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+```
+
+Configure both sides for SSE when needed:
+
+```tsx
+const chat = useChat({
+  endpoint: "http://localhost:8787/api/chat",
+  format: "sse",
+});
+```
+
+```ts
+return createEventStream(agent.prompt(body.messages).stream(), {
+  format: "sse",
+});
+```
+
+Do not let the route return JSONL while the client expects SSE, or the stream parser will fail.

@@ -1,0 +1,137 @@
+---
+title: Attachments end to end
+description: Add file picker, dropzone, previews, controlled attachment state, and server-side handling.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 9
+  label: Attachments end to end
+---
+
+Attachments start in the composer, become `UIAttachment` values, and are converted by
+`@anvia/react` into core messages before the request reaches your server.
+
+## Composer with picker and dropzone
+
+```tsx
+import { Attachment, Composer } from "@anvia/react-ui";
+
+export function AttachmentComposer() {
+  return (
+    <Composer.Root className="composer">
+      <Composer.AttachmentDropzone className="dropzone">
+        <Composer.Attachments className="attachment-list">
+          {(attachment) => (
+            <Attachment.Root className="attachment-row">
+              <Attachment.Preview />
+              <Attachment.Name />
+              <Attachment.Remove>Remove</Attachment.Remove>
+            </Attachment.Root>
+          )}
+        </Composer.Attachments>
+        <Composer.AddAttachment accept="image/*,.pdf" multiple>
+          Attach image or PDF
+        </Composer.AddAttachment>
+        <Composer.Input placeholder="Ask about the attached file..." />
+        <Composer.Submit>Send</Composer.Submit>
+      </Composer.AttachmentDropzone>
+    </Composer.Root>
+  );
+}
+```
+
+## Controlled attachments
+
+Use controlled state when the app needs validation, upload progress, or a separate form preview.
+
+```tsx
+import type { UIAttachment } from "@anvia/react";
+import { useState } from "react";
+
+const [attachments, setAttachments] = useState<UIAttachment[]>([]);
+
+return (
+  <Composer.Root
+    attachments={attachments}
+    onAttachmentsChange={(next) => {
+      setAttachments(next.filter((attachment) => attachment.mediaType !== "application/zip"));
+    }}
+  >
+    <Composer.Attachments keepMounted />
+    <Composer.AttachmentInput accept="image/*,.pdf" multiple />
+    <Composer.Input />
+    <Composer.Submit />
+  </Composer.Root>
+);
+```
+
+## Sending attachments manually
+
+When a design system owns the uploader, pass attachments to `sendMessage(...)`.
+
+```tsx
+await chat.sendMessage({
+  text: "Summarize these files.",
+  attachments,
+  metadata: {
+    source: "custom-uploader",
+  },
+});
+```
+
+## Server handling
+
+The route still receives core messages:
+
+```ts
+import type { UIStreamRequest } from "@anvia/core";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+}
+```
+
+The browser should not receive provider credentials or direct upload authority. If files must be
+stored before model execution, upload them to your application first and pass safe attachment
+metadata or URLs through the message.
+
+## Attachment UI states
+
+```css
+.dropzone {
+  border: 1px dashed #52525b;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.dropzone[data-dragging] {
+  border-color: #2bf563;
+  background: rgba(43, 245, 99, 0.08);
+}
+
+.attachment-row {
+  display: inline-flex;
+  max-width: 240px;
+  align-items: center;
+  gap: 8px;
+}
+
+.attachment-row [data-anvia-attachment-name] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
+## Checklist
+
+- Limit accepted file types with `accept`.
+- Validate file count and size in application code.
+- Keep provider keys on the server.
+- Prefer product-owned upload/storage for large files.
+- Render filenames with truncation so long names do not break the composer.

@@ -10,11 +10,12 @@ sidebar:
 ## Minimal route
 
 ```ts
+import type { UIStreamRequest } from "@anvia/core";
 import { createEventStream } from "@anvia/server";
 
 export async function POST(request: Request) {
-  const { message } = await request.json();
-  return createEventStream(agent.prompt(message).stream());
+  const body = (await request.json()) as UIStreamRequest;
+  return createEventStream(agent.prompt(body.messages).stream());
 }
 ```
 ## Product-shaped endpoint
@@ -22,9 +23,9 @@ export async function POST(request: Request) {
 ```ts
 export async function POST(request: Request) {
   const user = await requireUser(request);
-  const { message } = await parseChatRequest(request);
+  const body = await parseChatRequest(request);
 
-  return createEventStream(createSupportAgent(user).prompt(message).stream(), {
+  return createEventStream(createSupportAgent(user).prompt(body.messages).stream(), {
     format: "jsonl",
   });
 }

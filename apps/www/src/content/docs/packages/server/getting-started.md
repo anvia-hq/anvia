@@ -16,12 +16,13 @@ pnpm add @anvia/server
 ## Minimum setup
 
 ```ts
+import type { UIStreamRequest } from "@anvia/core";
 import { createEventStream } from "@anvia/server";
 
 export async function POST(request: Request) {
-  const { message } = await request.json();
+  const body = (await request.json()) as UIStreamRequest;
 
-  return createEventStream(agent.prompt(message).stream(), {
+  return createEventStream(agent.prompt(body.messages).stream(), {
     format: "jsonl",
   });
 }

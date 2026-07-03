@@ -1,0 +1,138 @@
+---
+title: Server routes
+description: Return React-compatible Anvia streams from chat and completion routes.
+section: react-ui
+sidebar:
+  group: Start Here
+  order: 4
+  label: Server routes
+---
+
+React UI components do not call provider SDKs directly. They render state from `@anvia/react`.
+`@anvia/react` posts to your API app, and that app owns auth, model selection, tools,
+credentials, persistence, and streaming.
+
+The examples use a separate frontend app at `http://localhost:5173` and API app at
+`http://localhost:8787`. In that setup, the hook endpoint is the full API URL:
+
+```tsx
+const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+```
+
+If the frontend and API run on different origins, configure CORS in the API app. With Hono:
+
+```ts
+import { cors } from "hono/cors";
+
+app.use("/api/*", cors({ origin: "http://localhost:5173" }));
+```
+
+## Chat route
+
+The chat route sends the default `UIStreamRequest` body:
+
+```ts
+type UIStreamRequest = {
+  messages: Message[];
+  stream: true;
+  metadata?: JsonValue;
+};
+```
+
+Read `body.messages`, not `{ message }`, when the route is used by `@anvia/react`.
+
+```ts
+import type { UIStreamRequest } from "@anvia/core";
+import { createEventStream } from "@anvia/server";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+}
+```
+
+## Completion route
+
+`useCompletion(...)` uses the same request shape. A completion route can stream one model call:
+
+```ts
+import { createCompletionStream, type UIStreamRequest } from "@anvia/core";
+import { createEventStream } from "@anvia/server";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(
+    createCompletionStream(model, {
+      instructions: "Write concise product copy.",
+      messages: body.messages,
+      maxTokens: 500,
+    }),
+    { format: "jsonl" },
+  );
+}
+```
+
+## Product-shaped route
+
+Keep product state on the server. Use `metadata` or a custom request body for client-selected
+options, then validate those values before running the agent.
+
+```ts
+import type { UIStreamRequest } from "@anvia/core";
+import { createEventStream } from "@anvia/server";
+
+type ChatMetadata = {
+  model?: string;
+  tenantId?: string;
+};
+
+export async function POST(request: Request) {
+  const user = await requireUser(request);
+  const body = (await request.json()) as UIStreamRequest;
+  const metadata = (body.metadata ?? {}) as ChatMetadata;
+  const tenant = await requireTenant(user, metadata.tenantId);
+  const agent = createSupportAgent({
+    model: chooseAllowedModel(user, metadata.model),
+    tenant,
+  });
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+}
+```
+
+## JSONL and SSE
+
+JSONL is the default and is the simplest pairing with `@anvia/react`:
+
+```ts
+return createEventStream(events, { format: "jsonl" });
+```
+
+Use SSE only when your infrastructure or existing clients need `text/event-stream`:
+
+```ts
+return createEventStream(events, { format: "sse" });
+```
+
+If the route returns SSE, configure the client with the same format:
+
+```tsx
+const chat = useChat({
+  endpoint: "http://localhost:8787/api/chat",
+  format: "sse",
+});
+```
+
+## Route checklist
+
+- Keep API keys and provider clients on the server.
+- Read `body.messages` from `UIStreamRequest`.
+- Return an Anvia stream through `createEventStream(...)`.
+- Validate any client-selected model, provider, tenant, or feature flag.
+- Do not expose private tool inputs, secrets, trace payloads, or raw provider responses directly to the browser.

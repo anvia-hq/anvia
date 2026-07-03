@@ -1,0 +1,158 @@
+---
+title: Lifecycle and state
+description: Handle idle, streaming, error, stop, reset, regenerate, and loading states in React UI surfaces.
+section: react-ui
+sidebar:
+  group: Primitives
+  order: 7
+  label: Lifecycle and state
+---
+
+`@anvia/react-ui` reflects the `@anvia/react` controller state. Your app decides where to place
+status, errors, stop buttons, retry controls, and reset actions.
+
+## Chat states
+
+`useChat(...)` exposes three status values:
+
+| Status | Meaning | Common UI |
+| --- | --- | --- |
+| `idle` | No request is active. | Enable send and regenerate. |
+| `streaming` | The route is sending events. | Show stop, disable submit, auto-scroll. |
+| `error` | The latest request failed. | Show error and let the user retry. |
+
+```tsx
+const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+
+return (
+  <ChatProvider controller={chat}>
+    <Thread.Status>
+      {(status) => (status === "streaming" ? "Thinking..." : "Ready")}
+    </Thread.Status>
+    <Thread.Error />
+    <Composer.Root>
+      <Composer.Input />
+      <Composer.Stop>Stop</Composer.Stop>
+      <Composer.Submit>Send</Composer.Submit>
+    </Composer.Root>
+  </ChatProvider>
+);
+```
+
+## Stop streaming
+
+`Composer.Stop` calls `chat.stop()` and disables itself when nothing can be stopped.
+
+```tsx
+<Composer.Stop className="composer-button">Stop</Composer.Stop>
+```
+
+Use the controller directly when the stop action lives outside the composer:
+
+```tsx
+<button type="button" disabled={chat.status !== "streaming"} onClick={chat.stop}>
+  Stop response
+</button>
+```
+
+## Reset conversation
+
+Use `reset()` for a new chat:
+
+```tsx
+<button type="button" onClick={() => chat.reset()}>
+  New chat
+</button>
+```
+
+Pass messages to reset into a known history:
+
+```tsx
+chat.reset(savedMessages);
+```
+
+## Regenerate
+
+`Message.Regenerate` is enabled for the latest assistant message while the chat is idle.
+
+```tsx
+<Thread.Messages>
+  {(message) => (
+    <Message.Root>
+      <Message.Content>
+        <Message.Parts />
+      </Message.Content>
+      {message.role === "assistant" ? (
+        <Message.Actions>
+          <Message.Regenerate>Try again</Message.Regenerate>
+        </Message.Actions>
+      ) : null}
+    </Message.Root>
+  )}
+</Thread.Messages>
+```
+
+Use `chat.regenerate()` directly for a toolbar action:
+
+```tsx
+<button type="button" disabled={chat.status !== "idle"} onClick={() => void chat.regenerate()}>
+  Regenerate latest
+</button>
+```
+
+## Error state
+
+`Thread.Error` renders the controller error. Use a child function when the product needs a custom
+message or retry button.
+
+```tsx
+<Thread.Error className="thread-error">
+  {(error) => (
+    <div role="alert">
+      <strong>Message failed</strong>
+      <p>{error instanceof Error ? error.message : "The stream failed."}</p>
+      <button type="button" onClick={() => void chat.regenerate()}>
+        Retry
+      </button>
+    </div>
+  )}
+</Thread.Error>
+```
+
+## Loading indicator
+
+Use `Thread.Loading` for a loading area inside the viewport:
+
+```tsx
+<Thread.Loading className="loading-row">Generating...</Thread.Loading>
+```
+
+Or branch from controller state:
+
+```tsx
+{chat.status === "streaming" ? <div className="typing">Assistant is writing...</div> : null}
+```
+
+## Completion states
+
+Completion controllers expose the same lifecycle concepts:
+
+```tsx
+const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
+
+return (
+  <CompletionProvider controller={completion}>
+    <Completion.Root>
+      <Completion.Output />
+      <Completion.Form>
+        <Completion.Input />
+        <Completion.Stop>Stop</Completion.Stop>
+        <Completion.Submit>Generate</Completion.Submit>
+      </Completion.Form>
+    </Completion.Root>
+  </CompletionProvider>
+);
+```
+
+For lifecycle tests, keep assertions around visible UI state: submit disabled while streaming,
+stop enabled while streaming, error visible after a failed route, and reset clearing message state.

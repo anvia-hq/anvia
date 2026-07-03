@@ -16,6 +16,27 @@ prompt-to-text panels, draft generators, rewrite tools, and other one-shot text 
 
 <CodeVariants id="completion-panel" variants={completionVariants} />
 
+The endpoint uses the same React request shape as chat:
+
+```ts
+import { createCompletionStream, type UIStreamRequest } from "@anvia/core";
+import { createEventStream } from "@anvia/server";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(
+    createCompletionStream(model, {
+      instructions: "Draft concise release notes.",
+      messages: body.messages,
+    }),
+  );
+}
+```
+
+Use completion when the UI has one prompt and one generated text result. Use chat when the user
+expects a multi-turn transcript, tools, attachments, or human review.
+
 ## Custom output
 
 `Completion.Output` renders plain output by default. Use a child function when your app needs a

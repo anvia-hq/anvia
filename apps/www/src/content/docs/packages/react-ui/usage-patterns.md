@@ -15,6 +15,9 @@ sidebar:
 - Use `useCompletion(...)` with `CompletionProvider` and `Completion`.
 - Keep server routes, auth, persistence, and model selection outside the UI package.
 
+React routes should accept the `@anvia/react` request shape `{ messages, stream: true }`. See
+[React UI server routes](/docs/react-ui/server-routes) for complete examples.
+
 ## Use as headless primitives
 
 Every primitive supports `className` and stable `data-anvia-*` attributes. Button-like primitives also support `asChild`, so applications can attach behavior to design-system components.
@@ -77,6 +80,9 @@ or filter tool parts before wrappers are created:
 ## Human input
 
 `HumanInput.Approvals` and `HumanInput.Questions` read `useChat` human-input state and call the matching controller actions. They are meant for tool approval and question workflows emitted by Anvia agents or Studio-compatible streams.
+
+Application code owns the decision and answer routes. See
+[Human review end to end](/docs/react-ui/human-review-end-to-end).
 
 ## Attachments and Markdown
 

@@ -236,12 +236,14 @@ const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   },
 );
 
+type MessageCopyState = "idle" | "copied" | "error";
+
 const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(function MessageCopy(
   { onClick, ...props },
   ref,
 ) {
   const { message } = useMessage();
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<MessageCopyState>("idle");
   const text = messageText(message);
   const disabled = props.disabled ?? text.length === 0;
 
@@ -251,8 +253,17 @@ const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(func
       if (event.defaultPrevented || disabled) {
         return;
       }
-      await navigator.clipboard?.writeText(text);
-      setCopied(true);
+      const writeText = navigator.clipboard?.writeText;
+      if (writeText === undefined) {
+        setCopyState("error");
+        return;
+      }
+      try {
+        await writeText.call(navigator.clipboard, text);
+        setCopyState("copied");
+      } catch {
+        setCopyState("error");
+      }
     },
     [disabled, onClick, text],
   );
@@ -266,7 +277,7 @@ const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(func
       onClick: handleClick,
       type: props.type ?? "button",
       "data-anvia-copy": "",
-      "data-state": copied ? "copied" : "idle",
+      "data-state": copyState,
     } as PrimitiveProps<"button">,
     ref,
   );
@@ -276,8 +287,14 @@ const MessageRegenerate = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
   function MessageRegenerate({ onClick, ...props }, ref) {
     const chat = useChatContext();
     const { message } = useMessage();
+    const latestAssistantMessage = [...chat.messages]
+      .reverse()
+      .find((item) => item.role === "assistant");
     const disabled =
-      props.disabled ?? (chat.status === "streaming" || message.role !== "assistant");
+      props.disabled ??
+      (chat.status === "streaming" ||
+        message.role !== "assistant" ||
+        latestAssistantMessage?.id !== message.id);
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {

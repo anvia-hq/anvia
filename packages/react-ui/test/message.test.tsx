@@ -1,9 +1,11 @@
 import type { UIMessage } from "@anvia/react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatProvider, Message, Thread } from "../src";
-import { createChatController } from "./helpers";
+import { createChatController, textMessage } from "./helpers";
+
+afterEach(() => cleanup());
 
 describe("Message primitives", () => {
   it("renders chat messages and all supported message part kinds", () => {
@@ -166,5 +168,97 @@ describe("Message primitives", () => {
     expect(screen.queryByText("pending_lookup")).toBeNull();
     expect(screen.getByText("done_lookup")).toBeTruthy();
     expect(screen.getAllByTestId("settled-tool")).toHaveLength(1);
+  });
+
+  it("sets copied state when clipboard write succeeds", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <ChatProvider
+        controller={createChatController({
+          messages: [textMessage("assistant_1", "assistant", "Copy me")],
+        })}
+      >
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Copy />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Copy"));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("Copy me");
+      expect(screen.getByText("Copy").getAttribute("data-state")).toBe("copied");
+    });
+  });
+
+  it("sets error state when clipboard write fails", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn(async () => Promise.reject(new Error("denied"))) },
+    });
+
+    render(
+      <ChatProvider
+        controller={createChatController({
+          messages: [textMessage("assistant_1", "assistant", "Copy me")],
+        })}
+      >
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Copy />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Copy"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Copy").getAttribute("data-state")).toBe("error");
+    });
+  });
+
+  it("enables regenerate only for the latest assistant message", () => {
+    const regenerate = vi.fn(async () => {});
+    const messages = [
+      textMessage("user_1", "user", "First"),
+      textMessage("assistant_1", "assistant", "Old answer"),
+      textMessage("user_2", "user", "Second"),
+      textMessage("assistant_2", "assistant", "Latest answer"),
+    ];
+
+    render(
+      <ChatProvider controller={createChatController({ messages, regenerate })}>
+        <Thread.Root>
+          <Thread.Messages>
+            {(message) => (
+              <Message.Root>
+                <Message.Regenerate>{`Regenerate ${message.id}`}</Message.Regenerate>
+              </Message.Root>
+            )}
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect((screen.getByText("Regenerate assistant_1") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("Regenerate assistant_2") as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByText("Regenerate assistant_1"));
+    fireEvent.click(screen.getByText("Regenerate assistant_2"));
+
+    expect(regenerate).toHaveBeenCalledTimes(1);
   });
 });

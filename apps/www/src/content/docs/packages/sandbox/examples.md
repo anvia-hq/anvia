@@ -50,6 +50,61 @@ const agent = new AgentBuilder("debugger", model)
   })
   .build();
 ```
+
+## Serve a generated artifact
+
+Use `session.readFile(...)` from application code when a sandbox command produces an image or
+another binary artifact. Keep the public route narrow and copy artifacts to durable storage before
+destroying the session if the URL needs to outlive the sandbox.
+
+```ts
+import type { SandboxSession } from "@anvia/sandbox";
+
+export async function serveSandboxArtifact(
+  session: SandboxSession,
+  requestedPath: string,
+): Promise<Response> {
+  const artifactPath = normalizeArtifactPath(requestedPath);
+
+  if (artifactPath === undefined || !artifactPath.startsWith("artifacts/")) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const contentType = imageContentType(artifactPath);
+
+  if (contentType === undefined) {
+    return new Response("Unsupported artifact type", { status: 415 });
+  }
+
+  const bytes = await session.readFile(artifactPath);
+
+  return new Response(bytes, {
+    headers: {
+      "cache-control": "private, max-age=60",
+      "content-type": contentType,
+    },
+  });
+}
+
+function normalizeArtifactPath(path: string): string | undefined {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+
+  if (parts.some((part) => part === "." || part === "..")) {
+    return undefined;
+  }
+
+  return parts.join("/");
+}
+
+function imageContentType(path: string): string | undefined {
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".gif")) return "image/gif";
+  return undefined;
+}
+```
+
 ## Harness shape
 
 ```ts

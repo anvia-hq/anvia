@@ -29,6 +29,19 @@ to your API app, and your API app runs the model, agent, tools, auth checks, and
 The beginner docs use `http://localhost:5173` for the frontend and `http://localhost:8787` for the
 API app. In production, point the hook endpoint at your deployed API origin.
 
+## Chat vs completion
+
+React UI has two separate surface families:
+
+| Surface | Use when | Controller and provider | UI primitives |
+| --- | --- | --- | --- |
+| Chat | The user expects a transcript, follow-up turns, tools, attachments, or human review. | `useChat(...)` with `ChatProvider` | `Thread.*`, `Composer.*`, `Message.*`, `HumanInput.*` |
+| Completion | The user submits one prompt and reads one generated text result. | `useCompletion(...)` with `CompletionProvider` | `Completion.*` |
+
+Both families can call an API route that accepts `{ messages, stream: true }`, but they expose
+different client state and contexts. Do not mix `Thread`, `Composer`, `Message`, or `HumanInput`
+inside `CompletionProvider`; use the chat family when those primitives are needed.
+
 ## What to build first
 
 Most applications start with a chat surface:

@@ -13,6 +13,12 @@ sidebar:
 pnpm add @anvia/react @anvia/react-ui
 ```
 
+## Choose a surface
+
+Use chat for transcripts, follow-up turns, tools, attachments, and human review. Use completion for
+one prompt input and one generated text result. The hooks can share the same request shape, but their
+providers and primitives are separate.
+
 ## Chat setup
 
 ```tsx

@@ -14,6 +14,11 @@ import { completionVariants } from "../../../lib/react-ui-code-variants";
 `CompletionProvider` binds a `useCompletion(...)` controller to completion primitives. Use it for
 prompt-to-text panels, draft generators, rewrite tools, and other one-shot text generation flows.
 
+Use completion when the UI has one prompt and one generated text result. Use
+[Chat and composer](/docs/react-ui/chat) when the user expects a multi-turn transcript, tools,
+attachments, suggestions, or human review. `CompletionProvider` only supports `Completion.*`
+primitives; it does not provide `Thread`, `Composer`, `Message`, or `HumanInput` contexts.
+
 <CodeVariants id="completion-panel" variants={completionVariants} />
 
 The endpoint uses the same React request shape as chat:
@@ -33,9 +38,6 @@ export async function POST(request: Request) {
   );
 }
 ```
-
-Use completion when the UI has one prompt and one generated text result. Use chat when the user
-expects a multi-turn transcript, tools, attachments, or human review.
 
 ## Custom output
 

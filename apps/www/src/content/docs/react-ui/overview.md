@@ -35,13 +35,14 @@ Most applications start with a chat surface:
 
 1. Read the [mental model](/docs/react-ui/mental-model) for the provider and compound-component
    structure.
-2. Build an API route that accepts `{ messages, stream: true }`.
-3. Create a `useChat(...)` controller that points at that route.
-4. Wrap the UI in `ChatProvider`.
-5. Render `Thread.Root`, `Thread.Viewport`, `Thread.Messages`, and `Composer.Root`.
-6. Keep the default message renderer until a part needs product-specific UI.
-7. Add custom Markdown, attachment, tool-card, and human-input rendering one piece at a time.
-8. Move layout, colors, spacing, and cards into application CSS or Tailwind classes.
+2. Keep the [cheat sheet](/docs/react-ui/cheat-sheet) open while composing the first surface.
+3. Build an API route that accepts `{ messages, stream: true }`.
+4. Create a `useChat(...)` controller that points at that route.
+5. Wrap the UI in `ChatProvider`.
+6. Render `Thread.Root`, `Thread.Viewport`, `Thread.Messages`, and `Composer.Root`.
+7. Keep the default message renderer until a part needs product-specific UI.
+8. Add custom Markdown, attachment, tool-card, and human-input rendering one piece at a time.
+9. Move layout, colors, spacing, and cards into application CSS or Tailwind classes.
 
 The primitives give you state, accessibility-friendly defaults, and stable attributes. They do not
 try to own your design system.
@@ -62,6 +63,8 @@ Application code still owns:
 
 - [Mental model](/docs/react-ui/mental-model): understand providers, compound components, and
   renderer levels.
+- [Cheat sheet](/docs/react-ui/cheat-sheet): grab imports, skeletons, renderer rules, and common
+  snippets.
 - [TanStack quickstart](/docs/react-ui/quickstart-tanstack): build the frontend app and API app first.
 - [Server routes](/docs/react-ui/server-routes): understand the route contract.
 - [Request shape](/docs/react-ui/request-shape): add model selectors and metadata safely.
@@ -84,6 +87,7 @@ Application code still owns:
 ## Next pages
 
 - [Mental model](/docs/react-ui/mental-model)
+- [Cheat sheet](/docs/react-ui/cheat-sheet)
 - [Getting started](/docs/react-ui/getting-started)
 - [TanStack quickstart](/docs/react-ui/quickstart-tanstack)
 - [Server routes](/docs/react-ui/server-routes)

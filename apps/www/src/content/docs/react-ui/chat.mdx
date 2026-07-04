@@ -15,6 +15,10 @@ import { threadVariants, composerVariants } from "../../../lib/react-ui-code-var
 Everything inside the provider reads from the same messages, status, errors, suggestions, human
 input state, and actions.
 
+Use chat when the surface needs a transcript, follow-up turns, tools, attachments, suggestions, or
+human review. Use [Completion](/docs/react-ui/completion) instead when the surface has one prompt and
+one generated text result.
+
 ```tsx
 import { useChat } from "@anvia/react";
 import { ChatProvider } from "@anvia/react-ui";
@@ -136,14 +140,16 @@ Use `Composer.AddAttachment` for a ready-made file-picker button, `Composer.Atta
 design system owns the input trigger, and `Composer.AttachmentDropzone` for drag-and-drop.
 
 ```tsx
-<Composer.AttachmentDropzone className="dropzone">
-  <Composer.Attachments className="attachments" />
-  <Composer.AddAttachment accept="image/*,.pdf" multiple>
-    Attach image or PDF
-  </Composer.AddAttachment>
-  <Composer.Input />
-  <Composer.Submit />
-</Composer.AttachmentDropzone>
+<Composer.Root>
+  <Composer.AttachmentDropzone className="dropzone">
+    <Composer.Attachments className="attachments" />
+    <Composer.AddAttachment accept="image/*,.pdf" multiple>
+      Attach image or PDF
+    </Composer.AddAttachment>
+    <Composer.Input />
+    <Composer.Submit />
+  </Composer.AttachmentDropzone>
+</Composer.Root>
 ```
 
 For a complete attachment recipe, see [Composer attachments](/docs/react-ui/examples/composer-attachments).

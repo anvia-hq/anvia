@@ -27,10 +27,18 @@ type UIStreamRequest = {
 The `messages` field is already converted from browser-side `UIMessage[]` into core Anvia
 `Message[]`.
 
+The shared wire shape does not mean the UI primitives are interchangeable. `useChat(...)` maintains
+a transcript and works with `ChatProvider`, `Thread`, `Composer`, `Message`, and `HumanInput`.
+`useCompletion(...)` maintains prompt/output state and works with `CompletionProvider` and
+`Completion.*`.
+
 ## What createRequest receives
 
 Use `createRequest` when the server needs request-level options such as model, reasoning effort,
 provider, temperature, tenant, or feature flags.
+
+The example below uses `useChat(...)`; the same `createRequest` pattern applies to
+`useCompletion(...)` when a completion route needs request-level options.
 
 ```tsx
 import type { Message } from "@anvia/core/completion";

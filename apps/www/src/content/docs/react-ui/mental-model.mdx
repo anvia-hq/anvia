@@ -18,6 +18,16 @@ components. Each namespace groups primitives that share the same controller stat
 providers and primitives. Your app owns the server route, styling, auth, persistence, and any
 domain-specific rendering.
 
+There are two surface families:
+
+- Chat: `useChat(...)` -> `ChatProvider` -> `Thread.*`, `Composer.*`, `Message.*`, and
+  `HumanInput.*`.
+- Completion: `useCompletion(...)` -> `CompletionProvider` -> `Completion.*`.
+
+They can share the same wire request shape, but they do not share UI context. Use chat for
+transcripts, tools, attachments, and human review. Use completion for one prompt and one generated
+text result.
+
 <div
   className="mt-6 grid max-w-5xl gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4"
   aria-label="React UI mental model"
@@ -47,7 +57,9 @@ domain-specific rendering.
             <code>{"Composer.*"}</code>
             {", and "}
             <code>{"Message.*"}</code>
-            {" read nearby context."}
+            {" read chat context; "}
+            <code>{"Completion.*"}</code>
+            {" reads completion context."}
           </div>
         </div>
       </div>
@@ -117,6 +129,9 @@ The first word is the context family. The second word is the primitive rendered 
 
 The same pattern applies to `CompletionProvider` and `Completion.*`, except completion surfaces use
 a `useCompletion(...)` controller instead of a chat controller.
+
+`CompletionProvider` does not provide chat contexts. If a surface needs `Thread`, `Composer`,
+`Message`, tools, attachments, or human input, use `useChat(...)` and `ChatProvider`.
 
 ## The common chat tree
 

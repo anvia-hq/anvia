@@ -30,6 +30,16 @@ import { useCompletion } from "@anvia/react";
 import { Completion, CompletionProvider } from "@anvia/react-ui";
 ```
 
+## Chat or completion
+
+| Choose | When | Do not use for |
+| --- | --- | --- |
+| Chat | Multi-turn transcript, follow-up prompts, tools, attachments, suggestions, or human review. | One-shot prompt panels with no transcript. |
+| Completion | One prompt input and one generated text output. | Tool cards, attachments, human review, or message threads. |
+
+Both can send `{ messages, stream: true }` to an API route. The difference is the client state and
+UI context: chat exposes messages and chat actions; completion exposes prompt input and output text.
+
 ## Pick the right primitive
 
 | Need | Use | Must live inside |

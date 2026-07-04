@@ -1,46 +1,21 @@
-import { AgentBuilder, createTool, type UIStreamRequest } from "@anvia/core";
+import { createCompletionStream, type UIStreamRequest } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { createEventStream } from "@anvia/server";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const getOrder = createTool({
-  name: "get_order",
-  description: "Read an order summary from local application state.",
-  input: z.object({
-    id: z.string().describe("The order id to read."),
-  }),
-  output: z.object({
-    id: z.string(),
-    status: z.enum(["processing", "blocked", "shipped"]),
-    customer: z.string(),
-    notes: z.string(),
-  }),
-  execute: ({ id }) => ({
-    id,
-    status: "blocked" as const,
-    customer: "Delta Kit Labs",
-    notes: "Payment review is complete, but warehouse allocation has not been confirmed.",
-  }),
-});
-
-const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("support-operations", agentModel)
-  .name("Support Operations")
-  .description("Answers operational questions with short, concrete summaries.")
-  .instructions(
-    "Use tools when useful. Use attached images or PDFs when the user provides them. Keep answers concise and action-oriented.",
-  )
-  .tool(getOrder)
-  .defaultMaxTurns(50)
-  .build();
+const model = client.completionModel("gpt-5.5");
+const instructions = [
+  "You are Support Operations. Answer operational questions with short, concrete summaries.",
+  "Use this local application context when it is relevant: order A-100 belongs to Delta Kit Labs, its status is blocked, and payment review is complete, but warehouse allocation has not been confirmed.",
+  "Keep answers concise and action-oriented.",
+].join("\n\n");
 
 const app = new Hono();
 
@@ -48,12 +23,18 @@ app.use("/api/*", cors());
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
-app.post("/api/chat", async (c) => {
+app.post("/api/completion", async (c) => {
   const body = (await c.req.json()) as UIStreamRequest;
 
-  return createEventStream(agent.prompt(body.messages).stream(), {
-    format: "jsonl",
-  });
+  return createEventStream(
+    createCompletionStream(model, {
+      messages: body.messages,
+      instructions,
+    }),
+    {
+      format: "jsonl",
+    },
+  );
 });
 
 export function startApiServer(port = 8787) {

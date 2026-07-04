@@ -1,0 +1,342 @@
+---
+title: Cheat sheet
+description: Quick reference for @anvia/react-ui providers, namespaces, snippets, and common decisions.
+section: react-ui
+sidebar:
+  group: Start Here
+  order: 1.7
+  label: Cheat sheet
+---
+
+Use this page when you already understand the [mental model](/docs/react-ui/mental-model) and need
+the shortest path to the right primitive or snippet.
+
+## Install and import
+
+```sh
+pnpm add @anvia/react @anvia/react-ui
+```
+
+```tsx
+import { useChat } from "@anvia/react";
+import { ChatProvider, Composer, HumanInput, Message, Thread } from "@anvia/react-ui";
+import "@anvia/react-ui/styles.css";
+```
+
+For completion surfaces:
+
+```tsx
+import { useCompletion } from "@anvia/react";
+import { Completion, CompletionProvider } from "@anvia/react-ui";
+```
+
+## Pick the right primitive
+
+| Need | Use | Must live inside |
+| --- | --- | --- |
+| Multi-turn transcript | `useChat(...)` | React component state |
+| Chat UI context | `ChatProvider` | Receives `controller={chat}` |
+| Scrollable transcript | `Thread.Root`, `Thread.Viewport` | `ChatProvider` |
+| Message list | `Thread.Messages` | `Thread.Root` is recommended |
+| Message row and parts | `Message.Root`, `Message.Parts`, `Message.Part` | `Thread.Messages` |
+| Prompt input | `Composer.Root`, `Composer.Input` | `ChatProvider` |
+| Pending attachments | `Composer.Attachments`, `Attachment.*` | `Composer.Root` |
+| Tool cards | `Message.Tool` | `Message.Part` for a tool part |
+| Human review | `HumanInput.*` | `ChatProvider` with `humanInput` configured |
+| One-shot text generation | `useCompletion(...)`, `Completion.*` | `CompletionProvider` |
+
+## Minimal chat
+
+```tsx
+import { useChat } from "@anvia/react";
+import { ChatProvider, Composer, Thread } from "@anvia/react-ui";
+import "@anvia/react-ui/styles.css";
+
+export function ChatSurface() {
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+
+  return (
+    <ChatProvider controller={chat}>
+      <Thread.Root>
+        <Thread.Viewport autoScroll>
+          <Thread.Empty>Ask your first question.</Thread.Empty>
+          <Thread.Messages />
+          <Thread.Error />
+          <Thread.ScrollToBottom>Latest</Thread.ScrollToBottom>
+        </Thread.Viewport>
+
+        <Composer.Root>
+          <Composer.Attachments />
+          <Composer.Input placeholder="Message Anvia..." />
+          <Composer.Stop>Stop</Composer.Stop>
+          <Composer.Submit>Send</Composer.Submit>
+        </Composer.Root>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+```
+
+Keep `<Thread.Messages />` empty until you need product-specific rows or parts.
+
+## Server route shape
+
+The default hook request sends core messages to your API route:
+
+```ts
+type UIStreamRequest = {
+  messages: Message[];
+  stream: true;
+  metadata?: JsonValue;
+};
+```
+
+The route should read `body.messages` and return an Anvia stream:
+
+```ts
+import type { UIStreamRequest } from "@anvia/core";
+import { createEventStream } from "@anvia/server";
+
+export async function POST(request: Request) {
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(agent.prompt(body.messages).stream(), {
+    format: "jsonl",
+  });
+}
+```
+
+## Add request options
+
+Use `createRequest` for model selectors, tenant ids, reasoning effort, feature flags, or any option
+that belongs to the whole request.
+
+```tsx
+import type { Message } from "@anvia/core/completion";
+import { useChat } from "@anvia/react";
+
+type ChatRequest = {
+  messages: Message[];
+  stream: true;
+  metadata: {
+    model: string;
+    reasoningEffort: "low" | "medium" | "high";
+  };
+};
+
+const chat = useChat<ChatRequest>({
+  endpoint: "http://localhost:8787/api/chat",
+  createRequest: ({ coreMessages }) => ({
+    messages: coreMessages,
+    stream: true,
+    metadata: {
+      model,
+      reasoningEffort,
+    },
+  }),
+});
+```
+
+Use `Composer.Root` `submitMessage` only when the submitted message itself needs custom text,
+attachments, or per-message metadata.
+
+## Renderer ladder
+
+| Start here | Move here when | Snippet |
+| --- | --- | --- |
+| Default list | Default parts are enough | `<Thread.Messages />` |
+| Custom row | You need avatars, actions, timestamps, or layout | `Thread.Messages` child function |
+| Custom part | One part type needs product-specific UI | `Message.Parts` child function |
+| Custom route | The server request shape is product-specific | `useChat({ createRequest })` |
+
+Custom row, default parts:
+
+```tsx
+<Thread.Messages>
+  {(message) => (
+    <Message.Root className="message-row">
+      <Message.Content>
+        <Message.Parts />
+      </Message.Content>
+      <Message.Actions>
+        <Message.Copy>Copy</Message.Copy>
+        <Message.Regenerate>Try again</Message.Regenerate>
+      </Message.Actions>
+    </Message.Root>
+  )}
+</Thread.Messages>
+```
+
+Custom part, fallback for everything else:
+
+```tsx
+<Message.Parts>
+  {(part) => {
+    if (part.type === "text") {
+      return (
+        <Message.Part>
+          <Message.Markdown />
+        </Message.Part>
+      );
+    }
+
+    return <Message.Part />;
+  }}
+</Message.Parts>
+```
+
+## Tools
+
+Tools execute on the server. The browser renders streamed tool parts.
+
+```tsx
+<Message.Parts>
+  {(part) =>
+    part.type === "tool" ? (
+      <Message.Part>
+        <Message.Tool className="tool-card" renderWhen="always">
+          <Message.ToolName />
+          <Message.ToolStatus />
+          <Message.ToolInput />
+          <Message.ToolOutput />
+          <Message.ToolError />
+        </Message.Tool>
+      </Message.Part>
+    ) : (
+      <Message.Part />
+    )
+  }
+</Message.Parts>
+```
+
+Useful `renderWhen` values:
+
+| Value | Shows |
+| --- | --- |
+| `always` | Input, output, and errors whenever available. |
+| `pending` | `input-streaming` and `input-available`. |
+| `settled` | `output-available` and `error`. |
+
+## Human input
+
+Configure the review endpoint on `useChat(...)`:
+
+```tsx
+const chat = useChat({
+  endpoint: "http://localhost:8787/api/chat",
+  humanInput: {
+    endpoint: "http://localhost:8787/api/review",
+  },
+});
+```
+
+Then render a review panel anywhere inside `ChatProvider`:
+
+```tsx
+<HumanInput.Panel className="review-panel">
+  <HumanInput.Status />
+  <HumanInput.Approvals />
+  <HumanInput.Questions />
+</HumanInput.Panel>
+```
+
+Use `keepMounted` for persistent lanes:
+
+```tsx
+<aside className="review-lane">
+  <HumanInput.Status />
+  <HumanInput.Approvals keepMounted />
+  <HumanInput.Questions keepMounted />
+</aside>
+```
+
+## Attachments
+
+Use the built-in picker:
+
+```tsx
+<Composer.Root>
+  <Composer.Attachments />
+  <Composer.AddAttachment accept="image/*,.pdf" multiple>
+    Attach
+  </Composer.AddAttachment>
+  <Composer.Input />
+  <Composer.Submit />
+</Composer.Root>
+```
+
+Use a dropzone when the composer region should accept dropped files:
+
+```tsx
+<Composer.Root>
+  <Composer.AttachmentDropzone className="dropzone">
+    <Composer.Attachments />
+    <Composer.Input />
+    <Composer.Submit />
+  </Composer.AttachmentDropzone>
+</Composer.Root>
+```
+
+## Completion
+
+Use completion for one prompt and one generated text result:
+
+```tsx
+import { useCompletion } from "@anvia/react";
+import { Completion, CompletionProvider } from "@anvia/react-ui";
+
+export function CompletionPanel() {
+  const completion = useCompletion({
+    endpoint: "http://localhost:8787/api/complete",
+  });
+
+  return (
+    <CompletionProvider controller={completion}>
+      <Completion.Root>
+        <Completion.Output />
+        <Completion.Form>
+          <Completion.Input placeholder="Draft a product update..." />
+          <Completion.Stop>Stop</Completion.Stop>
+          <Completion.Submit>Generate</Completion.Submit>
+        </Completion.Form>
+      </Completion.Root>
+    </CompletionProvider>
+  );
+}
+```
+
+Use chat instead when the surface needs a transcript, tools, attachments, or human review.
+
+## Styling targets
+
+Style stable attributes from app CSS or Tailwind selectors:
+
+| Attribute | Emitted by | Use |
+| --- | --- | --- |
+| `data-anvia-thread` | `Thread.Root` | Overall chat state. |
+| `data-anvia-thread-viewport` | `Thread.Viewport` | Scroll container state. |
+| `data-anvia-message` | `Message.Root` | Message row. |
+| `data-role` | `Message.Root` | `user`, `assistant`, `system`, or `tool`. |
+| `data-anvia-part` | `Message.Part` | Per-part layout. |
+| `data-part` | `Message.Part` | Part type. |
+| `data-anvia-tool` | `Message.Tool` | Tool-call cards. |
+| `data-anvia-composer` | `Composer.Root` | Composer state. |
+| `data-state` | Many primitives | `idle`, `streaming`, `error`, `enabled`, `disabled`, etc. |
+
+## Defaults to keep
+
+- Keep `<Thread.Messages />` until you need custom rows.
+- Keep `<Message.Part />` as the fallback when branching on part types.
+- Keep request-level options in `createRequest`.
+- Keep server-only work, provider credentials, tools, auth, and persistence in the API route.
+- Keep final layout and visual design in application CSS or your design system.
+
+## Deep dives
+
+- [Mental model](/docs/react-ui/mental-model)
+- [Getting started](/docs/react-ui/getting-started)
+- [Request shape](/docs/react-ui/request-shape)
+- [Messages](/docs/react-ui/messages)
+- [Tool calls](/docs/react-ui/tool-calls)
+- [Human input](/docs/react-ui/human-input)
+- [Completion](/docs/react-ui/completion)

@@ -18,6 +18,10 @@ sidebar:
 React routes should accept the `@anvia/react` request shape `{ messages, stream: true }`. See
 [React UI server routes](/docs/react-ui/server-routes) for complete examples.
 
+The shared request shape does not mean every primitive can read every provider. `Thread`,
+`Composer`, `Message`, and `HumanInput` read chat context from `ChatProvider`. `Completion.*` reads
+completion context from `CompletionProvider`.
+
 ## Use as headless primitives
 
 Every primitive supports `className` and stable `data-anvia-*` attributes. Button-like primitives also support `asChild`, so applications can attach behavior to design-system components.
@@ -79,7 +83,10 @@ or filter tool parts before wrappers are created:
 
 ## Human input
 
-`HumanInput.Approvals` and `HumanInput.Questions` read `useChat` human-input state and call the matching controller actions. They are meant for tool approval and question workflows emitted by Anvia agents or Studio-compatible streams.
+`HumanInput.Approvals` and `HumanInput.Questions` read `useChat` human-input state and call the
+matching controller actions. They are meant for tool approval and question workflows emitted by
+Anvia agents or Studio-compatible streams, so they belong in chat surfaces rather than completion
+surfaces.
 
 Application code owns the decision and answer routes. See
 [Human review end to end](/docs/react-ui/human-review-end-to-end).
@@ -110,3 +117,10 @@ application state.
 
 Use `Message.Markdown` when text parts should render GitHub-flavored Markdown; pass `components` to
 replace code blocks or other Markdown elements with app-owned components.
+
+## Completion panels
+
+Use `Completion.Root`, `Completion.Output`, `Completion.Form`, `Completion.Input`,
+`Completion.Stop`, and `Completion.Submit` for prompt-to-text panels. Do not add `Thread`,
+`Composer`, `Message`, or `HumanInput` inside `CompletionProvider`; move to a chat surface when the
+product needs those primitives.

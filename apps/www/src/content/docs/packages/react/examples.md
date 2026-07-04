@@ -18,6 +18,26 @@ export function Chat() {
   return <button onClick={() => void chat.send("Hello")}>{chat.status}</button>;
 }
 ```
+
+## Minimal completion
+
+```tsx
+import { useCompletion } from "@anvia/react";
+
+export function Completion() {
+  const completion = useCompletion({ endpoint: "http://localhost:8787/api/completion" });
+
+  return (
+    <section>
+      <button onClick={() => void completion.complete("Draft a changelog entry")}>
+        {completion.status === "streaming" ? "Writing..." : "Complete"}
+      </button>
+      <pre>{completion.completion}</pre>
+    </section>
+  );
+}
+```
+
 ## Product-shaped transport
 
 ```tsx

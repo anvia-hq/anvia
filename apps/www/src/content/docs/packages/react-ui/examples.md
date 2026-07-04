@@ -11,6 +11,10 @@ sidebar:
 The package page stays concise for package-reference coverage. The richer recipe set lives in the
 dedicated [React UI examples](/docs/react-ui/examples).
 
+The message snippet below assumes it is rendered by `Thread.Messages` or another message provider
+inside `ChatProvider`. The composer snippet assumes `ChatProvider`. The completion snippet uses its
+own `CompletionProvider`; chat primitives do not read completion context.
+
 ## Quick examples
 
 ```tsx

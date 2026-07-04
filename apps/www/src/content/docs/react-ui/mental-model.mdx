@@ -1,0 +1,218 @@
+---
+title: Mental model
+description: Understand how @anvia/react controllers, React UI providers, and compound component namespaces fit together.
+section: react-ui
+sidebar:
+  group: Start Here
+  order: 1.5
+  label: Mental model
+---
+
+React UI is easiest to read as a set of context-bound building blocks, not as a closed chat widget.
+The dotted names such as `Thread.Messages`, `Composer.Input`, and `Message.Parts` are compound
+components. Each namespace groups primitives that share the same controller state and local context.
+
+## The shape
+
+`@anvia/react` owns transport and state reduction. `@anvia/react-ui` renders that state through
+providers and primitives. Your app owns the server route, styling, auth, persistence, and any
+domain-specific rendering.
+
+<div
+  className="mt-6 grid max-w-5xl gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4"
+  aria-label="React UI mental model"
+>
+  <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr] lg:items-stretch">
+    <div className="grid gap-3">
+      <div className="rounded-lg border border-[#2BF563]/25 bg-[#2BF563]/[0.06] p-4">
+        <div className="font-mono text-[#2BF563] text-xs uppercase tracking-[0.18em]">
+          {"Browser client"}
+        </div>
+        <div className="mt-3 grid gap-2 text-sm text-zinc-200">
+          <div className="rounded-md bg-white/[0.045] px-3 py-2">
+            <code>{"useChat(...)"}</code>
+            {" or "}
+            <code>{"useCompletion(...)"}</code>
+            {" creates a controller."}
+          </div>
+          <div className="rounded-md bg-white/[0.045] px-3 py-2">
+            <code>{"ChatProvider"}</code>
+            {" or "}
+            <code>{"CompletionProvider"}</code>
+            {" exposes it to UI primitives."}
+          </div>
+          <div className="rounded-md bg-white/[0.045] px-3 py-2">
+            <code>{"Thread.*"}</code>
+            {", "}
+            <code>{"Composer.*"}</code>
+            {", and "}
+            <code>{"Message.*"}</code>
+            {" read nearby context."}
+          </div>
+        </div>
+      </div>
+      <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+        <div className="font-mono text-zinc-400 text-xs uppercase tracking-[0.18em]">
+          {"UI actions"}
+        </div>
+        <div className="mt-2 text-sm text-zinc-200">
+          {"Submit, stop, regenerate, approve, reject, and answer controls call controller actions."}
+        </div>
+      </div>
+    </div>
+
+    <div className="flex items-center justify-center font-mono text-[#2BF563] text-xs uppercase tracking-[0.18em] lg:px-1">
+      {"POST / stream"}
+    </div>
+
+    <div className="grid gap-3">
+      <div className="rounded-lg border border-white/10 bg-white/[0.035] p-4">
+        <div className="font-mono text-zinc-400 text-xs uppercase tracking-[0.18em]">
+          {"Application API route"}
+        </div>
+        <div className="mt-3 grid gap-2 text-sm text-zinc-200">
+          <div className="rounded-md bg-white/[0.045] px-3 py-2">
+            {"Reads "}
+            <code>{"{ messages, stream: true }"}</code>
+            {" and request metadata."}
+          </div>
+          <div className="rounded-md bg-white/[0.045] px-3 py-2">
+            {"Runs auth, model selection, agents, tools, and persistence."}
+          </div>
+          <div className="rounded-md bg-white/[0.045] px-3 py-2">
+            {"Returns Anvia stream events to the controller."}
+          </div>
+        </div>
+      </div>
+      <div className="rounded-lg border border-[#2BF563]/25 bg-[#2BF563]/[0.06] p-4">
+        <div className="font-mono text-[#2BF563] text-xs uppercase tracking-[0.18em]">
+          {"Stream reduction"}
+        </div>
+        <div className="mt-2 text-sm text-zinc-200">
+          {"The hook folds stream events into messages, status, errors, suggestions, and human input."}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+Data flows down from the hook controller into providers and primitives. User actions flow back up
+through controller methods such as `sendMessage`, `stop`, `regenerate`, approval handlers, or
+question handlers.
+
+## How to read dotted components
+
+The first word is the context family. The second word is the primitive rendered inside that family.
+
+| Pattern | Meaning |
+| --- | --- |
+| `ChatProvider` | Makes a `useChat(...)` controller available to chat primitives. |
+| `Thread.Root` | Creates thread context around the transcript area and emits thread state. |
+| `Thread.Messages` | Iterates `chat.messages` and installs message context for each row. |
+| `Message.Root` | Reads the current message and emits message attributes such as `data-role`. |
+| `Message.Parts` | Iterates `message.parts` and installs part context for each part. |
+| `Composer.Root` | Creates composer context for draft text, pending attachments, submit, and stop. |
+| `Composer.Input` | Reads and writes the nearest composer draft. |
+| `HumanInput.Panel` | Reads pending approvals and questions from the chat controller. |
+
+The same pattern applies to `CompletionProvider` and `Completion.*`, except completion surfaces use
+a `useCompletion(...)` controller instead of a chat controller.
+
+## The common chat tree
+
+Start with the smallest tree that lets the package render messages for you:
+
+```tsx
+const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+
+return (
+  <ChatProvider controller={chat}>
+    <Thread.Root>
+      <Thread.Viewport autoScroll>
+        <Thread.Empty>Ask your first question.</Thread.Empty>
+        <Thread.Messages />
+        <Thread.Error />
+        <Thread.ScrollToBottom>Latest</Thread.ScrollToBottom>
+      </Thread.Viewport>
+
+      <Composer.Root>
+        <Composer.Attachments />
+        <Composer.Input placeholder="Message Anvia..." />
+        <Composer.Stop>Stop</Composer.Stop>
+        <Composer.Submit>Send</Composer.Submit>
+      </Composer.Root>
+    </Thread.Root>
+  </ChatProvider>
+);
+```
+
+`Thread.Messages` has no child function here, so it uses the default row and part renderer. This is
+the preferred starting point because new message part types can render without application changes.
+
+## Rendering levels
+
+Move down one level only when the product needs control at that level.
+
+| Level | You keep | You customize |
+| --- | --- | --- |
+| Default list | `Thread.Messages` | CSS through stable `data-anvia-*` and `data-role` attributes. |
+| Message row | `Message.Parts` | Row layout, avatars, actions, timestamps, copy, regenerate. |
+| Message part | `Message.Part` fallback | Tool cards, Markdown, attachment previews, structured data. |
+| Route request | UI primitives | Model selectors, metadata, auth, persistence, and tool execution. |
+
+For example, customize the row but keep default part rendering:
+
+```tsx
+<Thread.Messages>
+  {(message) => (
+    <Message.Root className="message-row">
+      <Message.Content>
+        <Message.Parts />
+      </Message.Content>
+      <Message.Actions>
+        <Message.Copy>Copy</Message.Copy>
+        <Message.Regenerate>Try again</Message.Regenerate>
+      </Message.Actions>
+    </Message.Root>
+  )}
+</Thread.Messages>
+```
+
+Customize individual parts only when one part type needs product-specific UI. Keep the fallback:
+
+```tsx
+<Message.Parts>
+  {(part) => {
+    if (part.type === "tool") {
+      return (
+        <Message.Part>
+          <Message.Tool className="tool-card" renderWhen="always" />
+        </Message.Part>
+      );
+    }
+
+    return <Message.Part />;
+  }}
+</Message.Parts>
+```
+
+## Boundaries to remember
+
+- The browser renders UI and calls your API route. It should not hold provider credentials or run
+  provider SDKs directly.
+- `@anvia/react-ui` does not create a controller. It expects a `useChat(...)` or
+  `useCompletion(...)` result from `@anvia/react`.
+- Use `createRequest` on `useChat(...)` for request-level options such as model, tenant, or
+  reasoning effort. Use `Composer.Root` `submitMessage` only when the submitted message itself needs
+  custom text, attachments, or metadata.
+- Prefer the default `Thread.Messages` and `Message.Part` fallbacks until a product-specific part
+  needs custom markup.
+- Style stable attributes such as `data-anvia-message`, `data-role`, `data-part`, and `data-state`
+  instead of relying on internal DOM details.
+
+## Next steps
+
+- [Getting started](/docs/react-ui/getting-started): render the first chat surface.
+- [Request shape](/docs/react-ui/request-shape): add model selectors and metadata.
+- [Messages](/docs/react-ui/messages): choose the right renderer level.
+- [Styling](/docs/react-ui/styling): target stable attributes from application CSS.

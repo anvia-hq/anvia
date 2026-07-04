@@ -292,7 +292,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/core",
         "core",
-        "0.8.0",
+        "0.12.2",
         "packages/core",
         "Core runtime primitives for context-aware Anvia agents.",
         true,
@@ -300,7 +300,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/server",
         "server",
-        "0.3.1",
+        "0.4.9",
         "packages/server",
         "Server-side event stream helpers for Anvia applications.",
         true,
@@ -308,7 +308,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/react",
         "react",
-        "0.5.0",
+        "0.7.9",
         "packages/react",
         "React hooks and client transports for Anvia applications.",
         true,
@@ -316,7 +316,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/react-ui",
         "react-ui",
-        "0.1.0",
+        "0.2.0",
         "packages/react-ui",
         "Composable React UI primitives for Anvia chat and completion experiences.",
         true,
@@ -340,7 +340,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/openai",
         "openai",
-        "0.3.14",
+        "0.3.15",
         "packages/provider-openai",
         "OpenAI provider adapter for Anvia.",
         true,
@@ -348,7 +348,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/anthropic",
         "anthropic",
-        "0.3.11",
+        "0.3.13",
         "packages/provider-anthropic",
         "Anthropic provider adapter for Anvia.",
         true,
@@ -356,7 +356,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/gemini",
         "gemini",
-        "0.2.9",
+        "0.2.10",
         "packages/provider-gemini",
         "Gemini provider adapter for Anvia.",
         true,
@@ -364,7 +364,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/mistral",
         "mistral",
-        "0.3.1",
+        "0.3.3",
         "packages/provider-mistral",
         "Mistral provider adapter for Anvia.",
         true,
@@ -428,7 +428,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/redis",
         "redis",
-        "0.2.4",
+        "0.2.5",
         "packages/vector-redis",
         "Redis vector store adapter for Anvia.",
         false,
@@ -436,7 +436,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/chroma",
         "chroma",
-        "0.2.10",
+        "0.2.11",
         "packages/vector-chroma",
         "ChromaDB vector store adapter for Anvia.",
         true,
@@ -476,7 +476,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/langfuse",
         "langfuse",
-        "0.3.2",
+        "0.3.4",
         "packages/observability-langfuse",
         "Langfuse tracing adapter for Anvia.",
         true,
@@ -508,7 +508,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/studio",
         "studio",
-        "0.7.5",
+        "0.7.18",
         "packages/tool-studio",
         "Studio UI and HTTP runtime for Anvia agents.",
         true,

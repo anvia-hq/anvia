@@ -7,6 +7,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, "../../..");
 const packagesRoot = join(repoRoot, "packages");
 const referenceRoot = join(repoRoot, "apps/www/src/content/docs/packages");
+const packageIndexMetadataPath = join(repoRoot, "apps/www/src/lib/packages.ts");
 
 function discoverPackages() {
   return readdirSync(packagesRoot)
@@ -103,13 +104,93 @@ function getPublicExports(file) {
     .sort((a, b) => a.localeCompare(b));
 }
 
+function isStringLike(node) {
+  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
+}
+
+function readPackageIndexMetadata() {
+  const sourceText = readFileSync(packageIndexMetadataPath, "utf8");
+  const sourceFile = ts.createSourceFile(
+    packageIndexMetadataPath,
+    sourceText,
+    ts.ScriptTarget.ES2022,
+    true,
+  );
+  const entries = [];
+
+  function visit(node) {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      if (node.expression.text === "definePackage") {
+        const [name, slug, version, sourceDirectory] = node.arguments;
+        if (
+          !isStringLike(name) ||
+          !isStringLike(slug) ||
+          !isStringLike(version) ||
+          !isStringLike(sourceDirectory)
+        ) {
+          throw new Error("definePackage calls in package metadata must use string literals.");
+        }
+
+        entries.push({
+          name: name.text,
+          slug: slug.text,
+          version: version.text,
+          sourceDirectory: sourceDirectory.text,
+        });
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return entries;
+}
+
+function checkPackageIndexMetadata(discoveredPackages) {
+  const packagesByName = new Map(
+    discoveredPackages.map(({ dir, pkg }) => [
+      pkg.name,
+      {
+        version: pkg.version,
+        sourceDirectory: relative(repoRoot, dir),
+      },
+    ]),
+  );
+  const issues = [];
+
+  for (const entry of readPackageIndexMetadata()) {
+    const manifest = packagesByName.get(entry.name);
+    if (!manifest) {
+      issues.push(`${entry.name} is listed in package metadata but has no package.json`);
+      continue;
+    }
+
+    if (entry.version !== manifest.version) {
+      issues.push(
+        `${entry.name} package metadata version is ${entry.version}, package.json is ${manifest.version}`,
+      );
+    }
+
+    if (entry.sourceDirectory !== manifest.sourceDirectory) {
+      issues.push(
+        `${entry.name} package metadata sourceDirectory is ${entry.sourceDirectory}, package.json is in ${manifest.sourceDirectory}`,
+      );
+    }
+  }
+
+  return issues;
+}
+
 let totalMissingEntrypoints = 0;
 let totalMissingSymbols = 0;
 let totalEntrypoints = 0;
 let totalSymbols = 0;
 const lines = [];
+const discoveredPackages = discoverPackages();
+const packageIndexMetadataIssues = checkPackageIndexMetadata(discoveredPackages);
 
-for (const { dir, pkg } of discoverPackages()) {
+for (const { dir, pkg } of discoveredPackages) {
   const docsText = readReferenceDocs(pkg.name);
   const exportEntries = getExportsMap(pkg);
   const entrypoints = [];
@@ -150,12 +231,20 @@ for (const { dir, pkg } of discoverPackages()) {
 
 for (const line of lines) console.log(line);
 console.log(
-  `TOTAL_ENTRYPOINTS=${totalEntrypoints} TOTAL_EXPORTS=${totalSymbols} TOTAL_MISSING_ENTRYPOINTS=${totalMissingEntrypoints} TOTAL_MISSING_EXPORTS=${totalMissingSymbols}`,
+  `TOTAL_ENTRYPOINTS=${totalEntrypoints} TOTAL_EXPORTS=${totalSymbols} TOTAL_MISSING_ENTRYPOINTS=${totalMissingEntrypoints} TOTAL_MISSING_EXPORTS=${totalMissingSymbols} TOTAL_PACKAGE_INDEX_METADATA_ISSUES=${packageIndexMetadataIssues.length}`,
 );
 
-if (totalMissingEntrypoints > 0 || totalMissingSymbols > 0) {
+if (
+  totalMissingEntrypoints > 0 ||
+  totalMissingSymbols > 0 ||
+  packageIndexMetadataIssues.length > 0
+) {
+  for (const issue of packageIndexMetadataIssues) {
+    console.error(`Package index metadata failed: ${issue}`);
+  }
+
   console.error(
-    `Reference coverage failed from ${relative(process.cwd(), fileURLToPath(import.meta.url))}. Document missing public entrypoints or exports before merging.`,
+    `Reference coverage failed from ${relative(process.cwd(), fileURLToPath(import.meta.url))}. Document missing public entrypoints or exports and keep package index metadata aligned before merging.`,
   );
   process.exit(1);
 }

@@ -17,7 +17,8 @@ pnpm add @anvia/react @anvia/react-ui
 
 Use chat for transcripts, follow-up turns, tools, attachments, and human review. Use completion for
 one prompt input and one generated text result. The hooks can share the same request shape, but their
-providers and primitives are separate.
+providers and primitives are separate. Chat uses `ChatProvider` with `Thread.*`, `Composer.*`,
+`Message.*`, and `HumanInput.*`; completion uses `CompletionProvider` with `Completion.*`.
 
 ## Chat setup
 

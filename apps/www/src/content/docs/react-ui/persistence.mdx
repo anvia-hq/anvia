@@ -65,6 +65,30 @@ export function LocalChat() {
 A production route usually receives a thread id, authenticates the user, and stores messages or
 runtime events after the stream completes.
 
+For memory-backed chats, load the saved core messages on the server, convert them with
+`coreMessagesToUIMessages(...)`, and return them as `UIMessage[]`. The React page can pass that
+array directly to `initialMessages`.
+
+```tsx
+import type { UIMessage } from "@anvia/react";
+import { useChat } from "@anvia/react";
+
+export function ServerBackedChat({
+  threadId,
+  initialMessages,
+}: {
+  threadId: string;
+  initialMessages: UIMessage[];
+}) {
+  const chat = useChat({
+    endpoint: `http://localhost:8787/api/conversations/${threadId}/chat`,
+    initialMessages,
+  });
+
+  return <ChatProvider controller={chat}>{/* thread */}</ChatProvider>;
+}
+```
+
 ```tsx
 const chat = useChat({
   endpoint: "http://localhost:8787/api/chat",
@@ -91,6 +115,11 @@ export async function POST(request: Request) {
   );
 }
 ```
+
+When the server route is backed by `agent.session(...)`, treat `initialMessages` as browser
+hydration. On the POST route, run only the latest user message through the session prompt; the
+server-side `MemoryStore` loads prior history. See
+[Sessions and memory](/docs/advanced/sessions-and-memory) for a complete route example.
 
 ## Reset
 

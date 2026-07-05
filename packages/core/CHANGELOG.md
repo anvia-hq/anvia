@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.3
+
+### Patch Changes
+
+- 6cd352e: Fix agent option isolation, deterministic regex eval metrics, and MCP client version metadata.
+
 ## 0.12.2
 
 ### Patch Changes

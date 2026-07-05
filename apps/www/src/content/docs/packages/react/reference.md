@@ -308,6 +308,18 @@ function createChatTransport<TRequest, TEvent>(
 
 Purpose: named chat transport helper built on the fetch transport.
 
+## initialMessagesFromMemory
+
+```ts
+function initialMessagesFromMemory(messages: Message[]): UIMessage[];
+```
+
+Purpose: convert stored Anvia memory messages into the `UIMessage[]` shape accepted by
+`useChat({ initialMessages })`.
+
+The helper adapts core message data for React state. It does not depend on a specific database
+schema.
+
 ## useChat
 
 ```ts

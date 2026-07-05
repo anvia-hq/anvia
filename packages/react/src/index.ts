@@ -7,6 +7,7 @@ export {
   defaultEventToApproval,
   defaultEventToQuestion,
 } from "./human-input";
+export { initialMessagesFromMemory } from "./memory";
 export { readJsonlStream, readSseStream } from "./streams";
 export type { CreateFetchTransportOptions } from "./transport";
 export { createChatTransport, createFetchTransport } from "./transport";

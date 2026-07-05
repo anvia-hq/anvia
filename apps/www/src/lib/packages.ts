@@ -308,7 +308,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/react",
         "react",
-        "0.7.10",
+        "0.7.11",
         "packages/react",
         "React hooks and client transports for Anvia applications.",
         true,
@@ -508,7 +508,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/studio",
         "studio",
-        "0.7.19",
+        "0.7.20",
         "packages/tool-studio",
         "Studio UI and HTTP runtime for Anvia agents.",
         true,

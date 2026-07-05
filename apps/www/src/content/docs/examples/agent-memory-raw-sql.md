@@ -17,11 +17,25 @@ A Node service talks to Postgres through `pg`. The agent receives a stable sessi
 ## Table
 
 ```sql
-CREATE TABLE agent_memory_messages (
-  id bigserial PRIMARY KEY,
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE agent_memory_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope_key text NOT NULL UNIQUE,
   session_id text NOT NULL,
   user_id text,
   tenant_id text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX agent_memory_sessions_scope_idx
+  ON agent_memory_sessions (session_id, user_id, tenant_id);
+
+CREATE TABLE agent_memory_messages (
+  id bigserial PRIMARY KEY,
+  memory_session_id uuid NOT NULL REFERENCES agent_memory_sessions(id) ON DELETE CASCADE,
   run_id text NOT NULL,
   turn integer NOT NULL,
   position integer NOT NULL,
@@ -30,8 +44,8 @@ CREATE TABLE agent_memory_messages (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX agent_memory_session_idx
-  ON agent_memory_messages (session_id, user_id, tenant_id, position);
+CREATE UNIQUE INDEX agent_memory_messages_position_idx
+  ON agent_memory_messages (memory_session_id, position);
 ```
 
 ## Expected Message JSON
@@ -215,6 +229,10 @@ function scopeKey(context: MemoryContext) {
   return JSON.stringify(scopeValues(context));
 }
 
+function metadataJson(context: MemoryContext) {
+  return JSON.stringify(context.metadata ?? {});
+}
+
 function fromJson(value: unknown): Message {
   return typeof value === "string" ? (JSON.parse(value) as Message) : (value as Message);
 }
@@ -224,13 +242,13 @@ export class SqlMemoryStore implements MemoryStore {
 
   async load(context: MemoryContext): Promise<Message[]> {
     const { rows } = await this.pool.query<{ message: unknown }>(
-      `SELECT message
-       FROM agent_memory_messages
-       WHERE session_id = $1
-         AND user_id IS NOT DISTINCT FROM $2
-         AND tenant_id IS NOT DISTINCT FROM $3
-       ORDER BY position ASC`,
-      scopeValues(context),
+      `SELECT messages.message
+       FROM agent_memory_sessions sessions
+       JOIN agent_memory_messages messages
+         ON messages.memory_session_id = sessions.id
+       WHERE sessions.scope_key = $1
+       ORDER BY messages.position ASC`,
+      [scopeKey(context)],
     );
 
     return rows.map((row) => fromJson(row.message));
@@ -245,27 +263,45 @@ export class SqlMemoryStore implements MemoryStore {
 
     try {
       await client.query("BEGIN");
-      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey(input.context)]);
+      const key = scopeKey(input.context);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [key]);
+
+      const { rows: sessionRows } = await client.query<{ id: string }>(
+        `INSERT INTO agent_memory_sessions
+           (scope_key, session_id, user_id, tenant_id, metadata)
+         VALUES ($1, $2, $3, $4, $5::jsonb)
+         ON CONFLICT (scope_key) DO UPDATE
+           SET updated_at = now(),
+               metadata = EXCLUDED.metadata
+         RETURNING id`,
+        [
+          key,
+          input.context.sessionId,
+          input.context.userId ?? null,
+          tenantId(input.context),
+          metadataJson(input.context),
+        ],
+      );
+      const memorySessionId = sessionRows[0]?.id;
+      if (memorySessionId === undefined) {
+        throw new Error("Failed to resolve memory session.");
+      }
 
       const { rows } = await client.query<{ position: number }>(
         `SELECT COALESCE(MAX(position), -1) AS position
          FROM agent_memory_messages
-         WHERE session_id = $1
-           AND user_id IS NOT DISTINCT FROM $2
-           AND tenant_id IS NOT DISTINCT FROM $3`,
-        scopeValues(input.context),
+         WHERE memory_session_id = $1`,
+        [memorySessionId],
       );
-      const start = rows[0]?.position ?? 0;
+      const start = rows[0]?.position ?? -1;
 
       for (const [index, message] of input.messages.entries()) {
         await client.query(
           `INSERT INTO agent_memory_messages
-             (session_id, user_id, tenant_id, run_id, turn, position, role, message)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+             (memory_session_id, run_id, turn, position, role, message)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
           [
-            input.context.sessionId,
-            input.context.userId ?? null,
-            tenantId(input.context),
+            memorySessionId,
             input.runId,
             input.turn,
             start + index + 1,
@@ -286,11 +322,9 @@ export class SqlMemoryStore implements MemoryStore {
 
   async clear(context: MemoryContext): Promise<void> {
     await this.pool.query(
-      `DELETE FROM agent_memory_messages
-       WHERE session_id = $1
-         AND user_id IS NOT DISTINCT FROM $2
-         AND tenant_id IS NOT DISTINCT FROM $3`,
-      scopeValues(context),
+      `DELETE FROM agent_memory_sessions
+       WHERE scope_key = $1`,
+      [scopeKey(context)],
     );
   }
 }
@@ -323,10 +357,10 @@ console.log(response.output);
 
 ## Production Checks
 
-- Compare nullable user and tenant columns with null-safe SQL such as `IS NOT DISTINCT FROM`.
-- Use a transaction around position lookup and inserts.
-- Add per-session locking or database-generated ordering before allowing concurrent writes to the same conversation.
-- Keep memory rows scoped by product-owned session, user, and tenant values.
+- Use `scope_key` for one canonical nullable user and tenant scope lookup.
+- Keep session ownership and lifecycle metadata on `agent_memory_sessions`.
+- Keep full prompt history rows in `agent_memory_messages`.
+- Use transactions and advisory locks before allowing concurrent writes to the same conversation.
 
 ## Next Patterns
 

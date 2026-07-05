@@ -27,13 +27,17 @@ Keep these as separate storage paths:
 
 | Data | Typical table | Why it exists |
 | --- | --- | --- |
-| conversation memory | `agent_memory_messages` | gives the next prompt prior user, assistant, and tool-result messages |
+| memory sessions | `agent_memory_sessions` | owns product session scope, tenant/user ownership, lifecycle metadata, and cascade cleanup |
+| memory messages | `agent_memory_messages` | gives the next prompt prior user, assistant, and tool-result messages |
 | runtime events | `agent_events` | preserves turn starts, deltas, tool calls, tool results, nested agent events, final output, and errors by run id |
 | product run record | `support_runs` or `agent_runs` | compact user-facing status, final output, trace id, and usage |
 | audit records | `audit_logs` | records who requested or performed sensitive product actions |
 | traces | tracing backend or trace id fields | connects the run to model/provider/tool observability |
 
-Memory rows are scoped by product-owned session, user, and tenant values. Event rows are scoped by run id and agent metadata. Product run records usually connect both worlds by storing `conversationId`, `runId`, `traceId`, final output, and usage.
+Memory session rows are scoped by product-owned session, user, and tenant values. Memory message
+rows keep the ordered Anvia `Message` JSON used as future prompt context. Event rows are scoped by
+run id and agent metadata. Product run records usually connect both worlds by storing
+`conversationId`, `runId`, `traceId`, final output, and usage.
 
 ## Typical Flow
 

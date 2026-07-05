@@ -19,16 +19,43 @@ A tenant-scoped app stores conversations in Postgres through Drizzle. The route 
 This example uses Drizzle's Postgres core. The important part is the same for other relational stores: keep a session scope, an append order, and the full Anvia message JSON.
 
 ```ts
-import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import type { Message } from "@anvia/core";
+import {
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import type { JsonObject, Message } from "@anvia/core";
+
+export const agentMemorySessions = pgTable(
+  "agent_memory_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scopeKey: text("scope_key").notNull(),
+    sessionId: text("session_id").notNull(),
+    userId: text("user_id"),
+    tenantId: text("tenant_id"),
+    metadata: jsonb("metadata").$type<JsonObject>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_memory_sessions_scope_key_idx").on(table.scopeKey),
+    index("agent_memory_sessions_scope_idx").on(table.sessionId, table.userId, table.tenantId),
+  ],
+);
 
 export const agentMemoryMessages = pgTable(
   "agent_memory_messages",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    sessionId: text("session_id").notNull(),
-    userId: text("user_id"),
-    tenantId: text("tenant_id"),
+    memorySessionId: uuid("memory_session_id")
+      .notNull()
+      .references(() => agentMemorySessions.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
     turn: integer("turn").notNull(),
     position: integer("position").notNull(),
@@ -36,10 +63,12 @@ export const agentMemoryMessages = pgTable(
     message: jsonb("message").$type<Message>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("agent_memory_session_idx").on(table.sessionId, table.userId, table.tenantId, table.position)],
+  (table) => [
+    uniqueIndex("agent_memory_messages_position_idx").on(table.memorySessionId, table.position),
+  ],
 );
 
-export const schema = { agentMemoryMessages };
+export const schema = { agentMemorySessions, agentMemoryMessages };
 ```
 
 ## Expected Message JSON
@@ -206,11 +235,11 @@ Each row's `message` column contains one item from that array.
 ## Memory Store
 
 ```ts
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { type MemoryStore, type Message } from "@anvia/core";
+import { type JsonObject, type MemoryStore, type Message } from "@anvia/core";
 import type { MemoryAppendInput, MemoryContext } from "@anvia/core/memory";
-import { agentMemoryMessages, schema } from "./schema";
+import { agentMemoryMessages, agentMemorySessions, schema } from "./schema";
 
 type MemoryDb = NodePgDatabase<typeof schema>;
 
@@ -219,14 +248,16 @@ function tenantId(context: MemoryContext) {
   return typeof value === "string" ? value : null;
 }
 
-function scopedWhere(context: MemoryContext) {
-  const tenant = tenantId(context);
+function scopeValues(context: MemoryContext) {
+  return [context.sessionId, context.userId ?? null, tenantId(context)] as const;
+}
 
-  return and(
-    eq(agentMemoryMessages.sessionId, context.sessionId),
-    context.userId === undefined ? isNull(agentMemoryMessages.userId) : eq(agentMemoryMessages.userId, context.userId),
-    tenant === null ? isNull(agentMemoryMessages.tenantId) : eq(agentMemoryMessages.tenantId, tenant),
-  );
+function scopeKey(context: MemoryContext) {
+  return JSON.stringify(scopeValues(context));
+}
+
+function metadata(context: MemoryContext): JsonObject {
+  return context.metadata ?? {};
 }
 
 export class DrizzleMemoryStore implements MemoryStore {
@@ -236,7 +267,11 @@ export class DrizzleMemoryStore implements MemoryStore {
     const rows = await this.db
       .select({ message: agentMemoryMessages.message })
       .from(agentMemoryMessages)
-      .where(scopedWhere(context))
+      .innerJoin(
+        agentMemorySessions,
+        eq(agentMemoryMessages.memorySessionId, agentMemorySessions.id),
+      )
+      .where(eq(agentMemorySessions.scopeKey, scopeKey(context)))
       .orderBy(asc(agentMemoryMessages.position));
 
     return rows.map((row) => row.message);
@@ -248,19 +283,41 @@ export class DrizzleMemoryStore implements MemoryStore {
     }
 
     await this.db.transaction(async (tx) => {
+      const key = scopeKey(input.context);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+
+      const [memorySession] = await tx
+        .insert(agentMemorySessions)
+        .values({
+          scopeKey: key,
+          sessionId: input.context.sessionId,
+          userId: input.context.userId ?? null,
+          tenantId: tenantId(input.context),
+          metadata: metadata(input.context),
+        })
+        .onConflictDoUpdate({
+          target: agentMemorySessions.scopeKey,
+          set: {
+            metadata: metadata(input.context),
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({ id: agentMemorySessions.id });
+      if (memorySession === undefined) {
+        throw new Error("Failed to resolve memory session.");
+      }
+
       const [last] = await tx
         .select({ position: agentMemoryMessages.position })
         .from(agentMemoryMessages)
-        .where(scopedWhere(input.context))
+        .where(eq(agentMemoryMessages.memorySessionId, memorySession.id))
         .orderBy(desc(agentMemoryMessages.position))
         .limit(1);
       const start = (last?.position ?? -1) + 1;
 
       await tx.insert(agentMemoryMessages).values(
         input.messages.map((message, index) => ({
-          sessionId: input.context.sessionId,
-          userId: input.context.userId ?? null,
-          tenantId: tenantId(input.context),
+          memorySessionId: memorySession.id,
           runId: input.runId,
           turn: input.turn,
           position: start + index,
@@ -272,7 +329,9 @@ export class DrizzleMemoryStore implements MemoryStore {
   }
 
   async clear(context: MemoryContext): Promise<void> {
-    await this.db.delete(agentMemoryMessages).where(scopedWhere(context));
+    await this.db
+      .delete(agentMemorySessions)
+      .where(eq(agentMemorySessions.scopeKey, scopeKey(context)));
   }
 }
 ```
@@ -300,9 +359,10 @@ await agent
 
 ## Production Checks
 
-- Use one scope helper for `load`, `append`, and `clear` so tenant filtering cannot drift.
-- Store message JSON with the role and original content arrays intact.
-- Add stronger per-session locking or a database-generated sequence if concurrent requests can append to the same conversation.
+- Use `scopeKey` for one canonical nullable user and tenant scope lookup.
+- Keep session ownership and lifecycle metadata on `agentMemorySessions`.
+- Keep full Anvia message JSON intact on `agentMemoryMessages`.
+- Use transactions and advisory locks before allowing concurrent writes to the same conversation.
 - Keep memory separate from event logs, traces, and audit records.
 
 ## Next Patterns

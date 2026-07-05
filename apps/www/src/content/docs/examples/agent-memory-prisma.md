@@ -19,19 +19,33 @@ A support chat route uses Prisma for product data. Each request receives a produ
 Store full Anvia `Message` objects as JSON. Do not persist only final assistant text; tool-call and tool-result messages are part of the conversation context.
 
 ```prisma
-model AgentMemoryMessage {
+model AgentMemorySession {
   id        String   @id @default(cuid())
+  scopeKey  String   @unique
   sessionId String
   userId    String?
   tenantId  String?
-  runId     String
-  turn      Int
-  position  Int
-  role      String
-  message   Json
+  metadata  Json
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([sessionId, userId, tenantId, position])
+  messages AgentMemoryMessage[]
+
+  @@index([sessionId, userId, tenantId])
+}
+
+model AgentMemoryMessage {
+  id              String             @id @default(cuid())
+  memorySessionId String
+  memorySession   AgentMemorySession @relation(fields: [memorySessionId], references: [id], onDelete: Cascade)
+  runId           String
+  turn            Int
+  position        Int
+  role            String
+  message         Json
+  createdAt       DateTime           @default(now())
+
+  @@unique([memorySessionId, position])
 }
 ```
 
@@ -208,8 +222,20 @@ function tenantId(context: MemoryContext) {
   return typeof value === "string" ? value : null;
 }
 
+function scopeValues(context: MemoryContext) {
+  return [context.sessionId, context.userId ?? null, tenantId(context)] as const;
+}
+
+function scopeKey(context: MemoryContext) {
+  return JSON.stringify(scopeValues(context));
+}
+
 function toPrismaJson(message: Message): Prisma.InputJsonValue {
   return message as unknown as Prisma.InputJsonValue;
+}
+
+function metadataJson(context: MemoryContext): Prisma.InputJsonValue {
+  return (context.metadata ?? {}) as Prisma.InputJsonValue;
 }
 
 export class PrismaMemoryStore implements MemoryStore {
@@ -217,11 +243,7 @@ export class PrismaMemoryStore implements MemoryStore {
 
   async load(context: MemoryContext): Promise<Message[]> {
     const rows = await this.prisma.agentMemoryMessage.findMany({
-      where: {
-        sessionId: context.sessionId,
-        userId: context.userId ?? null,
-        tenantId: tenantId(context),
-      },
+      where: { memorySession: { scopeKey: scopeKey(context) } },
       orderBy: { position: "asc" },
     });
 
@@ -233,39 +255,46 @@ export class PrismaMemoryStore implements MemoryStore {
       return;
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const last = await tx.agentMemoryMessage.findFirst({
-        where: {
-          sessionId: input.context.sessionId,
-          userId: input.context.userId ?? null,
-          tenantId: tenantId(input.context),
-        },
-        orderBy: { position: "desc" },
-        select: { position: true },
-      });
-      const start = (last?.position ?? -1) + 1;
+    await this.prisma.$transaction(
+      async (tx) => {
+        const memorySession = await tx.agentMemorySession.upsert({
+          where: { scopeKey: scopeKey(input.context) },
+          update: { metadata: metadataJson(input.context) },
+          create: {
+            scopeKey: scopeKey(input.context),
+            sessionId: input.context.sessionId,
+            userId: input.context.userId ?? null,
+            tenantId: tenantId(input.context),
+            metadata: metadataJson(input.context),
+          },
+        });
 
-      await tx.agentMemoryMessage.createMany({
-        data: input.messages.map((message, index) => ({
-          sessionId: input.context.sessionId,
-          userId: input.context.userId ?? null,
-          tenantId: tenantId(input.context),
-          runId: input.runId,
-          turn: input.turn,
-          position: start + index,
-          role: message.role,
-          message: toPrismaJson(message),
-        })),
-      });
-    });
+        const last = await tx.agentMemoryMessage.findFirst({
+          where: { memorySessionId: memorySession.id },
+          orderBy: { position: "desc" },
+          select: { position: true },
+        });
+        const start = (last?.position ?? -1) + 1;
+
+        await tx.agentMemoryMessage.createMany({
+          data: input.messages.map((message, index) => ({
+            memorySessionId: memorySession.id,
+            runId: input.runId,
+            turn: input.turn,
+            position: start + index,
+            role: message.role,
+            message: toPrismaJson(message),
+          })),
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async clear(context: MemoryContext): Promise<void> {
-    await this.prisma.agentMemoryMessage.deleteMany({
+    await this.prisma.agentMemorySession.deleteMany({
       where: {
-        sessionId: context.sessionId,
-        userId: context.userId ?? null,
-        tenantId: tenantId(context),
+        scopeKey: scopeKey(context),
       },
     });
   }
@@ -298,9 +327,10 @@ console.log(response.output);
 
 ## Production Checks
 
-- Use the same user and tenant scope in `load`, `append`, and `clear`.
-- Keep message JSON intact so future turns can see tool calls and tool results.
-- Wrap appends in a transaction and add stricter ordering or locking if multiple requests can write to the same session concurrently.
+- Use `scopeKey` for one canonical nullable user and tenant scope lookup.
+- Keep session ownership and lifecycle metadata on `AgentMemorySession`.
+- Keep full Anvia message JSON intact on `AgentMemoryMessage`.
+- Use serializable transactions or retry failed writes if multiple requests can append concurrently.
 - Keep audit records, run records, and product state in separate tables from memory.
 
 ## Next Patterns

@@ -87,6 +87,61 @@ await agent.session("thread_123", { userId: user.id }).clear();
 
 Both operations go through the configured memory store. The store should enforce the same user and tenant rules as your product database.
 
+## Serve Stored Messages To React
+
+Production UIs usually need one route to load saved messages and another route to stream the next
+turn. Store core Anvia `Message[]` on the server, convert them to `UIMessage[]` before sending them
+to the browser, and pass that array to `useChat({ initialMessages })`.
+
+```ts
+import { type Message } from "@anvia/core";
+import { coreMessagesToUIMessages, type UIStreamRequest } from "@anvia/core/ui";
+import { createEventStream } from "@anvia/server";
+
+function sessionScope(user: { id: string; tenantId: string }) {
+  return {
+    userId: user.id,
+    metadata: { tenantId: user.tenantId },
+  };
+}
+
+function latestUserMessage(messages: Message[]): Message {
+  const message = messages.at(-1);
+  if (message?.role !== "user") {
+    throw new Error("Expected the latest chat message to be from the user.");
+  }
+  return message;
+}
+
+export async function GET(request: Request, params: { threadId: string }) {
+  const user = await requireUser(request);
+  const agent = createSupportAgent(user);
+  const messages = await agent.session(params.threadId, sessionScope(user)).messages();
+
+  return Response.json({
+    messages: coreMessagesToUIMessages(messages),
+  });
+}
+
+export async function POST(request: Request, params: { threadId: string }) {
+  const user = await requireUser(request);
+  const agent = createSupportAgent(user);
+  const body = (await request.json()) as UIStreamRequest;
+
+  return createEventStream(
+    agent
+      .session(params.threadId, sessionScope(user))
+      .prompt(latestUserMessage(body.messages))
+      .stream(),
+  );
+}
+```
+
+The loaded `initialMessages` are for UI hydration. The POST route should use the latest user message
+with `agent.session(...).prompt(...)`; the configured `MemoryStore` loads prior history server-side.
+Do not send the full hydrated transcript back as the session prompt. See
+[React UI persistence](/docs/react-ui/persistence) for the client-side `initialMessages` pattern.
+
 ## What To Store
 
 Store the runtime messages needed for future model context: user prompts, assistant responses, assistant tool calls, and tool results. If a tool result includes sensitive data, apply your product retention and redaction policy before long-term persistence.

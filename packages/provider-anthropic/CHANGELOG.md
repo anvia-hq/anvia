@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.14
+
+### Patch Changes
+
+- 8f7ba97: Update upstream runtime dependencies for provider, vector, and observability adapters.
+
 ## 0.3.13
 
 ### Patch Changes

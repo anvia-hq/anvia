@@ -1,5 +1,11 @@
 # @anvia/mistral
 
+## 0.3.4
+
+### Patch Changes
+
+- 8f7ba97: Update upstream runtime dependencies for provider, vector, and observability adapters.
+
 ## 0.3.3
 
 ### Patch Changes

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { OpenAIChatCompletionModel, OpenAIClient } from "../src/index";
 import {
   fromOpenAIChatCompletionResponse,
+  fromOpenAIChatCompletionStreamChunk,
   toOpenAIChatCompletionParams,
 } from "../src/openai/chat-completion";
 
@@ -144,6 +145,39 @@ describe("OpenAI chat-completions client path", () => {
     expect(response.choice).toEqual([
       AssistantContent.text("created"),
       AssistantContent.reasoning("provider reasoning text"),
+    ]);
+  });
+
+  it("maps Chat Completions refusals to visible assistant text", () => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: null,
+            refusal: "I can't help with that.",
+          },
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.choice).toEqual([AssistantContent.text("I can't help with that.")]);
+
+    expect(
+      fromOpenAIChatCompletionStreamChunk({
+        id: "cmpl_1",
+        choices: [
+          {
+            delta: {
+              refusal: "I can't help with that.",
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      { type: "text_delta", delta: "I can't help with that." },
+      { type: "message_id", id: "cmpl_1" },
     ]);
   });
 

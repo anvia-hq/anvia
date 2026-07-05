@@ -204,6 +204,10 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     choice.push(AssistantContent.text(message.content));
   }
 
+  if (typeof message.refusal === "string" && message.refusal.length > 0) {
+    choice.push(AssistantContent.text(message.refusal));
+  }
+
   const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
   if (reasoning !== undefined && reasoning.length > 0) {
     choice.push(AssistantContent.reasoning(reasoning));
@@ -250,6 +254,10 @@ export function fromOpenAIChatCompletionStreamChunk(chunk: unknown): CompletionS
     const delta = choice.delta;
     if (typeof delta.content === "string" && delta.content.length > 0) {
       events.push({ type: "text_delta", delta: delta.content });
+    }
+
+    if (typeof delta.refusal === "string" && delta.refusal.length > 0) {
+      events.push({ type: "text_delta", delta: delta.refusal });
     }
 
     const reasoning = stringFrom(delta.reasoning) ?? stringFrom(delta.reasoning_content);

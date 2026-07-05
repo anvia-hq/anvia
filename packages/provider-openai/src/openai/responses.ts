@@ -327,14 +327,21 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
     }
   }
 
-  if (event.type === "response.completed" && isPlainObject(event.response)) {
+  if (
+    (event.type === "response.completed" || event.type === "response.incomplete") &&
+    isPlainObject(event.response)
+  ) {
     return {
       type: "final",
       response: fromOpenAIResponse(event.response),
     };
   }
 
-  if (event.type === "response.error") {
+  if (event.type === "response.failed" && isPlainObject(event.response)) {
+    return { type: "error", error: event.response.error ?? event.response };
+  }
+
+  if (event.type === "error" || event.type === "response.error") {
     return { type: "error", error: event.error ?? event };
   }
 
@@ -569,6 +576,10 @@ function messageOutputToAssistantContent(item: Record<string, unknown>): Assista
 
     if (part.type === "text" && typeof part.text === "string") {
       return [AssistantContent.text(part.text)];
+    }
+
+    if (part.type === "refusal" && typeof part.refusal === "string") {
+      return [AssistantContent.text(part.refusal)];
     }
 
     return [];

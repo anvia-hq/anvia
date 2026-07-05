@@ -230,6 +230,20 @@ describe("OpenAI Responses mapping", () => {
     expect(response.messageId).toBe("resp_1");
   });
 
+  it("maps Responses refusals to visible assistant text", () => {
+    const response = fromOpenAIResponse({
+      output: [
+        {
+          type: "message",
+          content: [{ type: "refusal", refusal: "I can't comply with that." }],
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.choice).toEqual([AssistantContent.text("I can't comply with that.")]);
+  });
+
   it("maps Responses reasoning content and summaries", () => {
     const response = fromOpenAIResponse({
       output: [
@@ -356,6 +370,69 @@ describe("OpenAI Responses mapping", () => {
     ).toEqual({
       type: "tool_call",
       toolCall: AssistantContent.toolCall("call_1", "lookup", { query: "x" }, "fc_1"),
+    });
+  });
+
+  it("maps Responses terminal stream failure and incomplete events", () => {
+    const errorEvent = {
+      type: "error",
+      code: "rate_limit_exceeded",
+      message: "Too many requests.",
+      param: null,
+      sequence_number: 1,
+    };
+
+    expect(fromOpenAIStreamEvent(errorEvent)).toEqual({
+      type: "error",
+      error: errorEvent,
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.failed",
+        response: {
+          id: "resp_failed",
+          error: { code: "server_error", message: "The response failed." },
+        },
+        sequence_number: 2,
+      }),
+    ).toEqual({
+      type: "error",
+      error: { code: "server_error", message: "The response failed." },
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.incomplete",
+        response: {
+          id: "resp_incomplete",
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: "partial output" }],
+            },
+          ],
+          usage: {
+            input_tokens: 2,
+            output_tokens: 3,
+            total_tokens: 5,
+          },
+        },
+        sequence_number: 3,
+      }),
+    ).toEqual({
+      type: "final",
+      response: {
+        choice: [AssistantContent.text("partial output")],
+        usage: {
+          ...Usage.empty(),
+          inputTokens: 2,
+          outputTokens: 3,
+          totalTokens: 5,
+        },
+        rawResponse: expect.objectContaining({ id: "resp_incomplete" }),
+        messageId: "resp_incomplete",
+      },
     });
   });
 });

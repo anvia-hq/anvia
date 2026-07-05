@@ -6,10 +6,17 @@ import {
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
+  createMiddleware,
+  createObserver,
   createTool,
+  defineGuardrailPolicy,
+  defineInputGuardrail,
   MaxTurnsError,
+  type Tool,
+  type ToolSearchDocument,
   ToolSet,
   Usage,
+  type VectorSearchIndex,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -56,6 +63,42 @@ const addTool = createTool({
   output: z.number(),
   execute: ({ x, y }) => x + y,
 });
+
+const searchTool: Tool<{ query: string; topK?: number }, unknown> = {
+  name: "search",
+  definition() {
+    return {
+      name: "search",
+      description: "Search documents",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          topK: { type: "number" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    };
+  },
+  call() {
+    return [];
+  },
+};
+
+function emptyIndex<T>(): VectorSearchIndex<T> {
+  return {
+    async search() {
+      return [];
+    },
+    async searchIds() {
+      return [];
+    },
+    asTool() {
+      return searchTool;
+    },
+  };
+}
 
 describe("Agent.asTool", () => {
   it("stores a stable trimmed agent id", () => {
@@ -139,6 +182,50 @@ describe("Agent.asTool", () => {
 
     await expect(agent.prompt("add numbers").send()).resolves.toMatchObject({ output: "done" });
     expect(model.requests[0]?.tools).toEqual([expect.objectContaining({ name: "add" })]);
+  });
+
+  it("isolates built agents from later builder collection changes", () => {
+    const model = new QueueModel([]);
+    const builder = new AgentBuilder("test-agent", model).context("initial context");
+    const agent = builder.build();
+    const dynamicContextIndex = emptyIndex<unknown>();
+    const dynamicToolIndex = emptyIndex<ToolSearchDocument>();
+
+    builder
+      .context("late context")
+      .dynamicContext(dynamicContextIndex, { topK: 1 })
+      .dynamicTools(dynamicToolIndex, { topK: 1 })
+      .middleware(createMiddleware({}))
+      .observe(
+        createObserver({
+          startRun() {
+            return {
+              end() {},
+            };
+          },
+        }),
+      )
+      .guardrails(
+        defineGuardrailPolicy({
+          id: "late-policy",
+          input: [
+            defineInputGuardrail({
+              id: "late-input",
+              check(_context, { allow }) {
+                return allow();
+              },
+            }),
+          ],
+        }),
+      );
+
+    expect(agent.staticContext).toEqual([{ id: "static_doc_0", text: "initial context" }]);
+    expect(agent.middlewares).toHaveLength(0);
+    expect(agent.toolMiddlewares).toBe(agent.middlewares);
+    expect(agent.observers).toHaveLength(0);
+    expect(agent.guardrails).toHaveLength(0);
+    expect(agent.dynamicContexts).toHaveLength(0);
+    expect(agent.dynamicTools).toHaveLength(0);
   });
 
   it("copies existing builder tools into a shared tool set", async () => {

@@ -1,5 +1,18 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mcp } from "../src/mcp";
+
+const corePackageVersion = readCorePackageVersion();
+
+function readCorePackageVersion(): string {
+  const packageJson = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version?: unknown };
+  if (typeof packageJson.version !== "string") {
+    throw new TypeError("Expected @anvia/core package.json to contain a version string.");
+  }
+  return packageJson.version;
+}
 
 const sdk = vi.hoisted(() => {
   type ClientRecord = {
@@ -123,7 +136,7 @@ describe("MCP connection factories", () => {
     expect(client).toBe(sdk.clients[0]);
     expect(sdk.clients[0]?.metadata).toEqual({
       name: "@anvia/core",
-      version: "0.1.0",
+      version: corePackageVersion,
     });
     expect(sdk.stdioTransports).toHaveLength(1);
     expect(sdk.stdioTransports[0]).toBeInstanceOf(sdk.StdioClientTransport);
@@ -156,6 +169,10 @@ describe("MCP connection factories", () => {
 
     expect(sdk.clients).toHaveLength(1);
     expect(client).toBe(sdk.clients[0]);
+    expect(sdk.clients[0]?.metadata).toEqual({
+      name: "@anvia/core",
+      version: corePackageVersion,
+    });
     expect(sdk.httpTransports).toHaveLength(1);
     expect(sdk.httpTransports[0]).toBeInstanceOf(sdk.StreamableHTTPClientTransport);
     expect(sdk.httpTransports[0]?.url.href).toBe("http://localhost:3000/mcp");
@@ -186,7 +203,7 @@ describe("MCP connection factories", () => {
     expect(client).toBe(sdk.clients[0]);
     expect(sdk.clients[0]?.metadata).toEqual({
       name: "@anvia/core",
-      version: "0.1.0",
+      version: corePackageVersion,
     });
     expect(sdk.sseTransports).toHaveLength(1);
     expect(sdk.sseTransports[0]).toBeInstanceOf(sdk.SSEClientTransport);

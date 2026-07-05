@@ -53,12 +53,20 @@ export function contains<Input, Output, Expected = unknown>(
       if (typeof expected !== "string" && !(expected instanceof RegExp)) {
         return EvalOutcome.invalid("Contains expected value must be a string or RegExp.");
       }
-      const passed = expected instanceof RegExp ? expected.test(actual) : actual.includes(expected);
+      const passed =
+        expected instanceof RegExp ? regexMatches(expected, actual) : actual.includes(expected);
       return passed
         ? EvalOutcome.pass(true)
         : EvalOutcome.fail(false, { comment: `Output did not contain ${String(expected)}.` });
     },
   };
+}
+
+function regexMatches(pattern: RegExp, text: string): boolean {
+  pattern.lastIndex = 0;
+  const matched = pattern.test(text);
+  pattern.lastIndex = 0;
+  return matched;
 }
 
 export type SemanticSimilarityOptions<Input, Output, Expected = unknown> = {

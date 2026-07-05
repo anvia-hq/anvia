@@ -149,6 +149,28 @@ describe("evals", () => {
     expect(result.passed).toBe(2);
   });
 
+  it("keeps contains regex expectations deterministic across cases", async () => {
+    const globalPattern = /beta/g;
+    const stickyPattern = /beta/y;
+    const result = await runEvalSuite({
+      name: "regex-contains",
+      cases: [
+        { id: "first", input: "beta" },
+        { id: "second", input: "beta" },
+      ],
+      target: async (input) => input,
+      metrics: [
+        contains({ name: "contains_global", expected: globalPattern }),
+        contains({ name: "contains_sticky", expected: stickyPattern }),
+      ],
+    });
+
+    expect(result.passed).toBe(4);
+    expect(result.failed).toBe(0);
+    expect(globalPattern.lastIndex).toBe(0);
+    expect(stickyPattern.lastIndex).toBe(0);
+  });
+
   it("scores semantic similarity with an embedding model", async () => {
     const result = await runEvalSuite({
       name: "semantic",

@@ -1,6 +1,6 @@
 import type { CompletionModel, Document, JsonObject, JsonValue, ToolChoice } from "../completion";
-import { appendGuardrailPolicies } from "../guardrails";
 import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
+import { appendGuardrailPolicies } from "../guardrails";
 import type { PromptHook } from "../hooks";
 import type { McpServer } from "../mcp";
 import { resolveMemoryOptions } from "../memory/options";

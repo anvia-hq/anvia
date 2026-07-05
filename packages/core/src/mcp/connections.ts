@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -9,6 +10,8 @@ import type {
   McpSseOptions,
   McpStdioOptions,
 } from "./types";
+
+const CORE_CLIENT_VERSION = readCorePackageVersion();
 
 export const mcp = {
   stdio(options: McpStdioOptions): McpConnection {
@@ -55,8 +58,19 @@ export const mcp = {
 function createSdkClient(): Client {
   return new Client({
     name: "@anvia/core",
-    version: "0.1.0",
+    version: CORE_CLIENT_VERSION,
   });
+}
+
+function readCorePackageVersion(): string {
+  try {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { version?: unknown };
+    return typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
 }
 
 function asSdkTransport(transport: unknown): Parameters<Client["connect"]>[0] {

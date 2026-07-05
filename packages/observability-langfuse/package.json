@@ -33,8 +33,8 @@
   "dependencies": {
     "@langfuse/otel": "^5.9.1",
     "@langfuse/tracing": "^5.9.1",
-    "@opentelemetry/resources": "^2.8.0",
-    "@opentelemetry/sdk-node": "^0.219.0",
+    "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-node": "^0.220.0",
     "@opentelemetry/semantic-conventions": "^1.41.1"
   },
   "devDependencies": {

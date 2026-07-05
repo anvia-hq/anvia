@@ -1,5 +1,12 @@
 # fullstack-agent
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [498e95b]
+  - @anvia/openai@0.3.16
+
 ## 0.1.1
 
 ### Patch Changes

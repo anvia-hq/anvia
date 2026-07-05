@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.16
+
+### Patch Changes
+
+- 498e95b: Preserve OpenAI refusal text and terminal Responses stream failure states in completion mappings.
+
 ## 0.3.15
 
 ### Patch Changes

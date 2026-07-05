@@ -340,7 +340,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/openai",
         "openai",
-        "0.3.15",
+        "0.3.16",
         "packages/provider-openai",
         "OpenAI provider adapter for Anvia.",
         true,

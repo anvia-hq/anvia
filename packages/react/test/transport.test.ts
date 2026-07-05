@@ -1,4 +1,9 @@
-import { AssistantContent, type CompletionStreamEvent, Usage } from "@anvia/core/completion";
+import {
+  AssistantContent,
+  type CompletionStreamEvent,
+  Message,
+  Usage,
+} from "@anvia/core/completion";
 import type { AgentStreamEvent } from "@anvia/core/request";
 import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { act, renderHook } from "@testing-library/react";
@@ -11,6 +16,7 @@ import {
   EventStreamHttpError,
   type EventTransport,
   fetchEventStream,
+  initialMessagesFromMemory,
   readJsonlStream,
   readSseStream,
   useChat,
@@ -168,6 +174,61 @@ describe("@anvia/react transports", () => {
 });
 
 describe("@anvia/react useChat", () => {
+  it("creates initial UI messages from memory messages", () => {
+    const memoryMessages = [
+      Message.user("Where is order A-100?"),
+      Message.assistant([
+        AssistantContent.toolCall("call_1", "lookup_order", { orderId: "A-100" }),
+      ]),
+      Message.toolResult("call_1", { status: "shipped" }),
+      Message.assistant("Order A-100 has shipped."),
+    ];
+
+    const initialMessages = initialMessagesFromMemory(memoryMessages);
+
+    expect(initialMessages).toMatchObject([
+      { role: "user", parts: [{ type: "text", text: "Where is order A-100?" }] },
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool",
+            toolName: "lookup_order",
+            toolCallId: "call_1",
+            state: "input-available",
+            input: { orderId: "A-100" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        parts: [
+          {
+            type: "tool",
+            toolCallId: "call_1",
+            state: "output-available",
+            output: '{"status":"shipped"}',
+          },
+        ],
+      },
+      { role: "assistant", parts: [{ type: "text", text: "Order A-100 has shipped." }] },
+    ]);
+  });
+
+  it("hydrates useChat with initial messages created from memory", () => {
+    const memoryMessages = [Message.user("hello"), Message.assistant("hi")];
+    const initialMessages = initialMessagesFromMemory(memoryMessages);
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+      send: vi.fn(async function* (): AsyncIterable<UIStreamEvent> {
+        yield* [];
+      }),
+    };
+
+    const { result } = renderHook(() => useChat({ transport, initialMessages }));
+
+    expect(result.current.messages).toEqual(initialMessages);
+  });
+
   it("sends converted core messages and applies UI stream events", async () => {
     const onEvent = vi.fn();
     const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {

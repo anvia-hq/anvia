@@ -90,12 +90,12 @@ Both operations go through the configured memory store. The store should enforce
 ## Serve Stored Messages To React
 
 Production UIs usually need one route to load saved messages and another route to stream the next
-turn. Store core Anvia `Message[]` on the server, convert them to `UIMessage[]` before sending them
-to the browser, and pass that array to `useChat({ initialMessages })`.
+turn. Store core Anvia `Message[]` on the server, return those messages from your API, then convert
+them with `initialMessagesFromMemory(...)` before passing them to `useChat({ initialMessages })`.
 
 ```ts
 import { type Message } from "@anvia/core";
-import { coreMessagesToUIMessages, type UIStreamRequest } from "@anvia/core/ui";
+import { type UIStreamRequest } from "@anvia/core/ui";
 import { createEventStream } from "@anvia/server";
 
 function sessionScope(user: { id: string; tenantId: string }) {
@@ -118,9 +118,7 @@ export async function GET(request: Request, params: { threadId: string }) {
   const agent = createSupportAgent(user);
   const messages = await agent.session(params.threadId, sessionScope(user)).messages();
 
-  return Response.json({
-    messages: coreMessagesToUIMessages(messages),
-  });
+  return Response.json({ messages });
 }
 
 export async function POST(request: Request, params: { threadId: string }) {
@@ -137,9 +135,11 @@ export async function POST(request: Request, params: { threadId: string }) {
 }
 ```
 
-The loaded `initialMessages` are for UI hydration. The POST route should use the latest user message
-with `agent.session(...).prompt(...)`; the configured `MemoryStore` loads prior history server-side.
-Do not send the full hydrated transcript back as the session prompt. See
+The loaded memory messages are API data. Convert them on the React side with
+`initialMessagesFromMemory(...)` before passing `initialMessages` to `useChat`. The POST route
+should use the latest user message with `agent.session(...).prompt(...)`; the configured
+`MemoryStore` loads prior history server-side. Do not send the full hydrated transcript back as the
+session prompt. See
 [React UI persistence](/docs/react-ui/persistence) for the client-side `initialMessages` pattern.
 
 ## What To Store

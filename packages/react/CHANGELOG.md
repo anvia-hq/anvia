@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 0.7.11
+
+### Patch Changes
+
+- 8e6fc0c: Add `initialMessagesFromMemory` for hydrating React chat state from Anvia memory messages.
+
 ## 0.7.10
 
 ### Patch Changes

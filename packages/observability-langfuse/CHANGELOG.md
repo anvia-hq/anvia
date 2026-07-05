@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 0.3.5
+
+### Patch Changes
+
+- 8f7ba97: Update upstream runtime dependencies for provider, vector, and observability adapters.
+
 ## 0.3.4
 
 ### Patch Changes

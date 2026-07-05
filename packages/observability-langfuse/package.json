@@ -1,6 +1,6 @@
 {
   "name": "@anvia/langfuse",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Langfuse tracing adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

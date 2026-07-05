@@ -292,7 +292,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/core",
         "core",
-        "0.12.2",
+        "0.12.3",
         "packages/core",
         "Core runtime primitives for context-aware Anvia agents.",
         true,
@@ -300,7 +300,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/server",
         "server",
-        "0.4.9",
+        "0.4.10",
         "packages/server",
         "Server-side event stream helpers for Anvia applications.",
         true,
@@ -308,7 +308,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/react",
         "react",
-        "0.7.9",
+        "0.7.10",
         "packages/react",
         "React hooks and client transports for Anvia applications.",
         true,
@@ -508,7 +508,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/studio",
         "studio",
-        "0.7.18",
+        "0.7.19",
         "packages/tool-studio",
         "Studio UI and HTTP runtime for Anvia agents.",
         true,

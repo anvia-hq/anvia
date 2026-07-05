@@ -348,7 +348,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/anthropic",
         "anthropic",
-        "0.3.13",
+        "0.3.14",
         "packages/provider-anthropic",
         "Anthropic provider adapter for Anvia.",
         true,
@@ -364,7 +364,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/mistral",
         "mistral",
-        "0.3.3",
+        "0.3.4",
         "packages/provider-mistral",
         "Mistral provider adapter for Anvia.",
         true,
@@ -444,7 +444,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/lancedb",
         "lancedb",
-        "0.2.3",
+        "0.2.4",
         "packages/vector-lancedb",
         "LanceDB vector store adapter for Anvia.",
         false,
@@ -476,7 +476,7 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/langfuse",
         "langfuse",
-        "0.3.4",
+        "0.3.5",
         "packages/observability-langfuse",
         "Langfuse tracing adapter for Anvia.",
         true,

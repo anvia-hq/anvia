@@ -69,6 +69,37 @@ Prefer visible behavior over implementation details:
 - user messages align with `data-role="user"`
 - tool cards render `data-state="output-available"` after a result
 - attachment names truncate instead of resizing the composer
+- image previews render loading/error states and image actions disable without a source
+- selected text inside one message shows `SelectionToolbar`, while cross-message selections do not
+- quoted selections update controlled composer quote state and submit quote metadata
+- thread-list triggers call the app-owned controller and keyboard focus moves through item triggers
+
+For richer chat surfaces, cover the behavior users rely on rather than every internal context
+field. The React UI package tests include focused coverage for `Image`, `SelectionToolbar`,
+controlled `Composer.Quote`, and `ThreadList` controller actions.
+
+## Images, selection, and thread lists
+
+When a message renderer branches on image attachments, test that the image primitive can read the
+attachment context and that fallback rendering still works for non-image files.
+
+```tsx
+render(
+  <Message.Attachment>
+    <Image.Root>
+      <Image.Preview loadingFallback="Loading" errorFallback="Broken" />
+      <Image.Name />
+    </Image.Root>
+  </Message.Attachment>,
+);
+```
+
+For selection quotes, create a real DOM selection inside one `Message.Root`, dispatch
+`selectionchange`, and assert that `SelectionToolbar.Quote` passes `{ text, messageId }` into
+controlled composer state.
+
+For thread lists, use a fake `ThreadListController` with `vi.fn()` action methods and assert that
+`ThreadListItem.Trigger`, `Archive`, `Unarchive`, and `Delete` call the expected controller method.
 
 ## Human-input tests
 

@@ -42,6 +42,28 @@
   object-fit: contain;
 }
 
+[data-anvia-image-preview] img,
+[data-anvia-image-zoom-img] {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+[data-anvia-image-zoom-overlay] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: rgb(0 0 0 / 72%);
+}
+
+[data-anvia-selection-toolbar] {
+  z-index: 60;
+}
+
 [data-state="disabled"] {
   opacity: 0.55;
 }

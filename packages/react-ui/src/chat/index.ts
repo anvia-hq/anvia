@@ -4,6 +4,7 @@ export type {
   ComposerAttachmentInput,
   ComposerAttachmentsUpdate,
   ComposerContextValue,
+  ComposerQuote,
   ThreadContextValue,
 } from "../contexts";
 export { ChatProvider, useChatContext, useComposer, useThread } from "../contexts";

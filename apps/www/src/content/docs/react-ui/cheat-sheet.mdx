@@ -19,7 +19,19 @@ pnpm add @anvia/react @anvia/react-ui
 
 ```tsx
 import { useChat } from "@anvia/react";
-import { ChatProvider, Composer, HumanInput, Message, Thread } from "@anvia/react-ui";
+import {
+  ChatProvider,
+  Composer,
+  type ComposerQuote,
+  HumanInput,
+  Image,
+  Message,
+  SelectionToolbar,
+  Thread,
+  ThreadList,
+  ThreadListItem,
+  ThreadListProvider,
+} from "@anvia/react-ui";
 import "@anvia/react-ui/styles.css";
 ```
 
@@ -51,6 +63,9 @@ UI context: chat exposes messages and chat actions; completion exposes prompt in
 | Message row and parts | `Message.Root`, `Message.Parts`, `Message.Part` | `Thread.Messages` |
 | Prompt input | `Composer.Root`, `Composer.Input` | `ChatProvider` |
 | Pending attachments | `Composer.Attachments`, `Attachment.*` | `Composer.Root` |
+| Image attachment preview | `Image.*` | `Message.Attachment`, `Attachment.Root`, or explicit `attachment` |
+| Quote selected message text | `SelectionToolbar.*`, `Composer.Quote` | `Thread.Root` and controlled `Composer.Root` quote state |
+| Conversation history list | `ThreadList.*`, `ThreadListItem.*` | `ThreadListProvider` |
 | Tool cards | `Message.Tool` | `Message.Part` for a tool part |
 | Human review | `HumanInput.*` | `ChatProvider` with `humanInput` configured |
 | One-shot text generation | `useCompletion(...)`, `Completion.*` | `CompletionProvider` |
@@ -149,6 +164,60 @@ const chat = useChat<ChatRequest>({
 
 Use `Composer.Root` `submitMessage` only when the submitted message itself needs custom text,
 attachments, or per-message metadata.
+
+## Images, quotes, and thread history
+
+Use image primitives inside attachment rendering:
+
+```tsx
+<Message.Attachment>
+  <Image.Root>
+    <Image.ZoomTrigger>
+      <Image.Preview />
+    </Image.ZoomTrigger>
+    <Image.Name />
+    <Image.Actions>
+      <Image.Copy />
+      <Image.Download />
+    </Image.Actions>
+    <Image.ZoomOverlay />
+  </Image.Root>
+</Message.Attachment>
+```
+
+Use selection quotes as controlled composer state:
+
+```tsx
+const [quote, setQuote] = useState<ComposerQuote>();
+
+<SelectionToolbar.Root onQuote={setQuote} />
+<Composer.Root quote={quote} onQuoteChange={setQuote}>
+  <Composer.Quote />
+  <Composer.ClearQuote />
+  <Composer.Input />
+  <Composer.Submit />
+</Composer.Root>
+```
+
+Use thread-list primitives with an app-owned controller:
+
+```tsx
+<ThreadListProvider controller={threadList}>
+  <ThreadList.Root>
+    <ThreadList.New />
+    <ThreadList.Items>
+      <ThreadListItem.Root>
+        <ThreadListItem.Trigger>
+          <ThreadListItem.Title />
+        </ThreadListItem.Trigger>
+      </ThreadListItem.Root>
+    </ThreadList.Items>
+  </ThreadList.Root>
+</ThreadListProvider>
+```
+
+For a complete recipe, see
+[Images, selection, and thread list](/docs/react-ui/examples/image-selection-thread-list).
 
 ## Renderer ladder
 

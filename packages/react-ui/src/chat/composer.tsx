@@ -19,6 +19,7 @@ import {
   type ComposerAttachmentInput as ComposerAttachmentInputValue,
   type ComposerAttachmentsUpdate,
   type ComposerContextValue,
+  type ComposerQuote,
   InternalAttachmentProvider,
   InternalComposerProvider,
   useChatContext,
@@ -30,9 +31,12 @@ type ComposerRootProps = PrimitiveProps<"form"> & {
   attachments?: UIAttachment[];
   defaultAttachments?: UIAttachment[];
   defaultInput?: string;
+  defaultQuote?: ComposerQuote | undefined;
   input?: string;
   onAttachmentsChange?: (attachments: UIAttachment[]) => void;
   onInputChange?: (input: string) => void;
+  onQuoteChange?: (quote: ComposerQuote | undefined) => void;
+  quote?: ComposerQuote | undefined;
   submitMessage?: ComposerSubmitMessage;
 };
 
@@ -40,6 +44,7 @@ export type ComposerSubmitMessageArgs<TEvent = unknown> = {
   input: string;
   attachments: UIAttachment[];
   chat: ChatController<TEvent>;
+  quote?: ComposerQuote | undefined;
   clear(): void;
 };
 
@@ -52,9 +57,12 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     attachments: attachmentsProp,
     defaultAttachments,
     defaultInput = "",
+    defaultQuote,
     input: inputProp,
     onAttachmentsChange,
     onInputChange,
+    onQuoteChange,
+    quote: quoteProp,
     submitMessage,
     onSubmit,
     ...props
@@ -66,12 +74,17 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   const [uncontrolledAttachments, setUncontrolledAttachments] = useState<UIAttachment[]>(() => [
     ...(defaultAttachments ?? []),
   ]);
+  const [uncontrolledQuote, setUncontrolledQuote] = useState<ComposerQuote | undefined>(
+    defaultQuote,
+  );
   const input = inputProp ?? uncontrolledInput;
   const attachments = attachmentsProp ?? uncontrolledAttachments;
+  const quote = normalizeQuote(quoteProp ?? uncontrolledQuote);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const inputControlled = inputProp !== undefined;
   const attachmentsControlled = attachmentsProp !== undefined;
+  const quoteControlled = quoteProp !== undefined;
   const canSubmit =
     (input.trim().length > 0 || attachments.length > 0) && chat.status !== "streaming";
   const canStop = chat.status === "streaming";
@@ -99,6 +112,17 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     [attachmentsControlled, onAttachmentsChange],
   );
 
+  const setQuote = useCallback(
+    (nextQuote: ComposerQuote | undefined) => {
+      const normalizedQuote = normalizeQuote(nextQuote);
+      if (!quoteControlled) {
+        setUncontrolledQuote(normalizedQuote);
+      }
+      onQuoteChange?.(normalizedQuote);
+    },
+    [onQuoteChange, quoteControlled],
+  );
+
   const addAttachment = useCallback(
     async (attachment: ComposerAttachmentInputValue) => {
       const normalized = isFileAttachmentInput(attachment)
@@ -120,10 +144,15 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     setAttachments([]);
   }, [setAttachments]);
 
+  const clearQuote = useCallback(() => {
+    setQuote(undefined);
+  }, [setQuote]);
+
   const clear = useCallback(() => {
     setInput("");
     setAttachments([]);
-  }, [setAttachments, setInput]);
+    clearQuote();
+  }, [clearQuote, setAttachments, setInput]);
 
   const submit = useCallback(async () => {
     const prompt = input;
@@ -135,20 +164,30 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         input: prompt,
         attachments,
         chat,
+        quote,
         clear,
       });
       return;
     }
+    const submittedText = quote === undefined ? prompt : promptWithQuote(prompt, quote);
     if (attachments.length === 0) {
-      await chat.sendMessage(prompt);
+      if (quote === undefined) {
+        await chat.sendMessage(prompt);
+      } else {
+        await chat.sendMessage({
+          text: submittedText,
+          metadata: { quote },
+        });
+      }
     } else {
       await chat.sendMessage({
-        text: prompt,
+        text: submittedText,
         attachments,
+        ...(quote === undefined ? {} : { metadata: { quote } }),
       });
     }
     clear();
-  }, [attachments, chat, clear, input, submitMessage]);
+  }, [attachments, chat, clear, input, quote, submitMessage]);
 
   const value = useMemo<ComposerContextValue>(
     () => ({
@@ -159,6 +198,9 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
       addAttachment,
       removeAttachment,
       clearAttachments,
+      quote,
+      setQuote,
+      clearQuote,
       submit,
       stop: chat.stop,
       status: chat.status,
@@ -173,10 +215,13 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
       chat.status,
       chat.stop,
       clearAttachments,
+      clearQuote,
       input,
+      quote,
       removeAttachment,
       setAttachments,
       setInput,
+      setQuote,
       submit,
     ],
   );
@@ -208,6 +253,65 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     </InternalComposerProvider>
   );
 });
+
+type ComposerQuoteProps = Omit<PrimitiveProps<"blockquote">, "children"> & {
+  children?: ReactNode | ((quote: ComposerQuote) => ReactNode);
+};
+
+const ComposerQuotePreview = forwardRef<HTMLQuoteElement, ComposerQuoteProps>(
+  function ComposerQuotePreview({ children, ...props }, ref) {
+    const composer = useComposer();
+    const quote = composer.quote;
+    if (quote === undefined) {
+      return null;
+    }
+    const renderedChildren =
+      typeof children === "function" ? children(quote) : (children ?? quote.text);
+
+    return renderPrimitive(
+      "blockquote",
+      {
+        ...props,
+        children: renderedChildren,
+        "data-anvia-composer-quote": "",
+        "data-message-id": quote.messageId,
+      } as PrimitiveProps<"blockquote">,
+      ref,
+    );
+  },
+);
+
+const ComposerClearQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
+  function ComposerClearQuote({ onClick, ...props }, ref) {
+    const composer = useComposer();
+    const disabled = props.disabled ?? composer.quote === undefined;
+
+    const handleClick = useCallback(
+      (event: MouseEvent<HTMLButtonElement>) => {
+        onClick?.(event);
+        if (event.defaultPrevented || disabled) {
+          return;
+        }
+        composer.clearQuote();
+      },
+      [composer, disabled, onClick],
+    );
+
+    return renderPrimitive(
+      "button",
+      {
+        ...props,
+        children: props.children ?? "Clear quote",
+        disabled,
+        onClick: handleClick,
+        type: props.type ?? "button",
+        "data-anvia-clear-quote": "",
+        "data-state": disabled ? "disabled" : "enabled",
+      } as PrimitiveProps<"button">,
+      ref,
+    );
+  },
+);
 
 type ComposerInputProps = PrimitiveProps<"textarea"> & {
   autoResize?: boolean;
@@ -348,6 +452,24 @@ function pixelValue(value: string): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function promptWithQuote(prompt: string, quote: ComposerQuote): string {
+  const quotedText = quote.text
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n");
+  return `${quotedText}\n\n${prompt}`;
+}
+
+function normalizeQuote(quote: ComposerQuote | undefined): ComposerQuote | undefined {
+  if (quote === undefined) {
+    return undefined;
+  }
+  return {
+    text: quote.text,
+    messageId: quote.messageId,
+  };
 }
 
 const ComposerSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
@@ -647,6 +769,8 @@ function createAttachmentId(): string {
 
 export const Composer = {
   Root: ComposerRoot,
+  Quote: ComposerQuotePreview,
+  ClearQuote: ComposerClearQuote,
   Input: ComposerInput,
   Attachments: ComposerAttachments,
   AddAttachment: ComposerAddAttachment,

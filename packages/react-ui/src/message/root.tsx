@@ -23,6 +23,7 @@ const MessageRoot = forwardRef<HTMLElement, MessageRootProps>(function MessageRo
       ...props,
       children: renderedChildren,
       "data-anvia-message": "",
+      "data-anvia-message-id": message.id,
       "data-role": message.role,
     } as PrimitiveProps<"article">,
     ref,

@@ -35,7 +35,7 @@ React UI has two separate surface families:
 
 | Surface | Use when | Controller and provider | UI primitives |
 | --- | --- | --- | --- |
-| Chat | The user expects a transcript, follow-up turns, tools, attachments, or human review. | `useChat(...)` with `ChatProvider` | `Thread.*`, `Composer.*`, `Message.*`, `HumanInput.*` |
+| Chat | The user expects a transcript, follow-up turns, tools, attachments, selection quotes, thread history, or human review. | `useChat(...)` with `ChatProvider` | `Thread.*`, `Composer.*`, `Message.*`, `Image.*`, `SelectionToolbar.*`, `HumanInput.*` |
 | Completion | The user submits one prompt and reads one generated text result. | `useCompletion(...)` with `CompletionProvider` | `Completion.*` |
 
 Both families can call an API route that accepts `{ messages, stream: true }`, but they expose
@@ -63,7 +63,8 @@ try to own your design system.
 ## Package boundary
 
 `@anvia/react-ui` is headless. It provides primitives such as `Thread`, `Composer`, `Message`,
-`HumanInput`, and `Completion`, plus stable `data-anvia-*` attributes and an optional stylesheet.
+`Image`, `SelectionToolbar`, `ThreadList`, `HumanInput`, and `Completion`, plus stable
+`data-anvia-*` attributes and an optional stylesheet.
 
 Application code still owns:
 
@@ -90,6 +91,7 @@ Application code still owns:
 - [Full chat surface](/docs/react-ui/examples/chat-surface)
 - [Composer attachments](/docs/react-ui/examples/composer-attachments)
 - [Message rendering](/docs/react-ui/examples/message-rendering)
+- [Images, selection, and thread list](/docs/react-ui/examples/image-selection-thread-list)
 - [Tool and human input](/docs/react-ui/examples/tool-human-input)
 - [Styling recipe](/docs/react-ui/examples/styling)
 - [Completion panel](/docs/react-ui/examples/completion)

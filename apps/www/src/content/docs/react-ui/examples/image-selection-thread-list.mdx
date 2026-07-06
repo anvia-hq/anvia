@@ -1,0 +1,143 @@
+---
+title: Images, selection, and thread list
+description: Add image attachment rendering, quote-from-selection, and an app-owned thread list to @anvia/react-ui chat surfaces.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 3.5
+  label: Images, selection, thread list
+---
+
+Use these primitives when a chat surface needs richer message affordances without giving up
+application-owned state.
+
+- `Image.*` renders an image attachment with preview, actions, and zoom.
+- `SelectionToolbar.*` reacts to selected message text and can copy or quote it.
+- `ThreadList.*` renders app-owned conversation history. It does not persist threads by itself.
+
+## Image attachments
+
+`Image.Root` reads the current `Attachment` context, so it works naturally inside
+`Message.Attachment`.
+
+```tsx
+import { Image, Message, Thread } from "@anvia/react-ui";
+
+<Thread.Messages>
+  <Message.Root>
+    <Message.Content>
+      <Message.Parts>
+        {(part) =>
+          part.type === "attachment" ? (
+            <Message.Part>
+              <Message.Attachment>
+                <Image.Root>
+                  <Image.ZoomTrigger>
+                    <Image.Preview />
+                  </Image.ZoomTrigger>
+                  <Image.Name />
+                  <Image.Actions>
+                    <Image.Copy />
+                    <Image.Download />
+                  </Image.Actions>
+                  <Image.ZoomOverlay />
+                </Image.Root>
+              </Message.Attachment>
+            </Message.Part>
+          ) : (
+            <Message.Part />
+          )
+        }
+      </Message.Parts>
+    </Message.Content>
+  </Message.Root>
+</Thread.Messages>;
+```
+
+Use the existing `Attachment.*` primitives for document/file rows. Use `Image.*` when the
+attachment is an image and needs image-specific actions.
+
+## Quote selected text
+
+`SelectionToolbar.Root` appears only when the browser selection is fully inside one `Message.Root`.
+Bridge its `onQuote` callback into controlled `Composer.Root` quote state.
+
+```tsx
+import { useState } from "react";
+import type { ComposerQuote } from "@anvia/react-ui";
+import { Composer, SelectionToolbar, Thread } from "@anvia/react-ui";
+
+export function QuoteChatControls() {
+  const [quote, setQuote] = useState<ComposerQuote>();
+
+  return (
+    <Thread.Root>
+      <Thread.Viewport>
+        <Thread.Messages />
+      </Thread.Viewport>
+
+      <SelectionToolbar.Root onQuote={setQuote}>
+        <SelectionToolbar.Quote />
+        <SelectionToolbar.Copy />
+      </SelectionToolbar.Root>
+
+      <Composer.Root quote={quote} onQuoteChange={setQuote}>
+        <Composer.Quote />
+        <Composer.ClearQuote />
+        <Composer.Input />
+        <Composer.Submit />
+      </Composer.Root>
+    </Thread.Root>
+  );
+}
+```
+
+With the default submit behavior, quoted text is prefixed into the user message as a Markdown
+blockquote and the UI message metadata receives `{ quote: { text, messageId } }`. Use
+`submitMessage` if your route needs a different wire shape.
+
+## App-owned thread list
+
+`ThreadListProvider` receives a controller from your application. The controller can be backed by
+local state, router state, IndexedDB, a server API, or your Studio/session storage.
+
+```tsx
+import { ThreadList, ThreadListItem, ThreadListProvider } from "@anvia/react-ui";
+
+<ThreadListProvider controller={threadList}>
+  <ThreadList.Root className="conversation-list">
+    <ThreadList.New>New chat</ThreadList.New>
+
+    <ThreadList.Items>
+      <ThreadListItem.Root>
+        <ThreadListItem.Trigger>
+          <ThreadListItem.Title fallback="New chat" />
+        </ThreadListItem.Trigger>
+        <ThreadListItem.Archive />
+        <ThreadListItem.Delete />
+      </ThreadListItem.Root>
+    </ThreadList.Items>
+
+    <ThreadList.Empty>No conversations yet.</ThreadList.Empty>
+  </ThreadList.Root>
+</ThreadListProvider>;
+```
+
+Controller shape:
+
+```ts
+type ThreadListController = {
+  threads: ThreadListRecord[];
+  activeThreadId?: string;
+  status?: "idle" | "loading" | "error";
+  error?: unknown;
+  createThread(): Promise<void> | void;
+  switchThread(threadId: string): Promise<void> | void;
+  archiveThread?(threadId: string): Promise<void> | void;
+  unarchiveThread?(threadId: string): Promise<void> | void;
+  deleteThread?(threadId: string): Promise<void> | void;
+};
+```
+
+Use `ThreadList.Items archived` for archived conversations. Active rows emit `data-active`, and
+`ThreadList.Root` supports ArrowUp, ArrowDown, Home, and End focus movement between item triggers.

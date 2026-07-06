@@ -25,3 +25,7 @@ export function useAttachment(): AttachmentContextValue {
   }
   return value;
 }
+
+export function useOptionalAttachment(): AttachmentContextValue | undefined {
+  return useContext(AttachmentContext);
+}

@@ -18,6 +18,11 @@ import {
   Composer,
   Message,
   Attachment,
+  Image,
+  SelectionToolbar,
+  ThreadList,
+  ThreadListItem,
+  ThreadListProvider,
   HumanInput,
   Completion,
 } from "@anvia/react-ui";
@@ -29,8 +34,11 @@ Subpath entrypoints are also available:
 - `@anvia/react-ui/completion`
 - `@anvia/react-ui/attachment`
 - `@anvia/react-ui/human-input`
+- `@anvia/react-ui/image`
 - `@anvia/react-ui/message`
+- `@anvia/react-ui/selection-toolbar`
 - `@anvia/react-ui/shared`
+- `@anvia/react-ui/thread-list`
 - `@anvia/react-ui/styles.css`
 
 ## Providers
@@ -83,7 +91,9 @@ Composer primitives must be rendered inside `ChatProvider`.
 
 | Primitive | Element | Key props | Behavior |
 | --- | --- | --- | --- |
-| `Composer.Root` | `form` | `input`, `onInputChange`, `attachments`, `onAttachmentsChange`, `defaultInput`, `defaultAttachments`, `submitMessage` | Owns draft text, pending attachments, submit, stop. |
+| `Composer.Root` | `form` | `input`, `onInputChange`, `attachments`, `onAttachmentsChange`, `quote`, `onQuoteChange`, `defaultInput`, `defaultAttachments`, `defaultQuote`, `submitMessage` | Owns draft text, pending attachments, quote state, submit, stop. |
+| `Composer.Quote` | `blockquote` | child function | Renders the active quote when present. |
+| `Composer.ClearQuote` | `button` | `asChild` | Clears the active quote. |
 | `Composer.Input` | `textarea` | `minRows`, `maxRows`, `autoResize` | Controlled by composer context; Enter submits, Shift+Enter adds newline. |
 | `Composer.Attachments` | `div` | `keepMounted`, child function | Renders pending attachments. |
 | `Composer.AttachmentInput` | `input type="file"` | `accept`, `multiple` | Adds selected files. |
@@ -96,12 +106,15 @@ Custom submit signature:
 
 ```tsx
 <Composer.Root
-  submitMessage={async ({ input, attachments, chat, clear }) => {
+  submitMessage={async ({ input, attachments, quote, chat, clear }) => {
     await chat.sendMessage({ text: input, attachments, metadata: { source: "composer" } });
     clear();
   }}
 />
 ```
+
+When default submit is used with a quote, the submitted text includes a Markdown blockquote prefix
+and the UI message metadata includes `{ quote: { text, messageId } }`.
 
 ## Message
 
@@ -156,6 +169,103 @@ Attachment primitives are used inside `Composer.Attachments` or `Message.Attachm
 | `Attachment.Preview` | `div` | Renders image/link/kind preview. |
 | `Attachment.Remove` | `button` | Removes pending composer attachment when removable. |
 
+## Image
+
+Image primitives are used inside `Message.Attachment`, `Attachment.Root`, or with an explicit
+`attachment` prop.
+
+| Primitive | Element | Key props | Behavior |
+| --- | --- | --- | --- |
+| `Image.Root` | `figure` | `attachment`, `renderWhen` | Provides image context for one `UIAttachment`. |
+| `Image.Preview` | `div` | `loadingFallback`, `errorFallback`, `alt` | Renders an image with loading/error state. |
+| `Image.Name` | `figcaption` | element props | Renders attachment name or media type. |
+| `Image.Actions` | `div` | element props | Groups image actions. |
+| `Image.Copy` | `button` | `asChild` | Copies image data when Clipboard image support exists. |
+| `Image.Download` | `button` | `filename` | Downloads the image URL or data URL. |
+| `Image.ZoomTrigger` | `button` | `asChild` | Opens the zoom overlay. |
+| `Image.ZoomOverlay` | `div` | `container` | Portals a zoomed image overlay and closes on Escape or click. |
+
+```tsx
+<Message.Attachment>
+  <Image.Root>
+    <Image.ZoomTrigger>
+      <Image.Preview />
+    </Image.ZoomTrigger>
+    <Image.Name />
+    <Image.Actions>
+      <Image.Copy />
+      <Image.Download />
+    </Image.Actions>
+    <Image.ZoomOverlay />
+  </Image.Root>
+</Message.Attachment>
+```
+
+## SelectionToolbar
+
+Selection toolbar primitives render when selected text is fully inside one `Message.Root`.
+
+| Primitive | Element | Key props | Behavior |
+| --- | --- | --- | --- |
+| `SelectionToolbar.Root` | `div` | `onQuote`, `onSelectionChange`, `container` | Portals a floating toolbar above selected message text. |
+| `SelectionToolbar.Quote` | `button` | `asChild` | Calls `onQuote` with `{ text, messageId, rect }`. |
+| `SelectionToolbar.Copy` | `button` | `asChild` | Copies selected text. |
+
+Quote bridging is controlled by app state:
+
+```tsx
+const [quote, setQuote] = useState<ComposerQuote>();
+
+return (
+  <Thread.Root>
+    <Thread.Messages />
+    <SelectionToolbar.Root onQuote={setQuote} />
+    <Composer.Root quote={quote} onQuoteChange={setQuote}>
+      <Composer.Quote />
+      <Composer.ClearQuote />
+      <Composer.Input />
+      <Composer.Submit />
+    </Composer.Root>
+  </Thread.Root>
+);
+```
+
+## ThreadList
+
+Thread-list primitives require an app-owned `ThreadListController`. They do not create storage or
+chat persistence by themselves.
+
+| Primitive | Element | Key props | Behavior |
+| --- | --- | --- | --- |
+| `ThreadListProvider` | provider | `controller` | Provides a thread-list controller. |
+| `ThreadList.Root` | `div` | element props | Emits status and handles Arrow/Home/End trigger focus. |
+| `ThreadList.New` | `button` | `asChild` | Calls `controller.createThread`. |
+| `ThreadList.Items` | `div` | `archived`, `keepMounted`, child function | Renders filtered threads. |
+| `ThreadList.Empty` | `div` | element props | Renders when no non-archived threads exist. |
+| `ThreadListItem.Root` | `div` | element props | Provides one thread item and active state. |
+| `ThreadListItem.Trigger` | `button` | `asChild` | Calls `controller.switchThread(thread.id)`. |
+| `ThreadListItem.Title` | `span` | `fallback` | Renders thread title. |
+| `ThreadListItem.Archive` | `button` | `asChild` | Calls optional archive action. |
+| `ThreadListItem.Unarchive` | `button` | `asChild` | Calls optional unarchive action. |
+| `ThreadListItem.Delete` | `button` | `asChild` | Calls optional delete action. |
+
+```tsx
+<ThreadListProvider controller={threadList}>
+  <ThreadList.Root>
+    <ThreadList.New />
+    <ThreadList.Items>
+      <ThreadListItem.Root>
+        <ThreadListItem.Trigger>
+          <ThreadListItem.Title fallback="New chat" />
+        </ThreadListItem.Trigger>
+        <ThreadListItem.Archive />
+        <ThreadListItem.Delete />
+      </ThreadListItem.Root>
+    </ThreadList.Items>
+  </ThreadList.Root>
+</ThreadListProvider>
+```
+
 ## HumanInput
 
 Human-input primitives must be rendered inside `ChatProvider` and require `useChat({ humanInput })`
@@ -198,8 +308,12 @@ Use hooks only inside the matching provider/context:
 - `useComposer`
 - `useThread`
 - `useAttachment`
+- `useImage`
 - `useMessage`
 - `useMessagePart`
+- `useSelectionToolbar`
+- `useThreadList`
+- `useThreadListItem`
 - `useHumanInput`
 - `useApproval`
 - `useQuestion`
@@ -217,9 +331,11 @@ Style state with attributes instead of component names:
 | `data-state` on buttons | `enabled`, `disabled` |
 | `data-state` on scroll controls | `bottom`, `away` |
 | `data-role` on messages | `user`, `assistant`, `system`, `tool` |
+| `data-anvia-message-id` on messages | the `UIMessage.id` |
 | `data-part` on message parts | `text`, `reasoning`, `tool`, `attachment`, `data`, `error` |
 | `data-state` on tool cards | `input-streaming`, `input-available`, `output-available`, `error` |
 | `data-dragging` on attachment dropzone | present while dragging |
+| `data-active` on thread-list items | present for the active thread |
 
 The package reference coverage script checks the package-scoped reference file that mirrors the
 published API surface. This page is the product-facing reference for implementation decisions.

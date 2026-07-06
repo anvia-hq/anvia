@@ -6,6 +6,10 @@ export type ComposerAttachmentInput = File | CreateUIAttachment;
 export type ComposerAttachmentsUpdate =
   | UIAttachment[]
   | ((attachments: UIAttachment[]) => UIAttachment[]);
+export type ComposerQuote = {
+  text: string;
+  messageId: string;
+};
 
 export type ComposerContextValue = {
   input: string;
@@ -15,6 +19,9 @@ export type ComposerContextValue = {
   addAttachment(attachment: ComposerAttachmentInput): Promise<void>;
   removeAttachment(id: string): void;
   clearAttachments(): void;
+  quote?: ComposerQuote | undefined;
+  setQuote(quote: ComposerQuote | undefined): void;
+  clearQuote(): void;
   submit(): Promise<void>;
   stop(): void;
   status: ChatController["status"];

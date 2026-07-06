@@ -40,18 +40,30 @@
       "types": "./dist/human-input/index.d.ts",
       "import": "./dist/human-input/index.js"
     },
+    "./image": {
+      "types": "./dist/image/index.d.ts",
+      "import": "./dist/image/index.js"
+    },
     "./message": {
       "types": "./dist/message/index.d.ts",
       "import": "./dist/message/index.js"
+    },
+    "./selection-toolbar": {
+      "types": "./dist/selection-toolbar/index.d.ts",
+      "import": "./dist/selection-toolbar/index.js"
     },
     "./shared": {
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
     },
+    "./thread-list": {
+      "types": "./dist/thread-list/index.d.ts",
+      "import": "./dist/thread-list/index.js"
+    },
     "./styles.css": "./dist/styles.css"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/message/index.ts src/shared.ts --format esm --dts --sourcemap --clean --external react && cp src/styles.css dist/styles.css",
+    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/selection-toolbar/index.ts src/shared.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom && cp src/styles.css dist/styles.css",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -63,7 +75,8 @@
   },
   "peerDependencies": {
     "@anvia/react": ">=0.7.8 <1.0.0",
-    "react": ">=18"
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "devDependencies": {
     "@anvia/react": "workspace:*",

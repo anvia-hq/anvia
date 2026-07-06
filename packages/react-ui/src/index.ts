@@ -21,6 +21,7 @@ export {
   useQuestion,
   useQuestionPrompt,
 } from "./human-input/index";
+export { Image, useImage } from "./image/index";
 export type {
   MessageAttachmentPart,
   MessagePartsFilter,
@@ -28,6 +29,8 @@ export type {
   MessageToolRenderWhen,
 } from "./message/index";
 export { Message, useMessage, useMessagePart } from "./message/index";
+export type { SelectionToolbarSelection } from "./selection-toolbar/index";
+export { SelectionToolbar, useSelectionToolbar } from "./selection-toolbar/index";
 export type {
   ApprovalContextValue,
   AttachmentContextValue,
@@ -39,11 +42,27 @@ export type {
   ComposerAttachmentInput,
   ComposerAttachmentsUpdate,
   ComposerContextValue,
+  ComposerQuote,
+  ImageContextValue,
   MessageContextValue,
   MessagePartContextValue,
   PrimitiveProps,
   PrimitiveRef,
   QuestionContextValue,
   QuestionPromptContextValue,
+  SelectionToolbarContextValue,
   ThreadContextValue,
 } from "./shared";
+export type {
+  ThreadListController,
+  ThreadListItemContextValue,
+  ThreadListProviderProps,
+  ThreadListRecord,
+} from "./thread-list/index";
+export {
+  ThreadList,
+  ThreadListItem,
+  ThreadListProvider,
+  useThreadList,
+  useThreadListItem,
+} from "./thread-list/index";

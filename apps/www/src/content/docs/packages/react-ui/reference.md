@@ -15,8 +15,11 @@ Subpath entrypoints are also available:
 - `@anvia/react-ui/completion`
 - `@anvia/react-ui/attachment`
 - `@anvia/react-ui/human-input`
+- `@anvia/react-ui/image`
 - `@anvia/react-ui/message`
+- `@anvia/react-ui/selection-toolbar`
 - `@anvia/react-ui/shared`
+- `@anvia/react-ui/thread-list`
 - `@anvia/react-ui/styles.css`
 
 ## Primary namespaces
@@ -38,6 +41,8 @@ const Thread: {
 
 const Composer: {
   Root: React.ForwardRefExoticComponent<...>;
+  Quote: React.ForwardRefExoticComponent<...>;
+  ClearQuote: React.ForwardRefExoticComponent<...>;
   Input: React.ForwardRefExoticComponent<
     React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
       autoResize?: boolean;
@@ -58,6 +63,17 @@ const Attachment: {
   Name: React.ForwardRefExoticComponent<...>;
   Preview: React.ForwardRefExoticComponent<...>;
   Remove: React.ForwardRefExoticComponent<...>;
+};
+
+const Image: {
+  Root: React.ForwardRefExoticComponent<...>;
+  Preview: React.ForwardRefExoticComponent<...>;
+  Name: React.ForwardRefExoticComponent<...>;
+  Actions: React.ForwardRefExoticComponent<...>;
+  Copy: React.ForwardRefExoticComponent<...>;
+  Download: React.ForwardRefExoticComponent<...>;
+  ZoomTrigger: React.ForwardRefExoticComponent<...>;
+  ZoomOverlay: React.ForwardRefExoticComponent<...>;
 };
 
 const Message: {
@@ -107,6 +123,28 @@ const HumanInput: {
   QuestionTextAnswer: React.ForwardRefExoticComponent<...>;
   QuestionSubmit: React.ForwardRefExoticComponent<...>;
 };
+
+const SelectionToolbar: {
+  Root: React.ForwardRefExoticComponent<...>;
+  Quote: React.ForwardRefExoticComponent<...>;
+  Copy: React.ForwardRefExoticComponent<...>;
+};
+
+const ThreadList: {
+  Root: React.ForwardRefExoticComponent<...>;
+  New: React.ForwardRefExoticComponent<...>;
+  Items: React.ForwardRefExoticComponent<...>;
+  Empty: React.ForwardRefExoticComponent<...>;
+};
+
+const ThreadListItem: {
+  Root: React.ForwardRefExoticComponent<...>;
+  Trigger: React.ForwardRefExoticComponent<...>;
+  Title: React.ForwardRefExoticComponent<...>;
+  Archive: React.ForwardRefExoticComponent<...>;
+  Unarchive: React.ForwardRefExoticComponent<...>;
+  Delete: React.ForwardRefExoticComponent<...>;
+};
 ```
 
 ## Providers
@@ -125,13 +163,41 @@ type CompletionProviderProps<TEvent = unknown> = {
   children?: React.ReactNode;
 };
 
+type ThreadListRecord = {
+  id: string;
+  title?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  archived?: boolean;
+  metadata?: unknown;
+};
+
+type ThreadListController = {
+  threads: ThreadListRecord[];
+  activeThreadId?: string;
+  status?: "idle" | "loading" | "error";
+  error?: unknown;
+  createThread(): Promise<void> | void;
+  switchThread(threadId: string): Promise<void> | void;
+  archiveThread?(threadId: string): Promise<void> | void;
+  unarchiveThread?(threadId: string): Promise<void> | void;
+  deleteThread?(threadId: string): Promise<void> | void;
+};
+
+type ThreadListProviderProps = {
+  controller: ThreadListController;
+  children?: React.ReactNode;
+};
+
 function ChatProvider<TEvent = unknown>(props: ChatProviderProps<TEvent>): React.ReactElement;
 function CompletionProvider<TEvent = unknown>(
   props: CompletionProviderProps<TEvent>,
 ): React.ReactElement;
+function ThreadListProvider(props: ThreadListProviderProps): React.ReactElement;
 ```
 
-Purpose: provide `@anvia/react` hook results to UI primitives without prop drilling.
+Purpose: provide `@anvia/react` hook results and app-owned thread-list controllers to UI
+primitives without prop drilling.
 
 ## Shared primitive types
 
@@ -159,11 +225,19 @@ type ComposerContextValue = {
   addAttachment(attachment: File | CreateUIAttachment): Promise<void>;
   removeAttachment(id: string): void;
   clearAttachments(): void;
+  quote?: ComposerQuote;
+  setQuote(quote: ComposerQuote | undefined): void;
+  clearQuote(): void;
   submit(): Promise<void>;
   stop(): void;
   status: ChatController["status"];
   canSubmit: boolean;
   canStop: boolean;
+};
+
+type ComposerQuote = {
+  text: string;
+  messageId: string;
 };
 
 type CompletionInputContextValue = {
@@ -185,6 +259,7 @@ type ComposerSubmitMessageArgs<TEvent = unknown> = {
   input: string;
   attachments: UIAttachment[];
   chat: ChatController<TEvent>;
+  quote?: ComposerQuote;
   clear(): void;
 };
 
@@ -193,10 +268,10 @@ type ComposerSubmitMessage<TEvent = unknown> = (
 ) => Promise<void> | void;
 ```
 
-`Composer.Root` also accepts `defaultInput`, `defaultAttachments`, `input`, `onInputChange`,
-`attachments`, and `onAttachmentsChange` for uncontrolled or controlled composer state. Use
-`submitMessage` to replace the default send behavior when an app needs custom message payloads or
-metadata.
+`Composer.Root` also accepts `defaultInput`, `defaultAttachments`, `defaultQuote`, `input`,
+`onInputChange`, `attachments`, `onAttachmentsChange`, `quote`, and `onQuoteChange` for
+uncontrolled or controlled composer state. Use `submitMessage` to replace the default send behavior
+when an app needs custom message payloads or metadata.
 
 ## Context hooks
 
@@ -207,6 +282,7 @@ function useThread(): ThreadContextValue;
 function useComposer(): ComposerContextValue;
 function useCompletionInput(): CompletionInputContextValue;
 function useAttachment(): AttachmentContextValue;
+function useImage(): ImageContextValue;
 
 type MessageContextValue = { message: UIMessage };
 type MessagePartContextValue = { part: UIMessagePart };
@@ -233,11 +309,38 @@ type QuestionContextValue = {
   setAnswer(prompt: ToolQuestionPrompt, answer: ToolQuestionAnswer): void;
 };
 type QuestionPromptContextValue = { prompt: ToolQuestionPrompt };
+type ImageContextValue = {
+  attachment: UIAttachment;
+  src?: string;
+  name?: string;
+  mediaType?: string;
+  isImage: boolean;
+  zoomOpen: boolean;
+  setZoomOpen(open: boolean): void;
+};
+type SelectionToolbarSelection = {
+  text: string;
+  messageId: string;
+  rect: DOMRect;
+};
+type SelectionToolbarContextValue = {
+  selection?: SelectionToolbarSelection;
+  quote(): void;
+  copy(): Promise<void>;
+  clear(): void;
+};
+type ThreadListItemContextValue = {
+  thread: ThreadListRecord;
+  active: boolean;
+};
 
 function useHumanInput(): UseChatResult["humanInput"];
 function useApproval(): ApprovalContextValue;
 function useQuestion(): QuestionContextValue;
 function useQuestionPrompt(): QuestionPromptContextValue;
+function useSelectionToolbar(): SelectionToolbarContextValue;
+function useThreadList(): ThreadListController;
+function useThreadListItem(): ThreadListItemContextValue;
 ```
 
 Purpose: read primitive-local state when composing custom renderers.
@@ -256,6 +359,17 @@ Purpose: read primitive-local state when composing custom renderers.
 `Composer.Attachments`, `Thread.Messages`, `Thread.Suggestions`, `HumanInput.Approvals`, and
 `HumanInput.Questions` accept `keepMounted?: boolean` for layout control when their collection is
 empty.
+
+`Image.Root` reads the current attachment context or an explicit `attachment` prop. Use it inside
+`Message.Attachment` or `Attachment.Root` for image previews, image copy/download actions, and a
+portal zoom overlay.
+
+`SelectionToolbar.Root` renders only when selected text is fully inside one `Message.Root`. Use
+`onQuote` with controlled `Composer.Root` `quote`/`onQuoteChange` state to bridge selected text into
+`Composer.Quote`.
+
+`ThreadListProvider` accepts an app-owned `ThreadListController`. `ThreadList.Items` renders
+non-archived threads by default and accepts `archived` for archived lists.
 
 ## Styling
 

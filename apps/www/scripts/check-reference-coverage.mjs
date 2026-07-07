@@ -121,20 +121,14 @@ function readPackageIndexMetadata() {
   function visit(node) {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       if (node.expression.text === "definePackage") {
-        const [name, slug, version, sourceDirectory] = node.arguments;
-        if (
-          !isStringLike(name) ||
-          !isStringLike(slug) ||
-          !isStringLike(version) ||
-          !isStringLike(sourceDirectory)
-        ) {
+        const [name, slug, sourceDirectory] = node.arguments;
+        if (!isStringLike(name) || !isStringLike(slug) || !isStringLike(sourceDirectory)) {
           throw new Error("definePackage calls in package metadata must use string literals.");
         }
 
         entries.push({
           name: name.text,
           slug: slug.text,
-          version: version.text,
           sourceDirectory: sourceDirectory.text,
         });
       }
@@ -166,10 +160,9 @@ function checkPackageIndexMetadata(discoveredPackages) {
       continue;
     }
 
-    if (entry.version !== manifest.version) {
-      issues.push(
-        `${entry.name} package metadata version is ${entry.version}, package.json is ${manifest.version}`,
-      );
+    const expectedSlug = packageSlug(entry.name);
+    if (entry.slug !== expectedSlug) {
+      issues.push(`${entry.name} package metadata slug is ${entry.slug}, expected ${expectedSlug}`);
     }
 
     if (entry.sourceDirectory !== manifest.sourceDirectory) {

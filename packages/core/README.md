@@ -1,8 +1,14 @@
 # @anvia/core
 
-Core runtime primitives for Anvia agents, tools, structured extraction, pipelines, streaming, RAG, MCP, skills, and observability.
+Small, explicit, embeddable runtime contracts for Anvia agents, tools, structured extraction, pipelines, streaming, RAG, MCP, skills, and observability.
 
-This package is provider-neutral. Pair it with a provider adapter such as `@anvia/openai`, `@anvia/anthropic`, or `@anvia/gemini` to create runnable models.
+This package is provider-neutral. Pair it with a provider adapter such as `@anvia/openai`, `@anvia/anthropic`, or `@anvia/gemini` to create runnable model objects, then pass those objects into agents, extractors, pipelines, or direct completion helpers.
+
+## Design Philosophy
+
+`@anvia/core` owns the model/tool loop and the runtime contracts around it. Your application owns provider client construction, credentials, product data access, permissions, storage, deployment, observability backends, and response shape.
+
+The package is dependency-injection oriented: create provider models, typed tools, memory stores, vector indexes, observers, and services in application code, then pass the relevant objects into agents, prompt requests, runners, or adapters. Core receives those objects and coordinates the run without taking over product architecture.
 
 ## Installation
 

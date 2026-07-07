@@ -9,6 +9,19 @@ sidebar:
 
 Basics is a guided path from one provider-neutral model call to a working agent that can stream, use tools, remember sessions, use context, and connect to a product UI.
 
+## Design philosophy
+
+Anvia is not different because it has primitives. The difference is the boundary those
+primitives keep. Core is a small, explicit runtime layer that accepts the dependencies
+your application creates: provider models, tools, memory stores, vector indexes, observers,
+services, and transports.
+
+Anvia runs the agent/tool loop and emits runtime events. Your app still owns product
+architecture, auth, permissions, data access, persistence, deployment, and the response
+shape users see. This keeps Anvia dependency-injection oriented: build dependencies in
+application code, pass them into agents, runners, tools, or adapters, and replace them in
+tests.
+
 ## What you will build
 
 By the end of this section, you will have:

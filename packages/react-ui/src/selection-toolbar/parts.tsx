@@ -90,10 +90,12 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
       document.addEventListener("selectionchange", handleSelectionChange);
       document.addEventListener("mouseup", handleSelectionChange);
       document.addEventListener("keyup", handleSelectionChange);
+      document.addEventListener("scroll", handleSelectionChange, true);
       return () => {
         document.removeEventListener("selectionchange", handleSelectionChange);
         document.removeEventListener("mouseup", handleSelectionChange);
         document.removeEventListener("keyup", handleSelectionChange);
+        document.removeEventListener("scroll", handleSelectionChange, true);
       };
     }, [setSelection]);
 
@@ -137,19 +139,7 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
 
 const SelectionToolbarQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   function SelectionToolbarQuote({ onClick, ...props }, ref) {
-    const toolbar = useSelectionToolbar();
-    const disabled = props.disabled ?? toolbar.selection === undefined;
-
-    const handleClick = useCallback(
-      (event: MouseEvent<HTMLButtonElement>) => {
-        onClick?.(event);
-        if (event.defaultPrevented || disabled) {
-          return;
-        }
-        toolbar.quote();
-      },
-      [disabled, onClick, toolbar],
-    );
+    const { disabled, handleClick } = useSelectionToolbarAction("quote", props.disabled, onClick);
 
     return renderPrimitive(
       "button",
@@ -169,19 +159,7 @@ const SelectionToolbarQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"butt
 
 const SelectionToolbarCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   function SelectionToolbarCopy({ onClick, ...props }, ref) {
-    const toolbar = useSelectionToolbar();
-    const disabled = props.disabled ?? toolbar.selection === undefined;
-
-    const handleClick = useCallback(
-      (event: MouseEvent<HTMLButtonElement>) => {
-        onClick?.(event);
-        if (event.defaultPrevented || disabled) {
-          return;
-        }
-        void toolbar.copy();
-      },
-      [disabled, onClick, toolbar],
-    );
+    const { disabled, handleClick } = useSelectionToolbarAction("copy", props.disabled, onClick);
 
     return renderPrimitive(
       "button",
@@ -198,6 +176,32 @@ const SelectionToolbarCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"butto
     );
   },
 );
+
+type SelectionToolbarAction = "copy" | "quote";
+
+function useSelectionToolbarAction(
+  actionName: SelectionToolbarAction,
+  disabledProp: boolean | undefined,
+  onClick: ((event: MouseEvent<HTMLButtonElement>) => void) | undefined,
+): {
+  disabled: boolean;
+  handleClick(event: MouseEvent<HTMLButtonElement>): void;
+} {
+  const toolbar = useSelectionToolbar();
+  const disabled = disabledProp ?? toolbar.selection === undefined;
+  const action = toolbar[actionName];
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      onClick?.(event);
+      if (event.defaultPrevented || disabled) {
+        return;
+      }
+      void action();
+    },
+    [action, disabled, onClick],
+  );
+  return { disabled, handleClick };
+}
 
 function selectionFromDocument(document: Document): SelectionToolbarSelection | undefined {
   const selection = document.getSelection();

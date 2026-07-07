@@ -79,14 +79,24 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   );
   const input = inputProp ?? uncontrolledInput;
   const attachments = attachmentsProp ?? uncontrolledAttachments;
-  const quote = normalizeQuote(quoteProp ?? uncontrolledQuote);
+  const rawQuote = quoteProp ?? uncontrolledQuote;
+  const rawQuoteMessageId = rawQuote?.messageId;
+  const rawQuoteText = rawQuote?.text;
+  const quote = useMemo(
+    () =>
+      rawQuoteMessageId === undefined || rawQuoteText === undefined
+        ? undefined
+        : { messageId: rawQuoteMessageId, text: rawQuoteText },
+    [rawQuoteMessageId, rawQuoteText],
+  );
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const inputControlled = inputProp !== undefined;
   const attachmentsControlled = attachmentsProp !== undefined;
   const quoteControlled = quoteProp !== undefined;
-  const canSubmit =
-    (input.trim().length > 0 || attachments.length > 0) && chat.status !== "streaming";
+  const hasMessageContent =
+    input.trim().length > 0 || attachments.length > 0 || quote !== undefined;
+  const canSubmit = hasMessageContent && chat.status !== "streaming";
   const canStop = chat.status === "streaming";
 
   const setInput = useCallback(
@@ -156,7 +166,10 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
 
   const submit = useCallback(async () => {
     const prompt = input;
-    if ((prompt.trim().length === 0 && attachments.length === 0) || chat.status === "streaming") {
+    if (
+      (prompt.trim().length === 0 && attachments.length === 0 && quote === undefined) ||
+      chat.status === "streaming"
+    ) {
       return;
     }
     if (submitMessage !== undefined) {
@@ -459,6 +472,9 @@ function promptWithQuote(prompt: string, quote: ComposerQuote): string {
     .split(/\r?\n/)
     .map((line) => `> ${line}`)
     .join("\n");
+  if (prompt.trim().length === 0) {
+    return quotedText;
+  }
   return `${quotedText}\n\n${prompt}`;
 }
 

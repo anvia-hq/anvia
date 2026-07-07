@@ -44,6 +44,30 @@ describe("Chat primitives", () => {
     expect(sendMessage).toHaveBeenCalledWith("hello");
   });
 
+  it("submits quote-only composer messages", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const quote = { text: "Quoted text", messageId: "assistant_1" };
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root defaultQuote={quote}>
+          <Composer.Quote />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "> Quoted text",
+        metadata: { quote },
+      });
+    });
+    expect(screen.queryByText("Quoted text")).toBeNull();
+  });
+
   it("renders thread defaults and updates scroll state", () => {
     const scrollTo = vi.fn();
     const onScroll = vi.fn();

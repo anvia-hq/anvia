@@ -63,6 +63,23 @@ interface PackageFamilyDefinition {
   packages: PackageDefinition[];
 }
 
+interface PackageManifest {
+  name?: string;
+  version?: string;
+}
+
+const packageManifestsBySourceDirectory = new Map(
+  Object.entries(
+    import.meta.glob<PackageManifest>("../../../../packages/*/package.json", {
+      eager: true,
+      import: "default",
+    }),
+  ).map(([path, manifest]) => [
+    path.replace("../../../../", "").replace(/\/package\.json$/, ""),
+    manifest,
+  ]),
+);
+
 export const packageDocPages: PackageDocPage[] = [
   {
     id: "overview",
@@ -292,7 +309,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/core",
         "core",
-        "0.12.3",
         "packages/core",
         "Core runtime primitives for context-aware Anvia agents.",
         true,
@@ -300,7 +316,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/server",
         "server",
-        "0.4.10",
         "packages/server",
         "Server-side event stream helpers for Anvia applications.",
         true,
@@ -308,7 +323,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/react",
         "react",
-        "0.7.11",
         "packages/react",
         "React hooks and client transports for Anvia applications.",
         true,
@@ -316,7 +330,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/react-ui",
         "react-ui",
-        "0.2.0",
         "packages/react-ui",
         "Composable React UI primitives for Anvia chat and completion experiences.",
         true,
@@ -324,7 +337,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/logger",
         "logger",
-        "0.3.10",
         "packages/logger",
         "Structured logger adapters for Anvia.",
         true,
@@ -340,7 +352,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/openai",
         "openai",
-        "0.3.16",
         "packages/provider-openai",
         "OpenAI provider adapter for Anvia.",
         true,
@@ -348,7 +359,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/anthropic",
         "anthropic",
-        "0.3.14",
         "packages/provider-anthropic",
         "Anthropic provider adapter for Anvia.",
         true,
@@ -356,7 +366,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/gemini",
         "gemini",
-        "0.2.10",
         "packages/provider-gemini",
         "Gemini provider adapter for Anvia.",
         true,
@@ -364,7 +373,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/mistral",
         "mistral",
-        "0.3.4",
         "packages/provider-mistral",
         "Mistral provider adapter for Anvia.",
         true,
@@ -380,7 +388,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/fastembed",
         "fastembed",
-        "0.2.11",
         "packages/embedding-fastembed",
         "FastEmbed embedding model adapter for Anvia.",
         true,
@@ -388,7 +395,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/transformers",
         "transformers",
-        "0.2.11",
         "packages/embedding-transformers",
         "Transformers.js embedding model adapter for Anvia.",
         true,
@@ -404,7 +410,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/qdrant",
         "qdrant",
-        "0.2.10",
         "packages/vector-qdrant",
         "Qdrant vector store adapter for Anvia.",
         true,
@@ -412,7 +417,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/pinecone",
         "pinecone",
-        "0.3.6",
         "packages/vector-pinecone",
         "Pinecone vector store adapter for Anvia.",
         false,
@@ -420,7 +424,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/pgvector",
         "pgvector",
-        "0.2.11",
         "packages/vector-pgvector",
         "Postgres pgvector store adapter for Anvia.",
         true,
@@ -428,7 +431,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/redis",
         "redis",
-        "0.2.5",
         "packages/vector-redis",
         "Redis vector store adapter for Anvia.",
         false,
@@ -436,7 +438,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/chroma",
         "chroma",
-        "0.2.11",
         "packages/vector-chroma",
         "ChromaDB vector store adapter for Anvia.",
         true,
@@ -444,7 +445,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/lancedb",
         "lancedb",
-        "0.2.4",
         "packages/vector-lancedb",
         "LanceDB vector store adapter for Anvia.",
         false,
@@ -452,7 +452,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/milvus",
         "milvus",
-        "0.3.6",
         "packages/vector-milvus",
         "Milvus vector store adapter for Anvia.",
         false,
@@ -460,7 +459,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/weaviate",
         "weaviate",
-        "0.2.3",
         "packages/vector-weaviate",
         "Weaviate vector store adapter for Anvia.",
         false,
@@ -476,7 +474,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/langfuse",
         "langfuse",
-        "0.3.5",
         "packages/observability-langfuse",
         "Langfuse tracing adapter for Anvia.",
         true,
@@ -484,7 +481,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/otel",
         "otel",
-        "0.2.11",
         "packages/observability-otel",
         "OpenTelemetry tracing adapter for Anvia.",
         true,
@@ -500,7 +496,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/sandbox",
         "sandbox",
-        "0.3.5",
         "packages/tool-sandbox",
         "Sandboxed workspace tools for Anvia agents.",
         false,
@@ -508,7 +503,6 @@ const packageDefinitions: PackageFamilyDefinition[] = [
       definePackage(
         "@anvia/studio",
         "studio",
-        "0.7.20",
         "packages/tool-studio",
         "Studio UI and HTTP runtime for Anvia agents.",
         true,
@@ -599,15 +593,24 @@ function defineReferencePage(
 function definePackage(
   name: string,
   slug: string,
-  version: string,
   sourceDirectory: string,
   description: string,
   hasReadme: boolean,
 ): PackageDefinition {
+  const manifest = packageManifestsBySourceDirectory.get(sourceDirectory);
+
+  if (!manifest) {
+    throw new Error(`Missing package manifest for ${sourceDirectory}.`);
+  }
+
+  if (manifest.name !== name || typeof manifest.version !== "string") {
+    throw new Error(`Invalid package manifest metadata for ${sourceDirectory}.`);
+  }
+
   return {
     name,
     slug,
-    version,
+    version: manifest.version,
     sourceDirectory,
     description,
     readmePath: hasReadme ? `${sourceDirectory}/README.md` : undefined,

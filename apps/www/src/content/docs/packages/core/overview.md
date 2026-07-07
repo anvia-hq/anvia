@@ -1,6 +1,6 @@
 ---
 title: "@anvia/core: Overview"
-description: "Core runtime primitives for agents, tools, completions, extraction, pipelines, retrieval, streaming, MCP, skills, memory, and observability."
+description: "Small, explicit, embeddable runtime contracts for agents, tools, completions, extraction, pipelines, retrieval, streaming, MCP, skills, memory, and observability."
 section: packages
 sidebar:
   group: "@anvia/core"
@@ -9,15 +9,23 @@ sidebar:
 ---
 ## What it is
 
-Core runtime primitives for agents, tools, completions, extraction, pipelines, retrieval, streaming, MCP, skills, memory, and observability.
+Small, explicit, embeddable runtime contracts for agents, tools, completions, extraction,
+pipelines, retrieval, streaming, MCP, skills, memory, and observability.
 
-Use @anvia/core when the application needs provider-neutral runtime primitives before choosing any specific model provider. It is one of the runtime packages that sit closest to application request handling.
+Use @anvia/core when the application needs provider-neutral runtime behavior without
+handing product architecture to the runtime. The app creates provider clients and model
+objects, memory stores, service-backed tools, vector indexes, observers, and transports.
+Core receives those objects and runs the model/tool loop around them.
 
 ## Where it fits
 
 `@anvia/core` is the center of the package set. Provider packages supply models, storage packages supply indexes, and app packages add transport or UI around the core runtime.
 
-The package owns provider-neutral runtime contracts and orchestration primitives. Keep provider credentials, product data access, persistence policy, and deployment wiring in application code.
+The package owns provider-neutral runtime contracts and orchestration primitives. Keep
+provider credentials, product data access, memory and persistence policy, observability
+backends, and deployment wiring in application code. In practice, Anvia should be
+dependency-injection oriented: construct the dependencies your product owns, then pass
+them into agents, prompt requests, tools, runners, or adapters.
 
 ## Public surface
 

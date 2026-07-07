@@ -25,6 +25,19 @@ The provider client owns credentials, base URLs, headers, and SDK setup. A model
 
 Create these objects in startup code, factories, tests, jobs, or request handlers. Anvia does not require a global registry, and you should not need one to make agents discoverable inside your app.
 
+## Dependency Injection Shape
+
+Anvia's runtime boundaries are meant to be dependency-injection friendly. Provider clients
+become model objects before core sees them. Memory is a `MemoryStore` passed into an
+agent. Retrieval is a vector index passed into dynamic context or a tool. Observability is
+an observer passed into `AgentBuilder.observe(...)`. Product services are called from
+tools or runners, not hidden behind prompt text.
+
+This keeps framework ownership narrow. Anvia owns the agent loop, tool execution,
+streaming events, hooks, middleware, approvals, and runtime contracts. Your application
+owns the concrete services, storage systems, permissions, transports, deployment, and
+product response shape.
+
 ## Server, Worker, And Browser Boundaries
 
 Keep provider clients, API keys, file loaders, PDF loaders, vector-store clients, and side-effect tools on the server or in workers.

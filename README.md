@@ -14,12 +14,15 @@
 
 Anvia is a TypeScript runtime for agents, tools, structured extraction, retrieval, pipelines, and observability inside your application code.
 
-It gives teams more structure than raw model calls without forcing a heavyweight orchestration stack. You bring the product, data, permissions, persistence, deployment, and side effects. Anvia gives you typed AI workflow primitives that fit around them.
+It gives teams more structure than raw model calls without forcing a heavyweight orchestration stack. You bring the product, data, permissions, persistence, deployment, and side effects. Anvia gives you small, explicit AI runtime contracts that fit around them.
+
+The core design is dependency-injection oriented: your app creates provider models, typed tools, memory stores, vector indexes, observers, services, and transports, then passes the relevant objects into Anvia agents, runners, or adapters. Anvia runs the model/tool loop; your application keeps ownership of product architecture.
 
 ## Why Anvia
 
 - Provider-neutral clients for OpenAI-compatible APIs, Anthropic, Gemini, and Mistral.
 - Agent and tool APIs that keep application behavior explicit and typed.
+- Embeddable runtime contracts that keep provider, memory, observability, storage, and service choices in application code.
 - Structured extraction and output schemas for turning model responses into usable data.
 - Pipeline primitives for composing functions, agents, extractors, batches, and parallel branches.
 - Retrieval adapters for in-memory search, local embeddings, ChromaDB, Qdrant, and pgvector.

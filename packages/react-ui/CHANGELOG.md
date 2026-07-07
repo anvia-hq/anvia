@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 0.3.0
+
+### Minor Changes
+
+- 0bdb305: Add Image, SelectionToolbar, and ThreadList primitive namespaces. Composer now supports controlled quote state for selection quoting, and message roots expose stable message id attributes for selection-aware UI.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -130,9 +130,9 @@ describe("SelectionToolbar primitives", () => {
     selection?.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(screen.queryByText("Quote")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText("Quote")).toBeNull();
+    });
   });
 
   it("bridges quoted selections into controlled composer quote state", async () => {

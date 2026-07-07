@@ -127,24 +127,32 @@ const ThreadListItems = forwardRef<HTMLDivElement, ThreadListItemsProps>(functio
   );
 });
 
-const ThreadListEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
-  function ThreadListEmpty(props, ref) {
-    const threadList = useThreadList();
-    if (threadList.threads.some((thread) => thread.archived !== true)) {
-      return null;
-    }
+type ThreadListEmptyProps = PrimitiveProps<"div"> & {
+  archived?: boolean;
+};
 
-    return renderPrimitive(
-      "div",
-      {
-        ...props,
-        children: props.children ?? "No conversations.",
-        "data-anvia-thread-list-empty": "",
-      } as PrimitiveProps<"div">,
-      ref,
-    );
-  },
-);
+const ThreadListEmpty = forwardRef<HTMLDivElement, ThreadListEmptyProps>(function ThreadListEmpty(
+  { archived = false, ...props },
+  ref,
+) {
+  const threadList = useThreadList();
+  const hasVisibleThreads = threadList.threads.some(
+    (thread) => Boolean(thread.archived) === archived,
+  );
+  if (hasVisibleThreads) {
+    return null;
+  }
+
+  return renderPrimitive(
+    "div",
+    {
+      ...props,
+      children: props.children ?? "No conversations.",
+      "data-anvia-thread-list-empty": "",
+    } as PrimitiveProps<"div">,
+    ref,
+  );
+});
 
 const ThreadListItemRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadListItemRoot(props, ref) {
@@ -217,11 +225,25 @@ const ThreadListItemTitle = forwardRef<HTMLSpanElement, ThreadListItemTitleProps
   },
 );
 
-const ThreadListItemArchive = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
-  function ThreadListItemArchive({ onClick, ...props }, ref) {
+type ThreadListItemActionKey = "archiveThread" | "unarchiveThread" | "deleteThread";
+type ThreadListItemActionDataAttribute =
+  | "data-anvia-thread-list-archive"
+  | "data-anvia-thread-list-unarchive"
+  | "data-anvia-thread-list-delete";
+
+function createThreadListItemAction(
+  action: ThreadListItemActionKey,
+  defaultLabel: string,
+  dataAttribute: ThreadListItemActionDataAttribute,
+) {
+  return forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(function ThreadListItemAction(
+    { onClick, ...props },
+    ref,
+  ) {
     const threadList = useThreadList();
     const { thread } = useThreadListItem();
-    const disabled = props.disabled ?? threadList.archiveThread === undefined;
+    const actionHandler = threadList[action];
+    const disabled = props.disabled ?? actionHandler === undefined;
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -229,91 +251,42 @@ const ThreadListItemArchive = forwardRef<HTMLButtonElement, PrimitiveProps<"butt
         if (event.defaultPrevented || disabled) {
           return;
         }
-        void threadList.archiveThread?.(thread.id);
+        focusAfterThreadItemRemoval(event.currentTarget);
+        void actionHandler?.(thread.id);
       },
-      [disabled, onClick, thread.id, threadList],
+      [actionHandler, disabled, onClick, thread.id],
     );
 
     return renderPrimitive(
       "button",
       {
         ...props,
-        children: props.children ?? "Archive",
+        children: props.children ?? defaultLabel,
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-thread-list-archive": "",
+        [dataAttribute]: "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
     );
-  },
+  });
+}
+
+const ThreadListItemArchive = createThreadListItemAction(
+  "archiveThread",
+  "Archive",
+  "data-anvia-thread-list-archive",
 );
-
-const ThreadListItemUnarchive = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
-  function ThreadListItemUnarchive({ onClick, ...props }, ref) {
-    const threadList = useThreadList();
-    const { thread } = useThreadListItem();
-    const disabled = props.disabled ?? threadList.unarchiveThread === undefined;
-
-    const handleClick = useCallback(
-      (event: MouseEvent<HTMLButtonElement>) => {
-        onClick?.(event);
-        if (event.defaultPrevented || disabled) {
-          return;
-        }
-        void threadList.unarchiveThread?.(thread.id);
-      },
-      [disabled, onClick, thread.id, threadList],
-    );
-
-    return renderPrimitive(
-      "button",
-      {
-        ...props,
-        children: props.children ?? "Unarchive",
-        disabled,
-        onClick: handleClick,
-        type: props.type ?? "button",
-        "data-anvia-thread-list-unarchive": "",
-        "data-state": disabled ? "disabled" : "enabled",
-      } as PrimitiveProps<"button">,
-      ref,
-    );
-  },
+const ThreadListItemUnarchive = createThreadListItemAction(
+  "unarchiveThread",
+  "Unarchive",
+  "data-anvia-thread-list-unarchive",
 );
-
-const ThreadListItemDelete = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
-  function ThreadListItemDelete({ onClick, ...props }, ref) {
-    const threadList = useThreadList();
-    const { thread } = useThreadListItem();
-    const disabled = props.disabled ?? threadList.deleteThread === undefined;
-
-    const handleClick = useCallback(
-      (event: MouseEvent<HTMLButtonElement>) => {
-        onClick?.(event);
-        if (event.defaultPrevented || disabled) {
-          return;
-        }
-        void threadList.deleteThread?.(thread.id);
-      },
-      [disabled, onClick, thread.id, threadList],
-    );
-
-    return renderPrimitive(
-      "button",
-      {
-        ...props,
-        children: props.children ?? "Delete",
-        disabled,
-        onClick: handleClick,
-        type: props.type ?? "button",
-        "data-anvia-thread-list-delete": "",
-        "data-state": disabled ? "disabled" : "enabled",
-      } as PrimitiveProps<"button">,
-      ref,
-    );
-  },
+const ThreadListItemDelete = createThreadListItemAction(
+  "deleteThread",
+  "Delete",
+  "data-anvia-thread-list-delete",
 );
 
 function DefaultThreadItem(): ReactNode {
@@ -338,6 +311,39 @@ function nextTriggerIndex(key: string, currentIndex: number, triggerCount: numbe
     return (currentIndex - 1 + triggerCount) % triggerCount;
   }
   return (currentIndex + 1) % triggerCount;
+}
+
+function focusAfterThreadItemRemoval(actionButton: HTMLButtonElement): void {
+  const root = actionButton.closest<HTMLElement>("[data-anvia-thread-list]");
+  const currentItem = actionButton.closest<HTMLElement>("[data-anvia-thread-list-item]");
+  if (
+    root === null ||
+    currentItem === null ||
+    !currentItem.contains(root.ownerDocument.activeElement)
+  ) {
+    return;
+  }
+
+  const triggers = Array.from(
+    root.querySelectorAll<HTMLButtonElement>("[data-anvia-thread-list-trigger]:not(:disabled)"),
+  );
+  const currentTrigger = currentItem.querySelector<HTMLButtonElement>(
+    "[data-anvia-thread-list-trigger]",
+  );
+  const currentIndex = currentTrigger === null ? -1 : triggers.indexOf(currentTrigger);
+  const remainingTriggers = triggers.filter((trigger) => !currentItem.contains(trigger));
+  const fallback = root.querySelector<HTMLButtonElement>(
+    "[data-anvia-thread-list-new]:not(:disabled)",
+  );
+  const focusTarget =
+    remainingTriggers[Math.min(Math.max(currentIndex, 0), remainingTriggers.length - 1)] ??
+    fallback ??
+    root;
+
+  if (focusTarget === root && !root.hasAttribute("tabindex")) {
+    root.tabIndex = -1;
+  }
+  focusTarget.focus();
 }
 
 export {

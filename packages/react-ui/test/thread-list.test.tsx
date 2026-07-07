@@ -89,6 +89,26 @@ describe("ThreadList primitives", () => {
     expect(screen.getByText("No chats")).toBeTruthy();
   });
 
+  it("scopes empty state to the requested archived collection", () => {
+    render(
+      <ThreadListProvider
+        controller={createThreadListController({
+          threads: [{ id: "thread_1", title: "Archived", archived: true }],
+        })}
+      >
+        <ThreadList.Root>
+          <ThreadList.Items data-testid="items" keepMounted />
+          <ThreadList.Empty>No active chats</ThreadList.Empty>
+          <ThreadList.Empty archived>No archived chats</ThreadList.Empty>
+        </ThreadList.Root>
+      </ThreadListProvider>,
+    );
+
+    expect(screen.getByTestId("items").getAttribute("data-empty")).toBe("");
+    expect(screen.getByText("No active chats")).toBeTruthy();
+    expect(screen.queryByText("No archived chats")).toBeNull();
+  });
+
   it("moves focus through triggers with keyboard navigation", () => {
     render(
       <ThreadListProvider controller={createThreadListController()}>
@@ -110,6 +130,32 @@ describe("ThreadList primitives", () => {
 
     fireEvent.keyDown(root, { key: "ArrowUp" });
     expect(document.activeElement).toBe(triggers[0]);
+  });
+
+  it("moves focus before item actions remove the current item", () => {
+    const archiveThread = vi.fn();
+
+    render(
+      <ThreadListProvider controller={createThreadListController({ archiveThread })}>
+        <ThreadList.Root>
+          <ThreadList.Items>
+            <ThreadListItem.Root>
+              <ThreadListItem.Trigger>
+                <ThreadListItem.Title />
+              </ThreadListItem.Trigger>
+              <ThreadListItem.Archive />
+            </ThreadListItem.Root>
+          </ThreadList.Items>
+        </ThreadList.Root>
+      </ThreadListProvider>,
+    );
+
+    const firstArchive = screen.getAllByRole("button", { name: "Archive" })[0] as HTMLButtonElement;
+    firstArchive.focus();
+    fireEvent.click(firstArchive);
+
+    expect(archiveThread).toHaveBeenCalledWith("thread_1");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Second" }));
   });
 
   it("disables item actions when controller methods are absent", () => {

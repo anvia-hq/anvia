@@ -6,6 +6,8 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -16,7 +18,7 @@ import {
   useImage,
   useOptionalAttachment,
 } from "../contexts";
-import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type ImageRootChildren = ReactNode | ((image: ImageContextValue) => ReactNode);
 type ImageRenderWhen = "image" | "always";
@@ -41,19 +43,22 @@ const ImageRoot = forwardRef<HTMLElement, ImageRootProps>(function ImageRoot(
 
   const src = imageSource(attachment);
   const isImage = isImageAttachment(attachment);
+  const value = useMemo<ImageContextValue>(
+    () => ({
+      attachment,
+      ...(src === undefined ? {} : { src }),
+      ...(attachment.name === undefined ? {} : { name: attachment.name }),
+      ...(attachment.mediaType === undefined ? {} : { mediaType: attachment.mediaType }),
+      isImage,
+      zoomOpen,
+      setZoomOpen,
+    }),
+    [attachment, attachment.mediaType, attachment.name, isImage, src, zoomOpen],
+  );
   if (!isImage && renderWhen !== "always") {
     return null;
   }
 
-  const value: ImageContextValue = {
-    attachment,
-    ...(src === undefined ? {} : { src }),
-    ...(attachment.name === undefined ? {} : { name: attachment.name }),
-    ...(attachment.mediaType === undefined ? {} : { mediaType: attachment.mediaType }),
-    isImage,
-    zoomOpen,
-    setZoomOpen,
-  };
   const renderedChildren = typeof children === "function" ? children(value) : children;
 
   return (
@@ -213,12 +218,16 @@ const ImageDownload = forwardRef<HTMLButtonElement, ImageDownloadProps>(function
   const disabled = props.disabled ?? image.src === undefined;
 
   const handleClick = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
+    async (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
       if (event.defaultPrevented || disabled || image.src === undefined) {
         return;
       }
-      downloadImage(image, filename);
+      try {
+        await downloadImage(image, filename);
+      } catch {
+        return;
+      }
     },
     [disabled, filename, image, onClick],
   );
@@ -278,9 +287,15 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
   function ImageZoomOverlay({ container, onClick, onKeyDown, ...props }, ref) {
     const image = useImage();
     const portalContainer = container ?? globalThis.document?.body;
+    const overlayRef = useRef<HTMLDivElement | null>(null);
+    const composedRef = useMemo(() => composeRefs(overlayRef, ref), [ref]);
 
     useEffect(() => {
       if (!image.zoomOpen) {
+        return;
+      }
+      const document = globalThis.document;
+      if (document === undefined) {
         return;
       }
       const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -288,11 +303,25 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
           image.setZoomOpen(false);
         }
       };
-      globalThis.document?.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("keydown", handleKeyDown);
       return () => {
-        globalThis.document?.removeEventListener("keydown", handleKeyDown);
+        document.removeEventListener("keydown", handleKeyDown);
       };
-    }, [image]);
+    }, [image.setZoomOpen, image.zoomOpen]);
+
+    useEffect(() => {
+      if (!image.zoomOpen) {
+        return;
+      }
+      const activeElement = globalThis.document?.activeElement;
+      const previousFocus = activeElement instanceof HTMLElement ? activeElement : undefined;
+      focusOverlay(overlayRef.current);
+      return () => {
+        if (previousFocus?.isConnected === true) {
+          previousFocus.focus();
+        }
+      };
+    }, [image.zoomOpen]);
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLDivElement>) => {
@@ -307,8 +336,15 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
     const handleKeyDown = useCallback(
       (event: KeyboardEvent<HTMLDivElement>) => {
         onKeyDown?.(event);
-        if (!event.defaultPrevented && event.key === "Escape") {
+        if (event.defaultPrevented) {
+          return;
+        }
+        if (event.key === "Escape") {
           image.setZoomOpen(false);
+          return;
+        }
+        if (event.key === "Tab") {
+          trapOverlayFocus(event, overlayRef.current);
         }
       },
       [image, onKeyDown],
@@ -325,11 +361,12 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
         children: <img alt={image.name ?? "Image"} data-anvia-image-zoom-img="" src={image.src} />,
         onClick: handleClick,
         onKeyDown: handleKeyDown,
+        "aria-modal": props["aria-modal"] ?? true,
         role: props.role ?? "dialog",
         tabIndex: props.tabIndex ?? -1,
         "data-anvia-image-zoom-overlay": "",
       } as PrimitiveProps<"div">,
-      ref,
+      composedRef,
     );
 
     return createPortal(overlay, portalContainer);
@@ -391,23 +428,88 @@ function base64ToBlob(data: string, mediaType: string): Blob {
   return new Blob([bytes], { type: mediaType });
 }
 
-function downloadImage(image: ImageContextValue, filename: string | undefined): void {
+async function downloadImage(
+  image: ImageContextValue,
+  filename: string | undefined,
+): Promise<void> {
   const document = globalThis.document;
-  if (image.src === undefined || document === undefined) {
+  const url = globalThis.URL;
+  if (image.src === undefined || document === undefined || url?.createObjectURL === undefined) {
     return;
   }
+  const blobUrl = url.createObjectURL(await imageBlob(image));
   const link = document.createElement("a");
-  link.href = image.src;
-  link.download = filename ?? image.name ?? defaultImageFilename(image);
-  link.rel = "noopener";
-  document.body.append(link);
-  link.click();
-  link.remove();
+  try {
+    link.href = blobUrl;
+    link.download = filename ?? image.name ?? defaultImageFilename(image);
+    link.rel = "noopener";
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    url.revokeObjectURL(blobUrl);
+  }
 }
 
 function defaultImageFilename(image: ImageContextValue): string {
   const extension = image.mediaType?.split("/")[1]?.split(";")[0] ?? "png";
   return `image.${extension}`;
+}
+
+function focusOverlay(overlay: HTMLDivElement | null): void {
+  if (overlay === null) {
+    return;
+  }
+  const [firstFocusable] = focusableElements(overlay);
+  (firstFocusable ?? overlay).focus();
+}
+
+function trapOverlayFocus(
+  event: KeyboardEvent<HTMLDivElement>,
+  overlay: HTMLDivElement | null,
+): void {
+  if (overlay === null) {
+    return;
+  }
+  const focusable = focusableElements(overlay);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    overlay.focus();
+    return;
+  }
+
+  const firstFocusable = focusable[0];
+  const lastFocusable = focusable[focusable.length - 1];
+  const activeElement = globalThis.document?.activeElement;
+  if (event.shiftKey && activeElement === firstFocusable) {
+    event.preventDefault();
+    lastFocusable?.focus();
+    return;
+  }
+  if (!event.shiftKey && activeElement === lastFocusable) {
+    event.preventDefault();
+    firstFocusable?.focus();
+    return;
+  }
+  if (activeElement instanceof Node && !overlay.contains(activeElement)) {
+    event.preventDefault();
+    (event.shiftKey ? lastFocusable : firstFocusable)?.focus();
+  }
+}
+
+function focusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      [
+        "a[href]",
+        "button:not(:disabled)",
+        "input:not(:disabled)",
+        "select:not(:disabled)",
+        "textarea:not(:disabled)",
+        "[tabindex]",
+      ].join(","),
+    ),
+  ).filter((element) => element.tabIndex >= 0 && element.getAttribute("aria-hidden") !== "true");
 }
 
 export {

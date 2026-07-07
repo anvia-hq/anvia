@@ -23,6 +23,7 @@ import { SelectionToolbar } from "../src/selection-toolbar";
 import {
   ChatProvider as SharedChatProvider,
   CompletionProvider as SharedCompletionProvider,
+  ThreadListProvider as SharedThreadListProvider,
 } from "../src/shared";
 import { ThreadList, ThreadListItem, ThreadListProvider } from "../src/thread-list";
 
@@ -44,7 +45,7 @@ describe("public entrypoints", () => {
   it("keeps shared provider exports aligned with domain barrels", () => {
     expect(SharedChatProvider).toBe(ChatProvider);
     expect(SharedCompletionProvider).toBe(CompletionProvider);
-    expect(ThreadListProvider).toBeTypeOf("function");
+    expect(SharedThreadListProvider).toBe(ThreadListProvider);
   });
 
   it("exports public helper types from domain barrels", () => {

@@ -125,11 +125,17 @@ const triggers: ComposerTriggerDefinition[] = [
   },
 ];
 
-<Composer.Root triggers={triggers}>
-  <Composer.Input placeholder="Try @ or /..." />
-  <Composer.TriggerMenu />
-  <Composer.Submit />
-</Composer.Root>;
+const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+
+return (
+  <ChatProvider controller={chat}>
+    <Composer.Root triggers={triggers}>
+      <Composer.Input placeholder="Try @ or /..." />
+      <Composer.TriggerMenu />
+      <Composer.Submit />
+    </Composer.Root>
+  </ChatProvider>
+);
 ```
 
 Selected trigger values are submitted as `metadata.composer.entities`. Use

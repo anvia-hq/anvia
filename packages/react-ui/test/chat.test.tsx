@@ -421,6 +421,22 @@ describe("Chat primitives", () => {
     });
   });
 
+  it("keeps trigger menu mounted with render children while inactive", () => {
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root triggers={[peopleTrigger]}>
+          <Composer.TriggerMenu keepMounted data-testid="trigger-menu">
+            {() => <span>Active trigger</span>}
+          </Composer.TriggerMenu>
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    const menu = screen.getByTestId("trigger-menu");
+    expect(menu.getAttribute("data-empty")).toBe("");
+    expect(menu.textContent).toBe("");
+  });
+
   it("supports custom composer submit from form submit and Enter", async () => {
     const sendMessage = vi.fn(async () => {});
     const attachment: UIAttachment = {

@@ -1,5 +1,14 @@
 # @anvia/react-ui
 
+## 0.4.0
+
+### Minor Changes
+
+- 3898f6d: Add a Tiptap-backed rich `Composer.Input` with composable trigger/entity metadata support.
+
+  `Composer.Input` now renders a rich editor instead of a native textarea. Use
+  `Composer.TextareaInput` for the previous textarea behavior.
+
 ## 0.3.0
 
 ### Minor Changes

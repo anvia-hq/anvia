@@ -83,6 +83,7 @@ Application code still owns:
 - [Server routes](/docs/react-ui/server-routes): understand the route contract.
 - [Request shape](/docs/react-ui/request-shape): add model selectors and metadata safely.
 - [Chat and composer](/docs/react-ui/chat): learn the thread and prompt primitives.
+- [Composer triggers](/docs/react-ui/composer-triggers): add mentions, slash commands, and variables.
 - [Messages](/docs/react-ui/messages): customize message rows and parts.
 - [Lifecycle and state](/docs/react-ui/lifecycle-and-state): handle stop, errors, reset, and retry.
 
@@ -90,6 +91,7 @@ Application code still owns:
 
 - [Full chat surface](/docs/react-ui/examples/chat-surface)
 - [Composer attachments](/docs/react-ui/examples/composer-attachments)
+- [Composer triggers](/docs/react-ui/examples/composer-triggers)
 - [Message rendering](/docs/react-ui/examples/message-rendering)
 - [Images, selection, and thread list](/docs/react-ui/examples/image-selection-thread-list)
 - [Tool and human input](/docs/react-ui/examples/tool-human-input)
@@ -109,6 +111,7 @@ Application code still owns:
 - [Request shape](/docs/react-ui/request-shape)
 - [Usage patterns](/docs/react-ui/usage-patterns)
 - [Chat and composer](/docs/react-ui/chat)
+- [Composer triggers](/docs/react-ui/composer-triggers)
 - [Messages](/docs/react-ui/messages)
 - [Styling](/docs/react-ui/styling)
 - [Tool calls](/docs/react-ui/tool-calls)

@@ -44,12 +44,22 @@ const Composer: {
   Quote: React.ForwardRefExoticComponent<...>;
   ClearQuote: React.ForwardRefExoticComponent<...>;
   Input: React.ForwardRefExoticComponent<
+    React.HTMLAttributes<HTMLDivElement> & {
+      autoResize?: boolean;
+      maxRows?: number;
+      minRows?: number;
+      placeholder?: string;
+    }
+  >;
+  TextareaInput: React.ForwardRefExoticComponent<
     React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
       autoResize?: boolean;
       maxRows?: number;
       minRows?: number;
     }
   >;
+  TriggerMenu: React.ForwardRefExoticComponent<...>;
+  TriggerItem: React.ForwardRefExoticComponent<...>;
   Attachments: React.ForwardRefExoticComponent<...>;
   AttachmentInput: React.ForwardRefExoticComponent<...>;
   AddAttachment: React.ForwardRefExoticComponent<...>;
@@ -225,9 +235,14 @@ type ComposerContextValue = {
   addAttachment(attachment: File | CreateUIAttachment): Promise<void>;
   removeAttachment(id: string): void;
   clearAttachments(): void;
+  entities: ComposerEntity[];
+  setEntities(update: ComposerEntitiesUpdate): void;
   quote?: ComposerQuote;
   setQuote(quote: ComposerQuote | undefined): void;
   clearQuote(): void;
+  triggers: ComposerTriggerDefinition[];
+  activeTrigger?: ComposerTriggerState;
+  setActiveTrigger(update: ComposerTriggerStateUpdate): void;
   submit(): Promise<void>;
   stop(): void;
   status: ChatController["status"];
@@ -255,9 +270,89 @@ type ComposerAttachmentsUpdate =
   | UIAttachment[]
   | ((attachments: UIAttachment[]) => UIAttachment[]);
 
+type ComposerEntitiesUpdate =
+  | ComposerEntity[]
+  | ((entities: ComposerEntity[]) => ComposerEntity[]);
+
+type ComposerEntityData =
+  | string
+  | number
+  | boolean
+  | null
+  | ComposerEntityData[]
+  | { [key: string]: ComposerEntityData | undefined };
+
+type ComposerTriggerItem = {
+  id: string;
+  label: string;
+  text?: string;
+  detail?: React.ReactNode;
+  data?: ComposerEntityData;
+  disabled?: boolean;
+};
+
+type ComposerTriggerItemsArgs = {
+  trigger: ComposerTriggerDefinition;
+  query: string;
+  input: string;
+  entities: ComposerEntity[];
+  signal: AbortSignal;
+};
+
+type ComposerTriggerItems =
+  | ComposerTriggerItem[]
+  | ((args: ComposerTriggerItemsArgs) => ComposerTriggerItem[] | Promise<ComposerTriggerItem[]>);
+
+type ComposerTriggerDefinition = {
+  id: string;
+  char: string;
+  items: ComposerTriggerItems;
+  minQueryLength?: number;
+  allowedPrefixes?: string[] | null;
+  startOfLine?: boolean;
+  allowSpaces?: boolean;
+};
+
+type ComposerEntity = {
+  id: string;
+  triggerId: string;
+  trigger: string;
+  label: string;
+  text: string;
+  range: {
+    from: number;
+    to: number;
+  };
+  data?: ComposerEntityData;
+};
+
+type ComposerTriggerState = {
+  trigger: ComposerTriggerDefinition;
+  query: string;
+  items: ComposerTriggerItem[];
+  loading: boolean;
+  selectedIndex: number;
+  rect?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+    width: number;
+    height: number;
+  };
+  selectItem(item: ComposerTriggerItem): void;
+  setSelectedIndex(index: number): void;
+};
+
+type ComposerTriggerStateUpdate =
+  | ComposerTriggerState
+  | undefined
+  | ((state: ComposerTriggerState | undefined) => ComposerTriggerState | undefined);
+
 type ComposerSubmitMessageArgs<TEvent = unknown> = {
   input: string;
   attachments: UIAttachment[];
+  entities: ComposerEntity[];
   chat: ChatController<TEvent>;
   quote?: ComposerQuote;
   clear(): void;
@@ -268,10 +363,12 @@ type ComposerSubmitMessage<TEvent = unknown> = (
 ) => Promise<void> | void;
 ```
 
-`Composer.Root` also accepts `defaultInput`, `defaultAttachments`, `defaultQuote`, `input`,
-`onInputChange`, `attachments`, `onAttachmentsChange`, `quote`, and `onQuoteChange` for
-uncontrolled or controlled composer state. Use `submitMessage` to replace the default send behavior
-when an app needs custom message payloads or metadata.
+`Composer.Root` also accepts `defaultInput`, `defaultAttachments`, `defaultEntities`,
+`defaultQuote`, `input`, `onInputChange`, `attachments`, `onAttachmentsChange`, `entities`,
+`onEntitiesChange`, `quote`, `onQuoteChange`, and `triggers` for uncontrolled or controlled
+composer state. Use `submitMessage` to replace the default send behavior when an app needs custom
+message payloads or metadata. For trigger usage, see
+[Composer triggers](/docs/react-ui/composer-triggers).
 
 ## Context hooks
 

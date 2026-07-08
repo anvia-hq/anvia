@@ -16,6 +16,11 @@ import {
   CompletionProvider,
   Thread,
   Composer,
+  type ComposerEntity,
+  type ComposerEntityData,
+  type ComposerTriggerDefinition,
+  type ComposerTriggerItem,
+  type ComposerTriggerItemsArgs,
   Message,
   Attachment,
   Image,
@@ -91,10 +96,13 @@ Composer primitives must be rendered inside `ChatProvider`.
 
 | Primitive | Element | Key props | Behavior |
 | --- | --- | --- | --- |
-| `Composer.Root` | `form` | `input`, `onInputChange`, `attachments`, `onAttachmentsChange`, `quote`, `onQuoteChange`, `defaultInput`, `defaultAttachments`, `defaultQuote`, `submitMessage` | Owns draft text, pending attachments, quote state, submit, stop. |
+| `Composer.Root` | `form` | `input`, `onInputChange`, `attachments`, `onAttachmentsChange`, `entities`, `onEntitiesChange`, `quote`, `onQuoteChange`, `defaultInput`, `defaultAttachments`, `defaultEntities`, `defaultQuote`, `triggers`, `submitMessage` | Owns draft text, pending attachments, selected entities, quote state, submit, stop. |
 | `Composer.Quote` | `blockquote` | child function | Renders the active quote when present. |
 | `Composer.ClearQuote` | `button` | `asChild` | Clears the active quote. |
-| `Composer.Input` | `textarea` | `minRows`, `maxRows`, `autoResize` | Controlled by composer context; Enter submits, Shift+Enter adds newline. |
+| `Composer.Input` | `div` | `minRows`, `maxRows`, `autoResize`, `placeholder` | Rich composer input controlled by composer context; Enter submits, Shift+Enter adds newline. |
+| `Composer.TextareaInput` | `textarea` | `minRows`, `maxRows`, `autoResize` | Native textarea fallback controlled by composer context. |
+| `Composer.TriggerMenu` | `div` | `keepMounted`, child function | Renders the active trigger menu for `Composer.Input`. |
+| `Composer.TriggerItem` | `button` | `item`, `index`, child function | Selects a trigger item and inserts an inline entity. |
 | `Composer.Attachments` | `div` | `keepMounted`, child function | Renders pending attachments. |
 | `Composer.AttachmentInput` | `input type="file"` | `accept`, `multiple` | Adds selected files. |
 | `Composer.AddAttachment` | `button` | `accept`, `multiple` | Opens a hidden file picker. |
@@ -106,15 +114,93 @@ Custom submit signature:
 
 ```tsx
 <Composer.Root
-  submitMessage={async ({ input, attachments, quote, chat, clear }) => {
-    await chat.sendMessage({ text: input, attachments, metadata: { source: "composer" } });
+  submitMessage={async ({ input, attachments, entities, quote, chat, clear }) => {
+    await chat.sendMessage({
+      text: input,
+      attachments,
+      metadata: { source: "composer", composer: { entities } },
+    });
     clear();
   }}
 />
 ```
 
 When default submit is used with a quote, the submitted text includes a Markdown blockquote prefix
-and the UI message metadata includes `{ quote: { text, messageId } }`.
+and the UI message metadata includes `{ quote: { text, messageId } }`. When selected entities are
+present, metadata also includes `{ composer: { entities } }`.
+
+### Composer triggers and entities
+
+`Composer.Input` supports inline entity triggers such as `@`, `/`, or `$` through
+`Composer.Root`'s `triggers` prop.
+
+```tsx
+const triggers: ComposerTriggerDefinition[] = [
+  {
+    id: "people",
+    char: "@",
+    items: [{ id: "user_ada", label: "Ada Lovelace", data: { type: "user" } }],
+  },
+];
+
+<Composer.Root triggers={triggers}>
+  <Composer.Input />
+  <Composer.TriggerMenu />
+</Composer.Root>;
+```
+
+Trigger definitions:
+
+| Field | Type | Use |
+| --- | --- | --- |
+| `id` | `string` | Stable trigger catalog id stored on submitted entities. |
+| `char` | `string` | Trigger character such as `@`, `/`, or `$`. |
+| `items` | `ComposerTriggerItem[]` or resolver | Static items or an async item source. |
+| `minQueryLength` | `number` | Minimum typed query length before item lookup. |
+| `allowedPrefixes` | `string[] \| null` | Prefixes allowed before the trigger, or any prefix when `null`. |
+| `startOfLine` | `boolean` | Only open the trigger at the start of a line. |
+| `allowSpaces` | `boolean` | Keep the trigger active when the query includes spaces. |
+
+Trigger item fields:
+
+| Field | Type | Use |
+| --- | --- | --- |
+| `id` | `string` | Stable item id. |
+| `label` | `string` | Menu label and default inserted text after the trigger char. |
+| `text` | `string` | Optional plain text inserted into the submitted message. |
+| `detail` | `ReactNode` | Optional secondary content for custom menus. |
+| `data` | JSON-like value | App-owned metadata copied onto submitted entities. |
+| `disabled` | `boolean` | Renders the item disabled and prevents selection. |
+
+Async item resolvers receive:
+
+```ts
+type ComposerTriggerItemsArgs = {
+  trigger: ComposerTriggerDefinition;
+  query: string;
+  input: string;
+  entities: ComposerEntity[];
+  signal: AbortSignal;
+};
+```
+
+Submitted entities:
+
+```ts
+type ComposerEntity = {
+  id: string;
+  triggerId: string;
+  trigger: string;
+  label: string;
+  text: string;
+  range: { from: number; to: number };
+  data?: ComposerEntityData;
+};
+```
+
+Use `entities`, `defaultEntities`, and `onEntitiesChange` on `Composer.Root` when selected entities
+need to be controlled by application state. For a full guide, see
+[Composer triggers](/docs/react-ui/composer-triggers).
 
 ## Message
 

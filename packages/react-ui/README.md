@@ -8,6 +8,13 @@ import { ChatProvider, Composer, Message, Thread } from "@anvia/react-ui";
 
 export function SupportChat() {
   const chat = useChat({ endpoint: "/api/chat" });
+  const triggers = [
+    {
+      id: "people",
+      char: "@",
+      items: [{ id: "user_ada", label: "Ada Lovelace", data: { type: "user" } }],
+    },
+  ];
 
   return (
     <ChatProvider controller={chat}>
@@ -26,10 +33,11 @@ export function SupportChat() {
           <Thread.Error />
           <Thread.ScrollToBottom>Jump to latest</Thread.ScrollToBottom>
         </Thread.Viewport>
-        <Composer.Root>
+        <Composer.Root triggers={triggers}>
           <Composer.Attachments />
           <Composer.AddAttachment>Attach</Composer.AddAttachment>
           <Composer.Input maxRows={6} placeholder="Send a message..." />
+          <Composer.TriggerMenu />
           <Composer.Stop>Stop</Composer.Stop>
           <Composer.Submit>Send</Composer.Submit>
         </Composer.Root>
@@ -46,3 +54,8 @@ The primitives are headless by default: pass `className` or `asChild` for design
 integration, control `Composer.Root` with `input`/`attachments` props when needed, and use
 `submitMessage` for custom composer payloads. Use `keepMounted` on optional collections when empty
 wrappers are useful for layout.
+
+`Composer.Input` is a Tiptap-backed rich composer. Configure `Composer.Root` with `triggers` to
+support inline `@`, `/`, `$`, or other entity chips; selected entities are submitted under
+`metadata.composer.entities`. Use `Composer.TextareaInput` when you need the previous native
+textarea behavior.

@@ -17,6 +17,7 @@
 }
 
 [data-anvia-composer-input],
+[data-anvia-composer-textarea-input],
 [data-anvia-completion-input],
 [data-anvia-approval-reason],
 [data-anvia-question-text-answer] {
@@ -24,6 +25,20 @@
 }
 
 [data-anvia-composer-input] {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+[data-anvia-composer-editor] {
+  outline: none;
+  white-space: pre-wrap;
+}
+
+[data-anvia-composer-input][data-auto-resize] {
+  max-height: calc(var(--anvia-composer-max-rows, 6) * 1.5em + 1rem);
+}
+
+[data-anvia-composer-textarea-input] {
   min-width: 0;
   overflow-y: hidden;
   resize: none;

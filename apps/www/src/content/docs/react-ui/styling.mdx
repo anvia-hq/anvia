@@ -22,7 +22,8 @@ The optional stylesheet is for prototypes and functional defaults:
 import "@anvia/react-ui/styles.css";
 ```
 
-It keeps textarea resizing, disabled states, media bounds, code wrapping, and basic overflow sane.
+It keeps rich composer and textarea resizing, disabled states, media bounds, code wrapping, and
+basic overflow sane.
 It does not try to create your final chat layout.
 
 ## What your app styles
@@ -89,6 +90,12 @@ Common attributes:
 | `data-anvia-part` | `Message.Part` | Per-part layout. |
 | `data-anvia-tool` | `Message.Tool` | Tool-call cards. |
 | `data-anvia-composer` | `Composer.Root` | Composer state. |
+| `data-anvia-composer-input` | `Composer.Input` and `Composer.TextareaInput` | Prompt input wrapper. |
+| `data-anvia-composer-editor` | Rich editor inside `Composer.Input` | Contenteditable editor styling. |
+| `data-anvia-composer-textarea-input` | `Composer.TextareaInput` | Native textarea fallback styling. |
+| `data-anvia-composer-entity` | Inline trigger entity | Mention or command chip styling. |
+| `data-anvia-composer-trigger-menu` | `Composer.TriggerMenu` | Floating trigger menu. |
+| `data-anvia-composer-trigger-item` | `Composer.TriggerItem` | Trigger menu option styling. |
 | `data-anvia-submit` | `Composer.Submit` | Submit enabled/disabled state. |
 | `data-anvia-human-input-panel` | `HumanInput.Panel` | Review panel layout. |
 

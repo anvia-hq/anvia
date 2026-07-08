@@ -10,7 +10,16 @@ export type {
   ComposerAttachmentInput,
   ComposerAttachmentsUpdate,
   ComposerContextValue,
+  ComposerEntitiesUpdate,
+  ComposerEntity,
+  ComposerEntityData,
   ComposerQuote,
+  ComposerTriggerDefinition,
+  ComposerTriggerItem,
+  ComposerTriggerItems,
+  ComposerTriggerItemsArgs,
+  ComposerTriggerState,
+  ComposerTriggerStateUpdate,
 } from "./composer";
 export { InternalComposerProvider, useComposer } from "./composer";
 export type {

@@ -4,7 +4,16 @@ export type {
   ComposerAttachmentInput,
   ComposerAttachmentsUpdate,
   ComposerContextValue,
+  ComposerEntitiesUpdate,
+  ComposerEntity,
+  ComposerEntityData,
   ComposerQuote,
+  ComposerTriggerDefinition,
+  ComposerTriggerItem,
+  ComposerTriggerItems,
+  ComposerTriggerItemsArgs,
+  ComposerTriggerState,
+  ComposerTriggerStateUpdate,
   ThreadContextValue,
 } from "../contexts";
 export { ChatProvider, useChatContext, useComposer, useThread } from "../contexts";

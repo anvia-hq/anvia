@@ -1,0 +1,190 @@
+---
+title: Composer triggers
+description: Build a composer with people mentions, slash commands, variables, and a custom trigger menu.
+section: react-ui
+sidebar:
+  group: Examples
+  order: 2.7
+  label: Composer triggers
+---
+
+This recipe wires several trigger catalogs into one composer: `@` for people, `/` for commands, and
+`$` for variables. The same pattern works for files, tools, projects, issues, or any other
+application-owned entity.
+
+## Complete composer
+
+```tsx
+import { useMemo, useState } from "react";
+import { useChat } from "@anvia/react";
+import {
+  ChatProvider,
+  Composer,
+  Thread,
+  type ComposerEntity,
+  type ComposerTriggerDefinition,
+} from "@anvia/react-ui";
+import "@anvia/react-ui/styles.css";
+
+const people = [
+  { id: "user_ada", name: "Ada Lovelace", role: "Engineering" },
+  { id: "user_grace", name: "Grace Hopper", role: "Platform" },
+  { id: "user_katherine", name: "Katherine Johnson", role: "Research" },
+];
+
+const variables = [
+  { id: "account_name", label: "account.name" },
+  { id: "plan_name", label: "subscription.plan" },
+  { id: "renewal_date", label: "subscription.renewalDate" },
+];
+
+export function TriggerChat() {
+  const chat = useChat({ endpoint: "http://localhost:8787/api/chat" });
+  const [entities, setEntities] = useState<ComposerEntity[]>([]);
+  const triggers = useMemo<ComposerTriggerDefinition[]>(
+    () => [
+      {
+        id: "people",
+        char: "@",
+        items: ({ query }) =>
+          people
+            .filter((person) => person.name.toLowerCase().includes(query.toLowerCase()))
+            .map((person) => ({
+              id: person.id,
+              label: person.name,
+              detail: person.role,
+              data: { type: "person", role: person.role },
+            })),
+      },
+      {
+        id: "commands",
+        char: "/",
+        startOfLine: true,
+        items: [
+          { id: "summarize", label: "Summarize thread", text: "/summarize" },
+          { id: "draft_reply", label: "Draft reply", text: "/draft-reply" },
+          { id: "find_risks", label: "Find risks", text: "/find-risks" },
+        ],
+      },
+      {
+        id: "variables",
+        char: "$",
+        items: variables.map((variable) => ({
+          id: variable.id,
+          label: variable.label,
+          text: `$${variable.label}`,
+          data: { type: "variable" },
+        })),
+      },
+    ],
+    [],
+  );
+
+  return (
+    <ChatProvider controller={chat}>
+      <Thread.Root className="chat">
+        <Thread.Viewport className="chat-scroll" autoScroll>
+          <Thread.Messages />
+          <Thread.Error />
+        </Thread.Viewport>
+
+        <Composer.Root
+          className="composer"
+          triggers={triggers}
+          entities={entities}
+          onEntitiesChange={setEntities}
+        >
+          <Composer.Input className="composer-input" placeholder="Try @, /, or $..." />
+          <Composer.TriggerMenu className="trigger-menu">
+            {(trigger) => (
+              <>
+                <div className="trigger-menu-heading">
+                  {trigger.loading ? "Searching..." : `Select ${trigger.trigger.char}`}
+                </div>
+                {trigger.items.map((item, index) => (
+                  <Composer.TriggerItem
+                    className="trigger-menu-item"
+                    item={item}
+                    index={index}
+                    key={item.id}
+                  >
+                    {(option) => (
+                      <>
+                        <span>{option.label}</span>
+                        {option.detail ? <small>{option.detail}</small> : null}
+                      </>
+                    )}
+                  </Composer.TriggerItem>
+                ))}
+              </>
+            )}
+          </Composer.TriggerMenu>
+          <Composer.Submit>Send</Composer.Submit>
+        </Composer.Root>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+```
+
+## Menu styling
+
+The trigger primitives emit state attributes so CSS can track the active trigger, selected item, and
+loading state.
+
+```css
+.trigger-menu {
+  z-index: 40;
+  display: grid;
+  min-width: 220px;
+  overflow: hidden;
+  border: 1px solid rgb(39 39 42);
+  border-radius: 8px;
+  background: rgb(24 24 27);
+  color: white;
+  box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
+}
+
+.trigger-menu-heading {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgb(39 39 42);
+  color: rgb(161 161 170);
+  font-size: 12px;
+}
+
+.trigger-menu-item {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.trigger-menu-item[data-selected] {
+  background: rgb(39 39 42);
+}
+
+.trigger-menu-item small {
+  color: rgb(161 161 170);
+}
+```
+
+## Submitted metadata
+
+The default composer submit sends selected entities in UI message metadata:
+
+```ts
+type SubmittedMetadata = {
+  composer?: {
+    entities: ComposerEntity[];
+  };
+};
+```
+
+Each entity includes the trigger catalog, trigger character, inserted text, plain-text range, and
+the item `data` payload. Use this on the route to resolve ids, apply slash commands, or attach
+structured variables before the message reaches the agent.
+
+For the lower-level API, see [Composer triggers](/docs/react-ui/composer-triggers).

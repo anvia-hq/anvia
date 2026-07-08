@@ -157,7 +157,7 @@ describe("SelectionToolbar primitives", () => {
               </Message.Root>
             </Thread.Messages>
             <SelectionToolbar.Root onQuote={setQuote} />
-            <Composer.Root quote={quote} onQuoteChange={setQuote}>
+            <Composer.Root defaultInput="reply" quote={quote} onQuoteChange={setQuote}>
               <Composer.Quote />
               <Composer.ClearQuote />
               <Composer.Input />
@@ -179,7 +179,6 @@ describe("SelectionToolbar primitives", () => {
     fireEvent.click(screen.getByText("Quote"));
 
     expect(screen.getByText("Quoted")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "reply" } });
     fireEvent.click(screen.getByText("Send"));
 
     await waitFor(() => {

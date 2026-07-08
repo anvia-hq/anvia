@@ -1,0 +1,231 @@
+---
+title: Composer triggers
+description: Add @ mentions, slash commands, variables, and custom inline entity chips to @anvia/react-ui composers.
+section: react-ui
+sidebar:
+  group: Primitives
+  order: 1.5
+  label: Composer triggers
+---
+
+`Composer.Input` is a rich text input backed by Tiptap. It stores the submitted plain text in
+composer state and can turn trigger matches such as `@ada`, `/summarize`, or `$account` into inline
+entities.
+
+Use triggers when the user should select a known person, command, file, variable, tool, or other
+structured value while they write. Use `Composer.TextareaInput` when the surface needs the previous
+native textarea behavior and does not need inline entities.
+
+## Basic trigger
+
+Pass trigger definitions to `Composer.Root`, render `Composer.Input`, and place
+`Composer.TriggerMenu` near the input. The default menu renders one `Composer.TriggerItem` per
+matched item.
+
+```tsx
+import { Composer, type ComposerTriggerDefinition } from "@anvia/react-ui";
+
+const triggers: ComposerTriggerDefinition[] = [
+  {
+    id: "people",
+    char: "@",
+    items: [
+      { id: "user_ada", label: "Ada Lovelace", data: { type: "user" } },
+      { id: "user_grace", label: "Grace Hopper", data: { type: "user" } },
+    ],
+  },
+];
+
+export function MentionComposer() {
+  return (
+    <Composer.Root triggers={triggers}>
+      <Composer.Input placeholder="Mention a teammate..." />
+      <Composer.TriggerMenu className="trigger-menu" />
+      <Composer.Submit />
+    </Composer.Root>
+  );
+}
+```
+
+Static `items` are filtered by `label` with the current query. Selecting `Ada Lovelace` inserts an
+inline entity chip and keeps the composer input text as `@Ada Lovelace`.
+
+## Multiple trigger characters
+
+Each trigger has a stable `id` and one trigger `char`. Use separate definitions for different
+catalogs.
+
+```tsx
+const triggers: ComposerTriggerDefinition[] = [
+  {
+    id: "people",
+    char: "@",
+    items: people.map((person) => ({
+      id: person.id,
+      label: person.name,
+      data: { type: "person", email: person.email },
+    })),
+  },
+  {
+    id: "commands",
+    char: "/",
+    startOfLine: true,
+    items: [
+      { id: "summarize", label: "Summarize", text: "/summarize" },
+      { id: "next_steps", label: "Next steps", text: "/next-steps" },
+    ],
+  },
+  {
+    id: "variables",
+    char: "$",
+    items: [
+      { id: "account", label: "account.name", text: "$account.name" },
+      { id: "plan", label: "subscription.plan", text: "$subscription.plan" },
+    ],
+  },
+];
+```
+
+Use `text` when the plain text inserted into the prompt should differ from the item label. Without
+`text`, the composer inserts `${trigger.char}${item.label}`.
+
+## Async items
+
+Use a function when options come from local search, a route, or an app-owned index. The function can
+return items or a promise. Use `signal` to cancel in-flight work when the query changes.
+
+```tsx
+const triggers: ComposerTriggerDefinition[] = [
+  {
+    id: "people",
+    char: "@",
+    minQueryLength: 2,
+    items: async ({ query, signal }) => {
+      const response = await fetch(`/api/people?q=${encodeURIComponent(query)}`, { signal });
+      const people = (await response.json()) as Array<{ id: string; name: string; role: string }>;
+
+      return people.map((person) => ({
+        id: person.id,
+        label: person.name,
+        detail: person.role,
+        data: { type: "person", role: person.role },
+      }));
+    },
+  },
+];
+```
+
+The item callback receives:
+
+| Field | Use |
+| --- | --- |
+| `trigger` | The active `ComposerTriggerDefinition`. |
+| `query` | Text typed after the trigger character. |
+| `input` | Current composer plain text. |
+| `entities` | Current selected entities in the composer. |
+| `signal` | Abort signal for cancelling async item loading. |
+
+## Trigger options
+
+| Option | Use |
+| --- | --- |
+| `id` | Stable identifier stored on submitted entities. |
+| `char` | Trigger character such as `@`, `/`, or `$`. |
+| `items` | Static items or an async item resolver. |
+| `minQueryLength` | Minimum query length before items are requested. |
+| `allowedPrefixes` | Prefix characters allowed before the trigger, or `null` for any prefix. |
+| `startOfLine` | Only open the trigger at the start of a line. |
+| `allowSpaces` | Keep the trigger active while the query contains spaces. |
+
+## Custom menu
+
+`Composer.TriggerMenu` exposes the active trigger state as a render prop. Use it when the menu needs
+section headings, loading states, item details, or product-specific markup.
+
+```tsx
+<Composer.TriggerMenu className="trigger-menu">
+  {(trigger) => (
+    <>
+      <div className="trigger-menu-header">
+        {trigger.loading ? "Searching..." : `${trigger.trigger.char}${trigger.query}`}
+      </div>
+      {trigger.items.map((item, index) => (
+        <Composer.TriggerItem className="trigger-menu-item" item={item} index={index} key={item.id}>
+          {(option) => (
+            <>
+              <span>{option.label}</span>
+              {option.detail ? <small>{option.detail}</small> : null}
+            </>
+          )}
+        </Composer.TriggerItem>
+      ))}
+    </>
+  )}
+</Composer.TriggerMenu>
+```
+
+Arrow keys move through menu items, and Enter or Tab selects the active item. `disabled` items render
+disabled and cannot be selected.
+
+## Submitted entities
+
+Selected entities are submitted with default composer metadata:
+
+```json
+{
+  "composer": {
+    "entities": [
+      {
+        "id": "user_ada",
+        "triggerId": "people",
+        "trigger": "@",
+        "label": "Ada Lovelace",
+        "text": "@Ada Lovelace",
+        "range": { "from": 0, "to": 13 },
+        "data": { "type": "user" }
+      }
+    ]
+  }
+}
+```
+
+With a custom submit handler, read entities from the submit args and send them wherever your route
+expects them.
+
+```tsx
+<Composer.Root
+  triggers={triggers}
+  submitMessage={async ({ input, entities, chat, clear }) => {
+    await chat.sendMessage({
+      text: input,
+      metadata: {
+        composer: { entities },
+      },
+    });
+    clear();
+  }}
+>
+  <Composer.Input />
+  <Composer.TriggerMenu />
+  <Composer.Submit />
+</Composer.Root>
+```
+
+Use controlled entity props when another part of the app needs to inspect or clear selected
+entities before submit.
+
+```tsx
+const [entities, setEntities] = useState<ComposerEntity[]>([]);
+
+<Composer.Root
+  triggers={triggers}
+  entities={entities}
+  onEntitiesChange={setEntities}
+>
+  <Composer.Input />
+  <Composer.TriggerMenu />
+</Composer.Root>;
+```
+
+For a complete copy-paste surface, see
+[Composer triggers](/docs/react-ui/examples/composer-triggers).

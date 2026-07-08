@@ -72,11 +72,45 @@ Prefer visible behavior over implementation details:
 - image previews render loading/error states and image actions disable without a source
 - selected text inside one message shows `SelectionToolbar`, while cross-message selections do not
 - quoted selections update controlled composer quote state and submit quote metadata
+- composer triggers open from `@`, `/`, or `$`, keyboard selection inserts an entity, and submit
+  metadata includes `composer.entities`
 - thread-list triggers call the app-owned controller and keyboard focus moves through item triggers
 
 For richer chat surfaces, cover the behavior users rely on rather than every internal context
-field. The React UI package tests include focused coverage for `Image`, `SelectionToolbar`,
-controlled `Composer.Quote`, and `ThreadList` controller actions.
+field. `Composer.Input` is a rich contenteditable editor, so test it through visible typing and
+submitted state rather than textarea-only value assertions. The React UI package tests include
+focused coverage for `Image`, `SelectionToolbar`, controlled `Composer.Quote`, trigger entities,
+and `ThreadList` controller actions.
+
+## Composer trigger tests
+
+For mentions, slash commands, and variables, render `Composer.Root` with deterministic trigger
+items and assert the user-facing behavior:
+
+```tsx
+render(
+  <Composer.Root
+    triggers={[
+      {
+        id: "people",
+        char: "@",
+        items: [{ id: "user_ada", label: "Ada Lovelace" }],
+      },
+    ]}
+  >
+    <Composer.Input />
+    <Composer.TriggerMenu />
+    <Composer.Submit />
+  </Composer.Root>,
+);
+
+await user.type(screen.getByRole("textbox", { name: "Message" }), "@ada");
+await user.click(screen.getByRole("option", { name: "Ada Lovelace" }));
+await user.click(screen.getByRole("button", { name: "Send" }));
+```
+
+When the app controls `entities` or uses `submitMessage`, assert that the submitted entity has the
+expected `id`, `triggerId`, `trigger`, `text`, and `data` payload.
 
 ## Images, selection, and thread lists
 

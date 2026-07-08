@@ -23,6 +23,7 @@ import {
   ChatProvider,
   Composer,
   type ComposerQuote,
+  type ComposerTriggerDefinition,
   HumanInput,
   Image,
   Message,
@@ -62,6 +63,7 @@ UI context: chat exposes messages and chat actions; completion exposes prompt in
 | Message list | `Thread.Messages` | `Thread.Root` is recommended |
 | Message row and parts | `Message.Root`, `Message.Parts`, `Message.Part` | `Thread.Messages` |
 | Prompt input | `Composer.Root`, `Composer.Input` | `ChatProvider` |
+| Mentions, slash commands, variables | `Composer.Root`, `Composer.Input`, `Composer.TriggerMenu` | `ChatProvider` |
 | Pending attachments | `Composer.Attachments`, `Attachment.*` | `Composer.Root` |
 | Image attachment preview | `Image.*` | `Message.Attachment`, `Attachment.Root`, or explicit `attachment` |
 | Quote selected message text | `SelectionToolbar.*`, `Composer.Quote` | `Thread.Root` and controlled `Composer.Root` quote state |
@@ -103,6 +105,36 @@ export function ChatSurface() {
 ```
 
 Keep `<Thread.Messages />` empty until you need product-specific rows or parts.
+
+## Composer triggers
+
+Use triggers for `@` mentions, `/` commands, `$` variables, or another app-owned catalog.
+
+```tsx
+const triggers: ComposerTriggerDefinition[] = [
+  {
+    id: "people",
+    char: "@",
+    items: [{ id: "user_ada", label: "Ada Lovelace", data: { type: "user" } }],
+  },
+  {
+    id: "commands",
+    char: "/",
+    startOfLine: true,
+    items: [{ id: "summarize", label: "Summarize", text: "/summarize" }],
+  },
+];
+
+<Composer.Root triggers={triggers}>
+  <Composer.Input placeholder="Try @ or /..." />
+  <Composer.TriggerMenu />
+  <Composer.Submit />
+</Composer.Root>;
+```
+
+Selected trigger values are submitted as `metadata.composer.entities`. Use
+`Composer.TextareaInput` for native textarea behavior without inline entities. For the full API, see
+[Composer triggers](/docs/react-ui/composer-triggers).
 
 ## Server route shape
 

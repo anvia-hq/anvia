@@ -3,14 +3,85 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ComposerSubmitMessage } from "../src";
-import { ChatProvider, Composer, Thread } from "../src";
+import type { ComposerEntity, ComposerSubmitMessage, ComposerTriggerDefinition } from "../src";
+import { ChatProvider, Composer, Thread, useComposer } from "../src";
 import { createChatController, textMessage } from "./helpers";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+function composerEditor(): HTMLElement {
+  return screen.getByLabelText("Message");
+}
+
+function ComposerInputSetter({ children, value }: { children: string; value: string }) {
+  const composer = useComposer();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        composer.setInput(value);
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+const peopleItems = [
+  {
+    id: "user_ada",
+    label: "Ada",
+    data: { kind: "user" },
+  },
+];
+
+const peopleTrigger: ComposerTriggerDefinition = {
+  id: "people",
+  char: "@",
+  items: peopleItems,
+};
+
+function ComposerTriggerOpener() {
+  const composer = useComposer();
+  const entity: ComposerEntity = {
+    id: "user_ada",
+    triggerId: "people",
+    trigger: "@",
+    label: "Ada",
+    text: "@Ada",
+    range: { from: 0, to: 4 },
+    data: { kind: "user" },
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        composer.setActiveTrigger({
+          trigger: peopleTrigger,
+          query: "a",
+          items: peopleItems,
+          loading: false,
+          selectedIndex: 0,
+          selectItem: () => {
+            composer.setInput("@Ada");
+            composer.setEntities([entity]);
+            composer.setActiveTrigger(undefined);
+          },
+          setSelectedIndex: (index) => {
+            composer.setActiveTrigger((active) =>
+              active === undefined ? active : { ...active, selectedIndex: index },
+            );
+          },
+        });
+      }}
+    >
+      Open people
+    </button>
+  );
+}
 
 describe("Chat primitives", () => {
   it("throws when chat primitives are rendered outside ChatProvider", () => {
@@ -24,7 +95,7 @@ describe("Chat primitives", () => {
 
     render(
       <ChatProvider controller={createChatController({ sendMessage })}>
-        <Composer.Root aria-label="Chat form">
+        <Composer.Root aria-label="Chat form" defaultInput="hello">
           <Composer.Input />
           <Composer.Submit asChild>
             <button data-testid="send" type="submit">
@@ -35,7 +106,6 @@ describe("Chat primitives", () => {
       </ChatProvider>,
     );
 
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hello" } });
     const button = screen.getByTestId("send");
     expect(button.getAttribute("data-anvia-submit")).toBe("");
 
@@ -193,7 +263,7 @@ describe("Chat primitives", () => {
 
     const { container } = render(
       <ChatProvider controller={createChatController({ sendMessage })}>
-        <Composer.Root>
+        <Composer.Root defaultInput="read this">
           <Composer.AddAttachment />
           <Composer.Attachments />
           <Composer.Input />
@@ -215,7 +285,6 @@ describe("Chat primitives", () => {
       expect(screen.getByText("hello.txt")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "read this" } });
     fireEvent.click(screen.getByText("Send"));
 
     await waitFor(() => {
@@ -263,6 +332,7 @@ describe("Chat primitives", () => {
             <Composer.Attachments />
             <Composer.AttachmentInput data-testid="attachment-input" />
             <Composer.Input />
+            <ComposerInputSetter value="controlled">Set controlled</ComposerInputSetter>
             <Composer.Submit />
           </Composer.Root>
         </ChatProvider>
@@ -271,9 +341,9 @@ describe("Chat primitives", () => {
 
     render(<ControlledComposer />);
 
-    const input = screen.getByLabelText("Message");
-    expect((input as HTMLTextAreaElement).value).toBe("draft");
-    fireEvent.change(input, { target: { value: "controlled" } });
+    const input = composerEditor();
+    expect(input.textContent).toBe("draft");
+    fireEvent.click(screen.getByText("Set controlled"));
 
     expect(onInputChange).toHaveBeenCalledWith("controlled");
 
@@ -308,6 +378,49 @@ describe("Chat primitives", () => {
     expect(onAttachmentsChange).toHaveBeenLastCalledWith([]);
   });
 
+  it("renders trigger menu items and submits selected entities as metadata", async () => {
+    const sendMessage = vi.fn(async () => {});
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root triggers={[peopleTrigger]}>
+          <Composer.Input />
+          <ComposerTriggerOpener />
+          <Composer.TriggerMenu />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Open people"));
+
+    const item = screen.getByText("Ada");
+    expect(item.getAttribute("data-anvia-composer-trigger-item")).toBe("");
+    fireEvent.click(item);
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "@Ada",
+        metadata: {
+          composer: {
+            entities: [
+              {
+                id: "user_ada",
+                triggerId: "people",
+                trigger: "@",
+                label: "Ada",
+                text: "@Ada",
+                range: { from: 0, to: 4 },
+                data: { kind: "user" },
+              },
+            ],
+          },
+        },
+      });
+    });
+  });
+
   it("supports custom composer submit from form submit and Enter", async () => {
     const sendMessage = vi.fn(async () => {});
     const attachment: UIAttachment = {
@@ -337,6 +450,7 @@ describe("Chat primitives", () => {
         >
           <Composer.Attachments />
           <Composer.Input />
+          <ComposerInputSetter value="enter">Set enter</ComposerInputSetter>
           <Composer.Submit />
         </Composer.Root>
       </ChatProvider>,
@@ -360,12 +474,12 @@ describe("Chat primitives", () => {
     });
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+      expect(composerEditor().textContent).toBe("");
     });
     expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "enter" } });
-    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    fireEvent.click(screen.getByText("Set enter"));
+    fireEvent.keyDown(composerEditor(), { key: "Enter" });
 
     await waitFor(() => {
       expect(submitMessage).toHaveBeenCalledTimes(2);
@@ -415,7 +529,7 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(submitMessage).toHaveBeenCalledTimes(1);
     });
-    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("draft");
+    expect(composerEditor().textContent).toBe("draft");
     expect(screen.getByText("controlled.txt")).toBeTruthy();
 
     submitMessage.mockImplementationOnce(async ({ clear }) => {
@@ -424,7 +538,7 @@ describe("Chat primitives", () => {
     fireEvent.click(screen.getByText("Send"));
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+      expect(composerEditor().textContent).toBe("");
     });
     expect(screen.queryByText("controlled.txt")).toBeNull();
   });
@@ -466,6 +580,7 @@ describe("Chat primitives", () => {
       <ChatProvider controller={createChatController({ sendMessage })}>
         <Composer.Root
           aria-label="Chat form"
+          defaultInput="blocked"
           onSubmit={(event) => {
             event.preventDefault();
           }}
@@ -476,7 +591,6 @@ describe("Chat primitives", () => {
       </ChatProvider>,
     );
 
-    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "blocked" } });
     fireEvent.submit(screen.getByLabelText("Chat form"));
 
     expect(sendMessage).not.toHaveBeenCalled();
@@ -494,23 +608,26 @@ describe("Chat primitives", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
-  it("submits composer input from Enter and ignores modified Enter", () => {
+  it("submits composer input from Enter", async () => {
     const sendMessage = vi.fn(async () => {});
 
     render(
       <ChatProvider controller={createChatController({ sendMessage })}>
-        <Composer.Root>
+        <Composer.Root defaultInput="hello">
           <Composer.Input />
         </Composer.Root>
       </ChatProvider>,
     );
 
-    const input = screen.getByLabelText("Message");
-    fireEvent.change(input, { target: { value: "hello" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(composerEditor().textContent).toBe("hello");
+    });
+    const input = composerEditor();
+    fireEvent.keyDown(input, { code: "Enter", key: "Enter", keyCode: 13 });
 
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
     expect(sendMessage).toHaveBeenCalledWith("hello");
   });
 
@@ -529,7 +646,7 @@ describe("Chat primitives", () => {
     render(
       <ChatProvider controller={createChatController()}>
         <Composer.Root>
-          <Composer.Input
+          <Composer.TextareaInput
             maxRows={3}
             minRows={2}
             ref={(node) => {

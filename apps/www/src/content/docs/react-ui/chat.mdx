@@ -93,13 +93,14 @@ const chat = useChat({
 
 ## Composer
 
-`Composer.Root` owns the draft text and pending attachments by default. `Composer.Input`
-auto-resizes from `minRows` to `maxRows`, submits on Enter, keeps Shift+Enter for new lines, and
-disables while the chat is streaming.
+`Composer.Root` owns the draft text, selected entities, and pending attachments by default.
+`Composer.Input` is a rich input that auto-resizes from `minRows` to `maxRows`, submits on Enter,
+keeps Shift+Enter for new lines, and disables while the chat is streaming.
 
 <CodeVariants id="chat-composer" variants={composerVariants} />
 
-Use controlled props when the draft or attachments need to be mirrored into app state.
+Use controlled props when the draft, selected entities, or attachments need to be mirrored into app
+state.
 
 ```tsx
 <Composer.Root
@@ -114,17 +115,39 @@ Use controlled props when the draft or attachments need to be mirrored into app 
 </Composer.Root>
 ```
 
+Use `triggers` with `Composer.Input` and `Composer.TriggerMenu` for inline mentions, slash commands,
+variables, or other entity chips.
+
+```tsx
+<Composer.Root
+  triggers={[
+    {
+      id: "people",
+      char: "@",
+      items: [{ id: "user_ada", label: "Ada Lovelace" }],
+    },
+  ]}
+>
+  <Composer.Input />
+  <Composer.TriggerMenu />
+  <Composer.Submit />
+</Composer.Root>
+```
+
+For a full trigger guide, see [Composer triggers](/docs/react-ui/composer-triggers). Use
+`Composer.TextareaInput` when the surface needs a native textarea instead of the rich composer.
+
 Use `submitMessage` only when the submitted message itself needs custom metadata or attachment
 handling. For request-level options such as model or reasoning effort, prefer `createRequest` on
 `useChat(...)` as shown in [Request shape](/docs/react-ui/request-shape).
 
 ```tsx
 <Composer.Root
-  submitMessage={async ({ input, attachments, chat: chatController, clear }) => {
+  submitMessage={async ({ input, attachments, entities, chat: chatController, clear }) => {
     await chatController.sendMessage({
       text: input,
       attachments,
-      metadata: { source: "support-composer" },
+      metadata: { source: "support-composer", composer: { entities } },
     });
     clear();
   }}

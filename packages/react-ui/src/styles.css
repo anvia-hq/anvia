@@ -34,6 +34,11 @@
   white-space: pre-wrap;
 }
 
+[data-anvia-composer-editor]:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 [data-anvia-composer-input][data-auto-resize] {
   max-height: calc(var(--anvia-composer-max-rows, 6) * 1.5em + 1rem);
 }

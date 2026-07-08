@@ -88,21 +88,31 @@ For mentions, slash commands, and variables, render `Composer.Root` with determi
 items and assert the user-facing behavior:
 
 ```tsx
-render(
-  <Composer.Root
-    triggers={[
-      {
-        id: "people",
-        char: "@",
-        items: [{ id: "user_ada", label: "Ada Lovelace" }],
-      },
-    ]}
-  >
-    <Composer.Input />
-    <Composer.TriggerMenu />
-    <Composer.Submit />
-  </Composer.Root>,
-);
+const transport = createDirectTransport(async function* () {});
+
+function TestChat() {
+  const chat = useChat({ transport });
+
+  return (
+    <ChatProvider controller={chat}>
+      <Composer.Root
+        triggers={[
+          {
+            id: "people",
+            char: "@",
+            items: [{ id: "user_ada", label: "Ada Lovelace" }],
+          },
+        ]}
+      >
+        <Composer.Input />
+        <Composer.TriggerMenu />
+        <Composer.Submit />
+      </Composer.Root>
+    </ChatProvider>
+  );
+}
+
+render(<TestChat />);
 
 await user.type(screen.getByRole("textbox", { name: "Message" }), "@ada");
 await user.click(screen.getByRole("option", { name: "Ada Lovelace" }));

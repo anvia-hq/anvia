@@ -119,19 +119,21 @@ Use `triggers` with `Composer.Input` and `Composer.TriggerMenu` for inline menti
 variables, or other entity chips.
 
 ```tsx
-<Composer.Root
-  triggers={[
-    {
-      id: "people",
-      char: "@",
-      items: [{ id: "user_ada", label: "Ada Lovelace" }],
-    },
-  ]}
->
-  <Composer.Input />
-  <Composer.TriggerMenu />
-  <Composer.Submit />
-</Composer.Root>
+<ChatProvider controller={chat}>
+  <Composer.Root
+    triggers={[
+      {
+        id: "people",
+        char: "@",
+        items: [{ id: "user_ada", label: "Ada Lovelace" }],
+      },
+    ]}
+  >
+    <Composer.Input />
+    <Composer.TriggerMenu />
+    <Composer.Submit />
+  </Composer.Root>
+</ChatProvider>
 ```
 
 For a full trigger guide, see [Composer triggers](/docs/react-ui/composer-triggers). Use

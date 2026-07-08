@@ -3,13 +3,17 @@ import type { Editor, Extensions, JSONContent } from "@tiptap/core";
 import { mergeAttributes } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
 import HardBreak from "@tiptap/extension-hard-break";
-import Mention from "@tiptap/extension-mention";
+import Mention, { type MentionOptions } from "@tiptap/extension-mention";
 import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
 import Text from "@tiptap/extension-text";
 import { PluginKey } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
+import type {
+  SuggestionKeyDownProps,
+  SuggestionOptions,
+  SuggestionProps,
+} from "@tiptap/suggestion";
 import {
   type ChangeEvent,
   type CSSProperties,
@@ -445,12 +449,6 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
           "data-anvia-composer-editor": "",
           role: "textbox",
         },
-        handleDOMEvents: {
-          keydown: (_view, event) => submitComposerFromEditorKeyDown(event, composerRef),
-        },
-        handleKeyDown: (_view, event) => {
-          return submitComposerFromEditorKeyDown(event, composerRef);
-        },
       },
       onUpdate: ({ editor: updatedEditor }) => {
         if (!editorReadyRef.current) {
@@ -679,7 +677,9 @@ type ComposerDocumentSnapshot = {
   entities: ComposerEntity[];
 };
 
-const ComposerEntityExtension = Mention.extend({
+const ComposerEntityExtension = Mention.extend<
+  MentionOptions<ComposerTriggerItemValue, ComposerEntityAttrs>
+>({
   name: COMPOSER_ENTITY_NODE,
 
   addAttributes() {
@@ -759,7 +759,7 @@ function composerInputExtensions({
         }),
         composerEntityText(node.attrs as ComposerEntityAttrs),
       ],
-      suggestions: triggers.map((trigger) => composerSuggestion(trigger, composerRef)) as never,
+      suggestions: triggers.map((trigger) => composerSuggestion(trigger, composerRef)),
     }),
   ];
 }
@@ -779,16 +779,24 @@ function submitComposerFromEditorKeyDown(event: KeyboardEvent, composerRef: Comp
   return true;
 }
 
-function composerSuggestion(trigger: ComposerTriggerDefinition, composerRef: ComposerRef) {
+type ComposerSuggestionOptions = Omit<
+  SuggestionOptions<ComposerTriggerItemValue, ComposerEntityAttrs>,
+  "editor"
+>;
+
+function composerSuggestion(
+  trigger: ComposerTriggerDefinition,
+  composerRef: ComposerRef,
+): ComposerSuggestionOptions {
   const pluginKey = new PluginKey(`anvia-composer-trigger-${trigger.id}`);
 
   return {
     pluginKey,
     char: trigger.char,
-    allowSpaces: trigger.allowSpaces,
-    allowedPrefixes: trigger.allowedPrefixes,
-    startOfLine: trigger.startOfLine,
-    minQueryLength: trigger.minQueryLength,
+    ...(trigger.allowSpaces === undefined ? {} : { allowSpaces: trigger.allowSpaces }),
+    ...(trigger.allowedPrefixes === undefined ? {} : { allowedPrefixes: trigger.allowedPrefixes }),
+    ...(trigger.startOfLine === undefined ? {} : { startOfLine: trigger.startOfLine }),
+    ...(trigger.minQueryLength === undefined ? {} : { minQueryLength: trigger.minQueryLength }),
     items: ({ query, signal }: { query: string; signal: AbortSignal }) =>
       resolveTriggerItems(trigger, query, composerRef.current, signal),
     command: ({
@@ -1300,7 +1308,9 @@ const ComposerTriggerMenu = forwardRef<HTMLDivElement, ComposerTriggerMenuProps>
           } satisfies CSSProperties);
     const renderedChildren =
       activeTrigger === undefined
-        ? children
+        ? typeof children === "function"
+          ? null
+          : children
         : typeof children === "function"
           ? children(activeTrigger)
           : (children ??

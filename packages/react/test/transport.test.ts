@@ -452,6 +452,66 @@ describe("@anvia/react useChat", () => {
     expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).toBeNull();
   });
 
+  it("ignores resume storage failures", async () => {
+    const storage: Storage = {
+      length: 0,
+      clear: vi.fn(),
+      getItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+      key: vi.fn(() => null),
+      removeItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+      setItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+    };
+    const transport: EventTransport<
+      UIStreamRequest,
+      UIStreamEvent | ResumableStreamEnvelope<UIStreamEvent>
+    > = {
+      send: async function* () {
+        yield { type: "stream_start", streamId: "run_1", eventId: 0 };
+        yield {
+          type: "stream_event",
+          streamId: "run_1",
+          eventId: 1,
+          event: {
+            type: "message_start",
+            message: { id: "assistant_1", role: "assistant", parts: [] },
+          },
+        };
+        yield {
+          type: "stream_event",
+          streamId: "run_1",
+          eventId: 2,
+          event: {
+            type: "text_delta",
+            messageId: "assistant_1",
+            partId: "assistant_1_text",
+            delta: "Hi",
+          },
+        };
+        yield { type: "stream_end", streamId: "run_1", eventId: 2, status: "completed" };
+      },
+    };
+    const { result } = renderHook(() =>
+      useChat({ transport, resume: { key: "thread_1", storage } }),
+    );
+
+    await act(async () => {
+      await result.current.send("hello");
+    });
+
+    expect(result.current.status).toBe("idle");
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.text).toBe("Hi");
+    expect(storage.getItem).toHaveBeenCalled();
+    expect(storage.setItem).toHaveBeenCalled();
+    expect(storage.removeItem).toHaveBeenCalled();
+  });
+
   it("sends attachment-only messages", async () => {
     const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
       send: async function* (request) {

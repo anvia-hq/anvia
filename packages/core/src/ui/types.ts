@@ -48,6 +48,7 @@ export type UIMessagePart =
       toolName: string;
       toolCallId: string;
       callId?: string;
+      turn?: number;
       state: "input-streaming" | "input-available" | "output-available" | "error";
       input?: JsonValue;
       output?: JsonValue;

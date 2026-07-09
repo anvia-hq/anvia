@@ -776,8 +776,8 @@ describe("PromptRequest streaming", () => {
       messages: [
         Message.user("reason"),
         Message.assistant([
-          AssistantContent.text("done"),
           AssistantContent.reasoning("Think once."),
+          AssistantContent.text("done"),
         ]),
       ],
     });
@@ -816,7 +816,6 @@ describe("PromptRequest streaming", () => {
       messages: [
         Message.user("reason"),
         Message.assistant([
-          AssistantContent.text("done"),
           {
             type: "reasoning",
             id: "rs_1",
@@ -835,6 +834,7 @@ describe("PromptRequest streaming", () => {
             text: "",
             content: [{ type: "encrypted", data: "opaque" }],
           },
+          AssistantContent.text("done"),
         ]),
       ],
     });

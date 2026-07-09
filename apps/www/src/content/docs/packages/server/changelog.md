@@ -10,6 +10,54 @@ sidebar:
 
 Release history mirrored from `packages/server/CHANGELOG.md`.
 
+## 0.4.10
+
+### Patch Changes
+
+- Updated dependencies [6cd352e]
+  - @anvia/core@0.12.3
+
+## 0.4.9
+
+### Patch Changes
+
+- Updated dependencies [7b398eb]
+  - @anvia/core@0.12.2
+
+## 0.4.8
+
+### Patch Changes
+
+- Updated dependencies [2735197]
+  - @anvia/core@0.12.1
+
+## 0.4.7
+
+### Patch Changes
+
+- Updated dependencies [eed8b5f]
+  - @anvia/core@0.12.0
+
+## 0.4.6
+
+### Patch Changes
+
+- 264b92d: Restore React human-input hook state, harden overlapping chat sends, make fetch transports avoid implicit GET/HEAD bodies, and validate server-sent event control fields.
+
+## 0.4.5
+
+### Patch Changes
+
+- Updated dependencies [32171dc]
+  - @anvia/core@0.11.3
+
+## 0.4.4
+
+### Patch Changes
+
+- Updated dependencies [730c23d]
+  - @anvia/core@0.11.2
+
 ## 0.4.3
 
 ### Patch Changes

@@ -10,6 +10,12 @@ sidebar:
 
 Release history mirrored from `packages/memory-sqlite/CHANGELOG.md`.
 
-## Unreleased
+## 0.2.0
 
-Initial package with a SQLite-backed Anvia memory store.
+### Minor Changes
+
+- 8d880dd: Add durable session memory adapters for Prisma, Drizzle, SQLite, and Postgres.
+
+## 0.1.0
+
+- Add a SQLite-backed durable memory store for Anvia session memory.

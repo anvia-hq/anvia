@@ -10,6 +10,12 @@ sidebar:
 
 Release history mirrored from `packages/vector-redis/CHANGELOG.md`.
 
+## 0.2.5
+
+### Patch Changes
+
+- 7326e6a: Update upstream runtime dependencies for provider, vector store, observability, and Studio packages.
+
 ## 0.2.4
 
 ### Patch Changes

@@ -10,6 +10,44 @@ sidebar:
 
 Release history mirrored from `packages/core/CHANGELOG.md`.
 
+## 0.12.3
+
+### Patch Changes
+
+- 6cd352e: Fix agent option isolation, deterministic regex eval metrics, and MCP client version metadata.
+
+## 0.12.2
+
+### Patch Changes
+
+- 7b398eb: Add composable React UI primitives for Anvia chat, completion, message parts, and human-input workflows.
+  Merge raw agent tool-call results back into the originating tool part when provider and internal call ids differ.
+  Add UI attachment contracts, chat suggestions, composer attachments, auto-resizing composer input, Markdown rendering, granular tool primitives, thread status helpers, expanded human-input controls, controlled composer state, custom composer submit handlers, optional empty collection mounting, and thinner headless defaults.
+
+## 0.12.1
+
+### Patch Changes
+
+- 2735197: Remove experimental tool and tool-result guardrails. Guardrail policies now cover input and final output boundaries only; use tool approvals, hooks, middleware, and service-level validation for tool execution behavior.
+
+## 0.12.0
+
+### Minor Changes
+
+- eed8b5f: Add experimental guardrail policies for input, tool calls, tool results, and final output.
+
+## 0.11.3
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
+## 0.11.2
+
+### Patch Changes
+
+- 730c23d: Clean up request internals by moving prompt runtime implementation details behind the internal source boundary while preserving the public request API.
+
 ## 0.11.1
 
 ### Patch Changes

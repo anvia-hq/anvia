@@ -194,17 +194,22 @@ describe("UI message adapters", () => {
       Message.toolResult("tool_1", "7", { callId: "call_1", toolName: "add" }),
     ]);
 
-    expect(coreMessagesToUIMessages(coreMessages)[1]?.parts[0]).toMatchObject({
+    const hydrated = coreMessagesToUIMessages(coreMessages);
+
+    expect(hydrated).toHaveLength(1);
+    expect(hydrated[0]?.parts[0]).toMatchObject({
       type: "tool",
       toolName: "add",
       toolCallId: "tool_1",
       callId: "call_1",
       state: "output-available",
+      input: { x: 2, y: 5 },
       output: "7",
     });
+    expect(uiMessagesToCoreMessages(hydrated)).toEqual(coreMessages);
   });
 
-  it("recovers persisted tool result names by tool call id", () => {
+  it("merges persisted tool results by tool call id", () => {
     const messages = coreMessagesToUIMessages([
       Message.assistant([
         AssistantContent.toolCall("abc", "exec_command", { cmd: "pwd" }, "call_1"),
@@ -212,17 +217,19 @@ describe("UI message adapters", () => {
       Message.toolResult("abc", "done", { callId: "call_1" }),
     ]);
 
-    expect(messages[1]?.parts[0]).toMatchObject({
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.parts[0]).toMatchObject({
       type: "tool",
       toolName: "exec_command",
       toolCallId: "abc",
       callId: "call_1",
       state: "output-available",
+      input: { cmd: "pwd" },
       output: "done",
     });
   });
 
-  it("recovers persisted tool result names by provider callId", () => {
+  it("merges persisted tool results by provider callId", () => {
     const messages = coreMessagesToUIMessages([
       Message.assistant([
         AssistantContent.toolCall("internal_1", "read_file", { path: "README.md" }, "call_1"),
@@ -230,12 +237,14 @@ describe("UI message adapters", () => {
       Message.toolResult("legacy_result", "done", { callId: "call_1" }),
     ]);
 
-    expect(messages[1]?.parts[0]).toMatchObject({
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.parts[0]).toMatchObject({
       type: "tool",
       toolName: "read_file",
-      toolCallId: "legacy_result",
+      toolCallId: "internal_1",
       callId: "call_1",
       state: "output-available",
+      input: { path: "README.md" },
       output: "done",
     });
   });

@@ -1,11 +1,12 @@
-import type { JsonValue } from "@anvia/core/completion";
-import type {
-  CreateUIAttachment,
-  UIAttachment,
-  UIError,
-  UIMessage,
-  UIMessagePart,
-  UIStreamEvent,
+import type { Message as CoreMessage, JsonValue } from "@anvia/core/completion";
+import {
+  type CreateUIAttachment,
+  coreMessagesToUIMessages,
+  type UIAttachment,
+  type UIError,
+  type UIMessage,
+  type UIMessagePart,
+  type UIStreamEvent,
 } from "@anvia/core/ui";
 import type { SendMessageInput } from "./types";
 
@@ -180,7 +181,12 @@ export function applyAnviaStreamEvent(
           ? valueToJson(event.structuredResult)
           : valueToJson(event.result),
     };
-    return updateAssistantToolPart(messages, part, [providerCallId, internalCallId]);
+    return updateAssistantToolPart(
+      messages,
+      part,
+      [providerCallId, internalCallId],
+      parseJsonValue(event.args),
+    );
   }
 
   if (event.type === "message_id" && typeof event.id === "string") {
@@ -188,6 +194,14 @@ export function applyAnviaStreamEvent(
   }
 
   if (event.type === "final") {
+    const finalMessages = finalMessagesFromEvent(event);
+    if (finalMessages !== undefined) {
+      const next = replaceCurrentRunMessages(messages, finalMessages);
+      return typeof event.runId === "string"
+        ? setLastAssistantMetadata(next, { runId: event.runId })
+        : next;
+    }
+
     if (isRecord(event.response) && Array.isArray(event.response.choice)) {
       const finalText = textFromAssistantContent(event.response.choice);
       const next = finalText.length > 0 ? replaceAssistantText(messages, finalText) : messages;
@@ -225,6 +239,32 @@ export function messageText(message: UIMessage): string {
   return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
 }
 
+function assistantTextPartId(assistant: UIMessage): string {
+  const lastPart = assistant.parts.at(-1);
+  if (lastPart?.type === "text") {
+    return lastPart.id;
+  }
+
+  const textCount = assistant.parts.filter((part) => part.type === "text").length;
+  return textCount === 0 ? `${assistant.id}_text` : `${assistant.id}_text_${textCount + 1}`;
+}
+
+function assistantReasoningPartId(assistant: UIMessage, reasoningId?: string): string {
+  if (reasoningId !== undefined) {
+    return `${assistant.id}_reasoning_${reasoningId}`;
+  }
+
+  const lastPart = assistant.parts.at(-1);
+  if (lastPart?.type === "reasoning" && lastPart.reasoningId === undefined) {
+    return lastPart.id;
+  }
+
+  const reasoningCount = assistant.parts.filter((part) => part.type === "reasoning").length;
+  return reasoningCount === 0
+    ? `${assistant.id}_reasoning`
+    : `${assistant.id}_reasoning_${reasoningCount + 1}`;
+}
+
 export function appendAssistantDelta(messages: UIMessage[], delta: string): UIMessage[] {
   const current = ensureAssistantMessage(messages);
   const assistant = current[current.length - 1];
@@ -232,7 +272,7 @@ export function appendAssistantDelta(messages: UIMessage[], delta: string): UIMe
     return current;
   }
   return updateMessagePart(current, assistant.id, {
-    id: `${assistant.id}_text`,
+    id: assistantTextPartId(assistant),
     type: "text",
     text: delta,
   });
@@ -248,12 +288,8 @@ export function appendAssistantReasoningDelta(
   if (assistant === undefined) {
     return current;
   }
-  const partId =
-    reasoningId === undefined
-      ? `${assistant.id}_reasoning`
-      : `${assistant.id}_reasoning_${reasoningId}`;
   return updateMessagePart(current, assistant.id, {
-    id: partId,
+    id: assistantReasoningPartId(assistant, reasoningId),
     type: "reasoning",
     text: delta,
     ...(reasoningId === undefined ? {} : { reasoningId }),
@@ -269,6 +305,45 @@ export function replaceAssistantText(messages: UIMessage[], text: string): UIMes
   return current.map((message) =>
     message.id === assistant.id ? { ...message, parts: replaceTextPart(message, text) } : message,
   );
+}
+
+function finalMessagesFromEvent(event: Record<string, unknown>): UIMessage[] | undefined {
+  if (!Array.isArray(event.messages) || event.messages.length === 0) {
+    return undefined;
+  }
+
+  try {
+    return coreMessagesToUIMessages(event.messages as CoreMessage[]);
+  } catch {
+    return undefined;
+  }
+}
+
+function replaceCurrentRunMessages(messages: UIMessage[], finalMessages: UIMessage[]): UIMessage[] {
+  if (messages.length === 0 || finalMessages.length === 0) {
+    return finalMessages;
+  }
+
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === "user");
+  if (lastUserIndex === -1) {
+    return finalMessages;
+  }
+
+  const finalFirst = finalMessages[0];
+  if (finalFirst?.role !== "user") {
+    return [...messages.slice(0, lastUserIndex + 1), ...finalMessages];
+  }
+
+  const currentPrompt = messages[lastUserIndex];
+  if (currentPrompt === undefined || messageText(currentPrompt) !== messageText(finalFirst)) {
+    return finalMessages;
+  }
+
+  return [
+    ...messages.slice(0, lastUserIndex),
+    { ...finalFirst, id: currentPrompt.id },
+    ...finalMessages.slice(1),
+  ];
 }
 
 function updateMessagePart(
@@ -312,6 +387,7 @@ function updateAssistantToolPart(
   messages: UIMessage[],
   part: UIToolMessagePart,
   aliases: Array<string | undefined> = [],
+  inputMatch?: JsonValue,
 ): UIMessage[] {
   const current = ensureAssistantMessage(messages);
   const assistant = current[current.length - 1];
@@ -319,7 +395,7 @@ function updateAssistantToolPart(
     return current;
   }
 
-  const existingPart = findMatchingToolPart(assistant, part, aliases);
+  const existingPart = findMatchingToolPart(assistant, part, aliases, inputMatch);
   const nextPart =
     existingPart === undefined
       ? part
@@ -341,6 +417,7 @@ function findMatchingToolPart(
   message: UIMessage,
   part: UIToolMessagePart,
   aliases: Array<string | undefined>,
+  inputMatch?: JsonValue,
 ): UIToolMessagePart | undefined {
   const candidates = new Set(
     [part.toolCallId, part.callId, ...aliases].filter(
@@ -348,13 +425,26 @@ function findMatchingToolPart(
     ),
   );
 
-  return message.parts.find(
+  const exactMatch = message.parts.find(
     (item): item is UIToolMessagePart =>
       item.type === "tool" &&
       (item.id === part.id ||
         candidates.has(item.toolCallId) ||
         (item.callId !== undefined && candidates.has(item.callId))),
   );
+  if (exactMatch !== undefined || inputMatch === undefined) {
+    return exactMatch;
+  }
+
+  const inputMatches = message.parts.filter(
+    (item): item is UIToolMessagePart =>
+      item.type === "tool" &&
+      item.toolName === part.toolName &&
+      item.state !== "output-available" &&
+      item.state !== "error" &&
+      jsonEquals(item.input ?? {}, inputMatch),
+  );
+  return inputMatches.length === 1 ? inputMatches[0] : undefined;
 }
 
 function mergeToolPart(
@@ -541,6 +631,20 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function parseJsonValue(value: unknown): JsonValue | undefined {
+  if (typeof value === "string") {
+    try {
+      return valueToJson(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+  if (value === undefined) {
+    return undefined;
+  }
+  return valueToJson(value);
+}
+
 function valueToJson(value: unknown): JsonValue {
   if (
     value === null ||
@@ -553,6 +657,29 @@ function valueToJson(value: unknown): JsonValue {
     return value as JsonValue;
   }
   return stringifyUnknown(value);
+}
+
+function jsonEquals(left: JsonValue, right: JsonValue): boolean {
+  try {
+    return JSON.stringify(normalizeJson(left)) === JSON.stringify(normalizeJson(right));
+  } catch {
+    return false;
+  }
+}
+
+function normalizeJson(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeJson(item));
+  }
+  if (isJsonObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter((entry): entry is [string, JsonValue] => entry[1] !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, normalizeJson(item)]),
+    );
+  }
+  return value;
 }
 
 function mergeMetadata(current: UIMessage["metadata"], next: JsonValue): JsonValue {
@@ -568,6 +695,15 @@ function isJsonObject(value: unknown): value is Record<string, JsonValue | undef
 
 function toolPartId(toolCallId: string): string {
   return `tool_${toolCallId}`;
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index] as T)) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

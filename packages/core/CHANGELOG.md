@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.4
+
+### Patch Changes
+
+- 327261f: Preserve streamed assistant content part order when reconstructing final streaming responses.
+
 ## 0.12.3
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @anvia/react
 
+## 0.8.3
+
+### Patch Changes
+
+- 70ae42c: Preserve streamed and replayed tool result ordering across text/tool boundaries.
+- Updated dependencies [70ae42c]
+  - @anvia/core@0.12.6
+
 ## 0.8.2
 
 ### Patch Changes

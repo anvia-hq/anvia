@@ -17,6 +17,7 @@ import {
   type EventTransport,
   fetchEventStream,
   initialMessagesFromMemory,
+  type ResumableStreamEnvelope,
   readJsonlStream,
   readSseStream,
   useChat,
@@ -25,6 +26,8 @@ import {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe("@anvia/react transports", () => {
@@ -311,6 +314,142 @@ describe("@anvia/react useChat", () => {
       stream: true,
     });
     expect(result.current.text).toBe("hi");
+  });
+
+  it("unwraps resumable stream envelopes and persists active chat resume state", async () => {
+    let continueStream!: () => void;
+    const onEvent = vi.fn();
+    const transport: EventTransport<
+      UIStreamRequest,
+      UIStreamEvent | ResumableStreamEnvelope<UIStreamEvent>
+    > = {
+      send: async function* () {
+        yield { type: "stream_start", streamId: "run_1", eventId: 0 };
+        yield {
+          type: "stream_event",
+          streamId: "run_1",
+          eventId: 1,
+          event: {
+            type: "message_start",
+            message: { id: "assistant_1", role: "assistant", parts: [] },
+          },
+        };
+        yield {
+          type: "stream_event",
+          streamId: "run_1",
+          eventId: 2,
+          event: {
+            type: "text_delta",
+            messageId: "assistant_1",
+            partId: "assistant_1_text",
+            delta: "Hi",
+          },
+        };
+        await new Promise<void>((resolve) => {
+          continueStream = resolve;
+        });
+        yield { type: "stream_end", streamId: "run_1", eventId: 2, status: "completed" };
+      },
+    };
+    const { result } = renderHook(() =>
+      useChat({ transport, resume: { key: "thread_1" }, onEvent }),
+    );
+
+    let sendPromise!: Promise<void>;
+    act(() => {
+      sendPromise = result.current.send("hello");
+    });
+    await vi.waitFor(() => {
+      expect(result.current.text).toBe("Hi");
+    });
+
+    const stored = JSON.parse(
+      window.sessionStorage.getItem("anvia:chat-resume:thread_1") ?? "null",
+    ) as { streamId?: string; lastEventId?: number; messages?: UIMessage[] } | null;
+    expect(stored).toMatchObject({
+      streamId: "run_1",
+      lastEventId: 2,
+    });
+    expect(stored?.messages?.at(-1)).toMatchObject({
+      id: "assistant_1",
+      role: "assistant",
+      parts: [{ type: "text", text: "Hi" }],
+    });
+    expect(result.current.streamId).toBe("run_1");
+    expect(result.current.events).toEqual([
+      { type: "message_start", message: { id: "assistant_1", role: "assistant", parts: [] } },
+      {
+        type: "text_delta",
+        messageId: "assistant_1",
+        partId: "assistant_1_text",
+        delta: "Hi",
+      },
+    ]);
+    expect(onEvent).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      continueStream();
+      await sendPromise;
+    });
+
+    expect(result.current.streamId).toBeUndefined();
+    expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).toBeNull();
+  });
+
+  it("auto-resumes chat streams with the same endpoint request body", async () => {
+    window.sessionStorage.setItem(
+      "anvia:chat-resume:thread_1",
+      JSON.stringify({
+        version: 1,
+        streamId: "run_1",
+        lastEventId: 1,
+        messages: [
+          {
+            id: "user_1",
+            role: "user",
+            parts: [{ id: "part_1", type: "text", text: "hello" }],
+          },
+        ],
+      }),
+    );
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(
+          streamFrom(
+            `${[
+              '{"type":"stream_start","streamId":"run_1","eventId":0}',
+              '{"type":"stream_event","streamId":"run_1","eventId":2,"event":{"type":"message_start","message":{"id":"assistant_1","role":"assistant","parts":[]}}}',
+              '{"type":"stream_event","streamId":"run_1","eventId":3,"event":{"type":"text_delta","messageId":"assistant_1","partId":"assistant_1_text","delta":"there"}}',
+              '{"type":"stream_end","streamId":"run_1","eventId":3,"status":"completed"}',
+            ].join("\n")}\n`,
+          ),
+          { headers: { "content-type": "application/x-ndjson" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useChat({
+        endpoint: "https://example.test/chat",
+        resume: { key: "thread_1" },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(result.current.text).toBe("there");
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+      stream: true,
+      resume: {
+        streamId: "run_1",
+        after: 1,
+      },
+    });
+    expect(result.current.isResuming).toBe(false);
+    expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).toBeNull();
   });
 
   it("sends attachment-only messages", async () => {

@@ -23,6 +23,45 @@ export type EventTransport<TRequest, TEvent> = {
   send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
 };
 
+export type ChatResumeCursor = {
+  streamId: string;
+  after: number;
+};
+
+export type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
+
+export type ChatResumeOptions = {
+  key: string;
+  storage?: ChatResumeStorage;
+  auto?: boolean;
+};
+
+export type ChatResumeState = {
+  version: 1;
+  streamId: string;
+  lastEventId: number;
+  messages: UIMessage[];
+};
+
+export type ResumableStreamEnvelope<TEvent> =
+  | {
+      type: "stream_start";
+      streamId: string;
+      eventId: 0;
+    }
+  | {
+      type: "stream_event";
+      streamId: string;
+      eventId: number;
+      event: TEvent;
+    }
+  | {
+      type: "stream_end";
+      streamId: string;
+      eventId: number;
+      status: "running" | "completed" | "error" | "missing";
+    };
+
 export type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out";
 
 export type ToolApproval = {
@@ -130,6 +169,7 @@ export type CreateChatRequestArgs = {
   messages: UIMessage[];
   uiMessages: UIMessage[];
   coreMessages: Message[];
+  resume?: ChatResumeCursor | undefined;
 };
 
 export type UseChatStatus = "idle" | "streaming" | "error";
@@ -139,6 +179,7 @@ export type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> =
   endpoint?: string | URL;
   format?: EventStreamFormat;
   initialMessages?: UIMessage[];
+  resume?: ChatResumeOptions;
   createRequest?: (args: CreateChatRequestArgs) => TRequest;
   eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
   eventToDelta?: (event: TEvent) => string | undefined;
@@ -166,6 +207,9 @@ export type UseChatResult<TEvent = UIStreamEvent> = {
   status: UseChatStatus;
   error: unknown;
   text: string;
+  streamId?: string | undefined;
+  isResuming: boolean;
+  resume(): Promise<void>;
   humanInput: HumanInputState;
   decidingApprovals: ReadonlySet<string>;
   answeringQuestions: ReadonlySet<string>;

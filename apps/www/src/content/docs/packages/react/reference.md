@@ -107,9 +107,40 @@ type CreateChatRequestArgs = {
   messages: UIMessage[];
   uiMessages: UIMessage[];
   coreMessages: Message[];
+  resume?: ChatResumeCursor;
 };
 
 type UseChatStatus = "idle" | "streaming" | "error";
+
+type ChatResumeCursor = {
+  streamId: string;
+  after: number;
+};
+
+type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
+
+type ChatResumeOptions = {
+  key: string;
+  storage?: ChatResumeStorage;
+  auto?: boolean;
+};
+
+type ChatResumeState = {
+  version: 1;
+  streamId: string;
+  lastEventId: number;
+  messages: UIMessage[];
+};
+
+type ResumableStreamEnvelope<TEvent> =
+  | { type: "stream_start"; streamId: string; eventId: 0 }
+  | { type: "stream_event"; streamId: string; eventId: number; event: TEvent }
+  | {
+      type: "stream_end";
+      streamId: string;
+      eventId: number;
+      status: "running" | "completed" | "error" | "missing";
+    };
 
 type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out";
 
@@ -328,6 +359,7 @@ type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
   endpoint?: string | URL;
   format?: "jsonl" | "sse";
   initialMessages?: UIMessage[];
+  resume?: ChatResumeOptions;
   createRequest?: (args: CreateChatRequestArgs) => TRequest;
   eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
   eventToDelta?: (event: TEvent) => string | undefined;
@@ -351,6 +383,9 @@ type UseChatResult<TEvent = UIStreamEvent> = {
   status: UseChatStatus;
   error: unknown;
   text: string;
+  streamId?: string;
+  isResuming: boolean;
+  resume(): Promise<void>;
   humanInput: HumanInputState;
   decidingApprovals: Set<string>;
   answeringQuestions: Set<string>;
@@ -364,6 +399,7 @@ function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(options?: {
   endpoint?: string | URL;
   format?: "jsonl" | "sse";
   initialMessages?: UIMessage[];
+  resume?: ChatResumeOptions;
   createRequest?: (args: CreateChatRequestArgs) => TRequest;
   eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
   eventToDelta?: (event: TEvent) => string | undefined;
@@ -380,6 +416,12 @@ Purpose: React chat state machine that sends `UIStreamRequest` by default and ac
 Passing `endpoint` creates a default JSONL fetch transport. Passing `transport` makes the hook independent of HTTP. `sendMessage(...)` appends a user message, keeps the full UI message history in state, and sends the converted core message history. Custom request factories receive the UI array as `messages` for compatibility and the converted array as `coreMessages`. The hook applies raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records as the assistant response arrives.
 
 Passing `humanInput` tracks streamed tool approval and question events in `humanInput.approvals` and `humanInput.questions`. The action helpers submit approval decisions and question answers through custom handlers or the default `/approvals/:id/decision` and `/questions/:id/answer` endpoint paths.
+
+Passing `resume: { key }` stores the active `streamId`, last event cursor, and current messages in
+`sessionStorage` by default. On mount, `useChat` sends the same endpoint a POST body with
+`resume: { streamId, after }`, unwraps `ResumableStreamEnvelope` records, replays missed events, and
+continues tailing live events until `stream_end`. Custom `createRequest` callbacks receive
+`args.resume` and should forward it when using resumable server routes.
 
 ## useCompletion
 

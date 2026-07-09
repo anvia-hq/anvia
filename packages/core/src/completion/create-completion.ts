@@ -266,6 +266,7 @@ function isToolContent(value: unknown): boolean {
     value.type === "tool_result" &&
     typeof value.id === "string" &&
     (value.callId === undefined || typeof value.callId === "string") &&
+    (value.toolName === undefined || typeof value.toolName === "string") &&
     Array.isArray(value.content) &&
     value.content.every(isToolResultContent)
   );

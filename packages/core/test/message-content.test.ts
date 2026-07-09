@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AssistantContent, Message, reasoningDisplayText, UserContent } from "./helpers/imports";
+import {
+  AssistantContent,
+  Message,
+  reasoningDisplayText,
+  ToolContent,
+  UserContent,
+} from "./helpers/imports";
 
 describe("message attachment content", () => {
   it("creates user image and document attachments", () => {
@@ -104,6 +110,39 @@ describe("message attachment content", () => {
           content: [{ type: "text", text: '{"ok":true}' }],
         },
       ],
+    });
+  });
+
+  it("creates a tool result message with toolName metadata", () => {
+    expect(
+      Message.toolResult("abc", { ok: true }, { callId: "call_123", toolName: "exec_command" }),
+    ).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "abc",
+          callId: "call_123",
+          toolName: "exec_command",
+          content: [{ type: "text", text: '{"ok":true}' }],
+        },
+      ],
+    });
+  });
+
+  it("supports positional tool result toolName metadata", () => {
+    expect(ToolContent.toolResult("abc", "hello", undefined, "read_file")).toEqual({
+      type: "tool_result",
+      id: "abc",
+      toolName: "read_file",
+      content: [{ type: "text", text: "hello" }],
+    });
+    expect(ToolContent.toolResult("abc", "hello", "call_123", "read_file")).toEqual({
+      type: "tool_result",
+      id: "abc",
+      callId: "call_123",
+      toolName: "read_file",
+      content: [{ type: "text", text: "hello" }],
     });
   });
 

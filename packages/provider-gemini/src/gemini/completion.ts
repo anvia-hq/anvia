@@ -371,7 +371,7 @@ function toolContentToGeminiPart(
 ): GeminiPart {
   const id = content.callId ?? content.id;
   const functionResponse: Record<string, unknown> = {
-    name: toolNamesById.get(id) ?? content.id,
+    name: content.toolName ?? toolNamesById.get(id) ?? content.id,
     response: toolResultResponse(content.content),
   };
   if (content.callId !== undefined) {

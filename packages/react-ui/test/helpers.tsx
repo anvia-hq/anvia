@@ -31,6 +31,8 @@ export function createChatController(
     status: "idle",
     error: undefined,
     text: "",
+    isResuming: false,
+    resume: vi.fn(async () => {}),
     humanInput: {
       approvals: { all: [], pending: [] },
       questions: { all: [], pending: [] },

@@ -13,8 +13,15 @@ import {
   defaultEventToQuestion,
   upsertById,
 } from "./human-input";
+import {
+  clearChatResumeState,
+  isResumableStreamEnvelope,
+  loadChatResumeState,
+  saveChatResumeState,
+} from "./resume";
 import { createChatTransport } from "./transport";
 import type {
+  ChatResumeCursor,
   CreateChatRequestArgs,
   EventTransport,
   SendMessageInput,
@@ -44,12 +51,17 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   const [questions, setQuestions] = useState<ToolQuestion[]>([]);
   const [decidingApprovals, setDecidingApprovals] = useState<Set<string>>(() => new Set());
   const [answeringQuestions, setAnsweringQuestions] = useState<Set<string>>(() => new Set());
+  const [streamId, setStreamIdState] = useState<string | undefined>();
+  const [isResuming, setIsResuming] = useState(false);
   const abortRef = useRef<AbortController | undefined>(undefined);
   const messagesRef = useRef(messages);
   const approvalsRef = useRef(approvals);
   const questionsRef = useRef(questions);
   const decidingApprovalsRef = useRef(decidingApprovals);
   const answeringQuestionsRef = useRef(answeringQuestions);
+  const streamIdRef = useRef<string | undefined>(undefined);
+  const lastEventIdRef = useRef(0);
+  const autoResumeStartedRef = useRef(false);
   const humanInputVersionRef = useRef(0);
 
   useEffect(() => {
@@ -98,6 +110,31 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     messagesRef.current = next;
     setMessagesState(next);
   }, []);
+
+  const setStreamId = useCallback((nextStreamId: string | undefined) => {
+    streamIdRef.current = nextStreamId;
+    setStreamIdState(nextStreamId);
+  }, []);
+
+  const persistResumeState = useCallback(() => {
+    const currentStreamId = streamIdRef.current;
+    if (currentStreamId === undefined) {
+      return;
+    }
+
+    saveChatResumeState(options.resume, {
+      version: 1,
+      streamId: currentStreamId,
+      lastEventId: lastEventIdRef.current,
+      messages: messagesRef.current,
+    });
+  }, [options.resume]);
+
+  const clearResumeState = useCallback(() => {
+    lastEventIdRef.current = 0;
+    setStreamId(undefined);
+    clearChatResumeState(options.resume);
+  }, [options.resume, setStreamId]);
 
   const updateApproval = useCallback((approval: ToolApproval) => {
     setApprovals((current) => {
@@ -191,7 +228,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   );
 
   const sendMessages = useCallback(
-    async (nextMessages: UIMessage[]) => {
+    async (nextMessages: UIMessage[], runOptions: SendMessagesRunOptions = {}) => {
       if (transport === undefined) {
         throw new Error("useChat requires either transport or endpoint");
       }
@@ -203,13 +240,25 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       const createRequest =
         options.createRequest ??
         ((args: CreateChatRequestArgs) =>
-          ({ messages: args.coreMessages, stream: true }) as TRequest);
+          ({
+            messages: args.coreMessages,
+            stream: true,
+            ...(args.resume === undefined ? {} : { resume: args.resume }),
+          }) as TRequest);
+
+      if (runOptions.resume === undefined) {
+        clearResumeState();
+      } else {
+        lastEventIdRef.current = runOptions.resume.after;
+        setStreamId(runOptions.resume.streamId);
+      }
 
       setMessages(nextMessages);
       setEvents([]);
       setError(undefined);
       clearHumanInput();
       setStatus("streaming");
+      setIsResuming(runOptions.isResuming === true);
 
       try {
         const coreMessages = uiMessagesToCoreMessages(nextMessages);
@@ -217,12 +266,40 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
           messages: nextMessages,
           uiMessages: nextMessages,
           coreMessages,
+          resume: runOptions.resume,
         });
 
-        for await (const event of transport.send(request, { signal: abortController.signal })) {
+        for await (const rawEvent of transport.send(request, { signal: abortController.signal })) {
           if (abortRef.current !== abortController || abortController.signal.aborted) {
             return;
           }
+          if (isResumableStreamEnvelope<TEvent>(rawEvent)) {
+            if (rawEvent.type === "stream_start") {
+              setStreamId(rawEvent.streamId);
+              persistResumeState();
+              continue;
+            }
+
+            if (rawEvent.type === "stream_end") {
+              lastEventIdRef.current = rawEvent.eventId;
+              clearResumeState();
+              continue;
+            }
+
+            lastEventIdRef.current = rawEvent.eventId;
+            const event = rawEvent.event;
+            setEvents((current) => [...current, event]);
+            applyHumanInputEvent(event);
+            options.onEvent?.(event);
+            if (abortRef.current !== abortController || abortController.signal.aborted) {
+              return;
+            }
+            applyEvent(event);
+            persistResumeState();
+            continue;
+          }
+
+          const event = rawEvent;
           setEvents((current) => [...current, event]);
           applyHumanInputEvent(event);
           options.onEvent?.(event);
@@ -252,11 +329,46 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       } finally {
         if (abortRef.current === abortController) {
           abortRef.current = undefined;
+          setIsResuming(false);
         }
       }
     },
-    [applyEvent, applyHumanInputEvent, clearHumanInput, options, setMessages, transport],
+    [
+      applyEvent,
+      applyHumanInputEvent,
+      clearHumanInput,
+      clearResumeState,
+      options,
+      persistResumeState,
+      setMessages,
+      setStreamId,
+      transport,
+    ],
   );
+
+  const resume = useCallback(async () => {
+    const resumeState = loadChatResumeState(options.resume);
+    if (resumeState === undefined) {
+      return;
+    }
+
+    await sendMessages(resumeState.messages, {
+      resume: {
+        streamId: resumeState.streamId,
+        after: resumeState.lastEventId,
+      },
+      isResuming: true,
+    });
+  }, [options.resume, sendMessages]);
+
+  useEffect(() => {
+    if (options.resume?.auto === false || autoResumeStartedRef.current) {
+      return;
+    }
+
+    autoResumeStartedRef.current = true;
+    void resume();
+  }, [options.resume?.auto, resume]);
 
   const sendMessage = useCallback(
     async (input: SendMessageInput) => {
@@ -292,8 +404,10 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = undefined;
+    clearResumeState();
     setStatus("idle");
-  }, []);
+    setIsResuming(false);
+  }, [clearResumeState]);
 
   const decideToolApproval = useCallback(
     async (approvalId: string, approved: boolean, reason?: string) => {
@@ -394,13 +508,15 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     (nextMessages: UIMessage[] = []) => {
       abortRef.current?.abort();
       abortRef.current = undefined;
+      clearResumeState();
       setMessages(nextMessages);
       setEvents([]);
       clearHumanInput();
       setError(undefined);
       setStatus("idle");
+      setIsResuming(false);
     },
-    [clearHumanInput, setMessages],
+    [clearHumanInput, clearResumeState, setMessages],
   );
 
   return {
@@ -416,6 +532,9 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     status,
     error,
     text: assistantText(messages),
+    streamId,
+    isResuming,
+    resume,
     humanInput: {
       approvals: {
         all: approvals,
@@ -433,6 +552,11 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     answerToolQuestion,
   };
 }
+
+type SendMessagesRunOptions = {
+  resume?: ChatResumeCursor;
+  isResuming?: boolean;
+};
 
 function findLastUserIndex(messages: UIMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {

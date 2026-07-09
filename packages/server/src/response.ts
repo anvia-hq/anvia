@@ -1,7 +1,15 @@
 import type { UIStreamEvent } from "@anvia/core/ui";
 import { createJsonlStream } from "./jsonl";
+import { createResumableStream } from "./resumable";
 import { createSseStream } from "./sse";
-import type { CreateEventStreamOptions } from "./types";
+import type {
+  CreateEventStreamOptions,
+  JsonlStreamOptions,
+  ResumableStreamEnvelope,
+  SseStreamOptions,
+} from "./types";
+
+type ResponseStreamEvent<TEvent> = TEvent | ResumableStreamEnvelope<TEvent>;
 
 export function createEventStream<TEvent>(
   events: AsyncIterable<TEvent>,
@@ -20,10 +28,20 @@ export function createEventStream<TEvent>(
     headers.set("x-accel-buffering", "no");
   }
 
+  const eventsForResponse: AsyncIterable<ResponseStreamEvent<TEvent>> =
+    options.resumable === undefined
+      ? (events as AsyncIterable<ResponseStreamEvent<TEvent>>)
+      : createResumableStream(events, options.resumable);
   const body =
     format === "sse"
-      ? createSseStream(events, options.sse)
-      : createJsonlStream(events, options.jsonl);
+      ? createSseStream(
+          eventsForResponse,
+          options.sse as SseStreamOptions<ResponseStreamEvent<TEvent>> | undefined,
+        )
+      : createJsonlStream(
+          eventsForResponse,
+          options.jsonl as JsonlStreamOptions<ResponseStreamEvent<TEvent>> | undefined,
+        );
 
   if (!headers.has("content-type")) {
     headers.set(

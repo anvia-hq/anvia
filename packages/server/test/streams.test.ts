@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   createEventStream,
   createJsonlStream,
+  createMemoryResumableStreamStore,
   createSseStream,
   createUIStreamResponse,
+  resumeStreamEvents,
 } from "../src";
 
 describe("@anvia/server streams", () => {
@@ -57,6 +59,128 @@ describe("@anvia/server streams", () => {
 
     expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
     expect(await response.text()).toBe('data: {"type":"one"}\n\n');
+  });
+
+  it("creates resumable event stream responses", async () => {
+    const store = createMemoryResumableStreamStore<{ type: string }>();
+    const response = createEventStream(events([{ type: "one" }, { type: "two" }]), {
+      resumable: {
+        id: "run_1",
+        store,
+      },
+    });
+
+    const parsed = parseJsonl(await response.text());
+
+    expect(parsed).toEqual([
+      { type: "stream_start", streamId: "run_1", eventId: 0 },
+      { type: "stream_event", streamId: "run_1", eventId: 1, event: { type: "one" } },
+      { type: "stream_event", streamId: "run_1", eventId: 2, event: { type: "two" } },
+      { type: "stream_end", streamId: "run_1", eventId: 2, status: "completed" },
+    ]);
+    await expect(store.status({ streamId: "run_1" })).resolves.toMatchObject({
+      status: "completed",
+      lastEventId: 2,
+    });
+  });
+
+  it("resumes stored events and tails live resumable stream events", async () => {
+    const store = createMemoryResumableStreamStore<{ type: string }>();
+    await store.open({ streamId: "run_1" });
+    await store.append({ streamId: "run_1", event: { type: "one" } });
+
+    const iterator = resumeStreamEvents({
+      id: "run_1",
+      after: 0,
+      store,
+    })[Symbol.asyncIterator]();
+
+    await expect(nextValue(iterator)).resolves.toEqual({
+      type: "stream_start",
+      streamId: "run_1",
+      eventId: 0,
+    });
+    await expect(nextValue(iterator)).resolves.toEqual({
+      type: "stream_event",
+      streamId: "run_1",
+      eventId: 1,
+      event: { type: "one" },
+    });
+
+    const nextEvent = nextValue(iterator);
+    await store.append({ streamId: "run_1", event: { type: "two" } });
+    await expect(nextEvent).resolves.toEqual({
+      type: "stream_event",
+      streamId: "run_1",
+      eventId: 2,
+      event: { type: "two" },
+    });
+
+    const endEvent = nextValue(iterator);
+    await store.close({ streamId: "run_1", status: "completed" });
+    await expect(endEvent).resolves.toEqual({
+      type: "stream_end",
+      streamId: "run_1",
+      eventId: 2,
+      status: "completed",
+    });
+  });
+
+  it("stores and emits resumable stream errors", async () => {
+    const store = createMemoryResumableStreamStore<{ type: string }>();
+    const response = createEventStream(failingEvents<{ type: string }>(new Error("nope")), {
+      resumable: {
+        id: "run_1",
+        store,
+      },
+    });
+
+    const parsed = parseJsonl(await response.text());
+
+    expect(parsed).toMatchObject([
+      { type: "stream_start", streamId: "run_1", eventId: 0 },
+      {
+        type: "stream_event",
+        streamId: "run_1",
+        eventId: 1,
+        event: { type: "error", error: { name: "Error", message: "nope" } },
+      },
+      { type: "stream_end", streamId: "run_1", eventId: 1, status: "error" },
+    ]);
+  });
+
+  it("keeps storing resumable events after response cancellation", async () => {
+    const store = createMemoryResumableStreamStore<{ type: string }>();
+    let continueEvents!: () => void;
+    const response = createEventStream(
+      (async function* () {
+        yield { type: "one" };
+        await new Promise<void>((resolve) => {
+          continueEvents = resolve;
+        });
+        yield { type: "two" };
+      })(),
+      {
+        resumable: {
+          id: "run_1",
+          store,
+        },
+      },
+    );
+    const reader = response.body?.getReader();
+    if (reader === undefined) {
+      throw new Error("Expected response body");
+    }
+
+    await reader.read();
+    await reader.read();
+    await reader.cancel();
+    continueEvents();
+
+    await waitFor(async () => {
+      const state = await store.status({ streamId: "run_1" });
+      return state.status === "completed" && state.lastEventId === 2;
+    });
   });
 
   it("creates UI stream responses", async () => {
@@ -169,6 +293,33 @@ async function* events<T>(items: T[]): AsyncIterable<T> {
 
 async function readText(stream: ReadableStream<Uint8Array>): Promise<string> {
   return new Response(stream).text();
+}
+
+function parseJsonl(text: string): unknown[] {
+  return text
+    .trim()
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as unknown);
+}
+
+async function nextValue<T>(iterator: AsyncIterator<T>): Promise<T> {
+  const next = await iterator.next();
+  if (next.done === true) {
+    throw new Error("Expected iterator value");
+  }
+  return next.value;
+}
+
+async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  throw new Error("Timed out waiting for condition");
 }
 
 function failingEvents<TEvent = unknown>(error: unknown): AsyncIterable<TEvent> {

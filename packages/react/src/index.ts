@@ -12,6 +12,10 @@ export { readJsonlStream, readSseStream } from "./streams";
 export type { CreateFetchTransportOptions } from "./transport";
 export { createChatTransport, createFetchTransport } from "./transport";
 export type {
+  ChatResumeCursor,
+  ChatResumeOptions,
+  ChatResumeState,
+  ChatResumeStorage,
   ChatSuggestion,
   CreateChatRequestArgs,
   CreateUIAttachment,
@@ -19,6 +23,7 @@ export type {
   EventTransport,
   HumanInputOptions,
   HumanInputState,
+  ResumableStreamEnvelope,
   SendMessageInput,
   ToolApproval,
   ToolApprovalDecisionInput,

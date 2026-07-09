@@ -42,7 +42,7 @@ export function Chat() {
 - `fetchEventStream(url, options)` fetches JSONL or SSE streams as `AsyncIterable`.
 - `createFetchTransport(options)` creates an `EventTransport`; it defaults to POST JSON and omits implicit bodies for GET/HEAD.
 - `createChatTransport(options)` creates the default fetch-backed chat transport.
-- `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`, including optional human-input approval/question state.
+- `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`, including optional human-input approval/question state and opt-in stream resume.
 - `useCompletion(options)` appends completion turns into `UIMessage[]` state and exposes derived `completion` text.
 
 Default hook requests use one shared wire shape:
@@ -73,3 +73,7 @@ Default hooks can consume raw `createCompletionStream(...)` events, raw agent st
 ```ts
 createEventStream(createCompletionStream(model, { messages: body.messages }));
 ```
+
+For chat streams that should survive navigation or reload, pair `useChat({ resume: { key } })` with
+an endpoint that returns `createEventStream(events, { resumable: { id, store } })` and handles
+resume bodies containing `{ resume: { streamId, after } }`.

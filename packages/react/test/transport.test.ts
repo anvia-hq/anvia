@@ -198,18 +198,8 @@ describe("@anvia/react useChat", () => {
             type: "tool",
             toolName: "lookup_order",
             toolCallId: "call_1",
-            state: "input-available",
-            input: { orderId: "A-100" },
-          },
-        ],
-      },
-      {
-        role: "tool",
-        parts: [
-          {
-            type: "tool",
-            toolCallId: "call_1",
             state: "output-available",
+            input: { orderId: "A-100" },
             output: '{"status":"shipped"}',
           },
         ],
@@ -770,6 +760,336 @@ describe("@anvia/react useChat", () => {
     );
   });
 
+  it("keeps raw text deltas after tool results in chronological order", async () => {
+    const transport: EventTransport<UIStreamRequest, AgentStreamEvent> = {
+      send: async function* () {
+        yield { type: "text_delta", turn: 1, delta: "before" };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall(
+            "web_1",
+            "webSearch",
+            { query: "AAPL stock price market analysis 2025" },
+            "call_web_1",
+          ),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "webSearch",
+          toolCallId: "call_web_1",
+          internalCallId: "internal_web_1",
+          args: '{"query":"AAPL stock price market analysis 2025"}',
+          result: "price result",
+        } as unknown as AgentStreamEvent;
+        yield { type: "text_delta", turn: 1, delta: "after" };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("report");
+    });
+
+    expect(assistantPartSummary(result.current.messages)).toEqual([
+      { type: "text", text: "before" },
+      {
+        type: "tool",
+        toolName: "webSearch",
+        toolCallId: "web_1",
+        callId: "call_web_1",
+        state: "output-available",
+        input: { query: "AAPL stock price market analysis 2025" },
+        output: "price result",
+      },
+      { type: "text", text: "after" },
+    ]);
+  });
+
+  it("keeps text after a tool-first assistant run after the completed tool", async () => {
+    const transport: EventTransport<UIStreamRequest, AgentStreamEvent> = {
+      send: async function* () {
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall("exec_1", "exec_command", { command: "ls" }),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "exec_command",
+          internalCallId: "internal_exec_1",
+          args: '{"command":"ls"}',
+          result: "file.txt",
+        } as unknown as AgentStreamEvent;
+        yield { type: "text_delta", turn: 1, delta: "verified" };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("list");
+    });
+
+    expect(assistantPartSummary(result.current.messages)).toEqual([
+      {
+        type: "tool",
+        toolName: "exec_command",
+        toolCallId: "exec_1",
+        state: "output-available",
+        input: { command: "ls" },
+        output: "file.txt",
+      },
+      { type: "text", text: "verified" },
+    ]);
+  });
+
+  it("preserves ordering across multiple tool calls in one assistant run", async () => {
+    const transport: EventTransport<UIStreamRequest, AgentStreamEvent> = {
+      send: async function* () {
+        yield { type: "reasoning_delta", turn: 1, delta: "thinking..." };
+        yield {
+          type: "text_delta",
+          turn: 1,
+          delta: "Let me gather the latest information.",
+        };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall(
+            "web_1",
+            "webSearch",
+            { query: "AAPL stock price market analysis 2025" },
+            "call_web_1",
+          ),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "webSearch",
+          toolCallId: "call_web_1",
+          internalCallId: "internal_web_1",
+          args: '{"query":"AAPL stock price market analysis 2025"}',
+          result: "price result",
+        } as unknown as AgentStreamEvent;
+        yield { type: "text_delta", turn: 1, delta: "Let me get a few more details." };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall(
+            "web_2",
+            "webSearch",
+            { query: "AAPL technical analysis 2025" },
+            "call_web_2",
+          ),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "webSearch",
+          toolCallId: "call_web_2",
+          internalCallId: "internal_web_2",
+          args: '{"query":"AAPL technical analysis 2025"}',
+          result: "technical result",
+        } as unknown as AgentStreamEvent;
+        yield {
+          type: "text_delta",
+          turn: 1,
+          delta: "Excellent. Now let me create the PDF report.",
+        };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall("exec_1", "exec_command", { command: "ls" }),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "exec_command",
+          internalCallId: "internal_exec_1",
+          args: '{"command":"ls"}',
+          result: "report.pdf",
+        } as unknown as AgentStreamEvent;
+        yield { type: "text_delta", turn: 1, delta: "Let me verify the file." };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("report");
+    });
+
+    expect(assistantPartSummary(result.current.messages)).toEqual([
+      { type: "text", text: "Let me gather the latest information." },
+      expect.objectContaining({ type: "tool", toolName: "webSearch", toolCallId: "web_1" }),
+      { type: "text", text: "Let me get a few more details." },
+      expect.objectContaining({ type: "tool", toolName: "webSearch", toolCallId: "web_2" }),
+      { type: "text", text: "Excellent. Now let me create the PDF report." },
+      expect.objectContaining({
+        type: "tool",
+        toolName: "exec_command",
+        toolCallId: "exec_1",
+        input: { command: "ls" },
+        output: "report.pdf",
+      }),
+      { type: "text", text: "Let me verify the file." },
+    ]);
+  });
+
+  it("matches final and replay order while keeping sandbox tool results visible", async () => {
+    const finalMessages = [
+      Message.user("report"),
+      Message.assistant([
+        AssistantContent.text("Let me gather the latest information."),
+        AssistantContent.toolCall(
+          "web_1",
+          "webSearch",
+          { query: "AAPL stock price market analysis 2025" },
+          "call_web_1",
+        ),
+      ]),
+      Message.toolResult("web_1", "price result", {
+        callId: "call_web_1",
+        toolName: "webSearch",
+      }),
+      Message.assistant([
+        AssistantContent.text("Let me get a few more details."),
+        AssistantContent.toolCall(
+          "web_2",
+          "webSearch",
+          { query: "AAPL technical analysis 2025" },
+          "call_web_2",
+        ),
+      ]),
+      Message.toolResult("web_2", "technical result", {
+        callId: "call_web_2",
+        toolName: "webSearch",
+      }),
+      Message.assistant([
+        AssistantContent.text("Excellent. Now let me create the PDF report."),
+        AssistantContent.toolCall("exec_1", "exec_command", { command: "ls" }),
+      ]),
+      Message.toolResult("exec_1", "report.pdf", { toolName: "exec_command" }),
+      Message.assistant("Let me verify the file."),
+    ];
+    const transport: EventTransport<UIStreamRequest, AgentStreamEvent> = {
+      send: async function* () {
+        yield {
+          type: "text_delta",
+          turn: 1,
+          delta: "Let me gather the latest information.",
+        };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall(
+            "web_1",
+            "webSearch",
+            { query: "AAPL stock price market analysis 2025" },
+            "call_web_1",
+          ),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "webSearch",
+          toolCallId: "call_web_1",
+          internalCallId: "internal_web_1",
+          args: '{"query":"AAPL stock price market analysis 2025"}',
+          result: "price result",
+        } as unknown as AgentStreamEvent;
+        yield { type: "text_delta", turn: 1, delta: "Let me get a few more details." };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall(
+            "web_2",
+            "webSearch",
+            { query: "AAPL technical analysis 2025" },
+            "call_web_2",
+          ),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "webSearch",
+          toolCallId: "call_web_2",
+          internalCallId: "internal_web_2",
+          args: '{"query":"AAPL technical analysis 2025"}',
+          result: "technical result",
+        } as unknown as AgentStreamEvent;
+        yield {
+          type: "text_delta",
+          turn: 1,
+          delta: "Excellent. Now let me create the PDF report.",
+        };
+        yield {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall("exec_1", "exec_command", { command: "ls" }),
+        };
+        yield {
+          type: "tool_result",
+          turn: 1,
+          toolName: "exec_command",
+          internalCallId: "internal_exec_1",
+          args: '{"command":"ls"}',
+          result: "report.pdf",
+        } as unknown as AgentStreamEvent;
+        yield { type: "text_delta", turn: 1, delta: "Let me verify the file." };
+        yield {
+          type: "final",
+          runId: "run_1",
+          output: "Let me verify the file.",
+          usage: Usage.empty(),
+          messages: finalMessages,
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("report");
+    });
+
+    const finalSummary = assistantPartSummary(result.current.messages);
+    const replaySummary = assistantPartSummary(initialMessagesFromMemory(finalMessages));
+    expect(finalSummary).toEqual(replaySummary);
+    expect(finalSummary).toEqual([
+      { type: "text", text: "Let me gather the latest information." },
+      expect.objectContaining({
+        type: "tool",
+        toolName: "webSearch",
+        toolCallId: "web_1",
+        callId: "call_web_1",
+        state: "output-available",
+      }),
+      { type: "text", text: "Let me get a few more details." },
+      expect.objectContaining({
+        type: "tool",
+        toolName: "webSearch",
+        toolCallId: "web_2",
+        callId: "call_web_2",
+        state: "output-available",
+      }),
+      { type: "text", text: "Excellent. Now let me create the PDF report." },
+      {
+        type: "tool",
+        toolName: "exec_command",
+        toolCallId: "exec_1",
+        state: "output-available",
+        input: { command: "ls" },
+        output: "report.pdf",
+      },
+      { type: "text", text: "Let me verify the file." },
+    ]);
+    expect(result.current.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      metadata: { runId: "run_1" },
+    });
+  });
+
   it("supports custom event mapping for non-UI streams", async () => {
     const transport: EventTransport<UIStreamRequest, { type: string; delta?: string }> = {
       send: async function* () {
@@ -1224,6 +1544,48 @@ describe("@anvia/react useChat", () => {
     expect(result.current.answeringQuestions.has("question-1")).toBe(false);
   });
 });
+
+type AssistantPartSummary =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "tool";
+      toolName: string;
+      toolCallId: string;
+      callId?: string;
+      state: "input-streaming" | "input-available" | "output-available" | "error";
+      input?: unknown;
+      output?: unknown;
+    };
+
+function assistantPartSummary(messages: UIMessage[]): AssistantPartSummary[] {
+  return messages.flatMap((message) => {
+    if (message.role !== "assistant") {
+      return [];
+    }
+    return message.parts.flatMap((part): AssistantPartSummary[] => {
+      if (part.type === "text") {
+        return [{ type: "text", text: part.text }];
+      }
+      if (part.type === "tool") {
+        return [
+          {
+            type: "tool",
+            toolName: part.toolName,
+            toolCallId: part.toolCallId,
+            ...(part.callId === undefined ? {} : { callId: part.callId }),
+            state: part.state,
+            ...(part.input === undefined ? {} : { input: part.input }),
+            ...(part.output === undefined ? {} : { output: part.output }),
+          },
+        ];
+      }
+      return [];
+    });
+  });
+}
 
 async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   const items: T[] = [];

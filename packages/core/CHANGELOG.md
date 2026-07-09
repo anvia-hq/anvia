@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.6
+
+### Patch Changes
+
+- 70ae42c: Preserve streamed and replayed tool result ordering across text/tool boundaries.
+
 ## 0.12.5
 
 ### Patch Changes

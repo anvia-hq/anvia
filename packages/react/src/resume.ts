@@ -16,7 +16,13 @@ export function loadChatResumeState(
     return undefined;
   }
 
-  const raw = storage.getItem(key);
+  let raw: string | null;
+  try {
+    raw = storage.getItem(key);
+  } catch {
+    return undefined;
+  }
+
   if (raw === null) {
     return undefined;
   }
@@ -39,7 +45,11 @@ export function saveChatResumeState(
     return;
   }
 
-  storage.setItem(key, JSON.stringify(state));
+  try {
+    storage.setItem(key, JSON.stringify(state));
+  } catch {
+    // Resume state is an optimization; storage failures should not break streaming.
+  }
 }
 
 export function clearChatResumeState(options: ChatResumeOptions | undefined): void {
@@ -49,7 +59,11 @@ export function clearChatResumeState(options: ChatResumeOptions | undefined): vo
     return;
   }
 
-  storage.removeItem(key);
+  try {
+    storage.removeItem(key);
+  } catch {
+    // Resume state is an optimization; storage failures should not break streaming.
+  }
 }
 
 export function isResumableStreamEnvelope<TEvent>(
@@ -102,7 +116,11 @@ function resolveResumeStorage(options: ChatResumeOptions | undefined): Storage |
     return undefined;
   }
 
-  return storageName === "localStorage" ? window.localStorage : window.sessionStorage;
+  try {
+    return storageName === "localStorage" ? window.localStorage : window.sessionStorage;
+  } catch {
+    return undefined;
+  }
 }
 
 function isChatResumeState(value: unknown): value is ChatResumeState {

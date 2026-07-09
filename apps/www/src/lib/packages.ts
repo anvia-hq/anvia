@@ -1,5 +1,6 @@
 export type PackageFamilyId =
   | "runtime"
+  | "memory-stores"
   | "model-providers"
   | "embeddings"
   | "vector-stores"
@@ -339,6 +340,42 @@ const packageDefinitions: PackageFamilyDefinition[] = [
         "logger",
         "packages/logger",
         "Structured logger adapters for Anvia.",
+        true,
+      ),
+    ],
+  },
+  {
+    id: "memory-stores",
+    label: "Memory Store",
+    title: "Memory Store",
+    description: "Durable session memory adapters for Anvia agents.",
+    packages: [
+      definePackage(
+        "@anvia/memory-prisma",
+        "memory-prisma",
+        "packages/memory-prisma",
+        "Prisma-backed durable session memory store for Anvia.",
+        true,
+      ),
+      definePackage(
+        "@anvia/memory-drizzle",
+        "memory-drizzle",
+        "packages/memory-drizzle",
+        "Drizzle-backed durable session memory store for Anvia.",
+        true,
+      ),
+      definePackage(
+        "@anvia/memory-sqlite",
+        "memory-sqlite",
+        "packages/memory-sqlite",
+        "SQLite-backed durable session memory store for Anvia.",
+        true,
+      ),
+      definePackage(
+        "@anvia/memory-postgres",
+        "memory-postgres",
+        "packages/memory-postgres",
+        "Postgres-backed durable session memory store for Anvia.",
         true,
       ),
     ],

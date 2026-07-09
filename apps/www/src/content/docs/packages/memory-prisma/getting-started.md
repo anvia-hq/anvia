@@ -68,6 +68,8 @@ await agent
   .send();
 ```
 
+`scope` defines the database key for one memory thread. The default key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` adds `metadata.tenantId`, which isolates memory across tenants or workspaces.
+
 ## Next step
 
 Continue with [Usage Patterns](/docs/packages/memory-prisma/usage-patterns).

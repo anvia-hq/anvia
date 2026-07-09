@@ -22,7 +22,89 @@ const session = agent.session(conversation.id, {
 });
 ```
 
-The scope key isolates memory by conversation, user, and tenant.
+The scope key isolates memory by conversation, user, and tenant. Internally the adapter builds one stable key from `sessionId`, `userId`, and each selected metadata value.
+
+If the same `sessionId` should be shared across users inside a tenant, opt out of user scoping explicitly:
+
+```ts
+const memory = createPrismaMemoryStore(prisma, {
+  scope: {
+    includeUserId: false,
+    metadataKeys: ["tenantId"],
+  },
+});
+```
+
+Use that only for intentional shared memory. For normal user conversations, keep the default `includeUserId: true`.
+
+Metadata keys can point at nested JSON values:
+
+```ts
+const memory = createPrismaMemoryStore(prisma, {
+  scope: { metadataKeys: ["tenant.id", "workspace.id"] },
+});
+```
+
+Missing metadata values become `null`, so validate required tenancy metadata before running the session. Scope is not an authorization layer; it only decides which stored rows the memory adapter reads and writes.
+
+## Custom scope keys
+
+Pass a function when the app already has one canonical database key for conversation memory:
+
+```ts
+const memory = createPrismaMemoryStore(prisma, {
+  scope: (context) => {
+    const tenantId = context.metadata?.tenantId;
+    return `${tenantId}:${context.sessionId}`;
+  },
+});
+```
+
+The function must return the same value for every request that should share memory, including `load(...)`, `append(...)`, and `clear(...)`.
+
+## Load initial messages
+
+Use `session.messages()` on the server when a React page needs to render an existing thread:
+
+```ts
+export async function GET(request: Request, params: { threadId: string }) {
+  const user = await requireUser(request);
+  const agent = createSupportAgent(user);
+
+  const messages = await agent
+    .session(params.threadId, {
+      userId: user.id,
+      metadata: { tenantId: user.tenantId },
+    })
+    .messages();
+
+  return Response.json({ messages });
+}
+```
+
+The response contains core Anvia `Message[]`. Convert those messages before passing them to `useChat`:
+
+```tsx
+import type { Message } from "@anvia/core";
+import { initialMessagesFromMemory, useChat } from "@anvia/react";
+
+export function SupportChat({
+  threadId,
+  messages,
+}: {
+  threadId: string;
+  messages: Message[];
+}) {
+  const chat = useChat({
+    endpoint: `/api/threads/${threadId}/chat`,
+    initialMessages: initialMessagesFromMemory(messages),
+  });
+
+  return <ChatProvider controller={chat}>{/* thread */}</ChatProvider>;
+}
+```
+
+`initialMessages` hydrates browser state only. The stream route should still call `agent.session(...).prompt(latestUserMessage)` so Prisma memory loads authoritative history on the server.
 
 ## Save policy
 

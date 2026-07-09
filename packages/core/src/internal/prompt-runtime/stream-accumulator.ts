@@ -10,6 +10,7 @@ import { Usage } from "../../completion/index";
 import type { AgentDeltaEvent } from "../../request/types";
 
 type ReasoningState = {
+  id?: string;
   text: string;
   content?: ReasoningContent[];
 };
@@ -20,53 +21,45 @@ type PartialToolCall = {
   name: string;
   argumentsText: string;
   signature?: string;
+  additionalParams?: JsonValue;
 };
 
+type OrderedPartRef =
+  | { type: "text"; key: string }
+  | { type: "reasoning"; key: string }
+  | { type: "tool_call"; key: string };
+
 export class CompletionStreamAccumulator<RawResponse = unknown> {
-  private static readonly defaultReasoningKey = "reasoning";
-  private text = "";
-  private reasoningById = new Map<string, ReasoningState>();
-  private reasoningOrder: string[] = [];
+  private orderedParts: OrderedPartRef[] = [];
+  private textParts = new Map<string, string>();
+  private reasoningByKey = new Map<string, ReasoningState>();
+  private reasoningKeyById = new Map<string, string>();
   private toolCalls = new Map<string, PartialToolCall>();
-  private toolCallOrder: string[] = [];
   private finalResponse: CompletionResponse<RawResponse> | undefined;
   private messageId: string | undefined;
+  private nextTextKey = 0;
+  private nextReasoningKey = 0;
 
   accept(event: CompletionStreamEvent<RawResponse>): AgentDeltaEvent | undefined {
     if (event.type === "text_delta") {
-      this.text += event.delta;
+      this.appendText(event.delta);
       return { type: "text_delta", delta: event.delta };
     }
 
     if (event.type === "reasoning_delta") {
-      const key = event.id ?? CompletionStreamAccumulator.defaultReasoningKey;
-      const existing = this.reasoningById.get(key);
-      const reasoning = existing ?? { text: "" };
-      if (!existing) {
-        this.reasoningOrder.push(key);
-      }
+      const reasoning = this.reasoningStateForEvent(event);
       this.appendReasoning(reasoning, event);
-      this.reasoningById.set(key, reasoning);
       return reasoningDeltaEvent(event);
     }
 
     if (event.type === "tool_call_delta") {
-      const existing = this.toolCalls.get(event.id);
-      const toolCall = existing ?? {
-        id: event.id,
-        name: "",
-        argumentsText: "",
-      };
-      if (!existing) {
-        this.toolCallOrder.push(event.id);
-      }
+      const toolCall = this.toolCallStateForId(event.id);
       if (event.callId !== undefined) toolCall.callId = event.callId;
       if (event.name !== undefined) toolCall.name = event.name;
       if (event.signature !== undefined) toolCall.signature = event.signature;
       if (event.argumentsDelta !== undefined) {
         toolCall.argumentsText += event.argumentsDelta;
       }
-      this.toolCalls.set(event.id, toolCall);
       return undefined;
     }
 
@@ -91,16 +84,8 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   response(): CompletionResponse<RawResponse> {
     const accumulatedResponse = this.buildAccumulatedResponse();
     if (this.finalResponse !== undefined) {
-      if (this.finalResponse.choice.length === 0) {
-        const response = {
-          ...accumulatedResponse,
-          usage: this.finalResponse.usage,
-          rawResponse: this.finalResponse.rawResponse,
-        };
-        if (this.finalResponse.messageId !== undefined) {
-          response.messageId = this.finalResponse.messageId;
-        }
-        return response;
+      if (accumulatedResponse.choice.length === 0) {
+        return this.withMessageIdFallback(this.finalResponse, accumulatedResponse);
       }
       return this.mergeFinalResponse(accumulatedResponse, this.finalResponse);
     }
@@ -110,36 +95,27 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
   private buildAccumulatedResponse(): CompletionResponse<RawResponse> {
     const choice: AssistantContentType[] = [];
-    if (this.text.length > 0) {
-      choice.push({ type: "text", text: this.text });
-    }
-    for (const key of this.reasoningOrder) {
-      const reasoning = this.reasoningById.get(key) ?? { text: "" };
-      const id = key === CompletionStreamAccumulator.defaultReasoningKey ? undefined : key;
-      const content =
-        reasoning.content === undefined
-          ? { type: "reasoning" as const, text: reasoning.text }
-          : { type: "reasoning" as const, text: reasoning.text, content: reasoning.content };
-      choice.push(id === undefined ? content : { ...content, id });
-    }
-    for (const id of this.toolCallOrder) {
-      const toolCall = this.toolCalls.get(id);
+
+    for (const part of this.orderedParts) {
+      if (part.type === "text") {
+        const text = this.textParts.get(part.key) ?? "";
+        if (text.length > 0) {
+          choice.push({ type: "text", text });
+        }
+        continue;
+      }
+
+      if (part.type === "reasoning") {
+        const reasoning = this.reasoningByKey.get(part.key);
+        if (reasoning !== undefined) {
+          choice.push(reasoningContent(reasoning));
+        }
+        continue;
+      }
+
+      const toolCall = this.toolCalls.get(part.key);
       if (toolCall !== undefined) {
-        const content: ToolCall = {
-          type: "tool_call",
-          id: toolCall.id,
-          function: {
-            name: toolCall.name,
-            arguments: parseJsonValue(toolCall.argumentsText),
-          },
-        };
-        if (toolCall.callId !== undefined) {
-          content.callId = toolCall.callId;
-        }
-        if (toolCall.signature !== undefined) {
-          content.signature = toolCall.signature;
-        }
-        choice.push(content);
+        choice.push(toolCallContent(toolCall));
       }
     }
 
@@ -156,7 +132,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
   private upsertToolCall(toolCall: ToolCall): void {
     if (!this.toolCalls.has(toolCall.id)) {
-      this.toolCallOrder.push(toolCall.id);
+      this.orderedParts.push({ type: "tool_call", key: toolCall.id });
     }
     const partial: PartialToolCall = {
       id: toolCall.id,
@@ -169,6 +145,9 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     if (toolCall.signature !== undefined) {
       partial.signature = toolCall.signature;
     }
+    if (toolCall.additionalParams !== undefined) {
+      partial.additionalParams = toolCall.additionalParams;
+    }
     this.toolCalls.set(toolCall.id, partial);
   }
 
@@ -176,41 +155,137 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     accumulatedResponse: CompletionResponse<RawResponse>,
     finalResponse: CompletionResponse<RawResponse>,
   ): CompletionResponse<RawResponse> {
-    const accumulatedById = new Map<string, ToolCall>();
-    const accumulatedByCallId = new Map<string, ToolCall>();
-    for (const content of accumulatedResponse.choice) {
+    if (finalResponse.choice.length === 0) {
+      return this.withMessageIdFallback(
+        {
+          ...accumulatedResponse,
+          usage: finalResponse.usage,
+          rawResponse: finalResponse.rawResponse,
+          ...(finalResponse.messageId === undefined ? {} : { messageId: finalResponse.messageId }),
+        },
+        accumulatedResponse,
+      );
+    }
+
+    const finalById = new Map<string, ToolCall>();
+    const finalByCallId = new Map<string, ToolCall>();
+    for (const content of finalResponse.choice) {
       if (content.type !== "tool_call") {
         continue;
       }
-      accumulatedById.set(content.id, content);
+      finalById.set(content.id, content);
       if (content.callId !== undefined) {
-        accumulatedByCallId.set(content.callId, content);
+        finalByCallId.set(content.callId, content);
       }
     }
 
-    return {
-      ...finalResponse,
-      choice: finalResponse.choice.map((content) => {
-        if (content.type !== "tool_call" || !isEmptyToolArguments(content.function.arguments)) {
-          return content;
-        }
+    const matchedFinalToolCalls = new Set<ToolCall>();
+    const choice = accumulatedResponse.choice.map((content) => {
+      if (content.type !== "tool_call") {
+        return content;
+      }
 
-        const accumulated =
-          accumulatedById.get(content.id) ??
-          (content.callId === undefined ? undefined : accumulatedByCallId.get(content.callId));
-        if (accumulated === undefined || isEmptyToolArguments(accumulated.function.arguments)) {
-          return content;
-        }
+      const finalToolCall =
+        finalById.get(content.id) ??
+        (content.callId === undefined ? undefined : finalByCallId.get(content.callId));
+      if (finalToolCall === undefined) {
+        return content;
+      }
 
-        return {
-          ...content,
-          function: {
-            ...content.function,
-            arguments: accumulated.function.arguments,
-          },
-        };
-      }),
+      matchedFinalToolCalls.add(finalToolCall);
+      return mergeFinalToolCall(content, finalToolCall);
+    });
+
+    for (const content of finalResponse.choice) {
+      if (content.type !== "tool_call") {
+        continue;
+      }
+      if (!matchedFinalToolCalls.has(content)) {
+        choice.push(content);
+      }
+    }
+
+    return this.withMessageIdFallback({ ...finalResponse, choice }, accumulatedResponse);
+  }
+
+  private appendText(delta: string): void {
+    const lastPart = this.orderedParts.at(-1);
+    const key = lastPart?.type === "text" ? lastPart.key : this.createTextKey();
+    if (lastPart?.type !== "text") {
+      this.orderedParts.push({ type: "text", key });
+    }
+    this.textParts.set(key, `${this.textParts.get(key) ?? ""}${delta}`);
+  }
+
+  private reasoningStateForEvent(
+    event: Extract<CompletionStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
+  ): ReasoningState {
+    if (event.id !== undefined) {
+      const existingKey = this.reasoningKeyById.get(event.id);
+      if (existingKey !== undefined) {
+        const existing = this.reasoningByKey.get(existingKey);
+        if (existing !== undefined) {
+          return existing;
+        }
+      }
+
+      const key = this.createReasoningKey();
+      const reasoning: ReasoningState = { id: event.id, text: "" };
+      this.reasoningKeyById.set(event.id, key);
+      this.reasoningByKey.set(key, reasoning);
+      this.orderedParts.push({ type: "reasoning", key });
+      return reasoning;
+    }
+
+    const lastPart = this.orderedParts.at(-1);
+    if (lastPart?.type === "reasoning") {
+      const lastReasoning = this.reasoningByKey.get(lastPart.key);
+      if (lastReasoning !== undefined && lastReasoning.id === undefined) {
+        return lastReasoning;
+      }
+    }
+
+    const key = this.createReasoningKey();
+    const reasoning: ReasoningState = { text: "" };
+    this.reasoningByKey.set(key, reasoning);
+    this.orderedParts.push({ type: "reasoning", key });
+    return reasoning;
+  }
+
+  private toolCallStateForId(id: string): PartialToolCall {
+    const existing = this.toolCalls.get(id);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const toolCall: PartialToolCall = {
+      id,
+      name: "",
+      argumentsText: "",
     };
+    this.toolCalls.set(id, toolCall);
+    this.orderedParts.push({ type: "tool_call", key: id });
+    return toolCall;
+  }
+
+  private withMessageIdFallback(
+    response: CompletionResponse<RawResponse>,
+    accumulatedResponse: CompletionResponse<RawResponse>,
+  ): CompletionResponse<RawResponse> {
+    if (response.messageId !== undefined || accumulatedResponse.messageId === undefined) {
+      return response;
+    }
+    return { ...response, messageId: accumulatedResponse.messageId };
+  }
+
+  private createTextKey(): string {
+    this.nextTextKey += 1;
+    return `text_${this.nextTextKey.toString()}`;
+  }
+
+  private createReasoningKey(): string {
+    this.nextReasoningKey += 1;
+    return `reasoning_${this.nextReasoningKey.toString()}`;
   }
 
   private appendReasoning(
@@ -260,6 +335,50 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
     reasoning.content.push({ type: "redacted", data: event.delta });
   }
+}
+
+function reasoningContent(reasoning: ReasoningState): AssistantContentType {
+  const content =
+    reasoning.content === undefined
+      ? { type: "reasoning" as const, text: reasoning.text }
+      : { type: "reasoning" as const, text: reasoning.text, content: reasoning.content };
+  return reasoning.id === undefined ? content : { ...content, id: reasoning.id };
+}
+
+function toolCallContent(toolCall: PartialToolCall): ToolCall {
+  const content: ToolCall = {
+    type: "tool_call",
+    id: toolCall.id,
+    function: {
+      name: toolCall.name,
+      arguments: parseJsonValue(toolCall.argumentsText),
+    },
+  };
+  if (toolCall.callId !== undefined) {
+    content.callId = toolCall.callId;
+  }
+  if (toolCall.signature !== undefined) {
+    content.signature = toolCall.signature;
+  }
+  if (toolCall.additionalParams !== undefined) {
+    content.additionalParams = toolCall.additionalParams;
+  }
+  return content;
+}
+
+function mergeFinalToolCall(accumulated: ToolCall, finalToolCall: ToolCall): ToolCall {
+  const argumentsValue = isEmptyToolArguments(finalToolCall.function.arguments)
+    ? accumulated.function.arguments
+    : finalToolCall.function.arguments;
+  return {
+    ...accumulated,
+    ...finalToolCall,
+    function: {
+      ...accumulated.function,
+      ...finalToolCall.function,
+      arguments: argumentsValue,
+    },
+  };
 }
 
 function reasoningDeltaEvent(

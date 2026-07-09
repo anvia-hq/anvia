@@ -71,6 +71,8 @@ await agent
   .send();
 ```
 
+`scope` defines the database key for one memory thread. By default the key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory across tenants or workspaces. Scope is storage isolation, not authorization.
+
 ## Custom delegates
 
 The default client path expects Prisma delegates named `agentMemorySession`, `agentMemoryMessage`, and `agentMemoryError`. If your app uses custom model names, pass delegates explicitly:

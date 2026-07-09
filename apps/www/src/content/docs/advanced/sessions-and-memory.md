@@ -24,11 +24,61 @@ const response = await agent
   .send();
 ```
 
-Core loads prior messages before the run and appends new runtime messages according to the configured save policy. Your application owns the `MemoryStore` implementation, authorization checks, retention policy, and tenant isolation.
+Core loads prior messages before the run and appends new runtime messages according to the configured save policy. Your application owns authentication, authorization checks, retention policy, and tenant isolation.
 
-## Memory Store Contract
+## Use Prisma First
 
-A memory store implements three required operations. It can also implement `recordError(...)` for failed-run diagnostics:
+For Prisma applications, use `@anvia/memory-prisma` instead of writing the `MemoryStore` table shape by hand.
+
+```sh
+pnpm add @anvia/memory-prisma @anvia/core @prisma/client
+npx @anvia/memory-prisma init
+npx @anvia/memory-prisma init --write
+npx prisma validate
+npx prisma migrate dev --name add_anvia_memory
+```
+
+The init command is a dry run by default. `--write` creates `prisma/models/anvia-memory.prisma`. If your project cannot use multi-file Prisma schemas, use `--append-to-schema`; that path warns before modifying the existing `schema.prisma`.
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { createPrismaMemoryStore } from "@anvia/memory-prisma";
+import { prisma } from "./db";
+
+const memoryStore = createPrismaMemoryStore(prisma, {
+  scope: {
+    metadataKeys: ["tenantId"],
+  },
+});
+
+export const supportAgent = new AgentBuilder("support", model)
+  .instructions("Answer support questions using durable conversation context.")
+  .memory(memoryStore, { savePolicy: "turn" })
+  .build();
+```
+
+`scope` tells the adapter how to identify one durable memory thread in the database. The default key is `sessionId + userId`. `metadataKeys: ["tenantId"]` adds `context.metadata.tenantId`, producing a separate memory thread for each tenant even when conversation ids overlap.
+
+Use stable ids for metadata scope values. Missing metadata keys become `null`, so make required tenancy metadata part of the request path before calling `agent.session(...)`. Scope prevents accidental row sharing; it does not replace authorization checks.
+
+The Prisma store persists full Anvia `Message` JSON, maintains ordered message rows, stores failed-run diagnostics when enabled, and uses that scope key on memory load, append, clear, and error recording.
+
+See [`@anvia/memory-prisma`](/docs/packages/memory-prisma/getting-started) for the full package guide.
+
+## Other Store Packages
+
+Use the memory package that matches your product database layer:
+
+| Package | Use when |
+| --- | --- |
+| [`@anvia/memory-prisma`](/docs/packages/memory-prisma) | The app already uses Prisma and owns Prisma migrations. |
+| [`@anvia/memory-drizzle`](/docs/packages/memory-drizzle) | The app uses Drizzle and wants exported Postgres table definitions. |
+| [`@anvia/memory-postgres`](/docs/packages/memory-postgres) | The app owns a Postgres client or pool without an ORM. |
+| [`@anvia/memory-sqlite`](/docs/packages/memory-sqlite) | The app needs local durable memory with SQLite. |
+
+## Custom Memory Store Contract
+
+Use a custom store only when the official packages do not fit your storage layer. A memory store implements three required operations. It can also implement `recordError(...)` for failed-run diagnostics:
 
 ```ts
 import type { MemoryStore } from "@anvia/core";
@@ -89,20 +139,36 @@ Both operations go through the configured memory store. The store should enforce
 
 ## Serve Stored Messages To React
 
-Production UIs usually need one route to load saved messages and another route to stream the next
-turn. Store core Anvia `Message[]` on the server, return those messages from your API, then convert
-them with `initialMessagesFromMemory(...)` before passing them to `useChat({ initialMessages })`.
+Production UIs usually need one route to load saved messages and another route to stream the next turn. Store core Anvia `Message[]` on the server, return those messages from your API, then convert them with `initialMessagesFromMemory(...)` before passing them to `useChat({ initialMessages })`.
+
+The flow has two separate parts:
+
+1. `GET /threads/:threadId/messages` calls `agent.session(...).messages()` and returns `{ messages }`.
+2. The React page calls `initialMessagesFromMemory(messages)` and passes the result to `useChat({ initialMessages })`.
 
 ```ts
-import { type Message } from "@anvia/core";
+import { AgentBuilder, type Message } from "@anvia/core";
 import { type UIStreamRequest } from "@anvia/core/ui";
+import { createPrismaMemoryStore } from "@anvia/memory-prisma";
 import { createEventStream } from "@anvia/server";
+import { prisma } from "./db";
 
 function sessionScope(user: { id: string; tenantId: string }) {
   return {
     userId: user.id,
     metadata: { tenantId: user.tenantId },
   };
+}
+
+function createSupportAgent(user: { id: string; tenantId: string }) {
+  const memory = createPrismaMemoryStore(prisma, {
+    scope: { metadataKeys: ["tenantId"] },
+  });
+
+  return new AgentBuilder("support", model)
+    .instructions("Answer support questions with durable conversation context.")
+    .memory(memory, { savePolicy: "turn" })
+    .build();
 }
 
 function latestUserMessage(messages: Message[]): Message {
@@ -120,6 +186,41 @@ export async function GET(request: Request, params: { threadId: string }) {
 
   return Response.json({ messages });
 }
+```
+
+The GET route returns core memory messages exactly as they are stored by the memory adapter:
+
+```ts
+type LoadMessagesResponse = {
+  messages: Message[];
+};
+```
+
+On the client, convert that API payload into React UI messages before creating the chat controller:
+
+```tsx
+import type { Message } from "@anvia/core";
+import { initialMessagesFromMemory, useChat } from "@anvia/react";
+
+export function SupportChat({
+  threadId,
+  messages,
+}: {
+  threadId: string;
+  messages: Message[];
+}) {
+  const chat = useChat({
+    endpoint: `/api/threads/${threadId}/chat`,
+    initialMessages: initialMessagesFromMemory(messages),
+  });
+
+  return <ChatProvider controller={chat}>{/* thread */}</ChatProvider>;
+}
+```
+
+The stream route remains separate:
+
+```ts
 
 export async function POST(request: Request, params: { threadId: string }) {
   const user = await requireUser(request);
@@ -135,12 +236,9 @@ export async function POST(request: Request, params: { threadId: string }) {
 }
 ```
 
-The loaded memory messages are API data. Convert them on the React side with
-`initialMessagesFromMemory(...)` before passing `initialMessages` to `useChat`. The POST route
-should use the latest user message with `agent.session(...).prompt(...)`; the configured
-`MemoryStore` loads prior history server-side. Do not send the full hydrated transcript back as the
-session prompt. See
-[React UI persistence](/docs/react-ui/persistence) for the client-side `initialMessages` pattern.
+The loaded memory messages are API data. `initialMessagesFromMemory(...)` converts core `Message[]` into `UIMessage[]` for browser rendering. It does not write memory, and it does not change what the model sees.
+
+The POST route should use the latest user message with `agent.session(...).prompt(...)`; the configured `MemoryStore` loads prior history server-side. Do not send the full hydrated transcript back as the session prompt. See [React UI persistence](/docs/react-ui/persistence) for the client-side `initialMessages` pattern.
 
 ## What To Store
 

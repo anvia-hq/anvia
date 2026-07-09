@@ -10,6 +10,18 @@ sidebar:
 
 Release history mirrored from `packages/provider-openai/CHANGELOG.md`.
 
+## 0.3.16
+
+### Patch Changes
+
+- 498e95b: Preserve OpenAI refusal text and terminal Responses stream failure states in completion mappings.
+
+## 0.3.15
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.3.14
 
 ### Patch Changes

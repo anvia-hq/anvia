@@ -10,6 +10,63 @@ sidebar:
 
 Release history mirrored from `packages/react/CHANGELOG.md`.
 
+## 0.7.11
+
+### Patch Changes
+
+- 8e6fc0c: Add `initialMessagesFromMemory` for hydrating React chat state from Anvia memory messages.
+
+## 0.7.10
+
+### Patch Changes
+
+- Updated dependencies [6cd352e]
+  - @anvia/core@0.12.3
+
+## 0.7.9
+
+### Patch Changes
+
+- 7b398eb: Add composable React UI primitives for Anvia chat, completion, message parts, and human-input workflows.
+  Merge raw agent tool-call results back into the originating tool part when provider and internal call ids differ.
+  Add UI attachment contracts, chat suggestions, composer attachments, auto-resizing composer input, Markdown rendering, granular tool primitives, thread status helpers, expanded human-input controls, controlled composer state, custom composer submit handlers, optional empty collection mounting, and thinner headless defaults.
+- Updated dependencies [7b398eb]
+  - @anvia/core@0.12.2
+
+## 0.7.8
+
+### Patch Changes
+
+- Updated dependencies [2735197]
+  - @anvia/core@0.12.1
+
+## 0.7.7
+
+### Patch Changes
+
+- Updated dependencies [eed8b5f]
+  - @anvia/core@0.12.0
+
+## 0.7.6
+
+### Patch Changes
+
+- 264b92d: Restore React human-input hook state, harden overlapping chat sends, make fetch transports avoid implicit GET/HEAD bodies, and validate server-sent event control fields.
+
+## 0.7.5
+
+### Patch Changes
+
+- Updated dependencies [32171dc]
+  - @anvia/core@0.11.3
+
+## 0.7.4
+
+### Patch Changes
+
+- Updated dependencies [730c23d]
+  - @anvia/core@0.11.2
+
 ## 0.7.3
 
 ### Patch Changes

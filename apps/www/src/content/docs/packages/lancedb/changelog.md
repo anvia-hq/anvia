@@ -10,6 +10,12 @@ sidebar:
 
 Release history mirrored from `packages/vector-lancedb/CHANGELOG.md`.
 
+## 0.2.4
+
+### Patch Changes
+
+- 8f7ba97: Update upstream runtime dependencies for provider, vector, and observability adapters.
+
 ## 0.2.3
 
 ### Patch Changes

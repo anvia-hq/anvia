@@ -10,6 +10,24 @@ sidebar:
 
 Release history mirrored from `packages/provider-mistral/CHANGELOG.md`.
 
+## 0.3.4
+
+### Patch Changes
+
+- 8f7ba97: Update upstream runtime dependencies for provider, vector, and observability adapters.
+
+## 0.3.3
+
+### Patch Changes
+
+- 7326e6a: Update upstream runtime dependencies for provider, vector store, observability, and Studio packages.
+
+## 0.3.2
+
+### Patch Changes
+
+- 32171dc: Add provider model-name types for autocomplete while preserving custom string model IDs.
+
 ## 0.3.1
 
 ### Patch Changes

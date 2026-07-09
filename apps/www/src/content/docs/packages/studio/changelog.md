@@ -10,6 +10,78 @@ sidebar:
 
 Release history mirrored from `packages/tool-studio/CHANGELOG.md`.
 
+## 0.7.20
+
+### Patch Changes
+
+- Updated dependencies [8e6fc0c]
+  - @anvia/react@0.7.11
+
+## 0.7.19
+
+### Patch Changes
+
+- @anvia/react@0.7.10
+- @anvia/server@0.4.10
+
+## 0.7.18
+
+### Patch Changes
+
+- Updated dependencies [7b398eb]
+  - @anvia/react@0.7.9
+  - @anvia/server@0.4.9
+
+## 0.7.17
+
+### Patch Changes
+
+- 7326e6a: Update upstream runtime dependencies for provider, vector store, observability, and Studio packages.
+
+## 0.7.16
+
+### Patch Changes
+
+- f6860b9: Redesign the Studio Knowledge dynamic tools, Memory, and Status inspector pages.
+- fff056f: Expose MCP server origin on Studio tool metadata and run MCP-backed tools directly from the Studio MCP screen.
+- edc4aeb: Accept shared UI-style agent run requests and reuse shared React stream and human-input helpers internally while preserving Studio's existing JSONL behavior.
+
+## 0.7.15
+
+### Patch Changes
+
+- @anvia/react@0.7.8
+- @anvia/server@0.4.8
+
+## 0.7.14
+
+### Patch Changes
+
+- @anvia/react@0.7.7
+- @anvia/server@0.4.7
+
+## 0.7.13
+
+### Patch Changes
+
+- Updated dependencies [264b92d]
+  - @anvia/react@0.7.6
+  - @anvia/server@0.4.6
+
+## 0.7.12
+
+### Patch Changes
+
+- @anvia/react@0.7.5
+- @anvia/server@0.4.5
+
+## 0.7.11
+
+### Patch Changes
+
+- @anvia/react@0.7.4
+- @anvia/server@0.4.4
+
 ## 0.7.10
 
 ### Patch Changes

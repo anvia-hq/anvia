@@ -1,3 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 export type PackageFamilyId =
   | "runtime"
   | "memory-stores"
@@ -69,17 +73,61 @@ interface PackageManifest {
   version?: string;
 }
 
-const packageManifestsBySourceDirectory = new Map(
-  Object.entries(
-    import.meta.glob<PackageManifest>("../../../../packages/*/package.json", {
-      eager: true,
-      import: "default",
-    }),
-  ).map(([path, manifest]) => [
-    path.replace("../../../../", "").replace(/\/package\.json$/, ""),
-    manifest,
-  ]),
-);
+const packageManifestsBySourceDirectory =
+  typeof import.meta.glob === "function" ? readVitePackageManifests() : readNodePackageManifests();
+
+function readVitePackageManifests(): Map<string, PackageManifest> {
+  return new Map(
+    Object.entries(
+      import.meta.glob<PackageManifest>("../../../../packages/*/package.json", {
+        eager: true,
+        import: "default",
+      }),
+    ).map(([path, manifest]) => [
+      path.replace("../../../../", "").replace(/\/package\.json$/, ""),
+      manifest,
+    ]),
+  );
+}
+
+function readNodePackageManifests(): Map<string, PackageManifest> {
+  const sourceRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
+  const packagesRoot = join(sourceRoot, "packages");
+
+  return new Map(
+    readdirSync(packagesRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry): [string, PackageManifest][] => {
+        const sourceDirectory = `packages/${entry.name}`;
+        const packageJsonPath = join(packagesRoot, entry.name, "package.json");
+
+        if (!existsSync(packageJsonPath)) {
+          return [];
+        }
+
+        return [[sourceDirectory, JSON.parse(readFileSync(packageJsonPath, "utf8"))]];
+      }),
+  );
+}
+
+function findRepoRoot(startDirectory: string): string {
+  let currentDirectory = resolve(startDirectory);
+
+  while (true) {
+    if (
+      existsSync(join(currentDirectory, "pnpm-workspace.yaml")) &&
+      existsSync(join(currentDirectory, "packages"))
+    ) {
+      return currentDirectory;
+    }
+
+    const parentDirectory = dirname(currentDirectory);
+    if (parentDirectory === currentDirectory) {
+      throw new Error(`Unable to find repository root from ${startDirectory}.`);
+    }
+    currentDirectory = parentDirectory;
+  }
+}
 
 export const packageDocPages: PackageDocPage[] = [
   {

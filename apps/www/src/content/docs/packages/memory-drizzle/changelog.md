@@ -10,6 +10,12 @@ sidebar:
 
 Release history mirrored from `packages/memory-drizzle/CHANGELOG.md`.
 
-## Unreleased
+## 0.2.0
 
-Initial package with a Drizzle-backed Anvia memory store and exported Postgres table schema.
+### Minor Changes
+
+- 8d880dd: Add durable session memory adapters for Prisma, Drizzle, SQLite, and Postgres.
+
+## 0.1.0
+
+- Add a Drizzle-backed durable memory store and exported Postgres table schema.

@@ -56,7 +56,7 @@ type Reasoning = { type: "reasoning"; text: string; id?: string; content?: Reaso
 type ToolFunction = { name: string; arguments: JsonValue };
 type ToolCall = { type: "tool_call"; id: string; callId?: string; function: ToolFunction; signature?: string; additionalParams?: JsonValue };
 type ToolResultContent = { type: "text"; text: string } | { type: "image"; data: string; mediaType?: string };
-type ToolResult = { type: "tool_result"; id: string; callId?: string; content: ToolResultContent[] };
+type ToolResult = { type: "tool_result"; id: string; callId?: string; toolName?: string; content: ToolResultContent[] };
 type ToolContent = ToolResult;
 ```
 
@@ -80,7 +80,7 @@ const Message: {
   user(content: string | UserContent[]): Message;
   assistant(content: string | AssistantContent[], id?: string): Message;
   tool(content: ToolContent | ToolContent[]): Message;
-  toolResult(id: string, output: unknown, options?: { callId?: string | undefined }): Message;
+  toolResult(id: string, output: unknown, options?: { callId?: string | undefined; toolName?: string | undefined }): Message;
 };
 ```
 
@@ -115,7 +115,7 @@ const AssistantContent: {
 };
 
 const ToolContent: {
-  toolResult(id: string, content: string | ToolResultContent[], callId?: string): ToolResult;
+  toolResult(id: string, content: string | ToolResultContent[], callIdOrOptions?: string | { callId?: string | undefined; toolName?: string | undefined }, toolName?: string): ToolResult;
 };
 ```
 
@@ -128,6 +128,8 @@ For normal manual tool execution, prefer:
 ```ts
 messages.push(Message.toolResult(toolCall.id, result, { callId: toolCall.callId }));
 ```
+
+Set `toolName` on persisted tool results when the result is created without a nearby assistant tool call. UI message rehydration also recovers tool names from matching assistant tool calls by `id` or `callId`.
 
 `AssistantContent.reasoning(text, id?)` keeps the legacy shape. Provider adapters can populate `reasoning.content` with structured text, summary, encrypted, or redacted blocks; `reasoning.text` remains the display-safe text made from text and summary blocks.
 

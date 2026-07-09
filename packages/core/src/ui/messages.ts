@@ -83,11 +83,10 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
           );
           if (part.state === "output-available") {
             toolResults.push(
-              ToolContent.toolResult(
-                part.toolCallId,
-                outputToToolResultContent(part.output),
-                part.callId,
-              ),
+              ToolContent.toolResult(part.toolCallId, outputToToolResultContent(part.output), {
+                callId: part.callId,
+                toolName: part.toolName,
+              }),
             );
           }
         }
@@ -107,11 +106,10 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
         continue;
       }
       toolResults.push(
-        ToolContent.toolResult(
-          part.toolCallId,
-          outputToToolResultContent(part.output),
-          part.callId,
-        ),
+        ToolContent.toolResult(part.toolCallId, outputToToolResultContent(part.output), {
+          callId: part.callId,
+          toolName: part.toolName,
+        }),
       );
     }
     if (toolResults.length > 0) {
@@ -124,6 +122,7 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
 
 export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
   const uiMessages: UIMessage[] = [];
+  const toolNamesByCallKey = toolCallNameLookup(messages);
 
   for (const message of messages) {
     if (message.role === "system") {
@@ -202,7 +201,7 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
       const part: UIMessagePart = {
         id: toolPartId(content.id),
         type: "tool",
-        toolName: "tool",
+        toolName: toolNameForResult(content, toolNamesByCallKey),
         toolCallId: content.id,
         state: "output-available",
         output: toolResultContentToJson(content.content),
@@ -216,6 +215,39 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
   }
 
   return uiMessages;
+}
+
+function toolCallNameLookup(messages: CoreMessage[]): Map<string, string> {
+  const toolNamesByCallKey = new Map<string, string>();
+
+  for (const message of messages) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+    for (const content of message.content) {
+      if (content.type !== "tool_call") {
+        continue;
+      }
+      toolNamesByCallKey.set(content.id, content.function.name);
+      if (content.callId !== undefined) {
+        toolNamesByCallKey.set(content.callId, content.function.name);
+      }
+    }
+  }
+
+  return toolNamesByCallKey;
+}
+
+function toolNameForResult(
+  content: ToolContentType,
+  toolNamesByCallKey: Map<string, string>,
+): string {
+  return (
+    content.toolName ??
+    toolNamesByCallKey.get(content.id) ??
+    (content.callId === undefined ? undefined : toolNamesByCallKey.get(content.callId)) ??
+    "tool"
+  );
 }
 
 export function isUIMessage(value: unknown): value is UIMessage {

@@ -104,7 +104,13 @@ export type ToolResult = {
   type: "tool_result";
   id: string;
   callId?: string;
+  toolName?: string;
   content: ToolResultContent[];
+};
+
+type ToolResultOptions = {
+  callId?: string | undefined;
+  toolName?: string | undefined;
 };
 
 export type UserContent = Text | ImageContent | DocumentContent;
@@ -191,14 +197,40 @@ export const UserContent = {
 };
 
 export const ToolContent = {
-  toolResult(id: string, content: string | ToolResultContent[], callId?: string): ToolResult {
+  toolResult(
+    id: string,
+    content: string | ToolResultContent[],
+    callIdOrOptions?: string | ToolResultOptions,
+    toolName?: string,
+  ): ToolResult {
     const normalized =
       typeof content === "string" ? [{ type: "text" as const, text: content }] : content;
-    return callId === undefined
-      ? { type: "tool_result", id, content: normalized }
-      : { type: "tool_result", id, callId, content: normalized };
+    const options = normalizeToolResultOptions(callIdOrOptions, toolName);
+    const result: ToolResult = { type: "tool_result", id, content: normalized };
+    if (options.callId !== undefined) {
+      result.callId = options.callId;
+    }
+    if (options.toolName !== undefined) {
+      result.toolName = options.toolName;
+    }
+    return result;
   },
 };
+
+function normalizeToolResultOptions(
+  callIdOrOptions?: string | ToolResultOptions,
+  toolName?: string,
+): ToolResultOptions {
+  if (callIdOrOptions === undefined) {
+    return toolName === undefined ? {} : { toolName };
+  }
+  if (typeof callIdOrOptions === "string") {
+    return toolName === undefined
+      ? { callId: callIdOrOptions }
+      : { callId: callIdOrOptions, toolName };
+  }
+  return toolName === undefined ? callIdOrOptions : { ...callIdOrOptions, toolName };
+}
 
 export function serializeToolResultOutput(output: unknown): string {
   if (typeof output === "string") {
@@ -330,9 +362,9 @@ export const Message = {
       content: Array.isArray(content) ? content : [content],
     };
   },
-  toolResult(id: string, output: unknown, options: { callId?: string | undefined } = {}): Message {
+  toolResult(id: string, output: unknown, options: ToolResultOptions = {}): Message {
     const content = isToolResultContentArray(output) ? output : serializeToolResultOutput(output);
-    return Message.tool(ToolContent.toolResult(id, content, options.callId));
+    return Message.tool(ToolContent.toolResult(id, content, options));
   },
 };
 

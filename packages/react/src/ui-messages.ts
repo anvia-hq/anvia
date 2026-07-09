@@ -136,12 +136,14 @@ export function applyAnviaStreamEvent(
   }
 
   if (event.type === "tool_call_delta" && typeof event.id === "string") {
+    const turn = eventTurn(event);
     const part: UIToolMessagePart = {
-      id: toolPartId(event.id),
+      id: toolPartId(event.id, turn),
       type: "tool",
       toolName: typeof event.name === "string" ? event.name : "",
       toolCallId: event.id,
       ...(typeof event.callId === "string" ? { callId: event.callId } : {}),
+      ...(turn === undefined ? {} : { turn }),
       state: "input-streaming",
       ...(typeof event.argumentsDelta === "string" ? { input: event.argumentsDelta } : {}),
     };
@@ -149,12 +151,14 @@ export function applyAnviaStreamEvent(
   }
 
   if (event.type === "tool_call" && isToolCall(event.toolCall)) {
+    const turn = eventTurn(event);
     const part: UIToolMessagePart = {
-      id: toolPartId(event.toolCall.id),
+      id: toolPartId(event.toolCall.id, turn),
       type: "tool",
       toolName: event.toolCall.function.name,
       toolCallId: event.toolCall.id,
       ...(typeof event.toolCall.callId === "string" ? { callId: event.toolCall.callId } : {}),
+      ...(turn === undefined ? {} : { turn }),
       state: "input-available",
       input: event.toolCall.function.arguments,
     };
@@ -169,12 +173,14 @@ export function applyAnviaStreamEvent(
     if (toolCallId === undefined || typeof event.toolName !== "string") {
       return undefined;
     }
+    const turn = eventTurn(event);
     const part: UIToolMessagePart = {
-      id: toolPartId(toolCallId),
+      id: toolPartId(toolCallId, turn),
       type: "tool",
       toolName: event.toolName,
       toolCallId,
       ...(providerCallId === undefined ? {} : { callId: providerCallId }),
+      ...(turn === undefined ? {} : { turn }),
       state: "output-available",
       output:
         "structuredResult" in event && event.structuredResult !== undefined
@@ -428,6 +434,7 @@ function findMatchingToolPart(
   const exactMatch = message.parts.find(
     (item): item is UIToolMessagePart =>
       item.type === "tool" &&
+      hasCompatibleTurn(item, part) &&
       (item.id === part.id ||
         candidates.has(item.toolCallId) ||
         (item.callId !== undefined && candidates.has(item.callId))),
@@ -439,6 +446,7 @@ function findMatchingToolPart(
   const inputMatches = message.parts.filter(
     (item): item is UIToolMessagePart =>
       item.type === "tool" &&
+      hasCompatibleTurn(item, part) &&
       item.toolName === part.toolName &&
       item.state !== "output-available" &&
       item.state !== "error" &&
@@ -472,6 +480,12 @@ function mergeToolPart(
   }
 
   return merged;
+}
+
+function hasCompatibleTurn(currentPart: UIToolMessagePart, nextPart: UIToolMessagePart): boolean {
+  return nextPart.turn === undefined
+    ? currentPart.turn === undefined
+    : currentPart.turn === nextPart.turn;
 }
 
 function appendAssistantError(messages: UIMessage[], error: UIError): UIMessage[] {
@@ -607,6 +621,10 @@ function isToolCall(value: unknown): value is {
   );
 }
 
+function eventTurn(event: Record<string, unknown>): number | undefined {
+  return typeof event.turn === "number" && Number.isFinite(event.turn) ? event.turn : undefined;
+}
+
 function textFromAssistantContent(content: unknown[]): string {
   return content
     .flatMap((item) =>
@@ -693,8 +711,8 @@ function isJsonObject(value: unknown): value is Record<string, JsonValue | undef
   return isRecord(value) && !Array.isArray(value);
 }
 
-function toolPartId(toolCallId: string): string {
-  return `tool_${toolCallId}`;
+function toolPartId(toolCallId: string, turn?: number): string {
+  return turn === undefined ? `tool_${toolCallId}` : `tool_${turn}_${toolCallId}`;
 }
 
 function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {

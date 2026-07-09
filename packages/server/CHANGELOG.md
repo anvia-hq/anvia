@@ -1,5 +1,12 @@
 # @anvia/server
 
+## 0.5.0
+
+### Minor Changes
+
+- 3236568: Add resumable chat stream support with server-side resumable event envelopes, replay/tail helpers,
+  an in-memory resumable stream store, and `useChat({ resume })` client resume state.
+
 ## 0.4.10
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/memory-prisma
 
+## 0.2.1
+
+### Patch Changes
+
+- 384c8f0: Preserve tool result names when rehydrating persisted UI messages from core messages.
+
 ## 0.2.0
 
 ### Minor Changes

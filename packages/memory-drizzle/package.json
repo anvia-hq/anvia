@@ -1,0 +1,45 @@
+{
+  "name": "@anvia/memory-drizzle",
+  "version": "0.1.0",
+  "description": "Drizzle-backed durable session memory store for Anvia.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/memory-drizzle"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anvia/core": "workspace:*",
+    "@types/node": "^24.9.1",
+    "drizzle-orm": "^0.45.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": ">=0.12.0 <1.0.0",
+    "drizzle-orm": ">=0.45.0 <1.0.0"
+  }
+}

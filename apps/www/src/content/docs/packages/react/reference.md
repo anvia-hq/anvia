@@ -423,6 +423,39 @@ Passing `resume: { key }` stores the active `streamId`, last event cursor, and c
 continues tailing live events until `stream_end`. Custom `createRequest` callbacks receive
 `args.resume` and should forward it when using resumable server routes.
 
+## useSmoothStreamText
+
+```ts
+type StreamAnimationMode = "none" | "smooth" | "fadeIn";
+type StreamSmoothingPreset = "realtime" | "balanced" | "silky";
+
+type UseSmoothStreamTextOptions = {
+  enabled?: boolean;
+  mode?: StreamAnimationMode;
+  isStreaming?: boolean;
+  preset?: StreamSmoothingPreset;
+  reducedMotion?: boolean;
+  largeAppendChars?: number;
+};
+
+type UseSmoothStreamTextResult = {
+  text: string;
+  isAnimating: boolean;
+  flush(): void;
+  reset(nextText?: string): void;
+};
+
+function useSmoothStreamText(
+  content: string,
+  options?: UseSmoothStreamTextOptions,
+): UseSmoothStreamTextResult;
+```
+
+Purpose: progressively reveal append-only display text with `requestAnimationFrame`. It does not
+consume transport events, update `UIMessage[]`, or replace `useChat`. Replacement text, large
+appends over the default 500-character threshold, disabled animation, stopped streaming, and
+reduced motion synchronize immediately.
+
 ## useCompletion
 
 ```ts

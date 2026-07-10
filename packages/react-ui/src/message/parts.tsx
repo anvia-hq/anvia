@@ -1,4 +1,10 @@
-import type { UIAttachment, UIMessagePart } from "@anvia/react";
+import {
+  type StreamAnimationMode,
+  type StreamSmoothingPreset,
+  type UIAttachment,
+  type UIMessagePart,
+  useSmoothStreamText,
+} from "@anvia/react";
 import { type ComponentPropsWithoutRef, forwardRef, type ReactNode } from "react";
 import ReactMarkdown, {
   type Components,
@@ -24,6 +30,14 @@ type MessageToolChildren = ReactNode | ((part: MessageToolPart) => ReactNode);
 export type MessageToolRenderWhen = "always" | "pending" | "settled";
 export type MessageAttachmentPart = Extract<UIMessagePart, { type: "attachment" }>;
 type MessageAttachmentChildren = ReactNode | ((attachment: UIAttachment) => ReactNode);
+
+type MessageStreamAnimationProps = {
+  animate?: boolean;
+  animationMode?: StreamAnimationMode;
+  isStreaming?: boolean;
+  smoothingPreset?: StreamSmoothingPreset;
+  reducedMotion?: boolean;
+};
 
 type MessagePartsProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: MessagePartChildren;
@@ -76,33 +90,71 @@ const MessagePart = forwardRef<HTMLDivElement, MessagePartProps>(function Messag
   );
 });
 
-const MessageText = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
-  function MessageText(props, ref) {
-    const { part } = useMessagePart();
-    if (part.type !== "text") {
-      return null;
-    }
+type MessageTextProps = PrimitiveProps<"span"> & MessageStreamAnimationProps;
+
+const MessageText = forwardRef<HTMLSpanElement, MessageTextProps>(function MessageText(props, ref) {
+  const { part } = useMessagePart();
+  if (part.type !== "text") {
+    return null;
+  }
+
+  return <MessageTextContent {...props} content={part.text} ref={ref} />;
+});
+
+type MessageTextContentProps = MessageTextProps & {
+  content: string;
+};
+
+const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
+  function MessageTextContent(
+    {
+      animate = false,
+      animationMode = "smooth",
+      isStreaming,
+      smoothingPreset,
+      reducedMotion,
+      content,
+      ...props
+    },
+    ref,
+  ) {
+    const animationEnabled = animate && props.children === undefined;
+    const smooth = useSmoothStreamText(content, {
+      enabled: animationEnabled,
+      mode: animationMode,
+      ...(isStreaming === undefined ? {} : { isStreaming }),
+      ...(smoothingPreset === undefined ? {} : { preset: smoothingPreset }),
+      ...(reducedMotion === undefined ? {} : { reducedMotion }),
+    });
+    const animationActive =
+      animationEnabled &&
+      animationMode !== "none" &&
+      isStreaming !== false &&
+      reducedMotion !== true;
 
     return renderPrimitive(
       "span",
       {
         ...props,
-        children: props.children ?? part.text,
+        children: props.children ?? (animationEnabled ? smooth.text : content),
         "data-anvia-text": "",
+        "data-anvia-stream-animation": animationEnabled ? animationMode : undefined,
+        "data-streaming": animationActive ? "" : undefined,
       } as PrimitiveProps<"span">,
       ref,
     );
   },
 );
 
-type MessageMarkdownProps = Omit<PrimitiveProps<"div">, "children"> & {
-  children?: string;
-  components?: Components;
-  remarkPlugins?: ReactMarkdownOptions["remarkPlugins"];
-};
+type MessageMarkdownProps = Omit<PrimitiveProps<"div">, "children"> &
+  MessageStreamAnimationProps & {
+    children?: string;
+    components?: Components;
+    remarkPlugins?: ReactMarkdownOptions["remarkPlugins"];
+  };
 
 const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(function MessageMarkdown(
-  { children, components, remarkPlugins, ...props },
+  { children, ...props },
   ref,
 ) {
   const { message } = useMessage();
@@ -118,23 +170,58 @@ const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(functio
       ? part.text
       : message.parts.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n\n"));
 
-  return renderPrimitive(
-    "div",
-    {
-      ...props,
-      children: (
-        <ReactMarkdown
-          components={{ code: defaultCodeComponent, pre: defaultPreComponent, ...components }}
-          remarkPlugins={remarkPlugins ?? [remarkGfm]}
-        >
-          {markdown}
-        </ReactMarkdown>
-      ),
-      "data-anvia-markdown": "",
-    } as PrimitiveProps<"div">,
-    ref,
-  );
+  return <MessageMarkdownContent {...props} markdown={markdown} ref={ref} />;
 });
+
+type MessageMarkdownContentProps = Omit<MessageMarkdownProps, "children"> & {
+  markdown: string;
+};
+
+const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContentProps>(
+  function MessageMarkdownContent(
+    {
+      animate = false,
+      animationMode = "smooth",
+      isStreaming,
+      smoothingPreset,
+      reducedMotion,
+      components,
+      remarkPlugins,
+      markdown,
+      ...props
+    },
+    ref,
+  ) {
+    const smooth = useSmoothStreamText(markdown, {
+      enabled: animate,
+      mode: animationMode,
+      ...(isStreaming === undefined ? {} : { isStreaming }),
+      ...(smoothingPreset === undefined ? {} : { preset: smoothingPreset }),
+      ...(reducedMotion === undefined ? {} : { reducedMotion }),
+    });
+    const animationActive =
+      animate && animationMode !== "none" && isStreaming !== false && reducedMotion !== true;
+
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        children: (
+          <ReactMarkdown
+            components={{ code: defaultCodeComponent, pre: defaultPreComponent, ...components }}
+            remarkPlugins={remarkPlugins ?? [remarkGfm]}
+          >
+            {animate ? smooth.text : markdown}
+          </ReactMarkdown>
+        ),
+        "data-anvia-markdown": "",
+        "data-anvia-stream-animation": animate ? animationMode : undefined,
+        "data-streaming": animationActive ? "" : undefined,
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
 
 type MessageCodeBlockProps = Omit<PrimitiveProps<"pre">, "children"> & {
   children?: ReactNode;

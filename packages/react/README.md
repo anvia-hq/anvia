@@ -44,6 +44,7 @@ export function Chat() {
 - `createChatTransport(options)` creates the default fetch-backed chat transport.
 - `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`, including optional human-input approval/question state and opt-in stream resume.
 - `useCompletion(options)` appends completion turns into `UIMessage[]` state and exposes derived `completion` text.
+- `useSmoothStreamText(content, options)` smooths an append-only string for display without changing stream events or message state.
 
 Default hook requests use one shared wire shape:
 

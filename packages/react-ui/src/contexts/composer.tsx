@@ -60,6 +60,11 @@ export type ComposerEntity = {
   };
   data?: ComposerEntityData | undefined;
 };
+export type ComposerMessageMetadata = {
+  composer: {
+    entities: ComposerEntity[];
+  };
+};
 export type ComposerTriggerState = {
   trigger: ComposerTriggerDefinition;
   query: string;

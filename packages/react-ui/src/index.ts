@@ -24,6 +24,7 @@ export {
 export { Image, useImage } from "./image/index";
 export type {
   MessageAttachmentPart,
+  MessageEntityProps,
   MessagePartsFilter,
   MessageToolPart,
   MessageToolRenderWhen,
@@ -45,6 +46,7 @@ export type {
   ComposerEntitiesUpdate,
   ComposerEntity,
   ComposerEntityData,
+  ComposerMessageMetadata,
   ComposerQuote,
   ComposerTriggerDefinition,
   ComposerTriggerItem,

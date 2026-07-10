@@ -93,6 +93,7 @@ const Message: {
   Part: React.ForwardRefExoticComponent<...>;
   Text: React.ForwardRefExoticComponent<...>;
   Markdown: React.ForwardRefExoticComponent<...>;
+  Entity: React.ForwardRefExoticComponent<MessageEntityProps & React.RefAttributes<HTMLSpanElement>>;
   CodeBlock: React.ForwardRefExoticComponent<...>;
   Reasoning: React.ForwardRefExoticComponent<...>;
   Tool: React.ForwardRefExoticComponent<...>;
@@ -173,6 +174,18 @@ type MessageStreamAnimationProps = {
 
 Animation is disabled by default. When enabled, these renderers pass their existing text through
 `useSmoothStreamText`; the underlying `useChat` controller and `UIMessage[]` remain unchanged.
+
+`Message.Markdown` also accepts `renderEntity?: (entity: ComposerEntity) => ReactNode`. Valid
+entities from `message.metadata.composer.entities` render through `Message.Entity` by default.
+
+```ts
+type MessageEntityProps = React.HTMLAttributes<HTMLSpanElement> & {
+  entity: ComposerEntity;
+};
+```
+
+The default span emits `data-anvia-message-entity`, `data-entity-id`, and `data-trigger-id`. It does
+not serialize `entity.data` into the DOM.
 
 ## Providers
 
@@ -341,6 +354,12 @@ type ComposerEntity = {
     to: number;
   };
   data?: ComposerEntityData;
+};
+
+type ComposerMessageMetadata = {
+  composer: {
+    entities: ComposerEntity[];
+  };
 };
 
 type ComposerTriggerState = {

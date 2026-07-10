@@ -2,11 +2,14 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   ComposerAttachmentInput,
   ComposerAttachmentsUpdate,
+  ComposerEntity,
+  ComposerMessageMetadata,
   ComposerQuote,
   ComposerSubmitMessage,
   ComposerSubmitMessageArgs,
   ImageContextValue,
   MessageAttachmentPart,
+  MessageEntityProps,
   MessageToolPart,
   SelectionToolbarSelection,
   ThreadListController,
@@ -34,6 +37,7 @@ describe("public entrypoints", () => {
     expect(Composer.Root).toBeTypeOf("object");
     expect(Composer.AttachmentInput).toBeTypeOf("object");
     expect(Message.Root).toBeTypeOf("object");
+    expect(Message.Entity).toBeTypeOf("object");
     expect(HumanInput.Approvals).toBeTypeOf("object");
     expect(Completion.Root).toBeTypeOf("object");
     expect(Image.Root).toBeTypeOf("object");
@@ -51,6 +55,10 @@ describe("public entrypoints", () => {
   it("exports public helper types from domain barrels", () => {
     expectTypeOf<MessageToolPart>().toMatchTypeOf<{ type: "tool" }>();
     expectTypeOf<MessageAttachmentPart>().toMatchTypeOf<{ type: "attachment" }>();
+    expectTypeOf<MessageEntityProps>().toMatchTypeOf<{ entity: ComposerEntity }>();
+    expectTypeOf<ComposerMessageMetadata>().toMatchTypeOf<{
+      composer: { entities: ComposerEntity[] };
+    }>();
     expectTypeOf<File>().toMatchTypeOf<ComposerAttachmentInput>();
     expectTypeOf<
       Array<{ id: string; type: "image" | "document" | "file" }>

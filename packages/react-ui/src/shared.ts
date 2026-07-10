@@ -12,6 +12,7 @@ export type {
   ComposerEntitiesUpdate,
   ComposerEntity,
   ComposerEntityData,
+  ComposerMessageMetadata,
   ComposerQuote,
   ComposerTriggerDefinition,
   ComposerTriggerItem,

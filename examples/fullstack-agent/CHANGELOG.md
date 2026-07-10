@@ -1,5 +1,16 @@
 # fullstack-agent
 
+## 0.1.12
+
+### Patch Changes
+
+- Updated dependencies [26efea0]
+  - @anvia/core@0.12.8
+  - @anvia/openai@0.3.16
+  - @anvia/react@0.8.5
+  - @anvia/server@0.5.5
+  - @anvia/react-ui@0.4.0
+
 ## 0.1.11
 
 ### Patch Changes

@@ -47,6 +47,7 @@ import {
   useChatContext,
   useComposer,
 } from "../contexts";
+import { shiftComposerEntityRanges } from "../entities";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type ComposerRootProps = PrimitiveProps<"form"> & {
@@ -246,10 +247,16 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     }
 
     const submittedAttachments = [...attachments];
-    const submittedEntities = [...entities];
     const submittedQuote = quote === undefined ? undefined : { ...quote };
-    const submittedText =
-      submittedQuote === undefined ? prompt : promptWithQuote(prompt, submittedQuote);
+    const formattedPrompt =
+      submittedQuote === undefined
+        ? { text: prompt, prefixLength: 0 }
+        : promptWithQuote(prompt, submittedQuote);
+    const submittedEntities = shiftComposerEntityRanges(
+      [...entities],
+      formattedPrompt.prefixLength,
+    );
+    const submittedText = formattedPrompt.text;
     const metadata = composerSubmitMetadata(submittedQuote, submittedEntities);
     const payload: Parameters<typeof chat.sendMessage>[0] =
       submittedAttachments.length === 0
@@ -1189,15 +1196,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function promptWithQuote(prompt: string, quote: ComposerQuote): string {
+function promptWithQuote(
+  prompt: string,
+  quote: ComposerQuote,
+): { text: string; prefixLength: number } {
   const quotedText = quote.text
     .split(/\r?\n/)
     .map((line) => `> ${line}`)
     .join("\n");
   if (prompt.trim().length === 0) {
-    return quotedText;
+    return { text: quotedText, prefixLength: 0 };
   }
-  return `${quotedText}\n\n${prompt}`;
+  const prefix = `${quotedText}\n\n`;
+  return { text: `${prefix}${prompt}`, prefixLength: prefix.length };
 }
 
 function normalizeQuote(quote: ComposerQuote | undefined): ComposerQuote | undefined {

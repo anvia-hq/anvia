@@ -282,7 +282,7 @@ describe("Chat primitives", () => {
         <Composer.Root
           defaultAttachments={[attachment]}
           defaultEntities={[entity]}
-          defaultInput="Hello"
+          defaultInput="@Ada says Hello"
           defaultQuote={quote}
         >
           <Composer.TextareaInput />
@@ -305,11 +305,13 @@ describe("Chat primitives", () => {
     });
 
     expect(payloadWhilePending).toEqual({
-      text: "> First line\n> Second line\n\nHello",
+      text: "> First line\n> Second line\n\n@Ada says Hello",
       attachments: [attachment],
       metadata: {
         quote,
-        composer: { entities: [entity] },
+        composer: {
+          entities: [{ ...entity, range: { from: 28, to: 32 } }],
+        },
       },
     });
     expect(stateWhilePending).toBe(

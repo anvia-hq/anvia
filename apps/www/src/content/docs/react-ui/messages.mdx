@@ -106,6 +106,49 @@ Use `Message.Markdown` when assistant text should render GitHub-flavored Markdow
 
 <CodeVariants id="messages-markdown" variants={markdownVariants} />
 
+### Composer entities
+
+When a message contains valid `metadata.composer.entities`, `Message.Markdown` renders each entity
+in an eligible prose position with headless semantic markup:
+
+```html
+<span
+  data-anvia-message-entity
+  data-entity-id="document-1"
+  data-trigger-id="documents"
+>
+  @Guide.pdf
+</span>
+```
+
+Style the attributes from application CSS without rewriting mentions into Markdown links:
+
+```css
+[data-anvia-message-entity][data-trigger-id="documents"] {
+  color: var(--document-mention-color);
+  font-weight: 600;
+}
+```
+
+Use `renderEntity` to replace the complete output, or render `Message.Entity` directly:
+
+```tsx
+<Message.Markdown
+  renderEntity={(entity) => <DocumentMention entity={entity} />}
+/>
+```
+
+```tsx
+<Message.Entity entity={entity} className="document-mention" />
+```
+
+Ranges must contain integer UTF-16 offsets, stay inside the final message text, match
+`entity.text`, and not overlap. Invalid, stale, overlapping, or out-of-bounds entries fall back to
+ordinary text. Entities render in prose, including emphasis and link labels; ranges inside inline
+code, fenced code, or link destinations remain literal. Regular Markdown links, consumer remark
+plugins, and `components.span` overrides continue to work. Entity `data` is never serialized into
+the DOM.
+
 ### Opt-in streaming animation
 
 `useChat(...)` continues to own the real message state. Enable display smoothing only on the latest

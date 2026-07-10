@@ -157,6 +157,23 @@ const ThreadListItem: {
 };
 ```
 
+## Streamed text animation
+
+`Message.Text` and `Message.Markdown` accept these optional display props:
+
+```ts
+type MessageStreamAnimationProps = {
+  animate?: boolean;
+  animationMode?: "none" | "smooth" | "fadeIn";
+  isStreaming?: boolean;
+  smoothingPreset?: "realtime" | "balanced" | "silky";
+  reducedMotion?: boolean;
+};
+```
+
+Animation is disabled by default. When enabled, these renderers pass their existing text through
+`useSmoothStreamText`; the underlying `useChat` controller and `UIMessage[]` remain unchanged.
+
 ## Providers
 
 ```ts

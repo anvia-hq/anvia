@@ -87,3 +87,23 @@
 [data-state="disabled"] {
   opacity: 0.55;
 }
+
+@keyframes anvia-stream-fade-in {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+[data-anvia-stream-animation="fadeIn"][data-streaming] {
+  animation: anvia-stream-fade-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-anvia-stream-animation="fadeIn"][data-streaming] {
+    animation: none;
+  }
+}

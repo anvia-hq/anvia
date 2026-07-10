@@ -59,3 +59,19 @@ wrappers are useful for layout.
 support inline `@`, `/`, `$`, or other entity chips; selected entities are submitted under
 `metadata.composer.entities`. Use `Composer.TextareaInput` when you need the previous native
 textarea behavior.
+
+Streaming text animation is opt-in and display-only. Keep `useChat` as the owner of transport and
+`UIMessage[]` state, then enable smoothing on the latest streaming assistant message:
+
+```tsx
+<Message.Markdown
+  animate
+  isStreaming={
+    chat.status === "streaming" &&
+    message.role === "assistant" &&
+    chat.messages.at(-1)?.id === message.id
+  }
+  animationMode="smooth"
+  smoothingPreset="balanced"
+/>
+```

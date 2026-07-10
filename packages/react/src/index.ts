@@ -54,3 +54,10 @@ export type {
   UseCompletionStatus,
 } from "./use-completion";
 export { useCompletion } from "./use-completion";
+export type {
+  StreamAnimationMode,
+  StreamSmoothingPreset,
+  UseSmoothStreamTextOptions,
+  UseSmoothStreamTextResult,
+} from "./use-smooth-stream-text";
+export { useSmoothStreamText } from "./use-smooth-stream-text";

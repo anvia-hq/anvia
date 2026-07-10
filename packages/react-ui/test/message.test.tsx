@@ -1,5 +1,6 @@
 import type { UIMessage } from "@anvia/react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps, ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatProvider, Message, Thread } from "../src";
@@ -9,6 +10,8 @@ const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   if (originalClipboardDescriptor === undefined) {
     Reflect.deleteProperty(navigator, "clipboard");
   } else {
@@ -72,6 +75,54 @@ describe("Message primitives", () => {
     expect(screen.getByText("photo.png")).toBeTruthy();
     expect(screen.getByText(/"count": 2/)).toBeTruthy();
     expect(screen.getByText("Nope")).toBeTruthy();
+  });
+
+  it("keeps Message.Text rendering immediate by default", () => {
+    const raf = installAnimationFrame();
+    const { container, rerender } = render(textView("Hello"));
+
+    rerender(textView("Hello world"));
+
+    const text = container.querySelector("[data-anvia-text]");
+    expect(text?.textContent).toBe("Hello world");
+    expect(text?.hasAttribute("data-anvia-stream-animation")).toBe(false);
+    expect(raf.request).not.toHaveBeenCalled();
+  });
+
+  it("uses smoothed text when Message.Text animation is enabled", () => {
+    const raf = installAnimationFrame();
+    const props = { animate: true, isStreaming: true, reducedMotion: false };
+    const { container, rerender } = render(textView("Hello", props));
+
+    rerender(textView("Hello world", props));
+
+    const text = container.querySelector("[data-anvia-text]");
+    expect(text?.textContent).toBe("Hello");
+    expect(text?.getAttribute("data-anvia-stream-animation")).toBe("smooth");
+
+    actAnimationFrame(raf);
+
+    expect(text?.textContent).not.toBe("Hello world");
+    expect(text?.textContent?.startsWith("Hello")).toBe(true);
+
+    drainAnimationFrames(raf);
+    expect(text?.textContent).toBe("Hello world");
+  });
+
+  it("preserves custom Message.Text children when animation is enabled", () => {
+    const raf = installAnimationFrame();
+    const props = {
+      animate: true,
+      children: "Custom content",
+      isStreaming: true,
+      reducedMotion: false,
+    };
+    const { container, rerender } = render(textView("Hello", props));
+
+    rerender(textView("Hello world", props));
+
+    expect(container.querySelector("[data-anvia-text]")?.textContent).toBe("Custom content");
+    expect(raf.request).not.toHaveBeenCalled();
   });
 
   it("supports custom tool rendering with input and output in one component", () => {
@@ -269,6 +320,57 @@ describe("Message primitives", () => {
     expect(screen.getAllByTestId("custom-code")).toHaveLength(2);
   });
 
+  it("keeps Message.Markdown rendering immediate by default", () => {
+    const raf = installAnimationFrame();
+    const { container, rerender } = render(markdownView("Hello"));
+
+    rerender(markdownView("Hello **world**"));
+
+    const markdown = container.querySelector("[data-anvia-markdown]");
+    expect(markdown?.textContent).toBe("Hello world");
+    expect(markdown?.querySelector("strong")?.textContent).toBe("world");
+    expect(markdown?.hasAttribute("data-anvia-stream-animation")).toBe(false);
+    expect(raf.request).not.toHaveBeenCalled();
+  });
+
+  it("uses smoothed markdown text and fade-in attributes when enabled", () => {
+    const raf = installAnimationFrame();
+    const props = {
+      animate: true,
+      animationMode: "fadeIn" as const,
+      isStreaming: true,
+      reducedMotion: false,
+    };
+    const { container, rerender } = render(markdownView("Hello", props));
+
+    rerender(markdownView("Hello **world**", props));
+
+    const markdown = container.querySelector("[data-anvia-markdown]");
+    expect(markdown?.textContent).toBe("Hello");
+    expect(markdown?.getAttribute("data-anvia-stream-animation")).toBe("fadeIn");
+    expect(markdown?.hasAttribute("data-streaming")).toBe(true);
+
+    actAnimationFrame(raf);
+    expect(markdown?.textContent).not.toBe("Hello world");
+
+    drainAnimationFrames(raf);
+    expect(markdown?.textContent).toBe("Hello world");
+    expect(markdown?.querySelector("strong")?.textContent).toBe("world");
+  });
+
+  it("preserves code block behavior after animated markdown completes", () => {
+    const raf = installAnimationFrame();
+    const props = { animate: true, isStreaming: true, reducedMotion: false };
+    const { container, rerender } = render(markdownView("Code:\n\n", props));
+
+    rerender(markdownView("Code:\n\n```ts\nconst ok = true;\n```", props));
+    drainAnimationFrames(raf);
+
+    expect(container.querySelectorAll("[data-anvia-code-block]")).toHaveLength(1);
+    expect(container.querySelector("[data-anvia-code-block] pre")).toBeNull();
+    expect(screen.getByText("const ok = true;")).toBeTruthy();
+  });
+
   it("renders default markdown code blocks without nested pre elements", () => {
     const messages = [textMessage("assistant_1", "assistant", "```ts\nconst ok = true;\n```")];
 
@@ -423,3 +525,88 @@ describe("Message primitives", () => {
     expect(regenerate).toHaveBeenCalledTimes(1);
   });
 });
+
+type AnimationFrameHarness = ReturnType<typeof installAnimationFrame>;
+
+function textView(text: string, props: ComponentProps<typeof Message.Text> = {}): ReactElement {
+  return (
+    <ChatProvider
+      controller={createChatController({ messages: [textMessage("msg_1", "assistant", text)] })}
+    >
+      <Thread.Root>
+        <Thread.Messages>
+          <Message.Root>
+            <Message.Content>
+              <Message.Parts>
+                <Message.Part>
+                  <Message.Text {...props} />
+                </Message.Part>
+              </Message.Parts>
+            </Message.Content>
+          </Message.Root>
+        </Thread.Messages>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+
+function markdownView(
+  markdown: string,
+  props: ComponentProps<typeof Message.Markdown> = {},
+): ReactElement {
+  return (
+    <ChatProvider
+      controller={createChatController({
+        messages: [textMessage("msg_1", "assistant", markdown)],
+      })}
+    >
+      <Thread.Root>
+        <Thread.Messages>
+          <Message.Root>
+            <Message.Markdown {...props} />
+          </Message.Root>
+        </Thread.Messages>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+
+function installAnimationFrame() {
+  let nextId = 0;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  const request = vi.fn((callback: FrameRequestCallback) => {
+    const id = ++nextId;
+    callbacks.set(id, callback);
+    return id;
+  });
+  const cancel = vi.fn((id: number) => {
+    callbacks.delete(id);
+  });
+
+  vi.stubGlobal("requestAnimationFrame", request);
+  vi.stubGlobal("cancelAnimationFrame", cancel);
+
+  return {
+    cancel,
+    pending: () => callbacks.size,
+    request,
+    step() {
+      const pending = [...callbacks.values()];
+      callbacks.clear();
+      for (const callback of pending) {
+        callback(0);
+      }
+    },
+  };
+}
+
+function actAnimationFrame(raf: AnimationFrameHarness): void {
+  act(() => raf.step());
+}
+
+function drainAnimationFrames(raf: AnimationFrameHarness): void {
+  for (let frame = 0; frame < 100 && raf.pending() > 0; frame += 1) {
+    actAnimationFrame(raf);
+  }
+  expect(raf.pending()).toBe(0);
+}

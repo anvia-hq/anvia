@@ -1,9 +1,9 @@
 import type { UIMessage } from "@anvia/react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ComponentProps, ReactElement } from "react";
+import { type ComponentProps, type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ChatProvider, Message, Thread } from "../src";
+import { ChatProvider, type ComposerEntity, Message, Thread } from "../src";
 import { createChatController, textMessage } from "./helpers";
 
 const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -320,6 +320,263 @@ describe("Message primitives", () => {
     expect(screen.getAllByTestId("custom-code")).toHaveLength(2);
   });
 
+  it("renders valid Composer entities as semantic Markdown markup", () => {
+    const text = "See @Guide.pdf for details.";
+    const entity = composerEntity(text, "@Guide.pdf", "document-1");
+    const { container } = render(<StrictMode>{markdownEntityView(text, [entity])}</StrictMode>);
+
+    const element = container.querySelector("[data-anvia-message-entity]");
+    expect(element?.textContent).toBe("@Guide.pdf");
+    expect(element?.getAttribute("data-entity-id")).toBe("document-1");
+    expect(element?.getAttribute("data-trigger-id")).toBe("documents");
+    expect(element?.hasAttribute("data-anvia-entity-index")).toBe(false);
+    expect(container.querySelectorAll("[data-anvia-message-entity]")).toHaveLength(1);
+  });
+
+  it("renders multiple and adjacent entities without changing normal Markdown links", () => {
+    const text =
+      "See @One.pdf and [the guide](https://example.test/guide), then @Two.pdf@Three.pdf.";
+    const entities = [
+      composerEntity(text, "@One.pdf", "document-1"),
+      composerEntity(text, "@Two.pdf", "document-2"),
+      composerEntity(text, "@Three.pdf", "document-3"),
+    ];
+    const { container } = render(markdownEntityView(text, entities));
+
+    expect(
+      [...container.querySelectorAll("[data-anvia-message-entity]")].map(
+        (element) => element.textContent,
+      ),
+    ).toEqual(["@One.pdf", "@Two.pdf", "@Three.pdf"]);
+    expect(container.querySelector("a")?.getAttribute("href")).toBe("https://example.test/guide");
+    expect(container.querySelector("a")?.textContent).toBe("the guide");
+  });
+
+  it("renders Markdown punctuation inside entity text literally", () => {
+    const entityText = "@Guide[1]*draft*_copy_`v2`.pdf";
+    const text = `Open ${entityText} now.`;
+    const { container } = render(
+      markdownEntityView(text, [composerEntity(text, entityText, "document-1")]),
+    );
+
+    const element = container.querySelector("[data-anvia-message-entity]");
+    expect(element?.textContent).toBe(entityText);
+    expect(element?.querySelector("em, code, a")).toBeNull();
+    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+  });
+
+  it("keeps escaped and Unicode text aligned with UTF-16 entity offsets", () => {
+    const text = String.raw`Escaped \*literal\* 👋 before @文档.pdf.`;
+    const entity = composerEntity(text, "@文档.pdf", "document-unicode");
+    const { container } = render(markdownEntityView(text, [entity]));
+
+    expect(container.querySelector("[data-anvia-message-entity]")?.textContent).toBe("@文档.pdf");
+    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(
+      "Escaped *literal* 👋 before @文档.pdf.",
+    );
+    expect(() => JSON.stringify(entity.data)).not.toThrow();
+  });
+
+  it("renders entities only in eligible prose positions", () => {
+    const text = [
+      "**@Strong.pdf**",
+      "",
+      "`@Inline.pdf`",
+      "",
+      "```txt",
+      "@Fenced.pdf",
+      "```",
+      "",
+      "[@Label.pdf](https://example.test)",
+      "",
+      "[destination](@Destination.pdf)",
+      "",
+      "# @Heading.pdf",
+      "",
+      "- @List.pdf",
+      "",
+      "> @Quote.pdf",
+      "",
+      "| Document |",
+      "| --- |",
+      "| @Table.pdf |",
+    ].join("\n");
+    const entityTexts = [
+      "@Strong.pdf",
+      "@Inline.pdf",
+      "@Fenced.pdf",
+      "@Label.pdf",
+      "@Destination.pdf",
+      "@Heading.pdf",
+      "@List.pdf",
+      "@Quote.pdf",
+      "@Table.pdf",
+    ];
+    const entities = entityTexts.map((entityText, index) =>
+      composerEntity(text, entityText, `document-${index + 1}`),
+    );
+    const { container } = render(markdownEntityView(text, entities));
+
+    const rendered = [...container.querySelectorAll("[data-anvia-message-entity]")].map(
+      (element) => element.textContent,
+    );
+    expect(rendered).toEqual([
+      "@Strong.pdf",
+      "@Label.pdf",
+      "@Heading.pdf",
+      "@List.pdf",
+      "@Quote.pdf",
+      "@Table.pdf",
+    ]);
+    expect(container.querySelector("strong [data-anvia-message-entity]")).toBeTruthy();
+    expect(container.querySelector("a [data-anvia-message-entity]")?.textContent).toBe(
+      "@Label.pdf",
+    );
+    expect(container.querySelector("code")?.textContent).toBe("@Inline.pdf");
+    expect(container.querySelector('a[href="@Destination.pdf"]')?.textContent).toBe("destination");
+  });
+
+  it("falls back to ordinary text for malformed, stale, and overlapping entities", () => {
+    const text = "@One.pdf @Two.pdf";
+    const overlapping = composerEntity(text, text, "overlap-all", 0);
+    const second = composerEntity(text, "@Two.pdf", "overlap-second");
+    const malformed: ComposerEntity[] = [
+      overlapping,
+      second,
+      { ...composerEntity(text, "@One.pdf", "stale"), text: "@Stale.pdf" },
+      { ...composerEntity(text, "@One.pdf", "out-of-bounds"), range: { from: 0, to: 999 } },
+      { ...composerEntity(text, "@One.pdf", "fractional"), range: { from: 0.5, to: 8 } },
+      { ...composerEntity(text, "@One.pdf", ""), id: "" },
+    ];
+    const { container } = render(markdownEntityView(text, malformed));
+
+    expect(container.querySelector("[data-anvia-message-entity]")).toBeNull();
+    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+  });
+
+  it("supports renderEntity and components.span overrides", () => {
+    const text = "See @Guide.pdf.";
+    const entity = composerEntity(text, "@Guide.pdf", "document-1");
+    const custom = render(
+      markdownEntityView(text, [entity], {
+        renderEntity(current) {
+          return <mark data-testid="custom-entity">{current.label}</mark>;
+        },
+      }),
+    );
+    expect(screen.getByTestId("custom-entity").textContent).toBe("Guide.pdf");
+    expect(custom.container.querySelector("[data-anvia-message-entity]")).toBeNull();
+    custom.unmount();
+
+    const span = render(
+      markdownEntityView(text, [entity], {
+        components: {
+          span({ node: _node, ...props }) {
+            return <span {...props} data-testid="custom-span" />;
+          },
+        },
+      }),
+    );
+    const element = screen.getByTestId("custom-span");
+    expect(element.getAttribute("data-entity-id")).toBe("document-1");
+    expect(element.textContent).toBe("@Guide.pdf");
+    span.unmount();
+  });
+
+  it("maps message-level entity offsets across multiple text parts", () => {
+    const first = "First paragraph.";
+    const second = "Open @Guide.pdf.";
+    const joined = `${first}\n\n${second}`;
+    const entity = composerEntity(joined, "@Guide.pdf", "document-1");
+    const message: UIMessage = {
+      id: "msg_1",
+      role: "user",
+      parts: [
+        { id: "part_1", type: "text", text: first },
+        { id: "part_2", type: "text", text: second },
+      ],
+      metadata: { composer: { entities: [entity] } },
+    };
+    const { container } = render(
+      <ChatProvider controller={createChatController({ messages: [message] })}>
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Markdown />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect(container.querySelectorAll("p")).toHaveLength(2);
+    expect(container.querySelector("[data-anvia-message-entity]")?.textContent).toBe("@Guide.pdf");
+  });
+
+  it("runs the entity transform before consumer remark plugins", () => {
+    const text = "See @Guide.pdf.";
+    const entity = composerEntity(text, "@Guide.pdf", "document-1");
+    const visitedTypes: string[] = [];
+
+    function inspectPlugin() {
+      return (tree: unknown) => collectNodeTypes(tree, visitedTypes);
+    }
+
+    render(markdownEntityView(text, [entity], { remarkPlugins: [inspectPlugin] }));
+    expect(visitedTypes).toContain("messageEntity");
+  });
+
+  it("lets consumer remark plugins reconstruct entity nodes as exact text", () => {
+    const entityText = "@Guide[1]*draft*.pdf";
+    const text = `Open ${entityText}.`;
+
+    function literalizePlugin() {
+      return (tree: unknown) => literalizeEntityNodes(tree);
+    }
+
+    const { container } = render(
+      markdownEntityView(text, [composerEntity(text, entityText, "document-1")], {
+        remarkPlugins: [literalizePlugin],
+      }),
+    );
+    expect(container.querySelector("[data-anvia-message-entity]")).toBeNull();
+    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+  });
+
+  it("keeps copy and regenerate disabled for standalone tool messages", () => {
+    const toolMessage: UIMessage = {
+      id: "tool_message_1",
+      role: "tool",
+      parts: [
+        {
+          id: "tool_1",
+          type: "tool",
+          toolName: "lookup",
+          toolCallId: "tool_1",
+          state: "output-available",
+          input: { query: "Anvia" },
+          output: "done",
+        },
+      ],
+      metadata: { source: "tool" },
+    };
+    render(
+      <ChatProvider controller={createChatController({ messages: [toolMessage] })}>
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Copy />
+              <Message.Regenerate />
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    expect((screen.getByText("Copy") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("Regenerate") as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("keeps Message.Markdown rendering immediate by default", () => {
     const raf = installAnimationFrame();
     const { container, rerender } = render(markdownView("Hello"));
@@ -569,6 +826,76 @@ function markdownView(
       </Thread.Root>
     </ChatProvider>
   );
+}
+
+function markdownEntityView(
+  markdown: string,
+  entities: ComposerEntity[],
+  props: ComponentProps<typeof Message.Markdown> = {},
+): ReactElement {
+  const message = {
+    ...textMessage("msg_1", "user", markdown),
+    metadata: { composer: { entities } },
+  };
+  return (
+    <ChatProvider controller={createChatController({ messages: [message] })}>
+      <Thread.Root>
+        <Thread.Messages>
+          <Message.Root>
+            <Message.Markdown {...props} />
+          </Message.Root>
+        </Thread.Messages>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+
+function composerEntity(
+  text: string,
+  entityText: string,
+  id: string,
+  from = text.indexOf(entityText),
+): ComposerEntity {
+  return {
+    id,
+    triggerId: "documents",
+    trigger: "@",
+    label: entityText.slice(1),
+    text: entityText,
+    range: { from, to: from + entityText.length },
+    data: { kind: "document", documentId: id },
+  };
+}
+
+function collectNodeTypes(value: unknown, types: string[]): void {
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+  if ("type" in value && typeof value.type === "string") {
+    types.push(value.type);
+  }
+  if ("children" in value && Array.isArray(value.children)) {
+    for (const child of value.children) {
+      collectNodeTypes(child, types);
+    }
+  }
+}
+
+function literalizeEntityNodes(value: unknown): void {
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+  if ("type" in value && value.type === "messageEntity") {
+    value.type = "text";
+    if ("entityIndex" in value) {
+      delete value.entityIndex;
+    }
+  }
+  if ("children" in value && Array.isArray(value.children)) {
+    for (const child of value.children) {
+      literalizeEntityNodes(child);
+    }
+  }
 }
 
 function installAnimationFrame() {

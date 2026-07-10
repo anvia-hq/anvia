@@ -5,7 +5,7 @@ import {
   type UIMessagePart,
   useSmoothStreamText,
 } from "@anvia/react";
-import { type ComponentPropsWithoutRef, forwardRef, type ReactNode } from "react";
+import { type ComponentPropsWithoutRef, createElement, forwardRef, type ReactNode } from "react";
 import ReactMarkdown, {
   type Components,
   type Options as ReactMarkdownOptions,
@@ -13,6 +13,7 @@ import ReactMarkdown, {
 import remarkGfm from "remark-gfm";
 
 import { Attachment } from "../attachment/index";
+import type { ComposerEntity } from "../contexts";
 import {
   InternalAttachmentProvider,
   InternalMessagePartProvider,
@@ -20,8 +21,11 @@ import {
   useMessagePart,
   useOptionalMessagePart,
 } from "../contexts";
+import { entitiesForTextSegment, messageTextLayout, validComposerEntities } from "../entities";
 import { stringifyValue } from "../format";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { MessageEntity } from "./entity";
+import { createMessageEntityRemarkPlugin, messageEntityRehypeOptions } from "./markdown-entities";
 
 type MessagePartChildren = ReactNode | ((part: UIMessagePart) => ReactNode);
 export type MessagePartsFilter = (part: UIMessagePart) => boolean;
@@ -150,6 +154,7 @@ type MessageMarkdownProps = Omit<PrimitiveProps<"div">, "children"> &
   MessageStreamAnimationProps & {
     children?: string;
     components?: Components;
+    renderEntity?: ((entity: ComposerEntity) => ReactNode) | undefined;
     remarkPlugins?: ReactMarkdownOptions["remarkPlugins"];
   };
 
@@ -164,16 +169,25 @@ const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(functio
     return null;
   }
 
-  const markdown =
-    children ??
-    (part?.type === "text"
-      ? part.text
-      : message.parts.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n\n"));
+  const layout = messageTextLayout(message.parts);
+  const markdown = children ?? (part?.type === "text" ? part.text : layout.text);
+  const expectedMarkdown = part?.type === "text" ? part.text : layout.text;
+  const validEntities =
+    children === undefined || children === expectedMarkdown
+      ? validComposerEntities(layout.text, message.metadata)
+      : [];
+  const segment =
+    part?.type === "text"
+      ? layout.segments.find((candidate) => candidate.part.id === part.id)
+      : undefined;
+  const entities =
+    segment === undefined ? validEntities : entitiesForTextSegment(validEntities, segment);
 
-  return <MessageMarkdownContent {...props} markdown={markdown} ref={ref} />;
+  return <MessageMarkdownContent {...props} entities={entities} markdown={markdown} ref={ref} />;
 });
 
 type MessageMarkdownContentProps = Omit<MessageMarkdownProps, "children"> & {
+  entities: ComposerEntity[];
   markdown: string;
 };
 
@@ -186,7 +200,9 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
       smoothingPreset,
       reducedMotion,
       components,
+      renderEntity,
       remarkPlugins,
+      entities,
       markdown,
       ...props
     },
@@ -201,6 +217,10 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
     });
     const animationActive =
       animate && animationMode !== "none" && isStreaming !== false && reducedMotion !== true;
+    const renderedMarkdown = animate ? smooth.text : markdown;
+    const renderedEntities = validComposerEntities(renderedMarkdown, {
+      composer: { entities },
+    });
 
     return renderPrimitive(
       "div",
@@ -208,10 +228,14 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
         ...props,
         children: (
           <ReactMarkdown
-            components={{ code: defaultCodeComponent, pre: defaultPreComponent, ...components }}
-            remarkPlugins={remarkPlugins ?? [remarkGfm]}
+            components={markdownComponents(components, renderedEntities, renderEntity)}
+            remarkPlugins={[
+              createMessageEntityRemarkPlugin(renderedMarkdown, renderedEntities),
+              ...(remarkPlugins ?? [remarkGfm]),
+            ]}
+            remarkRehypeOptions={messageEntityRehypeOptions()}
           >
-            {animate ? smooth.text : markdown}
+            {renderedMarkdown}
           </ReactMarkdown>
         ),
         "data-anvia-markdown": "",
@@ -222,6 +246,55 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
     );
   },
 );
+
+function markdownComponents(
+  components: Components | undefined,
+  entities: ComposerEntity[],
+  renderEntity: ((entity: ComposerEntity) => ReactNode) | undefined,
+): Components {
+  const consumerSpan = components?.span;
+  return {
+    code: defaultCodeComponent,
+    pre: defaultPreComponent,
+    ...components,
+    span(spanProps) {
+      const internalProps = spanProps as typeof spanProps & {
+        "data-anvia-entity-index"?: string | undefined;
+      };
+      const entityIndexValue = internalProps["data-anvia-entity-index"];
+      const entityIndex =
+        typeof entityIndexValue === "string" && /^\d+$/.test(entityIndexValue)
+          ? Number(entityIndexValue)
+          : undefined;
+      const entity = entityIndex === undefined ? undefined : entities[entityIndex];
+      const consumerProps = { ...internalProps };
+      delete consumerProps["data-anvia-entity-index"];
+
+      if (entity !== undefined) {
+        if (renderEntity !== undefined) {
+          return renderEntity(entity);
+        }
+        const entityProps = {
+          ...consumerProps,
+          "data-anvia-message-entity": "",
+          "data-entity-id": entity.id,
+          "data-trigger-id": entity.triggerId,
+        };
+        if (consumerSpan !== undefined) {
+          return createElement(consumerSpan, entityProps);
+        }
+        const { node: _node, ...elementProps } = entityProps;
+        return <MessageEntity {...elementProps} entity={entity} />;
+      }
+
+      if (consumerSpan !== undefined) {
+        return createElement(consumerSpan, consumerProps);
+      }
+      const { node: _node, ...elementProps } = consumerProps;
+      return <span {...elementProps} />;
+    },
+  };
+}
 
 type MessageCodeBlockProps = Omit<PrimitiveProps<"pre">, "children"> & {
   children?: ReactNode;

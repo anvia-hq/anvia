@@ -130,6 +130,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   attachmentsRef.current = attachments;
   const entitiesRef = useRef(entities);
   entitiesRef.current = entities;
+  const defaultSubmissionInFlightRef = useRef(false);
   const inputControlled = inputProp !== undefined;
   const attachmentsControlled = attachmentsProp !== undefined;
   const entitiesControlled = entitiesProp !== undefined;
@@ -240,25 +241,38 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
       });
       return;
     }
-    const submittedText = quote === undefined ? prompt : promptWithQuote(prompt, quote);
-    const metadata = composerSubmitMetadata(quote, entities);
-    if (attachments.length === 0) {
-      if (metadata === undefined) {
-        await chat.sendMessage(prompt);
-      } else {
-        await chat.sendMessage({
-          text: submittedText,
-          metadata,
-        });
-      }
-    } else {
-      await chat.sendMessage({
-        text: submittedText,
-        attachments,
-        ...(metadata === undefined ? {} : { metadata }),
-      });
+    if (defaultSubmissionInFlightRef.current) {
+      return;
     }
-    clear();
+
+    const submittedAttachments = [...attachments];
+    const submittedEntities = [...entities];
+    const submittedQuote = quote === undefined ? undefined : { ...quote };
+    const submittedText =
+      submittedQuote === undefined ? prompt : promptWithQuote(prompt, submittedQuote);
+    const metadata = composerSubmitMetadata(submittedQuote, submittedEntities);
+    const payload: Parameters<typeof chat.sendMessage>[0] =
+      submittedAttachments.length === 0
+        ? metadata === undefined
+          ? prompt
+          : {
+              text: submittedText,
+              metadata,
+            }
+        : {
+            text: submittedText,
+            attachments: submittedAttachments,
+            ...(metadata === undefined ? {} : { metadata }),
+          };
+
+    defaultSubmissionInFlightRef.current = true;
+    try {
+      const submission = chat.sendMessage(payload);
+      clear();
+      await submission;
+    } finally {
+      defaultSubmissionInFlightRef.current = false;
+    }
   }, [attachments, chat, clear, entities, input, quote, submitMessage]);
 
   const setActiveTrigger = useCallback((update: Parameters<typeof setActiveTriggerState>[0]) => {

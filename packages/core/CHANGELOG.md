@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.8
+
+### Patch Changes
+
+- 26efea0: Match persisted tool results by unique call ID before reused provider IDs and store tool names on new results.
+
 ## 0.12.7
 
 ### Patch Changes

@@ -159,8 +159,7 @@ export function useSmoothStreamText(
       return;
     }
 
-    const appendedLength = [...content.slice(previousTarget.length)].length;
-    if (appendedLength > largeAppendChars) {
+    if (exceedsCharacterLimit(content.slice(previousTarget.length), largeAppendChars)) {
       syncToTarget();
       return;
     }
@@ -224,4 +223,15 @@ function useSystemReducedMotion(override: boolean | undefined, observe: boolean)
   }, [observe, override]);
 
   return reducedMotion;
+}
+
+function exceedsCharacterLimit(value: string, limit: number): boolean {
+  let count = 0;
+  for (const _character of value) {
+    count += 1;
+    if (count > limit) {
+      return true;
+    }
+  }
+  return false;
 }

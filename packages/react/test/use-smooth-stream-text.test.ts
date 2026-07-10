@@ -137,6 +137,20 @@ describe("@anvia/react useSmoothStreamText", () => {
     expect(raf.request).not.toHaveBeenCalled();
   });
 
+  it("counts Unicode code points for the large append threshold", () => {
+    const raf = installAnimationFrame();
+    const { result, rerender } = renderHook(
+      ({ content }) => useSmoothStreamText(content, { largeAppendChars: 1, reducedMotion: false }),
+      { initialProps: { content: "A" } },
+    );
+
+    rerender({ content: "A🙂" });
+
+    expect(result.current.text).toBe("A");
+    expect(result.current.isAnimating).toBe(true);
+    expect(raf.request).toHaveBeenCalledTimes(1);
+  });
+
   it("synchronizes appends larger than the default 500-character threshold", () => {
     const raf = installAnimationFrame();
     const { result, rerender } = renderHook(

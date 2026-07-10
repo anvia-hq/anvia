@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 0.3.6
+
+### Patch Changes
+
+- b52c479: Persist strict JSON message metadata across UI and core message conversions while keeping it out of provider requests and model-generation trace inputs.
+
 ## 0.3.5
 
 ### Patch Changes

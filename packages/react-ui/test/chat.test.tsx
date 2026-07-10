@@ -1,5 +1,12 @@
-import type { UIAttachment } from "@anvia/react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  type EventTransport,
+  type SendMessageInput,
+  type UIAttachment,
+  type UIStreamEvent,
+  type UIStreamRequest,
+  useChat,
+} from "@anvia/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -28,6 +35,44 @@ function ComposerInputSetter({ children, value }: { children: string; value: str
       {children}
     </button>
   );
+}
+
+function ComposerStateSnapshot() {
+  const composer = useComposer();
+  return (
+    <output data-testid="composer-state">
+      {JSON.stringify({
+        input: composer.input,
+        attachmentIds: composer.attachments.map((attachment) => attachment.id),
+        entityIds: composer.entities.map((entity) => entity.id),
+        quote: composer.quote,
+      })}
+    </output>
+  );
+}
+
+function ComposerSubmitInvoker({ onSubmit }: { onSubmit: (submission: Promise<void>) => void }) {
+  const composer = useComposer();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onSubmit(composer.submit());
+      }}
+    >
+      Submit directly
+    </button>
+  );
+}
+
+function createDeferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 const peopleItems = [
@@ -112,6 +157,261 @@ describe("Chat primitives", () => {
     fireEvent.click(button);
 
     expect(sendMessage).toHaveBeenCalledWith("hello");
+  });
+
+  it("clears the default textarea composer while the chat stream is still pending", async () => {
+    const streamStarted = createDeferred();
+    const streamCompletion = createDeferred();
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+      send: vi.fn(async function* () {
+        streamStarted.resolve();
+        await streamCompletion.promise;
+        const event: UIStreamEvent = {
+          type: "message_start",
+          message: { id: "assistant_1", role: "assistant", parts: [] },
+        };
+        yield event;
+      }),
+    };
+
+    function DeferredChat() {
+      const chat = useChat({ transport });
+      return (
+        <ChatProvider controller={chat}>
+          <Composer.Root>
+            <Composer.TextareaInput />
+            <Composer.Submit />
+          </Composer.Root>
+        </ChatProvider>
+      );
+    }
+
+    render(<DeferredChat />);
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Hello" } });
+    fireEvent.click(screen.getByText("Send"));
+
+    await streamStarted.promise;
+    const inputWhileStreaming = input.value;
+
+    await act(async () => {
+      streamCompletion.resolve();
+      await streamCompletion.promise;
+    });
+
+    expect(inputWhileStreaming).toBe("");
+  });
+
+  it("clears controlled composer input before the send promise settles", async () => {
+    const sendCompletion = createDeferred();
+    const sendMessage = vi.fn(() => sendCompletion.promise);
+    const onInputChange = vi.fn();
+
+    function ControlledComposer() {
+      const [input, setInput] = useState("Hello");
+      return (
+        <ChatProvider controller={createChatController({ sendMessage })}>
+          <Composer.Root
+            input={input}
+            onInputChange={(nextInput) => {
+              onInputChange(nextInput);
+              setInput(nextInput);
+            }}
+          >
+            <Composer.TextareaInput />
+            <Composer.Submit />
+          </Composer.Root>
+        </ChatProvider>
+      );
+    }
+
+    render(<ControlledComposer />);
+    fireEvent.click(screen.getByText("Send"));
+
+    const inputWhilePending = (screen.getByLabelText("Message") as HTMLTextAreaElement).value;
+    const lastInputChangeWhilePending = onInputChange.mock.calls.at(-1)?.[0];
+
+    await act(async () => {
+      sendCompletion.resolve();
+      await sendCompletion.promise;
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith("Hello");
+    expect(lastInputChangeWhilePending).toBe("");
+    expect(inputWhilePending).toBe("");
+  });
+
+  it("snapshots the complete default payload before clearing composer state", async () => {
+    const sendCompletion = createDeferred();
+    const sendMessage = vi.fn((_input: SendMessageInput) => sendCompletion.promise);
+    const attachment: UIAttachment = {
+      id: "attachment_1",
+      type: "document",
+      name: "notes.txt",
+      mediaType: "text/plain",
+      data: "notes",
+    };
+    const quote = { messageId: "assistant_1", text: "First line\nSecond line" };
+    const entity: ComposerEntity = {
+      id: "user_ada",
+      triggerId: "people",
+      trigger: "@",
+      label: "Ada",
+      text: "@Ada",
+      range: { from: 0, to: 4 },
+      data: { kind: "user" },
+    };
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root
+          defaultAttachments={[attachment]}
+          defaultEntities={[entity]}
+          defaultInput="Hello"
+          defaultQuote={quote}
+        >
+          <Composer.TextareaInput />
+          <Composer.Attachments />
+          <Composer.Quote />
+          <ComposerStateSnapshot />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Send"));
+
+    const payloadWhilePending = sendMessage.mock.calls[0]?.[0];
+    const stateWhilePending = screen.getByTestId("composer-state").textContent;
+
+    await act(async () => {
+      sendCompletion.resolve();
+      await sendCompletion.promise;
+    });
+
+    expect(payloadWhilePending).toEqual({
+      text: "> First line\n> Second line\n\nHello",
+      attachments: [attachment],
+      metadata: {
+        quote,
+        composer: { entities: [entity] },
+      },
+    });
+    expect(stateWhilePending).toBe(
+      JSON.stringify({ input: "", attachmentIds: [], entityIds: [], quote: undefined }),
+    );
+  });
+
+  it("keeps a rejected default submission cleared without overwriting a new draft", async () => {
+    const sendCompletion = createDeferred();
+    const sendMessage = vi.fn(() => sendCompletion.promise);
+    let submission: Promise<void> | undefined;
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root defaultInput="Hello">
+          <Composer.TextareaInput />
+          <ComposerSubmitInvoker
+            onSubmit={(nextSubmission) => {
+              submission = nextSubmission;
+            }}
+          />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Submit directly"));
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    const inputAfterSubmit = input.value;
+    fireEvent.change(input, { target: { value: "New draft" } });
+
+    if (submission === undefined) {
+      throw new Error("Expected a composer submission promise");
+    }
+    const rejection = expect(submission).rejects.toThrow("stream failed");
+    await act(async () => {
+      sendCompletion.reject(new Error("stream failed"));
+      await rejection;
+    });
+
+    expect(inputAfterSubmit).toBe("");
+    expect(input.value).toBe("New draft");
+  });
+
+  it("does not clear empty or streaming default submissions", () => {
+    const emptySendMessage = vi.fn(async () => {});
+    const emptyInputChange = vi.fn();
+    const empty = render(
+      <ChatProvider controller={createChatController({ sendMessage: emptySendMessage })}>
+        <Composer.Root aria-label="Empty form" defaultInput="   " onInputChange={emptyInputChange}>
+          <Composer.TextareaInput />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.submit(empty.getByLabelText("Empty form"));
+
+    expect(emptySendMessage).not.toHaveBeenCalled();
+    expect(emptyInputChange).not.toHaveBeenCalled();
+    expect((empty.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("   ");
+    empty.unmount();
+
+    const streamingSendMessage = vi.fn(async () => {});
+    const streamingInputChange = vi.fn();
+    const streaming = render(
+      <ChatProvider
+        controller={createChatController({
+          sendMessage: streamingSendMessage,
+          status: "streaming",
+        })}
+      >
+        <Composer.Root
+          aria-label="Streaming form"
+          defaultInput="Busy"
+          onInputChange={streamingInputChange}
+        >
+          <Composer.TextareaInput />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.submit(streaming.getByLabelText("Streaming form"));
+
+    expect(streamingSendMessage).not.toHaveBeenCalled();
+    expect(streamingInputChange).not.toHaveBeenCalled();
+    expect((streaming.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("Busy");
+  });
+
+  it("does not send a captured default payload twice in the same tick", async () => {
+    const sendCompletion = createDeferred();
+    const sendMessage = vi.fn(() => sendCompletion.promise);
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root aria-label="Chat form" defaultInput="Hello">
+          <Composer.TextareaInput />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    const form = screen.getByLabelText("Chat form");
+    act(() => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    const callsWhilePending = sendMessage.mock.calls.length;
+    await act(async () => {
+      sendCompletion.resolve();
+      await sendCompletion.promise;
+    });
+
+    expect(callsWhilePending).toBe(1);
+    expect(sendMessage).toHaveBeenCalledWith("Hello");
   });
 
   it("submits quote-only composer messages", async () => {

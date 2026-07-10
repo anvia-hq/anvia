@@ -18,6 +18,52 @@ afterEach(async () => {
 });
 
 describe("memory-prisma init CLI", () => {
+  it.each([
+    { argv: [] },
+    { argv: ["init", "--help"] },
+    { argv: ["init", "-h"] },
+  ])("prints help without writing files for arguments $argv", async ({ argv }) => {
+    const cwd = createPrismaProject();
+    const events: Event[] = [];
+
+    const code = await runCli(argv, cwd, io(events));
+
+    expect(code).toBe(0);
+    expect(messages(events)).toContain("Usage: anvia-memory-prisma init [options]");
+    expect(existsSync(join(cwd, "prisma/models/anvia-memory.prisma"))).toBe(false);
+  });
+
+  it.each([
+    [["unknown"], "Unknown command: unknown"],
+    [["init", "--unknown"], "Unknown option: --unknown"],
+    [["init", "--schema"], "--schema requires a path"],
+    [["init", "--schema", "--write"], "--schema requires a path"],
+  ])("rejects invalid arguments %#", async (argv, expectedMessage) => {
+    const cwd = createPrismaProject();
+    const events: Event[] = [];
+
+    const code = await runCli(argv, cwd, io(events));
+
+    expect(code).toBe(1);
+    expect(messages(events)).toContain(expectedMessage);
+    expect(messages(events)).toContain("Usage: anvia-memory-prisma init [options]");
+  });
+
+  it("reports a missing explicit schema without writing files", async () => {
+    const cwd = createPrismaProject();
+    const events: Event[] = [];
+
+    const code = await runCli(
+      ["init", "--schema", "missing/schema.prisma", "--write"],
+      cwd,
+      io(events),
+    );
+
+    expect(code).toBe(1);
+    expect(messages(events)).toContain("Prisma schema not found at missing/schema.prisma");
+    expect(existsSync(join(cwd, "missing/models/anvia-memory.prisma"))).toBe(false);
+  });
+
   it("prints a dry-run plan without writing files", async () => {
     const cwd = createPrismaProject();
     const events: Event[] = [];
@@ -53,6 +99,25 @@ describe("memory-prisma init CLI", () => {
 
     expect(code).toBe(1);
     expect(messages(events)).toContain("already exists");
+  });
+
+  it("force-replaces an existing generated schema file", async () => {
+    const cwd = createPrismaProject();
+    const generatedPath = join(cwd, "prisma/models/anvia-memory.prisma");
+    await runCli(["init", "--write"], cwd, io([]));
+    writeFileSync(
+      generatedPath,
+      `${readFileSync(generatedPath, "utf8")}\n// local generated edit\n`,
+    );
+    const events: Event[] = [];
+
+    const code = await runCli(["init", "--write", "--force"], cwd, io(events));
+
+    expect(code).toBe(0);
+    const generated = readFileSync(generatedPath, "utf8");
+    expect(generated).not.toContain("// local generated edit");
+    expect(count(generated, "model AgentMemorySession")).toBe(1);
+    expect(messages(events)).toContain("Updated prisma/models/anvia-memory.prisma");
   });
 
   it("does not force-overwrite user-owned files", async () => {

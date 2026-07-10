@@ -442,6 +442,102 @@ describe("@anvia/react useChat", () => {
     expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).toBeNull();
   });
 
+  it("waits for an explicit resume when auto resume is disabled", async () => {
+    window.sessionStorage.setItem(
+      "anvia:chat-resume:thread_1",
+      JSON.stringify({
+        version: 1,
+        streamId: "run_1",
+        lastEventId: 4,
+        messages: [
+          {
+            id: "user_1",
+            role: "user",
+            parts: [{ id: "part_1", type: "text", text: "hello" }],
+          },
+        ],
+      }),
+    );
+    const streamCompletion = deferred();
+    const send = vi.fn(async function* (request: UIStreamRequest) {
+      yield { type: "stream_start", streamId: "run_1", eventId: 0 } as const;
+      await streamCompletion.promise;
+      yield { type: "stream_end", streamId: "run_1", eventId: 4, status: "completed" } as const;
+      expect(request).toMatchObject({ resume: { streamId: "run_1", after: 4 } });
+    });
+    const transport: EventTransport<UIStreamRequest, ResumableStreamEnvelope<UIStreamEvent>> = {
+      send,
+    };
+    const { result } = renderHook(() =>
+      useChat({ transport, resume: { key: "thread_1", auto: false } }),
+    );
+
+    await act(async () => Promise.resolve());
+    expect(send).not.toHaveBeenCalled();
+
+    let resumePromise!: Promise<void>;
+    act(() => {
+      resumePromise = result.current.resume();
+    });
+    await vi.waitFor(() => {
+      expect(result.current.isResuming).toBe(true);
+      expect(result.current.streamId).toBe("run_1");
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(result.current.messages).toMatchObject([
+      { id: "user_1", role: "user", parts: [{ type: "text", text: "hello" }] },
+    ]);
+
+    await act(async () => {
+      streamCompletion.resolve();
+      await resumePromise;
+    });
+
+    expect(result.current.isResuming).toBe(false);
+    expect(result.current.streamId).toBeUndefined();
+    expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).toBeNull();
+  });
+
+  it("clears an active resume cursor when a resumable chat is stopped", async () => {
+    const streamStarted = deferred();
+    const transport: EventTransport<
+      UIStreamRequest,
+      UIStreamEvent | ResumableStreamEnvelope<UIStreamEvent>
+    > = {
+      send: async function* (_request, options) {
+        yield { type: "stream_start", streamId: "run_1", eventId: 0 };
+        yield {
+          type: "stream_event",
+          streamId: "run_1",
+          eventId: 1,
+          event: {
+            type: "message_start",
+            message: { id: "assistant_1", role: "assistant", parts: [] },
+          },
+        };
+        streamStarted.resolve();
+        await new Promise<void>((resolve) => {
+          options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport, resume: { key: "thread_1" } }));
+
+    act(() => {
+      void result.current.send("hello");
+    });
+    await streamStarted.promise;
+    await vi.waitFor(() => {
+      expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).not.toBeNull();
+    });
+
+    act(() => result.current.stop());
+
+    expect(result.current.status).toBe("idle");
+    expect(result.current.streamId).toBeUndefined();
+    expect(window.sessionStorage.getItem("anvia:chat-resume:thread_1")).toBeNull();
+  });
+
   it("ignores resume storage failures", async () => {
     const storage: Storage = {
       length: 0,
@@ -1602,4 +1698,12 @@ function streamFrom(text: string): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
 }

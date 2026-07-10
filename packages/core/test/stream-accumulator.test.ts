@@ -332,4 +332,145 @@ describe("CompletionStreamAccumulator", () => {
       AssistantContent.toolCall("tool_1", "lookup", { query: "x" }),
     ]);
   });
+
+  it.each([
+    ["null", null],
+    ["blank string", "  "],
+    ["empty array", []],
+    ["empty object", {}],
+  ])("uses streamed arguments when final tool arguments are %s", (_label, finalArguments) => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_1",
+      callId: "call_1",
+      name: "lookup",
+      signature: "signed",
+      argumentsDelta: '{"query":"anvia"}',
+    });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.toolCall("tool_1", "lookup", finalArguments, "call_1")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      {
+        type: "tool_call",
+        id: "tool_1",
+        callId: "call_1",
+        signature: "signed",
+        function: { name: "lookup", arguments: { query: "anvia" } },
+      },
+    ]);
+  });
+
+  it.each([
+    ["false", false],
+    ["zero", 0],
+  ])("keeps meaningful scalar final tool arguments for %s", (_label, finalArguments) => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_1",
+      name: "lookup",
+      argumentsDelta: '{"query":"anvia"}',
+    });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.toolCall("tool_1", "lookup", finalArguments)],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_1", "lookup", finalArguments),
+    ]);
+  });
+
+  it("preserves invalid partial JSON and streamed tool metadata", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_1",
+      callId: "call_1",
+      name: "lookup",
+      signature: "signature_1",
+      argumentsDelta: '{"query":',
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      {
+        type: "tool_call",
+        id: "tool_1",
+        callId: "call_1",
+        signature: "signature_1",
+        function: { name: "lookup", arguments: '{"query":' },
+      },
+    ]);
+  });
+
+  it("preserves structured reasoning segments in their streamed order", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "reasoning_delta",
+      id: "reasoning_1",
+      contentType: "text",
+      delta: "analysis",
+      signature: "signature_1",
+    });
+    accumulator.accept({
+      type: "reasoning_delta",
+      id: "reasoning_1",
+      contentType: "summary",
+      delta: "summary",
+    });
+    accumulator.accept({
+      type: "reasoning_delta",
+      id: "reasoning_1",
+      contentType: "encrypted",
+      delta: "ciphertext",
+    });
+    accumulator.accept({
+      type: "reasoning_delta",
+      id: "reasoning_1",
+      contentType: "redacted",
+      delta: "redacted-data",
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      {
+        type: "reasoning",
+        id: "reasoning_1",
+        text: "analysissummary",
+        content: [
+          { type: "text", text: "analysis", signature: "signature_1" },
+          { type: "summary", text: "summary" },
+          { type: "encrypted", data: "ciphertext" },
+          { type: "redacted", data: "redacted-data" },
+        ],
+      },
+    ]);
+  });
+
+  it("uses a streamed message id only when the final response omits one", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({ type: "message_id", id: "stream_message" });
+    accumulator.accept({ type: "text_delta", delta: "answer" });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.text("answer")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    expect(accumulator.response()).toMatchObject({ messageId: "stream_message" });
+  });
 });

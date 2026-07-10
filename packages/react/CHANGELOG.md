@@ -1,5 +1,13 @@
 # @anvia/react
 
+## 0.8.4
+
+### Patch Changes
+
+- b54fba5: Scope live UI tool result matching by turn when reducer events include turn metadata.
+- Updated dependencies [b54fba5]
+  - @anvia/core@0.12.7
+
 ## 0.8.3
 
 ### Patch Changes

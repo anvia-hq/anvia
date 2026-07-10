@@ -15,11 +15,15 @@ Import from `@anvia/core` or `@anvia/core/completion`.
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 type JsonObject = { [key: string]: JsonValue | undefined };
+
+function isJsonValue(value: unknown): value is JsonValue;
 ```
 
 Purpose: provider-safe JSON contracts used by tool arguments, model parameters, schemas, and metadata.
 
-Return behavior: type-only exports.
+Return behavior: `isJsonValue(...)` accepts strict, JSON-serializable values. It rejects non-finite
+numbers, `undefined`, functions, symbols, bigint values, cycles, sparse arrays, accessors, and
+non-plain objects.
 
 Notable errors: none directly.
 
@@ -69,26 +73,51 @@ Notable errors: none directly.
 ## Message
 
 ```ts
-type SystemMessage = { role: "system"; content: string };
-type UserMessage = { role: "user"; content: UserContent[] };
-type AssistantMessage = { role: "assistant"; id?: string; content: AssistantContent[] };
-type ToolMessage = { role: "tool"; content: ToolContent[] };
+type MessageOptions = { metadata?: JsonValue };
+type AssistantMessageOptions = MessageOptions & { id?: string };
+type ToolResultOptions = {
+  callId?: string;
+  toolName?: string;
+};
+type ToolResultMessageOptions = ToolResultOptions & MessageOptions;
+
+type SystemMessage = { role: "system"; content: string; metadata?: JsonValue };
+type UserMessage = { role: "user"; content: UserContent[]; metadata?: JsonValue };
+type AssistantMessage = {
+  role: "assistant";
+  id?: string;
+  content: AssistantContent[];
+  metadata?: JsonValue;
+};
+type ToolMessage = { role: "tool"; content: ToolContent[]; metadata?: JsonValue };
 type Message = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
 
 const Message: {
-  system(content: string): Message;
-  user(content: string | UserContent[]): Message;
-  assistant(content: string | AssistantContent[], id?: string): Message;
-  tool(content: ToolContent | ToolContent[]): Message;
-  toolResult(id: string, output: unknown, options?: { callId?: string | undefined; toolName?: string | undefined }): Message;
+  system(content: string, options?: MessageOptions): Message;
+  user(content: string | UserContent[], options?: MessageOptions): Message;
+  assistant(
+    content: string | AssistantContent[],
+    idOrOptions?: string | AssistantMessageOptions,
+  ): Message;
+  tool(content: ToolContent | ToolContent[], options?: MessageOptions): Message;
+  toolResult(id: string, output: unknown, options?: ToolResultMessageOptions): Message;
 };
 ```
 
 Purpose: normalized chat history and prompt shape.
 
-Return behavior: factory methods return message objects with normalized content arrays. `Message.tool(...)` is the low-level factory for complete tool content. `Message.toolResult(...)` creates the common tool-role message after executing a model-requested tool call, serializing non-string output with JSON and preserving structured `ToolResultContent[]`.
+Return behavior: factory methods return message objects with normalized content arrays and optional
+strict JSON metadata. Existing assistant message ids remain supported as a string second argument;
+use `{ id, metadata }` when both are needed. `Message.tool(...)` is the low-level factory for
+complete tool content. `Message.toolResult(...)` creates the common tool-role message after
+executing a model-requested tool call, serializing non-string output with JSON and preserving
+structured `ToolResultContent[]`.
 
-Notable errors: none directly.
+Provider adapters construct provider-native payloads from message role and content. Message
+metadata is persisted and observable at the run/transcript level, but is not sent to model APIs or
+included in generation input attributes.
+
+Notable errors: factories throw `TypeError` when metadata is not a strict JSON value.
 
 ## UserContent, AssistantContent, and ToolContent
 

@@ -54,7 +54,7 @@ describe("OpenAI chat-completions client path", () => {
 
     expect(model).toBeInstanceOf(OpenAIChatCompletionModel);
     await model.completion({
-      chatHistory: [Message.user("hello")],
+      chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
       documents: [],
       tools: [],
     });

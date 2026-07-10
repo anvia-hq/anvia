@@ -110,7 +110,9 @@ describe("Mistral completion mapping", () => {
       instructions: "Use the support policy.",
       chatHistory: [
         Message.system("System context."),
-        Message.user("What is the order status?"),
+        Message.user("What is the order status?", {
+          metadata: { composer: { entities: [] } },
+        }),
         Message.assistant([AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" })]),
         Message.tool(ToolContent.toolResult("call_1", "shipped")),
       ],

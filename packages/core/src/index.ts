@@ -1,6 +1,7 @@
 export { AgentBuilder } from "./agent/builder";
 export type {
   AssistantMessage,
+  AssistantMessageOptions,
   CompletionModel,
   CompletionRequest,
   CompletionResponse,
@@ -16,6 +17,7 @@ export type {
   JsonObject,
   JsonPrimitive,
   JsonValue,
+  MessageOptions,
   SystemMessage,
   Text,
   ToolCall,
@@ -23,6 +25,8 @@ export type {
   ToolMessage,
   ToolResult,
   ToolResultContent,
+  ToolResultMessageOptions,
+  ToolResultOptions,
   UserMessage,
 } from "./completion/index";
 export {
@@ -30,6 +34,7 @@ export {
   createCompletion,
   createCompletionStream,
   createParsedCompletion,
+  isJsonValue,
   Message,
   ToolContent,
   Usage,

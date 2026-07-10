@@ -91,7 +91,8 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): Message[];
 
 Purpose: convert client-facing UI messages into core completion messages before calling completion or agent APIs.
 
-Return behavior: text, attachment, reasoning, tool call, and tool output parts are mapped into the closest core message representation.
+Return behavior: text, attachment, reasoning, tool call, tool output, and strict JSON message
+metadata are mapped into the closest core message representation.
 
 ## coreMessagesToUIMessages
 
@@ -101,6 +102,17 @@ function coreMessagesToUIMessages(messages: Message[]): UIMessage[];
 
 Purpose: convert existing core message history into the UI message shape used by React hooks.
 
-Return behavior: generated IDs are assigned where the core message format does not already provide one.
+Return behavior: generated IDs are assigned where the core message format does not already provide
+one, and core message metadata is restored onto the `UIMessage`. Metadata-free tool-result messages
+continue to merge into matching assistant tool parts. A metadata-bearing tool message remains a
+standalone UI tool message so its metadata and transcript structure are not lost.
+
+The supported persistence round trip is:
+
+```ts
+const coreMessages = uiMessagesToCoreMessages(uiMessages);
+const stored = JSON.stringify(coreMessages);
+const restored = coreMessagesToUIMessages(JSON.parse(stored));
+```
 
 Server handlers can pass converted core messages directly to completion or agent APIs. `@anvia/react` can consume raw completion streams, raw agent streams, or `UIStreamEvent` records.

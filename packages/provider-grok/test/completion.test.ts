@@ -34,7 +34,7 @@ describe("Grok completion models", () => {
     );
 
     await model.completion({
-      chatHistory: [Message.user("hello")],
+      chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
       documents: [],
       tools: [],
       additionalParams: {
@@ -97,5 +97,35 @@ describe("Grok completion models", () => {
       stream: true,
       model: "grok-chat-test",
     });
+  });
+
+  it("omits message metadata from Grok Chat requests", async () => {
+    const calls: unknown[] = [];
+    const model = new GrokChatCompletionModel(
+      {
+        chat: {
+          completions: {
+            create: async (params: unknown) => {
+              calls.push(params);
+              return { choices: [{ message: { role: "assistant", content: "ok" } }], usage: {} };
+            },
+          },
+        },
+      } as never,
+      "grok-chat-test",
+    );
+
+    await model.completion({
+      chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
+      documents: [],
+      tools: [],
+    });
+
+    expect(calls).toEqual([
+      {
+        model: "grok-chat-test",
+        messages: [{ role: "user", content: "hello" }],
+      },
+    ]);
   });
 });

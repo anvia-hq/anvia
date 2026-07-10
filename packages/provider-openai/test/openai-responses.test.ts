@@ -35,7 +35,7 @@ describe("OpenAI Responses mapping", () => {
   it("maps internal tools and tool outputs to Responses API params", () => {
     const request: CompletionRequest = {
       chatHistory: [
-        Message.user("What is 2+5?"),
+        Message.user("What is 2+5?", { metadata: { composer: { entities: [] } } }),
         Message.assistant([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }, "fc_1")]),
         Message.tool([
           {
@@ -75,6 +75,7 @@ describe("OpenAI Responses mapping", () => {
       call_id: "fc_1",
       output: "7",
     });
+    expect(params.input).toContainEqual({ role: "user", content: "What is 2+5?" });
   });
 
   it("maps multimodal tool outputs to Responses API output content", () => {

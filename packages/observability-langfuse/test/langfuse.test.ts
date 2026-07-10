@@ -1,4 +1,9 @@
-import { AssistantContent, type Message, type Usage } from "@anvia/core/completion";
+import {
+  AssistantContent,
+  Message,
+  type Message as MessageType,
+  type Usage,
+} from "@anvia/core/completion";
 import { EvalOutcome, exactMatch, runEvalSuite } from "@anvia/core/evals";
 import type {
   AgentGenerationStartArgs,
@@ -683,6 +688,56 @@ describe("langfuse", () => {
       }),
     );
     expect(root.end).toHaveBeenCalledOnce();
+  });
+
+  it("keeps message metadata on run transcripts but omits it from model inputs", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const generation = fakeObservation("generation", "trace-1", "obs-generation");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+    const metadata = { composer: { entities: [{ id: "document-1" }] } };
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      prompt: Message.user("hello", { metadata }),
+      history: [Message.user("earlier", { metadata })],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    expect(mocks.startObservation).toHaveBeenCalledWith(
+      "agent.run",
+      expect.objectContaining({
+        input: {
+          prompt: expect.objectContaining({ metadata }),
+          history: [expect.objectContaining({ metadata })],
+        },
+      }),
+      { asType: "agent" },
+    );
+
+    await run.startGeneration?.({
+      ...generationStartArgs(),
+      request: {
+        ...generationStartArgs().request,
+        chatHistory: [Message.user("hello", { metadata })],
+      },
+    });
+    const generationInput = turn.startObservation.mock.calls[0]?.[1]?.input as MessageType[];
+    expect(generationInput[0]).not.toHaveProperty("metadata");
+
+    await run.end({
+      output: "done",
+      usage: usage(1, 1),
+      messages: [Message.assistant("done", { metadata })],
+    });
+    expect(root.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          messages: [expect.objectContaining({ metadata })],
+        }),
+      }),
+    );
   });
 
   it("nests streamed child agent observations under the parent tool observation", async () => {
@@ -2447,7 +2502,7 @@ function generationStartArgs(): AgentGenerationStartArgs {
   };
 }
 
-function userMessage(text: string): Message {
+function userMessage(text: string): MessageType {
   return { role: "user", content: [{ type: "text", text }] };
 }
 

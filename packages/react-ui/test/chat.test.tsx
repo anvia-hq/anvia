@@ -7,10 +7,16 @@ import {
   useChat,
 } from "@anvia/react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Editor } from "@tiptap/core";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ComposerEntity, ComposerSubmitMessage, ComposerTriggerDefinition } from "../src";
+import type {
+  ComposerEntity,
+  ComposerSubmitMessage,
+  ComposerTriggerDefinition,
+  ComposerTriggerItemsArgs,
+} from "../src";
 import { ChatProvider, Composer, Thread, useComposer } from "../src";
 import { createChatController, textMessage } from "./helpers";
 
@@ -21,6 +27,14 @@ afterEach(() => {
 
 function composerEditor(): HTMLElement {
   return screen.getByLabelText("Message");
+}
+
+function composerTiptapEditor(): Editor {
+  const editor = (composerEditor() as HTMLElement & { editor?: Editor }).editor;
+  if (editor === undefined) {
+    throw new Error("Expected TipTap editor instance");
+  }
+  return editor;
 }
 
 function ComposerInputSetter({ children, value }: { children: string; value: string }) {
@@ -718,6 +732,178 @@ describe("Chat primitives", () => {
           },
         },
       });
+    });
+  });
+
+  it("filters and selects trigger entities through the TipTap editor", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const trigger: ComposerTriggerDefinition = {
+      id: "people",
+      char: "@",
+      items: [
+        { id: "user_ada", label: "Ada", data: { kind: "user" } },
+        { id: "user_grace", label: "Grace", text: "@grace-hopper" },
+        { id: "user_lin", label: "Lin" },
+      ],
+    };
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root triggers={[trigger]}>
+          <Composer.Input />
+          <Composer.TriggerMenu />
+          <ComposerStateSnapshot />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    act(() => {
+      composerTiptapEditor().commands.insertContent("@a");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Ada")).toBeTruthy();
+      expect(screen.getByText("Grace")).toBeTruthy();
+    });
+    expect(screen.queryByText("Lin")).toBeNull();
+    expect(screen.getByText("Ada").getAttribute("data-selected")).toBe("");
+
+    fireEvent.keyDown(composerEditor(), { key: "ArrowDown" });
+    expect(screen.getByText("Grace").getAttribute("data-selected")).toBe("");
+    const selection = window.getSelection();
+    if (selection !== null) {
+      vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
+    }
+    fireEvent.keyDown(composerEditor(), { key: "Enter" });
+
+    await waitFor(() => {
+      expect(composerEditor().textContent).toBe("@grace-hopper ");
+    });
+    expect(screen.getByTestId("composer-state").textContent).toBe(
+      JSON.stringify({
+        input: "@grace-hopper ",
+        attachmentIds: [],
+        entityIds: ["user_grace"],
+      }),
+    );
+
+    fireEvent.click(screen.getByText("Send"));
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "@grace-hopper ",
+        metadata: {
+          composer: {
+            entities: [
+              {
+                id: "user_grace",
+                triggerId: "people",
+                trigger: "@",
+                label: "Grace",
+                text: "@grace-hopper",
+                range: { from: 0, to: 13 },
+              },
+            ],
+          },
+        },
+      });
+    });
+  });
+
+  it("resolves async trigger items with editor context and supports escape", async () => {
+    const itemsCompletion =
+      createDeferred<Array<{ id: string; label: string; data: { kind: string } }>>();
+    const items = vi.fn((_args: ComposerTriggerItemsArgs) => itemsCompletion.promise);
+    const trigger: ComposerTriggerDefinition = {
+      id: "projects",
+      char: "#",
+      minQueryLength: 2,
+      items,
+    };
+
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root defaultInput="Review " triggers={[trigger]}>
+          <Composer.Input />
+          <Composer.TriggerMenu data-testid="trigger-menu" />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    act(() => {
+      composerTiptapEditor().commands.focus("end");
+      composerTiptapEditor().commands.insertContent("#an");
+    });
+
+    await waitFor(() => {
+      expect(items).toHaveBeenCalledTimes(1);
+    });
+    expect(items.mock.calls[0]?.[0]).toMatchObject({
+      trigger,
+      query: "an",
+      input: "Review ",
+      entities: [],
+      signal: expect.any(AbortSignal),
+    });
+    expect(screen.getByTestId("trigger-menu").getAttribute("data-loading")).toBe("");
+
+    await act(async () => {
+      itemsCompletion.resolve([{ id: "project_anvia", label: "Anvia", data: { kind: "project" } }]);
+      await itemsCompletion.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Anvia")).toBeTruthy();
+      expect(screen.getByTestId("trigger-menu").getAttribute("data-loading")).toBeNull();
+    });
+
+    fireEvent.keyDown(composerEditor(), { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByTestId("trigger-menu")).toBeNull();
+    });
+  });
+
+  it("keeps disabled trigger items inert and selects enabled items with the mouse", async () => {
+    const trigger: ComposerTriggerDefinition = {
+      id: "people",
+      char: "@",
+      items: [
+        { id: "blocked", label: "Blocked", disabled: true },
+        { id: "user_ada", label: "Ada" },
+      ],
+    };
+
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root triggers={[trigger]}>
+          <Composer.Input />
+          <Composer.TriggerMenu />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    act(() => {
+      composerTiptapEditor().commands.insertContent("@");
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Blocked")).toBeTruthy();
+      expect(screen.getByText("Ada")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Blocked"));
+    expect(composerEditor().textContent).toBe("@");
+    expect(screen.getByText("Blocked").getAttribute("data-disabled")).toBe("");
+
+    fireEvent.mouseEnter(screen.getByText("Ada"));
+    expect(screen.getByText("Ada").getAttribute("data-selected")).toBe("");
+    const selection = window.getSelection();
+    if (selection !== null) {
+      vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
+    }
+    fireEvent.click(screen.getByText("Ada"));
+
+    await waitFor(() => {
+      expect(composerEditor().textContent).toBe("@Ada ");
     });
   });
 

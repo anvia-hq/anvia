@@ -252,6 +252,35 @@ describe("@anvia/react UI message reducer", () => {
     expect(turnOf(toolParts(messages)[0])).toBeUndefined();
   });
 
+  it("does not guess when same-turn input fallback is ambiguous", () => {
+    const messages = reduceEvents([
+      {
+        type: "tool_call",
+        turn: 1,
+        toolCall: AssistantContent.toolCall("tool_a", "lookup", { query: "Anvia" }),
+      },
+      {
+        type: "tool_call",
+        turn: 1,
+        toolCall: AssistantContent.toolCall("tool_b", "lookup", { query: "Anvia" }),
+      },
+      {
+        type: "tool_result",
+        turn: 1,
+        toolName: "lookup",
+        internalCallId: "internal_result",
+        args: '{"query":"Anvia"}',
+        result: "result",
+      },
+    ]);
+
+    expect(toolParts(messages)).toMatchObject([
+      { toolCallId: "tool_a", state: "input-available", input: { query: "Anvia" } },
+      { toolCallId: "tool_b", state: "input-available", input: { query: "Anvia" } },
+      { toolCallId: "internal_result", state: "output-available", output: "result" },
+    ]);
+  });
+
   it("does not add turn metadata while replaying persisted core messages", () => {
     const messages = coreMessagesToUIMessages([
       Message.assistant([
@@ -264,6 +293,100 @@ describe("@anvia/react UI message reducer", () => {
 
     expect(toolParts(messages)).toHaveLength(1);
     expect(turnOf(toolParts(messages)[0])).toBeUndefined();
+  });
+
+  it("matches live and persisted ordering when provider tool ids repeat across turns", () => {
+    const live = reduceEvents([
+      { type: "text_delta", turn: 1, delta: "Searching first." },
+      {
+        type: "tool_call",
+        turn: 1,
+        toolCall: AssistantContent.toolCall(
+          "tool_0",
+          "webSearch",
+          { query: "Anvia" },
+          "call_search",
+        ),
+      },
+      {
+        type: "tool_result",
+        turn: 1,
+        toolName: "webSearch",
+        toolCallId: "call_search",
+        internalCallId: "internal_search",
+        args: '{"query":"Anvia"}',
+        result: "search-result",
+      },
+      { type: "text_delta", turn: 2, delta: "Writing next." },
+      {
+        type: "tool_call",
+        turn: 2,
+        toolCall: AssistantContent.toolCall(
+          "tool_0",
+          "write_file",
+          { path: "report.md" },
+          "call_write",
+        ),
+      },
+      {
+        type: "tool_result",
+        turn: 2,
+        toolName: "write_file",
+        toolCallId: "call_write",
+        internalCallId: "internal_write",
+        args: '{"path":"report.md"}',
+        result: "written",
+      },
+      { type: "text_delta", turn: 2, delta: "Done." },
+    ]);
+    const persisted = coreMessagesToUIMessages([
+      Message.assistant([
+        AssistantContent.text("Searching first."),
+        AssistantContent.toolCall("tool_0", "webSearch", { query: "Anvia" }, "call_search"),
+      ]),
+      Message.toolResult("tool_0", "search-result", {
+        callId: "call_search",
+        toolName: "webSearch",
+      }),
+      Message.assistant([
+        AssistantContent.text("Writing next."),
+        AssistantContent.toolCall("tool_0", "write_file", { path: "report.md" }, "call_write"),
+      ]),
+      Message.toolResult("tool_0", "written", {
+        callId: "call_write",
+        toolName: "write_file",
+      }),
+      Message.assistant("Done."),
+    ]);
+
+    expect(semanticPartSummary(live)).toEqual(semanticPartSummary(persisted));
+    expect(partSummary(live)).toEqual([
+      { type: "text", text: "Searching first." },
+      {
+        type: "tool",
+        id: "tool_1_tool_0",
+        toolName: "webSearch",
+        toolCallId: "tool_0",
+        callId: "call_search",
+        turn: 1,
+        state: "output-available",
+        input: { query: "Anvia" },
+        output: "search-result",
+      },
+      { type: "text", text: "Writing next." },
+      {
+        type: "tool",
+        id: "tool_2_tool_0",
+        toolName: "write_file",
+        toolCallId: "tool_0",
+        callId: "call_write",
+        turn: 2,
+        state: "output-available",
+        input: { path: "report.md" },
+        output: "written",
+      },
+      { type: "text", text: "Done." },
+    ]);
   });
 });
 
@@ -284,6 +407,9 @@ function toolParts(messages: UIMessage[]): UIToolPart[] {
 function partSummary(messages: UIMessage[]): unknown[] {
   return messages.flatMap((message) =>
     message.parts.flatMap((part): unknown[] => {
+      if (part.type === "text") {
+        return [{ type: "text", text: part.text }];
+      }
       if (part.type === "reasoning") {
         return [{ type: "reasoning", text: part.text }];
       }
@@ -303,6 +429,30 @@ function partSummary(messages: UIMessage[]): unknown[] {
         ];
       }
       return [];
+    }),
+  );
+}
+
+function semanticPartSummary(messages: UIMessage[]): unknown[] {
+  return messages.flatMap((message) =>
+    message.parts.flatMap((part): unknown[] => {
+      if (part.type === "text") {
+        return [{ type: "text", text: part.text }];
+      }
+      if (part.type !== "tool") {
+        return [];
+      }
+      return [
+        {
+          type: "tool",
+          toolName: part.toolName,
+          toolCallId: part.toolCallId,
+          ...(part.callId === undefined ? {} : { callId: part.callId }),
+          state: part.state,
+          ...(part.input === undefined ? {} : { input: part.input }),
+          ...(part.output === undefined ? {} : { output: part.output }),
+        },
+      ];
     }),
   );
 }

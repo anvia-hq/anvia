@@ -312,6 +312,7 @@ describe("skills", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "get_skill_instructions",
           content: [{ type: "text", text: "# Review\nUse direct feedback." }],
         },
       ]),
@@ -360,6 +361,7 @@ describe("skills", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "get_skill_instructions",
           content: [{ type: "text", text: "# Review\nUse direct feedback." }],
         },
       ]),

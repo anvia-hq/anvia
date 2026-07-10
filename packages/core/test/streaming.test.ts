@@ -268,6 +268,7 @@ describe("PromptRequest streaming", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "slow_add",
           content: [{ type: "text", text: "7" }],
         },
       ]),
@@ -424,6 +425,7 @@ describe("PromptRequest streaming", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "stored:7" }],
         },
       ]),
@@ -472,6 +474,7 @@ describe("PromptRequest streaming", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "computer_screenshot",
           content: structuredContent,
         },
       ]),
@@ -576,11 +579,13 @@ describe("PromptRequest streaming", () => {
         {
           type: "tool_result",
           id: "call_slow",
+          toolName: "slow_tool",
           content: [{ type: "text", text: "slow" }],
         },
         {
           type: "tool_result",
           id: "call_fast",
+          toolName: "fast_tool",
           content: [{ type: "text", text: "fast" }],
         },
       ]),
@@ -885,6 +890,7 @@ describe("PromptRequest streaming", () => {
           type: "tool_result",
           id: "tool_0",
           callId: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "7" }],
         },
       ]),

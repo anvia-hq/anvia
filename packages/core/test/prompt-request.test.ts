@@ -147,6 +147,7 @@ describe("PromptRequest", () => {
           type: "tool_result",
           id: "call_1",
           callId: "fc_1",
+          toolName: "add",
           content: [{ type: "text", text: "7" }],
         },
       ]),
@@ -203,6 +204,7 @@ describe("PromptRequest", () => {
           type: "tool_result",
           id: "call_1",
           callId: "fc_1",
+          toolName: "add",
           content: [{ type: "text", text: "stored:7" }],
         },
       ]),
@@ -241,6 +243,7 @@ describe("PromptRequest", () => {
           type: "tool_result",
           id: "call_1",
           callId: "fc_1",
+          toolName: "computer_screenshot",
           content: structuredContent,
         },
       ]),
@@ -285,6 +288,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "computer_screenshot",
           content: [{ type: "text", text: "stored:screenshot" }],
         },
       ]),
@@ -330,6 +334,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "7:agent:request" }],
         },
       ]),
@@ -477,6 +482,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "stored:7" }],
         },
       ]),
@@ -524,6 +530,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "7:agent:request:legacy" }],
         },
       ]),
@@ -549,6 +556,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "7" }],
         },
       ]),
@@ -574,6 +582,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "not needed" }],
         },
       ]),
@@ -708,6 +717,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "guarded",
           content: [{ type: "text", text: "Rejected by hook." }],
         },
       ]),
@@ -749,6 +759,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "guarded",
           content: [{ type: "text", text: "approved result" }],
         },
       ]),
@@ -790,6 +801,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "guarded",
           content: [{ type: "text", text: "Rejected by policy." }],
         },
       ]),
@@ -842,6 +854,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "guarded",
           content: [{ type: "text", text: "approved 250" }],
         },
       ]),
@@ -931,6 +944,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "guarded",
           content: [{ type: "text", text: "Rejected by policy." }],
         },
       ]),
@@ -1112,6 +1126,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "fail",
           content: [{ type: "text", text: "ToolCallError: tool failed" }],
         },
       ]),
@@ -1152,6 +1167,7 @@ describe("PromptRequest", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "add",
           content: [{ type: "text", text: "7" }],
         },
       ]),

@@ -316,6 +316,7 @@ describe("MCP tools", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "mcp_add",
           content: [{ type: "text", text: "7" }],
         },
       ]),
@@ -345,6 +346,7 @@ describe("MCP tools", () => {
         {
           type: "tool_result",
           id: "call_1",
+          toolName: "mcp_add",
           content: [{ type: "text", text: "mcp:7" }],
         },
       ]),

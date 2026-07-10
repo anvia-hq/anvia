@@ -22,6 +22,11 @@ type UIToolPartLocation = {
   partIndex: number;
 };
 
+type UIToolPartLocations = {
+  byToolCallId: Map<string, UIToolPartLocation>;
+  byCallId: Map<string, UIToolPartLocation>;
+};
+
 type UIToolMessagePart = Extract<UIMessagePart, { type: "tool" }>;
 
 export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
@@ -129,8 +134,10 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
 
 export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
   const uiMessages: UIMessage[] = [];
-  const toolNamesByCallKey = toolCallNameLookup(messages);
-  const toolPartsByCallKey = new Map<string, UIToolPartLocation>();
+  const toolPartLocations: UIToolPartLocations = {
+    byToolCallId: new Map(),
+    byCallId: new Map(),
+  };
 
   for (const message of messages) {
     if (message.role === "system") {
@@ -202,7 +209,7 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
       }
       const messageIndex = uiMessages.length;
       uiMessages.push({ id: message.id ?? createId("msg"), role: "assistant", parts });
-      registerToolPartLocations(parts, messageIndex, toolPartsByCallKey);
+      registerToolPartLocations(parts, messageIndex, toolPartLocations);
       continue;
     }
 
@@ -211,7 +218,7 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
       const part: UIToolMessagePart = {
         id: toolPartId(content.id),
         type: "tool",
-        toolName: toolNameForResult(content, toolNamesByCallKey),
+        toolName: toolNameForResult(content, uiMessages, toolPartLocations),
         toolCallId: content.id,
         state: "output-available",
         output: toolResultContentToJson(content.content),
@@ -219,7 +226,7 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
       if (content.callId !== undefined) {
         part.callId = content.callId;
       }
-      if (mergeToolResultPart(uiMessages, toolPartsByCallKey, part)) {
+      if (mergeToolResultPart(uiMessages, toolPartLocations, part)) {
         continue;
       }
       parts.push(part);
@@ -235,32 +242,34 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
 function registerToolPartLocations(
   parts: UIMessagePart[],
   messageIndex: number,
-  toolPartsByCallKey: Map<string, UIToolPartLocation>,
+  toolPartLocations: UIToolPartLocations,
 ): void {
   for (const [partIndex, part] of parts.entries()) {
     if (part.type !== "tool") {
       continue;
     }
     const location = { messageIndex, partIndex };
-    toolPartsByCallKey.set(part.toolCallId, location);
+    toolPartLocations.byToolCallId.set(part.toolCallId, location);
     if (part.callId !== undefined) {
-      toolPartsByCallKey.set(part.callId, location);
+      toolPartLocations.byCallId.set(part.callId, location);
     }
   }
 }
 
 function mergeToolResultPart(
   uiMessages: UIMessage[],
-  toolPartsByCallKey: Map<string, UIToolPartLocation>,
+  toolPartLocations: UIToolPartLocations,
   resultPart: UIMessagePart,
 ): boolean {
   if (resultPart.type !== "tool") {
     return false;
   }
 
-  const location =
-    toolPartsByCallKey.get(resultPart.toolCallId) ??
-    (resultPart.callId === undefined ? undefined : toolPartsByCallKey.get(resultPart.callId));
+  const location = findToolPartLocation(
+    resultPart.toolCallId,
+    resultPart.callId,
+    toolPartLocations,
+  );
   if (location === undefined) {
     return false;
   }
@@ -279,7 +288,7 @@ function mergeToolResultPart(
   };
   if (currentPart.callId === undefined && resultPart.callId !== undefined) {
     mergedPart.callId = resultPart.callId;
-    toolPartsByCallKey.set(resultPart.callId, location);
+    toolPartLocations.byCallId.set(resultPart.callId, location);
   }
 
   const nextParts = [...message.parts];
@@ -288,37 +297,32 @@ function mergeToolResultPart(
   return true;
 }
 
-function toolCallNameLookup(messages: CoreMessage[]): Map<string, string> {
-  const toolNamesByCallKey = new Map<string, string>();
-
-  for (const message of messages) {
-    if (message.role !== "assistant") {
-      continue;
-    }
-    for (const content of message.content) {
-      if (content.type !== "tool_call") {
-        continue;
-      }
-      toolNamesByCallKey.set(content.id, content.function.name);
-      if (content.callId !== undefined) {
-        toolNamesByCallKey.set(content.callId, content.function.name);
-      }
-    }
-  }
-
-  return toolNamesByCallKey;
+function findToolPartLocation(
+  toolCallId: string,
+  callId: string | undefined,
+  toolPartLocations: UIToolPartLocations,
+): UIToolPartLocation | undefined {
+  return (
+    (callId === undefined ? undefined : toolPartLocations.byCallId.get(callId)) ??
+    toolPartLocations.byToolCallId.get(toolCallId)
+  );
 }
 
 function toolNameForResult(
   content: ToolContentType,
-  toolNamesByCallKey: Map<string, string>,
+  uiMessages: UIMessage[],
+  toolPartLocations: UIToolPartLocations,
 ): string {
-  return (
-    content.toolName ??
-    toolNamesByCallKey.get(content.id) ??
-    (content.callId === undefined ? undefined : toolNamesByCallKey.get(content.callId)) ??
-    "tool"
-  );
+  if (content.toolName !== undefined) {
+    return content.toolName;
+  }
+
+  const location = findToolPartLocation(content.id, content.callId, toolPartLocations);
+  const part =
+    location === undefined
+      ? undefined
+      : uiMessages[location.messageIndex]?.parts[location.partIndex];
+  return part?.type === "tool" ? part.toolName : "tool";
 }
 
 export function isUIMessage(value: unknown): value is UIMessage {

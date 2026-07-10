@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 0.4.1
+
+### Patch Changes
+
+- b8bb855: Clear the default chat composer immediately after starting message submission instead of waiting for the response stream.
+
 ## 0.4.0
 
 ### Minor Changes

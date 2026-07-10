@@ -1,4 +1,5 @@
 import { MessageActions, MessageCopy, MessageRegenerate } from "./actions";
+import { MessageEntity } from "./entity";
 import {
   MessageAttachment,
   MessageCodeBlock,
@@ -25,6 +26,7 @@ export const Message = {
   Part: MessagePart,
   Text: MessageText,
   Markdown: MessageMarkdown,
+  Entity: MessageEntity,
   CodeBlock: MessageCodeBlock,
   Reasoning: MessageReasoning,
   Tool: MessageTool,
@@ -43,6 +45,7 @@ export const Message = {
 
 export type { MessageContextValue, MessagePartContextValue } from "../contexts";
 export { useChatContext, useMessage, useMessagePart } from "../contexts";
+export type { MessageEntityProps } from "./entity";
 export type {
   MessageAttachmentPart,
   MessagePartsFilter,

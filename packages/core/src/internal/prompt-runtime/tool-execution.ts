@@ -232,7 +232,10 @@ export class ToolCallExecutor {
         resultPayload.toolCallId = toolCall.callId;
       }
       onResult?.(resultPayload);
-      return ToolContent.toolResult(toolCall.id, output, toolCall.callId);
+      return ToolContent.toolResult(toolCall.id, output, {
+        callId: toolCall.callId,
+        toolName: toolCall.function.name,
+      });
     });
   }
 

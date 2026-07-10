@@ -229,6 +229,142 @@ describe("UI message adapters", () => {
     });
   });
 
+  it("keeps persisted tools isolated when provider ids are reused across turns", () => {
+    const messages = coreMessagesToUIMessages([
+      Message.user("Run the workflow"),
+      Message.assistant([
+        AssistantContent.toolCall("tool_0", "webSearch", { query: "Anvia" }, "call_search"),
+      ]),
+      Message.toolResult("tool_0", "search-result", { callId: "call_search" }),
+      Message.assistant([
+        AssistantContent.toolCall(
+          "tool_0",
+          "exec_command",
+          { command: "mkdir", args: ["demo"] },
+          "call_exec",
+        ),
+      ]),
+      Message.toolResult("tool_0", "command-result", { callId: "call_exec" }),
+      Message.assistant([
+        AssistantContent.toolCall("tool_0", "write_file", { path: "demo/file.txt" }, "call_write"),
+      ]),
+      Message.toolResult("tool_0", "Wrote demo/file.txt", { callId: "call_write" }),
+    ]);
+
+    const toolParts = messages.flatMap((message) =>
+      message.parts.filter((part) => part.type === "tool"),
+    );
+
+    expect(toolParts).toHaveLength(3);
+    expect(toolParts).toMatchObject([
+      {
+        toolName: "webSearch",
+        toolCallId: "tool_0",
+        callId: "call_search",
+        state: "output-available",
+        input: { query: "Anvia" },
+        output: "search-result",
+      },
+      {
+        toolName: "exec_command",
+        toolCallId: "tool_0",
+        callId: "call_exec",
+        state: "output-available",
+        input: { command: "mkdir", args: ["demo"] },
+        output: "command-result",
+      },
+      {
+        toolName: "write_file",
+        toolCallId: "tool_0",
+        callId: "call_write",
+        state: "output-available",
+        input: { path: "demo/file.txt" },
+        output: "Wrote demo/file.txt",
+      },
+    ]);
+  });
+
+  it("matches reused provider ids to the nearest preceding call without callId metadata", () => {
+    const messages = coreMessagesToUIMessages([
+      Message.assistant([AssistantContent.toolCall("tool_0", "webSearch", { query: "Anvia" })]),
+      Message.toolResult("tool_0", "search-result"),
+      Message.assistant([
+        AssistantContent.toolCall("tool_0", "exec_command", { command: "mkdir" }),
+      ]),
+      Message.toolResult("tool_0", "command-result"),
+    ]);
+
+    const toolParts = messages.flatMap((message) =>
+      message.parts.filter((part) => part.type === "tool"),
+    );
+
+    expect(toolParts).toMatchObject([
+      {
+        toolName: "webSearch",
+        state: "output-available",
+        input: { query: "Anvia" },
+        output: "search-result",
+      },
+      {
+        toolName: "exec_command",
+        state: "output-available",
+        input: { command: "mkdir" },
+        output: "command-result",
+      },
+    ]);
+  });
+
+  it("prefers callId when reused provider ids have multiple pending results", () => {
+    const messages = coreMessagesToUIMessages([
+      Message.assistant([
+        AssistantContent.toolCall("tool_0", "webSearch", { query: "Anvia" }, "call_search"),
+      ]),
+      Message.assistant([
+        AssistantContent.toolCall("tool_0", "exec_command", { command: "mkdir" }, "call_exec"),
+      ]),
+      Message.toolResult("tool_0", "search-result", { callId: "call_search" }),
+      Message.toolResult("tool_0", "command-result", { callId: "call_exec" }),
+    ]);
+
+    const toolParts = messages.flatMap((message) =>
+      message.parts.filter((part) => part.type === "tool"),
+    );
+
+    expect(toolParts).toMatchObject([
+      {
+        toolName: "webSearch",
+        callId: "call_search",
+        state: "output-available",
+        output: "search-result",
+      },
+      {
+        toolName: "exec_command",
+        callId: "call_exec",
+        state: "output-available",
+        output: "command-result",
+      },
+    ]);
+  });
+
+  it("uses an explicit persisted result toolName before identity lookup", () => {
+    const messages = coreMessagesToUIMessages([
+      Message.assistant([AssistantContent.toolCall("tool_0", "legacy_name", {}, "call_1")]),
+      Message.toolResult("tool_0", "done", {
+        callId: "call_1",
+        toolName: "stored_name",
+      }),
+    ]);
+
+    expect(messages[0]?.parts[0]).toMatchObject({
+      type: "tool",
+      toolName: "stored_name",
+      toolCallId: "tool_0",
+      callId: "call_1",
+      state: "output-available",
+      output: "done",
+    });
+  });
+
   it("merges persisted tool results by provider callId", () => {
     const messages = coreMessagesToUIMessages([
       Message.assistant([

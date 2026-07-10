@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 0.4.3
+
+### Patch Changes
+
+- 6448b3e: Add opt-in, reduced-motion-aware display smoothing for streamed text and Markdown without changing chat state or transport behavior.
+
 ## 0.4.2
 
 ### Patch Changes

@@ -8,7 +8,7 @@ import {
 } from "@anvia/react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
-import { useState } from "react";
+import { StrictMode, useEffect, useMemo, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -861,6 +861,178 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("trigger-menu")).toBeNull();
     });
+  });
+
+  it("handles trigger recreation and conditional remounts safely in Strict Mode", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const addEventListener = vi.spyOn(HTMLElement.prototype, "addEventListener");
+    const removeEventListener = vi.spyOn(HTMLElement.prototype, "removeEventListener");
+    const documentsLoaded = createDeferred<Array<{ id: string; title: string }>>();
+
+    function TriggerComposer({
+      documents,
+      visible = true,
+    }: {
+      documents: Array<{ id: string; title: string }>;
+      visible?: boolean;
+    }) {
+      const triggers = useMemo<ComposerTriggerDefinition[]>(
+        () => [
+          {
+            id: "document",
+            char: "@",
+            minQueryLength: 0,
+            allowSpaces: true,
+            items: ({ query }) =>
+              documents
+                .filter((document) => document.title.toLowerCase().includes(query.toLowerCase()))
+                .map((document) => ({
+                  id: document.id,
+                  label: document.title,
+                })),
+          },
+        ],
+        [documents],
+      );
+
+      return (
+        <ChatProvider controller={createChatController({ sendMessage })}>
+          {visible ? (
+            <Composer.Root defaultInput="hello" triggers={triggers}>
+              <Composer.Input />
+              <Composer.TriggerMenu />
+            </Composer.Root>
+          ) : null}
+        </ChatProvider>
+      );
+    }
+
+    function AsyncTriggerComposer() {
+      const [documents, setDocuments] = useState<Array<{ id: string; title: string }>>([]);
+
+      useEffect(() => {
+        let active = true;
+        void documentsLoaded.promise.then((loadedDocuments) => {
+          if (active) {
+            setDocuments(loadedDocuments);
+          }
+        });
+        return () => {
+          active = false;
+        };
+      }, []);
+
+      return <TriggerComposer documents={documents} />;
+    }
+
+    const emptyDocuments: Array<{ id: string; title: string }> = [];
+    const asyncRender = render(
+      <StrictMode>
+        <AsyncTriggerComposer />
+      </StrictMode>,
+    );
+
+    await act(async () => {
+      documentsLoaded.resolve([{ id: "document-1", title: "Example document" }]);
+      await documentsLoaded.promise;
+    });
+
+    fireEvent.keyDown(composerEditor(), { key: "Enter" });
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+    asyncRender.unmount();
+
+    const strictRender = render(
+      <StrictMode>
+        <TriggerComposer documents={emptyDocuments} />
+      </StrictMode>,
+    );
+
+    for (let revision = 2; revision <= 4; revision += 1) {
+      strictRender.rerender(
+        <StrictMode>
+          <TriggerComposer
+            documents={[{ id: `document-${revision}`, title: `Document ${revision}` }]}
+          />
+        </StrictMode>,
+      );
+    }
+
+    strictRender.rerender(
+      <StrictMode>
+        <TriggerComposer documents={emptyDocuments} visible={false} />
+      </StrictMode>,
+    );
+    strictRender.rerender(
+      <StrictMode>
+        <TriggerComposer documents={emptyDocuments} />
+      </StrictMode>,
+    );
+    strictRender.unmount();
+
+    const immediateUnmount = render(
+      <StrictMode>
+        <TriggerComposer documents={emptyDocuments} />
+      </StrictMode>,
+    );
+    immediateUnmount.unmount();
+
+    const nonStrictRender = render(<TriggerComposer documents={emptyDocuments} />);
+    nonStrictRender.rerender(
+      <TriggerComposer documents={[{ id: "document-5", title: "Document 5" }]} />,
+    );
+    nonStrictRender.unmount();
+
+    const composerEditorElements = new Set(
+      addEventListener.mock.calls.flatMap(([type], index) => {
+        const element = addEventListener.mock.contexts[index] as HTMLElement;
+        return type === "keydown" && element.hasAttribute("data-anvia-composer-editor")
+          ? [element]
+          : [];
+      }),
+    );
+    const composerEditorListenerCalls = (
+      spy: typeof addEventListener | typeof removeEventListener,
+    ) =>
+      spy.mock.calls.filter(
+        ([type], index) =>
+          type === "keydown" && composerEditorElements.has(spy.mock.contexts[index] as HTMLElement),
+      );
+
+    await waitFor(() => {
+      expect(composerEditorListenerCalls(removeEventListener)).toHaveLength(
+        composerEditorListenerCalls(addEventListener).length,
+      );
+    });
+
+    expect(
+      consoleError.mock.calls.some((args) =>
+        args.some((argument) => String(argument).includes("[tiptap error]")),
+      ),
+    ).toBe(false);
+    expect(composerEditorListenerCalls(addEventListener).length).toBeGreaterThan(0);
+    expect(
+      addEventListener.mock.calls.filter(
+        ([type, , options], index) =>
+          type === "keydown" &&
+          options === true &&
+          (addEventListener.mock.contexts[index] as HTMLElement).hasAttribute(
+            "data-anvia-composer-editor",
+          ),
+      ),
+    ).toHaveLength(0);
+    expect(
+      removeEventListener.mock.calls.filter(
+        ([type, , options], index) =>
+          type === "keydown" &&
+          options === true &&
+          (removeEventListener.mock.contexts[index] as HTMLElement).hasAttribute(
+            "data-anvia-composer-editor",
+          ),
+      ),
+    ).toHaveLength(0);
   });
 
   it("keeps disabled trigger items inert and selects enabled items with the mouse", async () => {

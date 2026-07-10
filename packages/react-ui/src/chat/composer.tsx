@@ -463,6 +463,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
           "data-anvia-composer-editor": "",
           role: "textbox",
         },
+        handleKeyDown: (_view, event) => submitComposerFromEditorKeyDown(event, composerRef),
       },
       onUpdate: ({ editor: updatedEditor }) => {
         if (!editorReadyRef.current) {
@@ -515,21 +516,6 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     }
     editor.setEditable(!composerDisabled, false);
   }, [composerDisabled, editor]);
-
-  useEffect(() => {
-    if (editor === null) {
-      return;
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (submitComposerFromEditorKeyDown(event, composerRef)) {
-        event.stopPropagation();
-      }
-    };
-    editor.view.dom.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      editor.view.dom.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [editor]);
 
   useEffect(() => {
     if (editor === null) {
@@ -822,7 +808,7 @@ function composerSuggestion(
       range: { from: number; to: number };
       props: ComposerEntityAttrs;
     }) => {
-      const nodeAfter = editor.view.state.selection.$to.nodeAfter;
+      const nodeAfter = editor.state.selection.$to.nodeAfter;
       const overrideSpace = nodeAfter?.text?.startsWith(" ");
       const insertRange = {
         from: range.from,
@@ -842,7 +828,7 @@ function composerSuggestion(
           },
         ])
         .run();
-      editor.view.dom.ownerDocument.defaultView?.getSelection()?.collapseToEnd();
+      composerEditorOwnerDocument(editor)?.defaultView?.getSelection()?.collapseToEnd();
       composerRef.current.setActiveTrigger(undefined);
     },
     render: () => ({
@@ -880,6 +866,14 @@ function resolveTriggerItems(
     entities: composer.entities,
     signal,
   });
+}
+
+function composerEditorOwnerDocument(editor: Editor): Document | undefined {
+  const element = editor.options.element;
+  if (element === null || typeof element === "function") {
+    return undefined;
+  }
+  return "mount" in element ? element.mount.ownerDocument : element.ownerDocument;
 }
 
 function updateComposerTriggerState(

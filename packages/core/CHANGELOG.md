@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.12.7
+
+### Patch Changes
+
+- b54fba5: Scope live UI tool result matching by turn when reducer events include turn metadata.
+
 ## 0.12.6
 
 ### Patch Changes

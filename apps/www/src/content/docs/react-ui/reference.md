@@ -18,6 +18,7 @@ import {
   Composer,
   type ComposerEntity,
   type ComposerEntityData,
+  type ComposerMessageMetadata,
   type ComposerTriggerDefinition,
   type ComposerTriggerItem,
   type ComposerTriggerItemsArgs,
@@ -196,11 +197,18 @@ type ComposerEntity = {
   range: { from: number; to: number };
   data?: ComposerEntityData;
 };
+
+type ComposerMessageMetadata = {
+  composer: { entities: ComposerEntity[] };
+};
 ```
 
 Use `entities`, `defaultEntities`, and `onEntitiesChange` on `Composer.Root` when selected entities
 need to be controlled by application state. For a full guide, see
 [Composer triggers](/docs/react-ui/composer-triggers).
+
+Entity ranges use JavaScript UTF-16 offsets. Default quote submission shifts them to match the
+prefixed message text.
 
 ## Message
 
@@ -214,7 +222,8 @@ provider supplied by that list.
 | `Message.Parts` | `div` | `filter`, child function | Renders message parts. |
 | `Message.Part` | `div` | child function | Provides one `UIMessagePart`. |
 | `Message.Text` | `span` | element props | Renders text part as plain text. |
-| `Message.Markdown` | `div` | `components`, `remarkPlugins` | Renders text with GitHub-flavored Markdown. |
+| `Message.Markdown` | `div` | `components`, `remarkPlugins`, `renderEntity` | Renders text with GitHub-flavored Markdown and validated Composer entities. |
+| `Message.Entity` | `span` | `entity`, span props | Renders headless semantic entity markup. |
 | `Message.CodeBlock` | `pre` | `code`, `language` | Markdown code block helper. |
 | `Message.Reasoning` | `details` | element props | Renders reasoning parts. |
 | `Message.Tool` | `div` | `renderWhen` | Renders tool parts. |
@@ -227,6 +236,16 @@ provider supplied by that list.
 
 Tool helpers: `Message.ToolName`, `Message.ToolStatus`, `Message.ToolInput`,
 `Message.ToolOutput`, and `Message.ToolError`.
+
+```ts
+type MessageEntityProps = React.HTMLAttributes<HTMLSpanElement> & {
+  entity: ComposerEntity;
+};
+```
+
+`Message.Entity` emits `data-anvia-message-entity`, `data-entity-id`, and `data-trigger-id` and uses
+`entity.text` as its default children. `Message.Markdown` reads entities from
+`message.metadata.composer.entities`; malformed ranges remain ordinary text.
 
 Child signatures:
 

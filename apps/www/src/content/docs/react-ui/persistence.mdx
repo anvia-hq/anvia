@@ -65,6 +65,22 @@ export function LocalChat() {
 A production route usually receives a thread id, authenticates the user, and stores messages or
 runtime events after the stream completes.
 
+`UIMessage.metadata` is preserved by the supported conversion path, including Composer entities:
+
+```ts
+import { coreMessagesToUIMessages, uiMessagesToCoreMessages } from "@anvia/core/ui";
+
+const coreMessages = uiMessagesToCoreMessages(uiMessages);
+await conversationStore.save(JSON.parse(JSON.stringify(coreMessages)));
+
+const restored = coreMessagesToUIMessages(await conversationStore.load());
+```
+
+Anvia's SQLite, Postgres, Prisma, and Drizzle memory adapters store complete core messages, and
+Studio persists message metadata in its normalized SQLite tables. Provider adapters omit this UI
+metadata from model requests. Consumers no longer need to rewrite mentions into fake links or
+reattach Composer metadata after rehydration.
+
 For memory-backed chats, load the saved core messages on the server with `session.messages()` and
 return them from your API as Anvia `Message[]`. The React page converts that payload with
 `initialMessagesFromMemory(...)` before passing it to `useChat`.

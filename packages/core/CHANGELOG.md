@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.13.0
+
+### Minor Changes
+
+- b52c479: Persist strict JSON message metadata across UI and core message conversions while keeping it out of provider requests and model-generation trace inputs.
+
 ## 0.12.8
 
 ### Patch Changes

@@ -1,4 +1,9 @@
-import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
+import {
+  isJsonValue as isCoreJsonValue,
+  type JsonObject,
+  type JsonValue,
+  type Message,
+} from "@anvia/core/completion";
 import type { AgentTraceOptions } from "../types";
 
 export function isObject(value: unknown): value is Record<string, unknown> {
@@ -6,22 +11,11 @@ export function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {
-  return isObject(value) && Object.values(value).every(isJsonValue);
+  return isObject(value) && isCoreJsonValue(value);
 }
 
 export function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-  return isJsonObject(value);
+  return isCoreJsonValue(value);
 }
 
 export function isMessageInput(value: unknown): value is string | Message {

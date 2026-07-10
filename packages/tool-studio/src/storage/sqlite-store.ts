@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
+import { isJsonValue, type JsonObject, type JsonValue, type Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
 import { compact } from "../runtime/compact";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
@@ -59,6 +59,7 @@ type MessageRow = {
   message_index: number;
   role: Message["role"];
   message_id: string | null;
+  metadata_json: string | null;
   created_at: string;
 };
 
@@ -891,6 +892,7 @@ class SqliteSessionStore
         message_index INTEGER NOT NULL,
         role TEXT NOT NULL,
         message_id TEXT,
+        metadata_json TEXT,
         created_at TEXT NOT NULL,
         PRIMARY KEY(session_id, message_index),
         FOREIGN KEY(session_id) REFERENCES anvia_studio_sessions(id) ON DELETE CASCADE
@@ -985,6 +987,7 @@ class SqliteSessionStore
       CREATE INDEX IF NOT EXISTS anvia_studio_traces_session_started_idx
         ON anvia_studio_traces(session_id, started_at DESC);
     `);
+    ensureMessageMetadataColumn(db);
 
     this.db = db;
     return db;
@@ -1047,7 +1050,7 @@ class SqliteSessionStore
     const db = this.database();
     const messageRows = db
       .prepare(
-        `SELECT session_id, message_index, role, message_id, created_at
+        `SELECT session_id, message_index, role, message_id, metadata_json, created_at
          FROM anvia_studio_session_messages
          WHERE session_id = $sessionId
          ORDER BY message_index ASC`,
@@ -1102,8 +1105,9 @@ class SqliteSessionStore
         message_index,
         role,
         message_id,
+        metadata_json,
         created_at
-      ) VALUES ($sessionId, $messageIndex, $role, $messageId, $createdAt)`,
+      ) VALUES ($sessionId, $messageIndex, $role, $messageId, $metadata, $createdAt)`,
     );
     const insertPart = db.prepare(
       `INSERT INTO anvia_studio_session_message_parts (
@@ -1117,11 +1121,15 @@ class SqliteSessionStore
 
     messages.forEach((message, messageOffset) => {
       const messageIndex = startIndex + messageOffset;
+      if (message.metadata !== undefined && !isJsonValue(message.metadata)) {
+        throw new TypeError("Studio message metadata must be a strict JSON value.");
+      }
       insertMessage.run({
         $sessionId: sessionId,
         $messageIndex: messageIndex,
         $role: message.role,
         $messageId: message.role === "assistant" ? (message.id ?? null) : null,
+        $metadata: message.metadata === undefined ? null : JSON.stringify(message.metadata),
         $createdAt: createdAt,
       });
 
@@ -1230,14 +1238,20 @@ function messageParts(message: Message): StoredMessagePart[] {
 
 function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   const parts = partRows.map((partRow) => JSON.parse(partRow.part_json) as unknown);
+  const metadata = parseJsonValue<JsonValue>(row.metadata_json);
+  if (metadata !== undefined && !isJsonValue(metadata)) {
+    throw new TypeError("Stored Studio message metadata is not a strict JSON value.");
+  }
+  const metadataProperties = compact({ metadata });
 
   if (row.role === "system") {
-    return { role: "system", content: systemContentFromParts(parts) };
+    return { role: "system", content: systemContentFromParts(parts), ...metadataProperties };
   }
   if (row.role === "user") {
     return {
       role: "user",
       content: parts as Extract<Message, { role: "user" }>["content"],
+      ...metadataProperties,
     };
   }
   if (row.role === "assistant") {
@@ -1245,12 +1259,14 @@ function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
       role: "assistant",
       ...compact({ id: row.message_id ?? undefined }),
       content: parts as Extract<Message, { role: "assistant" }>["content"],
+      ...metadataProperties,
     };
   }
   if (row.role === "tool") {
     return {
       role: "tool",
       content: parts as Extract<Message, { role: "tool" }>["content"],
+      ...metadataProperties,
     };
   }
 
@@ -1278,6 +1294,15 @@ function guardAgainstLegacySessionSchema(db: DatabaseSyncType): void {
     throw new Error(
       "Existing Studio SQLite DB uses the legacy messages_json schema. Delete or recreate the Studio SQLite DB to use normalized session messages.",
     );
+  }
+}
+
+function ensureMessageMetadataColumn(db: DatabaseSyncType): void {
+  const columns = db
+    .prepare("PRAGMA table_info('anvia_studio_session_messages')")
+    .all() as TableInfoRow[];
+  if (!columns.some((column) => column.name === "metadata_json")) {
+    db.exec("ALTER TABLE anvia_studio_session_messages ADD COLUMN metadata_json TEXT");
   }
 }
 

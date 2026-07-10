@@ -112,6 +112,7 @@ export class DrizzleMemoryStore implements MemoryStore {
     if (input.messages.length === 0) {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.context);
 
@@ -150,6 +151,7 @@ export class DrizzleMemoryStore implements MemoryStore {
     if (this.options.errors === "ignore") {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.context);
 
@@ -220,6 +222,14 @@ export class DrizzleMemoryStore implements MemoryStore {
       return this.options.scope(context);
     }
     return createDrizzleMemoryScopeKey(context, this.options.scope);
+  }
+
+  private validateInputMessages(messages: Message[]): void {
+    if (this.options.validateMessages) {
+      for (const message of messages) {
+        parseMemoryMessage(message);
+      }
+    }
   }
 }
 

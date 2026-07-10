@@ -1,4 +1,4 @@
-import type { JsonValue, Message } from "@anvia/core";
+import { isJsonValue, type JsonValue, type Message } from "@anvia/core";
 
 export function parseMemoryMessage(value: unknown): Message {
   if (!isMemoryMessage(value)) {
@@ -9,6 +9,9 @@ export function parseMemoryMessage(value: unknown): Message {
 
 export function isMemoryMessage(value: unknown): value is Message {
   if (!isRecord(value) || typeof value.role !== "string") {
+    return false;
+  }
+  if (value.metadata !== undefined && !isJsonValue(value.metadata)) {
     return false;
   }
 
@@ -39,25 +42,6 @@ export function serializeUnknownError(error: unknown): JsonValue {
   return {
     message: String(error),
   };
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return Number.isFinite(value) || typeof value !== "number";
-  }
-
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-
-  return (
-    isRecord(value) && Object.values(value).every((item) => item === undefined || isJsonValue(item))
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -71,6 +71,6 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.7.1 <1.0.0"
+    "@anvia/core": ">=0.13.0 <1.0.0"
   }
 }

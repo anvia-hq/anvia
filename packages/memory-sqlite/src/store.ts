@@ -86,6 +86,7 @@ export class SqliteMemoryStore implements MemoryStore {
     if (input.messages.length === 0) {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     const db = this.database();
     const scopeKey = this.scopeKey(input.context);
@@ -156,6 +157,7 @@ export class SqliteMemoryStore implements MemoryStore {
     if (this.options.errors === "ignore") {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     const db = this.database();
     const scopeKey = this.scopeKey(input.context);
@@ -272,6 +274,14 @@ export class SqliteMemoryStore implements MemoryStore {
   private messageFromJson(raw: string): Message {
     const value = JSON.parse(raw) as unknown;
     return this.options.validateMessages ? parseMemoryMessage(value) : (value as Message);
+  }
+
+  private validateInputMessages(messages: Message[]): void {
+    if (this.options.validateMessages) {
+      for (const message of messages) {
+        parseMemoryMessage(message);
+      }
+    }
   }
 
   private scopeKey(context: MemoryContext): string {

@@ -175,6 +175,48 @@ describe("otel", () => {
     expect(root?.ended).toBe(true);
   });
 
+  it("keeps message metadata on run transcripts but omits it from model inputs", async () => {
+    const tracer = new FakeTracer();
+    const tracing = otel.create({ tracer: tracer.tracer });
+    const metadata = { composer: { entities: [{ id: "document-1" }] } };
+    const run = await tracing.startRun({
+      prompt: Message.user("hello", { metadata }),
+      history: [Message.user("earlier", { metadata })],
+      maxTurns: 1,
+    });
+
+    const root = tracer.spans[0];
+    expect(JSON.parse(String(root?.attributes["anvia.run.prompt"]))).toHaveProperty(
+      "metadata",
+      metadata,
+    );
+    expect(JSON.parse(String(root?.attributes["anvia.run.history"]))[0]).toHaveProperty(
+      "metadata",
+      metadata,
+    );
+
+    await run?.startGeneration?.({
+      ...generationStartArgs(),
+      request: {
+        ...generationStartArgs().request,
+        chatHistory: [Message.user("hello", { metadata })],
+      },
+    });
+    expect(
+      JSON.parse(String(tracer.spans[1]?.attributes["anvia.generation.input"]))[0],
+    ).not.toHaveProperty("metadata");
+
+    await run?.end({
+      output: "done",
+      usage: usage(1, 1),
+      messages: [Message.assistant("done", { metadata })],
+    });
+    expect(JSON.parse(String(root?.attributes["anvia.run.messages"]))[0]).toHaveProperty(
+      "metadata",
+      metadata,
+    );
+  });
+
   it("records generation request options and output schema metadata", async () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });

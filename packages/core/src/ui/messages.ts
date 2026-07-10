@@ -1,3 +1,4 @@
+import { isJsonValue } from "../completion/json";
 import {
   AssistantContent,
   type AssistantContent as AssistantContentType,
@@ -37,7 +38,7 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
 
     if (message.role === "system") {
       if (text.length > 0) {
-        coreMessages.push(Message.system(text));
+        coreMessages.push(Message.system(text, metadataOptions(message.metadata)));
       }
       continue;
     }
@@ -62,7 +63,7 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
         );
       }
       if (content.length > 0) {
-        coreMessages.push(Message.user(content));
+        coreMessages.push(Message.user(content, metadataOptions(message.metadata)));
       }
       continue;
     }
@@ -104,7 +105,12 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
         }
       }
       if (content.length > 0) {
-        coreMessages.push(Message.assistant(content, message.id));
+        coreMessages.push(
+          Message.assistant(content, {
+            id: message.id,
+            ...metadataOptions(message.metadata),
+          }),
+        );
       }
       if (toolResults.length > 0) {
         coreMessages.push(Message.tool(toolResults));
@@ -125,7 +131,7 @@ export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
       );
     }
     if (toolResults.length > 0) {
-      coreMessages.push(Message.tool(toolResults));
+      coreMessages.push(Message.tool(toolResults, metadataOptions(message.metadata)));
     }
   }
 
@@ -145,6 +151,7 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
         id: createId("msg"),
         role: "system",
         parts: [{ id: createId("part"), type: "text", text: message.content }],
+        ...uiMetadata(message.metadata),
       });
       continue;
     }
@@ -162,7 +169,12 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
           });
         }
       }
-      uiMessages.push({ id: createId("msg"), role: "user", parts });
+      uiMessages.push({
+        id: createId("msg"),
+        role: "user",
+        parts,
+        ...uiMetadata(message.metadata),
+      });
       continue;
     }
 
@@ -208,7 +220,12 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
         });
       }
       const messageIndex = uiMessages.length;
-      uiMessages.push({ id: message.id ?? createId("msg"), role: "assistant", parts });
+      uiMessages.push({
+        id: message.id ?? createId("msg"),
+        role: "assistant",
+        parts,
+        ...uiMetadata(message.metadata),
+      });
       registerToolPartLocations(parts, messageIndex, toolPartLocations);
       continue;
     }
@@ -226,17 +243,45 @@ export function coreMessagesToUIMessages(messages: CoreMessage[]): UIMessage[] {
       if (content.callId !== undefined) {
         part.callId = content.callId;
       }
-      if (mergeToolResultPart(uiMessages, toolPartLocations, part)) {
+      if (
+        message.metadata === undefined &&
+        mergeToolResultPart(uiMessages, toolPartLocations, part)
+      ) {
         continue;
       }
       parts.push(part);
     }
     if (parts.length > 0) {
-      uiMessages.push({ id: createId("msg"), role: "tool", parts });
+      uiMessages.push({
+        id: createId("msg"),
+        role: "tool",
+        parts,
+        ...uiMetadata(message.metadata),
+      });
     }
   }
 
   return uiMessages;
+}
+
+function metadataOptions(metadata: UIMessage["metadata"]): { metadata?: JsonValue } {
+  if (metadata === undefined) {
+    return {};
+  }
+  if (!isJsonValue(metadata)) {
+    throw new TypeError("UI message metadata must be a strict JSON value.");
+  }
+  return { metadata };
+}
+
+function uiMetadata(metadata: JsonValue | undefined): { metadata?: JsonValue } {
+  if (metadata === undefined) {
+    return {};
+  }
+  if (!isJsonValue(metadata)) {
+    throw new TypeError("Core message metadata must be a strict JSON value.");
+  }
+  return { metadata };
 }
 
 function registerToolPartLocations(

@@ -1,4 +1,4 @@
-import { textFromAssistantContent } from "@anvia/core/completion";
+import { type Message, textFromAssistantContent } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationStartArgs,
@@ -67,12 +67,25 @@ export function generationStartAttributes(args: AgentGenerationStartArgs): Attri
   const params = modelParameters(args.request);
   return compactAttributes({
     "anvia.generation.turn": args.turn,
-    "anvia.generation.input": jsonString(args.request.chatHistory),
+    "anvia.generation.input": jsonString(modelInputMessages(args.request.chatHistory)),
     "anvia.generation.model": args.request.model ?? "default",
     "anvia.generation.tool_count": args.request.tools.length,
     "anvia.generation.has_output_schema": args.request.outputSchema !== undefined,
     ...params,
   });
+}
+
+export function modelInputMessage(message: Message): Message {
+  if (message.metadata === undefined) {
+    return message;
+  }
+  const result: Message = { ...message };
+  delete result.metadata;
+  return result;
+}
+
+export function modelInputMessages(messages: Message[]): Message[] {
+  return messages.map(modelInputMessage);
 }
 
 export function generationEndAttributes(args: AgentGenerationEndArgs): Attributes {

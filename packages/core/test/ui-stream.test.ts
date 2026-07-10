@@ -54,6 +54,80 @@ class StreamModel implements StreamingCompletionModel {
 }
 
 describe("UI message adapters", () => {
+  it("round-trips strict UI metadata through core messages and JSON persistence", () => {
+    const metadata = {
+      composer: {
+        entities: [
+          {
+            id: "document-1",
+            triggerId: "documents",
+            trigger: "@",
+            label: "Guide.pdf",
+            text: "@Guide.pdf",
+            range: { from: 4, to: 14 },
+            data: { kind: "document", documentId: "document-1" },
+          },
+        ],
+      },
+    };
+    const messages: UIMessage[] = [
+      {
+        id: "user_1",
+        role: "user",
+        parts: [{ id: "part_1", type: "text", text: "See @Guide.pdf" }],
+        metadata,
+      },
+    ];
+
+    const coreMessages = uiMessagesToCoreMessages(messages);
+    expect(coreMessages).toEqual([Message.user("See @Guide.pdf", { metadata })]);
+
+    const persisted = JSON.parse(JSON.stringify(coreMessages)) as typeof coreMessages;
+    expect(coreMessagesToUIMessages(persisted)[0]?.metadata).toEqual(metadata);
+  });
+
+  it("preserves assistant and standalone tool metadata without changing normal tool merging", () => {
+    const assistantMetadata = { source: "assistant" };
+    const toolMetadata = { source: "tool" };
+    const assistantMessage: UIMessage = {
+      id: "assistant_1",
+      role: "assistant",
+      parts: [
+        {
+          id: "tool_1",
+          type: "tool",
+          toolName: "lookup",
+          toolCallId: "tool_1",
+          state: "output-available",
+          input: { query: "Anvia" },
+          output: "done",
+        },
+      ],
+      metadata: assistantMetadata,
+    };
+
+    const assistantCore = uiMessagesToCoreMessages([assistantMessage]);
+    expect(assistantCore[0]?.metadata).toEqual(assistantMetadata);
+    expect(assistantCore[1]?.metadata).toBeUndefined();
+    const assistantRestored = coreMessagesToUIMessages(assistantCore);
+    expect(assistantRestored).toHaveLength(1);
+    expect(assistantRestored[0]?.metadata).toEqual(assistantMetadata);
+
+    const withStandaloneTool = coreMessagesToUIMessages([
+      Message.assistant([AssistantContent.toolCall("tool_1", "lookup", {})]),
+      Message.toolResult("tool_1", "done", { metadata: toolMetadata }),
+    ]);
+    expect(withStandaloneTool).toHaveLength(2);
+    expect(withStandaloneTool[1]).toMatchObject({ role: "tool", metadata: toolMetadata });
+
+    const mergedWithoutMetadata = coreMessagesToUIMessages([
+      Message.assistant([AssistantContent.toolCall("tool_1", "lookup", {})]),
+      Message.toolResult("tool_1", "done"),
+    ]);
+    expect(mergedWithoutMetadata).toHaveLength(1);
+    expect(mergedWithoutMetadata[0]?.parts[0]).toMatchObject({ state: "output-available" });
+  });
+
   it("converts UI messages into core completion messages", () => {
     const messages: UIMessage[] = [
       {

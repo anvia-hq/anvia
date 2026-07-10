@@ -178,8 +178,9 @@ describe("@anvia/react transports", () => {
 
 describe("@anvia/react useChat", () => {
   it("creates initial UI messages from memory messages", () => {
+    const metadata = { composer: { entities: [{ id: "document-1" }] } };
     const memoryMessages = [
-      Message.user("Where is order A-100?"),
+      Message.user("Where is order A-100?", { metadata }),
       Message.assistant([
         AssistantContent.toolCall("call_1", "lookup_order", { orderId: "A-100" }),
       ]),
@@ -190,7 +191,11 @@ describe("@anvia/react useChat", () => {
     const initialMessages = initialMessagesFromMemory(memoryMessages);
 
     expect(initialMessages).toMatchObject([
-      { role: "user", parts: [{ type: "text", text: "Where is order A-100?" }] },
+      {
+        role: "user",
+        parts: [{ type: "text", text: "Where is order A-100?" }],
+        metadata,
+      },
       {
         role: "assistant",
         parts: [
@@ -224,12 +229,14 @@ describe("@anvia/react useChat", () => {
 
   it("sends converted core messages and applies UI stream events", async () => {
     const onEvent = vi.fn();
+    const metadata = { composer: { entities: [{ id: "document-1" }] } };
     const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
       send: async function* (request) {
         expect(request.messages).toHaveLength(1);
         expect(request.messages[0]).toMatchObject({
           role: "user",
           content: [{ type: "text", text: "hi" }],
+          metadata,
         });
         expect(request.stream).toBe(true);
         yield {
@@ -259,14 +266,19 @@ describe("@anvia/react useChat", () => {
     const { result } = renderHook(() => useChat({ transport, onEvent }));
 
     await act(async () => {
-      await result.current.sendMessage({ text: "hi", id: "user_1" });
+      await result.current.sendMessage({ text: "hi", id: "user_1", metadata });
     });
 
     expect(result.current.status).toBe("idle");
     expect(result.current.error).toBeUndefined();
     expect(result.current.text).toBe("Hello");
     expect(result.current.messages).toMatchObject([
-      { id: "user_1", role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        id: "user_1",
+        role: "user",
+        parts: [{ type: "text", text: "hi" }],
+        metadata,
+      },
       {
         id: "assistant_1",
         role: "assistant",

@@ -1,3 +1,5 @@
+import { isJsonValue } from "./json";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue | undefined };
@@ -108,10 +110,20 @@ export type ToolResult = {
   content: ToolResultContent[];
 };
 
-type ToolResultOptions = {
+export type MessageOptions = {
+  metadata?: JsonValue | undefined;
+};
+
+export type AssistantMessageOptions = MessageOptions & {
+  id?: string | undefined;
+};
+
+export type ToolResultOptions = {
   callId?: string | undefined;
   toolName?: string | undefined;
 };
+
+export type ToolResultMessageOptions = ToolResultOptions & MessageOptions;
 
 export type UserContent = Text | ImageContent | DocumentContent;
 export type AssistantContent = Text | ToolCall | Reasoning | ImageContent;
@@ -120,22 +132,26 @@ export type ToolContent = ToolResult;
 export type SystemMessage = {
   role: "system";
   content: string;
+  metadata?: JsonValue;
 };
 
 export type UserMessage = {
   role: "user";
   content: UserContent[];
+  metadata?: JsonValue;
 };
 
 export type AssistantMessage = {
   role: "assistant";
   id?: string;
   content: AssistantContent[];
+  metadata?: JsonValue;
 };
 
 export type ToolMessage = {
   role: "tool";
   content: ToolContent[];
+  metadata?: JsonValue;
 };
 
 export type Message = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
@@ -341,32 +357,57 @@ export function reasoningDisplayText(reasoning: Reasoning | ReasoningContent[]):
 }
 
 export const Message = {
-  system(content: string): Message {
-    return { role: "system", content };
+  system(content: string, options: MessageOptions = {}): Message {
+    return { role: "system", content, ...messageMetadata(options) };
   },
-  user(content: string | UserContent[]): Message {
+  user(content: string | UserContent[], options: MessageOptions = {}): Message {
     return {
       role: "user",
       content: typeof content === "string" ? [UserContent.text(content)] : content,
+      ...messageMetadata(options),
     };
   },
-  assistant(content: string | AssistantContent[], id?: string): Message {
+  assistant(
+    content: string | AssistantContent[],
+    idOrOptions?: string | AssistantMessageOptions,
+  ): Message {
     const normalized = typeof content === "string" ? [AssistantContent.text(content)] : content;
-    return id === undefined
-      ? { role: "assistant", content: normalized }
-      : { role: "assistant", id, content: normalized };
+    const options = typeof idOrOptions === "string" ? { id: idOrOptions } : (idOrOptions ?? {});
+    return {
+      role: "assistant",
+      ...(options.id === undefined ? {} : { id: options.id }),
+      content: normalized,
+      ...messageMetadata(options),
+    };
   },
-  tool(content: ToolContent | ToolContent[]): Message {
+  tool(content: ToolContent | ToolContent[], options: MessageOptions = {}): Message {
     return {
       role: "tool",
       content: Array.isArray(content) ? content : [content],
+      ...messageMetadata(options),
     };
   },
-  toolResult(id: string, output: unknown, options: ToolResultOptions = {}): Message {
+  toolResult(id: string, output: unknown, options: ToolResultMessageOptions = {}): Message {
     const content = isToolResultContentArray(output) ? output : serializeToolResultOutput(output);
-    return Message.tool(ToolContent.toolResult(id, content, options));
+    return Message.tool(
+      ToolContent.toolResult(id, content, {
+        callId: options.callId,
+        toolName: options.toolName,
+      }),
+      { metadata: options.metadata },
+    );
   },
 };
+
+function messageMetadata(options: MessageOptions): { metadata?: JsonValue } {
+  if (options.metadata === undefined) {
+    return {};
+  }
+  if (!isJsonValue(options.metadata)) {
+    throw new TypeError("Message metadata must be a strict JSON value.");
+  }
+  return { metadata: options.metadata };
+}
 
 export type ToolChoice =
   | "auto"

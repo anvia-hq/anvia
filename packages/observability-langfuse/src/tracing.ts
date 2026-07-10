@@ -1,4 +1,4 @@
-import { textFromAssistantContent } from "@anvia/core/completion";
+import { type Message, textFromAssistantContent } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
@@ -41,6 +41,8 @@ import {
   errorMessage,
   generationKey,
   isRecord,
+  modelInputMessage,
+  modelInputMessages,
   modelParameters,
   usageDetails,
   usageDetailsFromRecord,
@@ -444,7 +446,7 @@ class LangfuseRunObserver implements AgentRunObserver {
   startGeneration(args: AgentGenerationStartArgs): AgentGenerationObserver {
     this.closeEarlierTurns(args.turn);
     const turn = this.turnSpan(args.turn);
-    const redactedChatHistory = this.redactInputValue(args.request.chatHistory);
+    const redactedChatHistory = this.redactInputValue(modelInputMessages(args.request.chatHistory));
     const generation = turn.startObservation(
       `model.turn.${args.turn}`,
       {
@@ -666,8 +668,8 @@ class LangfuseToolObserver implements AgentToolObserver {
         `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
         {
           input: {
-            prompt: child.prompt,
-            history: child.history,
+            prompt: modelInputMessage(child.prompt as Message),
+            history: modelInputMessages(child.history as Message[]),
           },
           metadata: childMetadata(args, agentId, agentName, childTurn),
         },

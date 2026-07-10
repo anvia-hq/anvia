@@ -1,3 +1,4 @@
+import type { Message } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
@@ -32,6 +33,8 @@ import {
   generationStartAttributes,
   isRecord,
   jsonString,
+  modelInputMessage,
+  modelInputMessages,
   parentContextFromTraceId,
   recordSpanError,
   rootSpanName,
@@ -195,8 +198,8 @@ class OtelToolObserver implements AgentToolObserver {
             "anvia.parent_tool.internal_call_id": args.internalCallId,
             "anvia.parent_tool.call_id": args.toolCallId,
             "anvia.generation.input": jsonString({
-              prompt: child.prompt,
-              history: child.history,
+              prompt: modelInputMessage(child.prompt as Message),
+              history: modelInputMessages(child.history as Message[]),
             }),
           }),
         },

@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   AssistantContent,
+  isJsonValue,
+  type JsonValue,
   Message,
+  type Message as MessageType,
   reasoningDisplayText,
   ToolContent,
   UserContent,
@@ -176,5 +179,79 @@ describe("message attachment content", () => {
       throw new Error("Expected tool result content");
     }
     expect("callId" in toolResult).toBe(false);
+  });
+
+  it("supports old and metadata-aware message factory signatures", () => {
+    const metadata = { composer: { entities: [] } };
+    const messages = [
+      Message.system("system"),
+      Message.system("system", { metadata }),
+      Message.user("user"),
+      Message.user("user", { metadata }),
+      Message.assistant("assistant"),
+      Message.assistant("assistant", "assistant_1"),
+      Message.assistant("assistant", { id: "assistant_1", metadata }),
+      Message.tool(ToolContent.toolResult("tool_1", "done")),
+      Message.tool(ToolContent.toolResult("tool_1", "done"), { metadata }),
+      Message.toolResult("tool_1", "done", {
+        callId: "call_1",
+        toolName: "lookup",
+        metadata,
+      }),
+    ];
+
+    expectTypeOf(messages).toMatchTypeOf<MessageType[]>();
+    expect(messages[6]).toEqual({
+      role: "assistant",
+      id: "assistant_1",
+      content: [{ type: "text", text: "assistant" }],
+      metadata,
+    });
+    expect(messages[9]).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "tool_1",
+          callId: "call_1",
+          toolName: "lookup",
+          content: [{ type: "text", text: "done" }],
+        },
+      ],
+      metadata,
+    });
+  });
+
+  it("validates strict JSON values without accepting lossy structures", () => {
+    const shared = { value: 1 };
+    expect(isJsonValue({ shared, duplicate: shared, list: [null, true, 1, "ok"] })).toBe(true);
+    expect(isJsonValue(Object.assign(Object.create(null), { value: "ok" }))).toBe(true);
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const sparse = new Array(2);
+    sparse[1] = "value";
+    const invalidValues = [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      undefined,
+      () => {},
+      Symbol("value"),
+      1n,
+      cyclic,
+      sparse,
+      new Date(),
+      { value: undefined },
+    ];
+
+    for (const value of invalidValues) {
+      expect(isJsonValue(value)).toBe(false);
+    }
+  });
+
+  it("rejects invalid runtime metadata at factory boundaries", () => {
+    expect(() => Message.user("hello", { metadata: { score: Number.NaN } as JsonValue })).toThrow(
+      "Message metadata must be a strict JSON value.",
+    );
   });
 });

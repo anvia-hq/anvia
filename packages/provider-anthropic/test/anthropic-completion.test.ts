@@ -168,7 +168,10 @@ describe("Anthropic Messages mapping", () => {
 
   it("prepends normalized static context before chat history and maps system messages", () => {
     const request: CompletionRequest = {
-      chatHistory: [Message.system("Use context."), Message.user("What is the owner?")],
+      chatHistory: [
+        Message.system("Use context."),
+        Message.user("What is the owner?", { metadata: { composer: { entities: [] } } }),
+      ],
       documents: [{ id: "owner", text: "Mira owns launch checklists." }],
       tools: [],
     };

@@ -41,7 +41,7 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.12.0 <1.0.0",
+    "@anvia/core": ">=0.13.0 <1.0.0",
     "@prisma/client": ">=6.2.0 <8.0.0"
   }
 }

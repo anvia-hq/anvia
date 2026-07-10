@@ -28,7 +28,7 @@ import {
 } from "./pipeline-logs";
 import { AsyncEventQueue } from "./runs";
 import { streamStudioJsonl } from "./streams";
-import { isJsonObject, isObject } from "./type-guards";
+import { isJsonObject, isJsonValue, isObject } from "./type-guards";
 
 export function registerPipelineRoutes(
   app: Hono,
@@ -494,22 +494,4 @@ function parsePipelineLogAfter(value: string | undefined): number | undefined | 
     return false;
   }
   return after;
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return Number.isFinite(value) || typeof value !== "number";
-  }
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-  if (isObject(value)) {
-    return Object.values(value).every((item) => item === undefined || isJsonValue(item));
-  }
-  return false;
 }

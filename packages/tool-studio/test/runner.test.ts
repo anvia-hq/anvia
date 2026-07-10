@@ -3422,20 +3422,58 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("rejects non-JSON message metadata in the SQLite session store", async () => {
+    const store = createSqliteSessionStore({ path: ":memory:" });
+    store.createSession({ id: "session_1", agentId: "support" });
+    const invalidMessage = {
+      ...Message.user("hi"),
+      metadata: { score: Number.NaN },
+    } as CoreMessage;
+
+    expect(() =>
+      store.append({
+        context: { sessionId: "session_1" },
+        runId: "run_1",
+        turn: 1,
+        messages: [invalidMessage],
+      }),
+    ).toThrow("Studio message metadata must be a strict JSON value");
+    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([]);
+  });
+
   it("persists session messages and parts in normalized SQLite tables", async () => {
     const path = join(studioDbDir ?? tmpdir(), "normalized.sqlite");
     const store = createSqliteSessionStore({ path });
     store.createSession({ id: "session_1", agentId: "support" });
 
     const messages = [
-      Message.system("Use project policy."),
-      Message.user([
-        UserContent.text("hi"),
-        UserContent.imageUrl("https://example.test/image.png", { detail: "high" }),
-        UserContent.documentUrl("https://example.test/file.pdf", "application/pdf", {
-          filename: "file.pdf",
-        }),
-      ]),
+      Message.system("Use project policy.", { metadata: { source: "system" } }),
+      Message.user(
+        [
+          UserContent.text("hi @Guide.pdf"),
+          UserContent.imageUrl("https://example.test/image.png", { detail: "high" }),
+          UserContent.documentUrl("https://example.test/file.pdf", "application/pdf", {
+            filename: "file.pdf",
+          }),
+        ],
+        {
+          metadata: {
+            composer: {
+              entities: [
+                {
+                  id: "document-1",
+                  triggerId: "documents",
+                  trigger: "@",
+                  label: "Guide.pdf",
+                  text: "@Guide.pdf",
+                  range: { from: 3, to: 13 },
+                  data: { kind: "document", documentId: "document-1" },
+                },
+              ],
+            },
+          },
+        },
+      ),
       Message.assistant(
         [
           AssistantContent.text("hello"),
@@ -3443,7 +3481,7 @@ describe("Anvia studio", () => {
           AssistantContent.toolCall("tool_1", "lookup", { query: "x" }, "call_1"),
           AssistantContent.imageBase64("abc123", "image/png"),
         ],
-        "assistant_message_1",
+        { id: "assistant_message_1", metadata: { source: "assistant" } },
       ),
       Message.tool(
         ToolContent.toolResult(
@@ -3454,6 +3492,7 @@ describe("Anvia studio", () => {
           ],
           "call_1",
         ),
+        { metadata: { source: "tool" } },
       ),
     ];
 
@@ -3479,6 +3518,13 @@ describe("Anvia studio", () => {
       .get() as { count: number };
     expect(messageCount.count).toBe(4);
     expect(partCount.count).toBe(9);
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM anvia_studio_session_messages WHERE metadata_json IS NOT NULL",
+        )
+        .get(),
+    ).toEqual({ count: 4 });
     db.close();
 
     const reloaded = createSqliteSessionStore({ path });
@@ -3488,6 +3534,73 @@ describe("Anvia studio", () => {
       messageCount: 4,
       messages,
     });
+  });
+
+  it("migrates normalized SQLite message tables to persist metadata", async () => {
+    const path = join(studioDbDir ?? tmpdir(), "normalized-metadata-migration.sqlite");
+    const db = new DatabaseSync(path);
+    db.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE anvia_studio_sessions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        title TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE anvia_studio_session_messages (
+        session_id TEXT NOT NULL,
+        message_index INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        message_id TEXT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(session_id, message_index),
+        FOREIGN KEY(session_id) REFERENCES anvia_studio_sessions(id) ON DELETE CASCADE
+      ) STRICT;
+      CREATE TABLE anvia_studio_session_message_parts (
+        session_id TEXT NOT NULL,
+        message_index INTEGER NOT NULL,
+        part_index INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        part_json TEXT NOT NULL,
+        PRIMARY KEY(session_id, message_index, part_index),
+        FOREIGN KEY(session_id, message_index)
+          REFERENCES anvia_studio_session_messages(session_id, message_index)
+          ON DELETE CASCADE
+      ) STRICT;
+      INSERT INTO anvia_studio_sessions
+        (id, agent_id, title, metadata_json, created_at, updated_at)
+      VALUES ('session_1', 'support', NULL, NULL, '2026-01-01', '2026-01-01');
+      INSERT INTO anvia_studio_session_messages
+        (session_id, message_index, role, message_id, created_at)
+      VALUES ('session_1', 0, 'user', NULL, '2026-01-01');
+      INSERT INTO anvia_studio_session_message_parts
+        (session_id, message_index, part_index, type, part_json)
+      VALUES ('session_1', 0, 0, 'text', '{"type":"text","text":"legacy"}');
+    `);
+    db.close();
+
+    const store = createSqliteSessionStore({ path });
+    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([Message.user("legacy")]);
+    const metadata = { composer: { entities: [{ id: "document-1" }] } };
+    await store.append({
+      context: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: [Message.user("new", { metadata })],
+    });
+    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([
+      Message.user("legacy"),
+      Message.user("new", { metadata }),
+    ]);
+
+    const migrated = new DatabaseSync(path);
+    const columns = migrated
+      .prepare("PRAGMA table_info('anvia_studio_session_messages')")
+      .all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toContain("metadata_json");
+    migrated.close();
   });
 
   it("persists session audit logs with monotonic sequence and deletes them with sessions", async () => {

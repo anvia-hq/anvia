@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
 import { compact } from "../runtime/compact";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
+import { isJsonObject, isJsonValue } from "../runtime/type-guards";
 import type {
   StudioPipelineLogAppendInput,
   StudioPipelineLogEntry,
@@ -327,23 +328,4 @@ function serializeJsonError(error: unknown): JsonValue {
     };
   }
   return isJsonValue(error) ? error : String(error);
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-  return isJsonObject(value) && Object.values(value).every(isJsonValue);
 }

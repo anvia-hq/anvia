@@ -140,6 +140,7 @@ export class PostgresMemoryStore implements MemoryStore {
     if (input.messages.length === 0) {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.context);
 
@@ -172,6 +173,7 @@ export class PostgresMemoryStore implements MemoryStore {
     if (this.options.errors === "ignore") {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.context);
 
@@ -281,6 +283,14 @@ export class PostgresMemoryStore implements MemoryStore {
   private messageFromValue(value: unknown): Message {
     const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
     return this.options.validateMessages ? parseMemoryMessage(parsed) : (parsed as Message);
+  }
+
+  private validateInputMessages(messages: Message[]): void {
+    if (this.options.validateMessages) {
+      for (const message of messages) {
+        parseMemoryMessage(message);
+      }
+    }
   }
 
   private scopeKey(context: MemoryContext): string {

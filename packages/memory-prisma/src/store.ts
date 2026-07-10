@@ -76,6 +76,7 @@ export class PrismaMemoryStore implements MemoryStore {
     if (input.messages.length === 0) {
       return;
     }
+    this.validateInputMessages(input.messages);
 
     await this.delegates.transaction(async (tx) => {
       const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
@@ -109,6 +110,7 @@ export class PrismaMemoryStore implements MemoryStore {
     if (this.options.errors === "ignore") {
       return;
     }
+    this.validateInputMessages(input.messages);
     if (this.delegates.errors === undefined) {
       throw new Error(
         'PrismaMemoryStore recordError requires an errors delegate. Pass errors: "ignore" to disable failed-run storage.',
@@ -137,6 +139,14 @@ export class PrismaMemoryStore implements MemoryStore {
       return this.options.scope(context);
     }
     return createPrismaMemoryScopeKey(context, this.options.scope);
+  }
+
+  private validateInputMessages(messages: Message[]): void {
+    if (this.options.validateMessages) {
+      for (const message of messages) {
+        parseMemoryMessage(message);
+      }
+    }
   }
 }
 

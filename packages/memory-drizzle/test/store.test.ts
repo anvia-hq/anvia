@@ -8,6 +8,7 @@ import {
   createDrizzleMemoryStore,
   drizzleMemorySchema,
 } from "../src/index.js";
+import { isMemoryMessage } from "../src/message.js";
 
 const userMessage: Message = {
   role: "user",
@@ -20,9 +21,10 @@ const assistantMessage: Message = {
 };
 
 const richMessages: Message[] = [
-  { role: "system", content: "System instructions" },
+  { role: "system", content: "System instructions", metadata: { source: "system" } },
   {
     role: "user",
+    metadata: { composer: { entities: [{ id: "document-1" }] } },
     content: [
       { type: "text", text: "Inspect these", signature: "user-signature" },
       {
@@ -62,6 +64,7 @@ const richMessages: Message[] = [
   {
     role: "assistant",
     id: "assistant-1",
+    metadata: { source: "assistant" },
     content: [
       { type: "text", text: "Working", signature: "assistant-signature" },
       {
@@ -92,6 +95,7 @@ const richMessages: Message[] = [
   },
   {
     role: "tool",
+    metadata: { source: "tool" },
     content: [
       {
         type: "tool_result",
@@ -108,6 +112,20 @@ const richMessages: Message[] = [
 ];
 
 describe("Drizzle memory public API", () => {
+  it("uses core strict JSON validation for message metadata", async () => {
+    expect(isMemoryMessage({ ...userMessage, metadata: { score: 1 } })).toBe(true);
+    expect(isMemoryMessage({ ...userMessage, metadata: { score: Number.NaN } })).toBe(false);
+    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    await expect(
+      store.append({
+        context: { sessionId: "thread-invalid" },
+        runId: "run-invalid",
+        turn: 0,
+        messages: [{ ...userMessage, metadata: { score: Number.NaN } } as Message],
+      }),
+    ).rejects.toThrow("valid Anvia Message");
+  });
+
   it("exports schema tables users can include in their Drizzle schema", () => {
     expect(agentMemorySessions).toBe(drizzleMemorySchema.agentMemorySessions);
     expect(agentMemoryMessages).toBe(drizzleMemorySchema.agentMemoryMessages);

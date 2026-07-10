@@ -9,6 +9,7 @@ import {
   PrismaMemoryStore,
   type PrismaMemoryTransactionOptions,
 } from "../src/index";
+import { isMemoryMessage } from "../src/message";
 
 type SessionRow = {
   id: string;
@@ -66,9 +67,10 @@ type CreateErrorArgs = {
 };
 
 const richMessages: MessageType[] = [
-  { role: "system", content: "System instructions" },
+  { role: "system", content: "System instructions", metadata: { source: "system" } },
   {
     role: "user",
+    metadata: { composer: { entities: [{ id: "document-1" }] } },
     content: [
       { type: "text", text: "Inspect these", signature: "user-signature" },
       {
@@ -108,6 +110,7 @@ const richMessages: MessageType[] = [
   {
     role: "assistant",
     id: "assistant-1",
+    metadata: { source: "assistant" },
     content: [
       { type: "text", text: "Working", signature: "assistant-signature" },
       {
@@ -138,6 +141,7 @@ const richMessages: MessageType[] = [
   },
   {
     role: "tool",
+    metadata: { source: "tool" },
     content: [
       {
         type: "tool_result",
@@ -250,6 +254,21 @@ class FakePrisma {
 }
 
 describe("PrismaMemoryStore", () => {
+  it("uses core strict JSON validation for message metadata", async () => {
+    const message = Message.user("hello");
+    expect(isMemoryMessage({ ...message, metadata: { score: 1 } })).toBe(true);
+    expect(isMemoryMessage({ ...message, metadata: { score: Number.NaN } })).toBe(false);
+    const store = createPrismaMemoryStore(new FakePrisma().client);
+    await expect(
+      store.append({
+        context: { sessionId: "thread-invalid" },
+        runId: "run-invalid",
+        turn: 0,
+        messages: [{ ...message, metadata: { score: Number.NaN } } as MessageType],
+      }),
+    ).rejects.toThrow("valid Anvia Message");
+  });
+
   it("appends and loads scoped messages in position order", async () => {
     const prisma = new FakePrisma();
     const store = createPrismaMemoryStore(prisma.client, {

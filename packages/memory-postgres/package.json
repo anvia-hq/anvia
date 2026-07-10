@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memory-postgres",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Postgres-backed durable session memory store for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

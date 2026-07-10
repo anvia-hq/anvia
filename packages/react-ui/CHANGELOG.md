@@ -1,5 +1,15 @@
 # @anvia/react-ui
 
+## 0.5.0
+
+### Minor Changes
+
+- bc1aef3: Render validated Composer entities as headless semantic markup in `Message.Markdown`, with `Message.Entity` and `renderEntity` customization APIs.
+
+### Patch Changes
+
+- feb5955: Keep Composer entity ranges aligned when default submission prefixes message text with a quote.
+
 ## 0.4.3
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 0.4.2
+
+### Patch Changes
+
+- 072451a: Make `Composer.Input` lifecycle-safe when trigger changes recreate its Tiptap editor.
+
 ## 0.4.1
 
 ### Patch Changes

@@ -32,7 +32,40 @@ describe("@anvia/server streams", () => {
 
     expect(response.headers.get("content-type")).toBe("application/x-ndjson; charset=utf-8");
     expect(response.headers.get("cache-control")).toBe("no-cache, no-transform");
+    expect(response.headers.get("connection")).toBe("keep-alive");
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
     expect(await response.text()).toBe('{"type":"one"}\n');
+  });
+
+  it("streams event responses before the upstream iterable completes", async () => {
+    let releaseSecondEvent!: () => void;
+    const secondEventReady = new Promise<void>((resolve) => {
+      releaseSecondEvent = resolve;
+    });
+    const response = createEventStream(
+      (async function* () {
+        yield { type: "one" };
+        await secondEventReady;
+        yield { type: "two" };
+      })(),
+    );
+    if (response.body === null) {
+      throw new Error("Expected event stream response body");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const first = await reader.read();
+
+    expect(first.done).toBe(false);
+    expect(decoder.decode(first.value)).toBe('{"type":"one"}\n');
+
+    releaseSecondEvent();
+    const second = await reader.read();
+
+    expect(second.done).toBe(false);
+    expect(decoder.decode(second.value)).toBe('{"type":"two"}\n');
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
   });
 
   it("creates event stream responses with custom response init", async () => {
@@ -282,19 +315,21 @@ describe("@anvia/server streams", () => {
     ]);
   });
 
-  it("creates UI stream responses", async () => {
+  it("creates UI stream responses with text deltas", async () => {
     const response = createUIStreamResponse(
       events([
         {
-          type: "message_start",
-          message: { id: "msg_1", role: "assistant", parts: [] },
+          type: "text_delta",
+          messageId: "msg_1",
+          partId: "part_1",
+          delta: "Hello",
         },
       ]),
     );
 
     expect(response.headers.get("content-type")).toBe("application/x-ndjson; charset=utf-8");
     expect(await response.text()).toBe(
-      '{"type":"message_start","message":{"id":"msg_1","role":"assistant","parts":[]}}\n',
+      '{"type":"text_delta","messageId":"msg_1","partId":"part_1","delta":"Hello"}\n',
     );
   });
 
@@ -362,9 +397,9 @@ describe("@anvia/server streams", () => {
     expect(text).toBe('event: error\ndata: {"type":"error","error":"plain failure"}\n\n');
   });
 
-  it("cancels async iterators", async () => {
+  it.each(["jsonl", "sse"] as const)("cancels %s async iterators", async (format) => {
     let canceled = false;
-    const stream = createJsonlStream({
+    const source = {
       [Symbol.asyncIterator]() {
         return {
           async next() {
@@ -376,7 +411,8 @@ describe("@anvia/server streams", () => {
           },
         };
       },
-    });
+    };
+    const stream = format === "jsonl" ? createJsonlStream(source) : createSseStream(source);
 
     await stream.cancel();
 

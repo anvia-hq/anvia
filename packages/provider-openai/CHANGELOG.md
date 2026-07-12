@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.17
+
+### Patch Changes
+
+- 204d342: Keep reasoning-only and empty assistant history compatible with providers that require content or tool calls.
+
 ## 0.3.16
 
 ### Patch Changes

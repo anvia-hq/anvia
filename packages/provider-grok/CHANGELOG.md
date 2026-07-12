@@ -1,5 +1,12 @@
 # @anvia/grok
 
+## 0.2.3
+
+### Patch Changes
+
+- Updated dependencies [204d342]
+  - @anvia/openai@0.3.17
+
 ## 0.2.2
 
 ### Patch Changes

@@ -368,6 +368,8 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   };
   if (text.length > 0) {
     chatMessage.content = text;
+  } else if (toolCalls.length === 0) {
+    chatMessage.content = " ";
   }
   if (reasoning.length > 0) {
     chatMessage.reasoning_content = reasoning;

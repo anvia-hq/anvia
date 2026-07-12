@@ -106,6 +106,52 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
+  it("adds compatible content to reasoning-only assistant history", () => {
+    const chatHistory = [
+      Message.user("First question"),
+      Message.assistant([AssistantContent.reasoning("internal reasoning only")]),
+      Message.user("Continue"),
+    ];
+    const originalChatHistory = structuredClone(chatHistory);
+
+    const params = toOpenAIChatCompletionParams("deepseek-v4-flash", {
+      chatHistory,
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([
+      { role: "user", content: "First question" },
+      {
+        role: "assistant",
+        content: " ",
+        reasoning_content: "internal reasoning only",
+      },
+      { role: "user", content: "Continue" },
+    ]);
+    expect(chatHistory).toEqual(originalChatHistory);
+  });
+
+  it("preserves ordinary assistant text history", () => {
+    const params = toOpenAIChatCompletionParams("deepseek-v4-flash", {
+      chatHistory: [Message.assistant("visible response")],
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([{ role: "assistant", content: "visible response" }]);
+  });
+
+  it("adds compatible content to empty assistant history", () => {
+    const params = toOpenAIChatCompletionParams("deepseek-v4-flash", {
+      chatHistory: [Message.assistant([])],
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([{ role: "assistant", content: " " }]);
+  });
+
   it("summarizes provider request metadata for traces", () => {
     const model = new OpenAIChatCompletionModel({} as never, "chat-test");
     const request: CompletionRequest = {

@@ -51,14 +51,15 @@ export function pineconeVectors<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => {
     const logicalId =
       document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`;
+    const metadata: Record<string, unknown> = {
+      [documentIdMetadataKey]: document.id,
+      [documentMetadataKey]: serializeDocument(document.document),
+    };
+    Object.assign(metadata, document.metadata);
     return {
       id: pointId(logicalId),
       values: embedding.vector,
-      metadata: {
-        [documentIdMetadataKey]: document.id,
-        [documentMetadataKey]: serializeDocument(document.document),
-        ...(document.metadata ?? {}),
-      },
+      metadata,
     };
   });
 }
@@ -85,12 +86,15 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     }
 
     const id = String(match.metadata?.[documentIdMetadataKey] ?? match.id);
-    const result = {
+    const result: VectorSearchResult<T, Metadata> = {
       id,
       score,
       document: parseDocument(match.metadata?.[documentMetadataKey]),
-      ...metadataFromPayload<Metadata>(match.metadata),
-    } as VectorSearchResult<T, Metadata>;
+    };
+    const metadata = metadataFromPayload<Metadata>(match.metadata);
+    if (metadata !== undefined) {
+      result.metadata = metadata;
+    }
 
     const current = byId.get(id);
     if (current === undefined || result.score > current.score) {
@@ -132,9 +136,9 @@ export async function ensureIndex(
 
 function metadataFromPayload<Metadata extends VectorMetadata>(
   payload: Record<string, unknown> | null | undefined,
-): { metadata?: Metadata | undefined } {
+): Metadata | undefined {
   const metadata = Object.fromEntries(
     Object.entries(payload ?? {}).filter(([key]) => !key.startsWith(reservedMetadataPrefix)),
   ) as Metadata;
-  return Object.keys(metadata).length === 0 ? {} : { metadata };
+  return Object.keys(metadata).length === 0 ? undefined : metadata;
 }

@@ -207,6 +207,25 @@ describe("PgVectorStore", () => {
     expect(client.queries.at(-1)?.text).toContain("embedding <#> $1::vector");
   });
 
+  it("omits result metadata when the database returns null", async () => {
+    const client = new MockPgClient();
+    const model = new MockEmbeddingModel();
+    const store = await PgVectorStore.connect<string>({
+      client,
+      tableName: "docs",
+      vectorSize: 2,
+    });
+
+    const results = await store.index(model).search({ query: "cat", topK: 3 });
+
+    expect(results[1]).toEqual({
+      id: "doc2",
+      score: 0.4,
+      document: "plain dog note",
+    });
+    expect(results[1]).not.toHaveProperty("metadata");
+  });
+
   it("rejects documents with no embeddings", async () => {
     const client = new MockPgClient();
     const store = await PgVectorStore.connect<string>({

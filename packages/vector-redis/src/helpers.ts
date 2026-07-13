@@ -52,14 +52,15 @@ export function redisHashEntries<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => {
     const logicalId =
       document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`;
+    const fields: Record<string, unknown> = {
+      [documentIdField]: document.id,
+      [documentField]: serializeDocument(document.document),
+      [vectorField]: Buffer.from(new Float32Array(embedding.vector).buffer),
+    };
+    Object.assign(fields, document.metadata);
     return {
       key: redisKeyId(keyPrefix, logicalId),
-      fields: {
-        [documentIdField]: document.id,
-        [documentField]: serializeDocument(document.document),
-        [vectorField]: Buffer.from(new Float32Array(embedding.vector).buffer),
-        ...(document.metadata ?? {}),
-      },
+      fields,
     };
   });
 }
@@ -88,12 +89,15 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     }
 
     const id = String(value[documentIdField] ?? "");
-    const result = {
+    const result: VectorSearchResult<T, Metadata> = {
       id,
       score,
       document: parseDocument(value[documentField]),
-      ...metadataFromFields<Metadata>(value),
-    } as VectorSearchResult<T, Metadata>;
+    };
+    const metadata = metadataFromFields<Metadata>(value);
+    if (metadata !== undefined) {
+      result.metadata = metadata;
+    }
     const current = byId.get(id);
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
@@ -113,7 +117,7 @@ export async function defaultRedisClient(): Promise<RedisClientLike> {
 
 function metadataFromFields<Metadata extends VectorMetadata>(
   fields: Record<string, unknown>,
-): { metadata?: Metadata | undefined } {
+): Metadata | undefined {
   const metadata = Object.fromEntries(
     Object.entries(fields).filter(
       ([key]) =>
@@ -123,5 +127,5 @@ function metadataFromFields<Metadata extends VectorMetadata>(
         key !== "__vector_score",
     ),
   ) as Metadata;
-  return Object.keys(metadata).length === 0 ? {} : { metadata };
+  return Object.keys(metadata).length === 0 ? undefined : metadata;
 }

@@ -161,6 +161,20 @@ describe("MilvusVectorStore", () => {
     ).toEqual("(a == true) || (b == false)");
   });
 
+  it("omits the search filter when none is requested", async () => {
+    const client = new MockMilvusClient();
+    const model = new MockEmbeddingModel();
+    const store = await MilvusVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    await store.index(model).search({ query: "cat", topK: 2 });
+
+    expect(client.searches[0]).not.toHaveProperty("filter");
+  });
+
   it("rejects documents with no embeddings", async () => {
     const client = new MockMilvusClient();
     const store = await MilvusVectorStore.connect<string>({

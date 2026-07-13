@@ -128,4 +128,33 @@ describe("ChromaVectorStore", () => {
     });
     expect(collection.upserts[0]).not.toHaveProperty("metadatas");
   });
+
+  it("omits result metadata when Chroma returns null metadata", async () => {
+    const collection = new MockCollection();
+    const client = {
+      async getOrCreateCollection() {
+        return collection;
+      },
+      async getCollection() {
+        return collection;
+      },
+      async createCollection() {
+        return collection;
+      },
+    };
+    const model = new MockEmbeddingModel();
+    const store = await ChromaVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+    });
+
+    const results = await store.index(model).search({ query: "cat", topK: 2 });
+
+    expect(results[1]).toEqual({
+      id: "doc2",
+      score: 0.19999999999999996,
+      document: "plain dog note",
+    });
+    expect(results[1]).not.toHaveProperty("metadata");
+  });
 });

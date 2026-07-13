@@ -28,7 +28,13 @@ class MockRedisClient {
       schema: Record<string, unknown>,
       options?: Record<string, unknown>,
     ) => {
-      this.indices.set(indexName, { schema, ...(options !== undefined ? { options } : {}) });
+      const index: { schema: Record<string, unknown>; options?: Record<string, unknown> } = {
+        schema,
+      };
+      if (options !== undefined) {
+        index.options = options;
+      }
+      this.indices.set(indexName, index);
       this.creates.push({ indexName, schema, options });
       return {};
     },

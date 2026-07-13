@@ -23,13 +23,16 @@ export class MilvusVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     const queryEmbedding = await embedText(this.model, request.query);
     const filterExpr = filterToMilvusExpr(request.filter);
-    const response = await this.client.search({
+    const options: Record<string, unknown> = {
       collection_name: this.collectionName,
       vector: [queryEmbedding.vector],
       limit: request.topK,
-      ...(filterExpr !== undefined ? { filter: filterExpr } : {}),
       output_fields: [documentIdFieldName, documentFieldName, "*"],
-    });
+    };
+    if (filterExpr !== undefined) {
+      options.filter = filterExpr;
+    }
+    const response = await this.client.search(options);
     return parseQueryResults<T, Metadata>(response, request.threshold);
   }
 

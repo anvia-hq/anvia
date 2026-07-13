@@ -79,6 +79,39 @@ describe("OpenAIClient", () => {
     });
   });
 
+  it("preserves model field precedence across compatible aliases", async () => {
+    const client = new OpenAIClient({
+      client: {
+        models: {
+          list: async () => ({
+            data: [
+              {
+                id: "compatible-model",
+                type: "preferred-type",
+                object: "fallback-type",
+                created: 100,
+                created_at: 200,
+                context_length: 300,
+                contextLength: 400,
+              },
+            ],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(client.listModels()).resolves.toEqual({
+      data: [
+        {
+          id: "compatible-model",
+          type: "preferred-type",
+          createdAt: 200,
+          contextLength: 400,
+        },
+      ],
+    });
+  });
+
   it("wraps model listing failures", async () => {
     const client = new OpenAIClient({
       client: {

@@ -147,17 +147,28 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
     return undefined;
   }
 
-  return {
+  const listedModel: ModelList["data"][number] = {
     id,
-    ...(typeof model.displayName === "string" ? { name: model.displayName } : {}),
-    ...(typeof model.display_name === "string" ? { name: model.display_name } : {}),
-    ...(typeof model.description === "string" ? { description: model.description } : {}),
-    ...(typeof model.type === "string" ? { type: model.type } : {}),
-    ...(typeof model.inputTokenLimit === "number" ? { contextLength: model.inputTokenLimit } : {}),
-    ...(typeof model.input_token_limit === "number"
-      ? { contextLength: model.input_token_limit }
-      : {}),
   };
+  if (typeof model.displayName === "string") {
+    listedModel.name = model.displayName;
+  }
+  if (typeof model.display_name === "string") {
+    listedModel.name = model.display_name;
+  }
+  if (typeof model.description === "string") {
+    listedModel.description = model.description;
+  }
+  if (typeof model.type === "string") {
+    listedModel.type = model.type;
+  }
+  if (typeof model.inputTokenLimit === "number") {
+    listedModel.contextLength = model.inputTokenLimit;
+  }
+  if (typeof model.input_token_limit === "number") {
+    listedModel.contextLength = model.input_token_limit;
+  }
+  return listedModel;
 }
 
 function normalizeGeminiModelId(name: string | undefined): string | undefined {
@@ -188,7 +199,7 @@ function toModelListingError(provider: string, error: unknown): ModelListingErro
   const statusCode = getStatusCode(error);
   return new ModelListingError(`${provider} model listing failed: ${getErrorMessage(error)}`, {
     provider,
-    ...(statusCode === undefined ? {} : { statusCode }),
+    statusCode,
     cause: error,
   });
 }

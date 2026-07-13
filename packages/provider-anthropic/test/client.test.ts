@@ -83,6 +83,35 @@ describe("Anthropic client", () => {
       ],
     });
   });
+
+  it("preserves model field precedence across compatible aliases", async () => {
+    const anthropic = new AnthropicClient({
+      client: {
+        models: {
+          list: async () =>
+            asyncIterable([
+              {
+                id: "claude-compatible",
+                display_name: "Display Name",
+                name: "Preferred Name",
+                max_input_tokens: 100_000,
+                context_length: 200_000,
+              },
+            ]),
+        },
+      } as never,
+    });
+
+    await expect(anthropic.listModels()).resolves.toEqual({
+      data: [
+        {
+          id: "claude-compatible",
+          name: "Preferred Name",
+          contextLength: 200_000,
+        },
+      ],
+    });
+  });
 });
 
 async function* asyncIterable(items: unknown[]): AsyncIterable<unknown> {

@@ -118,21 +118,36 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
     return undefined;
   }
 
-  return {
+  const listedModel: ModelList["data"][number] = {
     id: model.id,
-    ...(typeof model.name === "string" ? { name: model.name } : {}),
-    ...(typeof model.description === "string" ? { description: model.description } : {}),
-    ...(typeof model.type === "string"
-      ? { type: model.type }
-      : typeof model.object === "string"
-        ? { type: model.object }
-        : {}),
-    ...(typeof model.created === "number" ? { createdAt: model.created } : {}),
-    ...(typeof model.created_at === "number" ? { createdAt: model.created_at } : {}),
-    ...(typeof model.owned_by === "string" ? { ownedBy: model.owned_by } : {}),
-    ...(typeof model.context_length === "number" ? { contextLength: model.context_length } : {}),
-    ...(typeof model.contextLength === "number" ? { contextLength: model.contextLength } : {}),
   };
+  if (typeof model.name === "string") {
+    listedModel.name = model.name;
+  }
+  if (typeof model.description === "string") {
+    listedModel.description = model.description;
+  }
+  if (typeof model.type === "string") {
+    listedModel.type = model.type;
+  } else if (typeof model.object === "string") {
+    listedModel.type = model.object;
+  }
+  if (typeof model.created === "number") {
+    listedModel.createdAt = model.created;
+  }
+  if (typeof model.created_at === "number") {
+    listedModel.createdAt = model.created_at;
+  }
+  if (typeof model.owned_by === "string") {
+    listedModel.ownedBy = model.owned_by;
+  }
+  if (typeof model.context_length === "number") {
+    listedModel.contextLength = model.context_length;
+  }
+  if (typeof model.contextLength === "number") {
+    listedModel.contextLength = model.contextLength;
+  }
+  return listedModel;
 }
 
 function isListedModel(
@@ -149,7 +164,7 @@ function toModelListingError(provider: string, error: unknown): ModelListingErro
   const statusCode = getStatusCode(error);
   return new ModelListingError(`${provider} model listing failed: ${getErrorMessage(error)}`, {
     provider,
-    ...(statusCode === undefined ? {} : { statusCode }),
+    statusCode,
     cause: error,
   });
 }

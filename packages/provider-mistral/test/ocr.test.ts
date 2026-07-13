@@ -72,6 +72,44 @@ describe("Mistral OCR models", () => {
     expect(response.rawResponse).toEqual(ocrResponse());
   });
 
+  it("omits unavailable document and response metadata", async () => {
+    const calls: unknown[] = [];
+    const rawResponse = { pages: [] };
+    const client = new MistralClient({
+      client: {
+        ocr: {
+          process: async (params: unknown) => {
+            calls.push(params);
+            return rawResponse;
+          },
+        },
+      } as never,
+    });
+
+    const response = await client.ocrModel().ocr({
+      source: {
+        type: "document_url",
+        url: "https://example.com/invoice.pdf",
+      },
+    });
+
+    expect(calls).toEqual([
+      {
+        model: MISTRAL_OCR_LATEST,
+        document: {
+          type: "document_url",
+          documentUrl: "https://example.com/invoice.pdf",
+        },
+      },
+    ]);
+    expect(response).toEqual({
+      text: "",
+      markdown: "",
+      pages: [],
+      rawResponse,
+    });
+  });
+
   it("does not allow additional params to override OCR model or document", async () => {
     const calls: unknown[] = [];
     const client = new MistralClient({

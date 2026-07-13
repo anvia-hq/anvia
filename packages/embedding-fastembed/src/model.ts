@@ -26,10 +26,8 @@ export class FastEmbedEmbeddingModel implements EmbeddingModel {
     options: FastEmbedEmbeddingModelOptions = {},
   ): Promise<FastEmbedEmbeddingModel> {
     const model = options.model ?? DEFAULT_FASTEMBED_EMBEDDING_MODEL;
-    const runtime = await FlagEmbedding.init({
-      ...(options.initOptions ?? {}),
-      model,
-    } as never);
+    const initOptions = Object.assign({}, options.initOptions, { model });
+    const runtime = await FlagEmbedding.init(initOptions as never);
 
     return new FastEmbedEmbeddingModel(runtime, { ...options, model });
   }

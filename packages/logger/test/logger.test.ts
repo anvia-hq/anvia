@@ -180,6 +180,10 @@ describe("createLoggerObserver", () => {
       sessionId: "session_1",
       maxTurns: 2,
     });
+    expect(logger.records[0]?.context).not.toHaveProperty("traceId");
+    expect(logger.records[1]?.context).not.toHaveProperty("request");
+    expect(logger.records[2]?.context).not.toHaveProperty("response");
+    expect(logger.records[3]?.context).not.toHaveProperty("toolCallId");
     expect(logger.records[4]?.context).toMatchObject({
       toolName: "lookup",
       result: "found",
@@ -227,13 +231,12 @@ class RecordingLogger implements Logger {
   }
 
   private record(level: string, message: string, context?: Record<string, unknown>): void {
+    const mergedContext = { ...this.bindings };
+    Object.assign(mergedContext, context);
     this.records.push({
       level,
       message,
-      context: {
-        ...this.bindings,
-        ...(context ?? {}),
-      },
+      context: mergedContext,
     });
   }
 }

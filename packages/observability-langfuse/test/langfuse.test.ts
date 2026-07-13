@@ -1970,7 +1970,7 @@ describe("ScoreQueue", () => {
     const sleepMock = (overrides.sleep ?? vi.fn(async () => {})) as
       | ((ms: number) => Promise<void>)
       | ReturnType<typeof vi.fn>;
-    const queue = new ScoreQueue({
+    const options: ConstructorParameters<typeof ScoreQueue>[0] = {
       baseUrl: "https://langfuse.test",
       publicKey: "pk",
       secretKey: "sk",
@@ -1980,9 +1980,10 @@ describe("ScoreQueue", () => {
       maxRetries: overrides.maxRetries ?? 3,
       fetchImpl: fetchMock as typeof fetch,
       sleep: sleepMock as (ms: number) => Promise<void>,
-      ...(overrides.setTimer ? { setTimer: overrides.setTimer } : {}),
-      ...(overrides.clearTimer ? { clearTimer: overrides.clearTimer } : {}),
-    });
+    };
+    if (overrides.setTimer) options.setTimer = overrides.setTimer;
+    if (overrides.clearTimer) options.clearTimer = overrides.clearTimer;
+    const queue = new ScoreQueue(options);
     return {
       queue,
       fetchMock: fetchMock as ReturnType<typeof vi.fn>,

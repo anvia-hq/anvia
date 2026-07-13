@@ -15,9 +15,9 @@ export function createPinoLogger(options: PinoLoggerOptions = {}): Logger {
   const pinoOptions: PinoBaseOptions = {
     ...options.pinoOptions,
     level: options.pinoOptions?.level ?? resolveLogLevel(options.level),
-    ...(options.name === undefined ? {} : { name: options.name }),
-    ...(options.bindings === undefined ? {} : { base: options.bindings }),
   };
+  if (options.name !== undefined) pinoOptions.name = options.name;
+  if (options.bindings !== undefined) pinoOptions.base = options.bindings;
 
   const instance =
     options.destination === undefined ? pino(pinoOptions) : pino(pinoOptions, options.destination);

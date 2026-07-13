@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { assertDockerCli, runDockerCli } from "./docker-cli";
+import { assertDockerCli, type DockerCliOptions, runDockerCli } from "./docker-cli";
 import {
   SandboxDockerCommandError,
   SandboxFileSizeError,
@@ -14,6 +14,8 @@ import type {
   DockerSandboxOptions,
   Sandbox,
   SandboxCreateSessionOptions,
+  SandboxExecEndEvent,
+  SandboxExecEvent,
   SandboxExecOptions,
   SandboxExecResult,
   SandboxExecStreamEvent,
@@ -55,13 +57,15 @@ export class DockerSandbox implements Sandbox {
     this.pull = options.pull ?? "missing";
     this.workdir = options.workdir ?? defaultWorkdir;
     this.workspace = options.workspace ?? { mode: "ephemeral" };
-    this.lifecycle = {
+    const lifecycle: Required<Pick<SandboxLifecycleOptions, "autoDestroy">> &
+      Omit<SandboxLifecycleOptions, "autoDestroy"> = {
       autoDestroy: options.lifecycle?.autoDestroy ?? true,
-      ...(options.lifecycle?.ttlMs === undefined ? {} : { ttlMs: options.lifecycle.ttlMs }),
-      ...(options.lifecycle?.idleTimeoutMs === undefined
-        ? {}
-        : { idleTimeoutMs: options.lifecycle.idleTimeoutMs }),
     };
+    if (options.lifecycle?.ttlMs !== undefined) lifecycle.ttlMs = options.lifecycle.ttlMs;
+    if (options.lifecycle?.idleTimeoutMs !== undefined) {
+      lifecycle.idleTimeoutMs = options.lifecycle.idleTimeoutMs;
+    }
+    this.lifecycle = lifecycle;
     this.network = options.network ?? false;
     this.dockerPath = options.dockerPath ?? "docker";
     this.labels = options.labels ?? {};
@@ -312,22 +316,24 @@ class DockerSandboxSession implements SandboxSession {
 
   async exec(options: SandboxExecOptions): Promise<SandboxExecResult> {
     return this.runOperation(async () => {
-      await this.hooks.onExecStart?.({
+      const startEvent: SandboxExecEvent = {
         ...this.event(),
         command: options.command,
         args: options.args ?? [],
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      });
+      };
+      if (options.cwd !== undefined) startEvent.cwd = options.cwd;
+      await this.hooks.onExecStart?.(startEvent);
 
       const normalizedResult = await this.execCommand(options);
 
-      await this.hooks.onExecEnd?.({
+      const endEvent: SandboxExecEndEvent = {
         ...this.event(),
         command: options.command,
         args: options.args ?? [],
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         result: normalizedResult,
-      });
+      };
+      if (options.cwd !== undefined) endEvent.cwd = options.cwd;
+      await this.hooks.onExecEnd?.(endEvent);
 
       return normalizedResult;
     });
@@ -552,15 +558,15 @@ class DockerSandboxSession implements SandboxSession {
 
     args.push(this.containerName, options.command, ...(options.args ?? []));
 
-    const cliOptions = {
+    const cliOptions: DockerCliOptions = {
       dockerPath: this.dockerPath,
       timeoutMs: options.timeoutMs ?? this.limits.timeoutMs ?? defaultTimeoutMs,
       maxOutputBytes: this.limits.maxOutputBytes ?? defaultMaxOutputBytes,
-      ...(options.input === undefined ? {} : { input: options.input }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-      ...(options.onStdout === undefined ? {} : { onStdout: options.onStdout }),
-      ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
     };
+    if (options.input !== undefined) cliOptions.input = options.input;
+    if (options.signal !== undefined) cliOptions.signal = options.signal;
+    if (options.onStdout !== undefined) cliOptions.onStdout = options.onStdout;
+    if (options.onStderr !== undefined) cliOptions.onStderr = options.onStderr;
 
     const result = await runDockerCli(args, cliOptions);
 

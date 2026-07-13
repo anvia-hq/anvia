@@ -26,19 +26,22 @@ export function createLangfuseDatasetClient(
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const timeoutMs = resolvedConfig.timeoutMs;
 
-  const fetchImpl: typeof fetch = (...args) =>
-    fetch(args[0], { ...(args[1] ?? {}), signal: AbortSignal.timeout(timeoutMs) });
+  const fetchImpl: typeof fetch = (...args) => {
+    const init: RequestInit = {};
+    Object.assign(init, args[1]);
+    init.signal = AbortSignal.timeout(timeoutMs);
+    return fetch(args[0], init);
+  };
 
   const authHeader = buildAuthHeader(publicKey, secretKey);
 
   async function request<T>(input: string, init: RequestInit): Promise<T> {
+    const headers: Record<string, string> = {};
+    Object.assign(headers, init.headers, authHeader);
+    headers["Content-Type"] = "application/json";
     const response = await fetchImpl(input, {
       ...init,
-      headers: {
-        ...(init.headers ?? {}),
-        ...authHeader,
-        "Content-Type": "application/json",
-      },
+      headers,
     });
     if (!response.ok) {
       const body = await readErrorBody(response);
@@ -64,12 +67,13 @@ export function createLangfuseDatasetClient(
           metadata: dataset.metadata,
         }),
       });
-      return {
+      const result: LangfuseDataset<unknown, unknown> = {
         name: dataset.name,
-        ...(dataset.description === undefined ? {} : { description: dataset.description }),
-        ...(dataset.metadata === undefined ? {} : { metadata: dataset.metadata }),
         items: [],
       };
+      if (dataset.description !== undefined) result.description = dataset.description;
+      if (dataset.metadata !== undefined) result.metadata = dataset.metadata;
+      return result;
     },
 
     async getDataset<Input, Expected>(name: string): Promise<LangfuseDataset<Input, Expected>> {
@@ -99,12 +103,13 @@ export function createLangfuseDatasetClient(
           metadata = response.metadata;
         }
         for (const item of response.items) {
-          items.push({
+          const normalized: LangfuseDatasetItem<Input, Expected> = {
             id: item.id,
             input: item.input,
-            ...(item.expected === undefined ? {} : { expected: item.expected }),
-            ...(item.metadata === undefined ? {} : { metadata: item.metadata }),
-          });
+          };
+          if (item.expected !== undefined) normalized.expected = item.expected;
+          if (item.metadata !== undefined) normalized.metadata = item.metadata;
+          items.push(normalized);
         }
         const totalPages = response.meta?.totalPages;
         if (totalPages !== undefined && page >= totalPages) {
@@ -160,14 +165,15 @@ export function createLangfuseDatasetClient(
       for (const item of items) {
         try {
           const result = await opts.run(item);
-          datasetItemRuns.push({
+          const datasetItemRun: (typeof datasetItemRuns)[number] = {
             datasetItemId: item.id,
-            ...(result.trace?.traceId === undefined ? {} : { traceId: result.trace.traceId }),
-            ...(result.trace?.observationId === undefined
-              ? {}
-              : { observationId: result.trace.observationId }),
             output: toJsonValue(result.output),
-          });
+          };
+          if (result.trace?.traceId !== undefined) datasetItemRun.traceId = result.trace.traceId;
+          if (result.trace?.observationId !== undefined) {
+            datasetItemRun.observationId = result.trace.observationId;
+          }
+          datasetItemRuns.push(datasetItemRun);
         } catch (error) {
           errors.push({ itemId: item.id, error });
         }

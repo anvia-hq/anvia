@@ -414,19 +414,19 @@ function partSummary(messages: UIMessage[]): unknown[] {
         return [{ type: "reasoning", text: part.text }];
       }
       if (part.type === "tool") {
-        return [
-          {
-            id: part.id,
-            type: "tool",
-            toolName: part.toolName,
-            toolCallId: part.toolCallId,
-            ...(part.callId === undefined ? {} : { callId: part.callId }),
-            ...(turnOf(part) === undefined ? {} : { turn: turnOf(part) }),
-            state: part.state,
-            ...(part.input === undefined ? {} : { input: part.input }),
-            ...(part.output === undefined ? {} : { output: part.output }),
-          },
-        ];
+        const summary: Record<string, unknown> = {
+          id: part.id,
+          type: "tool",
+          toolName: part.toolName,
+          toolCallId: part.toolCallId,
+          state: part.state,
+        };
+        if (part.callId !== undefined) summary.callId = part.callId;
+        const turn = turnOf(part);
+        if (turn !== undefined) summary.turn = turn;
+        if (part.input !== undefined) summary.input = part.input;
+        if (part.output !== undefined) summary.output = part.output;
+        return [summary];
       }
       return [];
     }),
@@ -442,17 +442,16 @@ function semanticPartSummary(messages: UIMessage[]): unknown[] {
       if (part.type !== "tool") {
         return [];
       }
-      return [
-        {
-          type: "tool",
-          toolName: part.toolName,
-          toolCallId: part.toolCallId,
-          ...(part.callId === undefined ? {} : { callId: part.callId }),
-          state: part.state,
-          ...(part.input === undefined ? {} : { input: part.input }),
-          ...(part.output === undefined ? {} : { output: part.output }),
-        },
-      ];
+      const summary: Record<string, unknown> = {
+        type: "tool",
+        toolName: part.toolName,
+        toolCallId: part.toolCallId,
+        state: part.state,
+      };
+      if (part.callId !== undefined) summary.callId = part.callId;
+      if (part.input !== undefined) summary.input = part.input;
+      if (part.output !== undefined) summary.output = part.output;
+      return [summary];
     }),
   );
 }

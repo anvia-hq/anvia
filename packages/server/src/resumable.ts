@@ -6,6 +6,7 @@ import type {
   ResumableStreamState,
   ResumableStreamStatus,
   ResumableStreamStore,
+  ResumableStreamSubscribeInput,
   ResumeStreamEventsOptions,
 } from "./types";
 
@@ -57,10 +58,11 @@ export async function* resumeStreamEvents<TEvent>(
   const streamId = options.id;
   yield { type: "stream_start", streamId, eventId: 0 };
 
-  for await (const record of options.store.subscribe({
-    streamId,
-    ...(options.after === undefined ? {} : { after: options.after }),
-  })) {
+  const subscribeInput: ResumableStreamSubscribeInput = { streamId };
+  if (options.after !== undefined) {
+    subscribeInput.after = options.after;
+  }
+  for await (const record of options.store.subscribe(subscribeInput)) {
     yield recordToEnvelope(record);
   }
 

@@ -23,12 +23,11 @@ export function createFetchTransport<TRequest, TEvent = unknown>(
       const headers = mergeHeaders(requestHeaders, transportOptions.headers);
       const method = options.method ?? "POST";
       const body = await resolveBody(options.body, request, headers, method);
-      const init: FetchEventStreamOptions = {
-        ...(options.init ?? {}),
-        method,
-        headers,
-        format: options.format ?? "jsonl",
-      };
+      const init: FetchEventStreamOptions = {};
+      Object.assign(init, options.init);
+      init.method = method;
+      init.headers = headers;
+      init.format = options.format ?? "jsonl";
 
       if (body !== undefined) {
         init.body = body;

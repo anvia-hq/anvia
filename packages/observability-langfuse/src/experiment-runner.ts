@@ -4,6 +4,7 @@ import { runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseDatasetClient } from "./dataset-client.js";
 import type {
   LangfuseDatasetClient,
+  LangfuseDatasetClientOptions,
   LangfuseDatasetItem,
   LangfuseRunExperimentOptions,
   LangfuseRunExperimentResult,
@@ -29,14 +30,13 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
   evalOptions: RunEvalSuiteOptions<Input, Output, Expected>,
   experimentOptions: RunEvalAsExperimentOptions<Input, Output, Expected>,
 ): Promise<RunEvalAsExperimentResult<Input, Output, Expected>> {
+  const clientOptions: LangfuseDatasetClientOptions = {};
+  if (experimentOptions.pageSize !== undefined) clientOptions.pageSize = experimentOptions.pageSize;
+  if (experimentOptions.timeoutMs !== undefined)
+    clientOptions.timeoutMs = experimentOptions.timeoutMs;
   const client =
     experimentOptions.client ??
-    createLangfuseDatasetClient(experimentOptions.tracing, {
-      ...(experimentOptions.pageSize === undefined ? {} : { pageSize: experimentOptions.pageSize }),
-      ...(experimentOptions.timeoutMs === undefined
-        ? {}
-        : { timeoutMs: experimentOptions.timeoutMs }),
-    });
+    createLangfuseDatasetClient(experimentOptions.tracing, clientOptions);
 
   const suite = await runEvalSuite(evalOptions);
 
@@ -59,13 +59,9 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
     datasetItemMap.set(result.case.id, result);
   }
 
-  const datasetRun = await client.runExperiment<Input, Output, Expected>({
+  const runOptions: LangfuseRunExperimentOptions<Input, Output, Expected> = {
     datasetName: experimentOptions.datasetName,
     runName: experimentOptions.runName,
-    ...(experimentOptions.description === undefined
-      ? {}
-      : { description: experimentOptions.description }),
-    ...(experimentOptions.metadata === undefined ? {} : { metadata: experimentOptions.metadata }),
     items,
     run: (item) => {
       const result = datasetItemMap.get(item.id);
@@ -79,7 +75,12 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
       const trace = readTraceFromOutput(result.output);
       return { output, trace };
     },
-  });
+  };
+  if (experimentOptions.description !== undefined) {
+    runOptions.description = experimentOptions.description;
+  }
+  if (experimentOptions.metadata !== undefined) runOptions.metadata = experimentOptions.metadata;
+  const datasetRun = await client.runExperiment<Input, Output, Expected>(runOptions);
 
   return { suite, datasetRun };
 }

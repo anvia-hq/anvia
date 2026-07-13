@@ -74,9 +74,9 @@ export function createLangfusePromptClient(
       labels: raw.labels ?? [],
       prompt: normalizePrompt(raw.prompt, raw.type),
       type: raw.type,
-      ...(raw.tags === undefined ? {} : { tags: raw.tags }),
       resolvedAt: new Date(),
     };
+    if (raw.tags !== undefined) prompt.tags = raw.tags;
     cache.set(key, { prompt, expiresAt: Date.now() + ttl });
     return prompt;
   }

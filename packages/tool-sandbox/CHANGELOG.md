@@ -1,5 +1,11 @@
 # @anvia/sandbox
 
+## 0.3.7
+
+### Patch Changes
+
+- 433f642: Simplify optional object construction across runtime integrations without changing public behavior.
+
 ## 0.3.6
 
 ### Patch Changes

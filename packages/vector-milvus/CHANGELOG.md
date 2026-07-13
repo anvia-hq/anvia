@@ -1,5 +1,11 @@
 # @anvia/milvus
 
+## 0.3.7
+
+### Patch Changes
+
+- 433f642: Simplify optional vector query and result construction while preserving vector store behavior.
+
 ## 0.3.6
 
 ### Patch Changes

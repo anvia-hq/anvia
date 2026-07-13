@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.3.15
+
+### Patch Changes
+
+- 433f642: Simplify provider request and response object construction while preserving adapter behavior.
+
 ## 0.3.14
 
 ### Patch Changes

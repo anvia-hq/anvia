@@ -1,5 +1,14 @@
 # @anvia/studio
 
+## 0.7.30
+
+### Patch Changes
+
+- 433f642: Replace the generic compact helper and conditional object spreads with explicit optional assignments while preserving the Studio public API.
+- Updated dependencies [433f642]
+  - @anvia/react@0.8.8
+  - @anvia/server@0.5.7
+
 ## 0.7.29
 
 ### Patch Changes

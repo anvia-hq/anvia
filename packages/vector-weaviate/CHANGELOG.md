@@ -1,5 +1,11 @@
 # @anvia/weaviate
 
+## 0.2.4
+
+### Patch Changes
+
+- 433f642: Simplify optional vector query and result construction while preserving vector store behavior.
+
 ## 0.2.3
 
 ### Patch Changes

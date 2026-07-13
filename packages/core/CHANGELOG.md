@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.13.1
+
+### Patch Changes
+
+- 433f642: Simplify internal optional-property construction while preserving the existing public API and runtime behavior.
+
 ## 0.13.0
 
 ### Minor Changes

@@ -36,14 +36,15 @@ export function createUserMessage(input: SendMessageInput): UIMessage | undefine
     });
   }
 
-  return {
+  const message: UIMessage = {
     id: typeof input === "string" || input.id === undefined ? createId("msg") : input.id,
     role: "user",
     parts,
-    ...(typeof input === "string" || input.metadata === undefined
-      ? {}
-      : { metadata: input.metadata }),
   };
+  if (typeof input !== "string" && input.metadata !== undefined) {
+    message.metadata = input.metadata;
+  }
+  return message;
 }
 
 function createAttachment(attachment: CreateUIAttachment): UIAttachment {
@@ -142,11 +143,11 @@ export function applyAnviaStreamEvent(
       type: "tool",
       toolName: typeof event.name === "string" ? event.name : "",
       toolCallId: event.id,
-      ...(typeof event.callId === "string" ? { callId: event.callId } : {}),
-      ...(turn === undefined ? {} : { turn }),
       state: "input-streaming",
-      ...(typeof event.argumentsDelta === "string" ? { input: event.argumentsDelta } : {}),
     };
+    if (typeof event.callId === "string") part.callId = event.callId;
+    if (turn !== undefined) part.turn = turn;
+    if (typeof event.argumentsDelta === "string") part.input = event.argumentsDelta;
     return updateAssistantToolPart(messages, part);
   }
 
@@ -157,11 +158,11 @@ export function applyAnviaStreamEvent(
       type: "tool",
       toolName: event.toolCall.function.name,
       toolCallId: event.toolCall.id,
-      ...(typeof event.toolCall.callId === "string" ? { callId: event.toolCall.callId } : {}),
-      ...(turn === undefined ? {} : { turn }),
       state: "input-available",
       input: event.toolCall.function.arguments,
     };
+    if (typeof event.toolCall.callId === "string") part.callId = event.toolCall.callId;
+    if (turn !== undefined) part.turn = turn;
     return updateAssistantToolPart(messages, part);
   }
 
@@ -179,14 +180,14 @@ export function applyAnviaStreamEvent(
       type: "tool",
       toolName: event.toolName,
       toolCallId,
-      ...(providerCallId === undefined ? {} : { callId: providerCallId }),
-      ...(turn === undefined ? {} : { turn }),
       state: "output-available",
       output:
         "structuredResult" in event && event.structuredResult !== undefined
           ? valueToJson(event.structuredResult)
           : valueToJson(event.result),
     };
+    if (providerCallId !== undefined) part.callId = providerCallId;
+    if (turn !== undefined) part.turn = turn;
     return updateAssistantToolPart(
       messages,
       part,
@@ -294,12 +295,13 @@ export function appendAssistantReasoningDelta(
   if (assistant === undefined) {
     return current;
   }
-  return updateMessagePart(current, assistant.id, {
+  const part: Extract<UIMessagePart, { type: "reasoning" }> = {
     id: assistantReasoningPartId(assistant, reasoningId),
     type: "reasoning",
     text: delta,
-    ...(reasoningId === undefined ? {} : { reasoningId }),
-  });
+  };
+  if (reasoningId !== undefined) part.reasoningId = reasoningId;
+  return updateMessagePart(current, assistant.id, part);
 }
 
 export function replaceAssistantText(messages: UIMessage[], text: string): UIMessage[] {
@@ -402,19 +404,16 @@ function updateAssistantToolPart(
   }
 
   const existingPart = findMatchingToolPart(assistant, part, aliases, inputMatch);
-  const nextPart =
-    existingPart === undefined
-      ? part
-      : {
-          ...part,
-          id: existingPart.id,
-          toolCallId: existingPart.toolCallId,
-          ...(existingPart.callId !== undefined
-            ? { callId: existingPart.callId }
-            : part.callId !== undefined
-              ? { callId: part.callId }
-              : {}),
-        };
+  let nextPart = part;
+  if (existingPart !== undefined) {
+    nextPart = {
+      ...part,
+      id: existingPart.id,
+      toolCallId: existingPart.toolCallId,
+    };
+    const callId = existingPart.callId ?? part.callId;
+    if (callId !== undefined) nextPart.callId = callId;
+  }
 
   return updateMessagePart(current, assistant.id, nextPart);
 }

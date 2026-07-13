@@ -39,16 +39,17 @@ export async function defaultDecideApproval(
   if (fetchImpl === undefined) {
     throw new Error("humanInput approval decisions require a fetch implementation");
   }
+  const body: { approved: boolean; reason?: string | undefined } = {
+    approved: input.approved,
+  };
+  if (input.reason !== undefined) body.reason = input.reason;
 
   const response = await fetchImpl(
     endpointUrl(endpoint, `approvals/${input.approvalId}/decision`),
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        approved: input.approved,
-        ...(input.reason === undefined ? {} : { reason: input.reason }),
-      }),
+      body: JSON.stringify(body),
     },
   );
   if (!response.ok) {

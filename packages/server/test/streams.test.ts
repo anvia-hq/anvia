@@ -7,6 +7,7 @@ import {
   createResumableStream,
   createSseStream,
   createUIStreamResponse,
+  type ResumableStreamStore,
   resumeStreamEvents,
 } from "../src";
 
@@ -158,6 +159,38 @@ describe("@anvia/server streams", () => {
       eventId: 2,
       status: "completed",
     });
+  });
+
+  it("omits the resume cursor when none is supplied", async () => {
+    let subscribeInput: unknown;
+    const store: ResumableStreamStore<{ type: string }> = {
+      async open() {
+        return { status: "running", lastEventId: 0 };
+      },
+      async append(input) {
+        return {
+          streamId: input.streamId,
+          eventId: 1,
+          event: input.event,
+          createdAt: new Date(),
+        };
+      },
+      subscribe(input) {
+        subscribeInput = input;
+        return events([]);
+      },
+      async status() {
+        return { status: "completed", lastEventId: 0 };
+      },
+      async close() {
+        return { status: "completed", lastEventId: 0 };
+      },
+    };
+
+    await collect(resumeStreamEvents({ id: "run_1", store }));
+
+    expect(subscribeInput).toStrictEqual({ streamId: "run_1" });
+    expect(subscribeInput).not.toHaveProperty("after");
   });
 
   it("stores and emits resumable stream errors", async () => {

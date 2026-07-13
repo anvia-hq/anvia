@@ -655,7 +655,7 @@ class FakeSpan {
     readonly options: SpanOptions,
     readonly spanContextValue: ReturnType<Span["spanContext"]>,
   ) {
-    this.attributes = { ...(options.attributes ?? {}) };
+    Object.assign(this.attributes, options.attributes);
   }
 
   readonly span: Span = {

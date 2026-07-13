@@ -26,8 +26,10 @@ import type {
   EventTransport,
   SendMessageInput,
   ToolApproval,
+  ToolApprovalDecisionInput,
   ToolQuestion,
   ToolQuestionAnswer,
+  ToolQuestionAnswerInput,
   UseChatOptions,
   UseChatResult,
 } from "./types";
@@ -239,12 +241,14 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 
       const createRequest =
         options.createRequest ??
-        ((args: CreateChatRequestArgs) =>
-          ({
+        ((args: CreateChatRequestArgs) => {
+          const request: UIStreamRequest & { resume?: ChatResumeCursor } = {
             messages: args.coreMessages,
             stream: true,
-            ...(args.resume === undefined ? {} : { resume: args.resume }),
-          }) as TRequest);
+          };
+          if (args.resume !== undefined) request.resume = args.resume;
+          return request as TRequest;
+        });
 
       if (runOptions.resume === undefined) {
         clearResumeState();
@@ -425,12 +429,12 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       setDecidingApprovals(nextDeciding);
       try {
         const approval = approvalsRef.current.find((item) => item.id === approvalId);
-        const input = {
+        const input: ToolApprovalDecisionInput = {
           approvalId,
           approved,
-          ...(reason === undefined ? {} : { reason }),
-          ...(approval === undefined ? {} : { approval }),
         };
+        if (reason !== undefined) input.reason = reason;
+        if (approval !== undefined) input.approval = approval;
         const result =
           humanInputOptions.decideApproval === undefined
             ? await defaultDecideApproval(input, humanInputOptions)
@@ -480,11 +484,11 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       setAnsweringQuestions(nextAnswering);
       try {
         const question = questionsRef.current.find((item) => item.id === questionId);
-        const input = {
+        const input: ToolQuestionAnswerInput = {
           questionId,
           answers,
-          ...(question === undefined ? {} : { question }),
         };
+        if (question !== undefined) input.question = question;
         const result =
           humanInputOptions.answerQuestion === undefined
             ? await defaultAnswerQuestion(input, humanInputOptions)

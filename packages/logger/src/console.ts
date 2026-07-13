@@ -63,20 +63,22 @@ class ConsoleLogger implements Logger {
       return;
     }
 
-    const payload = {
+    const payload: LogContext = {
       time: this.state.timestamp().toISOString(),
       level,
       msg: message,
       ...this.state.bindings,
-      ...(context ?? {}),
     };
+    Object.assign(payload, context);
     this.state.writer(JSON.stringify(payload));
   }
 }
 
 function createInitialBindings(options: LoggerOptions): LogContext {
-  return {
-    ...(options.name === undefined ? {} : { name: options.name }),
-    ...(options.bindings ?? {}),
-  };
+  const bindings: LogContext = {};
+  if (options.name !== undefined) {
+    bindings.name = options.name;
+  }
+  Object.assign(bindings, options.bindings);
+  return bindings;
 }

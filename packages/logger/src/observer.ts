@@ -42,14 +42,15 @@ class LoggerRunObserver implements AgentRunObserver {
     private readonly options: LoggerObserverOptions,
     args: AgentRunStartArgs,
   ) {
-    this.logger = logger.child({
+    const context: LogContext = {
       component: "anvia.agent",
-      ...(args.agentName === undefined ? {} : { agentName: args.agentName }),
-      ...(args.trace?.name === undefined ? {} : { traceName: args.trace.name }),
-      ...(args.trace?.userId === undefined ? {} : { userId: args.trace.userId }),
-      ...(args.trace?.sessionId === undefined ? {} : { sessionId: args.trace.sessionId }),
-      ...(args.trace?.traceId === undefined ? {} : { traceId: args.trace.traceId }),
-    });
+    };
+    if (args.agentName !== undefined) context.agentName = args.agentName;
+    if (args.trace?.name !== undefined) context.traceName = args.trace.name;
+    if (args.trace?.userId !== undefined) context.userId = args.trace.userId;
+    if (args.trace?.sessionId !== undefined) context.sessionId = args.trace.sessionId;
+    if (args.trace?.traceId !== undefined) context.traceId = args.trace.traceId;
+    this.logger = logger.child(context);
     this.logger.info("agent run started", {
       agentDescription: args.agentDescription,
       maxTurns: args.maxTurns,
@@ -65,12 +66,13 @@ class LoggerRunObserver implements AgentRunObserver {
   }
 
   startTool(args: AgentToolStartArgs): AgentToolObserver {
-    const toolLogger = this.logger.child({
+    const context: LogContext = {
       turn: args.turn,
       toolName: args.toolName,
       internalCallId: args.internalCallId,
-      ...(args.toolCallId === undefined ? {} : { toolCallId: args.toolCallId }),
-    });
+    };
+    if (args.toolCallId !== undefined) context.toolCallId = args.toolCallId;
+    const toolLogger = this.logger.child(context);
     toolLogger.info("agent tool started", {
       args: args.args,
       toolMetadata: args.toolMetadata,
@@ -79,11 +81,12 @@ class LoggerRunObserver implements AgentRunObserver {
   }
 
   end(args: AgentRunEndArgs): void {
-    this.logger.info("agent run ended", {
-      ...(this.options.includeOutput === true ? { output: args.output } : {}),
+    const context: LogContext = {
       usage: args.usage,
       messageCount: args.messages.length,
-    });
+    };
+    if (this.options.includeOutput === true) context.output = args.output;
+    this.logger.info("agent run ended", context);
   }
 
   error(args: AgentRunErrorArgs): void {
@@ -126,13 +129,16 @@ class LoggerToolObserver implements AgentToolObserver {
   }
 
   end(args: AgentToolEndArgs): void {
-    this.logger.info("agent tool ended", {
+    const context: LogContext = {
       skipped: args.skipped,
-      ...(this.options.includeToolResult === true ? { result: args.result } : {}),
-      ...(this.options.includeToolResult === true && args.structuredResult !== undefined
-        ? { structuredResult: args.structuredResult }
-        : {}),
-    });
+    };
+    if (this.options.includeToolResult === true) {
+      context.result = args.result;
+      if (args.structuredResult !== undefined) {
+        context.structuredResult = args.structuredResult;
+      }
+    }
+    this.logger.info("agent tool ended", context);
   }
 
   error(args: AgentToolErrorArgs): void {
@@ -146,25 +152,27 @@ function generationStartContext(
   args: AgentGenerationStartArgs,
   options: LoggerObserverOptions,
 ): LogContext {
-  return {
+  const context: LogContext = {
     turn: args.turn,
     provider: args.modelInfo?.provider,
     model: args.modelInfo?.defaultModel,
     providerRequest: args.providerRequest,
-    ...(options.includeRequest === true ? { request: args.request } : {}),
   };
+  if (options.includeRequest === true) context.request = args.request;
+  return context;
 }
 
 function generationEndContext(
   args: AgentGenerationEndArgs,
   options: LoggerObserverOptions,
 ): LogContext {
-  return {
+  const context: LogContext = {
     turn: args.turn,
     firstDeltaMs: args.firstDeltaMs,
     usage: args.response.usage,
-    ...(options.includeResponse === true ? { response: args.response } : {}),
   };
+  if (options.includeResponse === true) context.response = args.response;
+  return context;
 }
 
 function serializeError(error: unknown): unknown {

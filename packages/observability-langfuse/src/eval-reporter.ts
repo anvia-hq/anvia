@@ -3,6 +3,7 @@ import type { EvalOutcome, EvalReportArgs, EvalReporter } from "@anvia/core/eval
 import type { AgentTraceInfo } from "@anvia/core/observability";
 import type {
   LangfuseEvalReporterOptions,
+  LangfuseScoreArgs,
   LangfuseScoreDataType,
   LangfuseTracing,
 } from "./types.js";
@@ -45,19 +46,19 @@ export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Ex
         includeMessages,
       });
       const comment = scoreComment(args.outcome);
+      const configId = resolveConfigId(args.metric);
 
-      await tracing.score({
+      const score: LangfuseScoreArgs = {
         traceId: trace.traceId,
-        ...(trace.observationId === undefined ? {} : { observationId: trace.observationId }),
         name: args.metric.name,
         value: scoreValue,
-        ...(args.metric.dataType === undefined ? {} : { dataType: args.metric.dataType }),
-        ...(resolveConfigId(args.metric) === undefined
-          ? {}
-          : { configId: resolveConfigId(args.metric) as string }),
-        ...(comment === undefined ? {} : { comment }),
-        ...(metadata === undefined ? {} : { metadata }),
-      });
+      };
+      if (trace.observationId !== undefined) score.observationId = trace.observationId;
+      if (args.metric.dataType !== undefined) score.dataType = args.metric.dataType;
+      if (configId !== undefined) score.configId = configId;
+      if (comment !== undefined) score.comment = comment;
+      if (metadata !== undefined) score.metadata = metadata;
+      await tracing.score(score);
     },
   };
 }
@@ -214,10 +215,9 @@ function traceFromEvalReport<Input, Output, Expected>(
   if (typeof traceId !== "string") {
     return undefined;
   }
-  return {
-    traceId,
-    ...(typeof observationId === "string" ? { observationId } : {}),
-  };
+  const trace: AgentTraceInfo = { traceId };
+  if (typeof observationId === "string") trace.observationId = observationId;
+  return trace;
 }
 
 function traceFromOutput(output: unknown): AgentTraceInfo | undefined {
@@ -243,8 +243,7 @@ function readTrace(trace: unknown): AgentTraceInfo | undefined {
   if (typeof traceId !== "string") {
     return undefined;
   }
-  return {
-    traceId,
-    ...(typeof observationId === "string" ? { observationId } : {}),
-  };
+  const result: AgentTraceInfo = { traceId };
+  if (typeof observationId === "string") result.observationId = observationId;
+  return result;
 }

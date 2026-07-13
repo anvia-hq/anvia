@@ -133,15 +133,16 @@ class LangfuseAgentObserver implements LangfuseTracing {
       prompt: args.prompt,
       history: args.history,
     });
+    const metadata: Record<string, unknown> = {
+      agentName: args.agentName,
+      agentDescription: args.agentDescription,
+      maxTurns: args.maxTurns,
+    };
+    if (this.serviceName !== undefined) metadata.serviceName = this.serviceName;
+    Object.assign(metadata, args.trace?.metadata);
     const rootAttributes: Parameters<typeof startObservation>[1] = {
       input: redactedInput,
-      metadata: {
-        ...(this.serviceName !== undefined ? { serviceName: this.serviceName } : {}),
-        agentName: args.agentName,
-        agentDescription: args.agentDescription,
-        maxTurns: args.maxTurns,
-        ...(args.trace?.metadata ?? {}),
-      },
+      metadata,
     };
     if (args.trace?.version !== undefined) {
       rootAttributes.version = args.trace.version;
@@ -384,10 +385,11 @@ function promptMetadata(
   if (ref === undefined) {
     return {};
   }
-  return {
+  const metadata: Record<string, string | number | undefined> = {
     promptName: ref.name,
-    ...(ref.version === undefined ? {} : { promptVersion: ref.version }),
   };
+  if (ref.version !== undefined) metadata.promptVersion = ref.version;
+  return metadata;
 }
 
 function serializeMetadataValue(value: unknown): string | undefined {
@@ -447,30 +449,30 @@ class LangfuseRunObserver implements AgentRunObserver {
     this.closeEarlierTurns(args.turn);
     const turn = this.turnSpan(args.turn);
     const redactedChatHistory = this.redactInputValue(modelInputMessages(args.request.chatHistory));
+    const metadata: Record<string, unknown> = {
+      turn: args.turn,
+      toolCount: args.request.tools.length,
+      hasOutputSchema: args.request.outputSchema !== undefined,
+    };
+    if (args.providerRequest !== undefined) metadata.providerRequest = args.providerRequest;
+    if (args.modelInfo !== undefined) {
+      const modelInfo: Record<string, unknown> = {
+        provider: args.modelInfo.provider,
+        defaultModel: args.modelInfo.defaultModel,
+      };
+      if (args.modelInfo.capabilities !== undefined) {
+        modelInfo.capabilities = args.modelInfo.capabilities;
+      }
+      metadata.modelInfo = modelInfo;
+    }
+    Object.assign(metadata, promptMetadata(this.promptRef));
     const generation = turn.startObservation(
       `model.turn.${args.turn}`,
       {
         input: redactedChatHistory,
         model: args.request.model ?? "default",
         modelParameters: modelParameters(args.request),
-        metadata: {
-          turn: args.turn,
-          toolCount: args.request.tools.length,
-          hasOutputSchema: args.request.outputSchema !== undefined,
-          ...(args.providerRequest !== undefined ? { providerRequest: args.providerRequest } : {}),
-          ...(args.modelInfo !== undefined
-            ? {
-                modelInfo: {
-                  provider: args.modelInfo.provider,
-                  defaultModel: args.modelInfo.defaultModel,
-                  ...(args.modelInfo.capabilities !== undefined
-                    ? { capabilities: args.modelInfo.capabilities }
-                    : {}),
-                },
-              }
-            : {}),
-          ...promptMetadata(this.promptRef),
-        },
+        metadata,
       },
       { asType: "generation" },
     );
@@ -480,6 +482,13 @@ class LangfuseRunObserver implements AgentRunObserver {
   startTool(args: AgentToolStartArgs): AgentToolObserver {
     const turn = this.turnSpan(args.turn);
     const redactedArgs = this.redactInputValue(args.args);
+    const metadata: Record<string, unknown> = {
+      turn: args.turn,
+      internalCallId: args.internalCallId,
+      toolCallId: args.toolCallId,
+    };
+    if (args.toolDefinition !== undefined) metadata.toolDefinition = args.toolDefinition;
+    if (args.toolMetadata !== undefined) metadata.toolMetadata = args.toolMetadata;
     const tool = turn.startObservation(
       `tool.${args.toolName}`,
       {
@@ -487,13 +496,7 @@ class LangfuseRunObserver implements AgentRunObserver {
           args: redactedArgs,
           toolCall: args.toolCall,
         },
-        metadata: {
-          turn: args.turn,
-          internalCallId: args.internalCallId,
-          toolCallId: args.toolCallId,
-          ...(args.toolDefinition !== undefined ? { toolDefinition: args.toolDefinition } : {}),
-          ...(args.toolMetadata !== undefined ? { toolMetadata: args.toolMetadata } : {}),
-        },
+        metadata,
       },
       { asType: "tool" },
     );
@@ -534,7 +537,8 @@ class LangfuseRunObserver implements AgentRunObserver {
   }
 
   event(args: AgentRunEventArgs): void {
-    const metadata: Record<string, unknown> = { ...(args.attributes ?? {}) };
+    const metadata: Record<string, unknown> = {};
+    Object.assign(metadata, args.attributes);
     this.root.startObservation(args.name, { metadata }, { asType: "event" }).end();
   }
 
@@ -551,7 +555,8 @@ class LangfuseRunObserver implements AgentRunObserver {
         this.setCurrentHandle?.(this.handle);
       },
       addEvent: (name, attributes) => {
-        const metadata: Record<string, unknown> = { ...(attributes ?? {}) };
+        const metadata: Record<string, unknown> = {};
+        Object.assign(metadata, attributes);
         this.root.startObservation(name, { metadata }, { asType: "event" }).end();
         this.setCurrentHandle?.(this.handle);
       },
@@ -607,6 +612,8 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
   end(args: AgentGenerationEndArgs): void {
     const redactedText = this.run.redactOutputValue(textFromAssistantContent(args.response.choice));
     const redactedChoice = this.run.redactOutputValue(args.response.choice);
+    const metadata: Record<string, unknown> = { turn: args.turn };
+    if (args.firstDeltaMs !== undefined) metadata.firstDeltaMs = args.firstDeltaMs;
     this.generation
       .update({
         output: {
@@ -615,10 +622,7 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
           text: redactedText,
         },
         usageDetails: usageDetails(args.response.usage),
-        metadata: {
-          turn: args.turn,
-          ...(args.firstDeltaMs !== undefined ? { firstDeltaMs: args.firstDeltaMs } : {}),
-        },
+        metadata,
       })
       .end();
   }
@@ -682,15 +686,14 @@ class LangfuseToolObserver implements AgentToolObserver {
     if (child.type === "turn_end") {
       const generation = this.childGenerations.get(generationKey(agentId, childTurn));
       if (generation !== undefined) {
-        generation
-          .update({
-            output: child.response,
-            ...(isRecord(child.response) && isRecord(child.response.usage)
-              ? { usageDetails: usageDetailsFromRecord(child.response.usage) }
-              : {}),
-            metadata: childMetadata(args, agentId, agentName, childTurn),
-          })
-          .end();
+        const update: Parameters<LangfuseGeneration["update"]>[0] = {
+          output: child.response,
+          metadata: childMetadata(args, agentId, agentName, childTurn),
+        };
+        if (isRecord(child.response) && isRecord(child.response.usage)) {
+          update.usageDetails = usageDetailsFromRecord(child.response.usage);
+        }
+        generation.update(update).end();
         this.childGenerations.delete(generationKey(agentId, childTurn));
       }
       return;
@@ -721,13 +724,14 @@ class LangfuseToolObserver implements AgentToolObserver {
         },
         { asType: "tool" },
       );
-      this.childTools.push({
+      const childToolRecord: (typeof this.childTools)[number] = {
         agentId,
         toolName,
-        ...(toolCallId === undefined ? {} : { toolCallId }),
         tool: childTool,
         ended: false,
-      });
+      };
+      if (toolCallId !== undefined) childToolRecord.toolCallId = toolCallId;
+      this.childTools.push(childToolRecord);
       return;
     }
 
@@ -755,12 +759,9 @@ class LangfuseToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "final") {
-      agent
-        .update({
-          output: child.output,
-          ...(isRecord(child.usage) ? { metadata: { usage: child.usage } } : {}),
-        })
-        .end();
+      const update: Parameters<LangfuseAgent["update"]>[0] = { output: child.output };
+      if (isRecord(child.usage)) update.metadata = { usage: child.usage };
+      agent.update(update).end();
       this.childAgents.delete(agentId);
       return;
     }
@@ -781,15 +782,16 @@ class LangfuseToolObserver implements AgentToolObserver {
     this.endOpenChildren();
     const redactedResult = this.run.redactOutputValue(args.result);
     const redactedStructured = this.run.redactOutputValue(args.structuredResult);
+    const metadata: Record<string, unknown> = {
+      turn: args.turn,
+      internalCallId: args.internalCallId,
+      toolCallId: args.toolCallId,
+      skipped: args.skipped,
+    };
+    if (redactedStructured !== undefined) metadata.structuredResult = redactedStructured;
     const attributes: Parameters<LangfuseTool["update"]>[0] = {
       output: redactedResult,
-      metadata: {
-        turn: args.turn,
-        internalCallId: args.internalCallId,
-        toolCallId: args.toolCallId,
-        skipped: args.skipped,
-        ...(redactedStructured !== undefined ? { structuredResult: redactedStructured } : {}),
-      },
+      metadata,
       level: args.skipped ? "WARNING" : "DEFAULT",
     };
     if (args.skipped) {

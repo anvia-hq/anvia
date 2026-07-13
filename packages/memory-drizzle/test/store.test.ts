@@ -8,7 +8,7 @@ import {
   createDrizzleMemoryStore,
   drizzleMemorySchema,
 } from "../src/index.js";
-import { isMemoryMessage } from "../src/message.js";
+import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
 
 const userMessage: Message = {
   role: "user",
@@ -113,17 +113,46 @@ const richMessages: Message[] = [
 
 describe("Drizzle memory public API", () => {
   it("uses core strict JSON validation for message metadata", async () => {
-    expect(isMemoryMessage({ ...userMessage, metadata: { score: 1 } })).toBe(true);
-    expect(isMemoryMessage({ ...userMessage, metadata: { score: Number.NaN } })).toBe(false);
+    const validMessage: Message = {
+      role: "user",
+      content: [{ type: "text", text: "remember this" }],
+      metadata: { score: 1 },
+    };
+    const invalidMessage: Message = {
+      role: "user",
+      content: [{ type: "text", text: "remember this" }],
+      metadata: { score: Number.NaN },
+    };
+
+    expect(isMemoryMessage(validMessage)).toBe(true);
+    expect(isMemoryMessage(invalidMessage)).toBe(false);
     const store = createDrizzleMemoryStore(new FakeDrizzleDb());
     await expect(
       store.append({
         context: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
-        messages: [{ ...userMessage, metadata: { score: Number.NaN } } as Message],
+        messages: [invalidMessage],
       }),
     ).rejects.toThrow("valid Anvia Message");
+  });
+
+  it("serializes Error stacks only when present", () => {
+    const withStack = new Error("failed");
+    withStack.stack = "test stack";
+    const withoutStack = new Error("failed");
+    delete withoutStack.stack;
+
+    expect(serializeUnknownError(withStack)).toEqual({
+      name: "Error",
+      message: "failed",
+      stack: "test stack",
+    });
+    expect(serializeUnknownError(withoutStack)).toStrictEqual({
+      name: "Error",
+      message: "failed",
+    });
+    expect(serializeUnknownError(withoutStack)).not.toHaveProperty("stack");
   });
 
   it("exports schema tables users can include in their Drizzle schema", () => {

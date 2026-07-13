@@ -6,6 +6,7 @@ import type {
   PrismaMemoryConventionalDelegates,
   PrismaMemoryDelegates,
   PrismaMemoryScopeOptions,
+  PrismaMemorySessionCreateData,
   PrismaMemoryStoreOptions,
 } from "./types.js";
 
@@ -177,18 +178,16 @@ async function upsertSession(
 function sessionCreateData(
   context: MemoryContext,
   scopeKey: string,
-): {
-  scopeKey: string;
-  sessionId: string;
-  userId?: string | undefined;
-  metadata: JsonObject;
-} {
-  return {
+): PrismaMemorySessionCreateData {
+  const data: PrismaMemorySessionCreateData = {
     scopeKey,
     sessionId: context.sessionId,
-    ...(context.userId === undefined ? {} : { userId: context.userId }),
     metadata: metadata(context),
   };
+  if (context.userId !== undefined) {
+    data.userId = context.userId;
+  }
+  return data;
 }
 
 function metadata(context: MemoryContext): JsonObject {
@@ -214,7 +213,9 @@ function conventionalDelegates(client: unknown): PrismaMemoryDelegates {
   assertConventionalClient(client);
   const models = conventionalModelDelegates(client);
   return {
-    ...models,
+    sessions: models.sessions,
+    messages: models.messages,
+    errors: models.errors,
     transaction: (operation, options) =>
       client.$transaction(
         async (tx) => operation(transactionDelegates(conventionalModelDelegates(tx))),
@@ -273,7 +274,9 @@ function transactionDelegates(
 ): PrismaMemoryDelegates {
   let delegates: PrismaMemoryDelegates;
   delegates = {
-    ...models,
+    sessions: models.sessions,
+    messages: models.messages,
+    errors: models.errors,
     transaction: (operation) => operation(delegates),
   };
   return delegates;

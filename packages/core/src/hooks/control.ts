@@ -1,4 +1,3 @@
-import { compact } from "../internal/compact";
 import type {
   HookAction,
   PromptHook,
@@ -23,11 +22,16 @@ export function skipTool(reason: string): ToolCallHookAction {
 }
 
 export function requestToolApproval(options: ToolApprovalRequestOptions = {}): ToolCallHookAction {
-  return compact({
+  const action: ToolCallHookAction = {
     type: "approval_request" as const,
-    reason: options.reason,
-    rejectMessage: options.rejectMessage,
-  }) as ToolCallHookAction;
+  };
+  if (options.reason !== undefined) {
+    action.reason = options.reason;
+  }
+  if (options.rejectMessage !== undefined) {
+    action.rejectMessage = options.rejectMessage;
+  }
+  return action;
 }
 
 export const runControl: RunControl = {

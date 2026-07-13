@@ -1,4 +1,5 @@
 import type { Agent } from "../agent/agent";
+import type { AgentEventAppendInput } from "../agent/types";
 import { isStreamingCompletionModel } from "../completion/create-completion";
 import {
   AssistantContent,
@@ -29,7 +30,6 @@ import {
 import type { PromptHook } from "../hooks";
 import { runControl } from "../hooks";
 import { createAsyncQueue } from "../internal/async-queue";
-import { compact } from "../internal/compact";
 import { PromptRequestMemory } from "../internal/prompt-runtime/memory";
 import { fetchDynamicContext, fetchToolDefinitions } from "../internal/prompt-runtime/retrieval";
 import { CompletionStreamAccumulator } from "../internal/prompt-runtime/stream-accumulator";
@@ -43,7 +43,11 @@ import {
 import { extractRagText } from "../internal/rag-text";
 import type { MemoryContext } from "../memory/types";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
-import type { AgentTraceOptions } from "../observability/types";
+import type {
+  AgentGenerationEndArgs,
+  AgentGenerationStartArgs,
+  AgentTraceOptions,
+} from "../observability/types";
 import { toReadableStream } from "../streaming";
 import type { ToolApprovalsOptions } from "../tool";
 import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
@@ -430,16 +434,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
         const generationObservers = await runObservers.startGeneration(
-          compact({
-            turn: currentTurns,
-            request,
-            providerRequest,
-            modelInfo: {
-              provider: this.agent.model.provider,
-              defaultModel: this.agent.model.defaultModel,
-              capabilities: this.agent.model.capabilities,
-            },
-          }),
+          this.generationStartArgs(currentTurns, request, providerRequest),
         );
         const accumulator = new CompletionStreamAccumulator();
         const generationStartedAt = Date.now();
@@ -476,13 +471,14 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         }
 
         let response = accumulator.response();
-        await generationObservers.end(
-          compact({
-            turn: currentTurns,
-            response,
-            firstDeltaMs,
-          }),
-        );
+        const generationEndArgs: AgentGenerationEndArgs = {
+          turn: currentTurns,
+          response,
+        };
+        if (firstDeltaMs !== undefined) {
+          generationEndArgs.firstDeltaMs = firstDeltaMs;
+        }
+        await generationObservers.end(generationEndArgs);
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
         usage = Usage.add(usage, response.usage);
         await this.runCompletionResponseHook(prompt, response, newMessages);
@@ -655,16 +651,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     assertCompletionRequestSupported(this.agent.model, request);
     const providerRequest = this.providerTraceRequest(request);
     const generationObservers = await runObservers.startGeneration(
-      compact({
-        turn,
-        request,
-        providerRequest,
-        modelInfo: {
-          provider: this.agent.model.provider,
-          defaultModel: this.agent.model.defaultModel,
-          capabilities: this.agent.model.capabilities,
-        },
-      }),
+      this.generationStartArgs(turn, request, providerRequest),
     );
     try {
       const response = await this.agent.model.completion(request);
@@ -687,6 +674,26 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  private generationStartArgs(
+    turn: number,
+    request: ReturnType<CompletionRequestBuilder["build"]>,
+    providerRequest: JsonObject | undefined,
+  ): AgentGenerationStartArgs {
+    const args: AgentGenerationStartArgs = {
+      turn,
+      request,
+      modelInfo: {
+        provider: this.agent.model.provider,
+        defaultModel: this.agent.model.defaultModel,
+        capabilities: this.agent.model.capabilities,
+      },
+    };
+    if (providerRequest !== undefined) {
+      args.providerRequest = providerRequest;
+    }
+    return args;
   }
 
   private async executeToolCalls(
@@ -767,12 +774,17 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   }
 
   private guardrailRunContext(runId: string): GuardrailRunContext {
-    return compact({
+    const context: GuardrailRunContext = {
       agentId: this.agent.id,
       runId,
-      sessionId: this.memoryContext?.sessionId,
-      metadata: this.memoryContext?.metadata,
-    }) as GuardrailRunContext;
+    };
+    if (this.memoryContext !== undefined) {
+      context.sessionId = this.memoryContext.sessionId;
+      if (this.memoryContext.metadata !== undefined) {
+        context.metadata = this.memoryContext.metadata;
+      }
+    }
+    return context;
   }
 
   private async startRunObservers(): Promise<ActiveAgentRunObservers> {
@@ -806,19 +818,25 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     const turn = "turn" in event ? event.turn : undefined;
     const agentId = event.type === "agent_tool_event" ? event.agentId : this.agent.id;
     const agentName = event.type === "agent_tool_event" ? event.agentName : this.agent.name;
-    await registration.store.append({
+    const input: AgentEventAppendInput = {
       runId,
       agentId,
-      ...compact({ agentName, turn }),
-      ...(event.type === "agent_tool_event"
-        ? compact({
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            internalCallId: event.internalCallId,
-          })
-        : {}),
       event,
-    });
+    };
+    if (agentName !== undefined) {
+      input.agentName = agentName;
+    }
+    if (turn !== undefined) {
+      input.turn = turn;
+    }
+    if (event.type === "agent_tool_event") {
+      input.toolName = event.toolName;
+      input.internalCallId = event.internalCallId;
+      if (event.toolCallId !== undefined) {
+        input.toolCallId = event.toolCallId;
+      }
+    }
+    await registration.store.append(input);
   }
 
   private async runCompletionCallHook(
@@ -1071,9 +1089,7 @@ function responseStreamEvents(turn: number, response: CompletionResponse): Agent
     if (item.type === "reasoning") {
       if (item.content === undefined) {
         if (item.text.length > 0) {
-          events.push(
-            compact({ type: "reasoning_delta" as const, turn, delta: item.text, id: item.id }),
-          );
+          events.push(reasoningDeltaEvent(turn, item.text, { id: item.id }));
         }
         continue;
       }
@@ -1082,10 +1098,7 @@ function responseStreamEvents(turn: number, response: CompletionResponse): Agent
         const delta =
           content.type === "encrypted" || content.type === "redacted" ? content.data : content.text;
         events.push(
-          compact({
-            type: "reasoning_delta" as const,
-            turn,
-            delta,
+          reasoningDeltaEvent(turn, delta, {
             id: item.id,
             contentType: content.type,
             signature: content.type === "text" ? content.signature : undefined,
@@ -1100,6 +1113,34 @@ function responseStreamEvents(turn: number, response: CompletionResponse): Agent
     }
   }
   return events;
+}
+
+type ReasoningDeltaEvent = Extract<AgentStreamEvent, { type: "reasoning_delta" }>;
+
+function reasoningDeltaEvent(
+  turn: number,
+  delta: string,
+  details: {
+    id?: ReasoningDeltaEvent["id"] | undefined;
+    contentType?: ReasoningDeltaEvent["contentType"] | undefined;
+    signature?: ReasoningDeltaEvent["signature"] | undefined;
+  } = {},
+): ReasoningDeltaEvent {
+  const event: ReasoningDeltaEvent = {
+    type: "reasoning_delta",
+    turn,
+    delta,
+  };
+  if (details.id !== undefined) {
+    event.id = details.id;
+  }
+  if (details.contentType !== undefined) {
+    event.contentType = details.contentType;
+  }
+  if (details.signature !== undefined) {
+    event.signature = details.signature;
+  }
+  return event;
 }
 
 function textFromMessage(message: MessageType): string {
@@ -1122,15 +1163,20 @@ function textFromMessage(message: MessageType): string {
 function guardrailDecisionAttributes(
   decision: GuardrailDecisionRecord,
 ): Record<string, JsonValue | undefined> {
-  return compact({
+  const attributes: Record<string, JsonValue | undefined> = {
     policyId: decision.policyId,
     guardrailId: decision.guardrailId,
     boundary: decision.boundary,
     mode: decision.mode,
     action: decision.action,
     applied: decision.applied,
-    reason: decision.reason,
-    message: decision.message,
     latencyMs: decision.latencyMs,
-  }) as Record<string, JsonValue | undefined>;
+  };
+  if (decision.reason !== undefined) {
+    attributes.reason = decision.reason;
+  }
+  if (decision.message !== undefined) {
+    attributes.message = decision.message;
+  }
+  return attributes;
 }

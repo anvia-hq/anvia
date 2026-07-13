@@ -1,4 +1,3 @@
-import { compact } from "../internal/compact";
 import { mapWithConcurrency } from "../internal/concurrency";
 import { errorMessage } from "./format";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "./outcome";
@@ -61,12 +60,17 @@ async function runEvalCase<Input, Output, Expected>(
     metrics.push({ metricName: metric.name, outcome, reporterErrors });
   }
 
-  return compact({
+  const result: EvalCaseResult<Input, Output, Expected> = {
     case: testCase,
-    output,
-    targetError,
     metrics,
-  }) as EvalCaseResult<Input, Output, Expected>;
+  };
+  if (output !== undefined) {
+    result.output = output;
+  }
+  if (targetError !== undefined) {
+    result.targetError = targetError;
+  }
+  return result;
 }
 
 async function safeEvaluate<Input, Output, Expected>(

@@ -373,12 +373,15 @@ export const Message = {
   ): Message {
     const normalized = typeof content === "string" ? [AssistantContent.text(content)] : content;
     const options = typeof idOrOptions === "string" ? { id: idOrOptions } : (idOrOptions ?? {});
-    return {
-      role: "assistant",
-      ...(options.id === undefined ? {} : { id: options.id }),
-      content: normalized,
-      ...messageMetadata(options),
-    };
+    const metadata = messageMetadata(options).metadata;
+    const message: AssistantMessage =
+      options.id === undefined
+        ? { role: "assistant", content: normalized }
+        : { role: "assistant", id: options.id, content: normalized };
+    if (metadata !== undefined) {
+      message.metadata = metadata;
+    }
+    return message;
   },
   tool(content: ToolContent | ToolContent[], options: MessageOptions = {}): Message {
     return {

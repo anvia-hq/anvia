@@ -1,4 +1,4 @@
-import { isRecord } from "../internal/compact";
+import { isRecord } from "../internal/record";
 import type { McpToolCallContent, McpToolCallResult } from "./types";
 
 export function createCallToolParams(

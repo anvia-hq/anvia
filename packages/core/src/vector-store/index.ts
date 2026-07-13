@@ -13,6 +13,7 @@ import { matchesVectorFilter } from "./filter";
 import { LshIndex } from "./lsh";
 import type {
   IndexStrategy,
+  VectorInspectItem,
   VectorInspectPage,
   VectorInspectRequest,
   VectorSearchIndex,
@@ -151,14 +152,15 @@ export class InMemoryVectorIndex<T, Metadata extends VectorMetadata = VectorMeta
         if (request.threshold !== undefined && score < request.threshold) {
           return [];
         }
-        return [
-          {
-            score,
-            id: document.id,
-            document: document.document,
-            ...(document.metadata !== undefined && { metadata: document.metadata }),
-          },
-        ];
+        const result: VectorSearchResult<T, Metadata> = {
+          score,
+          id: document.id,
+          document: document.document,
+        };
+        if (document.metadata !== undefined) {
+          result.metadata = document.metadata;
+        }
+        return [result];
       })
       .sort((left, right) => right.score - left.score)
       .slice(0, Math.max(0, Math.trunc(request.topK)));
@@ -176,15 +178,23 @@ export class InMemoryVectorIndex<T, Metadata extends VectorMetadata = VectorMeta
       .filter((document) => matchesVectorFilter(document.metadata, request.filter));
     const page = documents.slice(start, start + limit);
     const nextOffset = start + page.length;
-    return {
-      items: page.map((document) => ({
-        id: document.id,
-        document: document.document,
-        ...(document.metadata !== undefined && { metadata: document.metadata }),
-      })),
-      ...(nextOffset < documents.length ? { nextCursor: String(nextOffset) } : {}),
-      totalCount: documents.length,
+    const result: VectorInspectPage<T, Metadata> = {
+      items: page.map((document) => {
+        const item: VectorInspectItem<T, Metadata> = {
+          id: document.id,
+          document: document.document,
+        };
+        if (document.metadata !== undefined) {
+          item.metadata = document.metadata;
+        }
+        return item;
+      }),
     };
+    if (nextOffset < documents.length) {
+      result.nextCursor = String(nextOffset);
+    }
+    result.totalCount = documents.length;
+    return result;
   }
 
   asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown> {

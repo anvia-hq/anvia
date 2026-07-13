@@ -10,6 +10,11 @@ import { ToolContent } from "../../completion";
 import type { PromptHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
 import { runControl, toolCallControl } from "../../hooks";
 import type { ActiveAgentRunObservers, ActiveToolObservers } from "../../observability/group";
+import type {
+  AgentToolErrorArgs,
+  AgentToolStartArgs,
+  AgentToolStreamEventArgs,
+} from "../../observability/types";
 import { ToolApprovalRequiredError } from "../../request/errors";
 import type { AgentChildStreamEvent } from "../../request/types";
 import type {
@@ -19,6 +24,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalPolicy,
   ToolApprovalRequest,
+  ToolApprovalRunContext,
   ToolApprovalsOptions,
   ToolCallStreamEvent,
 } from "../../tool";
@@ -28,7 +34,6 @@ import type {
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
 } from "../../tool/middleware";
-import { compact } from "../compact";
 import { mapWithConcurrency } from "../concurrency";
 
 const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
@@ -101,18 +106,23 @@ export class ToolCallExecutor {
       );
       const toolMetadata = toolTraceMetadata(tool);
 
-      const toolObservers = await observation?.runObservers.startTool(
-        compact({
-          turn: observation.turn,
-          toolCall,
-          toolName: toolCall.function.name,
-          internalCallId,
-          args,
-          toolCallId: toolCall.callId,
-          toolDefinition,
-          toolMetadata,
-        }),
-      );
+      const toolStartArgs: AgentToolStartArgs = {
+        turn: observation?.turn ?? 0,
+        toolCall,
+        toolName: toolCall.function.name,
+        internalCallId,
+        args,
+      };
+      if (toolCall.callId !== undefined) {
+        toolStartArgs.toolCallId = toolCall.callId;
+      }
+      if (toolDefinition !== undefined) {
+        toolStartArgs.toolDefinition = toolDefinition;
+      }
+      if (toolMetadata !== undefined) {
+        toolStartArgs.toolMetadata = toolMetadata;
+      }
+      const toolObservers = await observation?.runObservers.startTool(toolStartArgs);
 
       let output: NormalizedToolOutput;
       let skipped = false;
@@ -261,17 +271,18 @@ export class ToolCallExecutor {
     try {
       return await this.agent.callTool(toolCall.function.name, middlewareArgs, {
         emitStreamEvent: async (event) => {
-          await toolObservers?.streamEvent(
-            compact({
-              turn: observation?.turn ?? 0,
-              toolCall,
-              toolName: toolCall.function.name,
-              internalCallId: hookArgs.internalCallId,
-              args: middlewareArgs,
-              toolCallId: toolCall.callId,
-              event,
-            }),
-          );
+          const streamEventArgs: AgentToolStreamEventArgs = {
+            turn: observation?.turn ?? 0,
+            toolCall,
+            toolName: toolCall.function.name,
+            internalCallId: hookArgs.internalCallId,
+            args: middlewareArgs,
+            event,
+          };
+          if (toolCall.callId !== undefined) {
+            streamEventArgs.toolCallId = toolCall.callId;
+          }
+          await toolObservers?.streamEvent(streamEventArgs);
           const payload = agentToolEventPayload(toolCall, hookArgs.internalCallId, event);
           if (payload !== undefined) {
             onStreamEvent?.(payload);
@@ -285,15 +296,15 @@ export class ToolCallExecutor {
         error,
         run: runControl,
       });
-      await toolObservers?.error({
-        turn: observation?.turn ?? 0,
-        toolCall,
-        toolName: toolCall.function.name,
-        internalCallId: hookArgs.internalCallId,
-        args: middlewareArgs,
-        ...(toolCall.callId !== undefined && { toolCallId: toolCall.callId }),
-        error,
-      });
+      await toolObservers?.error(
+        toolErrorArgs(
+          observation?.turn ?? 0,
+          toolCall,
+          hookArgs.internalCallId,
+          middlewareArgs,
+          error,
+        ),
+      );
       if (errorAction?.type === "terminate") {
         throw this.cancel(errorAction.reason);
       }
@@ -378,7 +389,14 @@ export class ToolCallExecutor {
 
     const reason = await resolveApprovalText(policy.reason, context);
     const rejectMessage = await resolveApprovalText(policy.rejectMessage, context);
-    return this.requestApproval(tool, hookArgs, compact({ reason, rejectMessage }));
+    const options: ToolApprovalRequestOptions = {};
+    if (reason !== undefined) {
+      options.reason = reason;
+    }
+    if (rejectMessage !== undefined) {
+      options.rejectMessage = rejectMessage;
+    }
+    return this.requestApproval(tool, hookArgs, options);
   }
 
   private async requestApproval(
@@ -386,11 +404,18 @@ export class ToolCallExecutor {
     hookArgs: ToolHookArgs,
     options: ToolApprovalRequestOptions,
   ): Promise<{ approved: true } | { approved: false; result: string }> {
-    const request = compact({
-      ...approvalContext(tool, hookArgs, this.agent, this.runContext),
-      reason: options.reason,
-      rejectMessage: options.rejectMessage,
-    }) as ToolApprovalRequest;
+    const request: ToolApprovalRequest = approvalContext(
+      tool,
+      hookArgs,
+      this.agent,
+      this.runContext,
+    );
+    if (options.reason !== undefined) {
+      request.reason = options.reason;
+    }
+    if (options.rejectMessage !== undefined) {
+      request.rejectMessage = options.rejectMessage;
+    }
     if (this.approvals === undefined) {
       throw new ToolApprovalRequiredError(request);
     }
@@ -418,19 +443,27 @@ function approvalContext(
 ): ToolApprovalContext {
   const rawParsedArgs = parseToolArgs(hookArgs.args);
   const parsedArgs = tool?.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
-  return compact({
+  const approvalRun: ToolApprovalRunContext = {
+    agentId: agent.id,
+    runId: run.runId,
+  };
+  if (run.sessionId !== undefined) {
+    approvalRun.sessionId = run.sessionId;
+  }
+  if (run.metadata !== undefined) {
+    approvalRun.metadata = run.metadata;
+  }
+  const context: ToolApprovalContext = {
     toolName: hookArgs.toolName,
     args: parsedArgs,
     rawArgs: hookArgs.args,
-    toolCallId: hookArgs.toolCallId,
     internalCallId: hookArgs.internalCallId,
-    run: compact({
-      agentId: agent.id,
-      runId: run.runId,
-      sessionId: run.sessionId,
-      metadata: run.metadata,
-    }),
-  }) as ToolApprovalContext;
+    run: approvalRun,
+  };
+  if (hookArgs.toolCallId !== undefined) {
+    context.toolCallId = hookArgs.toolCallId;
+  }
+  return context;
 }
 
 function normalizeApprovalDecision(decision: ToolApprovalDecision): {
@@ -470,12 +503,34 @@ function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
     typeof metadata === "object" && metadata !== null
       ? (metadata as { serverName?: unknown })
       : undefined;
-  return {
+  const result: JsonObject = {
     approvalRequired: tool.approval !== undefined,
-    ...(typeof mcpMetadata?.serverName === "string" && mcpMetadata.serverName.length > 0
-      ? { mcpServerName: mcpMetadata.serverName }
-      : {}),
   };
+  if (typeof mcpMetadata?.serverName === "string" && mcpMetadata.serverName.length > 0) {
+    result.mcpServerName = mcpMetadata.serverName;
+  }
+  return result;
+}
+
+function toolErrorArgs(
+  turn: number,
+  toolCall: ToolCall,
+  internalCallId: string,
+  args: string,
+  error: unknown,
+): AgentToolErrorArgs {
+  const observerArgs: AgentToolErrorArgs = {
+    turn,
+    toolCall,
+    toolName: toolCall.function.name,
+    internalCallId,
+    args,
+    error,
+  };
+  if (toolCall.callId !== undefined) {
+    observerArgs.toolCallId = toolCall.callId;
+  }
+  return observerArgs;
 }
 
 async function recordToolError(
@@ -515,13 +570,18 @@ function agentToolEventPayload(
   if (typeof event.agentId !== "string" || event.agentId.length === 0) {
     return undefined;
   }
-  return compact({
+  const payload: AgentToolEventPayload = {
     type: "agent_tool_event" as const,
     toolName: toolCall.function.name,
-    toolCallId: toolCall.callId,
     internalCallId,
     agentId: event.agentId,
-    agentName: event.agentName,
     event: event.event as AgentChildStreamEvent,
-  });
+  };
+  if (toolCall.callId !== undefined) {
+    payload.toolCallId = toolCall.callId;
+  }
+  if (event.agentName !== undefined) {
+    payload.agentName = event.agentName;
+  }
+  return payload;
 }

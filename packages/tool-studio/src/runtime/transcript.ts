@@ -23,7 +23,7 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
             role: "user",
             text: content.text,
           };
-          if (attachments.length > 0) entry.attachments = attachments;
+          if (!textEntryAdded && attachments.length > 0) entry.attachments = attachments;
           transcript.push(entry);
           textEntryAdded = true;
         }

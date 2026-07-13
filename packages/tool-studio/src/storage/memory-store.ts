@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import { traceSummary } from "../runtime/trace-summary";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import { isJsonObject, isJsonValue } from "../runtime/type-guards";
 import type {
@@ -287,24 +288,6 @@ function materializeSession(session: MemorySessionRecord): StudioSession {
     messages: [...session.messages],
     transcript: renumberTranscript(session.runs.flatMap((run) => run.transcript)),
   };
-}
-
-function traceSummary(trace: StudioTrace): StudioTraceSummary {
-  const summary: StudioTraceSummary = {
-    id: trace.id,
-    sessionId: trace.sessionId,
-    status: trace.status,
-    startedAt: trace.startedAt,
-    observationCount: trace.observations.length,
-  };
-  if (trace.name !== undefined) summary.name = trace.name;
-  if (trace.endedAt !== undefined) summary.endedAt = trace.endedAt;
-  if (trace.durationMs !== undefined) summary.durationMs = trace.durationMs;
-  if (trace.output !== undefined) summary.output = trace.output;
-  if (trace.error !== undefined) summary.error = trace.error;
-  if (trace.usage !== undefined) summary.usage = trace.usage;
-  if (trace.metadata !== undefined) summary.metadata = trace.metadata;
-  return summary;
 }
 
 function traceAgentId(trace: StudioTrace): string | undefined {

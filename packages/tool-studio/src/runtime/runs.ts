@@ -127,11 +127,11 @@ export function traceForRun(
   agentId: string,
   session: StudioSession | undefined,
 ): AgentTraceOptions {
-  const metadata = {};
-  Object.assign(metadata, trace?.metadata);
-  Object.assign(metadata, { agentId });
-  const options: AgentTraceOptions = { metadata };
-  Object.assign(options, trace);
+  const options: AgentTraceOptions = {};
+  if (trace !== undefined) Object.assign(options, trace);
+  const metadata: Record<string, unknown> = {};
+  if (trace?.metadata !== undefined) Object.assign(metadata, trace.metadata);
+  metadata.agentId = agentId;
   options.metadata = metadata;
   if (trace?.sessionId !== undefined) options.sessionId = trace.sessionId;
   else if (session !== undefined) options.sessionId = session.id;

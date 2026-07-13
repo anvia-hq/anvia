@@ -360,6 +360,8 @@ function logsFromStreamEvent(props: {
       questionId: event.question.id,
       toolName: event.question.toolName,
       status: event.question.status,
+      questionCount: event.question.questions.length,
+      argumentBytes: byteLength(event.question.args),
       answerCount: event.question.answers?.length ?? 0,
     };
     if (event.question.callId !== undefined) metadata.callId = event.question.callId;

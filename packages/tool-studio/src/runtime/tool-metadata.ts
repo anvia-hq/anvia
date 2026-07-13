@@ -31,11 +31,10 @@ export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata
     reason?: unknown;
     rejectMessage?: unknown;
   };
-  return {
-    required: true,
-    ...(typeof policy.reason === "string" ? { reason: policy.reason } : {}),
-    ...(typeof policy.rejectMessage === "string" ? { rejectMessage: policy.rejectMessage } : {}),
-  };
+  const metadata: StudioAgentToolApprovalMetadata = { required: true };
+  if (typeof policy.reason === "string") metadata.reason = policy.reason;
+  if (typeof policy.rejectMessage === "string") metadata.rejectMessage = policy.rejectMessage;
+  return metadata;
 }
 
 export function mcpServerName(tool: AnyTool): string | undefined {

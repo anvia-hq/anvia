@@ -124,15 +124,16 @@ export async function agentToolMetadata(agent: StudioAgent): Promise<StudioAgent
     seen.add(key);
     const definition = await tool.definition("");
     const serverName = mcpServerName(tool);
-    metadata.push({
+    const item: StudioAgentToolMetadata = {
       agentId: agent.id,
       name: definition.name,
       description: definition.description,
       parameters: definition.parameters,
       source,
-      ...(serverName === undefined ? {} : { mcpServerName: serverName }),
       approval: approvalMetadata(tool),
-    });
+    };
+    if (serverName !== undefined) item.mcpServerName = serverName;
+    metadata.push(item);
   }
 
   return metadata.sort((left, right) => {

@@ -9,6 +9,10 @@ import {
 } from "../shared/transcript";
 import type { ToolApprovalUpdate, ToolQuestionUpdate, TranscriptEntry } from "../shared/types";
 
+type TranscriptToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;
+type TranscriptApproval = NonNullable<TranscriptToolEntry["approval"]>;
+type TranscriptQuestion = NonNullable<TranscriptToolEntry["question"]>;
+
 export function usePlaygroundTranscript(): {
   messages: TranscriptEntry[];
   setMessages: Dispatch<SetStateAction<TranscriptEntry[]>>;
@@ -112,20 +116,16 @@ function updateToolApproval(
 ): TranscriptEntry[] {
   const next = withoutPendingAssistant(entries);
   const matchedIndex = findMatchingToolIndexByCall(next, approval.toolName, approval.callId);
+  const approvalState = transcriptApproval(approval);
   if (matchedIndex < 0) {
-    next.push({
+    const entry: TranscriptToolEntry = {
       entryId: nextTranscriptId(),
       kind: "tool",
       toolName: approval.toolName,
-      ...(approval.callId === undefined ? {} : { callId: approval.callId }),
-      approval: {
-        id: approval.id,
-        status: approval.status,
-        requestedAt: approval.requestedAt,
-        ...(approval.resolvedAt === undefined ? {} : { resolvedAt: approval.resolvedAt }),
-        ...(approval.reason === undefined ? {} : { reason: approval.reason }),
-      },
-    });
+      approval: approvalState,
+    };
+    if (approval.callId !== undefined) entry.callId = approval.callId;
+    next.push(entry);
     return next;
   }
 
@@ -133,13 +133,7 @@ function updateToolApproval(
   if (existing !== undefined && existing.kind === "tool") {
     next[matchedIndex] = {
       ...existing,
-      approval: {
-        id: approval.id,
-        status: approval.status,
-        requestedAt: approval.requestedAt,
-        ...(approval.resolvedAt === undefined ? {} : { resolvedAt: approval.resolvedAt }),
-        ...(approval.reason === undefined ? {} : { reason: approval.reason }),
-      },
+      approval: approvalState,
     };
   }
   return next;
@@ -151,21 +145,16 @@ function updateToolQuestion(
 ): TranscriptEntry[] {
   const next = withoutPendingAssistant(entries);
   const matchedIndex = findMatchingToolIndexByCall(next, question.toolName, question.callId);
+  const questionState = transcriptQuestion(question);
   if (matchedIndex < 0) {
-    next.push({
+    const entry: TranscriptToolEntry = {
       entryId: nextTranscriptId(),
       kind: "tool",
       toolName: question.toolName,
-      ...(question.callId === undefined ? {} : { callId: question.callId }),
-      question: {
-        id: question.id,
-        status: question.status,
-        requestedAt: question.requestedAt,
-        ...(question.answeredAt === undefined ? {} : { answeredAt: question.answeredAt }),
-        questions: question.questions,
-        ...(question.answers === undefined ? {} : { answers: question.answers }),
-      },
-    });
+      question: questionState,
+    };
+    if (question.callId !== undefined) entry.callId = question.callId;
+    next.push(entry);
     return next;
   }
 
@@ -173,17 +162,33 @@ function updateToolQuestion(
   if (existing !== undefined && existing.kind === "tool") {
     next[matchedIndex] = {
       ...existing,
-      question: {
-        id: question.id,
-        status: question.status,
-        requestedAt: question.requestedAt,
-        ...(question.answeredAt === undefined ? {} : { answeredAt: question.answeredAt }),
-        questions: question.questions,
-        ...(question.answers === undefined ? {} : { answers: question.answers }),
-      },
+      question: questionState,
     };
   }
   return next;
+}
+
+function transcriptApproval(approval: ToolApprovalUpdate): TranscriptApproval {
+  const state: TranscriptApproval = {
+    id: approval.id,
+    status: approval.status,
+    requestedAt: approval.requestedAt,
+  };
+  if (approval.resolvedAt !== undefined) state.resolvedAt = approval.resolvedAt;
+  if (approval.reason !== undefined) state.reason = approval.reason;
+  return state;
+}
+
+function transcriptQuestion(question: ToolQuestionUpdate): TranscriptQuestion {
+  const state: TranscriptQuestion = {
+    id: question.id,
+    status: question.status,
+    requestedAt: question.requestedAt,
+    questions: question.questions,
+  };
+  if (question.answeredAt !== undefined) state.answeredAt = question.answeredAt;
+  if (question.answers !== undefined) state.answers = question.answers;
+  return state;
 }
 
 function appendReasoningText(
@@ -196,12 +201,13 @@ function appendReasoningText(
   if (last?.kind === "reasoning" && (last.reasoningId ?? "") === (reasoningId ?? "")) {
     next[next.length - 1] = { ...last, text: `${last.text}${delta}` };
   } else {
-    next.push({
+    const entry: Extract<TranscriptEntry, { kind: "reasoning" }> = {
       entryId: nextTranscriptId(),
       kind: "reasoning",
-      ...(reasoningId === undefined ? {} : { reasoningId }),
       text: delta,
-    });
+    };
+    if (reasoningId !== undefined) entry.reasoningId = reasoningId;
+    next.push(entry);
   }
   return next;
 }
@@ -212,16 +218,14 @@ function appendToolCall(
   args: string,
   callId: string | undefined,
 ): TranscriptEntry[] {
-  return [
-    ...withoutPendingAssistant(entries),
-    {
-      entryId: nextTranscriptId(),
-      kind: "tool",
-      toolName,
-      ...(callId === undefined ? {} : { callId }),
-      ...(args.length === 0 ? {} : { args }),
-    },
-  ];
+  const entry: TranscriptToolEntry = {
+    entryId: nextTranscriptId(),
+    kind: "tool",
+    toolName,
+  };
+  if (callId !== undefined) entry.callId = callId;
+  if (args.length > 0) entry.args = args;
+  return [...withoutPendingAssistant(entries), entry];
 }
 
 function appendToolResult(
@@ -239,27 +243,27 @@ function appendToolResult(
   if (matchedIndex >= 0) {
     const existing = next[matchedIndex];
     if (existing !== undefined && existing.kind === "tool") {
-      next[matchedIndex] = {
+      const updated: TranscriptToolEntry = {
         ...existing,
         args: existing.args ?? props.args,
         result: props.result,
-        ...(props.structuredResult === undefined
-          ? {}
-          : { structuredResult: props.structuredResult }),
       };
+      if (props.structuredResult !== undefined) updated.structuredResult = props.structuredResult;
+      next[matchedIndex] = updated;
       return next;
     }
   }
 
-  next.push({
+  const entry: TranscriptToolEntry = {
     entryId: nextTranscriptId(),
     kind: "tool",
     toolName: props.toolName,
-    ...(props.callId === undefined ? {} : { callId: props.callId }),
     args: props.args,
     result: props.result,
-    ...(props.structuredResult === undefined ? {} : { structuredResult: props.structuredResult }),
-  });
+  };
+  if (props.callId !== undefined) entry.callId = props.callId;
+  if (props.structuredResult !== undefined) entry.structuredResult = props.structuredResult;
+  next.push(entry);
   return next;
 }
 
@@ -274,13 +278,14 @@ function appendAgentToolEvent(
   const next = withoutPendingAssistant(entries);
   const matchedIndex = findMatchingToolIndex(next, event.toolName, event.toolCallId);
   if (matchedIndex < 0) {
-    next.push({
+    const entry: TranscriptToolEntry = {
       entryId: nextTranscriptId(),
       kind: "tool",
       toolName: event.toolName,
-      ...(event.toolCallId === undefined ? {} : { callId: event.toolCallId }),
       childEvents: [childEvent],
-    });
+    };
+    if (event.toolCallId !== undefined) entry.callId = event.toolCallId;
+    next.push(entry);
     return next;
   }
 
@@ -317,53 +322,57 @@ function childAgentTranscriptEvent(
 ): StudioTranscriptChildAgentEvent | undefined {
   const child = event.event;
   if (child.type === "text_delta") {
-    return {
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
       kind: "message",
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
       text: child.delta,
     };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    return entry;
   }
   if (child.type === "reasoning_delta") {
-    return {
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "reasoning" }> = {
       kind: "reasoning",
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
-      ...(child.id === undefined ? {} : { reasoningId: child.id }),
       text: child.delta,
     };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    if (child.id !== undefined) entry.reasoningId = child.id;
+    return entry;
   }
   if (child.type === "tool_call") {
-    return {
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
       toolName: child.toolCall.function.name,
-      ...(child.toolCall.callId === undefined && child.toolCall.id === undefined
-        ? {}
-        : { callId: child.toolCall.callId ?? child.toolCall.id }),
       args: formatToolValue(child.toolCall.function.arguments),
     };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    const callId = child.toolCall.callId ?? child.toolCall.id;
+    if (callId !== undefined) entry.callId = callId;
+    return entry;
   }
   if (child.type === "tool_result") {
-    return {
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
       toolName: child.toolName,
-      ...(child.toolCallId === undefined ? {} : { callId: child.toolCallId }),
       args: child.args,
       result: child.result,
-      ...(child.structuredResult === undefined ? {} : { structuredResult: child.structuredResult }),
     };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    if (child.toolCallId !== undefined) entry.callId = child.toolCallId;
+    if (child.structuredResult !== undefined) entry.structuredResult = child.structuredResult;
+    return entry;
   }
   if (child.type === "error") {
-    return {
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
       kind: "message",
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
       text: `Error: ${errorMessage(child.error)}`,
     };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    return entry;
   }
   return undefined;
 }
@@ -401,13 +410,10 @@ function appendChildAgentTranscriptEvent(
   }
   const matched = childEvents[matchedIndex];
   if (matched?.kind === "tool") {
-    childEvents[matchedIndex] = {
-      ...matched,
-      ...(matched.args !== undefined || childEvent.args === undefined
-        ? {}
-        : { args: childEvent.args }),
-      ...(childEvent.result === undefined ? {} : { result: childEvent.result }),
-    };
+    const updated = { ...matched };
+    if (matched.args === undefined && childEvent.args !== undefined) updated.args = childEvent.args;
+    if (childEvent.result !== undefined) updated.result = childEvent.result;
+    childEvents[matchedIndex] = updated;
   }
 }
 

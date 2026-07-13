@@ -11,13 +11,15 @@ describe("Studio UI routes", () => {
   it("resolves UI options with normalized defaults", () => {
     expect(isStudioUiEnabled(undefined)).toBe(true);
     expect(isStudioUiEnabled(false)).toBe(false);
-    expect(resolveStudioUiOptions(undefined)).toMatchObject({
+    const defaults = resolveStudioUiOptions(undefined);
+    expect(defaults).toEqual({
       path: "/ui",
       title: "Anvia Studio",
       rootRoutes: true,
       redirectRoot: true,
       protectShell: false,
     });
+    expect(defaults).not.toHaveProperty("clientScript");
     expect(
       resolveStudioUiOptions({
         path: "studio///",

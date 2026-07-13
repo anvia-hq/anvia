@@ -12,7 +12,6 @@ import type {
   StudioPipelineRunSaveInput,
   StudioPipelineRunStore,
 } from "../types";
-import { compact } from "./compact";
 import { pipelineConfig } from "./config";
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
@@ -77,16 +76,16 @@ export function registerPipelineRoutes(
       return errorResponse(c, 400, "bad_request", "after must be a non-negative integer");
     }
 
-    const logs = await props.logStore.listPipelineLogs({
+    const listInput: Parameters<typeof props.logStore.listPipelineLogs>[0] = {
       pipelineId,
       limit,
-      ...compact({ after }),
-    });
+    };
+    if (after !== undefined) listInput.after = after;
+    const logs = await props.logStore.listPipelineLogs(listInput);
     const last = logs.at(-1);
-    return c.json({
-      logs,
-      ...(logs.length === limit && last !== undefined ? { nextCursor: last.sequence } : {}),
-    });
+    const response: { logs: typeof logs; nextCursor?: number } = { logs };
+    if (logs.length === limit && last !== undefined) response.nextCursor = last.sequence;
+    return c.json(response);
   });
 
   app.get("/pipelines/:pipelineId/runs", async (c) => {
@@ -159,11 +158,12 @@ export function registerPipelineRoutes(
       return errorResponse(c, 409, "conflict", "Cannot replay a running pipeline run");
     }
 
-    return executePipelineRun(c, props, pipeline, {
+    const replayRequest: StudioPipelineRunRequest = {
       input: sourceRun.input,
-      ...compact({ stream: body.stream }),
       metadata: replayMetadata(sourceRun.metadata, body.metadata, sourceRun.runId),
-    });
+    };
+    if (body.stream !== undefined) replayRequest.stream = body.stream;
+    return executePipelineRun(c, props, pipeline, replayRequest);
   });
 }
 
@@ -179,35 +179,36 @@ async function executePipelineRun(
   const runId = globalThis.crypto.randomUUID();
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
-  await appendPipelineLog(
-    props.logStore,
-    pipelineRunReceivedLog({
-      pipeline,
-      runId,
-      stream: body.stream === true,
-      input: body.input,
-      ...compact({ metadata: body.metadata }),
-    }),
-  );
-  await savePipelineRun(props.runStore, {
+  const receivedInput: Parameters<typeof pipelineRunReceivedLog>[0] = {
+    pipeline,
+    runId,
+    stream: body.stream === true,
+    input: body.input,
+  };
+  if (body.metadata !== undefined) receivedInput.metadata = body.metadata;
+  await appendPipelineLog(props.logStore, pipelineRunReceivedLog(receivedInput));
+  const runningRecord: StudioPipelineRunSaveInput = {
     runId,
     pipelineId: pipeline.id,
     status: "running",
     input: body.input,
-    ...compact({ metadata: body.metadata }),
     startedAt: startedAtIso,
-  });
+  };
+  if (body.metadata !== undefined) runningRecord.metadata = body.metadata;
+  await savePipelineRun(props.runStore, runningRecord);
 
   if (body.stream === true) {
-    return streamPipelineRun(c, {
+    const streamOptions: Parameters<typeof streamPipelineRun>[1] = {
       pipeline,
       runId,
       input: body.input,
       startedAt,
       startedAtIso,
-      ...compact({ metadata: body.metadata }),
-      ...compact({ logStore: props.logStore, runStore: props.runStore }),
-    });
+    };
+    if (body.metadata !== undefined) streamOptions.metadata = body.metadata;
+    if (props.logStore !== undefined) streamOptions.logStore = props.logStore;
+    if (props.runStore !== undefined) streamOptions.runStore = props.runStore;
+    return streamPipelineRun(c, streamOptions);
   }
 
   try {
@@ -221,17 +222,18 @@ async function executePipelineRun(
     });
     const jsonOutput = toJsonValue(output);
     const endedAt = Date.now();
-    await savePipelineRun(props.runStore, {
+    const successRecord: StudioPipelineRunSaveInput = {
       runId,
       pipelineId: pipeline.id,
       status: "success",
       input: body.input,
       output: jsonOutput,
-      ...compact({ metadata: body.metadata }),
       startedAt: startedAtIso,
       endedAt: new Date(endedAt).toISOString(),
       durationMs: endedAt - startedAt,
-    });
+    };
+    if (body.metadata !== undefined) successRecord.metadata = body.metadata;
+    await savePipelineRun(props.runStore, successRecord);
     await appendPipelineLog(
       props.logStore,
       pipelineRunCompletedLog({
@@ -249,17 +251,18 @@ async function executePipelineRun(
     return c.json(response);
   } catch (error) {
     const endedAt = Date.now();
-    await savePipelineRun(props.runStore, {
+    const errorRecord: StudioPipelineRunSaveInput = {
       runId,
       pipelineId: pipeline.id,
       status: "error",
       input: body.input,
       error: serializeError(error),
-      ...compact({ metadata: body.metadata }),
       startedAt: startedAtIso,
       endedAt: new Date(endedAt).toISOString(),
       durationMs: endedAt - startedAt,
-    });
+    };
+    if (body.metadata !== undefined) errorRecord.metadata = body.metadata;
+    await savePipelineRun(props.runStore, errorRecord);
     await appendPipelineLog(
       props.logStore,
       pipelineRunFailedLog(pipeline.id, runId, error, startedAt),
@@ -323,17 +326,18 @@ async function* pipelineRunEvents(props: {
     .then(async (output) => {
       const jsonOutput = toJsonValue(output);
       const endedAt = Date.now();
-      await savePipelineRun(props.runStore, {
+      const successRecord: StudioPipelineRunSaveInput = {
         runId: props.runId,
         pipelineId: props.pipeline.id,
         status: "success",
         input: props.input,
         output: jsonOutput,
-        ...compact({ metadata: props.metadata }),
         startedAt: props.startedAtIso,
         endedAt: new Date(endedAt).toISOString(),
         durationMs: endedAt - props.startedAt,
-      });
+      };
+      if (props.metadata !== undefined) successRecord.metadata = props.metadata;
+      await savePipelineRun(props.runStore, successRecord);
       const log = await appendPipelineLog(
         props.logStore,
         pipelineRunCompletedLog({
@@ -355,17 +359,18 @@ async function* pipelineRunEvents(props: {
     })
     .catch(async (error) => {
       const endedAt = Date.now();
-      await savePipelineRun(props.runStore, {
+      const errorRecord: StudioPipelineRunSaveInput = {
         runId: props.runId,
         pipelineId: props.pipeline.id,
         status: "error",
         input: props.input,
         error: serializeError(error),
-        ...compact({ metadata: props.metadata }),
         startedAt: props.startedAtIso,
         endedAt: new Date(endedAt).toISOString(),
         durationMs: endedAt - props.startedAt,
-      });
+      };
+      if (props.metadata !== undefined) errorRecord.metadata = props.metadata;
+      await savePipelineRun(props.runStore, errorRecord);
       const log = await appendPipelineLog(
         props.logStore,
         pipelineRunFailedLog(props.pipeline.id, props.runId, error, props.startedAt),
@@ -467,11 +472,10 @@ function replayMetadata(
   requestMetadata: JsonObject | undefined,
   sourceRunId: string,
 ): JsonObject {
-  return {
-    ...(sourceMetadata ?? {}),
-    ...(requestMetadata ?? {}),
-    replayOf: sourceRunId,
-  };
+  const metadata: JsonObject = {};
+  Object.assign(metadata, sourceMetadata, requestMetadata);
+  metadata.replayOf = sourceRunId;
+  return metadata;
 }
 
 function parsePipelineLogLimit(value: string | undefined): number | undefined {

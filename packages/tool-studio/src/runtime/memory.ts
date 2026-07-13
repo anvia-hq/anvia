@@ -9,7 +9,6 @@ import type {
   StudioSessionStore,
   StudioSessionSummary,
 } from "../types";
-import { compact } from "./compact";
 import { errorResponse } from "./http";
 import { optionalQueryString, parseLimit } from "./query";
 
@@ -67,10 +66,9 @@ export function registerMemoryRoutes(
 
     const agentId = optionalQueryString(c.req.query("agentId"));
     const userId = optionalQueryString(c.req.query("userId"));
-    const sessions = await props.sessionStore.listSessions({
-      ...compact({ agentId }),
-      limit: 100,
-    });
+    const listInput: Parameters<typeof props.sessionStore.listSessions>[0] = { limit: 100 };
+    if (agentId !== undefined) listInput.agentId = agentId;
+    const sessions = await props.sessionStore.listSessions(listInput);
     const conversations = sessions
       .map(memoryConversationSummary)
       .filter((session) => userId === undefined || session.userId === userId)
@@ -109,16 +107,17 @@ export function registerMemoryRoutes(
 function memoryConversationSummary(
   session: StudioSession | StudioSessionSummary,
 ): StudioMemoryConversationSummary {
-  return compact({
+  const summary: StudioMemoryConversationSummary = {
     id: session.id,
     userId: sessionUserId(session),
     agentId: session.agentId,
-    title: session.title,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: session.messageCount,
-    metadata: session.metadata,
-  }) as StudioMemoryConversationSummary;
+  };
+  if (session.title !== undefined) summary.title = session.title;
+  if (session.metadata !== undefined) summary.metadata = session.metadata;
+  return summary;
 }
 
 function sessionUserId(session: Pick<StudioSession, "metadata">): string {

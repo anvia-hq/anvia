@@ -10,7 +10,6 @@ import type {
 } from "../types";
 import { cloneAgent, composeHooks } from "./agent-utils";
 import type { createApprovalRuntime } from "./approvals";
-import { compact } from "./compact";
 import { serializeError } from "./errors";
 import { errorResponse, unsupportedCapability } from "./http";
 import {
@@ -227,29 +226,27 @@ async function recordRunReceived(props: {
     return;
   }
 
-  await appendSessionLog(
-    props.store,
-    runReceivedLog({
-      sessionId: props.session.id,
-      runId: props.runId,
-      agentId: props.agentId,
-      message: props.body.message,
-      stream: props.body.stream === true,
-      ...compact({ maxTurns: props.body.maxTurns }),
-      ...compact({ toolConcurrency: props.body.toolConcurrency }),
-      hasTrace: props.body.trace !== undefined,
-      ...(props.body.metadata === undefined && props.selectedModel.ref === undefined
-        ? {}
-        : {
-            metadata: {
-              ...(props.body.metadata ?? {}),
-              ...(props.selectedModel.ref === undefined
-                ? {}
-                : { [STUDIO_MODEL_METADATA_KEY]: props.selectedModel.ref }),
-            },
-          }),
-    }),
-  );
+  const input: Parameters<typeof runReceivedLog>[0] = {
+    sessionId: props.session.id,
+    runId: props.runId,
+    agentId: props.agentId,
+    message: props.body.message,
+    stream: props.body.stream === true,
+    hasTrace: props.body.trace !== undefined,
+  };
+  if (props.body.maxTurns !== undefined) input.maxTurns = props.body.maxTurns;
+  if (props.body.toolConcurrency !== undefined) {
+    input.toolConcurrency = props.body.toolConcurrency;
+  }
+  if (props.body.metadata !== undefined || props.selectedModel.ref !== undefined) {
+    const metadata: JsonObject = {};
+    Object.assign(metadata, props.body.metadata);
+    if (props.selectedModel.ref !== undefined) {
+      metadata[STUDIO_MODEL_METADATA_KEY] = props.selectedModel.ref;
+    }
+    input.metadata = metadata;
+  }
+  await appendSessionLog(props.store, runReceivedLog(input));
 }
 
 async function recordSelectedModelWarnings(props: {
@@ -274,10 +271,10 @@ async function recordSelectedModelWarnings(props: {
     });
   }
   if (sessionModelRef(props.session.metadata) !== props.selectedModel.ref) {
-    await props.store?.updateSessionMetadata?.(props.session.id, {
-      ...(props.session.metadata ?? {}),
-      [STUDIO_MODEL_METADATA_KEY]: props.selectedModel.ref,
-    });
+    const metadata: JsonObject = {};
+    Object.assign(metadata, props.session.metadata);
+    metadata[STUDIO_MODEL_METADATA_KEY] = props.selectedModel.ref;
+    await props.store?.updateSessionMetadata?.(props.session.id, metadata);
   }
 }
 
@@ -287,12 +284,11 @@ function runMemoryMetadata(
   selectedModel: SelectedModel,
   runId: string,
 ): JsonObject {
-  return {
-    agentId,
-    ...(body.metadata ?? {}),
-    ...(selectedModel.ref === undefined ? {} : { [STUDIO_MODEL_METADATA_KEY]: selectedModel.ref }),
-    studioRunId: runId,
-  };
+  const metadata: JsonObject = { agentId };
+  Object.assign(metadata, body.metadata);
+  if (selectedModel.ref !== undefined) metadata[STUDIO_MODEL_METADATA_KEY] = selectedModel.ref;
+  metadata.studioRunId = runId;
+  return metadata;
 }
 
 function createRunRequest(props: {
@@ -335,24 +331,24 @@ function handleStreamingAgentRun(
   props: AgentRunRouteProps,
 ): Response {
   const runtimeEvents = new AsyncEventQueue<AgentRunStreamEvent>();
-  run.request.approvals(
-    props.approvalRuntime.createApprovals({
-      runId: run.runId,
-      agentId: run.agentId,
-      ...compact({ sessionId: run.session?.id }),
-      ...compact({ metadata: run.body.metadata }),
-      emit: (event) => runtimeEvents.push(event),
-    }),
-  );
+  const approvalContext: Parameters<typeof props.approvalRuntime.createApprovals>[0] = {
+    runId: run.runId,
+    agentId: run.agentId,
+    emit: (event) => runtimeEvents.push(event),
+  };
+  if (run.session !== undefined) approvalContext.sessionId = run.session.id;
+  if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
+  run.request.approvals(props.approvalRuntime.createApprovals(approvalContext));
+  const questionContext: Parameters<typeof props.questionRuntime.createHook>[0] = {
+    runId: run.runId,
+    agentId: run.agentId,
+    emit: (event) => runtimeEvents.push(event),
+  };
+  if (run.session !== undefined) questionContext.sessionId = run.session.id;
+  if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = composeHooks(
     run.runAgent.hook,
-    props.questionRuntime.createHook({
-      runId: run.runId,
-      agentId: run.agentId,
-      ...compact({ sessionId: run.session?.id }),
-      ...compact({ metadata: run.body.metadata }),
-      emit: (event) => runtimeEvents.push(event),
-    }),
+    props.questionRuntime.createHook(questionContext),
   );
   if (effectiveHook !== undefined) {
     run.request.requestHook(effectiveHook);
@@ -403,23 +399,23 @@ async function startBufferedSessionRun(
     await appendSessionLog(run.sessionStore, runStartedLog(run.session, run.runId));
     await appendSessionLog(run.sessionStore, memoryLoadedLog(run.session, run.runId));
   }
+  const questionContext: Parameters<typeof props.questionRuntime.createHook>[0] = {
+    runId: run.runId,
+    agentId: run.agentId,
+  };
+  if (run.session !== undefined) questionContext.sessionId = run.session.id;
+  if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = composeHooks(
     run.runAgent.hook,
-    props.questionRuntime.createHook({
-      runId: run.runId,
-      agentId: run.agentId,
-      ...compact({ sessionId: run.session?.id }),
-      ...compact({ metadata: run.body.metadata }),
-    }),
+    props.questionRuntime.createHook(questionContext),
   );
-  run.request.approvals(
-    props.approvalRuntime.createApprovals({
-      runId: run.runId,
-      agentId: run.agentId,
-      ...compact({ sessionId: run.session?.id }),
-      ...compact({ metadata: run.body.metadata }),
-    }),
-  );
+  const approvalContext: Parameters<typeof props.approvalRuntime.createApprovals>[0] = {
+    runId: run.runId,
+    agentId: run.agentId,
+  };
+  if (run.session !== undefined) approvalContext.sessionId = run.session.id;
+  if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
+  run.request.approvals(props.approvalRuntime.createApprovals(approvalContext));
   if (effectiveHook !== undefined) {
     run.request.requestHook(effectiveHook);
   }

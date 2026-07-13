@@ -11,7 +11,6 @@ import type {
   StudioTranscriptChildAgentEvent,
   StudioTranscriptEntry,
 } from "../types";
-import { compact } from "./compact";
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
 import { formatJson } from "./json";
@@ -128,19 +127,15 @@ export function traceForRun(
   agentId: string,
   session: StudioSession | undefined,
 ): AgentTraceOptions {
-  const metadata = {
-    ...(trace?.metadata ?? {}),
-    agentId,
-  };
-  return {
-    ...(trace ?? {}),
-    metadata,
-    ...(trace?.sessionId !== undefined
-      ? { sessionId: trace.sessionId }
-      : session === undefined
-        ? {}
-        : { sessionId: session.id }),
-  };
+  const metadata = {};
+  Object.assign(metadata, trace?.metadata);
+  Object.assign(metadata, { agentId });
+  const options: AgentTraceOptions = { metadata };
+  Object.assign(options, trace);
+  options.metadata = metadata;
+  if (trace?.sessionId !== undefined) options.sessionId = trace.sessionId;
+  else if (session !== undefined) options.sessionId = session.id;
+  return options;
 }
 
 export async function* persistStreamingSessionTranscript(props: {
@@ -166,14 +161,15 @@ export async function* persistStreamingSessionTranscript(props: {
     for await (const event of props.stream) {
       acceptTranscriptStreamEvent(transcript, event);
 
-      const nextSession = await props.store.saveSessionRunTranscript({
+      const saveInput: Parameters<typeof props.store.saveSessionRunTranscript>[0] = {
         id: props.session.id,
         runId: props.runId,
         ...title,
         transcript,
         status: event.type === "final" ? "success" : event.type === "error" ? "error" : "running",
-        ...(event.type === "error" ? { error: serializeError(event.error) } : {}),
-      });
+      };
+      if (event.type === "error") saveInput.error = serializeError(event.error);
+      const nextSession = await props.store.saveSessionRunTranscript(saveInput);
       if (nextSession === undefined) {
         throw new Error("Session not found");
       }
@@ -225,17 +221,16 @@ function acceptTranscriptStreamEvent(
   if (event.type === "tool_result") {
     const matched = findTranscriptToolEntry(transcript, event.toolName, event.toolCallId);
     if (matched === undefined) {
-      transcript.push(
-        compact({
-          entryId: transcript.length,
-          kind: "tool" as const,
-          toolName: event.toolName,
-          callId: event.toolCallId,
-          args: event.args,
-          result: event.result,
-          structuredResult: event.structuredResult,
-        }) as StudioTranscriptEntry,
-      );
+      const entry: Extract<StudioTranscriptEntry, { kind: "tool" }> = {
+        entryId: transcript.length,
+        kind: "tool",
+        toolName: event.toolName,
+      };
+      if (event.toolCallId !== undefined) entry.callId = event.toolCallId;
+      if (event.args !== undefined) entry.args = event.args;
+      if (event.result !== undefined) entry.result = event.result;
+      if (event.structuredResult !== undefined) entry.structuredResult = event.structuredResult;
+      transcript.push(entry);
       return;
     }
     matched.args = matched.args ?? event.args;
@@ -247,17 +242,16 @@ function acceptTranscriptStreamEvent(
   if (event.type === "agent_tool_event") {
     const matched = findTranscriptToolEntry(transcript, event.toolName, event.toolCallId);
     if (matched === undefined) {
-      transcript.push(
-        compact({
-          entryId: transcript.length,
-          kind: "tool" as const,
-          toolName: event.toolName,
-          callId: event.toolCallId,
-          childEvents: [childAgentTranscriptEvent(event)].filter(
-            (childEvent): childEvent is StudioTranscriptChildAgentEvent => childEvent !== undefined,
-          ),
-        }) as StudioTranscriptEntry,
-      );
+      const entry: Extract<StudioTranscriptEntry, { kind: "tool" }> = {
+        entryId: transcript.length,
+        kind: "tool",
+        toolName: event.toolName,
+        childEvents: [childAgentTranscriptEvent(event)].filter(
+          (childEvent): childEvent is StudioTranscriptChildAgentEvent => childEvent !== undefined,
+        ),
+      };
+      if (event.toolCallId !== undefined) entry.callId = event.toolCallId;
+      transcript.push(entry);
       return;
     }
     appendChildAgentTranscriptEvent(matched, event);
@@ -283,13 +277,14 @@ function acceptTranscriptStreamEvent(
       approvalCallId(event.approval),
     );
     if (matched !== undefined) {
-      matched.approval = compact({
+      const approval: NonNullable<typeof matched.approval> = {
         id: event.approval.id,
         status: event.approval.status,
         requestedAt: event.approval.requestedAt,
-        resolvedAt: event.approval.resolvedAt,
-        reason: event.approval.reason,
-      }) as NonNullable<typeof matched.approval>;
+      };
+      if (event.approval.resolvedAt !== undefined) approval.resolvedAt = event.approval.resolvedAt;
+      if (event.approval.reason !== undefined) approval.reason = event.approval.reason;
+      matched.approval = approval;
     }
   }
   if (event.type === "tool_question_request") {
@@ -314,14 +309,15 @@ function acceptTranscriptStreamEvent(
       questionCallId(event.question),
     );
     if (matched !== undefined) {
-      matched.question = compact({
+      const question: NonNullable<typeof matched.question> = {
         id: event.question.id,
         status: event.question.status,
         requestedAt: event.question.requestedAt,
-        answeredAt: event.question.answeredAt,
         questions: event.question.questions,
-        answers: event.question.answers,
-      }) as NonNullable<typeof matched.question>;
+      };
+      if (event.question.answeredAt !== undefined) question.answeredAt = event.question.answeredAt;
+      if (event.question.answers !== undefined) question.answers = event.question.answers;
+      matched.question = question;
     }
   }
   if (event.type === "final" && event.trace?.traceId !== undefined) {
@@ -388,51 +384,56 @@ function childAgentTranscriptEvent(
 ): StudioTranscriptChildAgentEvent | undefined {
   const child = event.event;
   if (child.type === "text_delta") {
-    return compact({
-      kind: "message" as const,
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
+      kind: "message",
       agentId: event.agentId,
-      agentName: event.agentName,
       text: child.delta,
-    }) as StudioTranscriptChildAgentEvent;
+    };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    return entry;
   }
   if (child.type === "reasoning_delta") {
-    return compact({
-      kind: "reasoning" as const,
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "reasoning" }> = {
+      kind: "reasoning",
       agentId: event.agentId,
-      agentName: event.agentName,
-      reasoningId: child.id,
       text: child.delta,
-    }) as StudioTranscriptChildAgentEvent;
+    };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    if (child.id !== undefined) entry.reasoningId = child.id;
+    return entry;
   }
   if (child.type === "tool_call") {
-    return compact({
-      kind: "tool" as const,
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
+      kind: "tool",
       agentId: event.agentId,
-      agentName: event.agentName,
       toolName: child.toolCall.function.name,
       callId: child.toolCall.callId ?? child.toolCall.id,
       args: formatJson(child.toolCall.function.arguments),
-    }) as StudioTranscriptChildAgentEvent;
+    };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    return entry;
   }
   if (child.type === "tool_result") {
-    return compact({
-      kind: "tool" as const,
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
+      kind: "tool",
       agentId: event.agentId,
-      agentName: event.agentName,
       toolName: child.toolName,
-      callId: child.toolCallId,
-      args: child.args,
-      result: child.result,
-      structuredResult: child.structuredResult,
-    }) as StudioTranscriptChildAgentEvent;
+    };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    if (child.toolCallId !== undefined) entry.callId = child.toolCallId;
+    if (child.args !== undefined) entry.args = child.args;
+    if (child.result !== undefined) entry.result = child.result;
+    if (child.structuredResult !== undefined) entry.structuredResult = child.structuredResult;
+    return entry;
   }
   if (child.type === "error") {
-    return compact({
-      kind: "message" as const,
+    const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
+      kind: "message",
       agentId: event.agentId,
-      agentName: event.agentName,
       text: `Error: ${errorText(child.error)}`,
-    }) as StudioTranscriptChildAgentEvent;
+    };
+    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    return entry;
   }
   return undefined;
 }
@@ -470,13 +471,14 @@ function messageToTranscriptEntry(
   entryId: number,
 ): StudioTranscriptEntry {
   const role = typeof message === "string" || message.role !== "assistant" ? "user" : "assistant";
-  return {
+  const entry: Extract<StudioTranscriptEntry, { kind: "message" }> = {
     entryId,
     kind: "message",
     role,
     text: extractMessageText(message),
-    ...(role === "user" ? optionalTranscriptAttachments(message) : {}),
   };
+  if (role === "user") Object.assign(entry, optionalTranscriptAttachments(message));
+  return entry;
 }
 
 function appendTranscriptAssistantText(transcript: StudioTranscriptEntry[], delta: string): void {
@@ -532,14 +534,13 @@ function appendTranscriptReasoningText(
     last.text = `${last.text}${delta}`;
     return;
   }
-  transcript.push(
-    compact({
-      entryId: transcript.length,
-      kind: "reasoning" as const,
-      reasoningId,
-      text: delta,
-    }) as StudioTranscriptEntry,
-  );
+  const entry: Extract<StudioTranscriptEntry, { kind: "reasoning" }> = {
+    entryId: transcript.length,
+    kind: "reasoning",
+    text: delta,
+  };
+  if (reasoningId !== undefined) entry.reasoningId = reasoningId;
+  transcript.push(entry);
 }
 
 function findTranscriptToolEntry(
@@ -605,25 +606,22 @@ function optionalTranscriptAttachments(message: string | Message): {
   }
   const attachments = message.content.flatMap((content): StudioTranscriptAttachment[] => {
     if (content.type === "image") {
-      return [
-        {
-          kind: "image",
-          ...(content.source.type === "base64"
-            ? { data: content.source.data, mediaType: content.source.mediaType }
-            : { url: content.source.url }),
-        },
-      ];
+      const attachment: StudioTranscriptAttachment = { kind: "image" };
+      if (content.source.type === "base64") {
+        attachment.data = content.source.data;
+        attachment.mediaType = content.source.mediaType;
+      } else {
+        attachment.url = content.source.url;
+      }
+      return [attachment];
     }
     if (content.type === "document") {
-      return [
-        compact({
-          kind: "document" as const,
-          name: content.source.filename,
-          mediaType: content.source.mediaType,
-          data: content.source.type === "base64" ? content.source.data : undefined,
-          url: content.source.type === "url" ? content.source.url : undefined,
-        }) as StudioTranscriptAttachment,
-      ];
+      const attachment: StudioTranscriptAttachment = { kind: "document" };
+      if (content.source.filename !== undefined) attachment.name = content.source.filename;
+      if (content.source.mediaType !== undefined) attachment.mediaType = content.source.mediaType;
+      if (content.source.type === "base64") attachment.data = content.source.data;
+      if (content.source.type === "url") attachment.url = content.source.url;
+      return [attachment];
     }
     return [];
   });
@@ -700,10 +698,9 @@ function parseUiRunRequestBody(
   }
 
   const history = messages.slice(0, -1);
-  return {
-    message,
-    ...(history.length === 0 ? {} : { history }),
-  };
+  const request: AgentRunRequest = { message };
+  if (history.length > 0) request.history = history;
+  return request;
 }
 
 function parseRunRequestOptions(

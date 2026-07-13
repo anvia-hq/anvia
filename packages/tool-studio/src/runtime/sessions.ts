@@ -1,7 +1,6 @@
 import type { JsonObject } from "@anvia/core/completion";
 import type { Context, Hono } from "hono";
 import type { StudioAgent, StudioSessionStore, StudioTraceStore } from "../types";
-import { compact } from "./compact";
 import { errorResponse, unsupportedCapability } from "./http";
 import { optionalQueryString, parseAfter, parseLimit } from "./query";
 import { appendSessionLog, sessionCreatedLog } from "./session-logs";
@@ -26,10 +25,9 @@ export function registerSessionRoutes(
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
 
-    const sessions = await props.sessionStore.listSessions({
-      ...compact({ agentId }),
-      limit,
-    });
+    const listInput: Parameters<typeof props.sessionStore.listSessions>[0] = { limit };
+    if (agentId !== undefined) listInput.agentId = agentId;
+    const sessions = await props.sessionStore.listSessions(listInput);
     return c.json({ sessions });
   });
 
@@ -42,11 +40,13 @@ export function registerSessionRoutes(
       return errorResponse(c, 404, "not_found", "Agent not found");
     }
 
-    const session = await props.sessionStore.createSession({
+    const createInput: Parameters<typeof props.sessionStore.createSession>[0] = {
       id: globalThis.crypto.randomUUID(),
       agentId: body.agentId,
-      ...compact({ title: body.title, metadata: body.metadata }),
-    });
+    };
+    if (body.title !== undefined) createInput.title = body.title;
+    if (body.metadata !== undefined) createInput.metadata = body.metadata;
+    const session = await props.sessionStore.createSession(createInput);
     await appendSessionLog(props.sessionStore, sessionCreatedLog(session));
     return c.json(session, 201);
   });
@@ -84,16 +84,16 @@ export function registerSessionRoutes(
       return errorResponse(c, 400, "bad_request", "after must be a non-negative integer");
     }
 
-    const logs = await props.sessionStore.listSessionLogs({
+    const listInput: Parameters<NonNullable<typeof props.sessionStore.listSessionLogs>>[0] = {
       sessionId,
       limit,
-      ...compact({ after }),
-    });
+    };
+    if (after !== undefined) listInput.after = after;
+    const logs = await props.sessionStore.listSessionLogs(listInput);
     const last = logs.at(-1);
-    return c.json({
-      logs,
-      ...(logs.length === limit && last !== undefined ? { nextCursor: last.sequence } : {}),
-    });
+    const response: { logs: typeof logs; nextCursor?: number } = { logs };
+    if (logs.length === limit && last !== undefined) response.nextCursor = last.sequence;
+    return c.json(response);
   });
 
   app.delete("/sessions/:sessionId", async (c) => {

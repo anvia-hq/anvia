@@ -68,10 +68,10 @@ function isCompletedAssistantMessage(
 function metricsFromTrace(trace: StudioTraceSummary): AssistantResponseMetrics | undefined {
   const durationMs = numericValue(trace.durationMs);
   const usage = usageMetrics(trace.usage);
-  return definedMetrics({
-    ...(durationMs === undefined ? {} : { durationMs }),
-    ...(usage === undefined ? {} : { usage }),
-  });
+  const metrics: AssistantResponseMetrics = {};
+  if (durationMs !== undefined) metrics.durationMs = durationMs;
+  if (usage !== undefined) metrics.usage = usage;
+  return definedMetrics(metrics);
 }
 
 function metricsFromCompletedRunLog(
@@ -83,10 +83,10 @@ function metricsFromCompletedRunLog(
   }
   const durationMs = numericValue(metadata.durationMs);
   const usage = usageMetrics(metadata.usage);
-  return definedMetrics({
-    ...(durationMs === undefined ? {} : { durationMs }),
-    ...(usage === undefined ? {} : { usage }),
-  });
+  const metrics: AssistantResponseMetrics = {};
+  if (durationMs !== undefined) metrics.durationMs = durationMs;
+  if (usage !== undefined) metrics.usage = usage;
+  return definedMetrics(metrics);
 }
 
 function usageMetrics(value: unknown): ResponseUsageMetrics | undefined {
@@ -101,24 +101,17 @@ function usageMetrics(value: unknown): ResponseUsageMetrics | undefined {
     (inputTokens === undefined || outputTokens === undefined
       ? undefined
       : inputTokens + outputTokens);
-  const usage: ResponseUsageMetrics = {
-    ...(inputTokens === undefined ? {} : { inputTokens }),
-    ...(outputTokens === undefined ? {} : { outputTokens }),
-    ...(totalTokens === undefined ? {} : { totalTokens }),
-    ...definedNumberField("cachedInputTokens", value.cachedInputTokens),
-    ...definedNumberField("cacheCreationInputTokens", value.cacheCreationInputTokens),
-  };
+  const usage: ResponseUsageMetrics = {};
+  if (inputTokens !== undefined) usage.inputTokens = inputTokens;
+  if (outputTokens !== undefined) usage.outputTokens = outputTokens;
+  if (totalTokens !== undefined) usage.totalTokens = totalTokens;
+  const cachedInputTokens = numericValue(value.cachedInputTokens);
+  const cacheCreationInputTokens = numericValue(value.cacheCreationInputTokens);
+  if (cachedInputTokens !== undefined) usage.cachedInputTokens = cachedInputTokens;
+  if (cacheCreationInputTokens !== undefined) {
+    usage.cacheCreationInputTokens = cacheCreationInputTokens;
+  }
   return Object.keys(usage).length === 0 ? undefined : usage;
-}
-
-function definedNumberField<Key extends keyof ResponseUsageMetrics>(
-  key: Key,
-  value: unknown,
-): Pick<ResponseUsageMetrics, Key> | Record<string, never> {
-  const numberValue = numericValue(value);
-  return numberValue === undefined
-    ? {}
-    : ({ [key]: numberValue } as Pick<ResponseUsageMetrics, Key>);
 }
 
 function definedMetrics(metrics: AssistantResponseMetrics): AssistantResponseMetrics | undefined {

@@ -10,7 +10,6 @@ import type {
   StudioToolQuestionPrompt,
   StudioToolQuestionStatus,
 } from "../types";
-import { compact } from "./compact";
 import { errorResponse } from "./http";
 import { optionalQueryString } from "./query";
 import { isObject } from "./type-guards";
@@ -142,14 +141,13 @@ async function parseQuestionAnswerRequest(
     if ("custom" in answer && typeof answer.custom !== "boolean") {
       return { error: errorResponse(c, 400, "bad_request", "custom must be a boolean") };
     }
-    answers.push(
-      compact({
-        questionId: answer.questionId.trim(),
-        answer: answer.answer.trim(),
-        choice: typeof answer.choice === "string" ? answer.choice : undefined,
-        custom: typeof answer.custom === "boolean" ? answer.custom : undefined,
-      }) as StudioToolQuestionAnswer,
-    );
+    const normalized: StudioToolQuestionAnswer = {
+      questionId: answer.questionId.trim(),
+      answer: answer.answer.trim(),
+    };
+    if (typeof answer.choice === "string") normalized.choice = answer.choice;
+    if (typeof answer.custom === "boolean") normalized.custom = answer.custom;
+    answers.push(normalized);
   }
 
   return { answers };
@@ -172,17 +170,14 @@ export function createQuestionRuntime(): QuestionRuntime {
             return control.skip(prompts.error);
           }
 
-          const answers = await requestQuestion(
-            questions,
-            context,
-            compact({
-              toolName,
-              toolCallId,
-              internalCallId,
-              args,
-              questions: prompts.questions,
-            }) as QuestionRequest,
-          );
+          const request: QuestionRequest = {
+            toolName,
+            internalCallId,
+            args,
+            questions: prompts.questions,
+          };
+          if (toolCallId !== undefined) request.toolCallId = toolCallId;
+          const answers = await requestQuestion(questions, context, request);
 
           return control.skip(JSON.stringify({ answers }));
         },
@@ -235,22 +230,20 @@ async function requestQuestion(
 ): Promise<StudioToolQuestionAnswer[]> {
   const id = globalThis.crypto.randomUUID();
   const question: PendingQuestion = {
-    ...compact({
-      id,
-      runId: context.runId,
-      agentId: context.agentId,
-      sessionId: context.sessionId,
-      toolName: request.toolName,
-      callId: request.toolCallId,
-      internalCallId: request.internalCallId,
-      args: request.args,
-      questions: request.questions,
-      status: "pending" as const,
-      requestedAt: new Date().toISOString(),
-      emit: context.emit,
-    }),
+    id,
+    runId: context.runId,
+    agentId: context.agentId,
+    toolName: request.toolName,
+    internalCallId: request.internalCallId,
+    args: request.args,
+    questions: request.questions,
+    status: "pending",
+    requestedAt: new Date().toISOString(),
     resolve: () => {},
   };
+  if (context.sessionId !== undefined) question.sessionId = context.sessionId;
+  if (request.toolCallId !== undefined) question.callId = request.toolCallId;
+  if (context.emit !== undefined) question.emit = context.emit;
 
   const answer = new Promise<StudioToolQuestionAnswer[]>((resolve) => {
     question.resolve = (answers) => {

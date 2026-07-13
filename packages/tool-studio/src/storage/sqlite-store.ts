@@ -4,7 +4,6 @@ import { dirname, resolve } from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { isJsonValue, type JsonObject, type JsonValue, type Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
-import { compact } from "../runtime/compact";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import type {
   StudioPipelineLogAppendInput,
@@ -203,15 +202,16 @@ class SqliteSessionStore
       $now: now,
     });
 
-    return {
+    const session: StudioSessionSummary = {
       id: input.id,
       agentId: input.agentId,
-      ...compact({ title: input.title }),
       createdAt: now,
       updatedAt: now,
       messageCount: 0,
-      ...compact({ metadata: input.metadata }),
     };
+    if (input.title !== undefined) session.title = input.title;
+    if (input.metadata !== undefined) session.metadata = input.metadata;
+    return session;
   }
 
   getSession(id: string): StudioSession | undefined {
@@ -425,15 +425,15 @@ class SqliteSessionStore
       const entry: StudioSessionLogEntry = {
         id: globalThis.crypto.randomUUID(),
         sessionId: input.sessionId,
-        ...compact({ runId: input.runId }),
         sequence,
         timestamp: now,
         level: input.level,
         category: input.category,
         event: input.event,
         message: input.message,
-        ...compact({ metadata: input.metadata }),
       };
+      if (input.runId !== undefined) entry.runId = input.runId;
+      if (input.metadata !== undefined) entry.metadata = input.metadata;
 
       db.prepare(
         `INSERT INTO anvia_studio_session_logs (
@@ -514,15 +514,15 @@ class SqliteSessionStore
       const entry: StudioPipelineLogEntry = {
         id: globalThis.crypto.randomUUID(),
         pipelineId: input.pipelineId,
-        ...compact({ runId: input.runId }),
         sequence,
         timestamp: now,
         level: input.level,
         category: input.category,
         event: input.event,
         message: input.message,
-        ...compact({ metadata: input.metadata }),
       };
+      if (input.runId !== undefined) entry.runId = input.runId;
+      if (input.metadata !== undefined) entry.metadata = input.metadata;
 
       db.prepare(
         `INSERT INTO anvia_studio_pipeline_logs (
@@ -642,18 +642,19 @@ class SqliteSessionStore
       $durationMs: input.durationMs ?? null,
     });
 
-    return {
+    const record: StudioPipelineRunRecord = {
       runId: input.runId,
       pipelineId: input.pipelineId,
       status: input.status,
       input: input.input,
-      ...compact({ output: input.output }),
-      ...compact({ error: input.error }),
-      ...compact({ metadata: input.metadata }),
       startedAt: input.startedAt,
-      ...compact({ endedAt: input.endedAt }),
-      ...compact({ durationMs: input.durationMs }),
     };
+    if (input.output !== undefined) record.output = input.output;
+    if (input.error !== undefined) record.error = input.error;
+    if (input.metadata !== undefined) record.metadata = input.metadata;
+    if (input.endedAt !== undefined) record.endedAt = input.endedAt;
+    if (input.durationMs !== undefined) record.durationMs = input.durationMs;
+    return record;
   }
 
   getPipelineRun(options: {
@@ -1164,65 +1165,69 @@ function toSession(
 
 function toSessionSummary(row: SessionSummaryRow): StudioSessionSummary {
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
-  return {
+  const summary: StudioSessionSummary = {
     id: row.id,
     agentId: row.agent_id,
-    ...compact({ title: row.title ?? undefined }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     messageCount: row.message_count,
-    ...compact({ metadata }),
   };
+  if (row.title !== null) summary.title = row.title;
+  if (metadata !== undefined) summary.metadata = metadata;
+  return summary;
 }
 
 function toSessionLog(row: SessionLogRow): StudioSessionLogEntry {
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
-  return {
+  const entry: StudioSessionLogEntry = {
     id: row.id,
     sessionId: row.session_id,
-    ...compact({ runId: row.run_id ?? undefined }),
     sequence: row.sequence,
     timestamp: row.timestamp,
     level: row.level,
     category: row.category,
     event: row.event,
     message: row.message,
-    ...compact({ metadata }),
   };
+  if (row.run_id !== null) entry.runId = row.run_id;
+  if (metadata !== undefined) entry.metadata = metadata;
+  return entry;
 }
 
 function toPipelineLog(row: PipelineLogRow): StudioPipelineLogEntry {
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
-  return {
+  const entry: StudioPipelineLogEntry = {
     id: row.id,
     pipelineId: row.pipeline_id,
-    ...compact({ runId: row.run_id ?? undefined }),
     sequence: row.sequence,
     timestamp: row.timestamp,
     level: row.level,
     category: row.category,
     event: row.event,
     message: row.message,
-    ...compact({ metadata }),
   };
+  if (row.run_id !== null) entry.runId = row.run_id;
+  if (metadata !== undefined) entry.metadata = metadata;
+  return entry;
 }
 
 function toPipelineRun(row: PipelineRunRow): StudioPipelineRunRecord {
   const output = parseJsonValue<JsonValue>(row.output_json);
   const error = parseJsonValue<JsonValue>(row.error_json);
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
-  return {
+  const record: StudioPipelineRunRecord = {
     runId: row.run_id,
     pipelineId: row.pipeline_id,
     status: row.status,
     input: JSON.parse(row.input_json) as JsonValue,
-    ...compact({ output }),
-    ...compact({ error }),
-    ...compact({ metadata }),
     startedAt: row.started_at,
-    ...compact({ endedAt: row.ended_at ?? undefined }),
-    ...compact({ durationMs: row.duration_ms ?? undefined }),
   };
+  if (output !== undefined) record.output = output;
+  if (error !== undefined) record.error = error;
+  if (metadata !== undefined) record.metadata = metadata;
+  if (row.ended_at !== null) record.endedAt = row.ended_at;
+  if (row.duration_ms !== null) record.durationMs = row.duration_ms;
+  return record;
 }
 
 function messageParts(message: Message): StoredMessagePart[] {
@@ -1242,32 +1247,38 @@ function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   if (metadata !== undefined && !isJsonValue(metadata)) {
     throw new TypeError("Stored Studio message metadata is not a strict JSON value.");
   }
-  const metadataProperties = compact({ metadata });
-
   if (row.role === "system") {
-    return { role: "system", content: systemContentFromParts(parts), ...metadataProperties };
+    const message: Extract<Message, { role: "system" }> = {
+      role: "system",
+      content: systemContentFromParts(parts),
+    };
+    if (metadata !== undefined) message.metadata = metadata;
+    return message;
   }
   if (row.role === "user") {
-    return {
+    const message: Extract<Message, { role: "user" }> = {
       role: "user",
       content: parts as Extract<Message, { role: "user" }>["content"],
-      ...metadataProperties,
     };
+    if (metadata !== undefined) message.metadata = metadata;
+    return message;
   }
   if (row.role === "assistant") {
-    return {
+    const message: Extract<Message, { role: "assistant" }> = {
       role: "assistant",
-      ...compact({ id: row.message_id ?? undefined }),
       content: parts as Extract<Message, { role: "assistant" }>["content"],
-      ...metadataProperties,
     };
+    if (row.message_id !== null) message.id = row.message_id;
+    if (metadata !== undefined) message.metadata = metadata;
+    return message;
   }
   if (row.role === "tool") {
-    return {
+    const message: Extract<Message, { role: "tool" }> = {
       role: "tool",
       content: parts as Extract<Message, { role: "tool" }>["content"],
-      ...metadataProperties,
     };
+    if (metadata !== undefined) message.metadata = metadata;
+    return message;
   }
 
   throw new Error(`Unsupported stored message role: ${row.role}`);
@@ -1327,12 +1338,13 @@ function loadDatabaseSync(): DatabaseSyncConstructor {
 function toTrace(row: TraceRow): StudioTrace {
   const trace = parseJsonValue<StudioTrace["trace"]>(row.trace_json);
   const input = parseJsonValue<StudioTrace["input"]>(row.input_json);
-  return {
+  const result: StudioTrace = {
     ...toTraceSummary(row),
-    ...compact({ trace }),
-    ...compact({ input }),
     observations: parseJsonArray<StudioTrace["observations"][number]>(row.observations_json),
   };
+  if (trace !== undefined) result.trace = trace;
+  if (input !== undefined) result.input = input;
+  return result;
 }
 
 function toTraceSummary(row: TraceRow): StudioTraceSummary {
@@ -1340,20 +1352,21 @@ function toTraceSummary(row: TraceRow): StudioTraceSummary {
   const error = parseJsonValue<StudioTraceSummary["error"]>(row.error_json);
   const usage = parseJsonValue<StudioTraceSummary["usage"]>(row.usage_json);
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
-  return {
+  const summary: StudioTraceSummary = {
     id: row.id,
     sessionId: row.session_id,
-    ...compact({ name: row.name ?? undefined }),
     status: row.status,
     startedAt: row.started_at,
-    ...compact({ endedAt: row.ended_at ?? undefined }),
-    ...compact({ durationMs: row.duration_ms ?? undefined }),
-    ...compact({ output: row.output ?? undefined }),
-    ...compact({ error }),
-    ...compact({ usage }),
-    ...compact({ metadata }),
     observationCount: observations.length,
   };
+  if (row.name !== null) summary.name = row.name;
+  if (row.ended_at !== null) summary.endedAt = row.ended_at;
+  if (row.duration_ms !== null) summary.durationMs = row.duration_ms;
+  if (row.output !== null) summary.output = row.output;
+  if (error !== undefined) summary.error = error;
+  if (usage !== undefined) summary.usage = usage;
+  if (metadata !== undefined) summary.metadata = metadata;
+  return summary;
 }
 
 function parseJsonArray<T>(value: string): T[] {

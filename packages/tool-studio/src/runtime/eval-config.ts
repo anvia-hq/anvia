@@ -4,7 +4,6 @@ import type {
   StudioEvalSuite,
   StudioEvalSuiteConfig,
 } from "../types";
-import { compact } from "./compact";
 import { toJsonValue } from "./json";
 
 const CASE_PREVIEW_LIMIT = 5;
@@ -14,18 +13,19 @@ export function evalConfig(suite: StudioEvalSuite): StudioEvalSuiteConfig {
   const casePreviews = suite.cases.slice(0, CASE_PREVIEW_LIMIT).map(casePreview);
   const metricSummaries = suite.metrics.map(metricSummary);
 
-  return compact({
+  const config: StudioEvalSuiteConfig = {
     id: suite.id ?? suite.name,
     name: suite.name,
-    description: suite.description,
     caseCount: suite.cases.length,
     metricNames: suite.metrics.map((metric) => metric.name),
     casePreviewCount: casePreviews.length,
     casePreviews,
     metricSummaries,
-    concurrency: suite.concurrency,
-    metadata: suite.metadata,
-  }) as StudioEvalSuiteConfig;
+  };
+  if (suite.description !== undefined) config.description = suite.description;
+  if (suite.concurrency !== undefined) config.concurrency = suite.concurrency;
+  if (suite.metadata !== undefined) config.metadata = suite.metadata;
+  return config;
 }
 
 function casePreview(testCase: unknown, index: number): StudioEvalCasePreview {
@@ -36,13 +36,15 @@ function casePreview(testCase: unknown, index: number): StudioEvalCasePreview {
     };
   }
 
-  return compact({
+  const preview: StudioEvalCasePreview = {
     id:
       typeof testCase.id === "string" && testCase.id.length > 0 ? testCase.id : `case-${index + 1}`,
-    input: "input" in testCase ? previewValue(testCase.input) : undefined,
-    expected: "expected" in testCase ? previewValue(testCase.expected) : undefined,
-    metadataKeys: metadataKeys(testCase.metadata),
-  }) as StudioEvalCasePreview;
+  };
+  if ("input" in testCase) preview.input = previewValue(testCase.input);
+  if ("expected" in testCase) preview.expected = previewValue(testCase.expected);
+  const keys = metadataKeys(testCase.metadata);
+  if (keys !== undefined) preview.metadataKeys = keys;
+  return preview;
 }
 
 function metricSummary(metric: unknown, index: number): StudioEvalMetricSummary {
@@ -50,16 +52,19 @@ function metricSummary(metric: unknown, index: number): StudioEvalMetricSummary 
     return { name: `metric-${index + 1}` };
   }
 
-  return compact({
+  const summary: StudioEvalMetricSummary = {
     name:
       typeof metric.name === "string" && metric.name.length > 0
         ? metric.name
         : `metric-${index + 1}`,
-    dataType: metricDataType(metric.dataType),
-    configId: typeof metric.configId === "string" ? metric.configId : undefined,
-    scoreConfigId: typeof metric.scoreConfigId === "string" ? metric.scoreConfigId : undefined,
-    metadataKeys: metadataKeys(metric.metadata),
-  }) as StudioEvalMetricSummary;
+  };
+  const dataType = metricDataType(metric.dataType);
+  if (dataType !== undefined) summary.dataType = dataType;
+  if (typeof metric.configId === "string") summary.configId = metric.configId;
+  if (typeof metric.scoreConfigId === "string") summary.scoreConfigId = metric.scoreConfigId;
+  const keys = metadataKeys(metric.metadata);
+  if (keys !== undefined) summary.metadataKeys = keys;
+  return summary;
 }
 
 function previewValue(value: unknown) {

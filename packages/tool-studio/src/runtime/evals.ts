@@ -1,7 +1,6 @@
 import { runEvalSuite } from "@anvia/core/evals";
 import type { Context, Hono } from "hono";
 import type { StudioEvalRunRequest, StudioEvalRunResponse, StudioEvalSuite } from "../types";
-import { compact } from "./compact";
 import { evalConfig } from "./eval-config";
 import { errorResponse } from "./http";
 import { toJsonValue } from "./json";
@@ -41,10 +40,9 @@ export function registerEvalRoutes(
 
     const runId = globalThis.crypto.randomUUID();
     const startedAt = Date.now();
-    const result = await runEvalSuite({
-      ...suite,
-      ...compact({ concurrency: body.concurrency }),
-    });
+    const runOptions: Parameters<typeof runEvalSuite>[0] = { ...suite };
+    if (body.concurrency !== undefined) runOptions.concurrency = body.concurrency;
+    const result = await runEvalSuite(runOptions);
     const endedAt = Date.now();
     const jsonResult = toJsonValue(result);
     const response: StudioEvalRunResponse = {

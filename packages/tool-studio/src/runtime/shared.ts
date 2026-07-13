@@ -7,7 +7,6 @@ import type {
   StudioSessionStore,
   StudioTraceStore,
 } from "../types";
-import { compact } from "./compact";
 import type { ResolvedStores, StudioRuntimeOptions } from "./options";
 
 export type { ResolvedStores, StudioRuntimeOptions } from "./options";
@@ -18,12 +17,12 @@ export function resolveStores(options: StudioRuntimeOptions): ResolvedStores {
   const traces = resolveTraceStore(options, sessions, defaultStore);
   const pipelineLogs = resolvePipelineLogStore(options, sessions, defaultStore);
   const pipelineRuns = resolvePipelineRunStore(options, sessions, pipelineLogs, defaultStore);
-  return compact({
-    sessions,
-    traces,
-    pipelineLogs,
-    pipelineRuns,
-  }) as ResolvedStores;
+  const stores: ResolvedStores = {};
+  if (sessions !== undefined) stores.sessions = sessions;
+  if (traces !== undefined) stores.traces = traces;
+  if (pipelineLogs !== undefined) stores.pipelineLogs = pipelineLogs;
+  if (pipelineRuns !== undefined) stores.pipelineRuns = pipelineRuns;
+  return stores;
 }
 
 function defaultStudioStore(): StudioSessionStore &

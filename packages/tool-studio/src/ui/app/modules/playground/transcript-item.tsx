@@ -502,12 +502,13 @@ function ToolQuestionPanel(props: {
     const draft = values[question.id];
     const customAnswer = draft?.customValue?.trim() ?? "";
     const answer = customAnswer.length > 0 ? customAnswer : draft?.answer;
-    return {
+    const normalized: { questionId: string; answer: string; choice?: string; custom?: boolean } = {
       questionId: question.id,
       answer: answer?.trim() ?? "",
-      ...(draft?.choice === undefined ? {} : { choice: draft.choice }),
-      ...(customAnswer.length > 0 ? { custom: true } : {}),
     };
+    if (draft?.choice !== undefined) normalized.choice = draft.choice;
+    if (customAnswer.length > 0) normalized.custom = true;
+    return normalized;
   });
   const activeIndex = total === 0 ? 0 : Math.min(activeQuestionIndex, total - 1);
   const activeQuestion = props.question.questions[activeIndex];
@@ -546,7 +547,7 @@ function ToolQuestionPanel(props: {
         value={values[activeQuestion.id]}
         answer={props.question.answers?.find((answer) => answer.questionId === activeQuestion.id)}
         onChange={(value) => updateDraft(activeQuestion.id, value)}
-        {...(lastQuestion ? {} : { onAdvance: goNext })}
+        onAdvance={lastQuestion ? undefined : goNext}
       />
       {pending ? (
         <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/20 px-3 py-2">
@@ -613,7 +614,7 @@ function QuestionPromptControl(props: {
   index: number;
   total: number;
   onChange: (value: QuestionDraft) => void;
-  onAdvance?: () => void;
+  onAdvance: (() => void) | undefined;
 }) {
   const submittedAnswer = props.answer?.answer;
   const draftAnswer = questionDraftAnswer(props.value);

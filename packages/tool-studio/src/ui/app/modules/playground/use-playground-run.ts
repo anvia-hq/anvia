@@ -190,25 +190,28 @@ export function usePlaygroundRun(props: {
       promptAttachments.length === 0
         ? { text: trimmed }
         : userUIMessageWithAttachments(trimmed, promptAttachments);
-    transcript.setMessages((current) => [
-      ...current,
-      {
+    transcript.setMessages((current) => {
+      const userEntry: TranscriptEntry = {
         entryId: nextTranscriptId(),
         kind: "message",
         role: "user",
         text: trimmed,
-        ...(promptAttachments.length === 0
-          ? {}
-          : { attachments: transcriptAttachmentsForPrompt(promptAttachments) }),
-      },
-      {
-        entryId: nextTranscriptId(),
-        kind: "message",
-        role: "assistant",
-        text: "",
-        tone: "pending",
-      },
-    ]);
+      };
+      if (promptAttachments.length > 0) {
+        userEntry.attachments = transcriptAttachmentsForPrompt(promptAttachments);
+      }
+      return [
+        ...current,
+        userEntry,
+        {
+          entryId: nextTranscriptId(),
+          kind: "message",
+          role: "assistant",
+          text: "",
+          tone: "pending",
+        },
+      ];
+    });
 
     try {
       const shouldCreateSession = sessionsEnabled && sessions.selectedSessionId.length === 0;
@@ -218,19 +221,19 @@ export function usePlaygroundRun(props: {
       const history = sessionsEnabled ? undefined : toHistory(messages);
       playgroundRunErrorRef.current = undefined;
       playgroundVisibleEventRef.current = Promise.resolve();
-      playgroundRunRequestRef.current = {
+      const metadata: StudioAgentRunRequest["metadata"] = { source: "anvia-studio" };
+      if (selectedModelRef.length > 0) metadata.studioModel = selectedModelRef;
+      const runContext: PlaygroundRunRequestContext = {
         agentId,
         promptText: trimmed,
         useTextMessage: promptAttachments.length === 0,
-        ...(sessionId.length === 0 ? {} : { sessionId }),
-        ...(history === undefined ? {} : { history }),
-        ...(selectedModelRef.length === 0 ? {} : { model: selectedModelRef }),
         stream: true,
-        metadata: {
-          source: "anvia-studio",
-          ...(selectedModelRef.length === 0 ? {} : { studioModel: selectedModelRef }),
-        },
+        metadata,
       };
+      if (sessionId.length > 0) runContext.sessionId = sessionId;
+      if (history !== undefined) runContext.history = history;
+      if (selectedModelRef.length > 0) runContext.model = selectedModelRef;
+      playgroundRunRequestRef.current = runContext;
 
       await playgroundChat.sendMessage(promptMessage);
       await playgroundVisibleEventRef.current;
@@ -297,15 +300,14 @@ export function usePlaygroundRun(props: {
       return true;
     }
     if (event.type === "tool_result") {
-      transcript.appendToolResult({
+      const result: Parameters<typeof transcript.appendToolResult>[0] = {
         toolName: event.toolName,
         callId: event.toolCallId,
         args: event.args,
         result: event.result,
-        ...(event.structuredResult === undefined
-          ? {}
-          : { structuredResult: event.structuredResult }),
-      });
+      };
+      if (event.structuredResult !== undefined) result.structuredResult = event.structuredResult;
+      transcript.appendToolResult(result);
       return true;
     }
     if (event.type === "agent_tool_event") {
@@ -362,15 +364,16 @@ function runRequestFromContext(
   context: PlaygroundRunRequestContext,
   message: StudioAgentRunRequest["message"],
 ): StudioAgentRunRequest {
-  return {
+  const request: StudioAgentRunRequest = {
     agentId: context.agentId,
     message,
-    ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
-    ...(context.history === undefined ? {} : { history: context.history }),
-    ...(context.model === undefined ? {} : { model: context.model }),
     stream: context.stream,
     metadata: context.metadata,
   };
+  if (context.sessionId !== undefined) request.sessionId = context.sessionId;
+  if (context.history !== undefined) request.history = context.history;
+  if (context.model !== undefined) request.model = context.model;
+  return request;
 }
 
 function updateTranscriptApproval(
@@ -397,29 +400,31 @@ function transcriptApprovalUpdate(approval: ToolApproval): ToolApprovalUpdate | 
   if (approval.requestedAt === undefined) {
     return undefined;
   }
-  return {
+  const update: ToolApprovalUpdate = {
     id: approval.id,
     toolName: approval.toolName,
-    ...(approval.callId === undefined ? {} : { callId: approval.callId }),
     status: approval.status,
     requestedAt: approval.requestedAt,
-    ...(approval.resolvedAt === undefined ? {} : { resolvedAt: approval.resolvedAt }),
-    ...(approval.reason === undefined ? {} : { reason: approval.reason }),
   };
+  if (approval.callId !== undefined) update.callId = approval.callId;
+  if (approval.resolvedAt !== undefined) update.resolvedAt = approval.resolvedAt;
+  if (approval.reason !== undefined) update.reason = approval.reason;
+  return update;
 }
 
 function transcriptQuestionUpdate(question: ToolQuestion): ToolQuestionUpdate | undefined {
   if (question.requestedAt === undefined) {
     return undefined;
   }
-  return {
+  const update: ToolQuestionUpdate = {
     id: question.id,
     toolName: question.toolName,
-    ...(question.callId === undefined ? {} : { callId: question.callId }),
     status: question.status,
     requestedAt: question.requestedAt,
     questions: question.questions,
-    ...(question.answeredAt === undefined ? {} : { answeredAt: question.answeredAt }),
-    ...(question.answers === undefined ? {} : { answers: question.answers }),
   };
+  if (question.callId !== undefined) update.callId = question.callId;
+  if (question.answeredAt !== undefined) update.answeredAt = question.answeredAt;
+  if (question.answers !== undefined) update.answers = question.answers;
+  return update;
 }

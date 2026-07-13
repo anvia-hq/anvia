@@ -57,15 +57,13 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
   const [first, second, third] = segments;
   if (first === "tracing") {
     if (second === "sessions") {
-      return {
-        page: "tracing",
-        ...(third === undefined ? {} : { traceSessionId: third }),
-      };
+      const location: PageLocation = { page: "tracing" };
+      if (third !== undefined) location.traceSessionId = third;
+      return location;
     }
-    return {
-      page: "tracing",
-      ...(second === undefined ? {} : { traceId: second }),
-    };
+    const location: PageLocation = { page: "tracing" };
+    if (second !== undefined) location.traceId = second;
+    return location;
   }
   if (first === "sessions") {
     return { page: "sessions" };
@@ -95,10 +93,9 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
     return { page: "knowledge", knowledgeTab: knowledgeTabFromSegment(second) };
   }
   if (first === "playground") {
-    return {
-      page: "playground",
-      ...(second === undefined ? {} : { sessionId: second }),
-    };
+    const location: PageLocation = { page: "playground" };
+    if (second !== undefined) location.sessionId = second;
+    return location;
   }
   if (first !== undefined && second === undefined) {
     return { page: "playground", sessionId: first };

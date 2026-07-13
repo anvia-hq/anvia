@@ -133,12 +133,13 @@ const HumanInputQuestionChoice = forwardRef<HTMLButtonElement, HumanInputQuestio
         if (event.defaultPrevented || choiceValue.length === 0) {
           return;
         }
-        question.setAnswer(prompt, {
+        const nextAnswer: ToolQuestionAnswer = {
           questionId: prompt.id,
           answer: answer ?? choice?.label ?? choiceValue,
           choice: choiceValue,
-          ...(custom ? { custom: true } : {}),
-        });
+        };
+        if (custom) nextAnswer.custom = true;
+        question.setAnswer(prompt, nextAnswer);
       },
       [answer, choice?.label, choiceValue, custom, onClick, prompt, question],
     );

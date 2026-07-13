@@ -43,18 +43,18 @@ const ImageRoot = forwardRef<HTMLElement, ImageRootProps>(function ImageRoot(
 
   const src = imageSource(attachment);
   const isImage = isImageAttachment(attachment);
-  const value = useMemo<ImageContextValue>(
-    () => ({
+  const value = useMemo<ImageContextValue>(() => {
+    const context: ImageContextValue = {
       attachment,
-      ...(src === undefined ? {} : { src }),
-      ...(attachment.name === undefined ? {} : { name: attachment.name }),
-      ...(attachment.mediaType === undefined ? {} : { mediaType: attachment.mediaType }),
       isImage,
       zoomOpen,
       setZoomOpen,
-    }),
-    [attachment, attachment.mediaType, attachment.name, isImage, src, zoomOpen],
-  );
+    };
+    if (src !== undefined) context.src = src;
+    if (attachment.name !== undefined) context.name = attachment.name;
+    if (attachment.mediaType !== undefined) context.mediaType = attachment.mediaType;
+    return context;
+  }, [attachment, attachment.mediaType, attachment.name, isImage, src, zoomOpen]);
   if (!isImage && renderWhen !== "always") {
     return null;
   }

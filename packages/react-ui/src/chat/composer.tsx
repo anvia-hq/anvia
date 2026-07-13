@@ -258,19 +258,21 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     );
     const submittedText = formattedPrompt.text;
     const metadata = composerSubmitMetadata(submittedQuote, submittedEntities);
-    const payload: Parameters<typeof chat.sendMessage>[0] =
-      submittedAttachments.length === 0
-        ? metadata === undefined
-          ? prompt
-          : {
-              text: submittedText,
-              metadata,
-            }
-        : {
-            text: submittedText,
-            attachments: submittedAttachments,
-            ...(metadata === undefined ? {} : { metadata }),
-          };
+    let payload: Parameters<typeof chat.sendMessage>[0];
+    if (submittedAttachments.length === 0) {
+      payload = metadata === undefined ? prompt : { text: submittedText, metadata };
+    } else {
+      const attachmentPayload: {
+        text: string;
+        attachments: UIAttachment[];
+        metadata?: NonNullable<ReturnType<typeof composerSubmitMetadata>>;
+      } = {
+        text: submittedText,
+        attachments: submittedAttachments,
+      };
+      if (metadata !== undefined) attachmentPayload.metadata = metadata;
+      payload = attachmentPayload;
+    }
 
     defaultSubmissionInFlightRef.current = true;
     try {
@@ -797,13 +799,9 @@ function composerSuggestion(
 ): ComposerSuggestionOptions {
   const pluginKey = new PluginKey(`anvia-composer-trigger-${trigger.id}`);
 
-  return {
+  const suggestion: ComposerSuggestionOptions = {
     pluginKey,
     char: trigger.char,
-    ...(trigger.allowSpaces === undefined ? {} : { allowSpaces: trigger.allowSpaces }),
-    ...(trigger.allowedPrefixes === undefined ? {} : { allowedPrefixes: trigger.allowedPrefixes }),
-    ...(trigger.startOfLine === undefined ? {} : { startOfLine: trigger.startOfLine }),
-    ...(trigger.minQueryLength === undefined ? {} : { minQueryLength: trigger.minQueryLength }),
     items: ({ query, signal }: { query: string; signal: AbortSignal }) =>
       resolveTriggerItems(trigger, query, composerRef.current, signal),
     command: ({
@@ -854,6 +852,15 @@ function composerSuggestion(
         handleComposerTriggerKeyDown(trigger, props, composerRef),
     }),
   };
+  if (trigger.allowSpaces !== undefined) suggestion.allowSpaces = trigger.allowSpaces;
+  if (trigger.allowedPrefixes !== undefined) {
+    suggestion.allowedPrefixes = trigger.allowedPrefixes;
+  }
+  if (trigger.startOfLine !== undefined) suggestion.startOfLine = trigger.startOfLine;
+  if (trigger.minQueryLength !== undefined) {
+    suggestion.minQueryLength = trigger.minQueryLength;
+  }
+  return suggestion;
 }
 
 function resolveTriggerItems(
@@ -892,13 +899,12 @@ function updateComposerTriggerState(
   const selectedIndex =
     current?.trigger.id === trigger.id ? clampIndex(current.selectedIndex, props.items.length) : 0;
   const rect = rectFromSuggestion(props);
-  composerRef.current.setActiveTrigger({
+  const state: ComposerTriggerState = {
     trigger,
     query: props.query,
     items: props.items,
     loading: props.loading,
     selectedIndex,
-    ...(rect === undefined ? {} : { rect }),
     selectItem: (item) => {
       if (item.disabled) {
         return;
@@ -912,7 +918,9 @@ function updateComposerTriggerState(
           : active,
       );
     },
-  });
+  };
+  if (rect !== undefined) state.rect = rect;
+  composerRef.current.setActiveTrigger(state);
 }
 
 function handleComposerTriggerKeyDown(
@@ -1003,19 +1011,13 @@ function plainTextToComposerContent(input: string): JSONContent {
   const lines = input.length === 0 ? [""] : input.split(/\r?\n/);
   return {
     type: "doc",
-    content: lines.map((line) => ({
-      type: "paragraph",
-      ...(line.length === 0
-        ? {}
-        : {
-            content: [
-              {
-                type: "text",
-                text: line,
-              },
-            ],
-          }),
-    })),
+    content: lines.map((line) => {
+      const paragraph: JSONContent = { type: "paragraph" };
+      if (line.length > 0) {
+        paragraph.content = [{ type: "text", text: line }];
+      }
+      return paragraph;
+    }),
   };
 }
 
@@ -1100,7 +1102,7 @@ function composerEntityFromAttrs(
     (entity) => entity.id === id && entity.triggerId === triggerId && entity.trigger === trigger,
   );
   const data = attrs?.data ?? previous?.data;
-  return {
+  const entity: ComposerEntity = {
     id,
     triggerId,
     trigger,
@@ -1110,8 +1112,9 @@ function composerEntityFromAttrs(
       from,
       to: from + text.length,
     },
-    ...(data === undefined ? {} : { data }),
   };
+  if (data !== undefined) entity.data = data;
+  return entity;
 }
 
 function composerEntityText(attrs: ComposerEntityAttrs | undefined): string {
@@ -1221,30 +1224,24 @@ function normalizeQuote(quote: ComposerQuote | undefined): ComposerQuote | undef
   };
 }
 
+type ComposerSubmitMetadata = {
+  quote?: ComposerQuote;
+  composer?: {
+    entities: ComposerEntity[];
+  };
+};
+
 function composerSubmitMetadata(
   quote: ComposerQuote | undefined,
   entities: ComposerEntity[],
-):
-  | {
-      quote?: ComposerQuote;
-      composer?: {
-        entities: ComposerEntity[];
-      };
-    }
-  | undefined {
+): ComposerSubmitMetadata | undefined {
   if (quote === undefined && entities.length === 0) {
     return undefined;
   }
-  return {
-    ...(quote === undefined ? {} : { quote }),
-    ...(entities.length === 0
-      ? {}
-      : {
-          composer: {
-            entities,
-          },
-        }),
-  };
+  const metadata: ComposerSubmitMetadata = {};
+  if (quote !== undefined) metadata.quote = quote;
+  if (entities.length > 0) metadata.composer = { entities };
+  return metadata;
 }
 
 const ComposerSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(

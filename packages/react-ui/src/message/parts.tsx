@@ -3,6 +3,7 @@ import {
   type StreamSmoothingPreset,
   type UIAttachment,
   type UIMessagePart,
+  type UseSmoothStreamTextOptions,
   useSmoothStreamText,
 } from "@anvia/react";
 import { type ComponentPropsWithoutRef, createElement, forwardRef, type ReactNode } from "react";
@@ -123,13 +124,16 @@ const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
     ref,
   ) {
     const animationEnabled = animate && props.children === undefined;
-    const smooth = useSmoothStreamText(content, {
-      enabled: animationEnabled,
-      mode: animationMode,
-      ...(isStreaming === undefined ? {} : { isStreaming }),
-      ...(smoothingPreset === undefined ? {} : { preset: smoothingPreset }),
-      ...(reducedMotion === undefined ? {} : { reducedMotion }),
-    });
+    const smooth = useSmoothStreamText(
+      content,
+      smoothStreamOptions(
+        animationEnabled,
+        animationMode,
+        isStreaming,
+        smoothingPreset,
+        reducedMotion,
+      ),
+    );
     const animationActive =
       animationEnabled &&
       animationMode !== "none" &&
@@ -208,13 +212,10 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
     },
     ref,
   ) {
-    const smooth = useSmoothStreamText(markdown, {
-      enabled: animate,
-      mode: animationMode,
-      ...(isStreaming === undefined ? {} : { isStreaming }),
-      ...(smoothingPreset === undefined ? {} : { preset: smoothingPreset }),
-      ...(reducedMotion === undefined ? {} : { reducedMotion }),
-    });
+    const smooth = useSmoothStreamText(
+      markdown,
+      smoothStreamOptions(animate, animationMode, isStreaming, smoothingPreset, reducedMotion),
+    );
     const animationActive =
       animate && animationMode !== "none" && isStreaming !== false && reducedMotion !== true;
     const renderedMarkdown = animate ? smooth.text : markdown;
@@ -294,6 +295,20 @@ function markdownComponents(
       return <span {...elementProps} />;
     },
   };
+}
+
+function smoothStreamOptions(
+  enabled: boolean,
+  mode: StreamAnimationMode,
+  isStreaming: boolean | undefined,
+  preset: StreamSmoothingPreset | undefined,
+  reducedMotion: boolean | undefined,
+): UseSmoothStreamTextOptions {
+  const options: UseSmoothStreamTextOptions = { enabled, mode };
+  if (isStreaming !== undefined) options.isStreaming = isStreaming;
+  if (preset !== undefined) options.preset = preset;
+  if (reducedMotion !== undefined) options.reducedMotion = reducedMotion;
+  return options;
 }
 
 type MessageCodeBlockProps = Omit<PrimitiveProps<"pre">, "children"> & {

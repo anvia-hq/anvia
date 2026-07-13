@@ -67,15 +67,11 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
       clear();
     }, [clear, onQuote, selection]);
 
-    const value = useMemo<SelectionToolbarContextValue>(
-      () => ({
-        ...(selection === undefined ? {} : { selection }),
-        quote,
-        copy,
-        clear,
-      }),
-      [clear, copy, quote, selection],
-    );
+    const value = useMemo<SelectionToolbarContextValue>(() => {
+      const context: SelectionToolbarContextValue = { quote, copy, clear };
+      if (selection !== undefined) context.selection = selection;
+      return context;
+    }, [clear, copy, quote, selection]);
 
     useEffect(() => {
       const document = globalThis.document;

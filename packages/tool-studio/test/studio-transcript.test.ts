@@ -1,4 +1,6 @@
+import { Message, UserContent } from "@anvia/core/completion";
 import { describe, expect, it, vi } from "vitest";
+import { transcriptFromMessages } from "../src/runtime/transcript";
 import {
   findMatchingToolIndex,
   findMatchingToolIndexByCall,
@@ -16,6 +18,39 @@ import {
 import type { TranscriptEntry } from "../src/ui/app/modules/shared/types";
 
 describe("Studio transcript helpers", () => {
+  it("attaches message-scoped files only to the first user text entry", () => {
+    const attachment = { kind: "image", url: "https://example.com/image.png" };
+
+    expect(
+      transcriptFromMessages([
+        Message.user([
+          UserContent.text("first"),
+          UserContent.imageUrl(attachment.url),
+          UserContent.text("second"),
+        ]),
+      ]),
+    ).toEqual([
+      {
+        entryId: 0,
+        kind: "message",
+        role: "user",
+        text: "first",
+        attachments: [attachment],
+      },
+      { entryId: 1, kind: "message", role: "user", text: "second" },
+    ]);
+
+    expect(transcriptFromMessages([Message.user([UserContent.imageUrl(attachment.url)])])).toEqual([
+      {
+        entryId: 0,
+        kind: "message",
+        role: "user",
+        text: "",
+        attachments: [attachment],
+      },
+    ]);
+  });
+
   it("maintains deterministic transcript ids and sequence lookups", () => {
     resetTranscriptSequence();
     expect(nextTranscriptId()).toBe(0);

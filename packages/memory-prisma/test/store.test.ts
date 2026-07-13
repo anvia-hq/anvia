@@ -9,7 +9,7 @@ import {
   PrismaMemoryStore,
   type PrismaMemoryTransactionOptions,
 } from "../src/index";
-import { isMemoryMessage } from "../src/message";
+import { isMemoryMessage, serializeUnknownError } from "../src/message";
 
 type SessionRow = {
   id: string;
@@ -175,8 +175,13 @@ class FakePrisma {
 
       const session: SessionRow = {
         id: `session_${this.nextSessionId}`,
-        ...args.create,
+        scopeKey: args.create.scopeKey,
+        sessionId: args.create.sessionId,
+        metadata: args.create.metadata,
       };
+      if (args.create.userId !== undefined) {
+        session.userId = args.create.userId;
+      }
       this.nextSessionId += 1;
       this.sessions.set(args.where.scopeKey, session);
       return { id: session.id };
@@ -255,18 +260,46 @@ class FakePrisma {
 
 describe("PrismaMemoryStore", () => {
   it("uses core strict JSON validation for message metadata", async () => {
-    const message = Message.user("hello");
-    expect(isMemoryMessage({ ...message, metadata: { score: 1 } })).toBe(true);
-    expect(isMemoryMessage({ ...message, metadata: { score: Number.NaN } })).toBe(false);
+    const validMessage: MessageType = {
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+      metadata: { score: 1 },
+    };
+    const invalidMessage: MessageType = {
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+      metadata: { score: Number.NaN },
+    };
+
+    expect(isMemoryMessage(validMessage)).toBe(true);
+    expect(isMemoryMessage(invalidMessage)).toBe(false);
     const store = createPrismaMemoryStore(new FakePrisma().client);
     await expect(
       store.append({
         context: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
-        messages: [{ ...message, metadata: { score: Number.NaN } } as MessageType],
+        messages: [invalidMessage],
       }),
     ).rejects.toThrow("valid Anvia Message");
+  });
+
+  it("serializes Error stacks only when present", () => {
+    const withStack = new Error("failed");
+    withStack.stack = "test stack";
+    const withoutStack = new Error("failed");
+    delete withoutStack.stack;
+
+    expect(serializeUnknownError(withStack)).toEqual({
+      name: "Error",
+      message: "failed",
+      stack: "test stack",
+    });
+    expect(serializeUnknownError(withoutStack)).toStrictEqual({
+      name: "Error",
+      message: "failed",
+    });
+    expect(serializeUnknownError(withoutStack)).not.toHaveProperty("stack");
   });
 
   it("appends and loads scoped messages in position order", async () => {
@@ -307,6 +340,27 @@ describe("PrismaMemoryStore", () => {
       { isolationLevel: "Serializable" },
       { isolationLevel: "Serializable" },
     ]);
+  });
+
+  it("omits userId from session data when the context does not provide it", async () => {
+    const prisma = new FakePrisma();
+    const store = createPrismaMemoryStore(prisma.client);
+
+    await store.append({
+      context: { sessionId: "thread_without_user" },
+      runId: "run_1",
+      turn: 1,
+      messages: [Message.user("hi")],
+    });
+
+    const session = prisma.sessions.values().next().value;
+    expect(session).toStrictEqual({
+      id: "session_1",
+      scopeKey: JSON.stringify(["thread_without_user", null]),
+      sessionId: "thread_without_user",
+      metadata: {},
+    });
+    expect(session).not.toHaveProperty("userId");
   });
 
   it("round-trips every supported message content shape", async () => {

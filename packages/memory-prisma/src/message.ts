@@ -1,4 +1,4 @@
-import { isJsonValue, type JsonValue, type Message } from "@anvia/core";
+import { isJsonValue, type JsonObject, type JsonValue, type Message } from "@anvia/core";
 
 export function parseMemoryMessage(value: unknown): Message {
   if (!isMemoryMessage(value)) {
@@ -40,11 +40,14 @@ export function isMemoryMessage(value: unknown): value is Message {
 
 export function serializeUnknownError(error: unknown): JsonValue {
   if (error instanceof Error) {
-    return {
+    const serialized: JsonObject = {
       name: error.name,
       message: error.message,
-      ...(error.stack === undefined ? {} : { stack: error.stack }),
     };
+    if (error.stack !== undefined) {
+      serialized.stack = error.stack;
+    }
+    return serialized;
   }
 
   if (isJsonValue(error)) {

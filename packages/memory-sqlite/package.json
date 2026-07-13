@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memory-sqlite",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "SQLite-backed durable session memory store for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

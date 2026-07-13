@@ -1,5 +1,11 @@
 # @anvia/logger
 
+## 0.3.11
+
+### Patch Changes
+
+- 433f642: Simplify optional object construction across runtime integrations without changing public behavior.
+
 ## 0.3.10
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memory-prisma",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Prisma-backed durable session memory store for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

@@ -1,5 +1,13 @@
 # @anvia/grok
 
+## 0.2.4
+
+### Patch Changes
+
+- 433f642: Simplify provider request and response object construction while preserving adapter behavior.
+- Updated dependencies [433f642]
+  - @anvia/openai@0.3.18
+
 ## 0.2.3
 
 ### Patch Changes

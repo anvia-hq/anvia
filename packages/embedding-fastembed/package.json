@@ -1,6 +1,6 @@
 {
   "name": "@anvia/fastembed",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "FastEmbed embedding model adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

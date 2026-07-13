@@ -1,5 +1,11 @@
 # @anvia/redis
 
+## 0.2.6
+
+### Patch Changes
+
+- 433f642: Simplify optional vector query and result construction while preserving vector store behavior.
+
 ## 0.2.5
 
 ### Patch Changes

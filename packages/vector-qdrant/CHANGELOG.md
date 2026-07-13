@@ -1,5 +1,11 @@
 # @anvia/qdrant
 
+## 0.2.11
+
+### Patch Changes
+
+- 433f642: Simplify optional vector query and result construction while preserving vector store behavior.
+
 ## 0.2.10
 
 ### Patch Changes

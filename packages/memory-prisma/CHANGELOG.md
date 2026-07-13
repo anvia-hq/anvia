@@ -1,5 +1,11 @@
 # @anvia/memory-prisma
 
+## 0.2.3
+
+### Patch Changes
+
+- 433f642: Simplify optional memory record construction while preserving persistence behavior.
+
 ## 0.2.2
 
 ### Patch Changes

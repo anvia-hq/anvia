@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 0.2.12
+
+### Patch Changes
+
+- 433f642: Simplify provider request and response object construction while preserving adapter behavior.
+
 ## 0.2.11
 
 ### Patch Changes

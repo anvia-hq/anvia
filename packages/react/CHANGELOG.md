@@ -1,5 +1,13 @@
 # @anvia/react
 
+## 0.8.8
+
+### Patch Changes
+
+- 433f642: Simplify optional object construction across runtime integrations without changing public behavior.
+- Updated dependencies [433f642]
+  - @anvia/core@0.13.1
+
 ## 0.8.7
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/pinecone",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Pinecone vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

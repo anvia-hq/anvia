@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 0.5.1
+
+### Patch Changes
+
+- 433f642: Simplify conditional UI property construction while preserving rendered behavior and the public API.
+
 ## 0.5.0
 
 ### Minor Changes

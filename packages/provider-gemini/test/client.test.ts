@@ -92,6 +92,35 @@ describe("GeminiClient", () => {
       ],
     });
   });
+
+  it("preserves model field precedence across compatible aliases", async () => {
+    const client = new GeminiClient({
+      client: {
+        models: {
+          list: async () =>
+            asyncIterable([
+              {
+                baseModelId: "gemini-compatible",
+                displayName: "Display Name",
+                display_name: "Preferred Name",
+                inputTokenLimit: 100_000,
+                input_token_limit: 200_000,
+              },
+            ]),
+        },
+      } as never,
+    });
+
+    await expect(client.listModels()).resolves.toEqual({
+      data: [
+        {
+          id: "gemini-compatible",
+          name: "Preferred Name",
+          contextLength: 200_000,
+        },
+      ],
+    });
+  });
 });
 
 function fakeSdk() {

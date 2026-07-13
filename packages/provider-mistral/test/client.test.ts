@@ -75,6 +75,36 @@ describe("MistralClient", () => {
       ],
     });
   });
+
+  it("preserves model field precedence across compatible aliases", async () => {
+    const client = new MistralClient({
+      client: {
+        models: {
+          list: async () => ({
+            data: [
+              {
+                id: "mistral-compatible",
+                ownedBy: "camel-owner",
+                owned_by: "preferred-owner",
+                maxContextLength: 100_000,
+                max_context_length: 200_000,
+              },
+            ],
+          }),
+        },
+      } as never,
+    });
+
+    await expect(client.listModels()).resolves.toEqual({
+      data: [
+        {
+          id: "mistral-compatible",
+          ownedBy: "preferred-owner",
+          contextLength: 200_000,
+        },
+      ],
+    });
+  });
 });
 
 function fakeSdk() {

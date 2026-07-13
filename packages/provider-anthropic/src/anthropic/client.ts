@@ -86,19 +86,34 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
         ? model.created_at
         : undefined;
 
-  return {
+  const listedModel: ModelList["data"][number] = {
     id: model.id,
-    ...(typeof model.display_name === "string" ? { name: model.display_name } : {}),
-    ...(typeof model.name === "string" ? { name: model.name } : {}),
-    ...(typeof model.description === "string" ? { description: model.description } : {}),
-    ...(typeof model.type === "string" ? { type: model.type } : {}),
-    ...(createdAt === undefined ? {} : { createdAt }),
-    ...(typeof model.owned_by === "string" ? { ownedBy: model.owned_by } : {}),
-    ...(typeof model.max_input_tokens === "number"
-      ? { contextLength: model.max_input_tokens }
-      : {}),
-    ...(typeof model.context_length === "number" ? { contextLength: model.context_length } : {}),
   };
+  if (typeof model.display_name === "string") {
+    listedModel.name = model.display_name;
+  }
+  if (typeof model.name === "string") {
+    listedModel.name = model.name;
+  }
+  if (typeof model.description === "string") {
+    listedModel.description = model.description;
+  }
+  if (typeof model.type === "string") {
+    listedModel.type = model.type;
+  }
+  if (createdAt !== undefined) {
+    listedModel.createdAt = createdAt;
+  }
+  if (typeof model.owned_by === "string") {
+    listedModel.ownedBy = model.owned_by;
+  }
+  if (typeof model.max_input_tokens === "number") {
+    listedModel.contextLength = model.max_input_tokens;
+  }
+  if (typeof model.context_length === "number") {
+    listedModel.contextLength = model.context_length;
+  }
+  return listedModel;
 }
 
 function secondsFromDateString(value: string): number | undefined {
@@ -120,7 +135,7 @@ function toModelListingError(provider: string, error: unknown): ModelListingErro
   const statusCode = getStatusCode(error);
   return new ModelListingError(`${provider} model listing failed: ${getErrorMessage(error)}`, {
     provider,
-    ...(statusCode === undefined ? {} : { statusCode }),
+    statusCode,
     cause: error,
   });
 }

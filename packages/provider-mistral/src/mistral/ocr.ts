@@ -94,13 +94,14 @@ export class MistralOcrModel {
     source: MistralOcrSource,
   ): Promise<{ document: Record<string, unknown>; uploadedFile?: MistralOcrUploadedFile }> {
     if (source.type === "document_url") {
-      return {
-        document: {
-          type: "document_url",
-          documentUrl: source.url,
-          ...(source.documentName !== undefined ? { documentName: source.documentName } : {}),
-        },
+      const document: Record<string, unknown> = {
+        type: "document_url",
+        documentUrl: source.url,
       };
+      if (source.documentName !== undefined) {
+        document.documentName = source.documentName;
+      }
+      return { document };
     }
 
     if (source.type === "image_url") {
@@ -198,33 +199,53 @@ function normalizeOcrResponse(
   const pages = Array.isArray(raw.pages) ? raw.pages.map(normalizeOcrPage) : [];
   const markdown = pages.map((page) => page.markdown).join("\n\n");
 
-  return {
+  const normalized: MistralOcrResponse<unknown> = {
     text: markdown,
     markdown,
     pages,
-    ...(typeof raw.model === "string" ? { model: raw.model } : {}),
-    ...(raw.usageInfo !== undefined ? { usageInfo: raw.usageInfo } : {}),
-    ...(typeof raw.documentAnnotation === "string" || raw.documentAnnotation === null
-      ? { documentAnnotation: raw.documentAnnotation }
-      : {}),
-    ...(uploadedFile !== undefined ? { uploadedFile } : {}),
     rawResponse: response,
   };
+  if (typeof raw.model === "string") {
+    normalized.model = raw.model;
+  }
+  if (raw.usageInfo !== undefined) {
+    normalized.usageInfo = raw.usageInfo;
+  }
+  if (typeof raw.documentAnnotation === "string" || raw.documentAnnotation === null) {
+    normalized.documentAnnotation = raw.documentAnnotation;
+  }
+  if (uploadedFile !== undefined) {
+    normalized.uploadedFile = uploadedFile;
+  }
+  return normalized;
 }
 
 function normalizeOcrPage(page: unknown): MistralOcrPage {
   const raw = isPlainObject(page) ? page : {};
-  return {
+  const normalized: MistralOcrPage = {
     index: typeof raw.index === "number" ? raw.index : 0,
     markdown: typeof raw.markdown === "string" ? raw.markdown : "",
     images: Array.isArray(raw.images) ? raw.images : [],
-    ...(Array.isArray(raw.tables) ? { tables: raw.tables } : {}),
-    ...(isStringArray(raw.hyperlinks) ? { hyperlinks: raw.hyperlinks } : {}),
-    ...(typeof raw.header === "string" || raw.header === null ? { header: raw.header } : {}),
-    ...(typeof raw.footer === "string" || raw.footer === null ? { footer: raw.footer } : {}),
-    ...(raw.dimensions !== undefined ? { dimensions: raw.dimensions } : {}),
-    ...(raw.confidenceScores !== undefined ? { confidenceScores: raw.confidenceScores } : {}),
   };
+  if (Array.isArray(raw.tables)) {
+    normalized.tables = raw.tables;
+  }
+  if (isStringArray(raw.hyperlinks)) {
+    normalized.hyperlinks = raw.hyperlinks;
+  }
+  if (typeof raw.header === "string" || raw.header === null) {
+    normalized.header = raw.header;
+  }
+  if (typeof raw.footer === "string" || raw.footer === null) {
+    normalized.footer = raw.footer;
+  }
+  if (raw.dimensions !== undefined) {
+    normalized.dimensions = raw.dimensions;
+  }
+  if (raw.confidenceScores !== undefined) {
+    normalized.confidenceScores = raw.confidenceScores;
+  }
+  return normalized;
 }
 
 function uploadedFileFromResponse(response: unknown): MistralOcrUploadedFile {
@@ -232,13 +253,20 @@ function uploadedFileFromResponse(response: unknown): MistralOcrUploadedFile {
     throw new Error("Mistral OCR upload response contained no file id.");
   }
 
-  return {
+  const uploadedFile: MistralOcrUploadedFile = {
     id: response.id,
-    ...(typeof response.filename === "string" ? { filename: response.filename } : {}),
-    ...(typeof response.sizeBytes === "number" ? { sizeBytes: response.sizeBytes } : {}),
-    ...(typeof response.purpose === "string" ? { purpose: response.purpose } : {}),
     rawResponse: response,
   };
+  if (typeof response.filename === "string") {
+    uploadedFile.filename = response.filename;
+  }
+  if (typeof response.sizeBytes === "number") {
+    uploadedFile.sizeBytes = response.sizeBytes;
+  }
+  if (typeof response.purpose === "string") {
+    uploadedFile.purpose = response.purpose;
+  }
+  return uploadedFile;
 }
 
 function toUint8Array(data: Uint8Array | ArrayBuffer): Uint8Array {

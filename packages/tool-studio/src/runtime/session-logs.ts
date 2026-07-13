@@ -6,7 +6,6 @@ import type {
   StudioSessionLogEntry,
   StudioSessionStore,
 } from "../types";
-import { compact } from "./compact";
 import { serializeError } from "./errors";
 import { formatUnknown } from "./json";
 
@@ -57,11 +56,11 @@ export function sessionCreatedLog(
     category: "session",
     event: "session.created",
     message: "Session created",
-    metadata: compact({
+    metadata: {
       agentId: session.agentId,
       hasTitle: session.title !== undefined,
       titleLength: session.title?.length ?? 0,
-    }),
+    },
   };
 }
 
@@ -76,6 +75,15 @@ export function runReceivedLog(props: {
   hasTrace: boolean;
   metadata?: JsonObject;
 }): StudioSessionLogAppendInput {
+  const metadata: JsonObject = {
+    agentId: props.agentId,
+    stream: props.stream,
+    message: messageSummary(props.message),
+    hasTrace: props.hasTrace,
+    metadataKeys: Object.keys(props.metadata ?? {}),
+  };
+  if (props.maxTurns !== undefined) metadata.maxTurns = props.maxTurns;
+  if (props.toolConcurrency !== undefined) metadata.toolConcurrency = props.toolConcurrency;
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -83,15 +91,7 @@ export function runReceivedLog(props: {
     category: "api",
     event: "run.received",
     message: "Run request received",
-    metadata: compact({
-      agentId: props.agentId,
-      stream: props.stream,
-      message: messageSummary(props.message),
-      maxTurns: props.maxTurns,
-      toolConcurrency: props.toolConcurrency,
-      hasTrace: props.hasTrace,
-      metadataKeys: Object.keys(props.metadata ?? {}),
-    }),
+    metadata,
   };
 }
 
@@ -103,10 +103,10 @@ export function runStartedLog(session: StudioSession, runId: string): StudioSess
     category: "run",
     event: "run.started",
     message: "Run started",
-    metadata: compact({
+    metadata: {
       agentId: session.agentId,
       existingMessageCount: session.messageCount,
-    }),
+    },
   };
 }
 
@@ -121,10 +121,10 @@ export function memoryLoadedLog(
     category: "memory",
     event: "memory.loaded",
     message: "Session memory loaded",
-    metadata: compact({
+    metadata: {
       messageCount: session.messageCount,
       transcriptEntries: session.transcript.length,
-    }),
+    },
   };
 }
 
@@ -136,6 +136,13 @@ export function runCompletedLog(props: {
   output?: string;
   messageCount?: number;
 }): StudioSessionLogAppendInput {
+  const metadata: JsonObject = {
+    durationMs: props.durationMs,
+    outputBytes: byteLength(props.output),
+  };
+  const usage = usageSummary(props.usage);
+  if (usage !== undefined) metadata.usage = usage;
+  if (props.messageCount !== undefined) metadata.messageCount = props.messageCount;
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -143,12 +150,7 @@ export function runCompletedLog(props: {
     category: "run",
     event: "run.completed",
     message: "Run completed",
-    metadata: compact({
-      durationMs: props.durationMs,
-      usage: usageSummary(props.usage),
-      outputBytes: byteLength(props.output),
-      messageCount: props.messageCount,
-    }),
+    metadata,
   };
 }
 
@@ -157,6 +159,8 @@ export function memorySavedLog(props: {
   runId: string;
   messageCount?: number;
 }): StudioSessionLogAppendInput {
+  const metadata: JsonObject = {};
+  if (props.messageCount !== undefined) metadata.messageCount = props.messageCount;
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -164,9 +168,7 @@ export function memorySavedLog(props: {
     category: "memory",
     event: "memory.saved",
     message: "Session memory saved",
-    metadata: compact({
-      messageCount: props.messageCount,
-    }),
+    metadata,
   };
 }
 
@@ -183,10 +185,10 @@ export function runFailedLog(
     category: "run",
     event: "run.failed",
     message: "Run failed",
-    metadata: compact({
+    metadata: {
       durationMs: Date.now() - startedAt,
       error: serializeError(error),
-    }),
+    },
   };
 }
 
@@ -206,11 +208,11 @@ function logsFromStreamEvent(props: {
         category: "prompt",
         event: "prompt.prepared",
         message: `Turn ${event.turn} prompt prepared`,
-        metadata: compact({
+        metadata: {
           turn: event.turn,
           prompt: messageSummary(event.prompt),
           historyCount: event.history.length,
-        }),
+        },
       },
     ];
   }
@@ -223,16 +225,27 @@ function logsFromStreamEvent(props: {
         category: "tool",
         event: "tool.called",
         message: `Tool ${event.toolCall.function.name} called`,
-        metadata: compact({
+        metadata: {
           turn: event.turn,
           toolName: event.toolCall.function.name,
           callId: event.toolCall.callId ?? event.toolCall.id,
           argumentBytes: byteLength(formatUnknown(event.toolCall.function.arguments)),
-        }),
+        },
       },
     ];
   }
   if (event.type === "tool_result") {
+    const metadata: JsonObject = {
+      turn: event.turn,
+      toolName: event.toolName,
+      argumentBytes: byteLength(event.args),
+      resultBytes: byteLength(event.result),
+    };
+    if (event.toolCallId !== undefined) metadata.callId = event.toolCallId;
+    if (event.internalCallId !== undefined) metadata.internalCallId = event.internalCallId;
+    if (event.structuredResult !== undefined) {
+      metadata.structuredResultBytes = byteLength(JSON.stringify(event.structuredResult));
+    }
     return [
       {
         sessionId,
@@ -241,22 +254,17 @@ function logsFromStreamEvent(props: {
         category: "tool",
         event: "tool.completed",
         message: `Tool ${event.toolName} completed`,
-        metadata: compact({
-          turn: event.turn,
-          toolName: event.toolName,
-          callId: event.toolCallId,
-          internalCallId: event.internalCallId,
-          argumentBytes: byteLength(event.args),
-          resultBytes: byteLength(event.result),
-          structuredResultBytes:
-            event.structuredResult === undefined
-              ? undefined
-              : byteLength(JSON.stringify(event.structuredResult)),
-        }),
+        metadata,
       },
     ];
   }
   if (event.type === "turn_end") {
+    const metadata: JsonObject = {
+      turn: event.turn,
+      contentCount: event.response.choice.length,
+    };
+    const usage = usageSummary(event.response.usage);
+    if (usage !== undefined) metadata.usage = usage;
     return [
       {
         sessionId,
@@ -265,11 +273,7 @@ function logsFromStreamEvent(props: {
         category: "model",
         event: "model.turn.completed",
         message: `Model turn ${event.turn} completed`,
-        metadata: compact({
-          turn: event.turn,
-          contentCount: event.response.choice.length,
-          usage: usageSummary(event.response.usage),
-        }),
+        metadata,
       },
     ];
   }
@@ -290,6 +294,14 @@ function logsFromStreamEvent(props: {
     return [runFailedLog(sessionId, runId, event.error, props.startedAt)];
   }
   if (event.type === "tool_approval_request") {
+    const metadata: JsonObject = {
+      approvalId: event.approval.id,
+      toolName: event.approval.toolName,
+      status: event.approval.status,
+      hasReason: event.approval.reason !== undefined,
+      argumentBytes: byteLength(event.approval.args),
+    };
+    if (event.approval.callId !== undefined) metadata.callId = event.approval.callId;
     return [
       {
         sessionId,
@@ -298,18 +310,18 @@ function logsFromStreamEvent(props: {
         category: "approval",
         event: "approval.requested",
         message: `Approval requested for ${event.approval.toolName}`,
-        metadata: compact({
-          approvalId: event.approval.id,
-          toolName: event.approval.toolName,
-          callId: event.approval.callId,
-          status: event.approval.status,
-          hasReason: event.approval.reason !== undefined,
-          argumentBytes: byteLength(event.approval.args),
-        }),
+        metadata,
       },
     ];
   }
   if (event.type === "tool_approval_result") {
+    const metadata: JsonObject = {
+      approvalId: event.approval.id,
+      toolName: event.approval.toolName,
+      status: event.approval.status,
+      hasReason: event.approval.reason !== undefined,
+    };
+    if (event.approval.callId !== undefined) metadata.callId = event.approval.callId;
     return [
       {
         sessionId,
@@ -318,17 +330,19 @@ function logsFromStreamEvent(props: {
         category: "approval",
         event: "approval.resolved",
         message: `Approval ${event.approval.status} for ${event.approval.toolName}`,
-        metadata: compact({
-          approvalId: event.approval.id,
-          toolName: event.approval.toolName,
-          callId: event.approval.callId,
-          status: event.approval.status,
-          hasReason: event.approval.reason !== undefined,
-        }),
+        metadata,
       },
     ];
   }
   if (event.type === "tool_question_request") {
+    const metadata: JsonObject = {
+      questionId: event.question.id,
+      toolName: event.question.toolName,
+      status: event.question.status,
+      questionCount: event.question.questions.length,
+      argumentBytes: byteLength(event.question.args),
+    };
+    if (event.question.callId !== undefined) metadata.callId = event.question.callId;
     return [
       {
         sessionId,
@@ -337,18 +351,18 @@ function logsFromStreamEvent(props: {
         category: "question",
         event: "question.requested",
         message: `Question requested by ${event.question.toolName}`,
-        metadata: compact({
-          questionId: event.question.id,
-          toolName: event.question.toolName,
-          callId: event.question.callId,
-          status: event.question.status,
-          questionCount: event.question.questions.length,
-          argumentBytes: byteLength(event.question.args),
-        }),
+        metadata,
       },
     ];
   }
   if (event.type === "tool_question_result") {
+    const metadata: JsonObject = {
+      questionId: event.question.id,
+      toolName: event.question.toolName,
+      status: event.question.status,
+      answerCount: event.question.answers?.length ?? 0,
+    };
+    if (event.question.callId !== undefined) metadata.callId = event.question.callId;
     return [
       {
         sessionId,
@@ -357,13 +371,7 @@ function logsFromStreamEvent(props: {
         category: "question",
         event: "question.answered",
         message: `Question answered for ${event.question.toolName}`,
-        metadata: compact({
-          questionId: event.question.id,
-          toolName: event.question.toolName,
-          callId: event.question.callId,
-          status: event.question.status,
-          answerCount: event.question.answers?.length ?? 0,
-        }),
+        metadata,
       },
     ];
   }
@@ -398,7 +406,7 @@ function childAgentLog(
         category: "tool",
         event: "child_tool.called",
         message: `Child agent ${event.agentName ?? event.agentId} called ${child.toolCall.function.name}`,
-        metadata: compact({
+        metadata: {
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
@@ -407,11 +415,24 @@ function childAgentLog(
           toolName: child.toolCall.function.name,
           callId: child.toolCall.callId ?? child.toolCall.id,
           argumentBytes: byteLength(formatUnknown(child.toolCall.function.arguments)),
-        }),
+        },
       },
     ];
   }
   if (child.type === "tool_result") {
+    const metadata: JsonObject = {
+      parentToolName: event.toolName,
+      agentId: event.agentId,
+      hasAgentName: event.agentName !== undefined,
+      turn: event.turn,
+      childTurn: child.turn,
+      toolName: child.toolName,
+      resultBytes: byteLength(child.result),
+    };
+    if (child.toolCallId !== undefined) metadata.callId = child.toolCallId;
+    if (child.structuredResult !== undefined) {
+      metadata.structuredResultBytes = byteLength(JSON.stringify(child.structuredResult));
+    }
     return [
       {
         sessionId,
@@ -420,20 +441,7 @@ function childAgentLog(
         category: "tool",
         event: "child_tool.completed",
         message: `Child agent ${event.agentName ?? event.agentId} completed ${child.toolName}`,
-        metadata: compact({
-          parentToolName: event.toolName,
-          agentId: event.agentId,
-          hasAgentName: event.agentName !== undefined,
-          turn: event.turn,
-          childTurn: child.turn,
-          toolName: child.toolName,
-          callId: child.toolCallId,
-          resultBytes: byteLength(child.result),
-          structuredResultBytes:
-            child.structuredResult === undefined
-              ? undefined
-              : byteLength(JSON.stringify(child.structuredResult)),
-        }),
+        metadata,
       },
     ];
   }
@@ -446,17 +454,26 @@ function childAgentLog(
         category: "run",
         event: "child_agent.turn_started",
         message: `Child agent ${event.agentName ?? event.agentId} turn ${child.turn} started`,
-        metadata: compact({
+        metadata: {
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
           childTurn: child.turn,
           historyCount: child.history.length,
-        }),
+        },
       },
     ];
   }
   if (child.type === "final") {
+    const metadata: JsonObject = {
+      parentToolName: event.toolName,
+      agentId: event.agentId,
+      hasAgentName: event.agentName !== undefined,
+      outputBytes: byteLength(child.output),
+      messageCount: child.messages.length,
+    };
+    const usage = usageSummary(child.usage);
+    if (usage !== undefined) metadata.usage = usage;
     return [
       {
         sessionId,
@@ -465,14 +482,7 @@ function childAgentLog(
         category: "run",
         event: "child_agent.completed",
         message: `Child agent ${event.agentName ?? event.agentId} completed`,
-        metadata: compact({
-          parentToolName: event.toolName,
-          agentId: event.agentId,
-          hasAgentName: event.agentName !== undefined,
-          usage: usageSummary(child.usage),
-          outputBytes: byteLength(child.output),
-          messageCount: child.messages.length,
-        }),
+        metadata,
       },
     ];
   }
@@ -485,12 +495,12 @@ function childAgentLog(
         category: "run",
         event: "child_agent.failed",
         message: `Child agent ${event.agentName ?? event.agentId} failed`,
-        metadata: compact({
+        metadata: {
           parentToolName: event.toolName,
           agentId: event.agentId,
           hasAgentName: event.agentName !== undefined,
           error: serializeError(child.error),
-        }),
+        },
       },
     ];
   }
@@ -518,13 +528,20 @@ function usageSummary(value: unknown): JsonObject | undefined {
     return undefined;
   }
   const record = value as Record<string, unknown>;
-  return compact({
-    inputTokens: numericValue(record.inputTokens),
-    outputTokens: numericValue(record.outputTokens),
-    totalTokens: numericValue(record.totalTokens),
-    cachedInputTokens: numericValue(record.cachedInputTokens),
-    cacheCreationInputTokens: numericValue(record.cacheCreationInputTokens),
-  });
+  const summary: JsonObject = {};
+  const inputTokens = numericValue(record.inputTokens);
+  const outputTokens = numericValue(record.outputTokens);
+  const totalTokens = numericValue(record.totalTokens);
+  const cachedInputTokens = numericValue(record.cachedInputTokens);
+  const cacheCreationInputTokens = numericValue(record.cacheCreationInputTokens);
+  if (inputTokens !== undefined) summary.inputTokens = inputTokens;
+  if (outputTokens !== undefined) summary.outputTokens = outputTokens;
+  if (totalTokens !== undefined) summary.totalTokens = totalTokens;
+  if (cachedInputTokens !== undefined) summary.cachedInputTokens = cachedInputTokens;
+  if (cacheCreationInputTokens !== undefined) {
+    summary.cacheCreationInputTokens = cacheCreationInputTokens;
+  }
+  return summary;
 }
 
 function numericValue(value: unknown): number | undefined {

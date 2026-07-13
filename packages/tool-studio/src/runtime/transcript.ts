@@ -1,6 +1,5 @@
 import type { Message } from "@anvia/core/completion";
 import type { StudioTranscriptAttachment, StudioTranscriptEntry } from "../types";
-import { compact } from "./compact";
 import { formatJson } from "./json";
 
 export function renumberTranscript(entries: StudioTranscriptEntry[]): StudioTranscriptEntry[] {
@@ -18,15 +17,14 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
       let textEntryAdded = false;
       for (const content of message.content) {
         if (content.type === "text") {
-          transcript.push(
-            compact({
-              entryId: transcript.length,
-              kind: "message" as const,
-              role: "user" as const,
-              text: content.text,
-              attachments: attachments.length === 0 ? undefined : attachments,
-            }) as StudioTranscriptEntry,
-          );
+          const entry: StudioTranscriptEntry = {
+            entryId: transcript.length,
+            kind: "message",
+            role: "user",
+            text: content.text,
+          };
+          if (attachments.length > 0) entry.attachments = attachments;
+          transcript.push(entry);
           textEntryAdded = true;
         }
       }
@@ -63,14 +61,13 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
       if (content.type === "text") {
         appendAssistantTranscriptText(transcript, content.text);
       } else if (content.type === "reasoning") {
-        transcript.push(
-          compact({
-            entryId: transcript.length,
-            kind: "reasoning" as const,
-            reasoningId: content.id,
-            text: content.text,
-          }) as StudioTranscriptEntry,
-        );
+        const entry: StudioTranscriptEntry = {
+          entryId: transcript.length,
+          kind: "reasoning",
+          text: content.text,
+        };
+        if (content.id !== undefined) entry.reasoningId = content.id;
+        transcript.push(entry);
       } else if (content.type === "tool_call") {
         transcript.push({
           entryId: transcript.length,
@@ -91,25 +88,22 @@ function attachmentsFromMessage(message: Message): StudioTranscriptAttachment[] 
   }
   return message.content.flatMap((content): StudioTranscriptAttachment[] => {
     if (content.type === "image") {
-      return [
-        {
-          kind: "image",
-          ...(content.source.type === "base64"
-            ? { data: content.source.data, mediaType: content.source.mediaType }
-            : { url: content.source.url }),
-        },
-      ];
+      const attachment: StudioTranscriptAttachment = { kind: "image" };
+      if (content.source.type === "base64") {
+        attachment.data = content.source.data;
+        attachment.mediaType = content.source.mediaType;
+      } else {
+        attachment.url = content.source.url;
+      }
+      return [attachment];
     }
     if (content.type === "document") {
-      return [
-        compact({
-          kind: "document" as const,
-          name: content.source.filename,
-          mediaType: content.source.mediaType,
-          data: content.source.type === "base64" ? content.source.data : undefined,
-          url: content.source.type === "url" ? content.source.url : undefined,
-        }) as StudioTranscriptAttachment,
-      ];
+      const attachment: StudioTranscriptAttachment = { kind: "document" };
+      if (content.source.filename !== undefined) attachment.name = content.source.filename;
+      if (content.source.mediaType !== undefined) attachment.mediaType = content.source.mediaType;
+      if (content.source.type === "base64") attachment.data = content.source.data;
+      if (content.source.type === "url") attachment.url = content.source.url;
+      return [attachment];
     }
     return [];
   });

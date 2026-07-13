@@ -1,6 +1,5 @@
 import type { Hono } from "hono";
 import type { StudioTraceStore } from "../types";
-import { compact } from "./compact";
 import { errorResponse } from "./http";
 import { optionalQueryString, parseLimit, parseTraceStatus } from "./query";
 
@@ -28,10 +27,11 @@ export function registerTraceRoutes(app: Hono, traceStore: StudioTraceStore): vo
 
     const agentId = optionalQueryString(c.req.query("agentId"));
     const sessionId = optionalQueryString(c.req.query("sessionId"));
-    const traces = await traceStore.listTraces({
-      limit,
-      ...compact({ agentId, sessionId, status }),
-    });
+    const input: Parameters<NonNullable<typeof traceStore.listTraces>>[0] = { limit };
+    if (agentId !== undefined) input.agentId = agentId;
+    if (sessionId !== undefined) input.sessionId = sessionId;
+    if (status !== undefined) input.status = status;
+    const traces = await traceStore.listTraces(input);
     if (c.req.query("include") === "detail") {
       const detailed = await Promise.all(
         traces.map((trace) => Promise.resolve(traceStore.getTrace(trace.id))),

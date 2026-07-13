@@ -6,7 +6,6 @@ import type {
   StudioPipelineLogEntry,
   StudioPipelineLogStore,
 } from "../types";
-import { compact } from "./compact";
 import { serializeError } from "./errors";
 import { formatUnknown } from "./json";
 
@@ -34,6 +33,12 @@ export function pipelineRunReceivedLog(props: {
   input: unknown;
   metadata?: JsonObject;
 }): StudioPipelineLogAppendInput {
+  const metadata: JsonObject = {
+    stream: props.stream,
+    metadataKeys: Object.keys(props.metadata ?? {}),
+  };
+  const inputBytes = byteLength(formatUnknown(props.input));
+  if (inputBytes !== undefined) metadata.inputBytes = inputBytes;
   return {
     pipelineId: props.pipeline.id,
     runId: props.runId,
@@ -41,11 +46,7 @@ export function pipelineRunReceivedLog(props: {
     category: "api",
     event: "pipeline.run_received",
     message: "Pipeline run request received",
-    metadata: compact({
-      stream: props.stream,
-      inputBytes: byteLength(formatUnknown(props.input)),
-      metadataKeys: Object.keys(props.metadata ?? {}),
-    }),
+    metadata,
   };
 }
 
@@ -61,11 +62,11 @@ export function pipelineRunStartedLog(
     category: "run",
     event: "pipeline.run_started",
     message: "Pipeline run started",
-    metadata: compact({
+    metadata: {
       stageCount: graph.nodes.filter((node) => node.kind !== "input" && node.kind !== "output")
         .length,
       edgeCount: graph.edges.length,
-    }),
+    },
   };
 }
 
@@ -75,6 +76,9 @@ export function pipelineRunCompletedLog(props: {
   durationMs: number;
   output: unknown;
 }): StudioPipelineLogAppendInput {
+  const metadata: JsonObject = { durationMs: props.durationMs };
+  const outputBytes = byteLength(formatUnknown(props.output));
+  if (outputBytes !== undefined) metadata.outputBytes = outputBytes;
   return {
     pipelineId: props.pipelineId,
     runId: props.runId,
@@ -82,10 +86,7 @@ export function pipelineRunCompletedLog(props: {
     category: "run",
     event: "pipeline.run_completed",
     message: "Pipeline run completed",
-    metadata: compact({
-      durationMs: props.durationMs,
-      outputBytes: byteLength(formatUnknown(props.output)),
-    }),
+    metadata,
   };
 }
 
@@ -102,10 +103,10 @@ export function pipelineRunFailedLog(
     category: "run",
     event: "pipeline.run_failed",
     message: "Pipeline run failed",
-    metadata: compact({
+    metadata: {
       durationMs: Date.now() - startedAt,
       error: serializeError(error),
-    }),
+    },
   };
 }
 
@@ -134,10 +135,10 @@ export function pipelineStageLog(
       category,
       event: `${event.node.kind}.completed`,
       message: `${event.node.label} completed`,
-      metadata: compact({
+      metadata: {
         ...nodeMetadata(event.node),
         durationMs: event.durationMs,
-      }),
+      },
     };
   }
   return {
@@ -147,11 +148,11 @@ export function pipelineStageLog(
     category,
     event: `${event.node.kind}.failed`,
     message: `${event.node.label} failed`,
-    metadata: compact({
+    metadata: {
       ...nodeMetadata(event.node),
       durationMs: event.durationMs,
       error: serializeError(event.error),
-    }),
+    },
   };
 }
 
@@ -169,14 +170,15 @@ function stageCategory(node: PipelineGraphNode): StudioPipelineLogAppendInput["c
 }
 
 function nodeMetadata(node: PipelineGraphNode): JsonObject {
-  return compact({
+  const metadata: JsonObject = {
     nodeId: node.id,
     kind: node.kind,
     label: node.label,
-    agentId: node.agentId,
-    pipelineId: node.pipelineId,
-    branchKey: node.branchKey,
-  });
+  };
+  if (node.agentId !== undefined) metadata.agentId = node.agentId;
+  if (node.pipelineId !== undefined) metadata.pipelineId = node.pipelineId;
+  if (node.branchKey !== undefined) metadata.branchKey = node.branchKey;
+  return metadata;
 }
 
 function byteLength(value: string | undefined): number | undefined {

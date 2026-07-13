@@ -10,10 +10,10 @@ import type {
   StudioKnowledgeSourceKind,
   StudioKnowledgeSourceSummary,
   StudioKnowledgeSummary,
+  StudioStaticKnowledgeDocument,
   StudioTrace,
   StudioTraceStore,
 } from "../types";
-import { compact } from "./compact";
 import { errorResponse } from "./http";
 import { compactJsonObject, toJsonValue } from "./json";
 import { optionalQueryString, parseLimit } from "./query";
@@ -85,21 +85,19 @@ export function agentHasKnowledge(agent: StudioAgent): boolean {
 
 async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnowledgeConfig> {
   const agentName = agent.name ?? agent.agent.name;
-  return {
+  const config: StudioAgentKnowledgeConfig = {
     agentId: agent.id,
-    ...compact({ agentName }),
     sources: await knowledgeSources(agent),
-    staticContext: agent.agent.staticContext.map((document) => ({
-      id: document.id,
-      text: document.text,
-      ...compact({
-        additionalProps:
-          document.additionalProps !== undefined
-            ? jsonObjectFromRecord(document.additionalProps)
-            : undefined,
-      }),
-    })),
+    staticContext: agent.agent.staticContext.map((document) => {
+      const item: StudioStaticKnowledgeDocument = { id: document.id, text: document.text };
+      if (document.additionalProps !== undefined) {
+        item.additionalProps = jsonObjectFromRecord(document.additionalProps);
+      }
+      return item;
+    }),
   };
+  if (agentName !== undefined) config.agentName = agentName;
+  return config;
 }
 
 async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSourceSummary[]> {
@@ -118,17 +116,20 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
     agent.agent.dynamicContexts.map(async (registration, index) => {
       const inspect = inspectFn(registration.index);
       const count = await inspectableCount(inspect, registration.options.filter);
-      return {
+      const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicContextSourceId(index),
-        kind: "dynamic_context" as const,
+        kind: "dynamic_context",
         label: `Dynamic context ${index + 1}`,
         count: 1,
         registrationIndex: index,
         topK: registration.options.topK,
-        ...compact({ threshold: registration.options.threshold }),
         inspectable: inspect !== undefined,
-        ...compact({ itemCount: count }),
       };
+      if (registration.options.threshold !== undefined) {
+        source.threshold = registration.options.threshold;
+      }
+      if (count !== undefined) source.itemCount = count;
+      return source;
     }),
   );
 
@@ -136,17 +137,20 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
     agent.agent.dynamicTools.map(async (registration, index) => {
       const inspect = inspectFn(registration.index);
       const count = await inspectableCount(inspect, registration.options.filter);
-      return {
+      const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicToolsSourceId(index),
-        kind: "dynamic_tools" as const,
+        kind: "dynamic_tools",
         label: `Dynamic tools ${index + 1}`,
         count: 1,
         registrationIndex: index,
         topK: registration.options.topK,
-        ...compact({ threshold: registration.options.threshold }),
         inspectable: inspect !== undefined,
-        ...compact({ itemCount: count }),
       };
+      if (registration.options.threshold !== undefined) {
+        source.threshold = registration.options.threshold;
+      }
+      if (count !== undefined) source.itemCount = count;
+      return source;
     }),
   );
 
@@ -188,14 +192,16 @@ async function knowledgeItemsPage(
       cursor: request.cursor,
       filter: registration.options.filter,
     });
-    return {
+    const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
       sourceId,
       kind: "dynamic_context",
       inspectable: true,
       items: page.items.map((item) => dynamicContextItem(item)),
-      ...compact({ nextCursor: page.nextCursor, totalCount: page.totalCount }),
     };
+    if (page.nextCursor !== undefined) result.nextCursor = page.nextCursor;
+    if (page.totalCount !== undefined) result.totalCount = page.totalCount;
+    return result;
   }
 
   const dynamicToolsIndex = dynamicSourceIndex(sourceId, "dynamic_tools");
@@ -213,14 +219,16 @@ async function knowledgeItemsPage(
       cursor: request.cursor,
       filter: registration.options.filter,
     });
-    return {
+    const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
       sourceId,
       kind: "dynamic_tools",
       inspectable: true,
       items: page.items.map((item) => dynamicToolItem(item)),
-      ...compact({ nextCursor: page.nextCursor, totalCount: page.totalCount }),
     };
+    if (page.nextCursor !== undefined) result.nextCursor = page.nextCursor;
+    if (page.totalCount !== undefined) result.totalCount = page.totalCount;
+    return result;
   }
 
   return undefined;
@@ -242,27 +250,26 @@ function staticKnowledgeItemsPage(
   const start = Math.max(0, Math.trunc(Number(request.cursor ?? "0")));
   const page = agent.agent.staticContext.slice(start, start + request.limit);
   const nextOffset = start + page.length;
-  return {
+  const result: StudioKnowledgeItemsPage = {
     agentId: agent.id,
     sourceId: staticSourceId(),
     kind: "static_context",
     inspectable: true,
-    items: page.map((document) => ({
-      id: document.id,
-      kind: "static_context",
-      text: document.text,
-      ...compact({
-        metadata:
-          document.additionalProps !== undefined
-            ? jsonObjectFromRecord(document.additionalProps)
-            : undefined,
-      }),
-    })),
-    ...compact({
-      nextCursor: nextOffset < agent.agent.staticContext.length ? String(nextOffset) : undefined,
+    items: page.map((document) => {
+      const item: StudioKnowledgeItem = {
+        id: document.id,
+        kind: "static_context",
+        text: document.text,
+      };
+      if (document.additionalProps !== undefined) {
+        item.metadata = jsonObjectFromRecord(document.additionalProps);
+      }
+      return item;
     }),
     totalCount: agent.agent.staticContext.length,
   };
+  if (nextOffset < agent.agent.staticContext.length) result.nextCursor = String(nextOffset);
+  return result;
 }
 
 function nonInspectablePage(
@@ -291,14 +298,14 @@ function dynamicContextItem(item: {
       : typeof item.document === "string"
         ? item.document
         : undefined;
-  return {
+  const result: StudioKnowledgeItem = {
     id: item.id,
     kind: "dynamic_context",
-    ...(text === undefined ? { document: toJsonValue(item.document) } : { text }),
-    ...compact({
-      metadata: item.metadata !== undefined ? jsonObjectFromRecord(item.metadata) : undefined,
-    }),
   };
+  if (text === undefined) result.document = toJsonValue(item.document);
+  else result.text = text;
+  if (item.metadata !== undefined) result.metadata = jsonObjectFromRecord(item.metadata);
+  return result;
 }
 
 function dynamicToolItem(item: {
@@ -315,17 +322,16 @@ function dynamicToolItem(item: {
         ? definition.name
         : item.id;
   const description = typeof definition.description === "string" ? definition.description : "";
-  return {
+  const result: StudioKnowledgeItem = {
     id: item.id,
     kind: "dynamic_tool",
     toolName,
     description,
     parameterKeys: parameterKeys(definition.parameters),
     document: toJsonValue(item.document),
-    ...compact({
-      metadata: item.metadata !== undefined ? jsonObjectFromRecord(item.metadata) : undefined,
-    }),
   };
+  if (item.metadata !== undefined) result.metadata = jsonObjectFromRecord(item.metadata);
+  return result;
 }
 
 function parameterKeys(parameters: unknown): string[] {
@@ -398,21 +404,20 @@ function evidenceFromTrace(trace: StudioTrace): StudioKnowledgeEvidence[] {
     }
 
     const query = queryFromGenerationInput(observation.input);
-    return [
-      {
-        traceId: trace.id,
-        sessionId: trace.sessionId,
-        observationId: observation.id,
-        observationName: observation.name,
-        turn: observation.turn,
-        startedAt: observation.startedAt,
-        ...compact({ query }),
-        documentCount: documents.length,
-        toolCount: tools.length,
-        documents,
-        tools,
-      },
-    ];
+    const evidence: StudioKnowledgeEvidence = {
+      traceId: trace.id,
+      sessionId: trace.sessionId,
+      observationId: observation.id,
+      observationName: observation.name,
+      turn: observation.turn,
+      startedAt: observation.startedAt,
+      documentCount: documents.length,
+      toolCount: tools.length,
+      documents,
+      tools,
+    };
+    if (query !== undefined) evidence.query = query;
+    return [evidence];
   });
 }
 
@@ -487,7 +492,11 @@ function evidenceDocument(value: unknown): StudioKnowledgeEvidenceDocument[] {
   if (id === undefined && text === undefined && additionalProps === undefined) {
     return [];
   }
-  return [compact({ id, text, additionalProps })];
+  const document: StudioKnowledgeEvidenceDocument = {};
+  if (id !== undefined) document.id = id;
+  if (text !== undefined) document.text = text;
+  if (additionalProps !== undefined) document.additionalProps = additionalProps;
+  return [document];
 }
 
 function evidenceToolName(value: unknown): string[] {

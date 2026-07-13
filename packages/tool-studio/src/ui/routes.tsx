@@ -16,14 +16,15 @@ export function resolveStudioUiOptions(
   ui: boolean | StudioUiOptions | undefined,
 ): ResolvedStudioUiOptions {
   const options = typeof ui === "object" ? ui : {};
-  return {
+  const resolved: ResolvedStudioUiOptions = {
     path: normalizeUiPath(options.path ?? "/ui"),
     title: options.title ?? "Anvia Studio",
     rootRoutes: options.rootRoutes ?? true,
     redirectRoot: options.redirectRoot ?? true,
-    ...(options.clientScript === undefined ? {} : { clientScript: options.clientScript }),
     protectShell: options.protectShell ?? false,
   };
+  if (options.clientScript !== undefined) resolved.clientScript = options.clientScript;
+  return resolved;
 }
 
 export function isStudioUiEnabled(ui: boolean | StudioUiOptions | undefined): boolean {

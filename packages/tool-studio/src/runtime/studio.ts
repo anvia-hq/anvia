@@ -25,7 +25,6 @@ import {
 import { registerAgentRunRoute } from "./agent-runs";
 import { cloneAgent } from "./agent-utils";
 import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
-import { compact } from "./compact";
 import {
   agentConfig,
   agentRuntimeSummary,
@@ -92,11 +91,12 @@ export class Studio implements AnviaStudio {
     this.studio = createStudioApp(this.options);
 
     const port = serveOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
-    this.server = serve({
+    const serverOptions: Parameters<typeof serve>[0] = {
       fetch: (request) => this.fetch(request),
-      ...compact({ hostname: serveOptions.hostname }),
       port,
-    });
+    };
+    if (serveOptions.hostname !== undefined) serverOptions.hostname = serveOptions.hostname;
+    this.server = serve(serverOptions);
 
     const log = serveOptions.log ?? true;
     if (log) {
@@ -138,14 +138,15 @@ function studioOptionsFromTargets(
     // biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous user pipelines.
     (target): target is Pipeline<any, any> => target instanceof Pipeline,
   );
-  return {
+  const runtimeOptions: StudioRuntimeOptions = {
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
     pipelines: inferStudioPipelines(pipelines),
     evals: options.evals ?? [],
-    ...compact({ models: options.models }),
-    ...compact({ stores: options.stores }),
-    ...compact({ ui: options.ui }),
   };
+  if (options.models !== undefined) runtimeOptions.models = options.models;
+  if (options.stores !== undefined) runtimeOptions.stores = options.stores;
+  if (options.ui !== undefined) runtimeOptions.ui = options.ui;
+  return runtimeOptions;
 }
 
 function inferStudioAgents(agents: Agent[], quickPrompts: Record<string, string[]>): StudioAgent[] {
@@ -166,13 +167,14 @@ function inferStudioPipelines(pipelines: Array<Pipeline<any, any>>): StudioPipel
   const ids = new Set<string>();
   return pipelines.map((pipeline) => {
     const id = uniqueAgentId(pipeline.id || "pipeline", ids);
-    return {
+    const studioPipeline: StudioPipeline = {
       id,
       pipeline,
-      ...compact({ name: pipeline.name }),
-      ...compact({ description: pipeline.description }),
-      ...compact({ metadata: pipeline.metadata }),
     };
+    if (pipeline.name !== undefined) studioPipeline.name = pipeline.name;
+    if (pipeline.description !== undefined) studioPipeline.description = pipeline.description;
+    if (pipeline.metadata !== undefined) studioPipeline.metadata = pipeline.metadata;
+    return studioPipeline;
   });
 }
 
@@ -188,8 +190,7 @@ function uniqueAgentId(baseId: string, ids: Set<string>): string {
 }
 
 function agentMetadata(agent: Agent): JsonObject {
-  return {
-    ...compact({ defaultMaxTurns: agent.defaultMaxTurns }),
+  const metadata: JsonObject = {
     staticContextCount: agent.staticContext.length,
     dynamicContextCount: agent.dynamicContexts.length,
     dynamicToolCount: agent.dynamicTools.length,
@@ -198,6 +199,8 @@ function agentMetadata(agent: Agent): JsonObject {
     observerCount: agent.observers.length,
     approvalToolCount: agent.toolSet.values().filter((tool) => tool.approval !== undefined).length,
   };
+  if (agent.defaultMaxTurns !== undefined) metadata.defaultMaxTurns = agent.defaultMaxTurns;
+  return metadata;
 }
 
 function createStudioApp(options: StudioRuntimeOptions): StudioApp {
@@ -268,16 +271,16 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     evals: options.evals,
     evalMap,
   });
-  registerKnowledgeRoutes(app, {
-    agents,
-    ...compact({ traceStore: stores.traces }),
-  });
-  registerPipelineRoutes(app, {
+  const knowledgeOptions: Parameters<typeof registerKnowledgeRoutes>[1] = { agents };
+  if (stores.traces !== undefined) knowledgeOptions.traceStore = stores.traces;
+  registerKnowledgeRoutes(app, knowledgeOptions);
+  const pipelineOptions: Parameters<typeof registerPipelineRoutes>[1] = {
     pipelines,
     pipelineMap,
-    ...compact({ logStore: stores.pipelineLogs }),
-    ...compact({ runStore: stores.pipelineRuns }),
-  });
+  };
+  if (stores.pipelineLogs !== undefined) pipelineOptions.logStore = stores.pipelineLogs;
+  if (stores.pipelineRuns !== undefined) pipelineOptions.runStore = stores.pipelineRuns;
+  registerPipelineRoutes(app, pipelineOptions);
 
   registerAgentRunRoute(app, {
     agentMap,
@@ -291,11 +294,12 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     registerMemoryRoutes(app, {
       sessionStore: stores.sessions,
     });
-    registerSessionRoutes(app, {
+    const sessionOptions: Parameters<typeof registerSessionRoutes>[1] = {
       agentMap,
       sessionStore: stores.sessions,
-      ...compact({ traceStore: stores.traces }),
-    });
+    };
+    if (stores.traces !== undefined) sessionOptions.traceStore = stores.traces;
+    registerSessionRoutes(app, sessionOptions);
   }
 
   if (stores.traces !== undefined) {
@@ -307,7 +311,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     app.all(`/${capability}/*`, (c) => unsupportedCapability(c, capability));
   }
 
-  return {
+  const studio: StudioApp = {
     app,
     fetch(request: Request): Response | Promise<Response> {
       return app.fetch(request);
@@ -316,9 +320,10 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       return buildConfig(options, agents, pipelines, stores);
     },
     close() {},
-    ...compact({ sessionStore: stores.sessions }),
-    ...compact({ traceStore: stores.traces }),
   };
+  if (stores.sessions !== undefined) Object.assign(studio, { sessionStore: stores.sessions });
+  if (stores.traces !== undefined) Object.assign(studio, { traceStore: stores.traces });
+  return studio;
 }
 
 function withStudioTraceObserver(

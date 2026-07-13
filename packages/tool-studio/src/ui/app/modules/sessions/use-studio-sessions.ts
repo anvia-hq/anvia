@@ -101,18 +101,15 @@ export function useStudioSessions(props: {
       title: string,
       options: { updatePath?: boolean } = {},
     ): Promise<StudioSessionSummary> => {
+      const metadata: Record<string, string> = { source: "anvia-studio" };
+      if (selectedModelRef.length > 0) metadata[studioModelMetadataKey] = selectedModelRef;
       const response = await fetch("/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           agentId: currentAgentId,
           title,
-          metadata: {
-            source: "anvia-studio",
-            ...(selectedModelRef.length === 0
-              ? {}
-              : { [studioModelMetadataKey]: selectedModelRef }),
-          },
+          metadata,
         }),
       });
       if (!response.ok) {

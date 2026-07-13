@@ -760,6 +760,7 @@ describe("Anvia studio", () => {
     };
     expect(nextBody.logs[0]).toMatchObject({ event: "step.started", sequence: 2 });
     expect(nextBody.logs.map((log) => log.event)).toContain("pipeline.run_completed");
+    expect(nextBody).not.toHaveProperty("nextCursor");
 
     const serializedLogs = JSON.stringify([...firstBody.logs, ...nextBody.logs]);
     expect(serializedLogs).not.toContain("raw secret payload");
@@ -2842,6 +2843,7 @@ describe("Anvia studio", () => {
     };
     expect(nextBody.logs[0]).toMatchObject({ event: "run.started", sequence: 2 });
     expect(nextBody.logs.map((log) => log.event)).toContain("run.completed");
+    expect(nextBody).not.toHaveProperty("nextCursor");
 
     const serializedLogs = JSON.stringify([...firstBody.logs, ...nextBody.logs]);
     expect(serializedLogs).not.toContain("my raw secret prompt");

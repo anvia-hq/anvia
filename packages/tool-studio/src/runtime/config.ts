@@ -9,7 +9,6 @@ import type {
   StudioPipeline,
   StudioPipelineConfig,
 } from "../types";
-import { compact } from "./compact";
 import { evalConfig } from "./eval-config";
 import { serializeUnknown } from "./json";
 import { createStudioModelRegistry, studioModelsConfig } from "./models";
@@ -25,23 +24,22 @@ export function runnerId(options: StudioRuntimeOptions): string {
 export function agentConfig(agent: StudioAgent): StudioAgentConfig {
   const name = agent.name ?? agent.agent.name;
   const description = agent.description ?? agent.agent.description;
-  return compact({
+  const config: StudioAgentConfig = {
     id: agent.id,
-    name,
-    description,
     quickPrompts: agent.quickPrompts ?? [],
-    metadata: agent.metadata,
-  }) as StudioAgentConfig;
+  };
+  if (name !== undefined) config.name = name;
+  if (description !== undefined) config.description = description;
+  if (agent.metadata !== undefined) config.metadata = agent.metadata;
+  return config;
 }
 
 export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSummary {
   const tools = agentToolItems(agent);
   const name = agent.name ?? agent.agent.name;
   const description = agent.description ?? agent.agent.description;
-  return compact({
+  const summary: StudioAgentRuntimeSummary = {
     id: agent.id,
-    name,
-    description,
     model: toJsonValue(agent.agent.model),
     toolCount: tools.length,
     staticToolCount: tools.filter((item) => item.source === "static").length,
@@ -54,25 +52,31 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     hasMemory: agent.agent.memory !== undefined,
     hasHook: agent.agent.hook !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,
-    defaultMaxTurns: agent.agent.defaultMaxTurns,
-    metadata: agent.metadata,
-  }) as StudioAgentRuntimeSummary;
+  };
+  if (name !== undefined) summary.name = name;
+  if (description !== undefined) summary.description = description;
+  if (agent.agent.defaultMaxTurns !== undefined) {
+    summary.defaultMaxTurns = agent.agent.defaultMaxTurns;
+  }
+  if (agent.metadata !== undefined) summary.metadata = agent.metadata;
+  return summary;
 }
 
 export function pipelineConfig(pipeline: StudioPipeline): StudioPipelineConfig {
   const graph = pipeline.pipeline.graph();
   const stageNodes = graph.nodes.filter((node) => node.kind !== "input" && node.kind !== "output");
-  return compact({
+  const config: StudioPipelineConfig = {
     id: pipeline.id,
-    name: pipeline.name,
-    description: pipeline.description,
-    metadata: pipeline.metadata,
     stageCount: stageNodes.length,
     edgeCount: graph.edges.length,
     hasParallelStages: graph.nodes.some((node) => node.kind === "parallel"),
     agentCount: graph.nodes.filter((node) => node.kind === "agent").length,
     extractorCount: graph.nodes.filter((node) => node.kind === "extractor").length,
-  }) as StudioPipelineConfig;
+  };
+  if (pipeline.name !== undefined) config.name = pipeline.name;
+  if (pipeline.description !== undefined) config.description = pipeline.description;
+  if (pipeline.metadata !== undefined) config.metadata = pipeline.metadata;
+  return config;
 }
 
 export function buildConfig(
@@ -85,13 +89,9 @@ export function buildConfig(
     options.models === undefined
       ? undefined
       : studioModelsConfig(createStudioModelRegistry(options.models), agents);
-  return compact({
+  const config: StudioConfig = {
     id: runnerId(options),
-    name: options.name,
-    description: options.description,
-    version: options.version,
     agents: agents.map(agentConfig),
-    models,
     pipelines: pipelines.map(pipelineConfig),
     evals: options.evals.map(evalConfig),
     chat: {
@@ -99,7 +99,12 @@ export function buildConfig(
     },
     capabilities: capabilityConfig(options, agents, pipelines, stores),
     unsupportedCapabilities: unsupportedCapabilities(stores),
-  }) as StudioConfig;
+  };
+  if (options.name !== undefined) config.name = options.name;
+  if (options.description !== undefined) config.description = options.description;
+  if (options.version !== undefined) config.version = options.version;
+  if (models !== undefined) config.models = models;
+  return config;
 }
 
 export function capabilityConfig(
@@ -163,10 +168,10 @@ export function capabilityConfig(
 export function unsupportedCapabilities(
   stores: ResolvedStores,
 ): import("../types").StudioCapability[] {
-  return [
-    ...(stores.sessions === undefined ? (["sessions"] as const) : []),
-    ...(stores.traces === undefined ? (["traces"] as const) : []),
-  ];
+  const capabilities: import("../types").StudioCapability[] = [];
+  if (stores.sessions === undefined) capabilities.push("sessions");
+  if (stores.traces === undefined) capabilities.push("traces");
+  return capabilities;
 }
 
 function toJsonValue(value: unknown): JsonValue {

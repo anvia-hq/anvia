@@ -6,7 +6,6 @@ import type {
   StudioSessionStore,
   StudioTraceStore,
 } from "../types";
-import { compact } from "./compact";
 import type { ResolvedStores } from "./options";
 import { streamStudioJsonl } from "./streams";
 import { traceSummary } from "./trace-summary";
@@ -46,18 +45,13 @@ export class StudioObservabilityHub {
 }
 
 export function observeStores(stores: ResolvedStores, hub: StudioObservabilityHub): ResolvedStores {
-  return {
-    ...stores,
-    ...compact({
-      sessions:
-        stores.sessions !== undefined ? observeSessionStore(stores.sessions, hub) : undefined,
-      traces: stores.traces !== undefined ? observeTraceStore(stores.traces, hub) : undefined,
-      pipelineLogs:
-        stores.pipelineLogs !== undefined
-          ? observePipelineLogStore(stores.pipelineLogs, hub)
-          : undefined,
-    }),
-  };
+  const observed: ResolvedStores = { ...stores };
+  if (stores.sessions !== undefined) observed.sessions = observeSessionStore(stores.sessions, hub);
+  if (stores.traces !== undefined) observed.traces = observeTraceStore(stores.traces, hub);
+  if (stores.pipelineLogs !== undefined) {
+    observed.pipelineLogs = observePipelineLogStore(stores.pipelineLogs, hub);
+  }
+  return observed;
 }
 
 export function registerObservabilityRoutes(app: Hono, hub: StudioObservabilityHub): void {
@@ -83,7 +77,9 @@ function observabilityEvents(
   hub: StudioObservabilityHub,
   types: Set<StudioObservabilityEventType> | undefined,
 ): AsyncIterable<StudioObservabilityEvent> {
-  const subscription = hub.subscribe(compact({ types }));
+  const options: { types?: Set<StudioObservabilityEventType> } = {};
+  if (types !== undefined) options.types = types;
+  const subscription = hub.subscribe(options);
 
   return {
     [Symbol.asyncIterator]() {

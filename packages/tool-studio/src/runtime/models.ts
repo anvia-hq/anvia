@@ -15,7 +15,6 @@ import type {
   StudioModelSummary,
   StudioModelsConfig,
 } from "../types";
-import { compact } from "./compact";
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
 
@@ -70,25 +69,26 @@ export function createStudioModelRegistry(
       }
       staticModels.set(modelId, { ...model, id: modelId });
     }
-    providers.set(id, {
+    const runtimeProvider: RuntimeProvider = {
       ...provider,
       id,
-      ...compact({
-        defaultModel:
-          provider.defaultModel !== undefined ? normalizeModelId(provider.defaultModel) : undefined,
-      }),
       staticModels,
-    });
+    };
+    if (provider.defaultModel !== undefined) {
+      runtimeProvider.defaultModel = normalizeModelId(provider.defaultModel);
+    }
+    providers.set(id, runtimeProvider);
   }
 
-  return {
-    ...compact({
-      defaultModel: config.default !== undefined ? normalizeModelRef(config.default) : undefined,
-    }),
+  const registry: StudioModelRegistry = {
     providers,
     agentPolicies: normalizeAgentPolicies(config.agents ?? {}),
     modelCache: new Map(),
   };
+  if (config.default !== undefined) {
+    Object.assign(registry, { defaultModel: normalizeModelRef(config.default) });
+  }
+  return registry;
 }
 
 export function studioModelsConfig(
@@ -103,15 +103,14 @@ export function studioModelsConfig(
     const models = [...provider.staticModels.values()].map((model) =>
       modelSummary(provider, model.id, model),
     );
-    return {
+    const config: StudioModelProviderConfig = {
       id: provider.id,
-      ...compact({
-        name: provider.name,
-        defaultModel: provider.defaultModel,
-        metadata: provider.metadata,
-      }),
       models,
     };
+    if (provider.name !== undefined) config.name = provider.name;
+    if (provider.defaultModel !== undefined) config.defaultModel = provider.defaultModel;
+    if (provider.metadata !== undefined) config.metadata = provider.metadata;
+    return config;
   });
 
   const agentIds = new Set(agents.map((agent) => agent.id));
@@ -121,11 +120,12 @@ export function studioModelsConfig(
       .map(([agentId, policy]) => [agentId, publicPolicy(policy)]),
   );
 
-  return {
+  const config: StudioModelsConfig = {
     providers,
-    ...compact({ default: registry.defaultModel }),
     agents: agentsConfig,
   };
+  if (registry.defaultModel !== undefined) config.default = registry.defaultModel;
+  return config;
 }
 
 export function registerModelRoutes(
@@ -139,10 +139,13 @@ export function registerModelRoutes(
     const providers = await Promise.all(
       [...props.registry.providers.values()].map((provider) => providerCatalog(provider)),
     );
-    return c.json({
+    const response: { providers: StudioModelProviderConfig[]; defaultModel?: string } = {
       providers,
-      ...compact({ defaultModel: props.registry.defaultModel }),
-    });
+    };
+    if (props.registry.defaultModel !== undefined) {
+      response.defaultModel = props.registry.defaultModel;
+    }
+    return c.json(response);
   });
 
   app.get("/models/:providerId", async (c) => {
@@ -285,12 +288,13 @@ async function agentModelsCatalog(
     });
 
   const defaultModel = policy?.default ?? registry.defaultModel;
-  return {
+  const summary: StudioAgentModelsSummary = {
     agentId: agent.id,
-    ...compact({ defaultModel }),
     models: [...models, ...exactPolicyModels],
-    ...compact({ warnings: warnings.length === 0 ? undefined : warnings }),
   };
+  if (defaultModel !== undefined) summary.defaultModel = defaultModel;
+  if (warnings.length > 0) summary.warnings = warnings;
+  return summary;
 }
 
 async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelProviderConfig> {
@@ -305,23 +309,18 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
       const listed = await provider.listModels();
       for (const model of listed.data) {
         const staticModel = provider.staticModels.get(model.id);
-        models.set(
-          model.id,
-          modelSummary(provider, model.id, {
-            id: model.id,
-            ...compact({ name: model.name, description: model.description }),
-            ...(staticModel ?? {}),
-            metadata: {
-              ...compact({
-                type: model.type,
-                createdAt: model.createdAt,
-                ownedBy: model.ownedBy,
-                contextLength: model.contextLength,
-              }),
-              ...(staticModel?.metadata ?? {}),
-            },
-          }),
-        );
+        const definition: StudioModelDefinition = { id: model.id };
+        if (model.name !== undefined) definition.name = model.name;
+        if (model.description !== undefined) definition.description = model.description;
+        Object.assign(definition, staticModel);
+        const metadata: JsonObject = {};
+        if (model.type !== undefined) metadata.type = model.type;
+        if (model.createdAt !== undefined) metadata.createdAt = model.createdAt;
+        if (model.ownedBy !== undefined) metadata.ownedBy = model.ownedBy;
+        if (model.contextLength !== undefined) metadata.contextLength = model.contextLength;
+        Object.assign(metadata, staticModel?.metadata);
+        definition.metadata = metadata;
+        models.set(model.id, modelSummary(provider, model.id, definition));
       }
     } catch (error) {
       const serialized = serializeError(error);
@@ -332,16 +331,15 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
     }
   }
 
-  return {
+  const catalog: StudioModelProviderConfig = {
     id: provider.id,
-    ...compact({
-      name: provider.name,
-      defaultModel: provider.defaultModel,
-      metadata: provider.metadata,
-      warning,
-    }),
     models: [...models.values()].sort((left, right) => left.ref.localeCompare(right.ref)),
   };
+  if (provider.name !== undefined) catalog.name = provider.name;
+  if (provider.defaultModel !== undefined) catalog.defaultModel = provider.defaultModel;
+  if (provider.metadata !== undefined) catalog.metadata = provider.metadata;
+  if (warning !== undefined) catalog.warning = warning;
+  return catalog;
 }
 
 function modelSummary(
@@ -349,13 +347,14 @@ function modelSummary(
   modelId: string,
   model: StudioModelDefinition,
 ): StudioModelSummary {
-  return {
+  const summary: StudioModelSummary = {
     ...model,
     id: modelId,
     ref: `${provider.id}:${modelId}`,
     providerId: provider.id,
-    ...compact({ providerName: provider.name }),
   };
+  if (provider.name !== undefined) summary.providerName = provider.name;
+  return summary;
 }
 
 function ensureModelAllowed(registry: StudioModelRegistry, agentId: string, ref: string): void {
@@ -379,24 +378,26 @@ function normalizeAgentPolicies(
   policies: Record<string, StudioAgentModelPolicy>,
 ): Map<string, NormalizedAgentModelPolicy> {
   return new Map(
-    Object.entries(policies).map(([agentId, policy]) => [
-      agentId.trim(),
-      {
-        ...compact({
-          default: policy.default !== undefined ? normalizeModelRef(policy.default) : undefined,
-          allowed: policy.allowed?.map((entry) =>
-            typeof entry === "string" && entry.trim().endsWith(":*")
-              ? `${normalizeProviderId(entry.trim().slice(0, -2))}:*`
-              : normalizeModelRef(entry),
-          ),
-        }),
-      },
-    ]),
+    Object.entries(policies).map(([agentId, policy]) => {
+      const normalized: NormalizedAgentModelPolicy = {};
+      if (policy.default !== undefined) normalized.default = normalizeModelRef(policy.default);
+      if (policy.allowed !== undefined) {
+        normalized.allowed = policy.allowed.map((entry) =>
+          typeof entry === "string" && entry.trim().endsWith(":*")
+            ? `${normalizeProviderId(entry.trim().slice(0, -2))}:*`
+            : normalizeModelRef(entry),
+        );
+      }
+      return [agentId.trim(), normalized];
+    }),
   );
 }
 
 function publicPolicy(policy: NormalizedAgentModelPolicy): StudioAgentModelPolicyConfig {
-  return compact({ default: policy.default, allowed: policy.allowed });
+  const config: StudioAgentModelPolicyConfig = {};
+  if (policy.default !== undefined) config.default = policy.default;
+  if (policy.allowed !== undefined) config.allowed = policy.allowed;
+  return config;
 }
 
 function modelWarnings(

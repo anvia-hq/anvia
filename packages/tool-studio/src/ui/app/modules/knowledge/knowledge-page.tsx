@@ -61,19 +61,22 @@ export function KnowledgePage(props: {
   const loadItems = useCallback(
     async (source: KnowledgeSourceRef, options: { append: boolean; cursor?: string }) => {
       const sourceKey = source.key;
-      setItemState((current) => ({
-        key: sourceKey,
-        loading: true,
-        inspectable:
-          current?.key === sourceKey ? current.inspectable : source.source.inspectable === true,
-        items: options.append && current?.key === sourceKey ? current.items : [],
-        ...(options.append && current?.key === sourceKey && current.nextCursor !== undefined
-          ? { nextCursor: current.nextCursor }
-          : {}),
-        ...(current?.key === sourceKey && current.totalCount !== undefined
-          ? { totalCount: current.totalCount }
-          : {}),
-      }));
+      setItemState((current) => {
+        const next: ItemState = {
+          key: sourceKey,
+          loading: true,
+          inspectable:
+            current?.key === sourceKey ? current.inspectable : source.source.inspectable === true,
+          items: options.append && current?.key === sourceKey ? current.items : [],
+        };
+        if (options.append && current?.key === sourceKey && current.nextCursor !== undefined) {
+          next.nextCursor = current.nextCursor;
+        }
+        if (current?.key === sourceKey && current.totalCount !== undefined) {
+          next.totalCount = current.totalCount;
+        }
+        return next;
+      });
 
       try {
         const params = new URLSearchParams({
@@ -93,15 +96,16 @@ export function KnowledgePage(props: {
           if (current?.key !== sourceKey) {
             return current;
           }
-          return {
+          const next: ItemState = {
             key: sourceKey,
             loading: false,
             inspectable: page.inspectable,
             items: options.append ? [...current.items, ...page.items] : page.items,
-            ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
-            ...(page.totalCount === undefined ? {} : { totalCount: page.totalCount }),
-            ...(page.message === undefined ? {} : { message: page.message }),
           };
+          if (page.nextCursor !== undefined) next.nextCursor = page.nextCursor;
+          if (page.totalCount !== undefined) next.totalCount = page.totalCount;
+          if (page.message !== undefined) next.message = page.message;
+          return next;
         });
       } catch (error) {
         setItemState((current) => {

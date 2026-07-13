@@ -15,7 +15,6 @@ import type {
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
 } from "@anvia/core/observability";
-import { compact } from "../runtime/compact";
 import {
   compactJsonObject,
   serializeUnknown as serializeError,
@@ -177,7 +176,6 @@ class StudioRunTraceObserver implements AgentRunObserver {
     const trace: StudioTrace = {
       id: this.props.id,
       sessionId,
-      ...compact({ name: this.props.args.trace?.name }),
       status,
       trace: this.trace,
       startedAt: this.startedAt.toISOString(),
@@ -188,48 +186,43 @@ class StudioRunTraceObserver implements AgentRunObserver {
         prompt: this.props.args.prompt,
         history: this.props.args.history,
       }),
-      ...compact({ output: result.output }),
-      ...compact({ error: result.error }),
-      ...compact({ usage: result.usage }),
       metadata,
       observations: this.observations,
       observationCount: this.observations.length,
     };
+    if (this.props.args.trace?.name !== undefined) trace.name = this.props.args.trace.name;
+    if (result.output !== undefined) trace.output = result.output;
+    if (result.error !== undefined) trace.error = result.error;
+    if (result.usage !== undefined) trace.usage = result.usage;
 
     await store.saveTrace(trace);
   }
 }
 
+type ChildAgentStart = {
+  startedAt: Date;
+  agentId: string;
+  agentName?: string;
+};
+
+type ChildGenerationStart = ChildAgentStart & {
+  input?: JsonValue;
+  childTurn: number;
+};
+
+type ChildToolStart = ChildAgentStart & {
+  childTurn: number;
+  toolName: string;
+  toolCallId?: string;
+  internalCallId?: string;
+  input?: JsonValue;
+  completed: boolean;
+};
+
 class ChildAgentToolTraceAccumulator {
-  private readonly agentStarts = new Map<
-    string,
-    {
-      startedAt: Date;
-      agentId: string;
-      agentName?: string;
-    }
-  >();
-  private readonly generationStarts = new Map<
-    string,
-    {
-      startedAt: Date;
-      input?: JsonValue;
-      agentId: string;
-      agentName?: string;
-      childTurn: number;
-    }
-  >();
-  private readonly toolStarts: Array<{
-    startedAt: Date;
-    agentId: string;
-    agentName?: string;
-    childTurn: number;
-    toolName: string;
-    toolCallId?: string;
-    internalCallId?: string;
-    input?: JsonValue;
-    completed: boolean;
-  }> = [];
+  private readonly agentStarts = new Map<string, ChildAgentStart>();
+  private readonly generationStarts = new Map<string, ChildGenerationStart>();
+  private readonly toolStarts: ChildToolStart[] = [];
   private readonly completedObservations: StudioTraceObservation[] = [];
 
   constructor(private readonly parent: AgentToolStartArgs) {}
@@ -246,24 +239,26 @@ class ChildAgentToolTraceAccumulator {
     const childTurn = typeof child.turn === "number" ? child.turn : this.parent.turn;
 
     if (!this.agentStarts.has(agentId)) {
-      this.agentStarts.set(agentId, {
+      const start: ChildAgentStart = {
         startedAt: new Date(),
         agentId,
-        ...compact({ agentName }),
-      });
+      };
+      if (agentName !== undefined) start.agentName = agentName;
+      this.agentStarts.set(agentId, start);
     }
 
     if (child.type === "turn_start") {
-      this.generationStarts.set(generationKey(agentId, childTurn), {
+      const start: ChildGenerationStart = {
         startedAt: new Date(),
         input: toJsonValue({
           prompt: child.prompt,
           history: child.history,
         }),
         agentId,
-        ...compact({ agentName }),
         childTurn,
-      });
+      };
+      if (agentName !== undefined) start.agentName = agentName;
+      this.generationStarts.set(generationKey(agentId, childTurn), start);
       return;
     }
 
@@ -271,18 +266,17 @@ class ChildAgentToolTraceAccumulator {
       const key = generationKey(agentId, childTurn);
       const start = this.generationStarts.get(key);
       this.generationStarts.delete(key);
-      this.completedObservations.push(
-        traceObservation({
-          kind: "generation",
-          name: `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
-          status: "success",
-          turn: this.parent.turn,
-          startedAt: start?.startedAt ?? new Date(),
-          ...compact({ input: start?.input }),
-          output: toJsonValue(child.response),
-          metadata: this.childMetadata(agentId, agentName, childTurn),
-        }),
-      );
+      const observation: Parameters<typeof traceObservation>[0] = {
+        kind: "generation",
+        name: `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
+        status: "success",
+        turn: this.parent.turn,
+        startedAt: start?.startedAt ?? new Date(),
+        output: toJsonValue(child.response),
+        metadata: this.childMetadata(agentId, agentName, childTurn),
+      };
+      if (start?.input !== undefined) observation.input = start.input;
+      this.completedObservations.push(traceObservation(observation));
       return;
     }
 
@@ -296,16 +290,17 @@ class ChildAgentToolTraceAccumulator {
           : typeof toolCall.id === "string"
             ? toolCall.id
             : undefined;
-      this.toolStarts.push({
+      const start: (typeof this.toolStarts)[number] = {
         startedAt: new Date(),
         agentId,
-        ...compact({ agentName }),
         childTurn,
         toolName,
-        ...compact({ toolCallId: callId }),
         input: toJsonValue(toolCallFunction?.arguments ?? {}),
         completed: false,
-      });
+      };
+      if (agentName !== undefined) start.agentName = agentName;
+      if (callId !== undefined) start.toolCallId = callId;
+      this.toolStarts.push(start);
       return;
     }
 
@@ -320,22 +315,20 @@ class ChildAgentToolTraceAccumulator {
       if (start !== undefined) {
         start.completed = true;
       }
-      this.completedObservations.push(
-        traceObservation({
-          kind: "tool",
-          name: `${agentLabel(agentId, agentName)}.${toolName}`,
-          status: "success",
-          turn: this.parent.turn,
-          startedAt: start?.startedAt ?? new Date(),
-          ...compact({ input }),
-          ...(typeof child.result === "string" ? { output: parseOrString(child.result) } : {}),
-          metadata: {
-            ...this.childMetadata(agentId, agentName, childTurn),
-            ...compact({ toolCallId }),
-            ...compact({ internalCallId }),
-          },
-        }),
-      );
+      const metadata = this.childMetadata(agentId, agentName, childTurn);
+      if (toolCallId !== undefined) metadata.toolCallId = toolCallId;
+      if (internalCallId !== undefined) metadata.internalCallId = internalCallId;
+      const observation: Parameters<typeof traceObservation>[0] = {
+        kind: "tool",
+        name: `${agentLabel(agentId, agentName)}.${toolName}`,
+        status: "success",
+        turn: this.parent.turn,
+        startedAt: start?.startedAt ?? new Date(),
+        metadata,
+      };
+      if (input !== undefined) observation.input = input;
+      if (typeof child.result === "string") observation.output = parseOrString(child.result);
+      this.completedObservations.push(traceObservation(observation));
       return;
     }
 
@@ -466,11 +459,8 @@ function traceObservation(props: {
   metadata?: JsonObject;
 }): StudioTraceObservation {
   const endedAt = props.endedAt ?? new Date();
-  return {
+  const observation: StudioTraceObservation = {
     id: globalThis.crypto.randomUUID(),
-    ...(props.parentObservationId === undefined
-      ? {}
-      : { parentObservationId: props.parentObservationId }),
     kind: props.kind,
     name: props.name,
     status: props.status,
@@ -478,11 +468,15 @@ function traceObservation(props: {
     startedAt: props.startedAt.toISOString(),
     endedAt: endedAt.toISOString(),
     durationMs: durationMs(props.startedAt, endedAt),
-    ...compact({ input: props.input }),
-    ...compact({ output: props.output }),
-    ...compact({ error: props.error }),
-    ...compact({ metadata: props.metadata }),
   };
+  if (props.parentObservationId !== undefined) {
+    observation.parentObservationId = props.parentObservationId;
+  }
+  if (props.input !== undefined) observation.input = props.input;
+  if (props.output !== undefined) observation.output = props.output;
+  if (props.error !== undefined) observation.error = props.error;
+  if (props.metadata !== undefined) observation.metadata = props.metadata;
+  return observation;
 }
 
 function traceMetadata(args: AgentRunStartArgs, messages: JsonValue): JsonObject {

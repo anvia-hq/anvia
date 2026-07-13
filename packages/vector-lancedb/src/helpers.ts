@@ -44,13 +44,14 @@ export function lanceRows<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => {
     const logicalId =
       document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`;
-    return {
+    const row: Record<string, unknown> = {
       _rowid: rowId(logicalId),
       [documentIdColumn]: document.id,
       [documentColumn]: serializeDocument(document.document),
       [vectorColumn]: embedding.vector,
-      ...(document.metadata ?? {}),
     };
+    Object.assign(row, document.metadata);
+    return row;
   });
 }
 
@@ -70,12 +71,15 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     }
 
     const id = String(record[documentIdColumn] ?? "");
-    const result = {
+    const result: VectorSearchResult<T, Metadata> = {
       id,
       score,
       document: parseDocument(record[documentColumn]),
-      ...metadataFromColumns<Metadata>(record),
-    } as VectorSearchResult<T, Metadata>;
+    };
+    const metadata = metadataFromColumns<Metadata>(record);
+    if (metadata !== undefined) {
+      result.metadata = metadata;
+    }
     const current = byId.get(id);
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
@@ -96,7 +100,7 @@ export async function defaultLanceDBConnection(
 
 function metadataFromColumns<Metadata extends VectorMetadata>(
   record: Record<string, unknown>,
-): { metadata?: Metadata | undefined } {
+): Metadata | undefined {
   const metadata = Object.fromEntries(
     Object.entries(record).filter(
       ([key]) =>
@@ -106,5 +110,5 @@ function metadataFromColumns<Metadata extends VectorMetadata>(
         key !== "_distance",
     ),
   ) as Metadata;
-  return Object.keys(metadata).length === 0 ? {} : { metadata };
+  return Object.keys(metadata).length === 0 ? undefined : metadata;
 }

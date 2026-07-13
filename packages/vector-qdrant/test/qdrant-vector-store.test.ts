@@ -250,6 +250,28 @@ describe("QdrantVectorStore", () => {
     ).not.toHaveProperty("kind");
   });
 
+  it("handles search results without payloads", async () => {
+    const client = new MockQdrantClient();
+    client.search = async () => [{ id: "point-without-payload", score: 0.7 }];
+    const model = new MockEmbeddingModel();
+    const store = await QdrantVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    const results = await store.index(model).search({ query: "cat", topK: 1 });
+
+    expect(results).toEqual([
+      {
+        id: "point-without-payload",
+        score: 0.7,
+        document: "",
+      },
+    ]);
+    expect(results[0]).not.toHaveProperty("metadata");
+  });
+
   it("rejects documents with no embeddings", async () => {
     const client = new MockQdrantClient();
     const store = await QdrantVectorStore.connect<string>({

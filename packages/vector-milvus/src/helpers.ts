@@ -51,13 +51,14 @@ export function milvusRows<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => {
     const logicalId =
       document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`;
-    return {
+    const row: Record<string, unknown> = {
       id: pointId(logicalId),
       [documentIdFieldName]: document.id,
       [documentFieldName]: serializeDocument(document.document),
       vector: embedding.vector,
-      ...(document.metadata ?? {}),
     };
+    Object.assign(row, document.metadata);
+    return row;
   });
 }
 
@@ -87,12 +88,15 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     }
 
     const id = String(match[documentIdFieldName] ?? match.id);
-    const result = {
+    const result: VectorSearchResult<T, Metadata> = {
       id,
       score,
       document: parseDocument(match[documentFieldName]),
-      ...metadataFromRow<Metadata>(match),
-    } as VectorSearchResult<T, Metadata>;
+    };
+    const metadata = metadataFromRow<Metadata>(match);
+    if (metadata !== undefined) {
+      result.metadata = metadata;
+    }
 
     const current = byId.get(id);
     if (current === undefined || result.score > current.score) {
@@ -141,12 +145,12 @@ export async function ensureCollection(
 
 function metadataFromRow<Metadata extends VectorMetadata>(
   row: Record<string, unknown>,
-): { metadata?: Metadata | undefined } {
+): Metadata | undefined {
   const skipKeys = new Set(["id", "score", documentIdFieldName, documentFieldName, "vector"]);
   const metadata = Object.fromEntries(
     Object.entries(row).filter(
       ([key]) => !skipKeys.has(key) && !key.startsWith(reservedFieldPrefix),
     ),
   ) as Metadata;
-  return Object.keys(metadata).length === 0 ? {} : { metadata };
+  return Object.keys(metadata).length === 0 ? undefined : metadata;
 }

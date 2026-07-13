@@ -65,16 +65,16 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     if (threshold !== undefined && score < threshold) {
       return [];
     }
-    return [
-      {
-        id: logicalDocumentId(id),
-        score,
-        document: parseDocument(documents[index]),
-        ...(metadatas[index] === null || metadatas[index] === undefined
-          ? {}
-          : { metadata: metadatas[index] }),
-      } as VectorSearchResult<T, Metadata>,
-    ];
+    const result: VectorSearchResult<T, Metadata> = {
+      id: logicalDocumentId(id),
+      score,
+      document: parseDocument(documents[index]),
+    };
+    const metadata = metadatas[index];
+    if (metadata !== null && metadata !== undefined) {
+      result.metadata = metadata;
+    }
+    return [result];
   });
 
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();

@@ -27,14 +27,15 @@ export class ChromaVectorStore<T, Metadata extends VectorMetadata = VectorMetada
 
   async upsertDocuments(documents: Array<EmbeddedDocument<T, Metadata>>): Promise<void> {
     const records = documents.flatMap((document) => chromaRecords(document));
-    await this.collection.upsert({
+    const options: Record<string, unknown> = {
       ids: records.map((record) => record.id),
       documents: records.map((record) => record.document),
       embeddings: records.map((record) => record.embedding),
-      ...(records.some((record) => record.metadata !== undefined)
-        ? { metadatas: records.map((record) => record.metadata ?? null) }
-        : {}),
-    });
+    };
+    if (records.some((record) => record.metadata !== undefined)) {
+      options.metadatas = records.map((record) => record.metadata ?? null);
+    }
+    await this.collection.upsert(options);
   }
 
   index(model: EmbeddingModel): ChromaVectorIndex<T, Metadata> {

@@ -57,14 +57,15 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => {
     const logicalId =
       document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`;
+    const payload: Record<string, unknown> = {
+      [documentIdPayloadKey]: document.id,
+      [documentPayloadKey]: serializeDocument(document.document),
+    };
+    Object.assign(payload, document.metadata);
     return {
       id: pointId(logicalId),
       vector: embedding.vector,
-      payload: {
-        [documentIdPayloadKey]: document.id,
-        [documentPayloadKey]: serializeDocument(document.document),
-        ...(document.metadata ?? {}),
-      },
+      payload,
     };
   });
 }
@@ -82,12 +83,15 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     }
 
     const id = String(point.payload?.[documentIdPayloadKey] ?? point.id);
-    const result = {
+    const result: VectorSearchResult<T, Metadata> = {
       id,
       score: point.score,
       document: parseDocument(point.payload?.[documentPayloadKey]),
-      ...metadataFromPayload<Metadata>(point.payload),
-    } as VectorSearchResult<T, Metadata>;
+    };
+    const metadata = metadataFromPayload<Metadata>(point.payload);
+    if (metadata !== undefined) {
+      result.metadata = metadata;
+    }
     const current = byId.get(id);
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
@@ -137,18 +141,27 @@ function rawPoints(response: unknown): Array<{
       : Array.isArray(raw.result?.points)
         ? raw.result.points
         : raw.points);
-  return (points ?? []).map((point) => ({
-    id: point.id,
-    score: point.score ?? 0,
-    ...(point.payload === undefined ? {} : { payload: point.payload }),
-  }));
+  return (points ?? []).map((point) => {
+    const result: {
+      id: string | number;
+      score: number;
+      payload?: Record<string, unknown> | null;
+    } = {
+      id: point.id,
+      score: point.score ?? 0,
+    };
+    if (point.payload !== undefined) {
+      result.payload = point.payload;
+    }
+    return result;
+  });
 }
 
 function metadataFromPayload<Metadata extends VectorMetadata>(
   payload: Record<string, unknown> | null | undefined,
-): { metadata?: Metadata | undefined } {
+): Metadata | undefined {
   const metadata = Object.fromEntries(
     Object.entries(payload ?? {}).filter(([key]) => !key.startsWith(reservedPayloadPrefix)),
   ) as Metadata;
-  return Object.keys(metadata).length === 0 ? {} : { metadata };
+  return Object.keys(metadata).length === 0 ? undefined : metadata;
 }

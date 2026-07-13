@@ -80,12 +80,14 @@ export function parseSearchRows<T, Metadata extends VectorMetadata>(
     if (threshold !== undefined && score < threshold) {
       continue;
     }
-    const result = {
+    const result: VectorSearchResult<T, Metadata> = {
       id: row.document_id,
       score,
       document: row.document as T,
-      ...(row.metadata === null ? {} : { metadata: row.metadata }),
-    } as VectorSearchResult<T, Metadata>;
+    };
+    if (row.metadata !== null) {
+      result.metadata = row.metadata;
+    }
     const current = byId.get(result.id);
     if (current === undefined || result.score > current.score) {
       byId.set(result.id, result);
@@ -141,5 +143,9 @@ WHERE a.attrelid = $1::regclass
 
 export async function defaultPgClient(connectionString: string | undefined): Promise<PgClientLike> {
   const pg = await import("pg");
-  return new pg.Pool(connectionString === undefined ? {} : { connectionString }) as PgClientLike;
+  const options: { connectionString?: string } = {};
+  if (connectionString !== undefined) {
+    options.connectionString = connectionString;
+  }
+  return new pg.Pool(options) as PgClientLike;
 }

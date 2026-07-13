@@ -156,15 +156,15 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     finalResponse: CompletionResponse<RawResponse>,
   ): CompletionResponse<RawResponse> {
     if (finalResponse.choice.length === 0) {
-      return this.withMessageIdFallback(
-        {
-          ...accumulatedResponse,
-          usage: finalResponse.usage,
-          rawResponse: finalResponse.rawResponse,
-          ...(finalResponse.messageId === undefined ? {} : { messageId: finalResponse.messageId }),
-        },
-        accumulatedResponse,
-      );
+      const mergedResponse: CompletionResponse<RawResponse> = {
+        ...accumulatedResponse,
+        usage: finalResponse.usage,
+        rawResponse: finalResponse.rawResponse,
+      };
+      if (finalResponse.messageId !== undefined) {
+        mergedResponse.messageId = finalResponse.messageId;
+      }
+      return this.withMessageIdFallback(mergedResponse, accumulatedResponse);
     }
 
     const finalById = new Map<string, ToolCall>();

@@ -80,12 +80,13 @@ export async function embedDocuments<T, Metadata extends VectorMetadata = Vector
     byDocument.set(item.documentIndex, list);
   }
 
-  return prepared.map((item, index) => ({
-    id: item.id,
-    document: item.document,
-    ...(item.metadata !== undefined && { metadata: item.metadata }),
-    embeddings: byDocument.get(index) ?? [],
-  }));
+  return prepared.map((item, index) => {
+    const embeddings = byDocument.get(index) ?? [];
+    if (item.metadata === undefined) {
+      return { id: item.id, document: item.document, embeddings };
+    }
+    return { id: item.id, document: item.document, metadata: item.metadata, embeddings };
+  });
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

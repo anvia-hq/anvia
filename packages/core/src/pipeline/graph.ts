@@ -1,5 +1,4 @@
 import type { JsonObject } from "../completion";
-import { compact } from "../internal/compact";
 import type {
   PipelineBuilderState,
   PipelineGraph,
@@ -20,16 +19,21 @@ export function initialBuilderState(metadata: PipelineMetadata): PipelineBuilder
 
 export function initialGraph(metadata: PipelineMetadata): PipelineGraph {
   const id = normalizeId(metadata.id ?? "pipeline");
-  return {
-    ...compact({
-      id,
-      name: metadata.name,
-      description: metadata.description,
-      metadata: metadata.metadata,
-    }),
+  const graph: PipelineGraph = {
+    id,
     nodes: [{ id: "input", kind: "input", label: "Input" }],
     edges: [],
   };
+  if (metadata.name !== undefined) {
+    graph.name = metadata.name;
+  }
+  if (metadata.description !== undefined) {
+    graph.description = metadata.description;
+  }
+  if (metadata.metadata !== undefined) {
+    graph.metadata = metadata.metadata;
+  }
+  return graph;
 }
 
 export function appendNode(
@@ -161,17 +165,30 @@ function graphNode(
     normalizeId(options.preferredId ?? `${kind}_${index}`),
     options.existingIds ?? new Set(),
   );
-  return compact({
+  const node: PipelineGraphNode = {
     id,
     kind,
     label,
-    description: options.description,
-    metadata: options.metadata,
-    agentId: options.agentId,
-    agentName: options.agentName,
-    pipelineId: options.pipelineId,
-    branchKey: options.branchKey,
-  }) as PipelineGraphNode;
+  };
+  if (options.description !== undefined) {
+    node.description = options.description;
+  }
+  if (options.metadata !== undefined) {
+    node.metadata = options.metadata;
+  }
+  if (options.agentId !== undefined) {
+    node.agentId = options.agentId;
+  }
+  if (options.agentName !== undefined) {
+    node.agentName = options.agentName;
+  }
+  if (options.pipelineId !== undefined) {
+    node.pipelineId = options.pipelineId;
+  }
+  if (options.branchKey !== undefined) {
+    node.branchKey = options.branchKey;
+  }
+  return node;
 }
 
 function normalizeId(value: string): string {

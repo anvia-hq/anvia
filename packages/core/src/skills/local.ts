@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { isRecord } from "../internal/compact";
+import { isRecord } from "../internal/record";
 import type { Skill, SkillLoader, SkillValidationIssue } from "./types";
 import { SkillValidationError } from "./types";
 

@@ -1,5 +1,4 @@
 import type { z } from "zod";
-import { compact } from "../internal/compact";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { Tool, ToolApprovalPolicy, ToolCallContext } from "./tool";
 
@@ -42,28 +41,31 @@ export function createTool<
   options: CreateToolOptions<InputSchema, OutputSchema, Output>,
 ): Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> {
   const parameters = toProviderJsonSchema(options.input);
+  const definition = () => ({
+    name: options.name,
+    description: options.description,
+    parameters,
+  });
+  const call = async (
+    args: z.output<InputSchema>,
+    context: ToolCallContext = {},
+  ): Promise<CreateToolOutput<OutputSchema, Output>> => {
+    const parsedArgs = options.input.parse(args);
+    const result = await options.execute(parsedArgs, context);
+    return (
+      options.output === undefined ? result : options.output.parse(result)
+    ) as CreateToolOutput<OutputSchema, Output>;
+  };
+  const parseApprovalArgs = (args: unknown): z.output<InputSchema> => options.input.parse(args);
 
+  if (options.approval === undefined) {
+    return { name: options.name, definition, call, parseApprovalArgs };
+  }
   return {
-    ...compact({
-      name: options.name,
-      approval: options.approval,
-    }),
-    definition() {
-      return {
-        name: options.name,
-        description: options.description,
-        parameters,
-      };
-    },
-    async call(args, context = {}): Promise<CreateToolOutput<OutputSchema, Output>> {
-      const parsedArgs = options.input.parse(args);
-      const result = await options.execute(parsedArgs, context);
-      return (
-        options.output === undefined ? result : options.output.parse(result)
-      ) as CreateToolOutput<OutputSchema, Output>;
-    },
-    parseApprovalArgs(args): z.output<InputSchema> {
-      return options.input.parse(args);
-    },
+    name: options.name,
+    approval: options.approval,
+    definition,
+    call,
+    parseApprovalArgs,
   };
 }

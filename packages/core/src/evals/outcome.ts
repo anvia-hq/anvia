@@ -1,4 +1,3 @@
-import { compact } from "../internal/compact";
 import type { EvalMetadata } from "./types";
 
 export type EvalOutcome<Score = unknown> =
@@ -27,24 +26,38 @@ export const EvalOutcome = {
     score?: Score,
     options: { comment?: string | undefined; metadata?: EvalMetadata | undefined } = {},
   ): EvalOutcome<Score> {
-    return compact({
+    const outcome: EvalOutcome<Score> = {
       outcome: "pass" as const,
-      score,
-      comment: options.comment,
-      metadata: options.metadata,
-    }) as EvalOutcome<Score>;
+    };
+    if (score !== undefined) {
+      outcome.score = score;
+    }
+    if (options.comment !== undefined) {
+      outcome.comment = options.comment;
+    }
+    if (options.metadata !== undefined) {
+      outcome.metadata = options.metadata;
+    }
+    return outcome;
   },
 
   fail<Score>(
     score?: Score,
     options: { comment?: string | undefined; metadata?: EvalMetadata | undefined } = {},
   ): EvalOutcome<Score> {
-    return compact({
+    const outcome: EvalOutcome<Score> = {
       outcome: "fail" as const,
-      score,
-      comment: options.comment,
-      metadata: options.metadata,
-    }) as EvalOutcome<Score>;
+    };
+    if (score !== undefined) {
+      outcome.score = score;
+    }
+    if (options.comment !== undefined) {
+      outcome.comment = options.comment;
+    }
+    if (options.metadata !== undefined) {
+      outcome.metadata = options.metadata;
+    }
+    return outcome;
   },
 
   invalid<Score = never>(
@@ -55,12 +68,19 @@ export const EvalOutcome = {
       metadata?: EvalMetadata | undefined;
     } = {},
   ): EvalOutcome<Score> {
-    return compact({
+    const outcome: EvalOutcome<Score> = {
       outcome: "invalid" as const,
       reason,
-      score: options.score,
-      comment: options.comment,
-      metadata: options.metadata,
-    }) as EvalOutcome<Score>;
+    };
+    if (options.score !== undefined) {
+      outcome.score = options.score;
+    }
+    if (options.comment !== undefined) {
+      outcome.comment = options.comment;
+    }
+    if (options.metadata !== undefined) {
+      outcome.metadata = options.metadata;
+    }
+    return outcome;
   },
 };

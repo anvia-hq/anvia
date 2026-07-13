@@ -10,8 +10,7 @@ import type {
 } from "../completion/index";
 import type { GuardrailPolicy } from "../guardrails";
 import type { PromptHook } from "../hooks";
-import { compact } from "../internal/compact";
-import type { MemoryRegistration, SessionOptions } from "../memory/types";
+import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import { PromptRequest } from "../request";
 import { createTool } from "../tool/create-tool";
@@ -24,6 +23,7 @@ import type {
   Tool,
   ToolApprovalsOptions,
   ToolCallContext,
+  ToolCallStreamEvent,
 } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
@@ -104,11 +104,16 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     if (normalized.length === 0) {
       throw new TypeError("Session id must be a non-empty string.");
     }
-    return new AgentSession(this, {
+    const context: MemoryContext = {
       sessionId: normalized,
-      ...(options.userId !== undefined && { userId: options.userId }),
-      ...(options.metadata !== undefined && { metadata: options.metadata }),
-    });
+    };
+    if (options.userId !== undefined) {
+      context.userId = options.userId;
+    }
+    if (options.metadata !== undefined) {
+      context.metadata = options.metadata;
+    }
+    return new AgentSession(this, context);
   }
 
   asTool(options: AgentToolOptions): Tool<{ prompt: string }, string> {
@@ -134,13 +139,14 @@ export class Agent<M extends CompletionModel = CompletionModel> {
         ) {
           let output = "";
           for await (const event of childRequest.stream()) {
-            await context.emitStreamEvent(
-              compact({
-                agentId: this.id,
-                agentName: this.name,
-                event,
-              }),
-            );
+            const streamEvent: ToolCallStreamEvent = {
+              agentId: this.id,
+              event,
+            };
+            if (this.name !== undefined) {
+              streamEvent.agentName = this.name;
+            }
+            await context.emitStreamEvent(streamEvent);
             if (event.type === "final") {
               output = event.output;
             }

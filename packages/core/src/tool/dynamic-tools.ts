@@ -1,7 +1,6 @@
 import type { ToolDefinition } from "../completion";
 import type { EmbeddedDocument, EmbeddingModel, VectorMetadata } from "../embeddings";
 import { embedDocuments } from "../embeddings";
-import { compact } from "../internal/compact";
 import type {
   VectorInspectPage,
   VectorInspectRequest,
@@ -47,12 +46,14 @@ export async function embedTools<Metadata extends VectorMetadata = VectorMetadat
     const content = options.content?.(tool, definition) ?? defaultToolEmbeddingText(definition);
     const texts = Array.isArray(content) ? content : [content];
     const metadata = options.metadata?.(tool, definition);
-    const document: ToolSearchDocument<Metadata> = compact({
+    const document: ToolSearchDocument<Metadata> = {
       toolName: tool.name,
       definition,
       text: texts.join("\n"),
-      metadata,
-    }) as ToolSearchDocument<Metadata>;
+    };
+    if (metadata !== undefined) {
+      document.metadata = metadata;
+    }
     return { tool, document, texts, metadata };
   });
 

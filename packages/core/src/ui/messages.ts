@@ -329,8 +329,10 @@ function mergeToolResultPart(
     ...currentPart,
     toolName: resultPart.toolName === "tool" ? currentPart.toolName : resultPart.toolName,
     state: "output-available",
-    ...(resultPart.output === undefined ? {} : { output: resultPart.output }),
   };
+  if (resultPart.output !== undefined) {
+    mergedPart.output = resultPart.output;
+  }
   if (currentPart.callId === undefined && resultPart.callId !== undefined) {
     mergedPart.callId = resultPart.callId;
     toolPartLocations.byCallId.set(resultPart.callId, location);
@@ -407,14 +409,19 @@ function attachmentToUserContent(attachment: UIAttachment): UserContentType {
   }
 
   if (attachment.text !== undefined) {
+    const source: Extract<DocumentContent["source"], { type: "text" }> = {
+      type: "text",
+      text: attachment.text,
+    };
+    if (attachment.mediaType !== undefined) {
+      source.mediaType = attachment.mediaType;
+    }
+    if (attachment.name !== undefined) {
+      source.filename = attachment.name;
+    }
     return {
       type: "document",
-      source: {
-        type: "text",
-        text: attachment.text,
-        ...(attachment.mediaType === undefined ? {} : { mediaType: attachment.mediaType }),
-        ...(attachment.name === undefined ? {} : { filename: attachment.name }),
-      },
+      source,
     };
   }
 
@@ -434,8 +441,10 @@ function userContentToAttachment(content: ImageContent | DocumentContent): UIAtt
     const attachment: UIAttachment = {
       id: createId("attachment"),
       type: "image",
-      ...(content.detail === undefined ? {} : { detail: content.detail }),
     };
+    if (content.detail !== undefined) {
+      attachment.detail = content.detail;
+    }
     if (content.source.type === "url") {
       attachment.url = content.source.url;
     } else {

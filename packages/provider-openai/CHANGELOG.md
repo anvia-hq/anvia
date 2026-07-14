@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.21
+
+### Patch Changes
+
+- 5b0719c: Reject invalid Chat Completions streaming tool indices, isolate the primary completion choice, and fail safely when a streamed tool call ends without valid terminal metadata.
+
 ## 0.3.20
 
 ### Patch Changes

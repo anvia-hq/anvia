@@ -20,7 +20,7 @@ import {
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
-import { isPlainObject, numberFrom, parseJsonValue, schemaName, stringFrom } from "../utils";
+import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
 import type { OpenAICompletionModelName } from "./models";
 
 type ChatCompletionParams = Record<string, unknown>;
@@ -223,7 +223,7 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     const id = typeof toolCall.id === "string" ? toolCall.id : crypto.randomUUID();
     const name = typeof fn.name === "string" ? fn.name : "";
     const argsText = typeof fn.arguments === "string" ? fn.arguments : "{}";
-    choice.push(AssistantContent.toolCall(id, name, parseJsonValue(argsText)));
+    choice.push(AssistantContent.toolCall(id, name, parseToolArguments(id, argsText)));
   }
 
   const result: CompletionResponse = {

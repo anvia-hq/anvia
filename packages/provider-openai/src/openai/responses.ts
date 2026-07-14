@@ -23,7 +23,7 @@ import {
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
-import { isPlainObject, numberFrom, parseJsonValue, schemaName, stringFrom } from "../utils";
+import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
 import type { OpenAICompletionModelName } from "./models";
 
 type ResponsesCreateParams = Record<string, unknown>;
@@ -214,7 +214,7 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
       const callId = typeof item.call_id === "string" ? item.call_id : undefined;
       const name = typeof item.name === "string" ? item.name : "";
       const argsText = typeof item.arguments === "string" ? item.arguments : "{}";
-      choice.push(AssistantContent.toolCall(id, name, parseJsonValue(argsText), callId));
+      choice.push(AssistantContent.toolCall(id, name, parseToolArguments(id, argsText), callId));
     }
 
     if (item.type === "reasoning") {
@@ -315,12 +315,13 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
   if (event.type === "response.output_item.done" && isPlainObject(event.item)) {
     const item = event.item;
     if (item.type === "function_call") {
+      const id = stringFrom(item.id) ?? crypto.randomUUID();
       return {
         type: "tool_call",
         toolCall: AssistantContent.toolCall(
-          stringFrom(item.id) ?? crypto.randomUUID(),
+          id,
           stringFrom(item.name) ?? "",
-          parseJsonValue(typeof item.arguments === "string" ? item.arguments : "{}"),
+          parseToolArguments(id, typeof item.arguments === "string" ? item.arguments : "{}"),
           stringFrom(item.call_id),
         ),
       };

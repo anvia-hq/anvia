@@ -441,6 +441,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         let firstDeltaMs: number | undefined;
         const bufferResponseEvents = this.shouldBufferStreamResponseEvents();
         const emittedToolCallIds = new Set<string>();
+        let response: CompletionResponse;
         try {
           for await (const event of this.agent.model.streamCompletion(request)) {
             if (firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
@@ -464,13 +465,13 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
               }
             }
           }
+          response = accumulator.response();
         } catch (error) {
           await generationObservers.error({ turn: currentTurns, error });
           await this.runCompletionErrorHook(prompt, error, newMessages);
           throw error;
         }
 
-        let response = accumulator.response();
         const generationEndArgs: AgentGenerationEndArgs = {
           turn: currentTurns,
           response,

@@ -118,6 +118,59 @@ describe("CompletionStreamAccumulator", () => {
     ]);
   });
 
+  it("assembles valid JSON tool arguments across multiple fragments", () => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "ExecCommand",
+      argumentsDelta: '{"command":',
+    });
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      argumentsDelta: '"pwd"}',
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }),
+    ]);
+  });
+
+  it("preserves valid scalar JSON tool arguments", () => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "Echo",
+      argumentsDelta: '"hello"',
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_0", "Echo", "hello"),
+    ]);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["whitespace-only", " \n\t"],
+  ])("normalizes %s streamed tool arguments to an empty object", (_label, argumentsDelta) => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "NoOp",
+      argumentsDelta,
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_0", "NoOp", {}),
+    ]);
+  });
+
   it("does not replace accumulated tool metadata with empty continuation placeholders", () => {
     const accumulator = new CompletionStreamAccumulator();
 
@@ -415,25 +468,48 @@ describe("CompletionStreamAccumulator", () => {
     ]);
   });
 
-  it("preserves invalid partial JSON and streamed tool metadata", () => {
+  it("rejects malformed streamed tool arguments during response finalization", () => {
     const accumulator = new CompletionStreamAccumulator();
     accumulator.accept({
       type: "tool_call_delta",
-      id: "tool_1",
-      callId: "call_1",
-      name: "lookup",
-      signature: "signature_1",
-      argumentsDelta: '{"query":',
+      id: "tool_0",
+      callId: "call_abc",
+      name: "ExecCommand",
+      argumentsDelta: '{"command":"pwd"',
+    });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    expect(() => accumulator.response()).toThrow(
+      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
+  });
+
+  it("uses a valid completed tool call when streamed argument fragments are malformed", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "ExecCommand",
+      argumentsDelta: '{"command":"pwd"',
+    });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" })],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
     });
 
     expect(accumulator.response().choice).toEqual([
-      {
-        type: "tool_call",
-        id: "tool_1",
-        callId: "call_1",
-        signature: "signature_1",
-        function: { name: "lookup", arguments: '{"query":' },
-      },
+      AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }),
     ]);
   });
 

@@ -106,6 +106,27 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
+  it("serializes valid scalar tool arguments in assistant history as JSON", () => {
+    const params = toOpenAIChatCompletionParams("custom-chat-model", {
+      chatHistory: [Message.assistant([AssistantContent.toolCall("tool_0", "Echo", "hello")])],
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([
+      {
+        role: "assistant",
+        tool_calls: [
+          {
+            id: "tool_0",
+            type: "function",
+            function: { name: "Echo", arguments: '"hello"' },
+          },
+        ],
+      },
+    ]);
+  });
+
   it("adds compatible content to reasoning-only assistant history", () => {
     const chatHistory = [
       Message.user("First question"),
@@ -191,6 +212,58 @@ describe("OpenAI chat-completions client path", () => {
     expect(response.choice).toEqual([
       AssistantContent.text("created"),
       AssistantContent.reasoning("provider reasoning text"),
+    ]);
+  });
+
+  it("rejects malformed non-streaming tool arguments", () => {
+    expect(() =>
+      fromOpenAIChatCompletionResponse({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  id: "tool_0",
+                  type: "function",
+                  function: { name: "ExecCommand", arguments: '{"command":"pwd"' },
+                },
+              ],
+            },
+          },
+        ],
+        usage: {},
+      }),
+    ).toThrow(
+      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
+  });
+
+  it.each([
+    ["scalar", '"hello"', "hello"],
+    ["empty", "", {}],
+    ["whitespace-only", " \n\t", {}],
+  ])("maps %s non-streaming tool arguments", (_label, argumentsText, expectedArguments) => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "tool_0",
+                type: "function",
+                function: { name: "Echo", arguments: argumentsText },
+              },
+            ],
+          },
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("tool_0", "Echo", expectedArguments),
     ]);
   });
 

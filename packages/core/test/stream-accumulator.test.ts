@@ -491,6 +491,26 @@ describe("CompletionStreamAccumulator", () => {
     );
   });
 
+  it.each([
+    ["cumulative", ["{", '{"command":"pwd"}']],
+    ["duplicated final fragment", ['{"command":"pwd"', "}", "}"]],
+  ])("rejects %s streamed tool arguments", (_label, fragments) => {
+    const accumulator = new CompletionStreamAccumulator();
+    for (const argumentsDelta of fragments) {
+      accumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "call_abc",
+        name: "ExecCommand",
+        argumentsDelta,
+      });
+    }
+
+    expect(() => accumulator.response()).toThrow(
+      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
+  });
+
   it("uses a valid completed tool call when streamed argument fragments are malformed", () => {
     const accumulator = new CompletionStreamAccumulator();
     accumulator.accept({

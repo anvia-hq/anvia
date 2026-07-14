@@ -1,6 +1,6 @@
 {
   "name": "@anvia/react",
-  "version": "0.8.9",
+  "version": "0.8.10",
   "description": "React hooks and client transports for Anvia applications.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

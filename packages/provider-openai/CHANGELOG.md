@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.20
+
+### Patch Changes
+
+- 8b7fe0d: Reject malformed JSON tool arguments before execution or persistence while preserving valid scalar and blank inputs.
+
 ## 0.3.19
 
 ### Patch Changes

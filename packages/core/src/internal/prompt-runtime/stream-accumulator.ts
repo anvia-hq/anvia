@@ -54,8 +54,8 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
     if (event.type === "tool_call_delta") {
       const toolCall = this.toolCallStateForId(event.id);
-      if (event.callId !== undefined) toolCall.callId = event.callId;
-      if (event.name !== undefined) toolCall.name = event.name;
+      if (event.callId !== undefined && event.callId.length > 0) toolCall.callId = event.callId;
+      if (event.name !== undefined && event.name.length > 0) toolCall.name = event.name;
       if (event.signature !== undefined) toolCall.signature = event.signature;
       if (event.argumentsDelta !== undefined) {
         toolCall.argumentsText += event.argumentsDelta;

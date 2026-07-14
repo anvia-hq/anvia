@@ -89,6 +89,14 @@ export class ToolCallExecutor {
     onStreamEvent?: (event: AgentToolEventPayload) => void,
     observation?: ToolExecutionObservation,
   ): Promise<ToolResult[]> {
+    for (const toolCall of toolCalls) {
+      if (toolCall.function.name.length === 0) {
+        throw new Error(
+          `Completion returned tool call "${toolCall.id}" with an empty function name; this indicates invalid provider output or provider mapping.`,
+        );
+      }
+    }
+
     return mapWithConcurrency(toolCalls, this.concurrency, async (toolCall) => {
       const args = JSON.stringify(toolCall.function.arguments ?? {});
       const internalCallId = globalThis.crypto.randomUUID();

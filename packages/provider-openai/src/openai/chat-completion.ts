@@ -462,8 +462,8 @@ function toolCallDelta(
   },
 ): CompletionStreamEvent {
   const event: CompletionStreamEvent = { type: "tool_call_delta", id };
-  if (values.callId !== undefined) event.callId = values.callId;
-  if (values.name !== undefined) event.name = values.name;
+  if (values.callId !== undefined && values.callId.length > 0) event.callId = values.callId;
+  if (values.name !== undefined && values.name.length > 0) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
   return event;
 }

@@ -231,6 +231,48 @@ describe("OpenAI Responses mapping", () => {
     expect(response.messageId).toBe("resp_1");
   });
 
+  it("rejects malformed non-streaming Responses tool arguments", () => {
+    expect(() =>
+      fromOpenAIResponse({
+        output: [
+          {
+            type: "function_call",
+            id: "tool_0",
+            call_id: "call_abc",
+            name: "ExecCommand",
+            arguments: '{"command":"pwd"',
+          },
+        ],
+        usage: {},
+      }),
+    ).toThrow(
+      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
+  });
+
+  it.each([
+    ["scalar", '"hello"', "hello"],
+    ["empty", "", {}],
+    ["whitespace-only", " \n\t", {}],
+  ])("maps %s non-streaming Responses tool arguments", (_label, argumentsText, expectedArguments) => {
+    const response = fromOpenAIResponse({
+      output: [
+        {
+          type: "function_call",
+          id: "tool_0",
+          call_id: "call_abc",
+          name: "Echo",
+          arguments: argumentsText,
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("tool_0", "Echo", expectedArguments, "call_abc"),
+    ]);
+  });
+
   it("maps Responses refusals to visible assistant text", () => {
     const response = fromOpenAIResponse({
       output: [
@@ -285,6 +327,22 @@ describe("OpenAI Responses mapping", () => {
         call_id: "fc_1",
         name: "lookup",
         arguments: '{"query":"x"}',
+      },
+    ]);
+  });
+
+  it("serializes valid scalar tool arguments in Responses assistant history as JSON", () => {
+    expect(
+      openaiMessageHelpers.messageToResponsesInput(
+        Message.assistant([AssistantContent.toolCall("tool_0", "Echo", "hello", "call_abc")]),
+      ),
+    ).toEqual([
+      {
+        type: "function_call",
+        id: "tool_0",
+        call_id: "call_abc",
+        name: "Echo",
+        arguments: '"hello"',
       },
     ]);
   });
@@ -372,6 +430,23 @@ describe("OpenAI Responses mapping", () => {
       type: "tool_call",
       toolCall: AssistantContent.toolCall("call_1", "lookup", { query: "x" }, "fc_1"),
     });
+  });
+
+  it("rejects malformed arguments in completed Responses stream items", () => {
+    expect(() =>
+      fromOpenAIStreamEvent({
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          id: "tool_0",
+          call_id: "call_abc",
+          name: "ExecCommand",
+          arguments: '{"command":"pwd"',
+        },
+      }),
+    ).toThrow(
+      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
   });
 
   it("maps Responses terminal stream failure and incomplete events", () => {

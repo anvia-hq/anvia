@@ -115,7 +115,9 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
       const toolCall = this.toolCalls.get(part.key);
       if (toolCall !== undefined) {
-        choice.push(toolCallContent(toolCall));
+        choice.push(
+          toolCallContent(toolCall, matchingFinalToolCall(toolCall, this.finalResponse?.choice)),
+        );
       }
     }
 
@@ -345,13 +347,17 @@ function reasoningContent(reasoning: ReasoningState): AssistantContentType {
   return reasoning.id === undefined ? content : { ...content, id: reasoning.id };
 }
 
-function toolCallContent(toolCall: PartialToolCall): ToolCall {
+function toolCallContent(toolCall: PartialToolCall, finalToolCall?: ToolCall): ToolCall {
+  const argumentsValue =
+    finalToolCall !== undefined && !isEmptyToolArguments(finalToolCall.function.arguments)
+      ? finalToolCall.function.arguments
+      : parseToolArguments(toolCall.id, toolCall.argumentsText);
   const content: ToolCall = {
     type: "tool_call",
     id: toolCall.id,
     function: {
       name: toolCall.name,
-      arguments: parseJsonValue(toolCall.argumentsText),
+      arguments: argumentsValue,
     },
   };
   if (toolCall.callId !== undefined) {
@@ -364,6 +370,22 @@ function toolCallContent(toolCall: PartialToolCall): ToolCall {
     content.additionalParams = toolCall.additionalParams;
   }
   return content;
+}
+
+function matchingFinalToolCall(
+  accumulated: PartialToolCall,
+  finalChoice: AssistantContentType[] | undefined,
+): ToolCall | undefined {
+  const byId = finalChoice?.find(
+    (content): content is ToolCall => content.type === "tool_call" && content.id === accumulated.id,
+  );
+  if (byId !== undefined || accumulated.callId === undefined) {
+    return byId;
+  }
+  return finalChoice?.find(
+    (content): content is ToolCall =>
+      content.type === "tool_call" && content.callId === accumulated.callId,
+  );
 }
 
 function mergeFinalToolCall(accumulated: ToolCall, finalToolCall: ToolCall): ToolCall {
@@ -407,13 +429,15 @@ function isEmptyToolArguments(value: unknown): boolean {
   return false;
 }
 
-function parseJsonValue(text: string): JsonValue {
+function parseToolArguments(toolCallId: string, text: string): JsonValue {
   if (text.trim().length === 0) {
     return {};
   }
   try {
     return JSON.parse(text) as JsonValue;
   } catch {
-    return text;
+    throw new Error(
+      `Completion returned tool call "${toolCallId}" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.`,
+    );
   }
 }

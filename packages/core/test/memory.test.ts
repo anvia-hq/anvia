@@ -205,6 +205,92 @@ describe("agent memory", () => {
     ]);
   });
 
+  it("rejects malformed streamed tool arguments before execution or assistant persistence", async () => {
+    const store = new RecordingMemoryStore();
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "tool_0",
+          name: "Probe",
+          argumentsDelta: "{}",
+        },
+        {
+          type: "tool_call_delta",
+          id: "tool_1",
+          callId: "call_abc",
+          name: "ExecCommand",
+          argumentsDelta: '{"command":"pwd"',
+        },
+      ],
+      [{ type: "text_delta", delta: "recovered" }],
+    ]);
+    let probeExecutions = 0;
+    let commandExecutions = 0;
+    const completionErrors: string[] = [];
+    const probeTool = createTool({
+      name: "Probe",
+      description: "Record whether a sibling tool executes",
+      input: z.object({}),
+      execute: () => {
+        probeExecutions += 1;
+        return "probed";
+      },
+    });
+    const execCommandTool = createTool({
+      name: "ExecCommand",
+      description: "Execute a command",
+      input: z.object({ command: z.string() }),
+      execute: () => {
+        commandExecutions += 1;
+        return "executed";
+      },
+    });
+    const agent = new AgentBuilder("test-agent", model)
+      .memory(store)
+      .tool(probeTool)
+      .tool(execCommandTool)
+      .hook(
+        createHook({
+          onCompletionError({ error }) {
+            completionErrors.push(error instanceof Error ? error.message : String(error));
+          },
+        }),
+      )
+      .build();
+    const session = agent.session("session_1");
+
+    const runMalformedStream = async () => {
+      for await (const _event of session.prompt("run tools").stream()) {
+        // exhaust the stream
+      }
+    };
+    await expect(runMalformedStream()).rejects.toThrow(
+      'Completion returned tool call "tool_1" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
+
+    expect(probeExecutions).toBe(0);
+    expect(commandExecutions).toBe(0);
+    expect(completionErrors).toEqual([
+      'Completion returned tool call "tool_1" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    ]);
+    expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
+      ["user"],
+    ]);
+    expect(store.errorCalls).toHaveLength(1);
+    expect(store.errorCalls[0]?.messages).toEqual([Message.user("run tools")]);
+    await expect(session.messages()).resolves.toEqual([Message.user("run tools")]);
+
+    for await (const _event of session.prompt("continue").stream()) {
+      // exhaust the stream
+    }
+
+    expect(model.requests[1]?.chatHistory).toEqual([
+      Message.user("run tools"),
+      Message.user("continue"),
+    ]);
+  });
+
   it("supports turn save policy", async () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([

@@ -12,11 +12,16 @@ export function stringFrom(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-export function parseJsonValue(text: string): JsonValue {
+export function parseToolArguments(toolCallId: string, text: string): JsonValue {
+  if (text.trim().length === 0) {
+    return {};
+  }
   try {
     return JSON.parse(text) as JsonValue;
   } catch {
-    return text;
+    throw new Error(
+      `Completion returned tool call "${toolCallId}" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.`,
+    );
   }
 }
 

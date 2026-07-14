@@ -118,6 +118,28 @@ describe("CompletionStreamAccumulator", () => {
     ]);
   });
 
+  it("does not replace accumulated tool metadata with empty continuation placeholders", () => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      callId: "call_abc",
+      name: "ExecCommand",
+    });
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      callId: "",
+      name: "",
+      argumentsDelta: '{"command":"pwd"}',
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }, "call_abc"),
+    ]);
+  });
+
   it("preserves accumulated order when the final choice is empty", () => {
     const accumulator = new CompletionStreamAccumulator();
     const rawResponse = { provider: "test" };

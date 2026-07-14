@@ -154,6 +154,19 @@ describe("PromptRequest", () => {
     );
   });
 
+  it("rejects empty completion tool names before dispatch", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("tool_0", "", { command: "pwd" }, "call_abc")]),
+      response([AssistantContent.text("should not continue")]),
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    await expect(agent.prompt("run a command").send()).rejects.toThrow(
+      'Completion returned tool call "tool_0" with an empty function name; this indicates invalid provider output or provider mapping.',
+    );
+    expect(model.requests).toHaveLength(1);
+  });
+
   it("executes multiple tool calls in one turn", async () => {
     const model = new QueueModel([
       response([

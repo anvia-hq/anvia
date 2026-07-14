@@ -227,6 +227,55 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
+  it("omits empty streamed tool metadata while preserving argument fragments", () => {
+    expect(
+      fromOpenAIChatCompletionStreamChunk({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "",
+                  function: {
+                    name: "",
+                    arguments: '{"command":"pwd"}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        type: "tool_call_delta",
+        id: "tool_0",
+        argumentsDelta: '{"command":"pwd"}',
+      },
+    ]);
+  });
+
+  it("preserves empty streamed tool argument fragments", () => {
+    expect(
+      fromOpenAIChatCompletionStreamChunk({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "",
+                  function: { name: "", arguments: "" },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual([{ type: "tool_call_delta", id: "tool_0", argumentsDelta: "" }]);
+  });
+
   it("rejects unsupported document file input before provider calls", async () => {
     const calls: unknown[] = [];
     const model = new OpenAIChatCompletionModel(

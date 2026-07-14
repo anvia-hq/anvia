@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 0.3.19
+
+### Patch Changes
+
+- b5f285a: Preserve streamed tool call names and provider call IDs when continuation chunks contain empty metadata placeholders.
+
 ## 0.3.18
 
 ### Patch Changes

@@ -1,3 +1,4 @@
+export * from "./capabilities";
 export * from "./docker-sandbox";
 export * from "./errors";
 export * from "./tools";

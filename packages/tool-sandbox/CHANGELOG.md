@@ -1,5 +1,11 @@
 # @anvia/sandbox
 
+## 0.4.0
+
+### Minor Changes
+
+- 535c04d: Add loopback-only Docker port publishing, managed long-running processes, readiness checks, and opt-in agent tools for application-proxied website previews.
+
 ## 0.3.7
 
 ### Patch Changes

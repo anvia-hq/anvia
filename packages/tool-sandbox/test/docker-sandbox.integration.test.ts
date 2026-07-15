@@ -128,6 +128,9 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
     await session.writeTextFile("out/result.txt", "ok");
     await session.listFiles("out");
     await session.exec({ command: "node", args: ["-e", "console.log('hook')"] });
+    const eventsBeforeRejectedStart = [...events];
+    await expect(session.startProcess({ command: " " })).rejects.toThrow("cannot be empty");
+    expect(events).toEqual(eventsBeforeRejectedStart);
     const process = await session.startProcess({
       command: "node",
       args: ["-e", "console.log('managed hook')"],
@@ -153,6 +156,7 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
 
   it("publishes a preview port and manages a long-running server", async () => {
     const containerPort = 4310;
+    const lifecycleEvents: string[] = [];
     const sandbox = DockerSandbox.node({
       pull: "missing",
       network: true,
@@ -160,6 +164,14 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
         timeoutMs: 10_000,
         maxOutputBytes: 64_000,
         maxProcesses: 1,
+      },
+      hooks: {
+        onExecStart: () => {
+          lifecycleEvents.push("start");
+        },
+        onExecEnd: () => {
+          lifecycleEvents.push("end");
+        },
       },
     });
     const session = await sandbox.createSession({
@@ -187,6 +199,7 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
         ],
       });
       expect(process.status).toBe("running");
+      expect(lifecycleEvents).toEqual(["start"]);
 
       const publishedPort = await session.waitForPort(containerPort, { timeoutMs: 10_000 });
       const running = await session.listProcesses();
@@ -213,10 +226,33 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
       await expect(
         session.startProcess({ command: "node", args: ["-e", "setInterval(() => {}, 1000)"] }),
       ).rejects.toThrow("process limit");
+      expect(lifecycleEvents).toEqual(["start"]);
 
       const stopped = await session.stopProcess(process.id, { gracePeriodMs: 2_000 });
       expect(stopped.status).toBe("stopped");
       expect(await session.listProcesses()).toEqual([stopped]);
+
+      const grandchildServer = [
+        'const http = require("node:http");',
+        `http.createServer((_request, response) => response.end("grandchild"))`,
+        `.listen(${containerPort}, "0.0.0.0");`,
+      ].join("");
+      const grandchild = await session.startProcess({
+        command: "node",
+        args: [
+          "-e",
+          [
+            'const { spawn } = require("node:child_process");',
+            `spawn(process.execPath, ["-e", ${JSON.stringify(grandchildServer)}], { stdio: "inherit" });`,
+            "setInterval(() => {}, 1000);",
+          ].join(""),
+        ],
+      });
+      await session.waitForPort(containerPort, { timeoutMs: 10_000 });
+      await session.stopProcess(grandchild.id, { gracePeriodMs: 2_000 });
+      await expect(
+        session.waitForPort(containerPort, { timeoutMs: 500, intervalMs: 50 }),
+      ).rejects.toThrow("timed out");
 
       const loopbackOnly = await session.startProcess({
         command: "node",

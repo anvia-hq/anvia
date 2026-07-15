@@ -409,6 +409,15 @@ class DockerSandboxSessionImpl implements DockerSandboxSession {
       maxOutputBytes: this.limits.maxOutputBytes ?? defaultMaxOutputBytes,
       maxProcesses: this.limits.maxProcesses ?? defaultMaxProcesses,
       startupTimeoutMs: this.limits.timeoutMs ?? defaultTimeoutMs,
+      onStart: async (process) => {
+        const event: SandboxExecEvent = {
+          ...this.event(),
+          command: process.command,
+          args: process.args,
+        };
+        if (process.cwd !== undefined) event.cwd = process.cwd;
+        await this.hooks.onExecStart?.(event);
+      },
       onExit: async (process, logs, durationMs) => {
         const event: SandboxExecEndEvent = {
           ...this.event(),
@@ -529,16 +538,7 @@ class DockerSandboxSessionImpl implements DockerSandboxSession {
   }
 
   async startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo> {
-    return this.runOperation(async () => {
-      const event: SandboxExecEvent = {
-        ...this.event(),
-        command: options.command,
-        args: options.args ?? [],
-      };
-      if (options.cwd !== undefined) event.cwd = options.cwd;
-      await this.hooks.onExecStart?.(event);
-      return this.processManager.start(options);
-    });
+    return this.runOperation(async () => this.processManager.start(options));
   }
 
   async listProcesses(): Promise<SandboxProcessInfo[]> {
@@ -579,15 +579,19 @@ class DockerSandboxSessionImpl implements DockerSandboxSession {
       while (true) {
         this.assertActive();
         if (options.signal?.aborted === true) throw abortReason(options.signal);
-        const probeTimeoutMs = Math.max(1, Math.min(1_000, deadline - Date.now()));
-        if (await this.isPortListening(containerPort, probeTimeoutMs)) {
-          return publishedPort;
-        }
         const remainingMs = deadline - Date.now();
         if (remainingMs <= 0) {
           throw new SandboxTimeoutError(`Waiting for sandbox port ${containerPort}/tcp timed out.`);
         }
-        await waitWithSignal(Math.min(intervalMs, remainingMs), options.signal);
+        const probeTimeoutMs = Math.min(1_000, remainingMs);
+        if (await this.isPortListening(containerPort, probeTimeoutMs)) {
+          return publishedPort;
+        }
+        const remainingAfterProbeMs = deadline - Date.now();
+        if (remainingAfterProbeMs <= 0) {
+          throw new SandboxTimeoutError(`Waiting for sandbox port ${containerPort}/tcp timed out.`);
+        }
+        await waitWithSignal(Math.min(intervalMs, remainingAfterProbeMs), options.signal);
       }
     });
   }
@@ -676,9 +680,8 @@ class DockerSandboxSessionImpl implements DockerSandboxSession {
 
     this.destroyed = true;
     this.clearLifecycleTimers();
-    const processCleanup = this.processManager.dispose();
+    await this.processManager.dispose();
     await runDockerCli(["rm", "-f", this.containerName], this.cliOptions()).catch(() => undefined);
-    await processCleanup;
 
     if (this.removeVolumeOnDestroy) {
       await runDockerCli(["volume", "rm", "-f", this.volumeName], this.cliOptions()).catch(

@@ -32,3 +32,7 @@ export class SandboxTimeoutError extends SandboxError {}
 export class SandboxFileSizeError extends SandboxError {}
 
 export class SandboxToolPolicyError extends SandboxError {}
+
+export class SandboxPortError extends SandboxError {}
+
+export class SandboxProcessError extends SandboxError {}

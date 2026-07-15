@@ -105,6 +105,49 @@ function imageContentType(path: string): string | undefined {
 }
 ```
 
+## Agent-managed website preview
+
+Pre-authorize the container port in application code. The optional tools let the agent discover
+that port, launch any allowed development server, inspect its logs, wait for readiness, and stop
+it. Your application owns the public preview URL and reverse proxy.
+
+```ts
+const sandbox = DockerSandbox.node({
+  network: true,
+  limits: { maxProcesses: 2 },
+});
+const session = await sandbox.createSession({ ports: [5173] });
+
+const tools = createSandboxTools(session, {
+  include: [
+    "exec_command",
+    "read_file",
+    "write_file",
+    "list_files",
+    "list_ports",
+    "start_process",
+    "list_processes",
+    "read_process_logs",
+    "wait_for_port",
+    "stop_process",
+  ],
+  exec: {
+    allowedCommands: ["node", "pnpm"],
+  },
+  process: {
+    maxLogBytes: 64_000,
+    maxWaitTimeoutMs: 30_000,
+  },
+});
+
+const agent = new AgentBuilder("website-agent", model)
+  .instructions(
+    "Use the published port and bind the development server to 0.0.0.0. Wait for readiness before reporting completion.",
+  )
+  .tools(tools)
+  .build();
+```
+
 ## Harness shape
 
 ```ts

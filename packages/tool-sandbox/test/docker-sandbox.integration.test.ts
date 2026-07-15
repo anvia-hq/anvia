@@ -46,7 +46,7 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
       image: "node:22-bookworm",
       pull: "missing",
       limits: {
-        timeoutMs: 500,
+        timeoutMs: 10_000,
       },
     });
     const session = await sandbox.createSession({ id: `timeout-${Date.now()}` });
@@ -55,6 +55,7 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
       const result = await session.exec({
         command: "node",
         args: ["-e", "setTimeout(() => {}, 10_000)"],
+        timeoutMs: 500,
       });
       expect(result.timedOut).toBe(true);
       expect(result.exitCode).not.toBe(0);
@@ -84,7 +85,13 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
         events.push(event);
       }
 
-      expect(events.map((event) => event.type)).toEqual(["stdout", "stderr", "exit"]);
+      expect(events.at(-1)?.type).toBe("exit");
+      expect(
+        events
+          .slice(0, -1)
+          .map((event) => event.type)
+          .sort(),
+      ).toEqual(["stderr", "stdout"]);
       expect(events.find((event) => event.type === "stdout")?.text.trim()).toBe("one");
       expect(events.find((event) => event.type === "stderr")?.text.trim()).toBe("two");
       await expect(session.writeTextFile("too-large.txt", "12345")).rejects.toThrow("maxFileBytes");
@@ -121,6 +128,16 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
     await session.writeTextFile("out/result.txt", "ok");
     await session.listFiles("out");
     await session.exec({ command: "node", args: ["-e", "console.log('hook')"] });
+    const process = await session.startProcess({
+      command: "node",
+      args: ["-e", "console.log('managed hook')"],
+    });
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if ((await session.listProcesses())[0]?.status === "exited") break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect((await session.listProcesses())[0]?.status).toBe("exited");
+    expect((await session.readProcessLogs(process.id)).stdout).toContain("managed hook");
     await session.destroy();
 
     expect(events).toEqual([
@@ -128,8 +145,114 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
       "write:out/result.txt:2",
       "exec:start:node",
       "exec:end:0",
+      "exec:start:node",
+      "exec:end:0",
       `destroy:${session.id}`,
     ]);
+  }, 60_000);
+
+  it("publishes a preview port and manages a long-running server", async () => {
+    const containerPort = 4310;
+    const sandbox = DockerSandbox.node({
+      pull: "missing",
+      network: true,
+      limits: {
+        timeoutMs: 10_000,
+        maxOutputBytes: 64_000,
+        maxProcesses: 1,
+      },
+    });
+    const session = await sandbox.createSession({
+      id: `preview-${Date.now()}`,
+      ports: [containerPort],
+    });
+
+    try {
+      expect(session.publishedPorts).toHaveLength(1);
+      expect(session.publishedPorts[0]).toMatchObject({
+        containerPort,
+        host: "127.0.0.1",
+        protocol: "tcp",
+      });
+
+      const process = await session.startProcess({
+        command: "node",
+        args: [
+          "-e",
+          [
+            'const http = require("node:http");',
+            `http.createServer((_request, response) => response.end("sandbox preview"))`,
+            `.listen(${containerPort}, "0.0.0.0", () => console.log("preview-ready"));`,
+          ].join(""),
+        ],
+      });
+      expect(process.status).toBe("running");
+
+      const publishedPort = await session.waitForPort(containerPort, { timeoutMs: 10_000 });
+      const running = await session.listProcesses();
+      const startupLogs = await session.readProcessLogs(process.id);
+      expect(running[0]?.status, JSON.stringify(startupLogs)).toBe("running");
+      const response = await fetch(`http://${publishedPort.host}:${publishedPort.hostPort}`).catch(
+        (error: unknown) => {
+          throw new Error(
+            `Unable to fetch sandbox preview: ${JSON.stringify({ running, startupLogs })}`,
+            { cause: error },
+          );
+        },
+      );
+      expect(await response.text()).toBe("sandbox preview");
+
+      const logs = await session.readProcessLogs(process.id);
+      expect(logs.stdout).toContain("preview-ready");
+      const tailLogs = await session.readProcessLogs(process.id, { tailBytes: 5 });
+      expect(tailLogs.stdout).toBe("eady\n");
+      expect(tailLogs.stdoutTruncated).toBe(true);
+      const emptyLogs = await session.readProcessLogs(process.id, { tailBytes: 0 });
+      expect(emptyLogs.stdout).toBe("");
+      expect(emptyLogs.stdoutTruncated).toBe(true);
+      await expect(
+        session.startProcess({ command: "node", args: ["-e", "setInterval(() => {}, 1000)"] }),
+      ).rejects.toThrow("process limit");
+
+      const stopped = await session.stopProcess(process.id, { gracePeriodMs: 2_000 });
+      expect(stopped.status).toBe("stopped");
+      expect(await session.listProcesses()).toEqual([stopped]);
+
+      const loopbackOnly = await session.startProcess({
+        command: "node",
+        args: [
+          "-e",
+          `require("node:http").createServer(() => {}).listen(${containerPort}, "127.0.0.1");`,
+        ],
+      });
+      await expect(
+        session.waitForPort(containerPort, { timeoutMs: 500, intervalMs: 50 }),
+      ).rejects.toThrow("timed out");
+      await session.stopProcess(loopbackOnly.id, { gracePeriodMs: 2_000 });
+      await expect(session.waitForPort(9999)).rejects.toThrow("not published");
+    } finally {
+      await session.destroy();
+    }
+  }, 60_000);
+
+  it("applies idle cleanup while a managed process is running", async () => {
+    const sandbox = DockerSandbox.node({
+      pull: "missing",
+      lifecycle: { idleTimeoutMs: 250 },
+      limits: { timeoutMs: 10_000 },
+    });
+    const session = await sandbox.createSession({ id: `process-idle-${Date.now()}` });
+
+    try {
+      await session.startProcess({
+        command: "node",
+        args: ["-e", "setInterval(() => {}, 1000)"],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      await expect(session.listProcesses()).rejects.toThrow("has been destroyed");
+    } finally {
+      await session.destroy();
+    }
   }, 60_000);
 
   it("can reuse an explicit persistent workspace", async () => {

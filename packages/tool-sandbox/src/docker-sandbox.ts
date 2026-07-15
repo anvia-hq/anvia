@@ -3,17 +3,20 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { assertDockerCli, type DockerCliOptions, runDockerCli } from "./docker-cli";
+import { DockerProcessManager } from "./docker-process";
 import {
   SandboxDockerCommandError,
   SandboxFileSizeError,
+  SandboxPortError,
   SandboxSessionDestroyedError,
   SandboxTimeoutError,
 } from "./errors";
 import { containerPath, normalizeSandboxPath, parentSandboxPath } from "./path";
 import type {
+  DockerSandboxCreateSessionOptions,
   DockerSandboxOptions,
+  DockerSandboxSession,
   Sandbox,
-  SandboxCreateSessionOptions,
   SandboxExecEndEvent,
   SandboxExecEvent,
   SandboxExecOptions,
@@ -25,8 +28,14 @@ import type {
   SandboxLifecycleOptions,
   SandboxLimits,
   SandboxManifest,
-  SandboxSession,
+  SandboxProcessInfo,
+  SandboxProcessLogs,
+  SandboxProcessLogsOptions,
+  SandboxProcessStartOptions,
+  SandboxProcessStopOptions,
+  SandboxPublishedPort,
   SandboxSessionEvent,
+  SandboxWaitForPortOptions,
   SandboxWorkspaceOptions,
 } from "./types";
 
@@ -34,6 +43,23 @@ const defaultImage = "node:22-bookworm";
 const defaultWorkdir = "/workspace";
 const defaultTimeoutMs = 30_000;
 const defaultMaxOutputBytes = 1024 * 1024;
+const defaultMaxProcesses = 4;
+// Docker Desktop may accept a host-side TCP connection before a container service is ready. Probe
+// Linux socket state in the container so readiness requires an all-interface listening socket.
+const portProbeScript = [
+  'port="$(printf \'%04X\' "$1")"',
+  "for table in /proc/net/tcp /proc/net/tcp6; do",
+  '  [ -r "$table" ] || continue',
+  "  while read -r _ local _ state _; do",
+  '    case "$local" in',
+  '      "00000000:$port"|"00000000000000000000000000000000:$port")',
+  '        [ "$state" = "0A" ] && exit 0',
+  "        ;;",
+  "    esac",
+  '  done < "$table"',
+  "done",
+  "exit 1",
+].join("\n");
 
 export class DockerSandbox implements Sandbox {
   readonly provider = "docker";
@@ -91,7 +117,11 @@ export class DockerSandbox implements Sandbox {
     return new DockerSandbox({ ...options, image: options.image ?? "denoland/deno:debian" });
   }
 
-  async createSession(options: SandboxCreateSessionOptions = {}): Promise<SandboxSession> {
+  async createSession(
+    options: DockerSandboxCreateSessionOptions = {},
+  ): Promise<DockerSandboxSession> {
+    const ports = validatePublishedPorts(options.ports ?? []);
+    this.assertPortNetworkCompatible(ports);
     await this.ensureImage();
 
     const id = sanitizeResourceId(options.id ?? randomUUID());
@@ -105,14 +135,16 @@ export class DockerSandbox implements Sandbox {
 
     try {
       await assertDockerCli(
-        this.createRunArgs(containerName, volumeName, workspace, options.metadata),
+        this.createRunArgs(containerName, volumeName, workspace, options.metadata, ports),
         {
           ...this.cliOptions(),
           timeoutMs: this.limits.timeoutMs ?? defaultTimeoutMs,
         },
       );
 
-      const session = new DockerSandboxSession({
+      const publishedPorts = await this.inspectPublishedPorts(containerName, ports);
+
+      const session = new DockerSandboxSessionImpl({
         id,
         containerName,
         volumeName,
@@ -123,6 +155,7 @@ export class DockerSandbox implements Sandbox {
         removeVolumeOnDestroy,
         env: options.manifest?.env ?? {},
         hooks: this.hooks,
+        publishedPorts,
       });
 
       await session.applyManifest(options.manifest);
@@ -153,6 +186,7 @@ export class DockerSandbox implements Sandbox {
     volumeName: string,
     workspace: SandboxWorkspaceOptions,
     metadata: Record<string, string> | undefined,
+    ports: readonly number[],
   ): string[] {
     const args = [
       "run",
@@ -182,6 +216,9 @@ export class DockerSandbox implements Sandbox {
     }
 
     this.appendNetworkArgs(args);
+    for (const port of ports) {
+      args.push("--publish", `127.0.0.1::${port}/tcp`);
+    }
     this.appendLimitArgs(args);
     this.appendSecurityArgs(args);
 
@@ -209,6 +246,67 @@ export class DockerSandbox implements Sandbox {
     if (mode !== true) {
       args.push("--network", mode);
     }
+  }
+
+  private assertPortNetworkCompatible(ports: readonly number[]): void {
+    if (ports.length === 0) return;
+    const mode = typeof this.network === "object" ? this.network.mode : this.network;
+    if (
+      mode === false ||
+      mode === "none" ||
+      mode === "host" ||
+      (typeof mode === "string" && mode.startsWith("container:"))
+    ) {
+      throw new SandboxPortError(
+        "Published sandbox ports require network: true or a bridge-capable Docker network.",
+      );
+    }
+  }
+
+  private async inspectPublishedPorts(
+    containerName: string,
+    ports: readonly number[],
+  ): Promise<SandboxPublishedPort[]> {
+    if (ports.length === 0) return [];
+
+    const raw = await assertDockerCli(
+      ["container", "inspect", "--format", "{{json .NetworkSettings.Ports}}", containerName],
+      this.cliOptions(),
+    );
+    let mappings: unknown;
+    try {
+      mappings = JSON.parse(raw);
+    } catch (error) {
+      throw new SandboxPortError("Docker returned invalid published port metadata.", error);
+    }
+    if (!isRecord(mappings)) {
+      throw new SandboxPortError("Docker returned invalid published port metadata.");
+    }
+
+    return ports.map((containerPort) => {
+      const entries = mappings[`${containerPort}/tcp`];
+      if (!Array.isArray(entries)) {
+        throw new SandboxPortError(`Docker did not publish sandbox port ${containerPort}/tcp.`);
+      }
+      const entry = entries.find(
+        (candidate) =>
+          isRecord(candidate) &&
+          candidate.HostIp === "127.0.0.1" &&
+          typeof candidate.HostPort === "string",
+      );
+      if (!isRecord(entry) || typeof entry.HostPort !== "string") {
+        throw new SandboxPortError(
+          `Docker did not bind sandbox port ${containerPort}/tcp to 127.0.0.1.`,
+        );
+      }
+      const hostPort = Number(entry.HostPort);
+      if (!isValidPort(hostPort)) {
+        throw new SandboxPortError(
+          `Docker returned an invalid host port for ${containerPort}/tcp.`,
+        );
+      }
+      return { containerPort, host: "127.0.0.1", hostPort, protocol: "tcp" };
+    });
   }
 
   private appendLimitArgs(args: string[]): void {
@@ -257,10 +355,11 @@ export class DockerSandbox implements Sandbox {
   }
 }
 
-class DockerSandboxSession implements SandboxSession {
+class DockerSandboxSessionImpl implements DockerSandboxSession {
   readonly provider = "docker";
   readonly id: string;
   readonly workdir: string;
+  readonly publishedPorts: readonly SandboxPublishedPort[];
 
   private readonly containerName: string;
   private readonly volumeName: string;
@@ -271,6 +370,7 @@ class DockerSandboxSession implements SandboxSession {
   private readonly removeVolumeOnDestroy: boolean;
   private readonly env: Record<string, string>;
   private readonly hooks: SandboxHooks;
+  private readonly processManager: DockerProcessManager;
   private ttlTimer: ReturnType<typeof setTimeout> | undefined;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private activeOperations = 0;
@@ -288,6 +388,7 @@ class DockerSandboxSession implements SandboxSession {
     removeVolumeOnDestroy: boolean;
     env: Record<string, string>;
     hooks: SandboxHooks;
+    publishedPorts: SandboxPublishedPort[];
   }) {
     this.id = options.id;
     this.containerName = options.containerName;
@@ -299,6 +400,35 @@ class DockerSandboxSession implements SandboxSession {
     this.removeVolumeOnDestroy = options.removeVolumeOnDestroy;
     this.env = options.env;
     this.hooks = options.hooks;
+    this.publishedPorts = options.publishedPorts;
+    this.processManager = new DockerProcessManager({
+      containerName: this.containerName,
+      dockerPath: this.dockerPath,
+      workdir: this.workdir,
+      env: this.env,
+      maxOutputBytes: this.limits.maxOutputBytes ?? defaultMaxOutputBytes,
+      maxProcesses: this.limits.maxProcesses ?? defaultMaxProcesses,
+      startupTimeoutMs: this.limits.timeoutMs ?? defaultTimeoutMs,
+      onExit: async (process, logs, durationMs) => {
+        const event: SandboxExecEndEvent = {
+          ...this.event(),
+          command: process.command,
+          args: process.args,
+          result: {
+            stdout: logs.stdout,
+            stderr: logs.stderr,
+            exitCode: process.exitCode ?? 1,
+            durationMs,
+            timedOut: false,
+            aborted: process.status === "stopped",
+            stdoutTruncated: logs.stdoutTruncated,
+            stderrTruncated: logs.stderrTruncated,
+          },
+        };
+        if (process.cwd !== undefined) event.cwd = process.cwd;
+        await this.hooks.onExecEnd?.(event);
+      },
+    });
     this.startLifecycleTimers();
   }
 
@@ -398,6 +528,70 @@ class DockerSandboxSession implements SandboxSession {
     }
   }
 
+  async startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo> {
+    return this.runOperation(async () => {
+      const event: SandboxExecEvent = {
+        ...this.event(),
+        command: options.command,
+        args: options.args ?? [],
+      };
+      if (options.cwd !== undefined) event.cwd = options.cwd;
+      await this.hooks.onExecStart?.(event);
+      return this.processManager.start(options);
+    });
+  }
+
+  async listProcesses(): Promise<SandboxProcessInfo[]> {
+    return this.runOperation(async () => this.processManager.list());
+  }
+
+  async readProcessLogs(
+    processId: string,
+    options?: SandboxProcessLogsOptions,
+  ): Promise<SandboxProcessLogs> {
+    return this.runOperation(async () => this.processManager.logs(processId, options));
+  }
+
+  async stopProcess(
+    processId: string,
+    options?: SandboxProcessStopOptions,
+  ): Promise<SandboxProcessInfo> {
+    return this.runOperation(async () => this.processManager.stop(processId, options));
+  }
+
+  async waitForPort(
+    containerPort: number,
+    options: SandboxWaitForPortOptions = {},
+  ): Promise<SandboxPublishedPort> {
+    return this.runOperation(async () => {
+      const publishedPort = this.publishedPorts.find(
+        (candidate) => candidate.containerPort === containerPort,
+      );
+      if (publishedPort === undefined) {
+        throw new SandboxPortError(`Sandbox port is not published: ${containerPort}/tcp`);
+      }
+
+      const timeoutMs = options.timeoutMs ?? this.limits.timeoutMs ?? defaultTimeoutMs;
+      const intervalMs = options.intervalMs ?? 250;
+      assertWaitOptions(timeoutMs, intervalMs);
+      const deadline = Date.now() + timeoutMs;
+
+      while (true) {
+        this.assertActive();
+        if (options.signal?.aborted === true) throw abortReason(options.signal);
+        const probeTimeoutMs = Math.max(1, Math.min(1_000, deadline - Date.now()));
+        if (await this.isPortListening(containerPort, probeTimeoutMs)) {
+          return publishedPort;
+        }
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          throw new SandboxTimeoutError(`Waiting for sandbox port ${containerPort}/tcp timed out.`);
+        }
+        await waitWithSignal(Math.min(intervalMs, remainingMs), options.signal);
+      }
+    });
+  }
+
   async readFile(filePath: string): Promise<Uint8Array> {
     return this.runOperation(async () => {
       const normalized = normalizeSandboxPath(filePath);
@@ -482,7 +676,9 @@ class DockerSandboxSession implements SandboxSession {
 
     this.destroyed = true;
     this.clearLifecycleTimers();
+    const processCleanup = this.processManager.dispose();
     await runDockerCli(["rm", "-f", this.containerName], this.cliOptions()).catch(() => undefined);
+    await processCleanup;
 
     if (this.removeVolumeOnDestroy) {
       await runDockerCli(["volume", "rm", "-f", this.volumeName], this.cliOptions()).catch(
@@ -532,6 +728,25 @@ class DockerSandboxSession implements SandboxSession {
       dockerPath: this.dockerPath,
       maxOutputBytes: this.limits.maxOutputBytes ?? defaultMaxOutputBytes,
     };
+  }
+
+  private async isPortListening(containerPort: number, timeoutMs: number): Promise<boolean> {
+    const result = await runDockerCli(
+      [
+        "exec",
+        this.containerName,
+        "sh",
+        "-c",
+        portProbeScript,
+        "anvia-port-probe",
+        String(containerPort),
+      ],
+      {
+        ...this.cliOptions(),
+        timeoutMs: Math.max(1, timeoutMs),
+      },
+    );
+    return result.exitCode === 0;
   }
 
   private async execCommand(options: SandboxExecOptions): Promise<SandboxExecResult> {
@@ -701,4 +916,54 @@ function mapFindType(type: string | undefined): SandboxFileType {
     return "symlink";
   }
   return "other";
+}
+
+function validatePublishedPorts(ports: readonly number[]): number[] {
+  const unique = new Set<number>();
+  for (const port of ports) {
+    if (!isValidPort(port)) {
+      throw new SandboxPortError(`Sandbox port must be an integer from 1 to 65535: ${port}`);
+    }
+    if (unique.has(port)) {
+      throw new SandboxPortError(`Sandbox port is duplicated: ${port}`);
+    }
+    unique.add(port);
+  }
+  return [...unique];
+}
+
+function isValidPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65_535;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertWaitOptions(timeoutMs: number, intervalMs: number): void {
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new SandboxPortError("Port wait timeoutMs must be a positive integer.");
+  }
+  if (!Number.isInteger(intervalMs) || intervalMs <= 0) {
+    throw new SandboxPortError("Port wait intervalMs must be a positive integer.");
+  }
+}
+
+async function waitWithSignal(timeoutMs: number, signal: AbortSignal | undefined): Promise<void> {
+  if (signal?.aborted === true) throw abortReason(signal);
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, timeoutMs);
+    const abort = () => {
+      clearTimeout(timeout);
+      reject(abortReason(signal));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function abortReason(signal: AbortSignal | undefined): unknown {
+  return signal?.reason ?? new SandboxPortError("Waiting for sandbox port was aborted.");
 }

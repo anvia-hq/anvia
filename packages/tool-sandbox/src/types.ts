@@ -41,11 +41,36 @@ export interface SandboxSession {
   destroy(): Promise<void>;
 }
 
+export interface SandboxPortSession extends SandboxSession {
+  readonly publishedPorts: readonly SandboxPublishedPort[];
+
+  waitForPort(
+    containerPort: number,
+    options?: SandboxWaitForPortOptions,
+  ): Promise<SandboxPublishedPort>;
+}
+
+export interface SandboxProcessSession extends SandboxSession {
+  startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo>;
+  listProcesses(): Promise<SandboxProcessInfo[]>;
+  readProcessLogs(
+    processId: string,
+    options?: SandboxProcessLogsOptions,
+  ): Promise<SandboxProcessLogs>;
+  stopProcess(processId: string, options?: SandboxProcessStopOptions): Promise<SandboxProcessInfo>;
+}
+
+export interface DockerSandboxSession extends SandboxPortSession, SandboxProcessSession {}
+
 export interface SandboxCreateSessionOptions {
   id?: string;
   workspace?: SandboxWorkspaceOptions;
   manifest?: SandboxManifest;
   metadata?: Record<string, string>;
+}
+
+export interface DockerSandboxCreateSessionOptions extends SandboxCreateSessionOptions {
+  ports?: readonly number[];
 }
 
 export interface SandboxManifest {
@@ -61,6 +86,7 @@ export interface SandboxLimits {
   memoryMb?: number;
   cpus?: number;
   pidsLimit?: number;
+  maxProcesses?: number;
 }
 
 export interface SandboxExecOptions {
@@ -106,6 +132,54 @@ export interface SandboxFileEntry {
   path: string;
   type: SandboxFileType;
   size?: number;
+}
+
+export interface SandboxPublishedPort {
+  containerPort: number;
+  host: "127.0.0.1";
+  hostPort: number;
+  protocol: "tcp";
+}
+
+export interface SandboxWaitForPortOptions {
+  timeoutMs?: number;
+  intervalMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface SandboxProcessStartOptions {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+export type SandboxProcessStatus = "running" | "exited" | "stopped";
+
+export interface SandboxProcessInfo {
+  id: string;
+  command: string;
+  args: string[];
+  cwd?: string;
+  status: SandboxProcessStatus;
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface SandboxProcessLogsOptions {
+  tailBytes?: number;
+}
+
+export interface SandboxProcessLogs {
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+}
+
+export interface SandboxProcessStopOptions {
+  gracePeriodMs?: number;
 }
 
 export interface DockerSandboxSecurityOptions {
@@ -169,9 +243,20 @@ export interface SandboxToolsOptions {
   exec?: SandboxExecToolPolicy;
   readFile?: SandboxFileToolPolicy;
   writeFile?: SandboxFileToolPolicy;
+  process?: SandboxProcessToolPolicy;
 }
 
-export type SandboxToolName = "exec_command" | "read_file" | "write_file" | "list_files";
+export type SandboxToolName =
+  | "exec_command"
+  | "read_file"
+  | "write_file"
+  | "list_files"
+  | "list_ports"
+  | "start_process"
+  | "list_processes"
+  | "read_process_logs"
+  | "stop_process"
+  | "wait_for_port";
 
 export interface SandboxExecToolPolicy {
   allowedCommands?: string[];
@@ -182,6 +267,13 @@ export interface SandboxExecToolPolicy {
 
 export interface SandboxFileToolPolicy {
   maxBytes?: number;
+}
+
+export interface SandboxProcessToolPolicy {
+  maxLogBytes?: number;
+  defaultWaitTimeoutMs?: number;
+  maxWaitTimeoutMs?: number;
+  stopGracePeriodMs?: number;
 }
 
 export type SandboxToolsFactory = (

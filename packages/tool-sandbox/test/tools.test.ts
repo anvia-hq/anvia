@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSandboxTools } from "../src/tools";
-import type { SandboxSession } from "../src/types";
+import type { DockerSandboxSession, SandboxSession } from "../src/types";
 
 describe("createSandboxTools", () => {
   it("creates the default sandbox tool bundle", () => {
@@ -105,6 +105,100 @@ describe("createSandboxTools", () => {
     expect(read).toBe("file content");
     expect(list).toContain("file 12b\ta.txt");
   });
+
+  it("creates opt-in published port and managed process tools", () => {
+    const tools = createSandboxTools(createManagedSession(), {
+      include: [
+        "list_ports",
+        "start_process",
+        "list_processes",
+        "read_process_logs",
+        "stop_process",
+        "wait_for_port",
+      ],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "list_ports",
+      "start_process",
+      "list_processes",
+      "read_process_logs",
+      "stop_process",
+      "wait_for_port",
+    ]);
+  });
+
+  it("delegates managed process and port tools with structured input", async () => {
+    const session = createManagedSession();
+    const tools = Object.fromEntries(
+      createSandboxTools(session, {
+        include: [
+          "list_ports",
+          "start_process",
+          "list_processes",
+          "read_process_logs",
+          "stop_process",
+          "wait_for_port",
+        ],
+        exec: { allowedCommands: ["pnpm"] },
+        process: {
+          maxLogBytes: 1024,
+          defaultWaitTimeoutMs: 1234,
+          stopGracePeriodMs: 250,
+        },
+      }).map((tool) => [tool.name, tool] as const),
+    );
+
+    const ports = await tools.list_ports?.call({});
+    const started = await tools.start_process?.call({
+      command: "pnpm",
+      args: ["dev"],
+      cwd: "site",
+    });
+    await tools.list_processes?.call({});
+    const logs = await tools.read_process_logs?.call({ processId: "process_1", tailBytes: 512 });
+    await tools.stop_process?.call({ processId: "process_1" });
+    const ready = await tools.wait_for_port?.call({ containerPort: 5173 });
+
+    expect(ports).toContain("5173/tcp");
+    expect(started).toContain("process_id: process_1");
+    expect(logs).toContain("stdout:");
+    expect(ready).toContain("ready: 5173/tcp");
+    expect(session.startProcess).toHaveBeenCalledWith({
+      command: "pnpm",
+      args: ["dev"],
+      cwd: "site",
+    });
+    expect(session.readProcessLogs).toHaveBeenCalledWith("process_1", { tailBytes: 512 });
+    expect(session.stopProcess).toHaveBeenCalledWith("process_1", { gracePeriodMs: 250 });
+    expect(session.waitForPort).toHaveBeenCalledWith(5173, { timeoutMs: 1234 });
+  });
+
+  it("applies command and log policies to managed process tools", async () => {
+    const tools = Object.fromEntries(
+      createSandboxTools(createManagedSession(), {
+        include: ["start_process", "read_process_logs"],
+        exec: { allowedCommands: ["node"] },
+        process: { maxLogBytes: 128 },
+      }).map((tool) => [tool.name, tool] as const),
+    );
+
+    await expect(tools.start_process?.call({ command: "pnpm" })).rejects.toThrow(
+      "Command is not allowed",
+    );
+    await expect(
+      tools.read_process_logs?.call({ processId: "process_1", tailBytes: 129 }),
+    ).rejects.toThrow("exceeds sandbox tool policy");
+  });
+
+  it("rejects process tools for sessions without the capability", () => {
+    expect(() => createSandboxTools(createSession(), { include: ["start_process"] })).toThrow(
+      "does not support managed process tools",
+    );
+    expect(() => createSandboxTools(createSession(), { include: ["list_ports"] })).toThrow(
+      "does not support published port tools",
+    );
+  });
 });
 
 function createSession(): SandboxSession {
@@ -143,5 +237,49 @@ function createSession(): SandboxSession {
     writeTextFile: vi.fn(async () => undefined),
     listFiles: vi.fn(async () => [{ path: "a.txt", type: "file" as const, size: 12 }]),
     destroy: vi.fn(async () => undefined),
+  };
+}
+
+function createManagedSession(): DockerSandboxSession {
+  return {
+    ...createSession(),
+    publishedPorts: [{ containerPort: 5173, host: "127.0.0.1", hostPort: 49_152, protocol: "tcp" }],
+    waitForPort: vi.fn(async () => ({
+      containerPort: 5173,
+      host: "127.0.0.1" as const,
+      hostPort: 49_152,
+      protocol: "tcp" as const,
+    })),
+    startProcess: vi.fn(async () => ({
+      id: "process_1",
+      command: "pnpm",
+      args: ["dev"],
+      status: "running" as const,
+      startedAt: "2026-07-15T00:00:00.000Z",
+    })),
+    listProcesses: vi.fn(async () => [
+      {
+        id: "process_1",
+        command: "pnpm",
+        args: ["dev"],
+        status: "running" as const,
+        startedAt: "2026-07-15T00:00:00.000Z",
+      },
+    ]),
+    readProcessLogs: vi.fn(async () => ({
+      stdout: "ready\n",
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    })),
+    stopProcess: vi.fn(async () => ({
+      id: "process_1",
+      command: "pnpm",
+      args: ["dev"],
+      status: "stopped" as const,
+      exitCode: 143,
+      startedAt: "2026-07-15T00:00:00.000Z",
+      endedAt: "2026-07-15T00:00:01.000Z",
+    })),
   };
 }

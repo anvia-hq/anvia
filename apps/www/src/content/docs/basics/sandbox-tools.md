@@ -72,6 +72,11 @@ const agent = new AgentBuilder("workspace", model)
 
 The tool policy controls which commands are allowed, how long commands can run, and how much file content can pass through the tools.
 
+Managed website previews are available as opt-in tools. Application code pre-authorizes a
+container port, while the agent can start a long-running development server, inspect its logs, and
+wait for the port to become ready. See the package [usage patterns](/docs/packages/sandbox/usage-patterns#live-website-previews)
+for the complete application-owned proxy boundary.
+
 ## Clean up
 
 Destroy the session when your app is done with it:

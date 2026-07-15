@@ -18,7 +18,7 @@ class DockerSandbox implements Sandbox {
   static node(options?: DockerSandboxOptions): DockerSandbox;
   static python(options?: DockerSandboxOptions): DockerSandbox;
   static deno(options?: DockerSandboxOptions): DockerSandbox;
-  createSession(options?: SandboxCreateSessionOptions): Promise<SandboxSession>;
+  createSession(options?: DockerSandboxCreateSessionOptions): Promise<DockerSandboxSession>;
 }
 ```
 
@@ -55,6 +55,9 @@ Purpose: provider-neutral contracts for sandbox clients and live workspace sessi
 
 Return behavior: file paths are sandbox-relative; absolute paths and traversal outside the workspace are rejected.
 
+`DockerSandboxSession` adds published-port and managed-process capabilities without making them
+required for other `SandboxSession` providers.
+
 ## Session Options
 
 ```ts
@@ -63,6 +66,10 @@ type SandboxCreateSessionOptions = {
   workspace?: SandboxWorkspaceOptions;
   manifest?: SandboxManifest;
   metadata?: Record<string, string>;
+};
+
+type DockerSandboxCreateSessionOptions = SandboxCreateSessionOptions & {
+  ports?: readonly number[];
 };
 
 type SandboxWorkspaceOptions =
@@ -86,6 +93,7 @@ type SandboxLimits = {
   memoryMb?: number;
   cpus?: number;
   pidsLimit?: number;
+  maxProcesses?: number;
 };
 
 type SandboxLifecycleOptions = {
@@ -96,6 +104,10 @@ type SandboxLifecycleOptions = {
 ```
 
 Purpose: seed files, directories, environment, metadata, workspace mode, lifecycle cleanup, and runtime limits for a sandbox session.
+
+`ports` contains unique TCP ports from 1 through 65535. Published ports require `network: true`
+or a bridge-capable custom network. Docker binds them to random ports on host address
+`127.0.0.1`; the application remains responsible for any authenticated public proxy.
 
 ## Docker Options
 
@@ -180,6 +192,86 @@ type SandboxFileEntry = {
 
 Purpose: typed file-listing results from `SandboxSession.listFiles(...)`.
 
+## Published ports and managed processes
+
+```ts
+interface SandboxPortSession extends SandboxSession {
+  readonly publishedPorts: readonly SandboxPublishedPort[];
+  waitForPort(
+    containerPort: number,
+    options?: SandboxWaitForPortOptions,
+  ): Promise<SandboxPublishedPort>;
+}
+
+interface SandboxProcessSession extends SandboxSession {
+  startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo>;
+  listProcesses(): Promise<SandboxProcessInfo[]>;
+  readProcessLogs(
+    processId: string,
+    options?: SandboxProcessLogsOptions,
+  ): Promise<SandboxProcessLogs>;
+  stopProcess(
+    processId: string,
+    options?: SandboxProcessStopOptions,
+  ): Promise<SandboxProcessInfo>;
+}
+
+interface DockerSandboxSession extends SandboxPortSession, SandboxProcessSession {}
+
+type SandboxPublishedPort = {
+  containerPort: number;
+  host: "127.0.0.1";
+  hostPort: number;
+  protocol: "tcp";
+};
+
+type SandboxProcessStartOptions = {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+};
+
+type SandboxProcessStatus = "running" | "exited" | "stopped";
+
+type SandboxProcessInfo = {
+  id: string;
+  command: string;
+  args: string[];
+  cwd?: string;
+  status: SandboxProcessStatus;
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+};
+
+type SandboxProcessLogs = {
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+};
+
+type SandboxProcessLogsOptions = { tailBytes?: number };
+type SandboxProcessStopOptions = { gracePeriodMs?: number };
+type SandboxWaitForPortOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+  signal?: AbortSignal;
+};
+
+function isSandboxPortSession(session: SandboxSession): session is SandboxPortSession;
+function isSandboxProcessSession(session: SandboxSession): session is SandboxProcessSession;
+```
+
+`startProcess(...)` starts an arbitrary structured command and returns after launch. Output is
+retained in a bounded tail buffer. `maxProcesses` caps concurrent processes and retained process
+records; the oldest completed records are pruned when capacity is needed. `waitForPort(...)`
+confirms that the pre-authorized port is listening on all container interfaces; web servers must
+bind to `0.0.0.0`, not container localhost. Idle timeout, TTL, and explicit session destruction
+still clean up managed processes. Managed commands should remain in the foreground rather than
+daemonizing, so the session can track their exit status and stop them reliably.
+
 ## Agent Tools
 
 ```ts
@@ -195,13 +287,20 @@ type SandboxToolsOptions = {
   exec?: SandboxExecToolPolicy;
   readFile?: SandboxFileToolPolicy;
   writeFile?: SandboxFileToolPolicy;
+  process?: SandboxProcessToolPolicy;
 };
 
 type SandboxToolName =
   | "exec_command"
   | "read_file"
   | "write_file"
-  | "list_files";
+  | "list_files"
+  | "list_ports"
+  | "start_process"
+  | "list_processes"
+  | "read_process_logs"
+  | "stop_process"
+  | "wait_for_port";
 
 type SandboxExecToolPolicy = {
   allowedCommands?: string[];
@@ -214,13 +313,22 @@ type SandboxFileToolPolicy = {
   maxBytes?: number;
 };
 
+type SandboxProcessToolPolicy = {
+  maxLogBytes?: number;
+  defaultWaitTimeoutMs?: number;
+  maxWaitTimeoutMs?: number;
+  stopGracePeriodMs?: number;
+};
+
 type SandboxToolsFactory = (
   session: SandboxSession,
   options?: SandboxToolsOptions,
 ) => AnyTool[];
 ```
 
-Purpose: expose a live sandbox session as Anvia tools. The default bundle includes `exec_command`, `read_file`, `write_file`, and `list_files`. Use `allow` or `include` to select tools and `SandboxExecToolPolicy` or `SandboxFileToolPolicy` to bound model-facing operations.
+Purpose: expose a live sandbox session as Anvia tools. The default bundle remains `exec_command`,
+`read_file`, `write_file`, and `list_files`. Published-port and managed-process tools are opt-in.
+They use the existing executable allow/block policy plus `SandboxProcessToolPolicy` limits.
 
 ## Hooks
 
@@ -255,7 +363,9 @@ type SandboxFileWriteEvent = SandboxSessionEvent & {
 };
 ```
 
-Purpose: observe session creation, command execution, file writes, and cleanup without exposing those details to the model.
+Purpose: observe session creation, command execution, managed process start/exit, file writes, and
+cleanup without exposing those details to the model. Managed processes emit `onExecStart` when
+launched and `onExecEnd` when they exit or are stopped.
 
 For workflow guidance, see [Sandbox](/docs/basics/sandbox-tools).
 
@@ -270,6 +380,9 @@ class SandboxPathError extends SandboxError {}
 class SandboxTimeoutError extends SandboxError {}
 class SandboxFileSizeError extends SandboxError {}
 class SandboxToolPolicyError extends SandboxError {}
+class SandboxPortError extends SandboxError {}
+class SandboxProcessError extends SandboxError {}
 ```
 
-Purpose: typed failures for Docker setup, path validation, destroyed sessions, file size limits, tool policy limits, and sandbox operations.
+Purpose: typed failures for Docker setup, path and port validation, managed processes, destroyed
+sessions, file size limits, tool policy limits, and sandbox operations.

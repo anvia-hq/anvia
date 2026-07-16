@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.13.4
+
+### Patch Changes
+
+- d196025: Add prompt-scoped completion retries for transient non-streaming and pre-output streaming failures.
+
 ## 0.13.3
 
 ### Patch Changes

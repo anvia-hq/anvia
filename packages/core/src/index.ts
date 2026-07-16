@@ -72,6 +72,7 @@ export {
 } from "./hooks";
 export type { MemoryStore } from "./memory";
 export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./request/errors";
+export type { CompletionRetryContext, CompletionRetryOptions } from "./request/retry";
 export type {
   AgentChildStreamEvent,
   AgentStreamEvent,

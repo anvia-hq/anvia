@@ -162,6 +162,39 @@ describe("agent memory", () => {
     ]);
   });
 
+  it("applies completion retries to session prompts without duplicating memory", async () => {
+    const store = new RecordingMemoryStore();
+    const delegate = new QueueModel([response([AssistantContent.text("recovered")])]);
+    let attempts = 0;
+    const model: CompletionModel = {
+      provider: delegate.provider,
+      defaultModel: delegate.defaultModel,
+      capabilities: delegate.capabilities,
+      async completion(request) {
+        attempts += 1;
+        if (attempts === 1) {
+          throw Object.assign(new Error("temporarily unavailable"), { status: 503 });
+        }
+        return delegate.completion(request);
+      },
+    };
+    const agent = new AgentBuilder("test-agent", model).memory(store).build();
+
+    await expect(
+      agent
+        .session("session_1")
+        .prompt("hello")
+        .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
+        .send(),
+    ).resolves.toMatchObject({ output: "recovered" });
+
+    expect(attempts).toBe(2);
+    expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
+      ["user"],
+      ["assistant"],
+    ]);
+  });
+
   it("saves messages incrementally by default", async () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([

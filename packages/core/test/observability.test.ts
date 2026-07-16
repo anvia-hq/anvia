@@ -149,6 +149,9 @@ class RecordingObserver implements AgentObserver {
       error: (errorArgs: AgentRunErrorArgs) => {
         this.events.push({ type: "run_error", args: errorArgs });
       },
+      event: (eventArgs: AgentRunEventArgs) => {
+        this.events.push({ type: "run_event", args: eventArgs });
+      },
     };
   }
 }
@@ -209,6 +212,60 @@ describe("agent observability", () => {
         }),
       }),
     );
+  });
+
+  it("records recovered completion retries as sanitized run events", async () => {
+    const observer = new RecordingObserver();
+    const retryError = Object.assign(new Error("private provider detail"), {
+      status: 503,
+      code: "EAI_AGAIN",
+    });
+    const delegate = new QueueModel([response([AssistantContent.text("recovered")])]);
+    let attempts = 0;
+    const model: CompletionModel = {
+      provider: delegate.provider,
+      defaultModel: delegate.defaultModel,
+      capabilities: delegate.capabilities,
+      async completion(request) {
+        attempts += 1;
+        if (attempts === 1) {
+          throw retryError;
+        }
+        return delegate.completion(request);
+      },
+    };
+    const agent = new AgentBuilder("test-agent", model).observe(observer).build();
+
+    await expect(
+      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).send(),
+    ).resolves.toMatchObject({ output: "recovered" });
+
+    expect(eventTypes(observer)).toEqual([
+      "run_start",
+      "generation_start",
+      "run_event",
+      "generation_end",
+      "run_end",
+    ]);
+    expect(observer.events[2]).toEqual({
+      type: "run_event",
+      args: {
+        name: "completion.retry",
+        level: "WARNING",
+        attributes: {
+          turn: 1,
+          attempt: 1,
+          nextAttempt: 2,
+          maxAttempts: 3,
+          delayMs: 0,
+          streaming: false,
+          errorName: "Error",
+          statusCode: 503,
+          errorCode: "EAI_AGAIN",
+        },
+      },
+    });
+    expect(JSON.stringify(observer.events[2])).not.toContain("private provider detail");
   });
 
   it("records multiple turns and tool calls", async () => {

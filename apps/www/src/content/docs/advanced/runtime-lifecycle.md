@@ -49,7 +49,7 @@ For a session run, core performs the same sequence for `.send()` and `.stream()`
 5. Resolve dynamic context and dynamic tool definitions from the current prompt text.
 6. Build the provider-neutral completion request.
 7. Apply completion request middleware.
-8. Call the model.
+8. Call the model, applying any request-scoped completion retry policy without consuming another turn.
 9. Apply completion response middleware and run completion hooks.
 10. Store the assistant message according to the memory save policy.
 11. Execute requested tools, including approvals, tool hooks, tool middleware, and tool observers.
@@ -74,6 +74,8 @@ for await (const event of request.stream()) {
 ```
 
 Streaming emits runtime events, not only text. It can include turn starts, text deltas, reasoning deltas, tool calls, tool results, nested agent tool events, final output, and errors. Filter events before sending them to browser clients if tool arguments or results may contain private data.
+
+`withCompletionRetries(...)` applies to both send and stream execution. Recovered attempts are transparent to the public event stream and are recorded as sanitized `completion.retry` observer events. Streaming retries stop permanently after the first non-error provider event, including provider events that are used internally and not emitted to the caller.
 
 ## Memory And Event Storage
 

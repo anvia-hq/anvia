@@ -58,6 +58,14 @@ class StreamingQueueModel implements StreamingCompletionModel {
   }
 }
 
+async function* streamThenThrow(
+  events: CompletionStreamEvent[],
+  error: unknown,
+): AsyncIterable<CompletionStreamEvent> {
+  yield* events;
+  throw error;
+}
+
 class RecordingEventStore implements AgentEventStore {
   readonly appendCalls: AgentEventAppendInput[] = [];
 
@@ -109,6 +117,109 @@ describe("PromptRequest streaming", () => {
     expect(events.at(-1)).toMatchObject({ type: "final", output: "hello" });
     expect(model.requests[0]?.instructions).toBe("system");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hi"));
+  });
+
+  it("retries a transient stream failure before the first provider event", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new StreamingQueueModel([
+      streamThenThrow([], error),
+      [{ type: "text_delta", delta: "recovered" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const events = await collect(
+      agent.prompt("hi").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).stream(),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "turn_start",
+      "text_delta",
+      "turn_end",
+      "final",
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "recovered" });
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]).toBe(model.requests[0]);
+  });
+
+  it("retries an initial provider error event without exposing it", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { statusCode: 503 });
+    const model = new StreamingQueueModel([
+      [{ type: "error", error }],
+      [{ type: "text_delta", delta: "ready" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const events = await collect(
+      agent.prompt("hi").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).stream(),
+    );
+
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "ready" });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("applies completion retries through PromptRequest readable streams", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new StreamingQueueModel([
+      streamThenThrow([], error),
+      [{ type: "text_delta", delta: "ready" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const text = await readAll(
+      agent
+        .prompt("hi")
+        .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
+        .readableStream(),
+    );
+    const events = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "ready" });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("does not retry after a provider delta has been observed", async () => {
+    const error = Object.assign(new Error("stream interrupted"), { status: 503 });
+    const model = new StreamingQueueModel([
+      streamThenThrow([{ type: "text_delta", delta: "partial" }], error),
+      [{ type: "text_delta", delta: "duplicate" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const iterator = agent
+      .prompt("hi")
+      .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
+      .stream()
+      [Symbol.asyncIterator]();
+
+    expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
+    expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", delta: "partial" });
+    expect(await nextEvent(iterator)).toEqual({ type: "error", error });
+    await expect(iterator.next()).rejects.toBe(error);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("does not retry after a non-emitted provider event has been observed", async () => {
+    const error = Object.assign(new Error("stream interrupted"), { status: 503 });
+    const model = new StreamingQueueModel([
+      streamThenThrow([{ type: "message_id", id: "msg_1" }], error),
+      [{ type: "text_delta", delta: "duplicate" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const iterator = agent
+      .prompt("hi")
+      .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
+      .stream()
+      [Symbol.asyncIterator]();
+
+    expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
+    expect(await nextEvent(iterator)).toEqual({ type: "error", error });
+    await expect(iterator.next()).rejects.toBe(error);
+    expect(model.requests).toHaveLength(1);
   });
 
   it("streams post-middleware response content when response middleware is registered", async () => {

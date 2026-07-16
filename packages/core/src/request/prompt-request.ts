@@ -52,6 +52,14 @@ import { toReadableStream } from "../streaming";
 import type { ToolApprovalsOptions } from "../tool";
 import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
+import {
+  type CompletionRetryOptions,
+  completionRetryDelayMs,
+  completionRetryErrorAttributes,
+  type ResolvedCompletionRetryOptions,
+  resolveCompletionRetryOptions,
+  waitForCompletionRetry,
+} from "./retry";
 import type { AgentStreamEvent, PromptResponse } from "./types";
 
 export class PromptRequest<M extends CompletionModel = CompletionModel> {
@@ -63,6 +71,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
   private concurrency = 1;
   private traceOptions: AgentTraceOptions | undefined;
+  private completionRetryOptions: ResolvedCompletionRetryOptions | undefined;
   private requestMiddlewares: AgentMiddleware[] = [];
   private readonly steeringMessages: MessageType[] = [];
   private runState: "idle" | "running" | "completed" | "errored" | "cancelled" = "idle";
@@ -93,6 +102,11 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
   maxTurns(maxTurns: number): this {
     this.maxTurnCount = maxTurns;
+    return this;
+  }
+
+  withCompletionRetries(options: CompletionRetryOptions = {}): this {
+    this.completionRetryOptions = resolveCompletionRetryOptions(options);
     return this;
   }
 
@@ -443,29 +457,51 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         const emittedToolCallIds = new Set<string>();
         let response: CompletionResponse;
         try {
-          for await (const event of this.agent.model.streamCompletion(request)) {
-            if (firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
-              firstDeltaMs = Date.now() - generationStartedAt;
-            }
-            const mapped = accumulator.accept(event);
-            if (event.type === "error") {
-              throw event.error;
-            }
-            if (mapped !== undefined) {
-              await generationObservers.update?.({ turn: currentTurns, delta: mapped });
-              if (mapped.type === "tool_call") {
-                emittedToolCallIds.add(mapped.toolCall.id);
+          for (let attempt = 1; ; attempt += 1) {
+            let hasProviderProgress = false;
+            try {
+              for await (const event of this.agent.model.streamCompletion(request)) {
+                if (event.type === "error") {
+                  throw event.error;
+                }
+                hasProviderProgress = true;
+                if (firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
+                  firstDeltaMs = Date.now() - generationStartedAt;
+                }
+                const mapped = accumulator.accept(event);
+                if (mapped !== undefined) {
+                  await generationObservers.update?.({ turn: currentTurns, delta: mapped });
+                  if (mapped.type === "tool_call") {
+                    emittedToolCallIds.add(mapped.toolCall.id);
+                  }
+                  const shouldBuffer =
+                    bufferResponseEvents ||
+                    (bufferOutputDeltas &&
+                      (mapped.type === "text_delta" || mapped.type === "reasoning_delta"));
+                  if (!shouldBuffer) {
+                    yield await emit(addTurn(currentTurns, mapped));
+                  }
+                }
               }
-              const shouldBuffer =
-                bufferResponseEvents ||
-                (bufferOutputDeltas &&
-                  (mapped.type === "text_delta" || mapped.type === "reasoning_delta"));
-              if (!shouldBuffer) {
-                yield await emit(addTurn(currentTurns, mapped));
+              response = accumulator.response();
+              break;
+            } catch (error) {
+              const retryOptions = hasProviderProgress
+                ? undefined
+                : this.retryOptionsForFailure(error, attempt, currentTurns, true);
+              if (retryOptions === undefined) {
+                throw error;
               }
+              await this.scheduleCompletionRetry(
+                error,
+                attempt,
+                currentTurns,
+                true,
+                retryOptions,
+                runObservers,
+              );
             }
           }
-          response = accumulator.response();
         } catch (error) {
           await generationObservers.error({ turn: currentTurns, error });
           await this.runCompletionErrorHook(prompt, error, newMessages);
@@ -655,9 +691,28 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       this.generationStartArgs(turn, request, providerRequest),
     );
     try {
-      const response = await this.agent.model.completion(request);
-      await generationObservers.end({ turn, response });
-      return response;
+      for (let attempt = 1; ; attempt += 1) {
+        let response: CompletionResponse;
+        try {
+          response = await this.agent.model.completion(request);
+        } catch (error) {
+          const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
+          if (retryOptions === undefined) {
+            throw error;
+          }
+          await this.scheduleCompletionRetry(
+            error,
+            attempt,
+            turn,
+            false,
+            retryOptions,
+            runObservers,
+          );
+          continue;
+        }
+        await generationObservers.end({ turn, response });
+        return response;
+      }
     } catch (error) {
       await generationObservers.error({ turn, error });
       throw error;
@@ -695,6 +750,51 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       args.providerRequest = providerRequest;
     }
     return args;
+  }
+
+  private retryOptionsForFailure(
+    error: unknown,
+    attempt: number,
+    turn: number,
+    streaming: boolean,
+  ): ResolvedCompletionRetryOptions | undefined {
+    const options = this.completionRetryOptions;
+    if (options === undefined || attempt >= options.maxAttempts) {
+      return undefined;
+    }
+    const shouldRetry = options.shouldRetry({
+      error,
+      attempt,
+      maxAttempts: options.maxAttempts,
+      turn,
+      streaming,
+    });
+    return shouldRetry ? options : undefined;
+  }
+
+  private async scheduleCompletionRetry(
+    error: unknown,
+    attempt: number,
+    turn: number,
+    streaming: boolean,
+    options: ResolvedCompletionRetryOptions,
+    runObservers: ActiveAgentRunObservers,
+  ): Promise<void> {
+    const delayMs = completionRetryDelayMs(options, attempt);
+    await runObservers.event({
+      name: "completion.retry",
+      level: "WARNING",
+      attributes: {
+        turn,
+        attempt,
+        nextAttempt: attempt + 1,
+        maxAttempts: options.maxAttempts,
+        delayMs,
+        streaming,
+        ...completionRetryErrorAttributes(error),
+      },
+    });
+    await waitForCompletionRetry(delayMs);
   }
 
   private async executeToolCalls(

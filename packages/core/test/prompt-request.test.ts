@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   AgentBuilder,
@@ -46,6 +46,41 @@ class QueueModel implements CompletionModel {
   }
 }
 
+type CompletionOutcome =
+  | { response: CompletionResponse }
+  | {
+      error: unknown;
+    };
+
+class FlakyQueueModel implements CompletionModel {
+  readonly provider = "test";
+  readonly defaultModel = "test";
+  readonly capabilities = {
+    streaming: false,
+    tools: true,
+    toolChoice: true,
+    imageInput: true,
+    documentInput: true,
+    outputSchema: true,
+    reasoning: true,
+  };
+  readonly requests: CompletionRequest[] = [];
+
+  constructor(private readonly outcomes: CompletionOutcome[]) {}
+
+  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+    this.requests.push(request);
+    const outcome = this.outcomes.shift();
+    if (outcome === undefined) {
+      throw new Error("No queued outcome");
+    }
+    if ("error" in outcome) {
+      throw outcome.error;
+    }
+    return outcome.response;
+  }
+}
+
 function response(choice: CompletionResponse["choice"]): CompletionResponse {
   return {
     choice,
@@ -82,6 +117,218 @@ describe("PromptRequest", () => {
     expect(result.output).toBe("done");
     expect(model.requests[0]?.instructions).toBe("system");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hello"));
+  });
+
+  it("retries transient completion failures with the default policy", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("recovered")]) },
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    try {
+      const result = await agent.prompt("hello").withCompletionRetries().send();
+
+      expect(result.output).toBe("recovered");
+      expect(model.requests).toHaveLength(2);
+      expect(model.requests[1]).toBe(model.requests[0]);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("stops after the configured completion attempts and reports one logical error", async () => {
+    const errors = [
+      Object.assign(new Error("unavailable 1"), { status: 503 }),
+      Object.assign(new Error("unavailable 2"), { status: 503 }),
+      Object.assign(new Error("unavailable 3"), { status: 503 }),
+    ];
+    const model = new FlakyQueueModel(errors.map((error) => ({ error })));
+    const hookCalls = { completionCall: 0, completionError: 0 };
+    const agent = new AgentBuilder("test-agent", model)
+      .hook(
+        createHook({
+          onCompletionCall() {
+            hookCalls.completionCall += 1;
+          },
+          onCompletionError() {
+            hookCalls.completionError += 1;
+          },
+        }),
+      )
+      .build();
+
+    await expect(
+      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).send(),
+    ).rejects.toBe(errors[2]);
+
+    expect(model.requests).toHaveLength(3);
+    expect(hookCalls).toEqual({ completionCall: 1, completionError: 1 });
+  });
+
+  it("does not retry non-transient completion failures", async () => {
+    const error = Object.assign(new Error("invalid request"), { status: 400 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("unexpected")]) },
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    await expect(
+      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).send(),
+    ).rejects.toBe(error);
+
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("recognizes transient network codes through error causes", async () => {
+    const cause = Object.assign(new Error("socket reset"), { code: "ECONNRESET" });
+    const error = new Error("provider connection failed", { cause });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("recovered")]) },
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    await expect(
+      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).send(),
+    ).resolves.toMatchObject({ output: "recovered" });
+
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("never retries abort errors", async () => {
+    const error = Object.assign(new Error("aborted"), { name: "AbortError", status: 503 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("unexpected")]) },
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    await expect(
+      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).send(),
+    ).rejects.toBe(error);
+
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("supports request-specific completion retry classification", async () => {
+    const error = new Error("warming up");
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("ready")]) },
+    ]);
+    const contexts: unknown[] = [];
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const result = await agent
+      .prompt("hello")
+      .withCompletionRetries({
+        maxAttempts: 2,
+        initialDelayMs: 0,
+        maxDelayMs: 0,
+        shouldRetry(context) {
+          contexts.push(context);
+          return context.error === error;
+        },
+      })
+      .send();
+
+    expect(result.output).toBe("ready");
+    expect(contexts).toEqual([
+      {
+        error,
+        attempt: 1,
+        maxAttempts: 2,
+        turn: 1,
+        streaming: false,
+      },
+    ]);
+  });
+
+  it("validates completion retry options when configuring the request", () => {
+    const agent = new AgentBuilder(
+      "test-agent",
+      new QueueModel([response([AssistantContent.text("unused")])]),
+    ).build();
+
+    expect(() => agent.prompt("hello").withCompletionRetries({ maxAttempts: 0 })).toThrow(
+      RangeError,
+    );
+    expect(() => agent.prompt("hello").withCompletionRetries({ maxAttempts: 1.5 })).toThrow(
+      RangeError,
+    );
+    expect(() => agent.prompt("hello").withCompletionRetries({ initialDelayMs: -1 })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 200, maxDelayMs: 100 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      agent
+        .prompt("hello")
+        .withCompletionRetries({ shouldRetry: true as unknown as () => boolean }),
+    ).toThrow(TypeError);
+  });
+
+  it("retries a later completion turn without replaying tools or request hooks", async () => {
+    let toolExecutions = 0;
+    let middlewareCalls = 0;
+    let completionCalls = 0;
+    let completionErrors = 0;
+    const countingTool = createTool({
+      name: "counted_add",
+      description: "Add numbers and count executions",
+      input: z.object({ x: z.number(), y: z.number() }),
+      output: z.number(),
+      execute: ({ x, y }) => {
+        toolExecutions += 1;
+        return x + y;
+      },
+    });
+    const model = new FlakyQueueModel([
+      {
+        response: response([AssistantContent.toolCall("call_1", "counted_add", { x: 2, y: 5 })]),
+      },
+      { error: Object.assign(new Error("temporarily unavailable"), { status: 503 }) },
+      { response: response([AssistantContent.text("7")]) },
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(countingTool)
+      .middleware(
+        createMiddleware({
+          onCompletionRequest() {
+            middlewareCalls += 1;
+            return undefined;
+          },
+        }),
+      )
+      .hook(
+        createHook({
+          onCompletionCall() {
+            completionCalls += 1;
+          },
+          onCompletionError() {
+            completionErrors += 1;
+          },
+        }),
+      )
+      .build();
+
+    const result = await agent
+      .prompt("add")
+      .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
+      .send();
+
+    expect(result.output).toBe("7");
+    expect(model.requests).toHaveLength(3);
+    expect(toolExecutions).toBe(1);
+    expect(middlewareCalls).toBe(2);
+    expect(completionCalls).toBe(2);
+    expect(completionErrors).toBe(0);
+    expect(result.messages.filter((message) => message.role === "tool")).toHaveLength(1);
   });
 
   it("send consumes steering queued before no-tool finalization", async () => {

@@ -14,7 +14,11 @@ import * as extractor from "../src/extractor";
 import * as guardrails from "../src/guardrails";
 import * as hooks from "../src/hooks";
 import * as imageGeneration from "../src/image-generation";
-import type { ToolContent as RootToolContentType } from "../src/index";
+import type {
+  CompletionRetryContext as RootCompletionRetryContext,
+  CompletionRetryOptions as RootCompletionRetryOptions,
+  ToolContent as RootToolContentType,
+} from "../src/index";
 import * as publicCore from "../src/index";
 import { Message as RootMessage, ToolContent as RootToolContent } from "../src/index";
 import * as internalAgent from "../src/internal/agent";
@@ -23,6 +27,10 @@ import * as mcp from "../src/mcp";
 import * as modelListing from "../src/model-listing";
 import * as observability from "../src/observability";
 import * as pipeline from "../src/pipeline";
+import type {
+  CompletionRetryContext as RequestCompletionRetryContext,
+  CompletionRetryOptions as RequestCompletionRetryOptions,
+} from "../src/request";
 import * as request from "../src/request";
 import * as skills from "../src/skills";
 import * as streaming from "../src/streaming";
@@ -82,6 +90,8 @@ describe("public exports", () => {
     expect("PromptCancelledError" in request).toBe(true);
     expect("MaxTurnsError" in request).toBe(true);
     expect("ToolApprovalRequiredError" in request).toBe(true);
+    expectTypeOf<RootCompletionRetryContext>().toEqualTypeOf<RequestCompletionRetryContext>();
+    expectTypeOf<RootCompletionRetryOptions>().toEqualTypeOf<RequestCompletionRetryOptions>();
   });
 
   it("does not expose removed experimental UI stream creators", () => {

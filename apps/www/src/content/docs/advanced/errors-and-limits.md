@@ -77,9 +77,26 @@ Provider failures should be classified before retrying. Retry bounded transient 
 
 ## Retry Policy
 
-Retries belong outside the prompt. A runner or job worker should decide whether an error is retryable, how many attempts are allowed, and whether the workflow has already performed a side effect.
+Completion retries belong on the prompt request, outside prompt text. Enable them when a runner needs bounded recovery from transient provider failures:
 
-For read-only completions, bounded retries are usually safe. For tool-calling agents, retries require more care. A failed final model call may happen after a tool already changed product state. Use idempotency records around side-effect tools before retrying the full run.
+```ts
+const response = await agent
+  .prompt(input)
+  .withCompletionRetries({
+    maxAttempts: 3,
+    initialDelayMs: 100,
+    maxDelayMs: 1_000,
+  })
+  .send();
+```
+
+This policy retries only the failed model invocation in its current turn. It does not restart the agent run or replay completed tools. Request middleware, completion hooks, turn accounting, and memory writes retain their logical once-per-call behavior.
+
+For streaming, core retries only when the provider fails before producing any non-error stream event. Once text, reasoning, tool-call data, a message id, or a final response has arrived, the existing stream fails instead of restarting and duplicating output.
+
+For read-only completions, bounded retries are usually safe. Keep side-effecting tools idempotent even though completion retries do not replay them: the provider may have processed a request before the connection failed, and application-level retries or job retries can still replay a wider workflow. Provider SDK retries and Anvia request retries stack, so set both budgets intentionally.
+
+Use `shouldRetry` for provider-specific errors that the default transient classifier cannot recognize. Do not classify authentication, permission, invalid-request, or ordinary model-not-found failures as transient unless the provider contract explicitly guarantees temporary behavior.
 
 ## Runner Error Mapping
 

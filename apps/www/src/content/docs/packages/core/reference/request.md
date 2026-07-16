@@ -14,6 +14,7 @@ Import from `@anvia/core/request` when a reusable package needs prompt-run contr
 ```ts
 class PromptRequest<M extends CompletionModel = CompletionModel> {
   maxTurns(maxTurns: number): this;
+  withCompletionRetries(options?: CompletionRetryOptions): this;
   withHook(hook: PromptHook): this;
   /** @deprecated Use withHook instead. */
   requestHook(hook: PromptHook): this;
@@ -35,6 +36,39 @@ class PromptRequest<M extends CompletionModel = CompletionModel> {
 Purpose: per-run request state returned by `agent.prompt(...)` or `agent.session(...).prompt(...)`.
 
 Return behavior: `send()` resolves a final response; `stream()` yields agent run events and ends with a `final` event; `readableStream()` wraps the async iterable in a web stream.
+
+`withCompletionRetries(...)` retries only a failed model invocation within the current turn. It does not restart the run, consume another turn, replay completed tools, or re-run request middleware and hooks. Streaming calls are retried only when the provider fails before yielding any non-error event.
+
+## CompletionRetryOptions
+
+```ts
+type CompletionRetryOptions = {
+  maxAttempts?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  shouldRetry?: (context: CompletionRetryContext) => boolean;
+};
+```
+
+Purpose: opt-in, request-scoped retry policy for model calls made by `send()`, `stream()`, and `readableStream()`.
+
+Defaults: three total attempts, a 100 ms initial delay, a 1,000 ms maximum delay, factor-two exponential backoff with full jitter, and conservative transient-error classification. The built-in classifier retries status codes 408, 409, 425, 429, and 5xx responses plus common timeout and connection errors. Abort, authentication, permission, invalid-request, and unrecognized errors are not retried.
+
+`maxAttempts` includes the initial call. A custom `shouldRetry` replaces the built-in classifier. Anvia retries are additional to retries performed by the provider SDK. Core uses its configured local backoff and does not interpret provider `Retry-After` headers.
+
+## CompletionRetryContext
+
+```ts
+type CompletionRetryContext = {
+  error: unknown;
+  attempt: number;
+  maxAttempts: number;
+  turn: number;
+  streaming: boolean;
+};
+```
+
+Purpose: context passed to a custom completion retry classifier. `attempt` identifies the failed attempt and is one-based.
 
 ## PromptResponse
 

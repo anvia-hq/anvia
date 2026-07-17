@@ -69,6 +69,16 @@ describe("Studio UI routes", () => {
     const rootShell = await app.request("http://studio.test/tracing/sessions/session_1");
     expect(rootShell.status).toBe(200);
     expect(await rootShell.text()).toContain('data-ui-path=""');
+
+    const sandboxRedirect = await app.request("http://studio.test/studio/sandboxes/sandbox_ref");
+    expect(sandboxRedirect.status).toBe(302);
+    expect(sandboxRedirect.headers.get("location")).toBe("/sandboxes/sandbox_ref");
+
+    const sandboxShell = await app.request("http://studio.test/sandboxes/sandbox_ref", {
+      headers: { accept: "text/html" },
+    });
+    expect(sandboxShell.status).toBe(200);
+    expect(await sandboxShell.text()).toContain('data-ui-path=""');
   });
 
   it("serves configured client scripts and bundled assets", async () => {

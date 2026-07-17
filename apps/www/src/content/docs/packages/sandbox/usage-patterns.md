@@ -17,6 +17,29 @@ sidebar:
 - Pair with tool approvals when commands or file writes need human review.
 - Pair with observability packages to record command lifecycle and failures.
 
+## Inspect a live sandbox in Studio
+
+Tools returned by `createSandboxTools(...)` carry non-enumerable runtime metadata that lets
+`@anvia/studio` recognize their bound session. Attach those tools to a configured Studio agent and
+the live session appears automatically in the Sandboxes inspector:
+
+```ts
+const session = await DockerSandbox.node().createSession();
+const tools = createSandboxTools(session);
+const agent = new AgentBuilder("builder", model).tools(tools).build();
+
+new Studio([agent]).start();
+```
+
+The integration exposes read-only file browsing and downloads. Published ports, managed
+processes, and process logs also appear when the selected sandbox provider implements those
+capabilities. Studio deduplicates one session shared by several tools or agents and shows all of
+its associations.
+
+The application still owns the sandbox lifecycle. Destroying the session makes it unavailable to
+the inspector, and stopping Studio does not destroy it. Studio does not persist sandbox files or
+process state.
+
 ## Generated artifacts
 
 When a sandbox command produces images, reports, or other binary files, keep the model-facing

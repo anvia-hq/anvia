@@ -5,7 +5,7 @@ import { isObject } from "./type-guards";
 
 export function errorResponse(
   c: Context,
-  status: 400 | 404 | 409 | 500 | 501,
+  status: 400 | 404 | 409 | 413 | 500 | 501,
   code: StudioErrorCode,
   message: string,
   details?: JsonValue,

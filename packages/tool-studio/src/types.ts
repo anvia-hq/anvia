@@ -23,6 +23,7 @@ export type StudioCapability =
   | "mcps"
   | "observability"
   | "pipelines"
+  | "sandboxes"
   | "sessions"
   | "status"
   | "tools"
@@ -288,6 +289,79 @@ export type StudioAgentToolMetadata = {
 export type StudioAgentToolsSummary = {
   agentId: string;
   tools: StudioAgentToolMetadata[];
+};
+
+export type StudioSandboxCapabilities = {
+  files: true;
+  ports: boolean;
+  processes: boolean;
+};
+
+export type StudioSandboxSummary = {
+  ref: string;
+  id: string;
+  provider: string;
+  workdir: string;
+  agentIds: string[];
+  toolNames: string[];
+  capabilities: StudioSandboxCapabilities;
+};
+
+export type StudioSandboxesSummary = {
+  sandboxes: StudioSandboxSummary[];
+};
+
+export type StudioSandboxFileType = "file" | "directory" | "symlink" | "other";
+
+export type StudioSandboxFileEntry = {
+  path: string;
+  type: StudioSandboxFileType;
+  size?: number;
+};
+
+export type StudioSandboxFilesResponse = {
+  sandboxRef: string;
+  path: string;
+  entries: StudioSandboxFileEntry[];
+};
+
+export type StudioSandboxPort = {
+  containerPort: number;
+  host: string;
+  hostPort: number;
+  protocol: string;
+};
+
+export type StudioSandboxPortsResponse = {
+  sandboxRef: string;
+  ports: StudioSandboxPort[];
+};
+
+export type StudioSandboxProcessStatus = "running" | "exited" | "stopped";
+
+export type StudioSandboxProcess = {
+  id: string;
+  command: string;
+  args: string[];
+  cwd?: string;
+  status: StudioSandboxProcessStatus;
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+};
+
+export type StudioSandboxProcessesResponse = {
+  sandboxRef: string;
+  processes: StudioSandboxProcess[];
+};
+
+export type StudioSandboxProcessLogsResponse = {
+  sandboxRef: string;
+  processId: string;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
 };
 
 export type StudioToolRunRequest = {
@@ -739,6 +813,7 @@ export type StudioStatusSummary = {
   counts: {
     agents: number;
     pipelines: number;
+    sandboxes?: number;
     sessions?: number;
     traces?: number;
     pipelineRuns?: number;
@@ -776,6 +851,12 @@ export type StudioServeOptions = {
   port?: number;
   hostname?: string;
   log?: boolean;
+  handleSignals?: boolean;
+};
+
+export type StudioServeLifecycleOptions = Omit<StudioServeOptions, "handleSignals"> & {
+  signal?: AbortSignal;
+  onShutdown?: () => void | Promise<void>;
 };
 
 export type StudioToolApprovalDecision = {
@@ -1052,6 +1133,7 @@ export type StudioErrorCode =
   | "bad_request"
   | "conflict"
   | "not_found"
+  | "payload_too_large"
   | "unsupported_capability"
   | "internal_error";
 

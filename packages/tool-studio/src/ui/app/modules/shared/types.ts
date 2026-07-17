@@ -32,6 +32,7 @@ export type ActivePage =
   | "sessions"
   | "agents"
   | "tools"
+  | "sandboxes"
   | "mcps"
   | "pipelines"
   | "evals"

@@ -63,8 +63,27 @@ It defines an `ask_question` tool for missing operator input. The tool asks mult
 
 Use this for values that should come from a human operator rather than from model inference: priority, escalation channel, reviewer notes, or a final confirmation value.
 
+## Sandbox Workspaces
+
+Run the sandbox inspector example with Docker available:
+
+```sh
+pnpm cookbook:studio:15
+```
+
+It creates an ephemeral Node.js sandbox, seeds a small preview server, attaches tools from
+`createSandboxTools(session)` to the agent, and starts Studio. Open
+`http://localhost:4021/sandboxes` to browse live files, inspect the published preview port, and
+read managed process state and logs.
+
+Studio discovers the session automatically from the agent tools. The application still owns its
+lifecycle, so the example passes `session.destroy()` to the managed `studio.serve(...)` shutdown
+hook. Studio waits for the port to bind, handles Ctrl+C or SIGTERM, and finishes sandbox cleanup
+before exiting.
+
 ## Related Cookbook Files
 
 - `examples/cookbook/09_studio/03-tool-approval.ts`
 - `examples/cookbook/09_studio/04-ask-question.ts`
 - `examples/cookbook/09_studio/09-inspection-surfaces.ts`
+- `examples/cookbook/09_studio/15-sandbox-inspector.ts`

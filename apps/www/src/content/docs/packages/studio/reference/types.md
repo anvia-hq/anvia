@@ -20,6 +20,7 @@ type StudioCapability =
   | "mcps"
   | "observability"
   | "pipelines"
+  | "sandboxes"
   | "sessions"
   | "status"
   | "tools"
@@ -276,6 +277,95 @@ Notable errors: unknown agents return `not_found`.
 
 `GET /agents/:agentId/mcps` returns the MCP subset grouped by server name. MCP metadata is available for tools registered through `.mcp(...)` and includes the same tool approval metadata used by the Tools inspector.
 
+## Sandbox Inspection Types
+
+```ts
+type StudioSandboxCapabilities = {
+  files: true;
+  ports: boolean;
+  processes: boolean;
+};
+
+type StudioSandboxSummary = {
+  ref: string;
+  id: string;
+  provider: string;
+  workdir: string;
+  agentIds: string[];
+  toolNames: string[];
+  capabilities: StudioSandboxCapabilities;
+};
+
+type StudioSandboxesSummary = {
+  sandboxes: StudioSandboxSummary[];
+};
+
+type StudioSandboxFileType = "file" | "directory" | "symlink" | "other";
+
+type StudioSandboxFileEntry = {
+  path: string;
+  type: StudioSandboxFileType;
+  size?: number;
+};
+
+type StudioSandboxFilesResponse = {
+  sandboxRef: string;
+  path: string;
+  entries: StudioSandboxFileEntry[];
+};
+
+type StudioSandboxPort = {
+  containerPort: number;
+  host: string;
+  hostPort: number;
+  protocol: string;
+};
+
+type StudioSandboxPortsResponse = {
+  sandboxRef: string;
+  ports: StudioSandboxPort[];
+};
+
+type StudioSandboxProcessStatus = "running" | "exited" | "stopped";
+
+type StudioSandboxProcess = {
+  id: string;
+  command: string;
+  args: string[];
+  cwd?: string;
+  status: StudioSandboxProcessStatus;
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+};
+
+type StudioSandboxProcessesResponse = {
+  sandboxRef: string;
+  processes: StudioSandboxProcess[];
+};
+
+type StudioSandboxProcessLogsResponse = {
+  sandboxRef: string;
+  processId: string;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+};
+```
+
+Purpose: describe live sandbox sessions discovered from tools created by `createSandboxTools(...)`
+and the read-only data exposed by Studio's Sandboxes inspector.
+
+Return behavior: `GET /sandboxes` lists discovered sessions, `GET /sandboxes/:sandboxRef` returns
+one session, `/files` lists a directory, `/files/content` returns file bytes, `/ports` lists
+published ports, and `/processes` plus `/processes/:processId/logs` expose managed process state.
+Port and process routes return `unsupported_capability` when the provider does not implement them.
+
+Notable errors: invalid paths return `bad_request`, missing sandboxes or files return `not_found`,
+destroyed sessions return `conflict`, and files above Studio's response limit return
+`payload_too_large`.
+
 ## Memory and Status Types
 
 ```ts
@@ -333,6 +423,7 @@ type StudioStatusSummary = {
   counts: {
     agents: number;
     pipelines: number;
+    sandboxes?: number;
     sessions?: number;
     traces?: number;
     pipelineRuns?: number;
@@ -685,6 +776,7 @@ type StudioErrorCode =
   | "bad_request"
   | "conflict"
   | "not_found"
+  | "payload_too_large"
   | "unsupported_capability"
   | "internal_error";
 

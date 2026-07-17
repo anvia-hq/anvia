@@ -42,6 +42,12 @@ export const SessionsPage = lazy(() =>
   })),
 );
 
+export const SandboxesPage = lazy(() =>
+  import("./modules/sandboxes/sandboxes-page").then((module) => ({
+    default: module.SandboxesPage,
+  })),
+);
+
 export const DeleteSessionDialog = lazy(() =>
   import("./modules/sessions/sessions-page").then((module) => ({
     default: module.DeleteSessionDialog,

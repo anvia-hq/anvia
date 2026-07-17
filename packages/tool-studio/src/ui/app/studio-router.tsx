@@ -7,6 +7,7 @@ import { McpsRoute } from "./routes/mcps-route";
 import { MemoryRoute } from "./routes/memory-route";
 import { PipelinesRoute } from "./routes/pipelines-route";
 import { PlaygroundRoute } from "./routes/playground-route";
+import { SandboxesRoute } from "./routes/sandboxes-route";
 import { SessionsRoute } from "./routes/sessions-route";
 import { StatusRoute } from "./routes/status-route";
 import { ToolsRoute } from "./routes/tools-route";
@@ -70,6 +71,18 @@ const toolsRoute = createRoute({
   component: ToolsRoute,
 });
 
+const sandboxesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "sandboxes",
+  component: SandboxesRoute,
+});
+
+const sandboxDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "sandboxes/$sandboxRef",
+  component: SandboxesRoute,
+});
+
 const mcpsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "mcps",
@@ -122,6 +135,8 @@ const routeTree = rootRoute.addChildren([
   sessionsRoute,
   agentsRoute,
   toolsRoute,
+  sandboxesRoute,
+  sandboxDetailRoute,
   mcpsRoute,
   pipelinesRoute,
   evalsRoute,

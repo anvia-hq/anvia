@@ -17,6 +17,7 @@ const baseAvailability: StudioPageAvailability = {
   sessionsEnabled: true,
   tracesEnabled: true,
   toolsEnabled: true,
+  sandboxesEnabled: true,
   mcpsEnabled: true,
   pipelinesEnabled: true,
   evalsEnabled: true,
@@ -32,6 +33,7 @@ describe("Studio UI helpers", () => {
       sessionsEnabled: false,
       tracesEnabled: false,
       toolsEnabled: false,
+      sandboxesEnabled: false,
       mcpsEnabled: false,
       knowledgeEnabled: false,
     };
@@ -39,6 +41,7 @@ describe("Studio UI helpers", () => {
     expect(isActivePageEnabled("sessions", availability)).toBe(true);
     expect(isActivePageEnabled("tracing", availability)).toBe(true);
     expect(isActivePageEnabled("tools", availability)).toBe(true);
+    expect(isActivePageEnabled("sandboxes", availability)).toBe(true);
     expect(isActivePageEnabled("mcps", availability)).toBe(true);
     expect(isActivePageEnabled("knowledge", availability)).toBe(true);
     expect(isActivePageEnabled("agents", availability)).toBe(true);

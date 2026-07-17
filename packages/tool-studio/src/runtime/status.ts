@@ -10,6 +10,7 @@ export function registerStatusRoutes(
     agents: StudioAgent[];
     pipelines: StudioPipeline[];
     stores: ResolvedStores;
+    sandboxCount: number;
   },
 ): void {
   app.get("/status", async (c) => {
@@ -27,6 +28,7 @@ export function registerStatusRoutes(
       agents: props.agents.length,
       pipelines: props.pipelines.length,
     };
+    if (props.sandboxCount > 0) counts.sandboxes = props.sandboxCount;
     if (props.stores.sessions !== undefined) {
       counts.sessions = (await props.stores.sessions.listSessions({ limit: 100 })).length;
     }
@@ -50,7 +52,13 @@ export function registerStatusRoutes(
       runner,
       storage,
       counts,
-      capabilities: capabilityConfig(props.options, props.agents, props.pipelines, props.stores),
+      capabilities: capabilityConfig(
+        props.options,
+        props.agents,
+        props.pipelines,
+        props.stores,
+        props.sandboxCount,
+      ),
       generatedAt: new Date().toISOString(),
     };
     return c.json(summary);

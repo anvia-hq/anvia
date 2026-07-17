@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentBuilder } from "@anvia/core/agent";
@@ -973,6 +974,88 @@ describe("Anvia studio", () => {
     }
   });
 
+  it("can leave process signal handling to the application", () => {
+    const listenersBeforeStart = process.listeners("SIGINT");
+    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const runner = new Studio([agent]).start({ port: 0, log: false, handleSignals: false });
+
+    try {
+      expect(process.listeners("SIGINT")).toEqual(listenersBeforeStart);
+    } finally {
+      runner.close();
+    }
+  });
+
+  it("serves until aborted and awaits shutdown cleanup", async () => {
+    const controller = new AbortController();
+    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const studio = new Studio([agent]);
+    let releaseCleanup: () => void = () => {};
+    let markCleanupStarted: () => void = () => {};
+    const cleanupGate = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
+    const cleanupStarted = new Promise<void>((resolve) => {
+      markCleanupStarted = resolve;
+    });
+
+    const serving = studio.serve({
+      port: 0,
+      log: false,
+      signal: controller.signal,
+      onShutdown: async () => {
+        markCleanupStarted();
+        await cleanupGate;
+      },
+    });
+
+    controller.abort();
+    await cleanupStarted;
+
+    let settled = false;
+    void serving.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    releaseCleanup();
+    await serving;
+    expect(settled).toBe(true);
+  });
+
+  it("runs serve shutdown cleanup when the port is unavailable", async () => {
+    const blocker = createServer();
+    const port = await new Promise<number>((resolve, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(0, "127.0.0.1", () => {
+        const address = blocker.address();
+        if (typeof address === "object" && address !== null) resolve(address.port);
+        else reject(new Error("Expected a TCP server address"));
+      });
+    });
+    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const studio = new Studio([agent]);
+    let cleanedUp = false;
+
+    try {
+      await expect(
+        studio.serve({
+          port,
+          hostname: "127.0.0.1",
+          log: false,
+          onShutdown: () => {
+            cleanedUp = true;
+          },
+        }),
+      ).rejects.toMatchObject({ code: "EADDRINUSE" });
+      expect(cleanedUp).toBe(true);
+    } finally {
+      blocker.close();
+      studio.close();
+    }
+  });
+
   it("uses built-in stores with automatic Studio traces", async () => {
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
     const agent = new AgentBuilder("support", model)
@@ -1152,6 +1235,52 @@ describe("Anvia studio", () => {
       status: "success",
       result: "5",
       events: [],
+    });
+  });
+
+  it("automatically exposes sandbox sessions bound to agent tools", async () => {
+    const session = {
+      id: "workspace_1",
+      provider: "test-sandbox",
+      workdir: "/workspace",
+      listFiles: async () => [{ path: "notes.txt", type: "file", size: 5 }],
+      readFile: async () => new TextEncoder().encode("hello"),
+    };
+    const tool: Tool<Record<string, never>, string> = {
+      name: "list_files",
+      definition: () => ({
+        name: "list_files",
+        description: "List sandbox files",
+        parameters: { type: "object", properties: {} },
+      }),
+      call: () => "notes.txt",
+    };
+    Object.defineProperty(tool, Symbol.for("anvia.sandbox.tool.metadata"), {
+      value: { session },
+      enumerable: false,
+    });
+    const agent = new AgentBuilder("coder", new QueueModel([])).tool(tool).build();
+    const runner = new Studio([agent]);
+
+    expect(runner.config().capabilities.sandboxes).toEqual({ enabled: true });
+    const sandboxes = await runner.fetch(new Request("http://runner.test/sandboxes"));
+    expect(sandboxes.status).toBe(200);
+    await expect(sandboxes.json()).resolves.toMatchObject({
+      sandboxes: [
+        {
+          id: "workspace_1",
+          provider: "test-sandbox",
+          workdir: "/workspace",
+          agentIds: ["coder"],
+          toolNames: ["list_files"],
+        },
+      ],
+    });
+
+    const status = await runner.fetch(new Request("http://runner.test/status"));
+    await expect(status.json()).resolves.toMatchObject({
+      counts: { sandboxes: 1 },
+      capabilities: { sandboxes: { enabled: true } },
     });
   });
 

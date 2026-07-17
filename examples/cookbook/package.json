@@ -93,6 +93,7 @@
     "studio:12": "tsx -r dotenv/config 09_studio/12-ui-options.ts dotenv_config_path=../../.env",
     "studio:13": "tsx -r dotenv/config 09_studio/13-multi-provider-models.ts dotenv_config_path=../../.env",
     "studio:14": "tsx -r dotenv/config 09_studio/14-mcp-tools.ts dotenv_config_path=../../.env",
+    "studio:15": "node --import tsx -r dotenv/config 09_studio/15-sandbox-inspector.ts dotenv_config_path=../../.env",
     "integrations": "tsx -r dotenv/config 10_integrations/01-mcp-tools.ts dotenv_config_path=../../.env",
     "integrations:01": "tsx -r dotenv/config 10_integrations/01-mcp-tools.ts dotenv_config_path=../../.env",
     "integrations:02": "tsx -r dotenv/config 10_integrations/02-local-skills.ts dotenv_config_path=../../.env",

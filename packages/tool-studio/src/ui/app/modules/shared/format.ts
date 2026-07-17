@@ -79,6 +79,8 @@ export function pageTitle(page: ActivePage, agentName: string | undefined): stri
       return "Traces";
     case "tools":
       return "Tools";
+    case "sandboxes":
+      return "Sandboxes";
     case "mcps":
       return "MCPs";
     case "pipelines":

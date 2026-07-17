@@ -2,6 +2,7 @@ import {
   Activity01Icon,
   BookOpenTextIcon,
   ChatIcon,
+  ContainerIcon,
   DatabaseIcon,
   DatabaseLightningIcon,
   GaugeIcon,
@@ -48,6 +49,7 @@ type IconName =
   | "activity"
   | "bot"
   | "book-open-text"
+  | "container"
   | "database"
   | "database-lightning"
   | "gauge"
@@ -68,6 +70,8 @@ function navIcon(name: IconName): IconSvgElement {
       return Robot01Icon;
     case "book-open-text":
       return BookOpenTextIcon;
+    case "container":
+      return ContainerIcon;
     case "database":
       return DatabaseIcon;
     case "database-lightning":

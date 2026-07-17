@@ -3,6 +3,20 @@ import { createSandboxTools } from "../src/tools";
 import type { DockerSandboxSession, SandboxSession } from "../src/types";
 
 describe("createSandboxTools", () => {
+  it("marks tools with non-enumerable Studio discovery metadata", () => {
+    const session = createSession();
+    const [tool] = createSandboxTools(session, { include: ["list_files"] });
+    const key = Symbol.for("anvia.sandbox.tool.metadata");
+
+    expect(tool).toBeDefined();
+    expect((tool as { [key]?: unknown })[key]).toEqual({ session });
+    expect(Object.getOwnPropertyDescriptor(tool, key)).toMatchObject({
+      enumerable: false,
+      value: { session },
+    });
+    expect(Object.keys(tool ?? {})).not.toContain("session");
+  });
+
   it("creates the default sandbox tool bundle", () => {
     const tools = createSandboxTools(createSession());
 

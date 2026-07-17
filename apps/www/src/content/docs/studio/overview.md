@@ -8,7 +8,7 @@ sidebar:
   label: Overview
 ---
 
-Studio is the local and internal operations surface for Anvia runtimes. It wraps the same agents and pipelines your application owns, then exposes browser pages for prompts, tools, human review, knowledge, pipeline graphs, sessions, traces, evals, models, MCP tools, and runtime status.
+Studio is the local and internal operations surface for Anvia runtimes. It wraps the same agents and pipelines your application owns, then exposes browser pages for prompts, tools, sandbox workspaces, human review, knowledge, pipeline graphs, sessions, traces, evals, models, MCP tools, and runtime status.
 
 Use the Studio cookbook when you want runnable examples instead of isolated API snippets:
 
@@ -50,6 +50,7 @@ Your application still owns model clients, agent instructions, tools, product pe
 | `pnpm cookbook:studio:12` | UI options | Custom title, root redirect, and route aliases. |
 | `pnpm cookbook:studio:13` | Multi-provider models | Model/provider menu and per-agent model policy. |
 | `pnpm cookbook:studio:14` | MCP tools | Connected MCP server tools in Playground and MCP inspectors. |
+| `pnpm cookbook:studio:15` | Sandbox inspector | Live files, published ports, processes, and logs from a Docker sandbox. |
 
 ## Next
 

@@ -5,6 +5,7 @@ export type StudioPageAvailability = {
   sessionsEnabled: boolean;
   tracesEnabled: boolean;
   toolsEnabled: boolean;
+  sandboxesEnabled: boolean;
   mcpsEnabled: boolean;
   pipelinesEnabled: boolean;
   evalsEnabled: boolean;

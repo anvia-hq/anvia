@@ -92,6 +92,7 @@ const waitForPortInput = z.object({
 
 const textOutput = z.string();
 const maxToolLogBytes = 1024 * 1024;
+const sandboxToolMetadataKey = Symbol.for("anvia.sandbox.tool.metadata");
 
 export function createSandboxTools(
   session: SandboxSession,
@@ -149,6 +150,13 @@ export function createSandboxTools(
 
   if (include.has("wait_for_port") && portSession !== undefined) {
     tools.push(createWaitForPortTool(portSession, options));
+  }
+
+  for (const tool of tools) {
+    Object.defineProperty(tool, sandboxToolMetadataKey, {
+      value: { session },
+      enumerable: false,
+    });
   }
 
   return tools;

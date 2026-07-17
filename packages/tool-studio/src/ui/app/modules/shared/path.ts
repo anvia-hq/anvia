@@ -74,6 +74,9 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
   if (first === "tools") {
     return { page: "tools" };
   }
+  if (first === "sandboxes") {
+    return { page: "sandboxes" };
+  }
   if (first === "mcps") {
     return { page: "mcps" };
   }

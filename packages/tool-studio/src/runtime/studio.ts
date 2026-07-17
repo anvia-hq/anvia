@@ -11,6 +11,7 @@ import type {
   StudioConfig,
   StudioOptions,
   StudioPipeline,
+  StudioServeLifecycleOptions,
   StudioServeOptions,
   StudioSessionStore,
   StudioTarget,
@@ -46,6 +47,7 @@ import {
 import type { StudioRuntimeOptions } from "./options";
 import { registerPipelineRoutes } from "./pipelines";
 import { createQuestionRuntime, registerQuestionRoutes } from "./questions";
+import { createStudioSandboxRegistry, registerSandboxRoutes } from "./sandboxes";
 import { registerSessionRoutes } from "./sessions";
 import { normalizeAgents, normalizePipelines, resolveStores } from "./shared";
 import { registerStatusRoutes } from "./status";
@@ -101,21 +103,44 @@ export class Studio implements AnviaStudio {
     const log = serveOptions.log ?? true;
     if (log) {
       const host = serveOptions.hostname ?? "localhost";
-      if (isStudioUiEnabled(this.options.ui)) {
-        const uiPath = studioUiEntryPath(resolveStudioUiOptions(this.options.ui));
-        console.log(`Studio UI: http://${host}:${port}${uiPath}`);
-      } else {
-        console.log(`Studio API: http://${host}:${port}`);
-      }
+      this.logAddress(host, port);
     }
 
-    this.sigintHandler = () => {
-      this.close();
-      process.exit(0);
-    };
-    process.once("SIGINT", this.sigintHandler);
+    if (serveOptions.handleSignals ?? true) {
+      this.sigintHandler = () => {
+        this.close();
+        process.exit(0);
+      };
+      process.once("SIGINT", this.sigintHandler);
+    }
 
     return this;
+  }
+
+  async serve(serveOptions: StudioServeLifecycleOptions = {}): Promise<void> {
+    const { onShutdown, signal, ...startOptions } = serveOptions;
+
+    try {
+      this.start({ ...startOptions, log: false, handleSignals: false });
+      const server = this.server;
+      if (server === undefined) {
+        throw new Error("Studio server did not start");
+      }
+
+      await waitForServerListening(server);
+
+      if (startOptions.log ?? true) {
+        const requestedPort = startOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
+        const address = server.address();
+        const port = typeof address === "object" && address !== null ? address.port : requestedPort;
+        this.logAddress(startOptions.hostname ?? "localhost", port);
+      }
+
+      await waitForShutdown(signal);
+    } finally {
+      this.close();
+      await onShutdown?.();
+    }
   }
 
   close(): void {
@@ -127,6 +152,77 @@ export class Studio implements AnviaStudio {
     this.server = undefined;
     this.studio.close();
   }
+
+  private logAddress(host: string, port: number): void {
+    if (isStudioUiEnabled(this.options.ui)) {
+      const uiPath = studioUiEntryPath(resolveStudioUiOptions(this.options.ui));
+      console.log(`Studio UI: http://${host}:${port}${uiPath}`);
+    } else {
+      console.log(`Studio API: http://${host}:${port}`);
+    }
+  }
+}
+
+type StudioServer = ReturnType<typeof serve>;
+
+function waitForServerListening(server: StudioServer): Promise<void> {
+  if (server.listening) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      server.off("listening", onListening);
+      server.off("error", onError);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    server.once("listening", onListening);
+    server.once("error", onError);
+  });
+}
+
+function waitForShutdown(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const useRawInput = process.stdin.isTTY === true;
+    const wasRaw = process.stdin.isRaw;
+    const wasFlowing = process.stdin.readableFlowing;
+
+    const cleanup = () => {
+      process.off("SIGINT", finish);
+      process.off("SIGTERM", finish);
+      signal?.removeEventListener("abort", finish);
+      if (useRawInput) {
+        process.stdin.off("data", onInput);
+        if (!wasRaw && process.stdin.isRaw) process.stdin.setRawMode(false);
+        if (wasFlowing !== true) process.stdin.pause();
+      }
+    };
+    const finish = () => {
+      cleanup();
+      resolve();
+    };
+    const onInput = (chunk: Buffer | string) => {
+      const interrupted = typeof chunk === "string" ? chunk.includes("\u0003") : chunk.includes(3);
+      if (interrupted) finish();
+    };
+
+    process.once("SIGINT", finish);
+    process.once("SIGTERM", finish);
+    signal?.addEventListener("abort", finish, { once: true });
+    if (useRawInput) {
+      if (!wasRaw) process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.on("data", onInput);
+    }
+  });
 }
 
 function studioOptionsFromTargets(
@@ -216,6 +312,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
   const approvalRuntime = createApprovalRuntime();
   const questionRuntime = createQuestionRuntime();
+  const sandboxRegistry = createStudioSandboxRegistry(agents);
   const app = new HonoApp();
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;
 
@@ -238,8 +335,16 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     }),
   );
 
-  app.get("/config", (c) => c.json(buildConfig(options, agents, pipelines, stores)));
-  registerStatusRoutes(app, { options, agents, pipelines, stores });
+  app.get("/config", (c) =>
+    c.json(buildConfig(options, agents, pipelines, stores, sandboxRegistry.size)),
+  );
+  registerStatusRoutes(app, {
+    options,
+    agents,
+    pipelines,
+    stores,
+    sandboxCount: sandboxRegistry.size,
+  });
 
   app.get("/agents", (c) => c.json({ agents: agents.map(agentConfig) }));
 
@@ -264,6 +369,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   registerModelRoutes(app, { registry: modelRegistry, agentMap });
   registerMcpRoutes(app, { agentMap });
   registerToolRoutes(app, { agentMap });
+  registerSandboxRoutes(app, sandboxRegistry);
   registerApprovalRoutes(app, approvalRuntime);
   registerQuestionRoutes(app, questionRuntime);
   registerObservabilityRoutes(app, observabilityHub);
@@ -317,7 +423,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       return app.fetch(request);
     },
     config(): StudioConfig {
-      return buildConfig(options, agents, pipelines, stores);
+      return buildConfig(options, agents, pipelines, stores, sandboxRegistry.size);
     },
     close() {},
   };

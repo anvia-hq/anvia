@@ -38,6 +38,7 @@ export type StudioConsoleContextValue = {
   pipelinesEnabled: boolean;
   prompt: string;
   runState: RunState;
+  sandboxesEnabled: boolean;
   selectedAgent: StudioConfig["agents"][number] | undefined;
   selectedAgentId: string;
   selectedAgentModels: StudioModelSummary[];

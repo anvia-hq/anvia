@@ -17,6 +17,7 @@ export function StudioConsoleLayout() {
         mcpsEnabled={studio.mcpsEnabled}
         memoryEnabled={studio.memoryEnabled}
         pipelinesEnabled={studio.pipelinesEnabled}
+        sandboxesEnabled={studio.sandboxesEnabled}
         sessionsEnabled={studio.sessionsEnabled}
         status={studio.status}
         statusEnabled={studio.statusEnabled}
@@ -30,7 +31,11 @@ export function StudioConsoleLayout() {
       <main className="grid h-[100dvh] min-w-0 grid-rows-[52px_minmax(0,1fr)] overflow-hidden bg-background/80">
         <StudioHeader
           activePage={studio.activePage}
-          selectedAgentLabel={studio.selectedAgent?.name ?? studio.selectedAgent?.id ?? "Agent"}
+          selectedAgentLabel={
+            studio.activePage === "sandboxes"
+              ? "Sandboxes"
+              : (studio.selectedAgent?.name ?? studio.selectedAgent?.id ?? "Agent")
+          }
           sessionsEnabled={studio.sessionsEnabled}
           theme={studio.theme}
           onNavigate={studio.navigatePage}

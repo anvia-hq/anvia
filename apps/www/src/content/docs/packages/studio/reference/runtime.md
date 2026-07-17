@@ -19,13 +19,17 @@ class Studio implements AnviaStudio {
   config(): StudioConfig;
   traceObserver(): StudioTraceObserver;
   start(serveOptions?: StudioServeOptions): this;
+  serve(serveOptions?: StudioServeLifecycleOptions): Promise<void>;
   close(): void;
 }
 ```
 
 Purpose: local Studio HTTP runtime and UI/API host.
 
-Return behavior: pass built agents, built pipelines, or both in the first array. `start(...)` starts an HTTP server and returns `this`; `fetch(...)` delegates to the Hono app.
+Return behavior: pass built agents, built pipelines, or both in the first array. `start(...)` starts
+an HTTP server and returns `this`; `serve(...)` waits for the server to listen, remains active until
+Ctrl+C, SIGTERM, or an abort signal, then awaits shutdown cleanup; `fetch(...)` delegates to the
+Hono app.
 
 Notable errors: server startup can fail when the port is unavailable; route handlers return structured `StudioErrorResponse` values for request errors.
 
@@ -61,6 +65,12 @@ type StudioServeOptions = {
   port?: number;
   hostname?: string;
   log?: boolean;
+  handleSignals?: boolean;
+};
+
+type StudioServeLifecycleOptions = Omit<StudioServeOptions, "handleSignals"> & {
+  signal?: AbortSignal;
+  onShutdown?: () => void | Promise<void>;
 };
 
 type StudioUiOptions = {
@@ -75,7 +85,10 @@ type StudioUiOptions = {
 
 Purpose: configure Studio agents, server binding, and UI mounting.
 
-Return behavior: options are constructor or start inputs.
+Return behavior: options are constructor, `start(...)`, or `serve(...)` inputs. Set
+`handleSignals: false` when an application using `start(...)` needs to own SIGINT handling. Prefer
+`serve(...)` when cleanup is asynchronous: it waits for a successful server bind and invokes
+`onShutdown` after closing Studio, including when startup fails.
 
 Notable errors: invalid server options can fail at the Hono server layer.
 

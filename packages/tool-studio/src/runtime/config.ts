@@ -84,6 +84,7 @@ export function buildConfig(
   agents: StudioAgent[],
   pipelines: StudioPipeline[],
   stores: ResolvedStores,
+  sandboxCount = 0,
 ): StudioConfig {
   const models =
     options.models === undefined
@@ -97,7 +98,7 @@ export function buildConfig(
     chat: {
       quickPrompts: Object.fromEntries(agents.map((agent) => [agent.id, agent.quickPrompts ?? []])),
     },
-    capabilities: capabilityConfig(options, agents, pipelines, stores),
+    capabilities: capabilityConfig(options, agents, pipelines, stores, sandboxCount),
     unsupportedCapabilities: unsupportedCapabilities(stores),
   };
   if (options.name !== undefined) config.name = options.name;
@@ -112,6 +113,7 @@ export function capabilityConfig(
   agents: StudioAgent[],
   pipelines: StudioPipeline[],
   stores: ResolvedStores,
+  sandboxCount = 0,
 ): Partial<Record<StudioCapability, StudioCapabilityConfig>> {
   const capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>> = {
     agents: { enabled: true },
@@ -141,6 +143,9 @@ export function capabilityConfig(
   }
   if (agents.some(agentHasMcpTools)) {
     capabilities.mcps = { enabled: true };
+  }
+  if (sandboxCount > 0) {
+    capabilities.sandboxes = { enabled: true };
   }
 
   if (

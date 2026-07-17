@@ -123,6 +123,7 @@ export function StudioConsole() {
   const knowledgeEnabled = config?.capabilities.knowledge?.enabled === true;
   const mcpsEnabled = config?.capabilities.mcps?.enabled === true;
   const toolsEnabled = config?.capabilities.tools?.enabled === true;
+  const sandboxesEnabled = config?.capabilities.sandboxes?.enabled === true;
   const pipelinesEnabled = config?.capabilities.pipelines?.enabled === true;
   const evalsEnabled = config?.capabilities.evals?.enabled === true;
   const memoryEnabled = config?.capabilities.memory?.enabled === true;
@@ -176,6 +177,7 @@ export function StudioConsole() {
       sessionsEnabled,
       tracesEnabled,
       toolsEnabled,
+      sandboxesEnabled,
       mcpsEnabled,
       pipelinesEnabled,
       evalsEnabled,
@@ -188,6 +190,7 @@ export function StudioConsole() {
       sessionsEnabled,
       tracesEnabled,
       toolsEnabled,
+      sandboxesEnabled,
       mcpsEnabled,
       pipelinesEnabled,
       evalsEnabled,
@@ -455,6 +458,7 @@ export function StudioConsole() {
     pipelinesEnabled,
     prompt,
     runState,
+    sandboxesEnabled,
     selectedAgent,
     selectedAgentId,
     selectedAgentModels,

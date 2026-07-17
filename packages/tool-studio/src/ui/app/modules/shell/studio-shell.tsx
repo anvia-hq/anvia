@@ -21,6 +21,7 @@ export function StudioSidebar(props: {
   mcpsEnabled: boolean;
   memoryEnabled: boolean;
   pipelinesEnabled: boolean;
+  sandboxesEnabled: boolean;
   sessionsEnabled: boolean;
   status: string;
   statusEnabled: boolean;
@@ -94,6 +95,13 @@ export function StudioSidebar(props: {
           icon="wrench"
           label="Tools"
           onClick={() => props.onNavigate("tools")}
+        />
+        <NavButton
+          active={props.activePage === "sandboxes"}
+          disabled={!props.sandboxesEnabled}
+          icon="container"
+          label="Sandboxes"
+          onClick={() => props.onNavigate("sandboxes")}
         />
         <NavButton
           active={props.activePage === "mcps"}

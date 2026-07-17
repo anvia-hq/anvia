@@ -13,3 +13,6 @@ const memory = await createPostgresMemoryStore({
 The package creates the Anvia memory tables by default and writes ordered
 messages transactionally. Pass `createIfMissing: false` when your own migrations
 create the schema.
+
+Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
+ordered message records directly from these tables.

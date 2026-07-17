@@ -12,3 +12,6 @@ const memory = createSqliteMemoryStore({
 
 The package creates the Anvia memory tables by default and stores ordered
 `Message[]` rows keyed by the session scope.
+
+Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
+ordered message records directly from these tables.

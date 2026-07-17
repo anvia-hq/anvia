@@ -123,6 +123,8 @@ export function capabilityConfig(
 
   if (stores.sessions !== undefined) {
     capabilities.sessions = { enabled: true };
+  }
+  if (stores.sessions !== undefined || agents.some((agent) => agent.agent.memory !== undefined)) {
     capabilities.memory = { enabled: true };
   }
   if (stores.traces !== undefined) {

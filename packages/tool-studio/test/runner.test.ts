@@ -24,7 +24,9 @@ import { connectMcp, type McpClient } from "@anvia/core/mcp";
 import type {
   MemoryAppendInput,
   MemoryContext,
+  MemoryConversation,
   MemoryErrorInput,
+  MemoryInspector,
   MemoryStore,
 } from "@anvia/core/memory";
 import type { AgentObserver, AgentRunObserver, AgentRunStartArgs } from "@anvia/core/observability";
@@ -176,6 +178,36 @@ class RecordingMemoryStore implements MemoryStore {
   async recordError(input: MemoryErrorInput): Promise<void> {
     this.errorCalls.push({ ...input, messages: [...input.messages] });
   }
+}
+
+class InspectableMemoryStore implements MemoryStore {
+  readonly inspector: MemoryInspector;
+
+  constructor(private readonly conversations: MemoryConversation[]) {
+    this.inspector = {
+      listConversations: async (options) =>
+        this.conversations
+          .filter(
+            (conversation) =>
+              options.userId === undefined || conversation.userId === options.userId,
+          )
+          .slice(0, options.limit)
+          .map(({ messages: _messages, ...conversation }) => conversation),
+      getConversation: async (ref) => this.conversations.find((item) => item.ref === ref),
+    };
+  }
+
+  async load(context: MemoryContext): Promise<CoreMessage[]> {
+    return (
+      this.conversations
+        .find((conversation) => conversation.sessionId === context.sessionId)
+        ?.messages.map((record) => record.message) ?? []
+    );
+  }
+
+  async append(_input: MemoryAppendInput): Promise<void> {}
+
+  async clear(_context: MemoryContext): Promise<void> {}
 }
 
 class FailingStreamingModel implements StreamingCompletionModel {
@@ -3018,6 +3050,144 @@ describe("Anvia studio", () => {
         { kind: "message", role: "assistant", text: "Ticket is blocked" },
       ],
     });
+  });
+
+  it("discovers persisted agent memory through source-scoped explorer routes", async () => {
+    const memory = new InspectableMemoryStore([
+      {
+        ref: "database-row-1",
+        sessionId: "customer-thread-42",
+        userId: "customer-7",
+        metadata: { tenantId: "tenant-2" },
+        createdAt: "2026-07-17T01:00:00.000Z",
+        updatedAt: "2026-07-17T01:05:00.000Z",
+        messageCount: 2,
+        messages: [
+          {
+            position: 0,
+            runId: "run-1",
+            turn: 0,
+            createdAt: "2026-07-17T01:00:00.000Z",
+            message: Message.user("Remember the invoice"),
+          },
+          {
+            position: 1,
+            runId: "run-1",
+            turn: 0,
+            createdAt: "2026-07-17T01:00:01.000Z",
+            message: Message.assistant("Invoice remembered"),
+          },
+        ],
+      },
+    ]);
+    const support = new AgentBuilder("support", new QueueModel([])).memory(memory).build();
+    const billing = new AgentBuilder("billing", new QueueModel([])).memory(memory).build();
+    const fallback = new AgentBuilder("fallback", new QueueModel([])).build();
+    const runner = new Studio([support, billing, fallback]);
+
+    const sourcesResponse = await runner.fetch(new Request("http://runner.test/memory/sources"));
+    expect(sourcesResponse.status).toBe(200);
+    const sources = (await sourcesResponse.json()) as {
+      sources: Array<{
+        ref: string;
+        kind: string;
+        agentIds: string[];
+        available: boolean;
+      }>;
+    };
+    expect(sources.sources).toEqual([
+      expect.objectContaining({
+        kind: "agent",
+        agentIds: ["support", "billing"],
+        available: true,
+      }),
+      expect.objectContaining({
+        ref: "studio-sessions",
+        kind: "studio",
+        agentIds: ["fallback"],
+        available: true,
+      }),
+    ]);
+    const sourceRef = sources.sources[0]?.ref;
+    expect(sourceRef).toBeDefined();
+
+    const conversations = await runner.fetch(
+      new Request(`http://runner.test/memory/sources/${sourceRef}/conversations?userId=customer-7`),
+    );
+    expect(conversations.status).toBe(200);
+    await expect(conversations.json()).resolves.toMatchObject({
+      total: 1,
+      conversations: [
+        {
+          ref: "database-row-1",
+          sessionId: "customer-thread-42",
+          userId: "customer-7",
+          agentIds: ["support", "billing"],
+          messageCount: 2,
+          metadata: { tenantId: "tenant-2" },
+        },
+      ],
+    });
+
+    const users = await runner.fetch(
+      new Request(`http://runner.test/memory/sources/${sourceRef}/users`),
+    );
+    await expect(users.json()).resolves.toMatchObject({
+      users: [
+        {
+          userId: "customer-7",
+          conversationCount: 1,
+          agentIds: ["support", "billing"],
+        },
+      ],
+    });
+
+    const messages = await runner.fetch(
+      new Request(
+        `http://runner.test/memory/sources/${sourceRef}/conversations/database-row-1/messages`,
+      ),
+    );
+    expect(messages.status).toBe(200);
+    await expect(messages.json()).resolves.toMatchObject({
+      conversation: {
+        ref: "database-row-1",
+        sessionId: "customer-thread-42",
+      },
+      messages: [Message.user("Remember the invoice"), Message.assistant("Invoice remembered")],
+      records: [
+        { position: 0, runId: "run-1", message: Message.user("Remember the invoice") },
+        { position: 1, runId: "run-1", message: Message.assistant("Invoice remembered") },
+      ],
+      transcript: [
+        { kind: "message", role: "user", text: "Remember the invoice" },
+        { kind: "message", role: "assistant", text: "Invoice remembered" },
+      ],
+    });
+  });
+
+  it("reports non-inspectable agent memory without falling back to Studio sessions", async () => {
+    const agent = new AgentBuilder("support", new QueueModel([]))
+      .memory(new RecordingMemoryStore())
+      .build();
+    const runner = new Studio([agent]);
+
+    const config = await runner.fetch(new Request("http://runner.test/config"));
+    await expect(config.json()).resolves.toMatchObject({
+      capabilities: { memory: { enabled: true } },
+    });
+
+    const sources = await runner.fetch(new Request("http://runner.test/memory/sources"));
+    const body = (await sources.json()) as {
+      sources: Array<{ ref: string; available: boolean; agentIds: string[] }>;
+    };
+    expect(body.sources).toEqual([
+      expect.objectContaining({ available: false, agentIds: ["support"] }),
+    ]);
+
+    const conversations = await runner.fetch(
+      new Request(`http://runner.test/memory/sources/${body.sources[0]?.ref}/conversations`),
+    );
+    expect(conversations.status).toBe(501);
   });
 
   it("persists streaming sessions with UI transcript entries", async () => {

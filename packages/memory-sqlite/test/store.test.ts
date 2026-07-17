@@ -188,6 +188,52 @@ describe("SqliteMemoryStore", () => {
     expect(await store.load(context)).toEqual([]);
   });
 
+  it("inspects persisted conversations by opaque row reference", async () => {
+    const store = createSqliteMemoryStore();
+    await store.append({
+      context: {
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+      },
+      runId: "run-1",
+      turn: 2,
+      messages: [userMessage, assistantMessage],
+    });
+    await store.append({
+      context: { sessionId: "thread-2", userId: "user-2" },
+      runId: "run-2",
+      turn: 0,
+      messages: [userMessage],
+    });
+
+    const conversations = await store.inspector.listConversations({
+      limit: 10,
+      userId: "user-1",
+    });
+    expect(conversations).toEqual([
+      expect.objectContaining({
+        ref: expect.any(String),
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+        messageCount: 2,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      }),
+    ]);
+
+    const conversation = await store.inspector.getConversation(conversations[0]?.ref ?? "");
+    expect(conversation).toMatchObject({
+      sessionId: "thread-1",
+      messages: [
+        { position: 0, runId: "run-1", turn: 2, message: userMessage },
+        { position: 1, runId: "run-1", turn: 2, message: assistantMessage },
+      ],
+    });
+    await expect(store.inspector.getConversation("missing")).resolves.toBeUndefined();
+  });
+
   it("round-trips every supported message content shape", async () => {
     const store = createSqliteMemoryStore();
     const context = { sessionId: "rich-thread", userId: "user-1" };

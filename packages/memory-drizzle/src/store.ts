@@ -1,5 +1,13 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type {
+  MemoryAppendInput,
+  MemoryContext,
+  MemoryConversation,
+  MemoryConversationListOptions,
+  MemoryConversationSummary,
+  MemoryErrorInput,
+  MemoryInspector,
+} from "@anvia/core/memory";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import { drizzleMemorySchema } from "./schema.js";
@@ -31,7 +39,9 @@ type DrizzleRuntimeDatabase = {
 type DrizzleSelectBuilder = PromiseLike<unknown[]> & {
   from(table: unknown): DrizzleSelectBuilder;
   innerJoin(table: unknown, condition: unknown): DrizzleSelectBuilder;
+  leftJoin(table: unknown, condition: unknown): DrizzleSelectBuilder;
   where(condition: unknown): DrizzleSelectBuilder;
+  groupBy(...columns: unknown[]): DrizzleSelectBuilder;
   orderBy(...columns: unknown[]): DrizzleSelectBuilder;
   limit(limit: number): DrizzleSelectBuilder;
 };
@@ -55,6 +65,24 @@ type PositionRow = {
 };
 
 type MessageRow = {
+  message: unknown;
+};
+
+type InspectionSessionRow = {
+  ref: string;
+  sessionId: string;
+  userId: string | null;
+  metadata: JsonObject;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  messageCount: number | string;
+};
+
+type InspectionMessageRow = {
+  position: number;
+  runId: string;
+  turn: number;
+  createdAt: string | Date;
   message: unknown;
 };
 
@@ -86,6 +114,10 @@ export function createDrizzleMemoryScopeKey(
 
 export class DrizzleMemoryStore implements MemoryStore {
   readonly kind = "drizzle";
+  readonly inspector: MemoryInspector = {
+    listConversations: (options) => this.listConversations(options),
+    getConversation: (ref) => this.getConversation(ref),
+  };
 
   constructor(
     private readonly db: DrizzleMemoryDatabaseLike,
@@ -165,6 +197,80 @@ export class DrizzleMemoryStore implements MemoryStore {
         messages: input.messages,
       });
     });
+  }
+
+  private async listConversations(
+    options: MemoryConversationListOptions,
+  ): Promise<MemoryConversationSummary[]> {
+    const db = runtimeDatabase(this.db);
+    const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+    let query = db
+      .select({
+        ref: sessions.id,
+        sessionId: sessions.sessionId,
+        userId: sessions.userId,
+        metadata: sessions.metadata,
+        createdAt: sessions.createdAt,
+        updatedAt: sessions.updatedAt,
+        messageCount: sql<number>`count(${messages.id})`,
+      })
+      .from(sessions)
+      .leftJoin(messages, eq(messages.memorySessionId, sessions.id));
+    if (options.userId !== undefined) {
+      query = query.where(eq(sessions.userId, options.userId));
+    }
+    const rows = (await query
+      .groupBy(sessions.id)
+      .orderBy(desc(sessions.updatedAt), desc(sessions.id))
+      .limit(options.limit)) as InspectionSessionRow[];
+    return rows.map(inspectionSummary);
+  }
+
+  private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
+    const db = runtimeDatabase(this.db);
+    const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+    const summaries = (await db
+      .select({
+        ref: sessions.id,
+        sessionId: sessions.sessionId,
+        userId: sessions.userId,
+        metadata: sessions.metadata,
+        createdAt: sessions.createdAt,
+        updatedAt: sessions.updatedAt,
+        messageCount: sql<number>`count(${messages.id})`,
+      })
+      .from(sessions)
+      .leftJoin(messages, eq(messages.memorySessionId, sessions.id))
+      .where(eq(sessions.id, ref))
+      .groupBy(sessions.id)
+      .limit(1)) as InspectionSessionRow[];
+    const summary = summaries[0];
+    if (summary === undefined) return undefined;
+
+    const rows = (await db
+      .select({
+        position: messages.position,
+        runId: messages.runId,
+        turn: messages.turn,
+        createdAt: messages.createdAt,
+        message: messages.message,
+      })
+      .from(messages)
+      .where(eq(messages.memorySessionId, ref))
+      .orderBy(asc(messages.position))) as InspectionMessageRow[];
+
+    return {
+      ...inspectionSummary(summary),
+      messages: rows.map((row) => ({
+        position: row.position,
+        runId: row.runId,
+        turn: row.turn,
+        createdAt: isoTimestamp(row.createdAt),
+        message: this.options.validateMessages
+          ? parseMemoryMessage(row.message)
+          : (row.message as Message),
+      })),
+    };
   }
 
   private async transaction<T>(operation: (tx: DrizzleRuntimeDatabase) => Promise<T>): Promise<T> {
@@ -275,4 +381,21 @@ function isJsonObject(value: JsonValue | undefined): value is JsonObject {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function inspectionSummary(row: InspectionSessionRow): MemoryConversationSummary {
+  const summary: MemoryConversationSummary = {
+    ref: row.ref,
+    sessionId: row.sessionId,
+    metadata: row.metadata,
+    createdAt: isoTimestamp(row.createdAt),
+    updatedAt: isoTimestamp(row.updatedAt),
+    messageCount: Number(row.messageCount),
+  };
+  if (row.userId !== null) summary.userId = row.userId;
+  return summary;
+}
+
+function isoTimestamp(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

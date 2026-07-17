@@ -408,6 +408,68 @@ type StudioMemoryConversationSteps = {
   steps: StudioTranscriptEntry[];
 };
 
+type StudioMemorySourceKind = "agent" | "studio";
+
+type StudioMemorySourceSummary = {
+  ref: string;
+  kind: StudioMemorySourceKind;
+  label: string;
+  agentIds: string[];
+  available: boolean;
+  storeKind?: string;
+  reason?: string;
+};
+
+type StudioMemorySourcesPage = {
+  sources: StudioMemorySourceSummary[];
+};
+
+type StudioMemorySourceConversationSummary = {
+  ref: string;
+  sessionId: string;
+  userId: string;
+  agentIds: string[];
+  title?: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  metadata?: JsonObject;
+};
+
+type StudioMemorySourceConversationsPage = {
+  source: StudioMemorySourceSummary;
+  conversations: StudioMemorySourceConversationSummary[];
+  total: number;
+};
+
+type StudioMemorySourceUsersPage = {
+  source: StudioMemorySourceSummary;
+  users: StudioMemoryUserSummary[];
+  total: number;
+};
+
+type StudioMemoryMessageRecord = {
+  position: number;
+  runId: string;
+  turn: number;
+  createdAt: string;
+  message: Message;
+};
+
+type StudioMemorySourceConversationMessages = {
+  source: StudioMemorySourceSummary;
+  conversation: StudioMemorySourceConversationSummary;
+  messages: Message[];
+  records: StudioMemoryMessageRecord[];
+  transcript: StudioTranscriptEntry[];
+};
+
+type StudioMemorySourceConversationSteps = {
+  source: StudioMemorySourceSummary;
+  conversation: StudioMemorySourceConversationSummary;
+  steps: StudioTranscriptEntry[];
+};
+
 type StudioStatusSummary = {
   runner: {
     id: string;
@@ -480,9 +542,9 @@ type StudioEvalRunResponse = {
 };
 ```
 
-Purpose: response contracts for Memory, Status, direct tool runs, eval runs, and richer agent runtime inspection routes.
+Purpose: response contracts for Memory, Status, direct tool runs, eval runs, and richer agent runtime inspection routes. Source-scoped Memory types represent agent product memory; the original Memory types remain the compatibility contract for Studio session storage.
 
-Return behavior: Memory routes summarize the active Studio session store; Status returns a compact runtime snapshot.
+Return behavior: `GET /memory/sources` discovers agent memory first and Studio session fallback sources second. Source-scoped conversation routes return persisted message records and a derived transcript. The legacy Memory routes continue to summarize the active Studio session store. Status returns a compact runtime snapshot.
 
 Register eval suites with `new Studio(targets, { evals: [...] })`. Studio lists their case and metric counts, includes bounded case and metric previews for the UI, and runs them through `POST /evals/:evalId/runs`.
 

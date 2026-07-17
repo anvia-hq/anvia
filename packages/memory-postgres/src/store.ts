@@ -1,5 +1,13 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type {
+  MemoryAppendInput,
+  MemoryContext,
+  MemoryConversation,
+  MemoryConversationListOptions,
+  MemoryConversationSummary,
+  MemoryErrorInput,
+  MemoryInspector,
+} from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
   PostgresMemoryClientLike,
@@ -36,6 +44,24 @@ type PositionRow = {
 };
 
 type MessageRow = {
+  message: unknown;
+};
+
+type InspectionSessionRow = {
+  ref: string;
+  session_id: string;
+  user_id: string | null;
+  metadata: unknown;
+  created_at: string | Date;
+  updated_at: string | Date;
+  message_count: number | string;
+};
+
+type InspectionMessageRow = {
+  position: number | string;
+  run_id: string;
+  turn: number | string;
+  created_at: string | Date;
   message: unknown;
 };
 
@@ -104,6 +130,10 @@ CREATE TABLE IF NOT EXISTS ${tables.errors} (
 
 export class PostgresMemoryStore implements MemoryStore {
   readonly kind = "postgres";
+  readonly inspector: MemoryInspector = {
+    listConversations: (options) => this.listConversations(options),
+    getConversation: (ref) => this.getConversation(ref),
+  };
 
   private constructor(
     private readonly client: PostgresMemoryClientLike,
@@ -198,6 +228,93 @@ export class PostgresMemoryStore implements MemoryStore {
         ],
       );
     });
+  }
+
+  private async listConversations(
+    options: MemoryConversationListOptions,
+  ): Promise<MemoryConversationSummary[]> {
+    const values: unknown[] = [];
+    let where = "";
+    if (options.userId !== undefined) {
+      values.push(options.userId);
+      where = `WHERE s.user_id = $${values.length}`;
+    }
+    values.push(options.limit);
+    const result = await this.client.query(
+      `SELECT
+         s.id AS ref,
+         s.session_id,
+         s.user_id,
+         s.metadata,
+         s.created_at,
+         s.updated_at,
+         COUNT(m.id)::integer AS message_count
+       FROM ${this.tables.sessions} s
+       LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
+       ${where}
+       GROUP BY s.id
+       ORDER BY s.updated_at DESC, s.id DESC
+       LIMIT $${values.length}`,
+      values,
+    );
+    return result.rows.map((row) => this.inspectionSummary(row as InspectionSessionRow));
+  }
+
+  private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
+    const summaryResult = await this.client.query(
+      `SELECT
+         s.id AS ref,
+         s.session_id,
+         s.user_id,
+         s.metadata,
+         s.created_at,
+         s.updated_at,
+         COUNT(m.id)::integer AS message_count
+       FROM ${this.tables.sessions} s
+       LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
+       WHERE s.id = $1
+       GROUP BY s.id`,
+      [ref],
+    );
+    const row = summaryResult.rows[0] as InspectionSessionRow | undefined;
+    if (row === undefined) return undefined;
+
+    const messageResult = await this.client.query(
+      `SELECT position, run_id, turn, created_at, message
+       FROM ${this.tables.messages}
+       WHERE memory_session_id = $1
+       ORDER BY position ASC`,
+      [ref],
+    );
+
+    return {
+      ...this.inspectionSummary(row),
+      messages: messageResult.rows.map((message) => {
+        const item = message as InspectionMessageRow;
+        return {
+          position: Number(item.position),
+          runId: item.run_id,
+          turn: Number(item.turn),
+          createdAt: isoTimestamp(item.created_at),
+          message: this.messageFromValue(item.message),
+        };
+      }),
+    };
+  }
+
+  private inspectionSummary(row: InspectionSessionRow): MemoryConversationSummary {
+    const metadataValue =
+      typeof row.metadata === "string" ? (JSON.parse(row.metadata) as JsonObject) : row.metadata;
+    const summary: MemoryConversationSummary = {
+      ref: row.ref,
+      sessionId: row.session_id,
+      metadata: metadataValue as JsonObject,
+      createdAt: isoTimestamp(row.created_at),
+      updatedAt: isoTimestamp(row.updated_at),
+      messageCount: Number(row.message_count),
+    };
+    if (row.user_id !== null) summary.userId = row.user_id;
+    return summary;
   }
 
   private async transaction<T>(
@@ -379,4 +496,8 @@ function metadataValue(metadata: JsonObject | undefined, path: string): JsonValu
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isoTimestamp(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

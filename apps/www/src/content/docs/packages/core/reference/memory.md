@@ -13,6 +13,7 @@ Import from `@anvia/core` or `@anvia/core/memory`.
 
 ```ts
 interface MemoryStore {
+  readonly inspector?: MemoryInspector;
   load(context: MemoryContext): Promise<Message[]>;
   append(input: MemoryAppendInput): Promise<void>;
   clear(context: MemoryContext): Promise<void>;
@@ -25,6 +26,51 @@ Purpose: application-owned persistence adapter for durable agent sessions.
 Return behavior: `load(...)` returns prior transcript messages for a session; `append(...)` persists new run messages; `clear(...)` deletes the session transcript; `recordError(...)` optionally receives partial run messages when a prompt run fails.
 
 Notable errors: store implementations should reject when persistence fails. Rejections from `load(...)`, `append(...)`, `clear(...)`, or `recordError(...)` surface through session prompt calls.
+
+## MemoryInspector and Conversation Types
+
+```ts
+interface MemoryInspector {
+  listConversations(
+    options: MemoryConversationListOptions,
+  ): Promise<MemoryConversationSummary[]>;
+  getConversation(ref: string): Promise<MemoryConversation | undefined>;
+}
+
+type MemoryConversationListOptions = {
+  limit: number;
+  userId?: string;
+};
+
+type MemoryConversationSummary = {
+  ref: string;
+  sessionId: string;
+  userId?: string;
+  metadata?: JsonObject;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+type MemoryConversationMessage = {
+  position: number;
+  runId: string;
+  turn: number;
+  createdAt: string;
+  message: Message;
+};
+
+type MemoryConversation = MemoryConversationSummary & {
+  messages: MemoryConversationMessage[];
+};
+```
+
+Purpose: optional read-only discovery for developer tools such as Studio. `ref` is an opaque
+store-specific row reference, while `sessionId` remains the product conversation identifier.
+Custom stores do not need to implement this capability.
+
+Return behavior: implementations list newest conversations first and return messages in storage
+position order. Inspection does not import, copy, clear, or otherwise mutate product memory.
 
 ## MemoryContext
 

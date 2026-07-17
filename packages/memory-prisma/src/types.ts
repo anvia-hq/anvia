@@ -34,6 +34,8 @@ export type PrismaMemoryPositionRow = {
 export type PrismaMemorySessionDelegate = {
   upsert(args: unknown): Promise<PrismaMemorySessionRow>;
   deleteMany(args: unknown): Promise<unknown>;
+  findMany?(args: unknown): Promise<unknown[]>;
+  findUnique?(args: unknown): Promise<unknown | null>;
 };
 
 export type PrismaMemoryMessageDelegate = {

@@ -22,7 +22,42 @@ export type MemoryErrorInput = {
   messages: Message[];
 };
 
+export type MemoryConversationListOptions = {
+  limit: number;
+  userId?: string | undefined;
+};
+
+export type MemoryConversationSummary = {
+  /** Opaque, store-specific reference used to retrieve this exact conversation. */
+  ref: string;
+  sessionId: string;
+  userId?: string | undefined;
+  metadata?: JsonObject | undefined;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
+export type MemoryConversationMessage = {
+  position: number;
+  runId: string;
+  turn: number;
+  createdAt: string;
+  message: Message;
+};
+
+export type MemoryConversation = MemoryConversationSummary & {
+  messages: MemoryConversationMessage[];
+};
+
+/** Optional, read-only discovery surface for developer tooling such as Studio. */
+export interface MemoryInspector {
+  listConversations(options: MemoryConversationListOptions): Promise<MemoryConversationSummary[]>;
+  getConversation(ref: string): Promise<MemoryConversation | undefined>;
+}
+
 export interface MemoryStore {
+  readonly inspector?: MemoryInspector | undefined;
   load(context: MemoryContext): Promise<Message[]>;
   append(input: MemoryAppendInput): Promise<void>;
   clear(context: MemoryContext): Promise<void>;

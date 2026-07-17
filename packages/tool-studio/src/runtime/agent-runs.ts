@@ -24,6 +24,7 @@ import type { ResolvedStores } from "./options";
 import type { createQuestionRuntime } from "./questions";
 import {
   AsyncEventQueue,
+  assignTranscriptRunDuration,
   createPersistedStreamingSessionTranscript,
   mergeRunAndApprovalEvents,
   optionalTitle,
@@ -371,6 +372,7 @@ function handleStreamingAgentRun(
       session: run.session,
       message: run.body.message,
       runId: run.runId,
+      startedAt: run.runStartedAt,
       persistGeneratedMessages: run.shouldPersistSessionMessages,
     });
     stream = persistedRun.events;
@@ -461,11 +463,14 @@ async function completeBufferedSessionRun(
       });
     }
   }
+  const durationMs = Date.now() - run.runStartedAt;
+  const transcript = transcriptFromMessages(response.messages);
+  assignTranscriptRunDuration(transcript, durationMs);
   await run.sessionStore.saveSessionRunTranscript({
     id: run.session.id,
     runId: run.runId,
     ...optionalTitle(run.body.message),
-    transcript: transcriptFromMessages(response.messages),
+    transcript,
     status: "success",
   });
   await appendSessionLog(
@@ -473,7 +478,7 @@ async function completeBufferedSessionRun(
     runCompletedLog({
       sessionId: run.session.id,
       runId: run.runId,
-      durationMs: Date.now() - run.runStartedAt,
+      durationMs,
       usage: response.usage,
       output: response.output,
       messageCount: response.messages.length,
@@ -498,11 +503,14 @@ async function failBufferedSessionRun(run: PreparedAgentRun, error: unknown): Pr
     sessionId: run.session.id,
     metadata: run.memoryMetadata,
   });
+  const durationMs = Date.now() - run.runStartedAt;
+  const transcript = transcriptFromMessages(messages.slice(run.session.messageCount));
+  assignTranscriptRunDuration(transcript, durationMs);
   await run.sessionStore.saveSessionRunTranscript({
     id: run.session.id,
     runId: run.runId,
     ...optionalTitle(run.body.message),
-    transcript: transcriptFromMessages(messages.slice(run.session.messageCount)),
+    transcript,
     status: "error",
     error: serializeError(error),
   });

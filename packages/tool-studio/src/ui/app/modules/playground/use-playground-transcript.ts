@@ -29,8 +29,9 @@ export function usePlaygroundTranscript(): {
     structuredResult?: ToolResultContent[];
   }) => void;
   assignAssistantTraceId: (traceId: string) => void;
-  cancelPendingRun: () => void;
+  cancelPendingRun: (durationMs: number) => void;
   clearPendingAssistant: () => void;
+  completeRun: (durationMs: number) => void;
   updateToolApproval: (approval: ToolApprovalUpdate) => void;
   updateToolQuestion: (question: ToolQuestionUpdate) => void;
 } {
@@ -50,9 +51,13 @@ export function usePlaygroundTranscript(): {
     appendToolResult: (props) => setMessages((current) => appendToolResult(current, props)),
     assignAssistantTraceId: (traceId) =>
       setMessages((current) => assignAssistantTraceId(current, traceId)),
-    cancelPendingRun: () =>
-      setMessages((current) => cancelPendingTranscriptRun(current, new Date().toISOString())),
+    cancelPendingRun: (durationMs) =>
+      setMessages((current) =>
+        cancelPendingTranscriptRun(current, new Date().toISOString(), durationMs),
+      ),
     clearPendingAssistant: () => setMessages((current) => withoutPendingAssistant(current)),
+    completeRun: (durationMs) =>
+      setMessages((current) => completeTranscriptRun(current, durationMs)),
     updateToolApproval: (approval) =>
       setMessages((current) => updateToolApproval(current, approval)),
     updateToolQuestion: (question) =>
@@ -63,6 +68,7 @@ export function usePlaygroundTranscript(): {
 export function cancelPendingTranscriptRun(
   entries: TranscriptEntry[],
   cancelledAt: string,
+  durationMs: number,
 ): TranscriptEntry[] {
   const next = withoutPendingAssistant(entries);
   let currentTurnStart = -1;
@@ -74,7 +80,7 @@ export function cancelPendingTranscriptRun(
     }
   }
   if (currentTurnStart < 0) {
-    return next;
+    return completeTranscriptRun(next, durationMs);
   }
 
   for (let index = currentTurnStart + 1; index < next.length; index += 1) {
@@ -100,6 +106,37 @@ export function cancelPendingTranscriptRun(
     }
     next[index] = updated;
   }
+  return completeTranscriptRun(next, durationMs);
+}
+
+export function completeTranscriptRun(
+  entries: TranscriptEntry[],
+  durationMs: number,
+): TranscriptEntry[] {
+  const next = [...entries];
+  const normalizedDurationMs = Math.max(0, durationMs);
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const entry = next[index];
+    if (entry?.kind === "message" && entry.role === "assistant") {
+      if (entry.tone === "pending") {
+        const { tone: _tone, ...completedEntry } = entry;
+        next[index] = { ...completedEntry, durationMs: normalizedDurationMs };
+      } else {
+        next[index] = { ...entry, durationMs: normalizedDurationMs };
+      }
+      return next;
+    }
+    if (entry?.kind === "message" && entry.role === "user") {
+      break;
+    }
+  }
+  next.push({
+    entryId: nextTranscriptId(),
+    kind: "message",
+    role: "assistant",
+    text: "",
+    durationMs: normalizedDurationMs,
+  });
   return next;
 }
 

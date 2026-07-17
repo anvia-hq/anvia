@@ -29,23 +29,30 @@ export function assistantResponseMetricsByEntryId(props: {
       })
       .filter((item): item is [string, AssistantResponseMetrics] => item !== undefined),
   );
-  const completedRunMetrics = props.logs
-    .filter((log) => log.category === "run" && log.event === "run.completed")
+  const terminalRunMetrics = props.logs
+    .filter(
+      (log) =>
+        log.category === "run" &&
+        (log.event === "run.completed" ||
+          log.event === "run.cancelled" ||
+          log.event === "run.failed"),
+    )
     .sort((left, right) => left.sequence - right.sequence)
-    .map(metricsFromCompletedRunLog);
+    .map(metricsFromTerminalRunLog);
 
-  let completedRunIndex = 0;
+  let terminalRunIndex = 0;
   for (const entry of props.entries) {
-    if (!isCompletedAssistantMessage(entry)) {
+    if (!isTerminalAssistantMessage(entry)) {
       continue;
     }
 
-    const fallbackMetrics = completedRunMetrics[completedRunIndex];
-    completedRunIndex += 1;
-    const metrics =
+    const fallbackMetrics = terminalRunMetrics[terminalRunIndex];
+    terminalRunIndex += 1;
+    const observedMetrics =
       entry.traceId === undefined
         ? fallbackMetrics
         : (traceMetrics.get(entry.traceId) ?? fallbackMetrics);
+    const metrics = mergeEntryDuration(entry.durationMs, observedMetrics);
     if (metrics !== undefined) {
       byEntryId.set(entry.entryId, metrics);
     }
@@ -54,19 +61,19 @@ export function assistantResponseMetricsByEntryId(props: {
   return byEntryId;
 }
 
-function isCompletedAssistantMessage(
+function isTerminalAssistantMessage(
   entry: TranscriptEntry,
 ): entry is Extract<TranscriptEntry, { kind: "message"; role: "assistant" }> {
   return (
     entry.kind === "message" &&
     entry.role === "assistant" &&
-    entry.text.trim().length > 0 &&
+    (entry.text.trim().length > 0 || nonnegativeNumericValue(entry.durationMs) !== undefined) &&
     (!("tone" in entry) || entry.tone !== "pending")
   );
 }
 
 function metricsFromTrace(trace: StudioTraceSummary): AssistantResponseMetrics | undefined {
-  const durationMs = numericValue(trace.durationMs);
+  const durationMs = nonnegativeNumericValue(trace.durationMs);
   const usage = usageMetrics(trace.usage);
   const metrics: AssistantResponseMetrics = {};
   if (durationMs !== undefined) metrics.durationMs = durationMs;
@@ -74,14 +81,14 @@ function metricsFromTrace(trace: StudioTraceSummary): AssistantResponseMetrics |
   return definedMetrics(metrics);
 }
 
-function metricsFromCompletedRunLog(
+function metricsFromTerminalRunLog(
   log: StudioSessionLogEntry,
 ): AssistantResponseMetrics | undefined {
   const metadata = log.metadata;
   if (!isRecord(metadata)) {
     return undefined;
   }
-  const durationMs = numericValue(metadata.durationMs);
+  const durationMs = nonnegativeNumericValue(metadata.durationMs);
   const usage = usageMetrics(metadata.usage);
   const metrics: AssistantResponseMetrics = {};
   if (durationMs !== undefined) metrics.durationMs = durationMs;
@@ -116,6 +123,25 @@ function usageMetrics(value: unknown): ResponseUsageMetrics | undefined {
 
 function definedMetrics(metrics: AssistantResponseMetrics): AssistantResponseMetrics | undefined {
   return metrics.durationMs === undefined && metrics.usage === undefined ? undefined : metrics;
+}
+
+function mergeEntryDuration(
+  durationMs: number | undefined,
+  metrics: AssistantResponseMetrics | undefined,
+): AssistantResponseMetrics | undefined {
+  const persistedDurationMs = nonnegativeNumericValue(durationMs);
+  if (persistedDurationMs === undefined) {
+    return metrics;
+  }
+  return {
+    ...metrics,
+    durationMs: persistedDurationMs,
+  };
+}
+
+function nonnegativeNumericValue(value: unknown): number | undefined {
+  const number = numericValue(value);
+  return number !== undefined && number >= 0 ? number : undefined;
 }
 
 function numericValue(value: unknown): number | undefined {

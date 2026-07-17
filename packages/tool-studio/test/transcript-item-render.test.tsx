@@ -37,5 +37,31 @@ describe("TranscriptItem response actions", () => {
     expect(html).toContain("Cost");
     expect(html).toContain("Unavailable");
     expect(html).toContain("30 tokens");
+    expect(html).toContain("Working - 0m 1s");
+    expect(html.indexOf("Answer")).toBeLessThan(html.indexOf("Working - 0m 1s"));
+    expect(html.indexOf("Working - 0m 1s")).toBeLessThan(html.indexOf("Copy response"));
+  });
+
+  it("renders a persisted timer without response text or actions", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptItem
+        entry={{
+          entryId: 1,
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: 65_000,
+        }}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Working - 1m 5s");
+    expect(html).not.toContain('aria-label="Copy response"');
+    expect(html).not.toContain('aria-label="Response metrics"');
   });
 });

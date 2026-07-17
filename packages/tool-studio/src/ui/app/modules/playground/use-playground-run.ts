@@ -5,7 +5,7 @@ import {
   type ToolQuestionAnswer,
   useChat,
 } from "@anvia/react";
-import { type RefObject, useRef } from "react";
+import { type RefObject, useRef, useState } from "react";
 import type { AgentRunStreamEvent, StudioConfig, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
@@ -82,7 +82,9 @@ export function usePlaygroundRun(props: {
   const playgroundRunErrorRef = useRef<unknown>(undefined);
   const playgroundRunStoppedRef = useRef(false);
   const playgroundRunTerminalRef = useRef(false);
+  const playgroundRunStartedAtRef = useRef<number | undefined>(undefined);
   const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
+  const [workingStartedAt, setWorkingStartedAt] = useState<number | undefined>(undefined);
 
   const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
     transport: createChatTransport<StudioAgentRunRequest, AgentRunStreamEvent>({
@@ -151,17 +153,24 @@ export function usePlaygroundRun(props: {
       },
     },
     onEvent(event) {
+      if (playgroundRunTerminalRef.current) {
+        return;
+      }
       const visibleDelta = acceptStreamEvent(event);
       if (visibleDelta) {
         playgroundVisibleEventRef.current = playgroundVisibleEventRef.current.then(nextPaint);
       }
     },
     onError(error) {
+      if (playgroundRunStoppedRef.current || playgroundRunTerminalRef.current) {
+        return;
+      }
       playgroundRunTerminalRef.current = true;
       playgroundRunErrorRef.current = error;
       const message = agentRunErrorMessage(error);
       onError(message);
       transcript.appendAssistantError(message);
+      completeWorkingRun();
     },
   });
 
@@ -235,6 +244,9 @@ export function usePlaygroundRun(props: {
       if (history !== undefined) runContext.history = history;
       if (selectedModelRef.length > 0) runContext.model = selectedModelRef;
       playgroundRunRequestRef.current = runContext;
+      const startedAt = Date.now();
+      playgroundRunStartedAtRef.current = startedAt;
+      setWorkingStartedAt(startedAt);
 
       await playgroundChat.sendMessage(promptMessage);
       await playgroundVisibleEventRef.current;
@@ -258,10 +270,15 @@ export function usePlaygroundRun(props: {
         onStatus(playgroundRunStoppedRef.current ? "Stopped" : "Connected");
       }
     } catch (runError) {
-      const message = errorMessage(runError);
-      onError(message);
-      transcript.appendAssistantError(message);
+      if (!playgroundRunStoppedRef.current && !playgroundRunTerminalRef.current) {
+        playgroundRunTerminalRef.current = true;
+        const message = errorMessage(runError);
+        onError(message);
+        transcript.appendAssistantError(message);
+        completeWorkingRun();
+      }
     } finally {
+      completeWorkingRun();
       playgroundRunRequestRef.current = undefined;
       playgroundChat.reset();
       onRunStateChange("idle");
@@ -273,8 +290,10 @@ export function usePlaygroundRun(props: {
       return;
     }
     playgroundRunStoppedRef.current = true;
+    playgroundRunTerminalRef.current = true;
+    const durationMs = stopWorkingClock();
     playgroundChat.stop();
-    transcript.cancelPendingRun();
+    transcript.cancelPendingRun(durationMs ?? 0);
     onStatus("Stopping");
   }
 
@@ -351,6 +370,7 @@ export function usePlaygroundRun(props: {
         transcript.assignAssistantTraceId(event.trace.traceId);
       }
       transcript.clearPendingAssistant();
+      completeWorkingRun();
       return true;
     }
     if (event.type === "error") {
@@ -359,15 +379,34 @@ export function usePlaygroundRun(props: {
       playgroundRunErrorRef.current = event.error;
       onError(message);
       transcript.appendAssistantError(message);
+      completeWorkingRun();
       return true;
     }
     return false;
+  }
+
+  function completeWorkingRun() {
+    const durationMs = stopWorkingClock();
+    if (durationMs !== undefined) {
+      transcript.completeRun(durationMs);
+    }
+  }
+
+  function stopWorkingClock(): number | undefined {
+    const startedAt = playgroundRunStartedAtRef.current;
+    if (startedAt === undefined) {
+      return undefined;
+    }
+    playgroundRunStartedAtRef.current = undefined;
+    setWorkingStartedAt(undefined);
+    return Date.now() - startedAt;
   }
 
   return {
     answeringQuestions: new Set(playgroundChat.answeringQuestions),
     decidingApprovals: new Set(playgroundChat.decidingApprovals),
     isStreaming: playgroundChat.status === "streaming",
+    workingStartedAt,
     answerToolQuestion,
     decideToolApproval,
     runPrompt,

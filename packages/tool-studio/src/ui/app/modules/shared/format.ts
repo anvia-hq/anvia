@@ -141,6 +141,8 @@ export function approvalLabel(approval: ToolApproval): string {
       return "Rejected";
     case "timed_out":
       return "Timed out";
+    case "cancelled":
+      return "Cancelled";
     default:
       return approval.status;
   }

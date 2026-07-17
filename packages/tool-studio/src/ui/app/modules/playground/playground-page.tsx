@@ -4,6 +4,7 @@ import {
   AttachmentIcon,
   Cancel01Icon,
   ChatIcon,
+  StopIcon,
 } from "@hugeicons/core-free-icons";
 import {
   type ChangeEvent,
@@ -53,6 +54,7 @@ export function PlaygroundPage(props: {
   attachments: PromptAttachment[];
   decidingApprovals: Set<string>;
   hasMessages: boolean;
+  isStreaming: boolean;
   messages: TranscriptEntry[];
   prompt: string;
   runState: RunState;
@@ -80,6 +82,7 @@ export function PlaygroundPage(props: {
   ) => void;
   onRemovePromptAttachment: (id: string) => void;
   onRunPrompt: (prompt: string) => void;
+  onStopPrompt: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectModel: (modelRef: string) => void;
   onTranscriptScroll: () => void;
@@ -259,13 +262,23 @@ export function PlaygroundPage(props: {
                     </Select>
                   ) : null}
                   <Button
-                    aria-label={props.runState === "running" ? "Running" : "Send message"}
+                    aria-label={
+                      props.isStreaming
+                        ? "Stop generating"
+                        : props.runState === "running"
+                          ? "Running"
+                          : "Send message"
+                    }
                     className="h-9 min-h-9 w-9 rounded-full border-white bg-white text-black hover:bg-white/90"
                     size="icon"
-                    type="submit"
-                    disabled={props.runState === "running" || props.selectedAgentId.length === 0}
+                    type={props.isStreaming ? "button" : "submit"}
+                    disabled={
+                      !props.isStreaming &&
+                      (props.runState === "running" || props.selectedAgentId.length === 0)
+                    }
+                    onClick={props.isStreaming ? props.onStopPrompt : undefined}
                   >
-                    <StudioIcon icon={ArrowUp02Icon} />
+                    <StudioIcon icon={props.isStreaming ? StopIcon : ArrowUp02Icon} />
                   </Button>
                 </div>
               </div>

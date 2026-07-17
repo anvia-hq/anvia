@@ -118,8 +118,76 @@ export async function* mergeRunAndApprovalEvents(
 export function streamAgentRunEvents(
   _c: Context,
   events: AsyncIterable<AgentRunStreamEvent>,
+  options: { onCancel?: () => void | Promise<void> } = {},
 ): Response {
-  return streamStudioJsonl(events);
+  return streamStudioJsonl(withAgentRunCancellation(events, options.onCancel));
+}
+
+function withAgentRunCancellation(
+  events: AsyncIterable<AgentRunStreamEvent>,
+  onCancel: (() => void | Promise<void>) | undefined,
+): AsyncIterable<AgentRunStreamEvent> {
+  const iterator = events[Symbol.asyncIterator]();
+  let done = false;
+  let terminal = false;
+  let cancellationHandled = false;
+
+  const handleCancellation = async () => {
+    if (cancellationHandled) {
+      return;
+    }
+    cancellationHandled = true;
+    await onCancel?.();
+  };
+
+  return {
+    [Symbol.asyncIterator](): AsyncIterator<AgentRunStreamEvent> {
+      return {
+        async next(): Promise<IteratorResult<AgentRunStreamEvent>> {
+          if (done) {
+            return { done: true, value: undefined };
+          }
+          try {
+            const next = await iterator.next();
+            if (next.done === true) {
+              done = true;
+              if (!terminal) {
+                await handleCancellation();
+              }
+              return next;
+            }
+            if (next.value.type === "final" || next.value.type === "error") {
+              terminal = true;
+            }
+            return next;
+          } catch (error) {
+            done = true;
+            terminal = true;
+            throw error;
+          }
+        },
+        async return(): Promise<IteratorResult<AgentRunStreamEvent>> {
+          if (done) {
+            return { done: true, value: undefined };
+          }
+          done = true;
+          let closeError: unknown;
+          const closePromise = iterator.return?.().catch((error: unknown) => {
+            closeError = error;
+            return { done: true, value: undefined } as IteratorResult<AgentRunStreamEvent>;
+          });
+          if (!terminal) {
+            await handleCancellation();
+          }
+          await closePromise;
+          if (closeError !== undefined) {
+            throw closeError;
+          }
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
 }
 
 export function traceForRun(
@@ -138,64 +206,142 @@ export function traceForRun(
   return options;
 }
 
-export async function* persistStreamingSessionTranscript(props: {
+export function createPersistedStreamingSessionTranscript(props: {
   stream: AsyncIterable<AgentRunStreamEvent>;
   store: StudioSessionStore;
   session: StudioSession;
   message: string | Message;
   runId: string;
   persistGeneratedMessages?: boolean;
-}): AsyncIterable<AgentRunStreamEvent> {
+}): {
+  events: AsyncIterable<AgentRunStreamEvent>;
+  cancel: () => Promise<void>;
+} {
   const transcript: StudioTranscriptEntry[] = [messageToTranscriptEntry(props.message, 0)];
   const title = optionalTitle(props.message);
+  let status: "running" | "success" | "error" | "cancelled" = "running";
+  let saveTail: Promise<void> = Promise.resolve();
+  const isCancelled = () => status === "cancelled";
 
-  await props.store.saveSessionRunTranscript({
-    id: props.session.id,
-    runId: props.runId,
-    ...title,
-    transcript,
-    status: "running",
-  });
-
-  try {
-    for await (const event of props.stream) {
-      acceptTranscriptStreamEvent(transcript, event);
-
-      const saveInput: Parameters<typeof props.store.saveSessionRunTranscript>[0] = {
-        id: props.session.id,
-        runId: props.runId,
-        ...title,
-        transcript,
-        status: event.type === "final" ? "success" : event.type === "error" ? "error" : "running",
-      };
-      if (event.type === "error") saveInput.error = serializeError(event.error);
-      const nextSession = await props.store.saveSessionRunTranscript(saveInput);
+  const saveTranscript = (
+    input: Parameters<typeof props.store.saveSessionRunTranscript>[0],
+  ): Promise<void> => {
+    const operation = saveTail.then(async () => {
+      const nextSession = await props.store.saveSessionRunTranscript(input);
       if (nextSession === undefined) {
         throw new Error("Session not found");
       }
-      const generatedMessages = event.type === "final" ? event.messages.slice(1) : [];
-      if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
-        await props.store.append({
-          context: { sessionId: props.session.id },
-          runId: props.runId,
-          turn: 1,
-          messages: generatedMessages,
-        });
-      }
+    });
+    saveTail = operation.catch(() => undefined);
+    return operation;
+  };
 
-      yield event;
-    }
-  } catch (error) {
-    appendTranscriptAssistantError(transcript, errorText(error));
-    await props.store.saveSessionRunTranscript({
+  const events = (async function* (): AsyncIterable<AgentRunStreamEvent> {
+    await saveTranscript({
       id: props.session.id,
       runId: props.runId,
       ...title,
       transcript,
-      status: "error",
-      error: serializeError(error),
+      status: "running",
     });
-    throw error;
+    if (isCancelled()) {
+      return;
+    }
+
+    try {
+      for await (const event of props.stream) {
+        if (isCancelled()) {
+          return;
+        }
+        acceptTranscriptStreamEvent(transcript, event);
+        const eventStatus =
+          event.type === "final" ? "success" : event.type === "error" ? "error" : "running";
+
+        const saveInput: Parameters<typeof props.store.saveSessionRunTranscript>[0] = {
+          id: props.session.id,
+          runId: props.runId,
+          ...title,
+          transcript,
+          status: eventStatus,
+        };
+        if (event.type === "error") saveInput.error = serializeError(event.error);
+        await saveTranscript(saveInput);
+        const generatedMessages = event.type === "final" ? event.messages.slice(1) : [];
+        if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
+          await props.store.append({
+            context: { sessionId: props.session.id },
+            runId: props.runId,
+            turn: 1,
+            messages: generatedMessages,
+          });
+        }
+        if (isCancelled()) {
+          return;
+        }
+        status = eventStatus;
+
+        yield event;
+      }
+    } catch (error) {
+      if (status !== "running") {
+        throw error;
+      }
+      status = "error";
+      appendTranscriptAssistantError(transcript, errorText(error));
+      await saveTranscript({
+        id: props.session.id,
+        runId: props.runId,
+        ...title,
+        transcript,
+        status: "error",
+        error: serializeError(error),
+      });
+      throw error;
+    }
+  })();
+
+  return {
+    events,
+    async cancel() {
+      if (status !== "running") {
+        return;
+      }
+      status = "cancelled";
+      cancelPendingTranscriptInputs(transcript, new Date().toISOString());
+      await saveTranscript({
+        id: props.session.id,
+        runId: props.runId,
+        ...title,
+        transcript,
+        status: "cancelled",
+      });
+    },
+  };
+}
+
+function cancelPendingTranscriptInputs(
+  transcript: StudioTranscriptEntry[],
+  cancelledAt: string,
+): void {
+  for (const entry of transcript) {
+    if (entry.kind !== "tool") {
+      continue;
+    }
+    if (entry.approval?.status === "pending") {
+      entry.approval = {
+        ...entry.approval,
+        status: "cancelled",
+        resolvedAt: cancelledAt,
+        reason: "Run cancelled in Anvia Studio.",
+      };
+    }
+    if (entry.question?.status === "pending") {
+      entry.question = {
+        ...entry.question,
+        status: "cancelled",
+        cancelledAt,
+      };
+    }
   }
 }
 
@@ -316,6 +462,9 @@ function acceptTranscriptStreamEvent(
         questions: event.question.questions,
       };
       if (event.question.answeredAt !== undefined) question.answeredAt = event.question.answeredAt;
+      if (event.question.cancelledAt !== undefined) {
+        question.cancelledAt = event.question.cancelledAt;
+      }
       if (event.question.answers !== undefined) question.answers = event.question.answers;
       matched.question = question;
     }

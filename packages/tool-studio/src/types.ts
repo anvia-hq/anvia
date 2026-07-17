@@ -422,7 +422,7 @@ export type StudioSessionListOptions = {
   limit: number;
 };
 
-export type StudioSessionRunStatus = "running" | "success" | "error";
+export type StudioSessionRunStatus = "running" | "success" | "error" | "cancelled";
 
 export type StudioSessionRunTranscriptInput = {
   id: string;
@@ -782,7 +782,12 @@ export type StudioToolApprovalDecision = {
   reason?: string;
 };
 
-export type StudioToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out";
+export type StudioToolApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "timed_out"
+  | "cancelled";
 
 export type StudioToolApproval = {
   id: string;
@@ -835,7 +840,7 @@ export type StudioToolQuestionAnswer = {
   custom?: boolean;
 };
 
-export type StudioToolQuestionStatus = "pending" | "answered";
+export type StudioToolQuestionStatus = "pending" | "answered" | "cancelled";
 
 export type StudioToolQuestion = {
   id: string;
@@ -850,6 +855,7 @@ export type StudioToolQuestion = {
   status: StudioToolQuestionStatus;
   requestedAt: string;
   answeredAt?: string;
+  cancelledAt?: string;
   answers?: StudioToolQuestionAnswer[];
 };
 
@@ -858,6 +864,7 @@ export type StudioToolQuestionTranscript = {
   status: StudioToolQuestionStatus;
   requestedAt: string;
   answeredAt?: string;
+  cancelledAt?: string;
   questions: StudioToolQuestionPrompt[];
   answers?: StudioToolQuestionAnswer[];
 };

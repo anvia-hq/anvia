@@ -154,6 +154,24 @@ export function runCompletedLog(props: {
   };
 }
 
+export function runCancelledLog(
+  sessionId: string,
+  runId: string,
+  startedAt: number,
+): StudioSessionLogAppendInput {
+  return {
+    sessionId,
+    runId,
+    level: "info",
+    category: "run",
+    event: "run.cancelled",
+    message: "Run cancelled",
+    metadata: {
+      durationMs: Date.now() - startedAt,
+    },
+  };
+}
+
 export function memorySavedLog(props: {
   sessionId: string;
   runId: string;
@@ -356,6 +374,7 @@ function logsFromStreamEvent(props: {
     ];
   }
   if (event.type === "tool_question_result") {
+    const cancelled = event.question.status === "cancelled";
     const metadata: JsonObject = {
       questionId: event.question.id,
       toolName: event.question.toolName,
@@ -371,8 +390,10 @@ function logsFromStreamEvent(props: {
         runId,
         level: "info",
         category: "question",
-        event: "question.answered",
-        message: `Question answered for ${event.question.toolName}`,
+        event: cancelled ? "question.cancelled" : "question.answered",
+        message: cancelled
+          ? `Question cancelled for ${event.question.toolName}`
+          : `Question answered for ${event.question.toolName}`,
         metadata,
       },
     ];

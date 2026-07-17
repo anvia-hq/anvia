@@ -26,6 +26,7 @@ export type StudioConsoleContextValue = {
   evalsEnabled: boolean;
   hasAgents: boolean;
   hasMessages: boolean;
+  isStreaming: boolean;
   knowledgeEnabled: boolean;
   knowledgeTab: KnowledgeTab;
   mcpsEnabled: boolean;
@@ -74,6 +75,7 @@ export type StudioConsoleContextValue = {
   ) => void;
   removePromptAttachment: (id: string) => void;
   runPrompt: (prompt: string) => void;
+  stopPrompt: () => void;
   toggleTheme: () => void;
   updateTranscriptStickiness: () => void;
 };

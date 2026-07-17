@@ -38,7 +38,11 @@ import {
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createInMemoryStudioStore, Studio } from "../src/index";
+import {
+  createInMemoryStudioStore,
+  Studio,
+  type StudioSessionRunTranscriptInput,
+} from "../src/index";
 import { registerObservabilityRoutes, StudioObservabilityHub } from "../src/runtime/observability";
 import { createSqliteSessionStore } from "../src/sqlite";
 
@@ -1754,6 +1758,59 @@ describe("Anvia studio", () => {
     expect(remaining).toContainEqual(expect.objectContaining({ type: "final" }));
   });
 
+  it("cancels pending approvals when a streaming response is cancelled", async () => {
+    let executed = false;
+    const refundTool = createRefundTool(() => {
+      executed = true;
+      return "should not run";
+    });
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "issue_refund",
+          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
+    const runner = new Studio([agent]);
+    const response = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "refund", stream: true }),
+      }),
+    );
+    const reader = createJsonlReader(response);
+    let approvalId = "";
+    while (approvalId.length === 0) {
+      const event = await withTimeout(reader.read(), 1_000);
+      if ((event as { type?: string }).type === "tool_approval_request") {
+        approvalId = (event as { approval: { id: string } }).approval.id;
+      }
+    }
+
+    await withTimeout(reader.cancel(), 1_000);
+
+    const pending = (await (
+      await runner.fetch(new Request("http://runner.test/approvals?status=pending"))
+    ).json()) as { approvals: unknown[] };
+    expect(pending.approvals).toEqual([]);
+    const resolved = (await (
+      await runner.fetch(new Request("http://runner.test/approvals?status=resolved"))
+    ).json()) as { approvals: Array<{ id: string; status: string; reason?: string }> };
+    expect(resolved.approvals).toContainEqual(
+      expect.objectContaining({
+        id: approvalId,
+        status: "cancelled",
+        reason: "Run cancelled in Anvia Studio.",
+      }),
+    );
+    expect(executed).toBe(false);
+  });
+
   it("rejects protected tool calls without executing them and persists approval status", async () => {
     let executed = false;
     const refundTool = createRefundTool(() => {
@@ -2143,6 +2200,87 @@ describe("Anvia studio", () => {
           },
         },
         { kind: "message", role: "assistant", text: "Thanks for the context" },
+      ],
+    });
+  });
+
+  it("cancels pending questions when a streaming response is cancelled", async () => {
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "ask_question",
+          argumentsDelta: JSON.stringify({
+            questions: [
+              {
+                id: "priority",
+                question: "Which priority should we use?",
+                choices: ["Low", "High"],
+              },
+            ],
+          }),
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("support", model)
+      .tool(askQuestionTool)
+      .defaultMaxTurns(2)
+      .build();
+    const runner = new Studio([agent]);
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId: "support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+    const response = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "ask", sessionId: session.id, stream: true }),
+      }),
+    );
+    const reader = createJsonlReader(response);
+    let questionId = "";
+    while (questionId.length === 0) {
+      const event = await withTimeout(reader.read(), 1_000);
+      if ((event as { type?: string }).type === "tool_question_request") {
+        questionId = (event as { question: { id: string } }).question.id;
+      }
+    }
+
+    await withTimeout(reader.cancel(), 1_000);
+
+    const pending = (await (
+      await runner.fetch(new Request("http://runner.test/questions?status=pending"))
+    ).json()) as { questions: unknown[] };
+    expect(pending.questions).toEqual([]);
+    const resolved = (await (
+      await runner.fetch(new Request("http://runner.test/questions?status=resolved"))
+    ).json()) as { questions: Array<{ id: string; status: string; cancelledAt?: string }> };
+    expect(resolved.questions).toContainEqual(
+      expect.objectContaining({
+        id: questionId,
+        status: "cancelled",
+        cancelledAt: expect.any(String),
+      }),
+    );
+    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
+    await expect(loaded.json()).resolves.toMatchObject({
+      transcript: [
+        { kind: "message", role: "user", text: "ask" },
+        {
+          kind: "tool",
+          toolName: "ask_question",
+          question: {
+            id: questionId,
+            status: "cancelled",
+            cancelledAt: expect.any(String),
+          },
+        },
       ],
     });
   });
@@ -2772,6 +2910,68 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("persists cancelled streams with their partial transcript and audit log", async () => {
+    const model = new GatedReasoningModel();
+    const agent = new AgentBuilder("support", model).build();
+    const store = createInMemoryStudioStore();
+    const saves: StudioSessionRunTranscriptInput[] = [];
+    const saveSessionRunTranscript = store.saveSessionRunTranscript.bind(store);
+    store.saveSessionRunTranscript = (input) => {
+      saves.push(structuredClone(input));
+      return saveSessionRunTranscript(input);
+    };
+    const runner = new Studio([agent], { stores: { sessions: store } });
+
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId: "support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+    const response = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "think", sessionId: session.id, stream: true }),
+      }),
+    );
+    const reader = createJsonlReader(response);
+
+    let event: unknown;
+    do {
+      event = await withTimeout(reader.read(), 1_000);
+    } while ((event as { type?: string }).type !== "reasoning_delta");
+
+    const cancellation = reader.cancel();
+    await waitFor(() => saves.some((save) => save.status === "cancelled"));
+    model.releaseText?.();
+    await withTimeout(cancellation, 1_000);
+
+    expect(saves.at(-1)).toMatchObject({
+      status: "cancelled",
+      transcript: [
+        { kind: "message", role: "user", text: "think" },
+        { kind: "reasoning", text: "thinking" },
+      ],
+    });
+    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
+    await expect(loaded.json()).resolves.toMatchObject({
+      messages: [Message.user("think")],
+      transcript: [
+        { kind: "message", role: "user", text: "think" },
+        { kind: "reasoning", text: "thinking" },
+      ],
+    });
+    const logs = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}/logs`));
+    await expect(logs.json()).resolves.toMatchObject({
+      logs: expect.arrayContaining([
+        expect.objectContaining({ event: "run.cancelled", level: "info" }),
+      ]),
+    });
+  });
+
   it("streams and persists metadata-only session audit logs", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "safe answer" }]]);
     const agent = new AgentBuilder("support", model).build();
@@ -2821,6 +3021,9 @@ describe("Anvia studio", () => {
     );
     expect(streamedLogs).toContainEqual(
       expect.objectContaining({ log: expect.objectContaining({ event: "memory.saved" }) }),
+    );
+    expect(streamedLogs).not.toContainEqual(
+      expect.objectContaining({ log: expect.objectContaining({ event: "run.cancelled" }) }),
     );
 
     const firstPage = await runner.fetch(

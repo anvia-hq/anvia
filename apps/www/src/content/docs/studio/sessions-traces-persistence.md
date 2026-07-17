@@ -44,6 +44,11 @@ source associated with those agents rather than duplicating its conversations. A
 custom `MemoryStore` that does not implement the optional core `MemoryInspector` capability is
 shown as unavailable. Studio does not silently replace it with another store.
 
+For newly generated assistant messages, conversation detail shows the persisted provider, model,
+and per-generation token usage alongside the response. Legacy messages remain readable and show
+that usage is unavailable. The raw message and record JSON panels remain available for exact
+inspection.
+
 For agents that have no configured memory, the Memory page falls back to the Studio session store.
 This keeps the two responsibilities separate:
 

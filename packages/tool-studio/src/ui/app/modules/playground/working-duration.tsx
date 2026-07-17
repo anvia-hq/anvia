@@ -1,4 +1,6 @@
+import { Loading03Icon } from "@hugeicons/core-free-icons";
 import { useEffect, useState } from "react";
+import { StudioIcon } from "../../components/ui/icon";
 import { cn } from "../../lib/utils";
 
 export function WorkingDuration(props: {
@@ -27,18 +29,32 @@ export function WorkingDuration(props: {
   return (
     <span
       aria-live="off"
-      className={cn("text-xs font-medium tabular-nums text-muted-foreground", props.className)}
+      className={cn(
+        "inline-flex items-center gap-1.5 text-xs font-medium tabular-nums text-muted-foreground",
+        props.className,
+      )}
       role={isActive ? "timer" : undefined}
     >
-      {formatWorkingDuration(elapsedMs)}
+      {isActive ? (
+        <StudioIcon
+          aria-hidden="true"
+          className="h-3.5 w-3.5 shrink-0 animate-spin"
+          icon={Loading03Icon}
+        />
+      ) : null}
+      {formatWorkingDuration(elapsedMs, isActive ? "working" : "finished")}
     </span>
   );
 }
 
-export function formatWorkingDuration(durationMs: number): string {
+export function formatWorkingDuration(
+  durationMs: number,
+  state: "working" | "finished" = "working",
+): string {
   const normalizedDurationMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
   const totalSeconds = Math.floor(normalizedDurationMs / 1_000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `Working - ${minutes}m ${seconds}s`;
+  const duration = minutes === 0 ? `${seconds}s` : `${minutes}m ${seconds}s`;
+  return `${state === "working" ? "Working" : "Finished"} - ${duration}`;
 }

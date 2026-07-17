@@ -1,5 +1,6 @@
 export { AgentBuilder } from "./agent/builder";
 export type {
+  AssistantGenerationMetadata,
   AssistantMessage,
   AssistantMessageOptions,
   CompletionModel,
@@ -34,6 +35,7 @@ export {
   createCompletion,
   createCompletionStream,
   createParsedCompletion,
+  getAssistantGenerationMetadata,
   isJsonValue,
   Message,
   ToolContent,

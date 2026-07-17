@@ -37,9 +37,12 @@ describe("TranscriptItem response actions", () => {
     expect(html).toContain("Cost");
     expect(html).toContain("Unavailable");
     expect(html).toContain("30 tokens");
-    expect(html).toContain("Working - 0m 1s");
-    expect(html.indexOf("Answer")).toBeLessThan(html.indexOf("Working - 0m 1s"));
-    expect(html.indexOf("Working - 0m 1s")).toBeLessThan(html.indexOf("Copy response"));
+    expect(html).toContain("Finished - 1s");
+    expect(html.indexOf("Answer")).toBeLessThan(html.indexOf("Copy response"));
+    expect(html.indexOf("Copy response")).toBeLessThan(html.indexOf("Response metrics"));
+    expect(html.indexOf("Response metrics")).toBeLessThan(html.indexOf("Open trace trace_1"));
+    expect(html.indexOf("Open trace trace_1")).toBeLessThan(html.indexOf("Finished - 1s"));
+    expect(html).not.toContain("animate-spin");
   });
 
   it("renders a persisted timer without response text or actions", () => {
@@ -60,8 +63,32 @@ describe("TranscriptItem response actions", () => {
       />,
     );
 
-    expect(html).toContain("Working - 1m 5s");
+    expect(html).toContain("Finished - 1m 5s");
     expect(html).not.toContain('aria-label="Copy response"');
     expect(html).not.toContain('aria-label="Response metrics"');
+  });
+
+  it("renders a spinning live timer after the response actions", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptItem
+        entry={{
+          entryId: 1,
+          kind: "message",
+          role: "assistant",
+          text: "Streaming answer",
+          traceId: "trace_live",
+        }}
+        workingStartedAt={Date.now()}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("animate-spin");
+    expect(html).toContain("Working - 0s");
+    expect(html.indexOf("Open trace trace_live")).toBeLessThan(html.indexOf("Working - 0s"));
   });
 });

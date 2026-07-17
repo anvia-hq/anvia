@@ -142,11 +142,6 @@ function AssistantResponseFooter(props: {
 
   return (
     <div className="mt-3 flex min-w-0 items-center gap-1.5">
-      <WorkingDuration
-        className={props.showActions ? "mr-1.5" : undefined}
-        durationMs={props.durationMs}
-        startedAt={props.startedAt}
-      />
       {props.showActions ? (
         <Button
           aria-label={copied ? "Response copied" : "Copy response"}
@@ -190,6 +185,11 @@ function AssistantResponseFooter(props: {
           <StudioIcon icon={PathIcon} aria-hidden="true" />
         </Button>
       )}
+      <WorkingDuration
+        className={props.showActions ? "ml-1.5" : undefined}
+        durationMs={props.durationMs}
+        startedAt={props.startedAt}
+      />
     </div>
   );
 }

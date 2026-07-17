@@ -21,6 +21,7 @@ describe("PlaygroundPage run action", () => {
     const stopButton = runAction(render({ isStreaming: true, runState: "running" }));
     expect(stopButton).toContain('aria-label="Stop generating"');
     expect(stopButton).toContain('type="button"');
+    expect(stopButton).toContain('fill="currentColor"');
     expect(stopButton).not.toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
   });
 
@@ -35,6 +36,7 @@ describe("PlaygroundPage run action", () => {
     });
 
     expect(html).toContain("Working - 1m 5s");
+    expect(html).toContain("animate-spin");
   });
 });
 
@@ -83,7 +85,7 @@ function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): 
 
 function runAction(html: string): string {
   const matched = html.match(
-    /<button[^>]+aria-label="(?:Send message|Running|Stop generating)"[^>]*>/,
+    /<button[^>]+aria-label="(?:Send message|Running|Stop generating)"[^>]*>[\s\S]*?<\/button>/,
   );
   if (matched === null) {
     throw new Error("Run action button not found");

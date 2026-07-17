@@ -110,7 +110,22 @@ const richMessages: MessageType[] = [
   {
     role: "assistant",
     id: "assistant-1",
-    metadata: { source: "assistant" },
+    metadata: {
+      source: "assistant",
+      anvia: {
+        generation: {
+          provider: "test",
+          model: "test-model",
+          usage: {
+            inputTokens: 12,
+            outputTokens: 4,
+            totalTokens: 16,
+            cachedInputTokens: 3,
+            cacheCreationInputTokens: 0,
+          },
+        },
+      },
+    },
     content: [
       { type: "text", text: "Working", signature: "assistant-signature" },
       {

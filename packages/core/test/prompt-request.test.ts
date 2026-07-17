@@ -358,9 +358,9 @@ describe("PromptRequest", () => {
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(Message.user("revise"));
     expect(result.messages).toEqual([
       Message.user("hello"),
-      Message.assistant("first"),
+      expect.objectContaining(Message.assistant("first")),
       Message.user("revise"),
-      Message.assistant("second"),
+      expect.objectContaining(Message.assistant("second")),
     ]);
   });
 

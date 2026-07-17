@@ -12,6 +12,7 @@ import {
   defineGuardrailPolicy,
   defineInputGuardrail,
   defineOutputGuardrail,
+  getAssistantGenerationMetadata,
   guardrails,
   type InputGuardrail,
   Message,
@@ -242,7 +243,13 @@ describe("guardrails", () => {
     const result = await agent.prompt("hello").send();
 
     expect(result.output).toBe("[redacted] token");
-    expect(result.messages.at(-1)).toEqual(Message.assistant("[redacted] token"));
+    const assistantMessage = result.messages.at(-1);
+    expect(assistantMessage).toMatchObject(Message.assistant("[redacted] token"));
+    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
+      provider: "test",
+      model: "test",
+      usage: Usage.empty(),
+    });
     expect(result.guardrails).toMatchObject([
       { guardrailId: "safe-output", action: "rewrite", applied: true },
     ]);

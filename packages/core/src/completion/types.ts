@@ -435,6 +435,12 @@ export type Usage = {
   cacheCreationInputTokens: number;
 };
 
+export type AssistantGenerationMetadata = {
+  provider: string;
+  model: string;
+  usage: Usage;
+};
+
 export const Usage = {
   empty(): Usage {
     return {
@@ -455,6 +461,53 @@ export const Usage = {
     };
   },
 };
+
+export function getAssistantGenerationMetadata(
+  message: Message,
+): AssistantGenerationMetadata | undefined {
+  if (message.role !== "assistant" || !isJsonObjectValue(message.metadata)) {
+    return undefined;
+  }
+  const frameworkMetadata = message.metadata.anvia;
+  if (!isJsonObjectValue(frameworkMetadata)) {
+    return undefined;
+  }
+  const generation = frameworkMetadata.generation;
+  if (
+    !isJsonObjectValue(generation) ||
+    typeof generation.provider !== "string" ||
+    typeof generation.model !== "string" ||
+    !isUsageValue(generation.usage)
+  ) {
+    return undefined;
+  }
+  return {
+    provider: generation.provider,
+    model: generation.model,
+    usage: { ...generation.usage },
+  };
+}
+
+function isJsonObjectValue(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUsageValue(value: JsonValue | undefined): value is JsonObject & Usage {
+  if (!isJsonObjectValue(value)) {
+    return false;
+  }
+  return (
+    isNonnegativeFiniteNumber(value.inputTokens) &&
+    isNonnegativeFiniteNumber(value.outputTokens) &&
+    isNonnegativeFiniteNumber(value.totalTokens) &&
+    isNonnegativeFiniteNumber(value.cachedInputTokens) &&
+    isNonnegativeFiniteNumber(value.cacheCreationInputTokens)
+  );
+}
+
+function isNonnegativeFiniteNumber(value: JsonValue | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
 
 export type CompletionRequest<ModelName extends string = string> = {
   model?: ModelName;

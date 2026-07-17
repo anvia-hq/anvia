@@ -1,5 +1,16 @@
 # @anvia/studio
 
+## 0.7.34
+
+### Patch Changes
+
+- 24d42ab: Automatically expose sandbox-backed agent workspaces in Studio through read-only APIs and a
+  dedicated Sandboxes inspector. Studio servers can also leave SIGINT handling to the application or
+  use the managed `serve(...)` lifecycle to await asynchronous resource cleanup.
+- 891caf2: Add cancellable Studio agent streams with partial transcript persistence, cancelled human-input states, and persisted response durations.
+- Updated dependencies [891caf2]
+  - @anvia/react@0.8.12
+
 ## 0.7.33
 
 ### Patch Changes

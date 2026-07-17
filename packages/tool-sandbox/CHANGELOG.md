@@ -1,5 +1,13 @@
 # @anvia/sandbox
 
+## 0.4.1
+
+### Patch Changes
+
+- 24d42ab: Automatically expose sandbox-backed agent workspaces in Studio through read-only APIs and a
+  dedicated Sandboxes inspector. Studio servers can also leave SIGINT handling to the application or
+  use the managed `serve(...)` lifecycle to await asynchronous resource cleanup.
+
 ## 0.4.0
 
 ### Minor Changes

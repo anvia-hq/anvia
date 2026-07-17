@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 0.8.12
+
+### Patch Changes
+
+- 891caf2: Add cancellable Studio agent streams with partial transcript persistence, cancelled human-input states, and persisted response durations.
+
 ## 0.8.11
 
 ### Patch Changes

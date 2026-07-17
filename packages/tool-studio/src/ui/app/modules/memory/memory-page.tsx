@@ -20,6 +20,7 @@ import {
 } from "../../components/ui/select";
 import { formatRelativeTime } from "../shared/format";
 import { JsonSyntax } from "../shared/renderers";
+import { MemoryGenerationLedger } from "./memory-generation-ledger";
 
 export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boolean }) {
   const [sources, setSources] = useState<StudioMemorySourceSummary[]>([]);
@@ -493,6 +494,7 @@ function ConversationDetail(props: {
             {props.conversation.metadata === undefined ? null : (
               <JsonPanel title="metadata" value={props.conversation.metadata} />
             )}
+            <MemoryGenerationLedger records={props.messages?.records ?? []} />
             <JsonPanel title="messages" value={props.messages?.messages ?? []} />
             <JsonPanel title="message records" value={props.messages?.records ?? []} />
             <JsonPanel title="derived transcript" value={props.steps?.steps ?? []} />

@@ -9,10 +9,13 @@ import {
   type CompletionStreamEvent,
   cancelPrompt,
   createHook,
+  createMiddleware,
   createTool,
+  getAssistantGenerationMetadata,
   type MemoryAppendInput,
   type MemoryContext,
   type MemoryErrorInput,
+  type MemorySavePolicy,
   type MemoryStore,
   Message,
   type Message as MessageType,
@@ -107,10 +110,13 @@ class RecordingMemoryStore implements MemoryStore {
   }
 }
 
-function response(choice: CompletionResponse["choice"]): CompletionResponse {
+function response(
+  choice: CompletionResponse["choice"],
+  usage: CompletionResponse["usage"] = Usage.empty(),
+): CompletionResponse {
   return {
     choice,
-    usage: Usage.empty(),
+    usage,
     rawResponse: {},
   };
 }
@@ -212,6 +218,59 @@ describe("agent memory", () => {
       ["assistant"],
     ]);
     await expect(agent.session("session_1").messages()).resolves.toHaveLength(4);
+  });
+
+  it.each<MemorySavePolicy>([
+    "message",
+    "turn",
+    "run",
+  ])("persists per-generation usage and the effective model with the %s save policy", async (savePolicy) => {
+    const store = new RecordingMemoryStore();
+    const firstUsage = {
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+      cachedInputTokens: 2,
+      cacheCreationInputTokens: 0,
+    };
+    const secondUsage = {
+      inputTokens: 20,
+      outputTokens: 1,
+      totalTokens: 21,
+      cachedInputTokens: 5,
+      cacheCreationInputTokens: 4,
+    };
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], firstUsage),
+      response([AssistantContent.text("7")], secondUsage),
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .memory(store, { savePolicy })
+      .middleware(
+        createMiddleware({
+          onCompletionRequest({ request }) {
+            return { request: { ...request, model: "test-override" } };
+          },
+        }),
+      )
+      .tool(addTool)
+      .build();
+
+    const result = await agent.session("session-generation-metadata").prompt("add").send();
+    const resultMetadata = result.messages
+      .filter((message) => message.role === "assistant")
+      .map(getAssistantGenerationMetadata);
+    const persistedMetadata = store.appendCalls
+      .flatMap((call) => call.messages)
+      .filter((message) => message.role === "assistant")
+      .map(getAssistantGenerationMetadata);
+    const expected = [
+      { provider: "test", model: "test-override", usage: firstUsage },
+      { provider: "test", model: "test-override", usage: secondUsage },
+    ];
+
+    expect(resultMetadata).toEqual(expected);
+    expect(persistedMetadata).toEqual(expected);
   });
 
   it("records failed runs after preserving completed messages", async () => {

@@ -259,7 +259,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         const toolCalls = response.choice.filter(
           (item): item is ToolCall => item.type === "tool_call",
         );
-        const assistantMessage = Message.assistant(response.choice, response.messageId);
+        const assistantMessage = this.generatedAssistantMessage(response, request);
         newMessages.push(assistantMessage);
         if (toolCalls.length === 0) {
           if (this.steeringMessages.length > 0) {
@@ -285,7 +285,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             runObservers,
           );
           response = guardedOutput.response;
-          const finalAssistantMessage = Message.assistant(response.choice, response.messageId);
+          const finalAssistantMessage = this.generatedAssistantMessage(response, request);
           newMessages[newMessages.length - 1] = finalAssistantMessage;
           await this.memoryRecorder.commitMessages(
             runId,
@@ -524,7 +524,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         const toolCalls = response.choice.filter(
           (item): item is ToolCall => item.type === "tool_call",
         );
-        let assistantMessage = Message.assistant(response.choice, response.messageId);
+        let assistantMessage = this.generatedAssistantMessage(response, request);
         newMessages.push(assistantMessage);
 
         if (toolCalls.length === 0) {
@@ -564,7 +564,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             yield await emit({ type: "guardrail_decision", decision });
           }
           response = guardedOutput.response;
-          assistantMessage = Message.assistant(response.choice, response.messageId);
+          assistantMessage = this.generatedAssistantMessage(response, request);
           newMessages[newMessages.length - 1] = assistantMessage;
           await this.memoryRecorder.commitMessages(
             runId,
@@ -717,6 +717,25 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       await generationObservers.error({ turn, error });
       throw error;
     }
+  }
+
+  private generatedAssistantMessage(
+    response: CompletionResponse,
+    request: ReturnType<CompletionRequestBuilder["build"]>,
+  ): MessageType {
+    const metadata: JsonObject = {
+      anvia: {
+        generation: {
+          provider: this.agent.model.provider,
+          model: request.model ?? this.agent.model.defaultModel,
+          usage: { ...response.usage },
+        },
+      },
+    };
+    return Message.assistant(response.choice, {
+      ...(response.messageId === undefined ? {} : { id: response.messageId }),
+      metadata,
+    });
   }
 
   private providerTraceRequest(

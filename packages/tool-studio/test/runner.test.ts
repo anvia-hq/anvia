@@ -2866,7 +2866,7 @@ describe("Anvia studio", () => {
 
     expect(model.requests[1]?.chatHistory).toEqual([
       Message.user("First question"),
-      Message.assistant("First answer"),
+      expect.objectContaining(Message.assistant("First answer")),
       Message.user("Follow up"),
     ]);
 
@@ -2953,7 +2953,7 @@ describe("Anvia studio", () => {
     ]);
     expect(model.requests[1]?.chatHistory).toEqual([
       Message.user("First question"),
-      Message.assistant("First answer"),
+      expect.objectContaining(Message.assistant("First answer")),
       Message.user("Follow up"),
     ]);
 

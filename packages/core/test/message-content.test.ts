@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   AssistantContent,
+  getAssistantGenerationMetadata,
   isJsonValue,
   type JsonValue,
   Message,
@@ -220,6 +221,54 @@ describe("message attachment content", () => {
       ],
       metadata,
     });
+  });
+
+  it("reads valid framework generation metadata without accepting malformed values", () => {
+    const message = Message.assistant("assistant", {
+      metadata: {
+        anvia: {
+          generation: {
+            provider: "test",
+            model: "test-model",
+            usage: {
+              inputTokens: 7,
+              outputTokens: 2,
+              totalTokens: 9,
+              cachedInputTokens: 1,
+              cacheCreationInputTokens: 0,
+            },
+          },
+        },
+      },
+    });
+
+    expect(getAssistantGenerationMetadata(message)).toEqual({
+      provider: "test",
+      model: "test-model",
+      usage: {
+        inputTokens: 7,
+        outputTokens: 2,
+        totalTokens: 9,
+        cachedInputTokens: 1,
+        cacheCreationInputTokens: 0,
+      },
+    });
+    expect(getAssistantGenerationMetadata(Message.user("user"))).toBeUndefined();
+    expect(
+      getAssistantGenerationMetadata(
+        Message.assistant("assistant", {
+          metadata: {
+            anvia: {
+              generation: {
+                provider: "test",
+                model: "test-model",
+                usage: { inputTokens: -1 },
+              },
+            },
+          },
+        }),
+      ),
+    ).toBeUndefined();
   });
 
   it("validates strict JSON values without accepting lossy structures", () => {

@@ -292,7 +292,10 @@ export function PlaygroundPage(props: {
                     }
                     onClick={props.isStreaming ? props.onStopPrompt : undefined}
                   >
-                    <StudioIcon icon={props.isStreaming ? StopIcon : ArrowUp02Icon} />
+                    <StudioIcon
+                      fill={props.isStreaming ? "currentColor" : undefined}
+                      icon={props.isStreaming ? StopIcon : ArrowUp02Icon}
+                    />
                   </Button>
                 </div>
               </div>

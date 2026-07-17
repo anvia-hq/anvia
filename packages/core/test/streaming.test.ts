@@ -15,6 +15,7 @@ import {
   createMiddleware,
   createTool,
   createToolMiddleware,
+  getAssistantGenerationMetadata,
   Message,
   PromptCancelledError,
   type StreamingCompletionModel,
@@ -374,7 +375,7 @@ describe("PromptRequest streaming", () => {
     expect(events.at(-1)).toMatchObject({ type: "final", output: "done" });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]?.chatHistory.slice(-3)).toEqual([
-      Message.assistant([toolCall]),
+      expect.objectContaining(Message.assistant([toolCall])),
       Message.tool([
         {
           type: "tool_result",
@@ -412,7 +413,7 @@ describe("PromptRequest streaming", () => {
       prompt: secondSteer,
     });
     expect(model.requests[1]?.chatHistory.slice(-3)).toEqual([
-      Message.assistant("base"),
+      expect.objectContaining(Message.assistant("base")),
       firstSteer,
       secondSteer,
     ]);
@@ -460,6 +461,23 @@ describe("PromptRequest streaming", () => {
         inputTokens: 2,
         outputTokens: 1,
         totalTokens: 3,
+      },
+    });
+    const finalEvent = events.at(-1);
+    expect(finalEvent?.type).toBe("final");
+    if (finalEvent?.type !== "final") {
+      throw new Error("Expected a final event");
+    }
+    const assistantMessage = finalEvent.messages.at(-1);
+    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
+      provider: "test",
+      model: "test",
+      usage: {
+        inputTokens: 2,
+        outputTokens: 1,
+        totalTokens: 3,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
       },
     });
   });

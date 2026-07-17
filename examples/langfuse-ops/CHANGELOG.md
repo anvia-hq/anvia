@@ -1,5 +1,15 @@
 # langfuse-ops
 
+## 0.1.28
+
+### Patch Changes
+
+- Updated dependencies [9e190bc]
+- Updated dependencies [ede828b]
+  - @anvia/core@0.13.5
+  - @anvia/langfuse@0.3.7
+  - @anvia/openai@0.3.21
+
 ## 0.1.27
 
 ### Patch Changes

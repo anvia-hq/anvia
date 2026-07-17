@@ -1,5 +1,14 @@
 # @anvia/core
 
+## 0.13.5
+
+### Patch Changes
+
+- 9e190bc: Persist provider, model, and per-generation token usage on generated assistant messages, and show
+  those durable response metrics in Studio's Memory inspector.
+- ede828b: Add optional read-only memory inspection, implement it across the database memory adapters, and let
+  Studio discover persisted agent conversations before falling back to Studio session storage.
+
 ## 0.13.4
 
 ### Patch Changes

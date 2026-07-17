@@ -1,6 +1,6 @@
 {
   "name": "@anvia/server",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "Server-side event stream helpers for Anvia applications.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

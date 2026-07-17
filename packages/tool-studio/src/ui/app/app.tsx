@@ -259,9 +259,11 @@ export function StudioConsole() {
   const {
     answeringQuestions,
     decidingApprovals,
+    isStreaming,
     answerToolQuestion,
     decideToolApproval,
     runPrompt,
+    stopPrompt,
   } = usePlaygroundRun({
     attachments,
     messages,
@@ -440,6 +442,7 @@ export function StudioConsole() {
     evalsEnabled,
     hasAgents,
     hasMessages,
+    isStreaming,
     knowledgeEnabled,
     knowledgeTab,
     mcpsEnabled,
@@ -485,6 +488,7 @@ export function StudioConsole() {
     answerToolQuestion,
     removePromptAttachment,
     runPrompt,
+    stopPrompt,
     toggleTheme,
     updateTranscriptStickiness,
   };

@@ -352,6 +352,7 @@ function ToolEntry(props: {
     question !== undefined;
   const pendingApproval = approval?.status === "pending";
   const pendingQuestion = question?.status === "pending";
+  const cancelledInteraction = approval?.status === "cancelled" || question?.status === "cancelled";
   const deciding = approval !== undefined && props.decidingApprovals.has(approval.id);
   const answering = question !== undefined && props.answeringQuestions.has(question.id);
 
@@ -396,6 +397,11 @@ function ToolEntry(props: {
         {pendingQuestion ? (
           <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-foreground">
             Waiting for input
+          </Badge>
+        ) : null}
+        {cancelledInteraction ? (
+          <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-muted-foreground">
+            Cancelled
           </Badge>
         ) : null}
         {pendingApproval || pendingQuestion ? (
@@ -538,6 +544,11 @@ function ToolQuestionPanel(props: {
 
   return (
     <div className="grid gap-3">
+      {props.question.status === "cancelled" ? (
+        <div className="rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 text-sm font-medium text-muted-foreground">
+          Question cancelled
+        </div>
+      ) : null}
       <QuestionPromptControl
         key={activeQuestion.id}
         disabled={props.disabled || !pending}

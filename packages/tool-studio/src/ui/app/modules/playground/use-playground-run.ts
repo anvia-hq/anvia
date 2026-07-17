@@ -5,7 +5,7 @@ import {
   type ToolQuestionAnswer,
   useChat,
 } from "@anvia/react";
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject, useRef } from "react";
 import type { AgentRunStreamEvent, StudioConfig, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
@@ -80,6 +80,8 @@ export function usePlaygroundRun(props: {
   } = props;
   const playgroundRunRequestRef = useRef<PlaygroundRunRequestContext | undefined>(undefined);
   const playgroundRunErrorRef = useRef<unknown>(undefined);
+  const playgroundRunStoppedRef = useRef(false);
+  const playgroundRunTerminalRef = useRef(false);
   const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
 
   const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
@@ -155,16 +157,13 @@ export function usePlaygroundRun(props: {
       }
     },
     onError(error) {
+      playgroundRunTerminalRef.current = true;
       playgroundRunErrorRef.current = error;
       const message = agentRunErrorMessage(error);
       onError(message);
       transcript.appendAssistantError(message);
     },
   });
-
-  useEffect(() => {
-    onRunStateChange(playgroundChat.status === "streaming" ? "running" : "idle");
-  }, [onRunStateChange, playgroundChat.status]);
 
   async function runPrompt(text: string) {
     const trimmed = text.trim();
@@ -179,6 +178,8 @@ export function usePlaygroundRun(props: {
       return;
     }
 
+    playgroundRunStoppedRef.current = false;
+    playgroundRunTerminalRef.current = false;
     onRunStateChange("running");
     onBeforeRun();
     onActivePageChange("playground");
@@ -254,7 +255,7 @@ export function usePlaygroundRun(props: {
             sessions.openSessionPath(sessionId);
           }
         }
-        onStatus("Connected");
+        onStatus(playgroundRunStoppedRef.current ? "Stopped" : "Connected");
       }
     } catch (runError) {
       const message = errorMessage(runError);
@@ -265,6 +266,16 @@ export function usePlaygroundRun(props: {
       playgroundChat.reset();
       onRunStateChange("idle");
     }
+  }
+
+  function stopPrompt() {
+    if (playgroundChat.status !== "streaming" || playgroundRunTerminalRef.current) {
+      return;
+    }
+    playgroundRunStoppedRef.current = true;
+    playgroundChat.stop();
+    transcript.cancelPendingRun();
+    onStatus("Stopping");
   }
 
   function decideToolApproval(approvalId: string, approved: boolean) {
@@ -335,6 +346,7 @@ export function usePlaygroundRun(props: {
       return true;
     }
     if (event.type === "final") {
+      playgroundRunTerminalRef.current = true;
       if (event.trace?.traceId !== undefined) {
         transcript.assignAssistantTraceId(event.trace.traceId);
       }
@@ -342,6 +354,7 @@ export function usePlaygroundRun(props: {
       return true;
     }
     if (event.type === "error") {
+      playgroundRunTerminalRef.current = true;
       const message = serializedStreamErrorText(event.error);
       playgroundRunErrorRef.current = event.error;
       onError(message);
@@ -354,9 +367,11 @@ export function usePlaygroundRun(props: {
   return {
     answeringQuestions: new Set(playgroundChat.answeringQuestions),
     decidingApprovals: new Set(playgroundChat.decidingApprovals),
+    isStreaming: playgroundChat.status === "streaming",
     answerToolQuestion,
     decideToolApproval,
     runPrompt,
+    stopPrompt,
   };
 }
 
@@ -425,6 +440,7 @@ function transcriptQuestionUpdate(question: ToolQuestion): ToolQuestionUpdate | 
   };
   if (question.callId !== undefined) update.callId = question.callId;
   if (question.answeredAt !== undefined) update.answeredAt = question.answeredAt;
+  if (question.cancelledAt !== undefined) update.cancelledAt = question.cancelledAt;
   if (question.answers !== undefined) update.answers = question.answers;
   return update;
 }

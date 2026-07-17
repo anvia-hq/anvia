@@ -40,6 +40,7 @@ export type QuestionRuntime = {
   questions: Map<string, PendingQuestion | StudioToolQuestion>;
   createHook(context: QuestionHookContext): PromptHook;
   list(options: QuestionListOptions): StudioToolQuestion[];
+  cancelRun(runId: string): StudioToolQuestion[];
   answer(
     id: string,
     answers: StudioToolQuestionAnswer[],
@@ -205,6 +206,20 @@ export function createQuestionRuntime(): QuestionRuntime {
         })
         .map(publicQuestion);
     },
+    cancelRun(runId) {
+      const cancelled: StudioToolQuestion[] = [];
+      for (const question of questions.values()) {
+        if (!isPendingQuestion(question) || question.runId !== runId) {
+          continue;
+        }
+        const resolved = cancelQuestion(question);
+        questions.set(question.id, resolved);
+        question.emit?.({ type: "tool_question_result", question: resolved });
+        question.resolve([]);
+        cancelled.push(resolved);
+      }
+      return cancelled;
+    },
     answer(id, answers) {
       const question = questions.get(id);
       if (question === undefined) {
@@ -343,6 +358,14 @@ function resolveQuestion(
     status: "answered" satisfies StudioToolQuestionStatus,
     answeredAt: new Date().toISOString(),
     answers,
+  });
+}
+
+function cancelQuestion(question: PendingQuestion | StudioToolQuestion): StudioToolQuestion {
+  return publicQuestion({
+    ...question,
+    status: "cancelled" satisfies StudioToolQuestionStatus,
+    cancelledAt: new Date().toISOString(),
   });
 }
 

@@ -62,7 +62,7 @@ export type ResumableStreamEnvelope<TEvent> =
       status: "running" | "completed" | "error" | "missing";
     };
 
-export type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out";
+export type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out" | "cancelled";
 
 export type ToolApproval = {
   id: string;
@@ -79,7 +79,7 @@ export type ToolApproval = {
   reason?: string;
 };
 
-export type ToolQuestionStatus = "pending" | "answered";
+export type ToolQuestionStatus = "pending" | "answered" | "cancelled";
 
 export type ToolQuestionChoice = {
   label: string;
@@ -112,6 +112,7 @@ export type ToolQuestion = {
   status: ToolQuestionStatus;
   requestedAt?: string;
   answeredAt?: string;
+  cancelledAt?: string;
   answers?: ToolQuestionAnswer[];
 };
 

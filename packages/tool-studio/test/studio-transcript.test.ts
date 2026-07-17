@@ -1,6 +1,7 @@
 import { Message, UserContent } from "@anvia/core/completion";
 import { describe, expect, it, vi } from "vitest";
 import { transcriptFromMessages } from "../src/runtime/transcript";
+import { cancelPendingTranscriptRun } from "../src/ui/app/modules/playground/use-playground-transcript";
 import {
   findMatchingToolIndex,
   findMatchingToolIndexByCall,
@@ -82,6 +83,74 @@ describe("Studio transcript helpers", () => {
     expect(findMatchingToolIndex(transcript, "lookup", "done")).toBe(-1);
     expect(findMatchingToolIndexByCall(transcript, "lookup", "done")).toBe(0);
     expect(findMatchingToolIndexByCall(transcript, "missing", undefined)).toBe(-1);
+  });
+
+  it("keeps partial output and cancels only current-run human input", () => {
+    const transcript: TranscriptEntry[] = [
+      { entryId: 1, kind: "message", role: "user", text: "Earlier" },
+      {
+        entryId: 2,
+        kind: "tool",
+        toolName: "old_tool",
+        approval: {
+          id: "approval_old",
+          status: "pending",
+          requestedAt: "2026-07-17T00:00:00.000Z",
+        },
+      },
+      { entryId: 3, kind: "message", role: "user", text: "Current" },
+      { entryId: 4, kind: "message", role: "assistant", text: "Partial answer" },
+      {
+        entryId: 5,
+        kind: "tool",
+        toolName: "protected_tool",
+        approval: {
+          id: "approval_current",
+          status: "pending",
+          requestedAt: "2026-07-17T00:01:00.000Z",
+        },
+      },
+      {
+        entryId: 6,
+        kind: "tool",
+        toolName: "ask_question",
+        question: {
+          id: "question_current",
+          status: "pending",
+          requestedAt: "2026-07-17T00:01:01.000Z",
+          questions: [
+            {
+              id: "choice",
+              question: "Continue?",
+              choices: [{ label: "Yes", value: "yes" }],
+            },
+          ],
+        },
+      },
+      { entryId: 7, kind: "message", role: "assistant", text: "", tone: "pending" },
+    ];
+
+    const cancelled = cancelPendingTranscriptRun(transcript, "2026-07-17T00:02:00.000Z");
+
+    expect(cancelled).toContainEqual({
+      entryId: 4,
+      kind: "message",
+      role: "assistant",
+      text: "Partial answer",
+    });
+    expect(cancelled).not.toContainEqual(expect.objectContaining({ entryId: 7 }));
+    expect((cancelled[1] as Extract<TranscriptEntry, { kind: "tool" }>).approval?.status).toBe(
+      "pending",
+    );
+    expect((cancelled[4] as Extract<TranscriptEntry, { kind: "tool" }>).approval).toMatchObject({
+      status: "cancelled",
+      resolvedAt: "2026-07-17T00:02:00.000Z",
+      reason: "Run cancelled in Anvia Studio.",
+    });
+    expect((cancelled[5] as Extract<TranscriptEntry, { kind: "tool" }>).question).toMatchObject({
+      status: "cancelled",
+      cancelledAt: "2026-07-17T00:02:00.000Z",
+    });
   });
 
   it("extracts display text from common message content shapes", () => {

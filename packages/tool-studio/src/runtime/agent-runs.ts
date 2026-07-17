@@ -24,10 +24,10 @@ import type { ResolvedStores } from "./options";
 import type { createQuestionRuntime } from "./questions";
 import {
   AsyncEventQueue,
+  createPersistedStreamingSessionTranscript,
   mergeRunAndApprovalEvents,
   optionalTitle,
   parseRunRequest,
-  persistStreamingSessionTranscript,
   streamAgentRunEvents,
   traceForRun,
   transcriptFromMessages,
@@ -36,6 +36,7 @@ import {
   appendSessionLog,
   memoryLoadedLog,
   memorySavedLog,
+  runCancelledLog,
   runCompletedLog,
   runFailedLog,
   runReceivedLog,
@@ -355,24 +356,45 @@ function handleStreamingAgentRun(
   }
 
   const runStream = mergeRunAndApprovalEvents(run.request.stream(), runtimeEvents);
-  const stream =
-    run.session === undefined || run.sessionStore === undefined
-      ? runStream
-      : persistStreamingSessionTranscript({
-          stream: streamSessionRunLogs({
-            stream: runStream,
-            store: run.sessionStore,
-            session: run.session,
-            runId: run.runId,
-            startedAt: run.runStartedAt,
-          }),
-          store: run.sessionStore,
-          session: run.session,
-          message: run.body.message,
-          runId: run.runId,
-          persistGeneratedMessages: run.shouldPersistSessionMessages,
-        });
-  return streamAgentRunEvents(c, stream);
+  let stream: AsyncIterable<AgentRunStreamEvent> = runStream;
+  let persistedRun: ReturnType<typeof createPersistedStreamingSessionTranscript> | undefined;
+  if (run.session !== undefined && run.sessionStore !== undefined) {
+    persistedRun = createPersistedStreamingSessionTranscript({
+      stream: streamSessionRunLogs({
+        stream: runStream,
+        store: run.sessionStore,
+        session: run.session,
+        runId: run.runId,
+        startedAt: run.runStartedAt,
+      }),
+      store: run.sessionStore,
+      session: run.session,
+      message: run.body.message,
+      runId: run.runId,
+      persistGeneratedMessages: run.shouldPersistSessionMessages,
+    });
+    stream = persistedRun.events;
+  }
+
+  return streamAgentRunEvents(c, stream, {
+    onCancel: async () => {
+      props.approvalRuntime.cancelRun(run.runId);
+      props.questionRuntime.cancelRun(run.runId);
+      const persistence: Promise<unknown>[] = [];
+      if (persistedRun !== undefined) {
+        persistence.push(persistedRun.cancel());
+      }
+      if (run.session !== undefined && run.sessionStore !== undefined) {
+        persistence.push(
+          appendSessionLog(
+            run.sessionStore,
+            runCancelledLog(run.session.id, run.runId, run.runStartedAt),
+          ),
+        );
+      }
+      await Promise.all(persistence);
+    },
+  });
 }
 
 async function handleBufferedAgentRun(

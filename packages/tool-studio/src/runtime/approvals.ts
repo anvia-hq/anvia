@@ -39,6 +39,7 @@ export type ApprovalRuntime = {
   approvals: Map<string, PendingApproval | StudioToolApproval>;
   createApprovals(context: ApprovalHookContext): ToolApprovalsOptions;
   list(options: ApprovalListOptions): StudioToolApproval[];
+  cancelRun(runId: string): StudioToolApproval[];
   decide(
     id: string,
     decision: StudioToolApprovalDecision,
@@ -179,6 +180,22 @@ export function createApprovalRuntime(): ApprovalRuntime {
           return true;
         })
         .map(publicApproval);
+    },
+    cancelRun(runId) {
+      const cancelled: StudioToolApproval[] = [];
+      for (const approval of approvals.values()) {
+        if (!isPendingApproval(approval) || approval.runId !== runId) {
+          continue;
+        }
+        const resolved = resolveApproval(approval, "cancelled", {
+          reason: "Run cancelled in Anvia Studio.",
+        });
+        approvals.set(approval.id, resolved);
+        approval.emit?.({ type: "tool_approval_result", approval: resolved });
+        approval.resolve(approvalDecision(false, resolved.reason));
+        cancelled.push(resolved);
+      }
+      return cancelled;
     },
     decide(id, decision) {
       const approval = approvals.get(id);

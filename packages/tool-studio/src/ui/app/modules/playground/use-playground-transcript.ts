@@ -29,6 +29,7 @@ export function usePlaygroundTranscript(): {
     structuredResult?: ToolResultContent[];
   }) => void;
   assignAssistantTraceId: (traceId: string) => void;
+  cancelPendingRun: () => void;
   clearPendingAssistant: () => void;
   updateToolApproval: (approval: ToolApprovalUpdate) => void;
   updateToolQuestion: (question: ToolQuestionUpdate) => void;
@@ -49,12 +50,57 @@ export function usePlaygroundTranscript(): {
     appendToolResult: (props) => setMessages((current) => appendToolResult(current, props)),
     assignAssistantTraceId: (traceId) =>
       setMessages((current) => assignAssistantTraceId(current, traceId)),
+    cancelPendingRun: () =>
+      setMessages((current) => cancelPendingTranscriptRun(current, new Date().toISOString())),
     clearPendingAssistant: () => setMessages((current) => withoutPendingAssistant(current)),
     updateToolApproval: (approval) =>
       setMessages((current) => updateToolApproval(current, approval)),
     updateToolQuestion: (question) =>
       setMessages((current) => updateToolQuestion(current, question)),
   };
+}
+
+export function cancelPendingTranscriptRun(
+  entries: TranscriptEntry[],
+  cancelledAt: string,
+): TranscriptEntry[] {
+  const next = withoutPendingAssistant(entries);
+  let currentTurnStart = -1;
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const entry = next[index];
+    if (entry?.kind === "message" && entry.role === "user") {
+      currentTurnStart = index;
+      break;
+    }
+  }
+  if (currentTurnStart < 0) {
+    return next;
+  }
+
+  for (let index = currentTurnStart + 1; index < next.length; index += 1) {
+    const entry = next[index];
+    if (entry?.kind !== "tool") {
+      continue;
+    }
+    const updated: TranscriptToolEntry = { ...entry };
+    if (entry.approval?.status === "pending") {
+      updated.approval = {
+        ...entry.approval,
+        status: "cancelled",
+        resolvedAt: cancelledAt,
+        reason: "Run cancelled in Anvia Studio.",
+      };
+    }
+    if (entry.question?.status === "pending") {
+      updated.question = {
+        ...entry.question,
+        status: "cancelled",
+        cancelledAt,
+      };
+    }
+    next[index] = updated;
+  }
+  return next;
 }
 
 function appendAssistantText(entries: TranscriptEntry[], delta: string): TranscriptEntry[] {

@@ -1386,8 +1386,18 @@ describe("@anvia/react useChat", () => {
           approval: {
             id: "approval-1",
             toolName: "issue_refund",
-            status: "approved",
-            reason: "Approved.",
+            status: "cancelled",
+            reason: "Run cancelled.",
+          },
+        };
+        yield {
+          type: "tool_question_result",
+          question: {
+            id: "question-1",
+            toolName: "ask_question",
+            status: "cancelled",
+            cancelledAt: "2026-07-17T00:00:00.000Z",
+            questions: [],
           },
         };
       },
@@ -1402,17 +1412,18 @@ describe("@anvia/react useChat", () => {
       expect.objectContaining({
         id: "approval-1",
         toolName: "issue_refund",
-        status: "approved",
+        status: "cancelled",
       }),
     ]);
     expect(result.current.humanInput.approvals.pending).toEqual([]);
-    expect(result.current.humanInput.questions.pending).toEqual([
+    expect(result.current.humanInput.questions.all).toEqual([
       expect.objectContaining({
         id: "question-1",
         toolName: "ask_question",
-        status: "pending",
+        status: "cancelled",
       }),
     ]);
+    expect(result.current.humanInput.questions.pending).toEqual([]);
   });
 
   it("submits Studio approval decisions and question answers to default endpoints", async () => {

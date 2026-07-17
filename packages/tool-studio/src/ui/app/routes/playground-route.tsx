@@ -42,6 +42,7 @@ export function PlaygroundRoute() {
       attachments={studio.attachments}
       decidingApprovals={studio.decidingApprovals}
       hasMessages={studio.hasMessages}
+      isStreaming={studio.isStreaming}
       messages={studio.messages}
       prompt={studio.prompt}
       runState={studio.runState}
@@ -66,6 +67,7 @@ export function PlaygroundRoute() {
       onQuestionAnswer={studio.answerToolQuestion}
       onRemovePromptAttachment={studio.removePromptAttachment}
       onRunPrompt={studio.runPrompt}
+      onStopPrompt={studio.stopPrompt}
       onSelectAgent={studio.selectPlaygroundAgent}
       onSelectModel={studio.setSelectedModelRef}
       onTranscriptScroll={studio.updateTranscriptStickiness}

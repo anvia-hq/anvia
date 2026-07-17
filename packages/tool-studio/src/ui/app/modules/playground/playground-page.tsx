@@ -40,6 +40,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type { RunState, TranscriptEntry } from "../shared/types";
 import { assistantResponseMetricsByEntryId } from "./response-metrics";
+import { WorkingDuration } from "./working-duration";
 
 const TranscriptItem = lazy(() =>
   import("./transcript-item").then((module) => ({
@@ -55,6 +56,7 @@ export function PlaygroundPage(props: {
   decidingApprovals: Set<string>;
   hasMessages: boolean;
   isStreaming: boolean;
+  workingStartedAt?: number | undefined;
   messages: TranscriptEntry[];
   prompt: string;
   runState: RunState;
@@ -96,6 +98,8 @@ export function PlaygroundPage(props: {
       }),
     [props.messages, props.sessionLogs, props.sessionTraceSummaries],
   );
+  const workingResponseEntryId =
+    props.workingStartedAt === undefined ? undefined : currentTurnAssistantEntryId(props.messages);
 
   return (
     <StudioPageShell className="grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1">
@@ -127,6 +131,11 @@ export function PlaygroundPage(props: {
                     key={message.entryId}
                     entry={message}
                     metrics={responseMetricsByEntryId.get(message.entryId)}
+                    workingStartedAt={
+                      message.entryId === workingResponseEntryId
+                        ? props.workingStartedAt
+                        : undefined
+                    }
                     decidingApprovals={props.decidingApprovals}
                     answeringQuestions={props.answeringQuestions}
                     onApprovalDecision={props.onApprovalDecision}
@@ -135,6 +144,11 @@ export function PlaygroundPage(props: {
                   />
                 ))}
               </Suspense>
+              {props.workingStartedAt !== undefined && workingResponseEntryId === undefined ? (
+                <article className="max-w-[min(82ch,100%)] justify-self-start text-foreground">
+                  <WorkingDuration startedAt={props.workingStartedAt} />
+                </article>
+              ) : null}
             </div>
           </section>
           <form
@@ -295,6 +309,19 @@ export function PlaygroundPage(props: {
       />
     </StudioPageShell>
   );
+}
+
+function currentTurnAssistantEntryId(entries: TranscriptEntry[]): number | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.kind === "message" && entry.role === "assistant") {
+      return entry.entryId;
+    }
+    if (entry?.kind === "message" && entry.role === "user") {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 function PlaygroundSessionsPanel(props: {

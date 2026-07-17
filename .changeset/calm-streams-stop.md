@@ -3,4 +3,4 @@
 "@anvia/studio": patch
 ---
 
-Add cancellable Studio agent streams with partial transcript persistence and cancelled human-input states.
+Add cancellable Studio agent streams with partial transcript persistence, cancelled human-input states, and persisted response durations.

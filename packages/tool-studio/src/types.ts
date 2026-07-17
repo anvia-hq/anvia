@@ -334,6 +334,7 @@ export type StudioTranscriptChatEntry = {
   text: string;
   tone?: "error";
   traceId?: string;
+  durationMs?: number;
   attachments?: StudioTranscriptAttachment[];
 };
 

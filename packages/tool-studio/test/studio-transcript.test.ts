@@ -1,7 +1,10 @@
 import { Message, UserContent } from "@anvia/core/completion";
 import { describe, expect, it, vi } from "vitest";
 import { transcriptFromMessages } from "../src/runtime/transcript";
-import { cancelPendingTranscriptRun } from "../src/ui/app/modules/playground/use-playground-transcript";
+import {
+  cancelPendingTranscriptRun,
+  completeTranscriptRun,
+} from "../src/ui/app/modules/playground/use-playground-transcript";
 import {
   findMatchingToolIndex,
   findMatchingToolIndexByCall,
@@ -130,13 +133,14 @@ describe("Studio transcript helpers", () => {
       { entryId: 7, kind: "message", role: "assistant", text: "", tone: "pending" },
     ];
 
-    const cancelled = cancelPendingTranscriptRun(transcript, "2026-07-17T00:02:00.000Z");
+    const cancelled = cancelPendingTranscriptRun(transcript, "2026-07-17T00:02:00.000Z", 65_000);
 
     expect(cancelled).toContainEqual({
       entryId: 4,
       kind: "message",
       role: "assistant",
       text: "Partial answer",
+      durationMs: 65_000,
     });
     expect(cancelled).not.toContainEqual(expect.objectContaining({ entryId: 7 }));
     expect((cancelled[1] as Extract<TranscriptEntry, { kind: "tool" }>).approval?.status).toBe(
@@ -151,6 +155,43 @@ describe("Studio transcript helpers", () => {
       status: "cancelled",
       cancelledAt: "2026-07-17T00:02:00.000Z",
     });
+  });
+
+  it("completes pending and empty assistant responses with a duration", () => {
+    resetTranscriptSequence();
+    const completedPending = completeTranscriptRun(
+      [
+        { entryId: 0, kind: "message", role: "user", text: "Hello" },
+        { entryId: 1, kind: "message", role: "assistant", text: "", tone: "pending" },
+      ],
+      1_200,
+    );
+    expect(completedPending[1]).toEqual({
+      entryId: 1,
+      kind: "message",
+      role: "assistant",
+      text: "",
+      durationMs: 1_200,
+    });
+
+    setTranscriptSequence(2);
+    const completedWithoutText = completeTranscriptRun(
+      [
+        { entryId: 0, kind: "message", role: "user", text: "Use a tool" },
+        { entryId: 1, kind: "tool", toolName: "lookup", result: "done" },
+      ],
+      2_500,
+    );
+    expect(completedWithoutText.at(-1)).toEqual({
+      entryId: 2,
+      kind: "message",
+      role: "assistant",
+      text: "",
+      durationMs: 2_500,
+    });
+    expect(toHistory(completedWithoutText)).toEqual([
+      { role: "user", content: [{ type: "text", text: "Use a tool" }] },
+    ]);
   });
 
   it("extracts display text from common message content shapes", () => {

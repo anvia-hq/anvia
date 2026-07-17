@@ -15,10 +15,12 @@ import { approvalLabel } from "../shared/format";
 import { MarkdownText, ToolPayload } from "../shared/renderers";
 import type { ToolApproval, ToolMessage, ToolQuestion, TranscriptEntry } from "../shared/types";
 import type { AssistantResponseMetrics, ResponseUsageMetrics } from "./response-metrics";
+import { WorkingDuration } from "./working-duration";
 
 export function TranscriptItem(props: {
   entry: TranscriptEntry;
   metrics?: AssistantResponseMetrics | undefined;
+  workingStartedAt?: number | undefined;
   decidingApprovals: Set<string>;
   answeringQuestions: Set<string>;
   onApprovalDecision: (approvalId: string, approved: boolean) => void;
@@ -60,6 +62,11 @@ export function TranscriptItem(props: {
     props.entry.role === "assistant" && "tone" in props.entry && props.entry.tone === "pending";
   const showAssistantActions =
     props.entry.role === "assistant" && !isPending && props.entry.text.trim().length > 0;
+  const persistedDurationMs = props.entry.durationMs ?? props.metrics?.durationMs;
+  const showAssistantFooter =
+    showAssistantActions ||
+    props.workingStartedAt !== undefined ||
+    persistedDurationMs !== undefined;
 
   if (props.entry.role === "user") {
     return (
@@ -93,11 +100,14 @@ export function TranscriptItem(props: {
       {props.entry.text.trim().length === 0 ? null : (
         <MarkdownText size="base" text={props.entry.text} />
       )}
-      {showAssistantActions ? (
-        <AssistantResponseActions
+      {showAssistantFooter ? (
+        <AssistantResponseFooter
           metrics={props.metrics}
+          showActions={showAssistantActions}
           text={props.entry.text}
           traceId={traceId}
+          durationMs={props.workingStartedAt === undefined ? persistedDurationMs : undefined}
+          startedAt={props.workingStartedAt}
           onOpenTrace={props.onOpenTrace}
         />
       ) : null}
@@ -105,8 +115,11 @@ export function TranscriptItem(props: {
   );
 }
 
-function AssistantResponseActions(props: {
+function AssistantResponseFooter(props: {
+  durationMs?: number | undefined;
   metrics?: AssistantResponseMetrics | undefined;
+  showActions: boolean;
+  startedAt?: number | undefined;
   text: string;
   traceId?: string | undefined;
   onOpenTrace: (traceId: string) => void;
@@ -129,34 +142,43 @@ function AssistantResponseActions(props: {
 
   return (
     <div className="mt-3 flex min-w-0 items-center gap-1.5">
-      <Button
-        aria-label={copied ? "Response copied" : "Copy response"}
-        className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
-        title={copied ? "Copied" : "Copy response"}
-        type="button"
-        variant="ghost"
-        onClick={() => void copyResponse()}
-      >
-        <StudioIcon icon={copied ? CopyCheckIcon : Copy01Icon} aria-hidden="true" />
-      </Button>
-      <div className="group relative">
+      <WorkingDuration
+        className={props.showActions ? "mr-1.5" : undefined}
+        durationMs={props.durationMs}
+        startedAt={props.startedAt}
+      />
+      {props.showActions ? (
         <Button
-          aria-label="Response metrics"
+          aria-label={copied ? "Response copied" : "Copy response"}
           className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
-          title={metricsTitle(props.metrics)}
+          title={copied ? "Copied" : "Copy response"}
           type="button"
           variant="ghost"
+          onClick={() => void copyResponse()}
         >
-          <StudioIcon icon={ChartBarLineIcon} aria-hidden="true" />
+          <StudioIcon icon={copied ? CopyCheckIcon : Copy01Icon} aria-hidden="true" />
         </Button>
-        <div
-          className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-border/90 bg-popover p-3 text-popover-foreground shadow-xl shadow-black/25 group-focus-within:grid group-hover:grid"
-          role="tooltip"
-        >
-          <ResponseMetricsTooltip metrics={props.metrics} />
+      ) : null}
+      {props.showActions ? (
+        <div className="group relative">
+          <Button
+            aria-label="Response metrics"
+            className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+            title={metricsTitle(props.metrics)}
+            type="button"
+            variant="ghost"
+          >
+            <StudioIcon icon={ChartBarLineIcon} aria-hidden="true" />
+          </Button>
+          <div
+            className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-border/90 bg-popover p-3 text-popover-foreground shadow-xl shadow-black/25 group-focus-within:grid group-hover:grid"
+            role="tooltip"
+          >
+            <ResponseMetricsTooltip metrics={props.metrics} />
+          </div>
         </div>
-      </div>
-      {traceId === undefined ? null : (
+      ) : null}
+      {!props.showActions || traceId === undefined ? null : (
         <Button
           aria-label={`Open trace ${traceId}`}
           className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"

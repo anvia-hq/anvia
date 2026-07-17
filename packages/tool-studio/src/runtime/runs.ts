@@ -212,6 +212,7 @@ export function createPersistedStreamingSessionTranscript(props: {
   session: StudioSession;
   message: string | Message;
   runId: string;
+  startedAt: number;
   persistGeneratedMessages?: boolean;
 }): {
   events: AsyncIterable<AgentRunStreamEvent>;
@@ -254,6 +255,9 @@ export function createPersistedStreamingSessionTranscript(props: {
           return;
         }
         acceptTranscriptStreamEvent(transcript, event);
+        if (event.type === "final" || event.type === "error") {
+          assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
+        }
         const eventStatus =
           event.type === "final" ? "success" : event.type === "error" ? "error" : "running";
 
@@ -288,6 +292,7 @@ export function createPersistedStreamingSessionTranscript(props: {
       }
       status = "error";
       appendTranscriptAssistantError(transcript, errorText(error));
+      assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
       await saveTranscript({
         id: props.session.id,
         runId: props.runId,
@@ -308,6 +313,7 @@ export function createPersistedStreamingSessionTranscript(props: {
       }
       status = "cancelled";
       cancelPendingTranscriptInputs(transcript, new Date().toISOString());
+      assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
       await saveTranscript({
         id: props.session.id,
         runId: props.runId,
@@ -317,6 +323,30 @@ export function createPersistedStreamingSessionTranscript(props: {
       });
     },
   };
+}
+
+export function assignTranscriptRunDuration(
+  transcript: StudioTranscriptEntry[],
+  durationMs: number,
+): void {
+  const normalizedDurationMs = Math.max(0, durationMs);
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const entry = transcript[index];
+    if (entry?.kind === "message" && entry.role === "assistant") {
+      entry.durationMs = normalizedDurationMs;
+      return;
+    }
+    if (entry?.kind === "message" && entry.role === "user") {
+      break;
+    }
+  }
+  transcript.push({
+    entryId: transcript.length,
+    kind: "message",
+    role: "assistant",
+    text: "",
+    durationMs: normalizedDurationMs,
+  });
 }
 
 function cancelPendingTranscriptInputs(

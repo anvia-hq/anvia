@@ -27,6 +27,7 @@ export type StudioConsoleContextValue = {
   hasAgents: boolean;
   hasMessages: boolean;
   isStreaming: boolean;
+  workingStartedAt: number | undefined;
   knowledgeEnabled: boolean;
   knowledgeTab: KnowledgeTab;
   mcpsEnabled: boolean;

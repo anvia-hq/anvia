@@ -54,6 +54,31 @@ describe("assistant response metrics", () => {
 
     expect(metrics.size).toBe(0);
   });
+
+  it("uses persisted durations for empty responses and terminal logs for legacy responses", () => {
+    const metrics = assistantResponseMetricsByEntryId({
+      entries: [
+        { entryId: 1, kind: "message", role: "user", text: "First" },
+        {
+          entryId: 2,
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: 2_500,
+        },
+        { entryId: 3, kind: "message", role: "user", text: "Second" },
+        { entryId: 4, kind: "message", role: "assistant", text: "Failed" },
+      ] as TranscriptEntry[],
+      traceSummaries: [],
+      logs: [
+        terminalRunLog("run_1", 1, "run.cancelled", 9_900),
+        terminalRunLog("run_2", 2, "run.failed", 500),
+      ],
+    });
+
+    expect(metrics.get(2)).toEqual({ durationMs: 2_500 });
+    expect(metrics.get(4)).toEqual({ durationMs: 500 });
+  });
 });
 
 function traceSummary(id: string, totalTokens: number, durationMs: number): StudioTraceSummary {
@@ -98,5 +123,25 @@ function completedRunLog(
         totalTokens,
       },
     },
+  };
+}
+
+function terminalRunLog(
+  runId: string,
+  sequence: number,
+  event: "run.cancelled" | "run.failed",
+  durationMs: number,
+): StudioSessionLogEntry {
+  return {
+    id: `log_${sequence}`,
+    sessionId: "session_1",
+    runId,
+    sequence,
+    timestamp: "2026-06-20T12:00:00.000Z",
+    level: event === "run.failed" ? "error" : "info",
+    category: "run",
+    event,
+    message: event === "run.failed" ? "Run failed" : "Run cancelled",
+    metadata: { durationMs },
   };
 }

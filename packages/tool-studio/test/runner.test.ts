@@ -2281,6 +2281,12 @@ describe("Anvia studio", () => {
             cancelledAt: expect.any(String),
           },
         },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: expect.any(Number),
+        },
       ],
     });
   });
@@ -2725,9 +2731,19 @@ describe("Anvia studio", () => {
       ],
       transcript: [
         { kind: "message", role: "user", text: "First question" },
-        { kind: "message", role: "assistant", text: "First answer" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "First answer",
+          durationMs: expect.any(Number),
+        },
         { kind: "message", role: "user", text: "Follow up" },
-        { kind: "message", role: "assistant", text: "Second answer" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "Second answer",
+          durationMs: expect.any(Number),
+        },
       ],
     });
   });
@@ -2905,7 +2921,13 @@ describe("Anvia studio", () => {
       messages: [Message.user("hi"), Message.assistant("hello")],
       transcript: [
         { entryId: 0, kind: "message", role: "user", text: "hi" },
-        { entryId: 1, kind: "message", role: "assistant", text: "hello" },
+        {
+          entryId: 1,
+          kind: "message",
+          role: "assistant",
+          text: "hello",
+          durationMs: expect.any(Number),
+        },
       ],
     });
   });
@@ -2954,6 +2976,12 @@ describe("Anvia studio", () => {
       transcript: [
         { kind: "message", role: "user", text: "think" },
         { kind: "reasoning", text: "thinking" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: expect.any(Number),
+        },
       ],
     });
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
@@ -2962,6 +2990,12 @@ describe("Anvia studio", () => {
       transcript: [
         { kind: "message", role: "user", text: "think" },
         { kind: "reasoning", text: "thinking" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: expect.any(Number),
+        },
       ],
     });
     const logs = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}/logs`));
@@ -3513,7 +3547,15 @@ describe("Anvia studio", () => {
     await expect(loaded.json()).resolves.toMatchObject({
       messageCount: 1,
       messages: [Message.user("fail")],
-      transcript: [{ kind: "message", role: "user", text: "fail" }],
+      transcript: [
+        { kind: "message", role: "user", text: "fail" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: expect.any(Number),
+        },
+      ],
     });
 
     const traces = (await (
@@ -3575,6 +3617,7 @@ describe("Anvia studio", () => {
           role: "assistant",
           text: expect.stringContaining('"message":"stream failed"'),
           tone: "error",
+          durationMs: expect.any(Number),
         },
       ],
     });
@@ -3597,7 +3640,16 @@ describe("Anvia studio", () => {
       runId: "run_1",
       title: "hi",
       status: "success",
-      transcript: [{ entryId: 0, kind: "message", role: "user", text: "hi" }],
+      transcript: [
+        { entryId: 0, kind: "message", role: "user", text: "hi" },
+        {
+          entryId: 1,
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: 1_234,
+        },
+      ],
     });
     expect((await store.listSessions({ limit: 10 }))[0]).toMatchObject({
       id: "session_1",
@@ -3606,6 +3658,13 @@ describe("Anvia studio", () => {
     });
     expect((await store.getSession("session_1"))?.transcript).toEqual([
       { entryId: 0, kind: "message", role: "user", text: "hi" },
+      {
+        entryId: 1,
+        kind: "message",
+        role: "assistant",
+        text: "",
+        durationMs: 1_234,
+      },
     ]);
 
     await store.recordError?.({
@@ -3616,7 +3675,14 @@ describe("Anvia studio", () => {
     });
     expect((await store.getSession("session_1"))?.transcript).toEqual([
       { entryId: 0, kind: "message", role: "user", text: "hi" },
-      { entryId: 1, kind: "message", role: "user", text: "failed" },
+      {
+        entryId: 1,
+        kind: "message",
+        role: "assistant",
+        text: "",
+        durationMs: 1_234,
+      },
+      { entryId: 2, kind: "message", role: "user", text: "failed" },
     ]);
 
     await store.clear({ sessionId: "session_1" });

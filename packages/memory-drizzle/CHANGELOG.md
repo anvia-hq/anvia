@@ -1,5 +1,12 @@
 # @anvia/memory-drizzle
 
+## 0.2.3
+
+### Patch Changes
+
+- ede828b: Add optional read-only memory inspection, implement it across the database memory adapters, and let
+  Studio discover persisted agent conversations before falling back to Studio session storage.
+
 ## 0.2.2
 
 ### Patch Changes

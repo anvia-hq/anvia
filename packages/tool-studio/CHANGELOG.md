@@ -1,5 +1,19 @@
 # @anvia/studio
 
+## 0.7.35
+
+### Patch Changes
+
+- 9e190bc: Persist provider, model, and per-generation token usage on generated assistant messages, and show
+  those durable response metrics in Studio's Memory inspector.
+- ede828b: Add optional read-only memory inspection, implement it across the database memory adapters, and let
+  Studio discover persisted agent conversations before falling back to Studio session storage.
+- 9e190bc: Show a dynamic spinner and elapsed time while a response is streaming, then label the stored final
+  duration as a finished status beside the response action icons. Render the streaming stop action
+  with a solid stop icon.
+  - @anvia/react@0.8.13
+  - @anvia/server@0.5.11
+
 ## 0.7.34
 
 ### Patch Changes

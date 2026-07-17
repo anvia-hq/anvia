@@ -51,7 +51,7 @@ type DeleteManyArgs = {
 };
 
 type FindManyArgs = {
-  where: { memorySession: { scopeKey: string } };
+  where: { memorySession: { scopeKey: string } } | { memorySessionId: string };
 };
 
 type FindFirstArgs = {
@@ -197,15 +197,66 @@ class FakePrisma {
       removeWhere(this.errors, (error) => error.memorySessionId === session.id);
       return { count: 1 };
     },
+    findMany: async (rawArgs: unknown) => {
+      const args = rawArgs as {
+        where?: { userId?: string };
+        take: number;
+      };
+      return [...this.sessions.values()]
+        .filter(
+          (session) => args.where?.userId === undefined || session.userId === args.where.userId,
+        )
+        .slice(0, args.take)
+        .map((session) => ({
+          id: session.id,
+          sessionId: session.sessionId,
+          userId: session.userId ?? null,
+          metadata: session.metadata,
+          createdAt: new Date("2026-07-17T01:00:00.000Z"),
+          updatedAt: new Date("2026-07-17T01:05:00.000Z"),
+          _count: {
+            messages: this.messages.filter((message) => message.memorySessionId === session.id)
+              .length,
+          },
+        }));
+    },
+    findUnique: async (rawArgs: unknown) => {
+      const args = rawArgs as { where: { id: string } };
+      const session = [...this.sessions.values()].find((item) => item.id === args.where.id);
+      if (session === undefined) return null;
+      return {
+        id: session.id,
+        sessionId: session.sessionId,
+        userId: session.userId ?? null,
+        metadata: session.metadata,
+        createdAt: new Date("2026-07-17T01:00:00.000Z"),
+        updatedAt: new Date("2026-07-17T01:05:00.000Z"),
+        _count: {
+          messages: this.messages.filter((message) => message.memorySessionId === session.id)
+            .length,
+        },
+      };
+    },
   };
 
   readonly agentMemoryMessage = {
     findMany: async (rawArgs: unknown) => {
       const args = rawArgs as FindManyArgs;
-      const session = this.sessions.get(args.where.memorySession.scopeKey);
-      if (session === undefined) {
-        return [];
+      if ("memorySessionId" in args.where) {
+        const { memorySessionId } = args.where;
+        return this.messages
+          .filter((message) => message.memorySessionId === memorySessionId)
+          .sort((left, right) => left.position - right.position)
+          .map((message) => ({
+            position: message.position,
+            runId: message.runId,
+            turn: message.turn,
+            createdAt: new Date("2026-07-17T01:00:01.000Z"),
+            message: message.message,
+          }));
       }
+      const session = this.sessions.get(args.where.memorySession.scopeKey);
+      if (session === undefined) return [];
       return this.messages
         .filter((message) => message.memorySessionId === session.id)
         .sort((left, right) => left.position - right.position)
@@ -340,6 +391,59 @@ describe("PrismaMemoryStore", () => {
       { isolationLevel: "Serializable" },
       { isolationLevel: "Serializable" },
     ]);
+  });
+
+  it("inspects conventional Prisma sessions when read delegates are available", async () => {
+    const prisma = new FakePrisma();
+    const store = createPrismaMemoryStore(prisma.client);
+    await store.append({
+      context: {
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+      },
+      runId: "run-1",
+      turn: 3,
+      messages: [Message.user("hi"), Message.assistant("hello")],
+    });
+
+    const conversations = await store.inspector?.listConversations({
+      limit: 10,
+      userId: "user-1",
+    });
+    expect(conversations).toEqual([
+      {
+        ref: "session_1",
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+        createdAt: "2026-07-17T01:00:00.000Z",
+        updatedAt: "2026-07-17T01:05:00.000Z",
+        messageCount: 2,
+      },
+    ]);
+    await expect(store.inspector?.getConversation("session_1")).resolves.toMatchObject({
+      ref: "session_1",
+      messages: [
+        { position: 0, runId: "run-1", turn: 3, message: Message.user("hi") },
+        { position: 1, runId: "run-1", turn: 3, message: Message.assistant("hello") },
+      ],
+    });
+  });
+
+  it("keeps custom delegates without discovery methods compatible", () => {
+    const prisma = new FakePrisma();
+    const delegates: PrismaMemoryDelegates = {
+      sessions: {
+        upsert: prisma.agentMemorySession.upsert,
+        deleteMany: prisma.agentMemorySession.deleteMany,
+      },
+      messages: prisma.agentMemoryMessage,
+      errors: prisma.agentMemoryError,
+      transaction: async (operation) => operation(delegates),
+    };
+
+    expect(PrismaMemoryStore.fromDelegates(delegates).inspector).toBeUndefined();
   });
 
   it("omits userId from session data when the context does not provide it", async () => {

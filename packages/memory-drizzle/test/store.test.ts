@@ -187,6 +187,42 @@ describe("Drizzle memory public API", () => {
     expect(await store.load(context)).toEqual([]);
   });
 
+  it("inspects persisted conversations with ordered message records", async () => {
+    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    await store.append({
+      context: {
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+      },
+      runId: "run-1",
+      turn: 5,
+      messages: [userMessage, assistantMessage],
+    });
+
+    const conversations = await store.inspector.listConversations({
+      limit: 10,
+      userId: "user-1",
+    });
+    expect(conversations).toEqual([
+      {
+        ref: "session-1",
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+        createdAt: "2026-07-17T01:00:00.000Z",
+        updatedAt: "2026-07-17T01:05:00.000Z",
+        messageCount: 2,
+      },
+    ]);
+    await expect(store.inspector.getConversation("session-1")).resolves.toMatchObject({
+      messages: [
+        { position: 0, runId: "run-1", turn: 5, message: userMessage },
+        { position: 1, runId: "run-1", turn: 5, message: assistantMessage },
+      ],
+    });
+  });
+
   it("round-trips every supported message content shape", async () => {
     const store = createDrizzleMemoryStore(new FakeDrizzleDb());
     const context = { sessionId: "rich-thread", userId: "user-1" };
@@ -382,11 +418,19 @@ describe("Drizzle memory public API", () => {
 type SessionRow = {
   id: string;
   scopeKey: string;
+  sessionId: string;
+  userId: string | null;
+  metadata: unknown;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 type MessageRow = {
   memorySessionId: string;
   position: number;
+  runId: string;
+  turn: number;
+  createdAt: Date;
   message: unknown;
 };
 
@@ -438,8 +482,40 @@ class FakeDrizzleDb {
   }
 
   selectRows(selection: unknown, fromTable: unknown, condition: unknown): unknown[] {
+    if (fromTable === agentMemorySessions && hasSelection(selection, "ref")) {
+      const filter = extractParam(condition);
+      const sessions = [...this.sessions.values()];
+      const exactSession = sessions.find((session) => session.id === filter);
+      const rows =
+        exactSession === undefined
+          ? sessions.filter((session) => filter === undefined || session.userId === filter)
+          : [exactSession];
+      return rows.map((session) => ({
+        ref: session.id,
+        sessionId: session.sessionId,
+        userId: session.userId,
+        metadata: session.metadata,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        messageCount: this.messages.get(session.id)?.length ?? 0,
+      }));
+    }
+
     if (fromTable !== agentMemoryMessages) {
       return [];
+    }
+
+    if (hasSelection(selection, "runId")) {
+      const memorySessionId = String(extractParam(condition));
+      return [...(this.messages.get(memorySessionId) ?? [])]
+        .sort((left, right) => left.position - right.position)
+        .map((row) => ({
+          position: row.position,
+          runId: row.runId,
+          turn: row.turn,
+          createdAt: row.createdAt,
+          message: row.message,
+        }));
     }
 
     if (hasSelection(selection, "message")) {
@@ -472,7 +548,15 @@ class FakeDrizzleDb {
       return existing;
     }
 
-    const session = { id: `session-${this.nextSessionId}`, scopeKey };
+    const session = {
+      id: `session-${this.nextSessionId}`,
+      scopeKey,
+      sessionId: String(row.sessionId),
+      userId: row.userId === null ? null : String(row.userId),
+      metadata: row.metadata,
+      createdAt: new Date("2026-07-17T01:00:00.000Z"),
+      updatedAt: new Date("2026-07-17T01:05:00.000Z"),
+    };
     this.nextSessionId += 1;
     this.sessions.set(scopeKey, session);
     return session;
@@ -489,6 +573,9 @@ class FakeDrizzleDb {
           {
             memorySessionId,
             position: Number(record.position),
+            runId: String(record.runId),
+            turn: Number(record.turn),
+            createdAt: new Date("2026-07-17T01:00:01.000Z"),
             message: record.message,
           },
         ]);
@@ -540,6 +627,10 @@ class FakeSelectBuilder {
     return this;
   }
 
+  leftJoin(_table: unknown, _condition: unknown): this {
+    return this;
+  }
+
   where(condition: unknown): this {
     this.condition = condition;
     return this;
@@ -547,6 +638,10 @@ class FakeSelectBuilder {
 
   orderBy(..._columns: unknown[]): this | Promise<unknown[]> {
     return hasSelection(this.selection, "message") ? Promise.resolve(this.rows()) : this;
+  }
+
+  groupBy(..._columns: unknown[]): this {
+    return this;
   }
 
   limit(_limit: number): Promise<unknown[]> {

@@ -37,7 +37,7 @@ import { registerEvalRoutes } from "./evals";
 import { errorResponse, unsupportedCapability } from "./http";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
-import { registerMemoryRoutes } from "./memory";
+import { createStudioMemorySourceRegistry, registerMemoryRoutes } from "./memory";
 import { createStudioModelRegistry, registerModelRoutes } from "./models";
 import {
   observeStores,
@@ -313,6 +313,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const approvalRuntime = createApprovalRuntime();
   const questionRuntime = createQuestionRuntime();
   const sandboxRegistry = createStudioSandboxRegistry(agents);
+  const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;
 
@@ -396,10 +397,14 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     questionRuntime,
   });
 
-  if (stores.sessions !== undefined) {
+  if (memorySources.size > 0 || stores.sessions !== undefined) {
     registerMemoryRoutes(app, {
+      sources: memorySources,
       sessionStore: stores.sessions,
     });
+  }
+
+  if (stores.sessions !== undefined) {
     const sessionOptions: Parameters<typeof registerSessionRoutes>[1] = {
       agentMap,
       sessionStore: stores.sessions,

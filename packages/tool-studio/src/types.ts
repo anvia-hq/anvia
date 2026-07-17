@@ -798,6 +798,68 @@ export type StudioMemoryConversationSteps = {
   steps: StudioTranscriptEntry[];
 };
 
+export type StudioMemorySourceKind = "agent" | "studio";
+
+export type StudioMemorySourceSummary = {
+  ref: string;
+  kind: StudioMemorySourceKind;
+  label: string;
+  agentIds: string[];
+  available: boolean;
+  storeKind?: string;
+  reason?: string;
+};
+
+export type StudioMemorySourcesPage = {
+  sources: StudioMemorySourceSummary[];
+};
+
+export type StudioMemorySourceConversationSummary = {
+  ref: string;
+  sessionId: string;
+  userId: string;
+  agentIds: string[];
+  title?: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  metadata?: JsonObject;
+};
+
+export type StudioMemorySourceConversationsPage = {
+  source: StudioMemorySourceSummary;
+  conversations: StudioMemorySourceConversationSummary[];
+  total: number;
+};
+
+export type StudioMemorySourceUsersPage = {
+  source: StudioMemorySourceSummary;
+  users: StudioMemoryUserSummary[];
+  total: number;
+};
+
+export type StudioMemoryMessageRecord = {
+  position: number;
+  runId: string;
+  turn: number;
+  createdAt: string;
+  message: Message;
+};
+
+export type StudioMemorySourceConversationMessages = {
+  source: StudioMemorySourceSummary;
+  conversation: StudioMemorySourceConversationSummary;
+  messages: Message[];
+  records: StudioMemoryMessageRecord[];
+  transcript: StudioTranscriptEntry[];
+};
+
+export type StudioMemorySourceConversationSteps = {
+  source: StudioMemorySourceSummary;
+  conversation: StudioMemorySourceConversationSummary;
+  steps: StudioTranscriptEntry[];
+};
+
 export type StudioStatusSummary = {
   runner: {
     id: string;

@@ -114,6 +114,11 @@ Use `.memory(memory, { savePolicy: "turn" })` for product chat when a complete m
 
 The default store expects `AgentMemorySession`, `AgentMemoryMessage`, and `AgentMemoryError` models. Use `PrismaMemoryStore.fromDelegates(...)` when your app maps those tables to different Prisma model names.
 
+Studio discovery remains optional for custom delegates. Provide `findMany(...)` and
+`findUnique(...)` on the sessions delegate, plus the normal messages `findMany(...)` delegate, to
+expose the read-only inspector. Existing custom delegates without those session read methods keep
+working for agent memory and appear as unavailable in Studio's Memory page.
+
 ## Migration ownership
 
 The init CLI writes Prisma model definitions only. It does not run `db push`, apply migrations, or deploy migrations. Keep migration review and deployment in the same workflow as the rest of your Prisma schema.

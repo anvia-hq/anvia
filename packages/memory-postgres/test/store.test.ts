@@ -120,8 +120,27 @@ type FakePgCall = {
 
 type FakePgState = {
   nextSessionId: number;
-  sessions: Map<string, { id: string }>;
-  messages: Map<string, Array<{ position: number; message: unknown }>>;
+  sessions: Map<
+    string,
+    {
+      id: string;
+      sessionId: string;
+      userId: string | null;
+      metadata: unknown;
+      createdAt: string;
+      updatedAt: string;
+    }
+  >;
+  messages: Map<
+    string,
+    Array<{
+      position: number;
+      runId: string;
+      turn: number;
+      createdAt: string;
+      message: unknown;
+    }>
+  >;
   errors: Array<{ memorySessionId: string; runId: string; error: unknown; messages: unknown }>;
 };
 
@@ -174,13 +193,25 @@ class FakePgClient implements PostgresMemoryClientLike {
       const scopeKey = values[0] as string;
       const current = this.state.sessions.get(scopeKey) ?? {
         id: `session-${this.state.nextSessionId}`,
+        sessionId: values[1] as string,
+        userId: values[2] as string | null,
+        metadata: JSON.parse(values[3] as string) as unknown,
+        createdAt: "2026-07-17T01:00:00.000Z",
+        updatedAt: "2026-07-17T01:05:00.000Z",
       };
+      current.sessionId = values[1] as string;
+      current.userId = values[2] as string | null;
+      current.metadata = JSON.parse(values[3] as string) as unknown;
       this.state.nextSessionId += this.state.sessions.has(scopeKey) ? 0 : 1;
       this.state.sessions.set(scopeKey, current);
       return { rows: [current] };
     }
 
-    if (text.includes("SELECT position") && text.includes("memory_messages")) {
+    if (
+      text.includes("SELECT position") &&
+      text.includes("memory_messages") &&
+      !text.includes("run_id")
+    ) {
       const rows = [...(this.state.messages.get(values[0] as string) ?? [])].sort(
         (left, right) => right.position - left.position,
       );
@@ -195,6 +226,9 @@ class FakePgClient implements PostgresMemoryClientLike {
         const memorySessionId = values[index] as string;
         const row = {
           position: values[index + 3] as number,
+          runId: values[index + 1] as string,
+          turn: values[index + 2] as number,
+          createdAt: "2026-07-17T01:00:01.000Z",
           message: JSON.parse(values[index + 5] as string) as unknown,
         };
         this.state.messages.set(memorySessionId, [
@@ -203,6 +237,41 @@ class FakePgClient implements PostgresMemoryClientLike {
         ]);
       }
       return { rows: [] };
+    }
+
+    if (text.includes("COUNT(m.id)::integer AS message_count")) {
+      const allSessions = [...this.state.sessions.values()];
+      const sessions = text.includes("WHERE s.id = $1")
+        ? allSessions.filter((session) => session.id === values[0])
+        : text.includes("WHERE s.user_id = $1")
+          ? allSessions.filter((session) => session.userId === values[0])
+          : allSessions;
+      const limit = text.includes("LIMIT") ? Number(values.at(-1)) : sessions.length;
+      return {
+        rows: sessions.slice(0, limit).map((session) => ({
+          ref: session.id,
+          session_id: session.sessionId,
+          user_id: session.userId,
+          metadata: session.metadata,
+          created_at: session.createdAt,
+          updated_at: session.updatedAt,
+          message_count: this.state.messages.get(session.id)?.length ?? 0,
+        })),
+      };
+    }
+
+    if (text.includes("SELECT position, run_id, turn, created_at, message")) {
+      return {
+        rows: [...(this.state.messages.get(values[0] as string) ?? [])]
+          .sort((left, right) => left.position - right.position)
+          .map((row) => ({
+            position: row.position,
+            run_id: row.runId,
+            turn: row.turn,
+            created_at: row.createdAt,
+            message: row.message,
+          })),
+      };
     }
 
     if (text.includes("SELECT m.message")) {
@@ -341,6 +410,43 @@ describe("PostgresMemoryStore", () => {
     expect(client.queries.some((query) => query.includes("pg_advisory_xact_lock"))).toBe(true);
     expect(client.queries.filter((query) => query === "BEGIN")).toHaveLength(2);
     expect(client.queries.filter((query) => query === "COMMIT")).toHaveLength(2);
+  });
+
+  it("inspects persisted conversations with message storage metadata", async () => {
+    const client = new FakePgClient();
+    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    await store.append({
+      context: {
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+      },
+      runId: "run-1",
+      turn: 4,
+      messages: [userMessage, assistantMessage],
+    });
+
+    const conversations = await store.inspector.listConversations({
+      limit: 10,
+      userId: "user-1",
+    });
+    expect(conversations).toEqual([
+      {
+        ref: "session-1",
+        sessionId: "thread-1",
+        userId: "user-1",
+        metadata: { tenantId: "tenant-1" },
+        createdAt: "2026-07-17T01:00:00.000Z",
+        updatedAt: "2026-07-17T01:05:00.000Z",
+        messageCount: 2,
+      },
+    ]);
+    await expect(store.inspector.getConversation("session-1")).resolves.toMatchObject({
+      messages: [
+        { position: 0, runId: "run-1", turn: 4, message: userMessage },
+        { position: 1, runId: "run-1", turn: 4, message: assistantMessage },
+      ],
+    });
   });
 
   it("round-trips every supported message content shape", async () => {

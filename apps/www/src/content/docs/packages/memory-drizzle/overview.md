@@ -15,7 +15,7 @@ The package exports the required Postgres Drizzle table definitions, so users ca
 
 ## Where it fits
 
-The package implements core's `MemoryStore` interface. Core controls the save policy, while the Drizzle adapter owns scope keys, ordered message rows, JSONB message storage, and failed-run error records.
+The package implements core's `MemoryStore` interface. Core controls the save policy, while the Drizzle adapter owns scope keys, ordered message rows, JSONB message storage, and failed-run error records. Its read-only `MemoryInspector` lets Studio discover existing database conversations without copying them or changing the schema.
 
 ## Public surface
 

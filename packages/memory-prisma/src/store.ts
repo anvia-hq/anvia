@@ -1,5 +1,13 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type {
+  MemoryAppendInput,
+  MemoryContext,
+  MemoryConversation,
+  MemoryConversationListOptions,
+  MemoryConversationSummary,
+  MemoryErrorInput,
+  MemoryInspector,
+} from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
   PrismaMemoryClientLike,
@@ -13,6 +21,24 @@ import type {
 const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
   includeUserId: true,
   metadataKeys: [],
+};
+
+type PrismaInspectionSessionRow = {
+  id: string;
+  sessionId: string;
+  userId: string | null;
+  metadata: JsonObject;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  _count: { messages: number };
+};
+
+type PrismaInspectionMessageRow = {
+  position: number;
+  runId: string;
+  turn: number;
+  createdAt: string | Date;
+  message: unknown;
 };
 
 export function createPrismaMemoryStore(
@@ -42,13 +68,23 @@ export function createPrismaMemoryScopeKey(
 }
 
 export class PrismaMemoryStore implements MemoryStore {
+  readonly kind = "prisma";
+  readonly inspector: MemoryInspector | undefined;
+
   private constructor(
     private readonly delegates: PrismaMemoryDelegates,
     private readonly options: Required<
       Pick<PrismaMemoryStoreOptions, "errors" | "validateMessages">
     > &
       Pick<PrismaMemoryStoreOptions, "scope" | "transaction">,
-  ) {}
+  ) {
+    this.inspector = hasInspectionDelegates(delegates)
+      ? {
+          listConversations: (options) => this.listConversations(options),
+          getConversation: (ref) => this.getConversation(ref),
+        }
+      : undefined;
+  }
 
   static fromClient(client: unknown, options: PrismaMemoryStoreOptions = {}): PrismaMemoryStore {
     return new PrismaMemoryStore(conventionalDelegates(client), resolveOptions(options));
@@ -133,6 +169,56 @@ export class PrismaMemoryStore implements MemoryStore {
         },
       });
     }, this.options.transaction);
+  }
+
+  private async listConversations(
+    options: MemoryConversationListOptions,
+  ): Promise<MemoryConversationSummary[]> {
+    const sessions = this.delegates.sessions;
+    if (sessions.findMany === undefined) return [];
+    const args: Record<string, unknown> = {
+      take: options.limit,
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      select: inspectionSessionSelect,
+    };
+    if (options.userId !== undefined) args.where = { userId: options.userId };
+    const rows = (await sessions.findMany(args)) as PrismaInspectionSessionRow[];
+    return rows.map(inspectionSummary);
+  }
+
+  private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
+    const sessions = this.delegates.sessions;
+    if (sessions.findUnique === undefined) return undefined;
+    const row = (await sessions.findUnique({
+      where: { id: ref },
+      select: inspectionSessionSelect,
+    })) as PrismaInspectionSessionRow | null;
+    if (row === null) return undefined;
+
+    const messages = (await this.delegates.messages.findMany({
+      where: { memorySessionId: ref },
+      orderBy: { position: "asc" },
+      select: {
+        position: true,
+        runId: true,
+        turn: true,
+        createdAt: true,
+        message: true,
+      },
+    })) as PrismaInspectionMessageRow[];
+
+    return {
+      ...inspectionSummary(row),
+      messages: messages.map((item) => ({
+        position: item.position,
+        runId: item.runId,
+        turn: item.turn,
+        createdAt: isoTimestamp(item.createdAt),
+        message: this.options.validateMessages
+          ? parseMemoryMessage(item.message)
+          : (item.message as Message),
+      })),
+    };
   }
 
   private scopeKey(context: MemoryContext): string {
@@ -280,4 +366,38 @@ function transactionDelegates(
     transaction: (operation) => operation(delegates),
   };
   return delegates;
+}
+
+const inspectionSessionSelect = {
+  id: true,
+  sessionId: true,
+  userId: true,
+  metadata: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: { select: { messages: true } },
+} as const;
+
+function hasInspectionDelegates(delegates: PrismaMemoryDelegates): boolean {
+  return (
+    typeof delegates.sessions.findMany === "function" &&
+    typeof delegates.sessions.findUnique === "function"
+  );
+}
+
+function inspectionSummary(row: PrismaInspectionSessionRow): MemoryConversationSummary {
+  const summary: MemoryConversationSummary = {
+    ref: row.id,
+    sessionId: row.sessionId,
+    metadata: row.metadata,
+    createdAt: isoTimestamp(row.createdAt),
+    updatedAt: isoTimestamp(row.updatedAt),
+    messageCount: row._count.messages,
+  };
+  if (row.userId !== null) summary.userId = row.userId;
+  return summary;
+}
+
+function isoTimestamp(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

@@ -70,7 +70,14 @@ export {
   skipTool,
   toolCallControl,
 } from "./hooks";
-export type { MemoryStore } from "./memory";
+export type {
+  MemoryConversation,
+  MemoryConversationListOptions,
+  MemoryConversationMessage,
+  MemoryConversationSummary,
+  MemoryInspector,
+  MemoryStore,
+} from "./memory";
 export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./request/errors";
 export type { CompletionRetryContext, CompletionRetryOptions } from "./request/retry";
 export type {

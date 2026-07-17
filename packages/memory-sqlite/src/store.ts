@@ -4,7 +4,15 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type {
+  MemoryAppendInput,
+  MemoryContext,
+  MemoryConversation,
+  MemoryConversationListOptions,
+  MemoryConversationSummary,
+  MemoryErrorInput,
+  MemoryInspector,
+} from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type { SqliteMemoryScopeOptions, SqliteMemoryStoreOptions } from "./types.js";
 
@@ -34,6 +42,24 @@ type MessageRow = {
   message_json: string;
 };
 
+type InspectionSessionRow = {
+  ref: string;
+  session_id: string;
+  user_id: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+};
+
+type InspectionMessageRow = {
+  position: number;
+  run_id: string;
+  turn: number;
+  created_at: string;
+  message_json: string;
+};
+
 export function createSqliteMemoryStore(options: SqliteMemoryStoreOptions = {}): SqliteMemoryStore {
   return new SqliteMemoryStore(options.path ?? ":memory:", resolveOptions(options));
 }
@@ -59,6 +85,10 @@ export function createSqliteMemoryScopeKey(
 
 export class SqliteMemoryStore implements MemoryStore {
   readonly kind = "sqlite";
+  readonly inspector: MemoryInspector = {
+    listConversations: (options) => this.listConversations(options),
+    getConversation: (ref) => this.getConversation(ref),
+  };
   private db: DatabaseSyncType | undefined;
 
   constructor(
@@ -194,6 +224,85 @@ export class SqliteMemoryStore implements MemoryStore {
       db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  private async listConversations(
+    options: MemoryConversationListOptions,
+  ): Promise<MemoryConversationSummary[]> {
+    const where = options.userId === undefined ? "" : "WHERE s.user_id = $userId";
+    const statement = this.database().prepare(
+      `SELECT
+         s.id AS ref,
+         s.session_id,
+         s.user_id,
+         s.metadata_json,
+         s.created_at,
+         s.updated_at,
+         COUNT(m.id) AS message_count
+       FROM anvia_memory_sessions s
+       LEFT JOIN anvia_memory_messages m ON m.memory_session_id = s.id
+       ${where}
+       GROUP BY s.id
+       ORDER BY s.updated_at DESC, s.id DESC
+       LIMIT $limit`,
+    );
+    const parameters: Record<string, string | number> = { $limit: options.limit };
+    if (options.userId !== undefined) parameters.$userId = options.userId;
+    const rows = statement.all(parameters) as InspectionSessionRow[];
+    return rows.map((row) => this.inspectionSummary(row));
+  }
+
+  private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
+    const row = this.database()
+      .prepare(
+        `SELECT
+           s.id AS ref,
+           s.session_id,
+           s.user_id,
+           s.metadata_json,
+           s.created_at,
+           s.updated_at,
+           COUNT(m.id) AS message_count
+         FROM anvia_memory_sessions s
+         LEFT JOIN anvia_memory_messages m ON m.memory_session_id = s.id
+         WHERE s.id = $ref
+         GROUP BY s.id`,
+      )
+      .get({ $ref: ref }) as InspectionSessionRow | undefined;
+    if (row === undefined) return undefined;
+
+    const messages = this.database()
+      .prepare(
+        `SELECT position, run_id, turn, created_at, message_json
+         FROM anvia_memory_messages
+         WHERE memory_session_id = $ref
+         ORDER BY position ASC`,
+      )
+      .all({ $ref: ref }) as InspectionMessageRow[];
+
+    return {
+      ...this.inspectionSummary(row),
+      messages: messages.map((message) => ({
+        position: message.position,
+        runId: message.run_id,
+        turn: message.turn,
+        createdAt: message.created_at,
+        message: this.messageFromJson(message.message_json),
+      })),
+    };
+  }
+
+  private inspectionSummary(row: InspectionSessionRow): MemoryConversationSummary {
+    const summary: MemoryConversationSummary = {
+      ref: row.ref,
+      sessionId: row.session_id,
+      metadata: JSON.parse(row.metadata_json) as JsonObject,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      messageCount: Number(row.message_count),
+    };
+    if (row.user_id !== null) summary.userId = row.user_id;
+    return summary;
   }
 
   private database(): DatabaseSyncType {

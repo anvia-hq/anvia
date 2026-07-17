@@ -15,7 +15,7 @@ Use it when an application wants durable memory without an ORM adapter, or when 
 
 ## Where it fits
 
-The package implements core's `MemoryStore` interface. Core controls the save policy, while the Postgres adapter owns scope keys, ordered message rows, JSONB message storage, and failed-run error records.
+The package implements core's `MemoryStore` interface. Core controls the save policy, while the Postgres adapter owns scope keys, ordered message rows, JSONB message storage, and failed-run error records. Its read-only `MemoryInspector` lets Studio discover existing database conversations without copying them or changing the schema.
 
 ## Public surface
 

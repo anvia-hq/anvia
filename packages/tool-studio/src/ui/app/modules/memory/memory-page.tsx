@@ -1,42 +1,90 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioConfig,
-  StudioMemoryConversationMessages,
-  StudioMemoryConversationSteps,
-  StudioMemoryConversationSummary,
-  StudioMemoryConversationsPage,
-  StudioMemoryUsersPage,
+  StudioMemorySourceConversationMessages,
+  StudioMemorySourceConversationSteps,
+  StudioMemorySourceConversationSummary,
+  StudioMemorySourceConversationsPage,
+  StudioMemorySourceSummary,
+  StudioMemorySourcesPage,
+  StudioMemorySourceUsersPage,
 } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import { formatRelativeTime } from "../shared/format";
 import { JsonSyntax } from "../shared/renderers";
 
 export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boolean }) {
-  const [users, setUsers] = useState<StudioMemoryUsersPage["users"]>([]);
-  const [conversations, setConversations] = useState<StudioMemoryConversationSummary[]>([]);
+  const [sources, setSources] = useState<StudioMemorySourceSummary[]>([]);
+  const [selectedSourceRef, setSelectedSourceRef] = useState("");
+  const [users, setUsers] = useState<StudioMemorySourceUsersPage["users"]>([]);
+  const [conversations, setConversations] = useState<StudioMemorySourceConversationSummary[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedConversationId, setSelectedConversationId] = useState("");
-  const [messages, setMessages] = useState<StudioMemoryConversationMessages | undefined>();
-  const [steps, setSteps] = useState<StudioMemoryConversationSteps | undefined>();
+  const [selectedConversationRef, setSelectedConversationRef] = useState("");
+  const [messages, setMessages] = useState<StudioMemorySourceConversationMessages | undefined>();
+  const [steps, setSteps] = useState<StudioMemorySourceConversationSteps | undefined>();
+  const [sourcesLoading, setSourcesLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
+  const memoryRequest = useRef(0);
+
+  const selectedSource = sources.find((source) => source.ref === selectedSourceRef);
+
+  const loadSources = useCallback(async () => {
+    if (!props.enabled) {
+      setSources([]);
+      setSelectedSourceRef("");
+      return;
+    }
+    setSourcesLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/memory/sources");
+      if (!response.ok) throw new Error(`Memory sources failed with HTTP ${response.status}`);
+      const body = (await response.json()) as StudioMemorySourcesPage;
+      setSources(body.sources);
+      setSelectedSourceRef((current) =>
+        body.sources.some((source) => source.ref === current)
+          ? current
+          : defaultSourceRef(body.sources),
+      );
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setSourcesLoading(false);
+    }
+  }, [props.enabled]);
+
+  useEffect(() => {
+    void loadSources();
+  }, [loadSources]);
 
   const loadMemory = useCallback(async () => {
-    if (!props.enabled) {
+    const requestId = memoryRequest.current + 1;
+    memoryRequest.current = requestId;
+    if (!props.enabled || selectedSource === undefined || !selectedSource.available) {
       setUsers([]);
       setConversations([]);
       setMessages(undefined);
       setSteps(undefined);
+      setLoading(false);
       return;
     }
     setLoading(true);
     setError("");
     try {
+      const sourcePath = `/memory/sources/${encodeURIComponent(selectedSource.ref)}`;
       const [usersResponse, conversationsResponse] = await Promise.all([
-        fetch("/memory/users?limit=50"),
-        fetch("/memory/conversations?limit=100"),
+        fetch(`${sourcePath}/users?limit=50`),
+        fetch(`${sourcePath}/conversations?limit=100`),
       ]);
       if (!usersResponse.ok) {
         throw new Error(`Memory users failed with HTTP ${usersResponse.status}`);
@@ -44,39 +92,61 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
       if (!conversationsResponse.ok) {
         throw new Error(`Memory conversations failed with HTTP ${conversationsResponse.status}`);
       }
-      const usersBody = (await usersResponse.json()) as StudioMemoryUsersPage;
+      const usersBody = (await usersResponse.json()) as StudioMemorySourceUsersPage;
       const conversationsBody =
-        (await conversationsResponse.json()) as StudioMemoryConversationsPage;
+        (await conversationsResponse.json()) as StudioMemorySourceConversationsPage;
+      if (memoryRequest.current !== requestId) return;
       setUsers(usersBody.users);
       setConversations(conversationsBody.conversations);
-      setSelectedConversationId(
-        (current) => current || conversationsBody.conversations[0]?.id || "",
+      setSelectedConversationRef(
+        (current) =>
+          conversationsBody.conversations.find((conversation) => conversation.ref === current)
+            ?.ref ??
+          conversationsBody.conversations[0]?.ref ??
+          "",
       );
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      if (memoryRequest.current === requestId) {
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+      }
     } finally {
-      setLoading(false);
+      if (memoryRequest.current === requestId) setLoading(false);
     }
-  }, [props.enabled]);
+  }, [props.enabled, selectedSource]);
 
   useEffect(() => {
+    setSelectedUserId("");
+    setSelectedConversationRef("");
+    setUsers([]);
+    setConversations([]);
+    setMessages(undefined);
+    setSteps(undefined);
     void loadMemory();
   }, [loadMemory]);
 
   useEffect(() => {
-    if (!props.enabled || selectedConversationId.length === 0) {
+    if (
+      !props.enabled ||
+      selectedSource === undefined ||
+      !selectedSource.available ||
+      selectedConversationRef.length === 0
+    ) {
       setMessages(undefined);
       setSteps(undefined);
       return;
     }
+    const sourceRef = selectedSource.ref;
     let cancelled = false;
     async function loadDetail() {
       setDetailLoading(true);
       setError("");
       try {
+        const conversationPath = `/memory/sources/${encodeURIComponent(
+          sourceRef,
+        )}/conversations/${encodeURIComponent(selectedConversationRef)}`;
         const [messagesResponse, stepsResponse] = await Promise.all([
-          fetch(`/memory/conversations/${encodeURIComponent(selectedConversationId)}/messages`),
-          fetch(`/memory/conversations/${encodeURIComponent(selectedConversationId)}/steps`),
+          fetch(`${conversationPath}/messages`),
+          fetch(`${conversationPath}/steps`),
         ]);
         if (!messagesResponse.ok) {
           throw new Error(`Conversation messages failed with HTTP ${messagesResponse.status}`);
@@ -85,8 +155,8 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
           throw new Error(`Conversation steps failed with HTTP ${stepsResponse.status}`);
         }
         if (!cancelled) {
-          setMessages((await messagesResponse.json()) as StudioMemoryConversationMessages);
-          setSteps((await stepsResponse.json()) as StudioMemoryConversationSteps);
+          setMessages((await messagesResponse.json()) as StudioMemorySourceConversationMessages);
+          setSteps((await stepsResponse.json()) as StudioMemorySourceConversationSteps);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -95,16 +165,14 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
           setSteps(undefined);
         }
       } finally {
-        if (!cancelled) {
-          setDetailLoading(false);
-        }
+        if (!cancelled) setDetailLoading(false);
       }
     }
     void loadDetail();
     return () => {
       cancelled = true;
     };
-  }, [props.enabled, selectedConversationId]);
+  }, [props.enabled, selectedConversationRef, selectedSource]);
 
   const visibleConversations = useMemo(
     () =>
@@ -115,18 +183,20 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
   );
   const totals = useMemo(() => memoryTotals(users, conversations), [conversations, users]);
   const selectedConversation =
-    visibleConversations.find((conversation) => conversation.id === selectedConversationId) ??
+    visibleConversations.find((conversation) => conversation.ref === selectedConversationRef) ??
     visibleConversations[0];
 
   useEffect(() => {
     if (visibleConversations.length === 0) {
-      setSelectedConversationId("");
+      setSelectedConversationRef("");
       return;
     }
-    if (!visibleConversations.some((conversation) => conversation.id === selectedConversationId)) {
-      setSelectedConversationId(visibleConversations[0]?.id ?? "");
+    if (
+      !visibleConversations.some((conversation) => conversation.ref === selectedConversationRef)
+    ) {
+      setSelectedConversationRef(visibleConversations[0]?.ref ?? "");
     }
-  }, [selectedConversationId, visibleConversations]);
+  }, [selectedConversationRef, visibleConversations]);
 
   return (
     <section
@@ -137,16 +207,32 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
             <div className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-              Conversation store
+              Agent memory inspector
             </div>
             <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
               Memory
             </h1>
-            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              Stored users, conversations, raw messages, and transcript steps from the Studio store.
+            <p className="m-0 max-w-[68ch] text-sm leading-6 text-muted-foreground">
+              Inspect persisted agent conversations directly. Studio sessions appear only as a
+              fallback for agents without configured memory.
             </p>
           </div>
           <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
+            {sources.length === 0 ? null : (
+              <Select value={selectedSourceRef} onValueChange={setSelectedSourceRef}>
+                <SelectTrigger className="h-8 min-h-8 w-60 rounded-md border-border bg-background/45 text-xs max-md:w-full">
+                  <SelectValue placeholder="Memory source" />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {sources.map((source) => (
+                    <SelectItem value={source.ref} key={source.ref}>
+                      {source.label}
+                      {source.available ? "" : " (unavailable)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <MemoryMetric label="users" value={totals.userCount} />
             <MemoryMetric label="conversations" value={totals.conversationCount} />
             <MemoryMetric label="messages" value={totals.messageCount} />
@@ -154,8 +240,8 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
               className="h-8 min-h-8 rounded-md px-3 text-xs"
               type="button"
               variant="secondary"
-              disabled={loading}
-              onClick={() => void loadMemory()}
+              disabled={sourcesLoading || loading}
+              onClick={() => void loadSources()}
             >
               Refresh
             </Button>
@@ -165,14 +251,25 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
 
       <div className="min-h-0 overflow-hidden pb-6 pl-4 pr-6">
         {!props.enabled ? (
-          <EmptyState title="Memory unavailable" text="This Studio runtime has no session store." />
+          <EmptyState
+            title="Memory unavailable"
+            text="No agent memory or Studio session store is configured."
+          />
+        ) : sourcesLoading && sources.length === 0 ? (
+          <EmptyState title="Loading memory" text="Discovering configured memory sources." />
+        ) : error.length > 0 && sources.length === 0 ? (
+          <EmptyState title="Memory error" text={error} />
+        ) : selectedSource === undefined ? (
+          <EmptyState title="No memory sources" text="No registered agent exposes memory." />
+        ) : !selectedSource.available ? (
+          <UnavailableSource source={selectedSource} />
         ) : loading && conversations.length === 0 ? (
-          <EmptyState title="Loading memory" text="Reading users and conversations." />
+          <EmptyState title="Loading memory" text={`Reading ${selectedSource.label}.`} />
         ) : error.length > 0 && conversations.length === 0 ? (
           <EmptyState title="Memory error" text={error} />
         ) : conversations.length === 0 ? (
           <MemoryEmptyDashboard
-            agentCount={props.agents.length}
+            source={selectedSource}
             userCount={users.length}
             onRefresh={() => void loadMemory()}
           />
@@ -194,14 +291,16 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
               <ConversationLedger
                 agents={props.agents}
                 conversations={visibleConversations}
-                selectedConversationId={selectedConversation?.id ?? ""}
-                onSelect={setSelectedConversationId}
+                selectedConversationRef={selectedConversation?.ref ?? ""}
+                source={selectedSource}
+                onSelect={setSelectedConversationRef}
               />
               <ConversationDetail
                 agents={props.agents}
                 conversation={selectedConversation}
                 detailLoading={detailLoading}
                 messages={messages}
+                source={selectedSource}
                 steps={steps}
               />
             </div>
@@ -213,7 +312,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
 }
 
 function MemoryUserRail(props: {
-  users: StudioMemoryUsersPage["users"];
+  users: StudioMemorySourceUsersPage["users"];
   selectedUserId: string;
   totalConversations: number;
   onSelect: (userId: string) => void;
@@ -271,9 +370,10 @@ function UserFilterButton(props: {
 
 function ConversationLedger(props: {
   agents: StudioConfig["agents"];
-  conversations: StudioMemoryConversationSummary[];
-  selectedConversationId: string;
-  onSelect: (conversationId: string) => void;
+  conversations: StudioMemorySourceConversationSummary[];
+  selectedConversationRef: string;
+  source: StudioMemorySourceSummary;
+  onSelect: (conversationRef: string) => void;
 }) {
   return (
     <section className="min-h-0 overflow-auto border-r border-border/80 px-4 max-xl:border-r-0 max-xl:pr-0 max-md:border-b max-md:px-0">
@@ -287,11 +387,11 @@ function ConversationLedger(props: {
           <div className="grid border-y border-border/80">
             {props.conversations.map((conversation) => (
               <ConversationRow
-                active={conversation.id === props.selectedConversationId}
-                agentName={agentLabel(props.agents, conversation.agentId)}
+                active={conversation.ref === props.selectedConversationRef}
+                agentName={sourceAgentLabel(props.agents, props.source, conversation.agentIds)}
                 conversation={conversation}
-                key={conversation.id}
-                onSelect={() => props.onSelect(conversation.id)}
+                key={conversation.ref}
+                onSelect={() => props.onSelect(conversation.ref)}
               />
             ))}
           </div>
@@ -302,7 +402,7 @@ function ConversationLedger(props: {
 }
 
 function ConversationRow(props: {
-  conversation: StudioMemoryConversationSummary;
+  conversation: StudioMemorySourceConversationSummary;
   agentName: string;
   active: boolean;
   onSelect: () => void;
@@ -319,7 +419,7 @@ function ConversationRow(props: {
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="grid min-w-0 gap-1">
           <span className="min-w-0 truncate text-sm font-semibold text-foreground">
-            {props.conversation.title ?? "Untitled conversation"}
+            {props.conversation.title ?? props.conversation.sessionId}
           </span>
           <span className="min-w-0 truncate text-xs text-muted-foreground">
             {props.agentName} / {props.conversation.userId}
@@ -331,7 +431,7 @@ function ConversationRow(props: {
       </div>
       <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span>{formatRelativeTime(props.conversation.updatedAt)}</span>
-        <span className="min-w-0 truncate">{props.conversation.id}</span>
+        <span className="min-w-0 truncate">{props.conversation.sessionId}</span>
       </div>
     </button>
   );
@@ -339,10 +439,11 @@ function ConversationRow(props: {
 
 function ConversationDetail(props: {
   agents: StudioConfig["agents"];
-  conversation: StudioMemoryConversationSummary | undefined;
+  conversation: StudioMemorySourceConversationSummary | undefined;
   detailLoading: boolean;
-  messages: StudioMemoryConversationMessages | undefined;
-  steps: StudioMemoryConversationSteps | undefined;
+  messages: StudioMemorySourceConversationMessages | undefined;
+  source: StudioMemorySourceSummary;
+  steps: StudioMemorySourceConversationSteps | undefined;
 }) {
   if (props.conversation === undefined) {
     return (
@@ -359,18 +460,23 @@ function ConversationDetail(props: {
           <div className="flex min-w-0 items-start justify-between gap-4 max-md:grid">
             <div className="grid min-w-0 gap-2">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Selected conversation
+                Persisted conversation
               </div>
               <h2 className="m-0 min-w-0 truncate text-2xl font-semibold leading-none text-foreground">
-                {props.conversation.title ?? "Untitled conversation"}
+                {props.conversation.title ?? props.conversation.sessionId}
               </h2>
               <span className="min-w-0 break-all font-mono text-xs text-muted-foreground">
-                {props.conversation.id}
+                {props.conversation.ref}
               </span>
             </div>
-            <Badge className="border-border/80 bg-muted/45 text-foreground">
-              {agentLabel(props.agents, props.conversation.agentId)}
-            </Badge>
+            <div className="flex flex-wrap justify-end gap-2 max-md:justify-start">
+              <Badge className="border-border/80 bg-muted/45 text-foreground">
+                {props.source.storeKind ?? props.source.kind}
+              </Badge>
+              <Badge className="border-border/80 bg-muted/45 text-foreground">
+                {sourceAgentLabel(props.agents, props.source, props.conversation.agentIds)}
+              </Badge>
+            </div>
           </div>
           <div className="grid border-y border-border/80 sm:grid-cols-4 sm:divide-x sm:divide-border/80">
             <Fact label="user" value={props.conversation.userId} />
@@ -381,18 +487,41 @@ function ConversationDetail(props: {
         </header>
 
         {props.detailLoading ? (
-          <EmptyState title="Loading detail" text="Reading message and transcript data." />
+          <EmptyState title="Loading detail" text="Reading persisted messages." />
         ) : (
           <div className="grid gap-4">
             {props.conversation.metadata === undefined ? null : (
               <JsonPanel title="metadata" value={props.conversation.metadata} />
             )}
             <JsonPanel title="messages" value={props.messages?.messages ?? []} />
-            <JsonPanel title="transcript steps" value={props.steps?.steps ?? []} />
+            <JsonPanel title="message records" value={props.messages?.records ?? []} />
+            <JsonPanel title="derived transcript" value={props.steps?.steps ?? []} />
           </div>
         )}
       </div>
     </section>
+  );
+}
+
+function UnavailableSource(props: { source: StudioMemorySourceSummary }) {
+  return (
+    <div className="grid h-full min-h-0 place-items-center border-t border-border/80 px-6">
+      <div className="grid w-full max-w-2xl gap-5">
+        <div className="grid gap-2">
+          <Badge className="w-fit border-border/80 bg-muted/45 text-foreground">agent memory</Badge>
+          <h2 className="m-0 text-2xl font-semibold leading-tight text-foreground">
+            {props.source.label} is not inspectable
+          </h2>
+          <p className="m-0 text-sm leading-6 text-muted-foreground">
+            {props.source.reason ?? "This memory store does not expose read-only discovery."}
+          </p>
+        </div>
+        <div className="grid border-y border-border/80 sm:grid-cols-2 sm:divide-x sm:divide-border/80">
+          <Fact label="store" value={props.source.storeKind ?? "custom"} />
+          <Fact label="agents" value={props.source.agentIds.join(", ")} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -455,7 +584,7 @@ function EmptyState(props: { title: string; text: string }) {
 }
 
 function MemoryEmptyDashboard(props: {
-  agentCount: number;
+  source: StudioMemorySourceSummary;
   userCount: number;
   onRefresh: () => void;
 }) {
@@ -464,19 +593,18 @@ function MemoryEmptyDashboard(props: {
       <div className="grid w-full max-w-3xl gap-6">
         <div className="grid gap-3">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Memory store
+            {props.source.label}
           </div>
           <h2 className="m-0 text-2xl font-semibold leading-tight text-foreground">
             No saved conversations yet
           </h2>
           <p className="m-0 max-w-[64ch] text-sm leading-6 text-muted-foreground">
-            Conversations will appear here after agents run with memory enabled. The inspector keeps
-            user filters, session payloads, and transcript steps in one place.
+            Conversations will appear here after the connected agent writes to this memory source.
           </p>
         </div>
         <div className="grid border-y border-border/80 sm:grid-cols-3 sm:divide-x sm:divide-border/80">
           <Fact label="users" value={props.userCount} />
-          <Fact label="agents" value={props.agentCount} />
+          <Fact label="agents" value={props.source.agentIds.length} />
           <Fact label="conversations" value={0} />
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -489,7 +617,7 @@ function MemoryEmptyDashboard(props: {
             Refresh
           </Button>
           <span className="text-xs leading-5 text-muted-foreground">
-            Start a chat session to populate memory.
+            Existing database conversations are discovered automatically.
           </span>
         </div>
       </div>
@@ -515,13 +643,9 @@ function MemoryMetric(props: { label: string; value: number }) {
 }
 
 function memoryTotals(
-  users: StudioMemoryUsersPage["users"],
-  conversations: StudioMemoryConversationSummary[],
-): {
-  userCount: number;
-  conversationCount: number;
-  messageCount: number;
-} {
+  users: StudioMemorySourceUsersPage["users"],
+  conversations: StudioMemorySourceConversationSummary[],
+): { userCount: number; conversationCount: number; messageCount: number } {
   return {
     userCount: users.length,
     conversationCount: conversations.length,
@@ -532,6 +656,15 @@ function memoryTotals(
   };
 }
 
+function defaultSourceRef(sources: StudioMemorySourceSummary[]): string {
+  return (
+    sources.find((source) => source.kind === "agent" && source.available)?.ref ??
+    sources.find((source) => source.available)?.ref ??
+    sources[0]?.ref ??
+    ""
+  );
+}
+
 function formatJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
@@ -540,6 +673,14 @@ function formatJson(value: unknown): string {
   }
 }
 
-function agentLabel(agents: StudioConfig["agents"], agentId: string): string {
-  return agents.find((agent) => agent.id === agentId)?.name ?? agentId;
+function sourceAgentLabel(
+  agents: StudioConfig["agents"],
+  source: StudioMemorySourceSummary,
+  agentIds: string[],
+): string {
+  if (agentIds.length === 1) {
+    const agentId = agentIds[0] ?? "agent";
+    return agents.find((agent) => agent.id === agentId)?.name ?? agentId;
+  }
+  return source.label;
 }

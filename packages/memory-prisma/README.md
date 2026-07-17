@@ -73,6 +73,10 @@ await agent
 
 `scope` defines the database key for one memory thread. By default the key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory across tenants or workspaces. Scope is storage isolation, not authorization.
 
+The store also exposes core's optional read-only memory inspector. When this agent is registered
+with `@anvia/studio`, existing Prisma conversations appear automatically on the Memory page. Studio
+does not copy the messages or require another schema migration.
+
 ## Custom delegates
 
 The default client path expects Prisma delegates named `agentMemorySession`, `agentMemoryMessage`, and `agentMemoryError`. If your app uses custom model names, pass delegates explicitly:
@@ -102,6 +106,9 @@ const memory = PrismaMemoryStore.fromDelegates({
     ),
 });
 ```
+
+Custom delegates continue to work without inspection. To make them discoverable by Studio, the
+sessions delegate must also expose Prisma-compatible `findMany(...)` and `findUnique(...)` methods.
 
 ## Development
 

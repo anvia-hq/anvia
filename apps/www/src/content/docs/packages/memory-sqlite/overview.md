@@ -15,7 +15,7 @@ Use it for local apps, desktop apps, examples, prototypes, or small deployments 
 
 ## Where it fits
 
-The package implements core's `MemoryStore` interface. Core controls the save policy, while the SQLite adapter owns the local tables, scope keys, ordered message rows, message JSON storage, and failed-run error records.
+The package implements core's `MemoryStore` interface. Core controls the save policy, while the SQLite adapter owns the local tables, scope keys, ordered message rows, message JSON storage, and failed-run error records. Its read-only `MemoryInspector` lets Studio discover existing database conversations without copying them or changing the schema.
 
 ## Public surface
 

@@ -15,7 +15,7 @@ Use it when the app already owns conversations through Prisma and you want `.ses
 
 ## Where it fits
 
-The package implements core's `MemoryStore` interface. Core still controls when messages are saved through the configured save policy, while the Prisma adapter owns scope keys, ordered message rows, full message JSON storage, and failed-run error records.
+The package implements core's `MemoryStore` interface. Core still controls when messages are saved through the configured save policy, while the Prisma adapter owns scope keys, ordered message rows, full message JSON storage, and failed-run error records. It also exposes core's read-only `MemoryInspector`, allowing Studio to discover existing conversations without copying them or changing the schema.
 
 The app still owns authentication, tenant checks, Prisma migrations, retention policy, and any user-facing conversation records.
 

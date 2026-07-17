@@ -14,3 +14,6 @@ const memory = createDrizzleMemoryStore(db);
 
 This adapter exports the table definitions so users can add the memory schema to
 their Drizzle schema instead of copying table shapes by hand.
+
+Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
+ordered message records directly from these tables.

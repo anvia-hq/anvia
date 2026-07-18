@@ -13,7 +13,7 @@ export interface SandboxImageVersions {
 export interface SandboxImagePackages {
   apt: string[];
   npm: string[];
-  pip: string[];
+  uv: string[];
 }
 
 export interface SandboxImageInput {
@@ -81,16 +81,16 @@ export function resolveSandboxImageSpec(input: SandboxImageInput): SandboxImageS
   const packages: SandboxImagePackages = {
     apt: unique(input.packages?.apt ?? []),
     npm: unique(input.packages?.npm ?? []),
-    pip: unique(input.packages?.pip ?? []),
+    uv: unique(input.packages?.uv ?? []),
   };
 
   for (const runtime of runtimes) validateRuntime(runtime);
   for (const feature of features) validateFeature(feature);
   for (const packageName of packages.apt) validateAptPackage(packageName);
   for (const packageSpec of packages.npm) parseNpmPackageSpec(packageSpec);
-  for (const requirement of packages.pip) validatePipRequirement(requirement);
+  for (const requirement of packages.uv) validateUvRequirement(requirement);
 
-  if (features.has("artifacts") || packages.pip.length > 0) runtimes.add("python");
+  if (features.has("artifacts") || packages.uv.length > 0) runtimes.add("python");
   if (features.has("playwright")) runtimes.add("node");
   if (packages.npm.length > 0 && !runtimes.has("node") && !runtimes.has("bun")) {
     runtimes.add("node");
@@ -121,20 +121,20 @@ export function renderSandboxImageContext(
   generatorVersion: string,
 ): SandboxImageContext {
   const files = new Map<string, string>();
-  const pipRequirements = [
+  const pythonRequirements = [
     ...(spec.features.includes("artifacts") ? artifactPythonPackages : []),
-    ...spec.packages.pip,
+    ...spec.packages.uv,
   ];
   const npmDependencies = npmDependenciesFor(spec);
 
-  files.set("Dockerfile", `${renderDockerfile(spec, pipRequirements, npmDependencies)}\n`);
+  files.set("Dockerfile", `${renderDockerfile(spec, pythonRequirements, npmDependencies)}\n`);
   files.set(
     ".dockerignore",
-    renderDockerignore(pipRequirements.length > 0, npmDependencies.size > 0),
+    renderDockerignore(pythonRequirements.length > 0, npmDependencies.size > 0),
   );
 
-  if (pipRequirements.length > 0) {
-    files.set("requirements.txt", `${unique(pipRequirements).join("\n")}\n`);
+  if (pythonRequirements.length > 0) {
+    files.set("pyproject.toml", renderPythonProject(spec, unique(pythonRequirements)));
   }
   if (npmDependencies.size > 0) {
     files.set(
@@ -167,11 +167,11 @@ export function renderSandboxImageContext(
 }
 
 export function unpinnedSandboxImagePackages(spec: SandboxImageSpec): string[] {
-  const unpinned = spec.packages.apt.filter((value) => !value.includes("="));
+  const unpinned: string[] = [];
   for (const value of spec.packages.npm) {
     if (parseNpmPackageSpec(value).version === "latest") unpinned.push(value);
   }
-  for (const value of spec.packages.pip) {
+  for (const value of spec.packages.uv) {
     if (!/===|==|@\s*https?:/i.test(value)) unpinned.push(value);
   }
   return unpinned;
@@ -179,7 +179,7 @@ export function unpinnedSandboxImagePackages(spec: SandboxImageSpec): string[] {
 
 function renderDockerfile(
   spec: SandboxImageSpec,
-  pipRequirements: readonly string[],
+  pythonRequirements: readonly string[],
   npmDependencies: ReadonlyMap<string, string>,
 ): string {
   const hasNode = spec.runtimes.includes("node");
@@ -244,12 +244,14 @@ function renderDockerfile(
     );
   }
 
-  if (pipRequirements.length > 0) {
+  if (pythonRequirements.length > 0) {
     lines.push(
       "",
-      "COPY requirements.txt /tmp/anvia/requirements.txt",
-      "RUN uv pip install --system --no-cache --requirement /tmp/anvia/requirements.txt \\",
-      "  && rm -rf /tmp/anvia",
+      "COPY pyproject.toml /opt/anvia-python/pyproject.toml",
+      "RUN cd /opt/anvia-python \\",
+      "  && uv sync --no-dev --no-cache --no-install-project",
+      "ENV VIRTUAL_ENV=/opt/anvia-python/.venv",
+      "ENV PATH=/opt/anvia-python/.venv/bin:$PATH",
     );
   }
 
@@ -284,14 +286,28 @@ function renderDockerfile(
   return lines.join("\n");
 }
 
-function renderDockerignore(hasPip: boolean, hasNpm: boolean): string {
+function renderDockerignore(hasPython: boolean, hasNpm: boolean): string {
   return [
     "**",
     "!Dockerfile",
     "!.dockerignore",
     "!anvia-sandbox.json",
-    ...(hasPip ? ["!requirements.txt"] : []),
+    ...(hasPython ? ["!pyproject.toml"] : []),
     ...(hasNpm ? ["!package.json"] : []),
+    "",
+  ].join("\n");
+}
+
+function renderPythonProject(spec: SandboxImageSpec, requirements: readonly string[]): string {
+  const [major, minor] = spec.versions.python.split(".");
+  return [
+    "[project]",
+    `name = ${JSON.stringify(`anvia-sandbox-${spec.name}`)}`,
+    'version = "0.0.0"',
+    `requires-python = ${JSON.stringify(`>=${major}.${minor}`)}`,
+    "dependencies = [",
+    ...requirements.map((requirement) => `  ${JSON.stringify(requirement)},`),
+    "]",
     "",
   ].join("\n");
 }
@@ -364,9 +380,9 @@ function parseNpmPackageSpec(packageSpec: string): { name: string; version: stri
   return { name, version };
 }
 
-function validatePipRequirement(requirement: string): void {
+function validateUvRequirement(requirement: string): void {
   if (!requirement || requirement.startsWith("-") || hasControlCharacter(requirement)) {
-    throw new Error(`Invalid pip requirement: ${requirement}`);
+    throw new Error(`Invalid uv package requirement: ${requirement}`);
   }
 }
 

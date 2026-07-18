@@ -19,6 +19,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "anvia-sandbox": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -26,12 +29,13 @@
     }
   },
   "scripts": {
-    "build": "pnpm run build:deps && tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "pnpm run build:deps && tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
     "build:deps": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
     "test": "pnpm run build:deps && vitest run",
     "typecheck": "pnpm run build:deps && tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -43,5 +47,8 @@
   },
   "peerDependencies": {
     "@anvia/core": ">=0.7.1 <1.0.0"
+  },
+  "engines": {
+    "node": ">=20.12.0"
   }
 }

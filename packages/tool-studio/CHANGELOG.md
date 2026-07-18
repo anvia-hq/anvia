@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 0.7.36
+
+### Patch Changes
+
+- 9005667: Automatically retry transient completion failures for buffered and pre-output streaming agent runs.
+
 ## 0.7.35
 
 ### Patch Changes

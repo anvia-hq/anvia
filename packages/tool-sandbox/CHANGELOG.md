@@ -1,5 +1,13 @@
 # @anvia/sandbox
 
+## 0.5.0
+
+### Minor Changes
+
+- 90ff39e: Add `pnpm dlx @anvia/sandbox create-image`, an interactive and scriptable CLI that generates and
+  builds local Docker images composed from Node.js, Bun, Python, reporting, Playwright, and curated
+  apt, npm, and uv package selections.
+
 ## 0.4.1
 
 ### Patch Changes

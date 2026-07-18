@@ -113,6 +113,43 @@ describe("anvia-sandbox CLI", () => {
     );
   });
 
+  it("records apt, npm, and uv packages without renaming the package groups", async () => {
+    const directory = await temporaryDirectory();
+    const code = await runCli(
+      [
+        "create-image",
+        "--name",
+        "documents",
+        "--runtime",
+        "node",
+        "--apt",
+        "poppler-utils",
+        "--npm",
+        "pdfkit@0.19.1",
+        "--uv",
+        "httpx==0.28.1",
+        "--no-build",
+      ],
+      directory,
+      captureIo().io,
+      dependencies(),
+    );
+
+    expect(code).toBe(0);
+    const contextPath = path.join(directory, ".anvia", "sandbox-images", "documents");
+    const manifest = JSON.parse(
+      await readFile(path.join(contextPath, "anvia-sandbox.json"), "utf8"),
+    ) as { packages: Record<string, string[]> };
+    expect(manifest.packages).toEqual({
+      apt: ["poppler-utils"],
+      npm: ["pdfkit@0.19.1"],
+      uv: ["httpx==0.28.1"],
+    });
+    await expect(readFile(path.join(contextPath, "pyproject.toml"), "utf8")).resolves.toContain(
+      '"httpx==0.28.1"',
+    );
+  });
+
   it("shell-quotes deferred build paths without allowing expansion", async () => {
     const directory = await temporaryDirectory();
     const output = captureIo();
@@ -155,9 +192,7 @@ describe("anvia-sandbox CLI", () => {
 
     expect(refreshed).toBe(0);
     await expect(readFile(path.join(contextPath, "notes.txt"), "utf8")).resolves.toBe("keep");
-    await expect(
-      readFile(path.join(contextPath, "requirements.txt"), "utf8"),
-    ).rejects.toMatchObject({
+    await expect(readFile(path.join(contextPath, "pyproject.toml"), "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
@@ -204,7 +239,7 @@ describe("anvia-sandbox CLI", () => {
         features: [],
         apt: [],
         npm: [],
-        pip: [],
+        uv: [],
         build: false,
       }),
     });

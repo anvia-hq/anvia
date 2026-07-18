@@ -15,7 +15,7 @@ describe("sandbox image builder", () => {
       packages: {
         apt: ["imagemagick=8:7.1.1.43+dfsg1-1"],
         npm: ["sharp@0.34.4"],
-        pip: ["scipy==1.17.0"],
+        uv: ["scipy==1.17.0"],
       },
     });
 
@@ -31,7 +31,7 @@ describe("sandbox image builder", () => {
     });
     const context = renderSandboxImageContext(spec, "0.5.0");
     const dockerfile = context.files.get("Dockerfile");
-    const requirements = context.files.get("requirements.txt");
+    const pythonProject = context.files.get("pyproject.toml");
     const packageJson = JSON.parse(context.files.get("package.json") ?? "{}") as {
       dependencies?: Record<string, string>;
     };
@@ -40,9 +40,14 @@ describe("sandbox image builder", () => {
     expect(dockerfile).toContain("FROM python:3.13.14-slim-bookworm AS python-runtime");
     expect(dockerfile).toContain("mcr.microsoft.com/playwright:v1.61.0-noble");
     expect(dockerfile).toContain("COPY --from=uv-runtime /uv /uvx /usr/local/bin/");
+    expect(dockerfile).toContain("uv sync --no-dev --no-cache --no-install-project");
+    expect(dockerfile).toContain("ENV VIRTUAL_ENV=/opt/anvia-python/.venv");
+    expect(dockerfile).toContain("ENV PATH=/opt/anvia-python/.venv/bin:$PATH");
     expect(dockerfile).toContain("WORKDIR /workspace");
     expect(dockerfile).toContain("ENTRYPOINT []");
-    expect(requirements?.trim().split("\n")).toEqual(artifactPythonPackages);
+    for (const requirement of artifactPythonPackages) {
+      expect(pythonProject).toContain(JSON.stringify(requirement));
+    }
     expect(packageJson.dependencies).toEqual({ playwright: "1.61.0" });
     expect(context.manifest).toMatchObject({
       schemaVersion: 1,
@@ -54,7 +59,7 @@ describe("sandbox image builder", () => {
       "Dockerfile",
       "anvia-sandbox.json",
       "package.json",
-      "requirements.txt",
+      "pyproject.toml",
     ]);
   });
 
@@ -77,7 +82,7 @@ describe("sandbox image builder", () => {
 
   it("adds a runtime for runtime-specific custom packages", () => {
     expect(
-      resolveSandboxImageSpec({ name: "python-extra", packages: { pip: ["rich==14.3.3"] } })
+      resolveSandboxImageSpec({ name: "python-extra", packages: { uv: ["rich==14.3.3"] } })
         .runtimes,
     ).toEqual(["python"]);
     expect(
@@ -115,10 +120,10 @@ describe("sandbox image builder", () => {
       packages: {
         apt: ["git", "curl=8.0"],
         npm: ["prettier", "tsx@4.21.0"],
-        pip: ["rich", "pydantic==2.12.5"],
+        uv: ["rich", "pydantic==2.12.5"],
       },
     });
 
-    expect(unpinnedSandboxImagePackages(spec)).toEqual(["git", "prettier", "rich"]);
+    expect(unpinnedSandboxImagePackages(spec)).toEqual(["prettier", "rich"]);
   });
 });

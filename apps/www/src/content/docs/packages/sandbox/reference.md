@@ -19,11 +19,15 @@ The CLI requires Node.js 20.12 or newer. With a terminal it prompts for runtimes
 non-interactive environment, provide `--name` and at least one repeatable `--runtime` or `--feature`
 flag.
 
+The wizard always shows curated checkbox lists for common apt tools, npm libraries, and Python
+libraries. Use the package flags below for entries that are not in those lists. Python packages are
+written to `pyproject.toml` and installed with `uv sync`.
+
 | Option | Behavior |
 | --- | --- |
 | `--runtime node\|bun\|python` | Add a runtime; repeatable. |
 | `--feature artifacts\|playwright` | Add a curated capability; repeatable. |
-| `--apt`, `--npm`, `--pip` | Add a package; repeatable. Unpinned packages produce a warning. |
+| `--apt`, `--npm`, `--uv` | Add an apt, npm, or Python package; repeatable. Unpinned npm and Python packages produce a warning. |
 | `--tag <tag>` | Set the local image tag. Defaults to `anvia-sandbox-<name>:latest`. |
 | `--output <path>` | Set the generated context path. Defaults to `.anvia/sandbox-images/<name>`. |
 | `--no-build` | Write the context without running `docker build`. |

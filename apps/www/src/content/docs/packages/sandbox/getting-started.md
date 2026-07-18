@@ -33,7 +33,9 @@ pnpm dlx @anvia/sandbox create-image \
 
 The command saves the build context under `.anvia/sandbox-images/reports`, builds the local image,
 and prints the `DockerSandbox` constructor configuration. Pass `--no-build` to generate the source
-without invoking Docker, or add repeatable `--apt`, `--npm`, and `--pip` flags for extra packages.
+without invoking Docker, or add repeatable `--apt`, `--npm`, and `--uv` flags for extra packages.
+The wizard offers common apt, npm, and Python packages as checkboxes. Python dependencies are
+managed in a generated `pyproject.toml` and installed into the image with `uv sync`.
 
 The `artifacts` feature includes Matplotlib, Seaborn, Pillow, ReportLab, pypdf, pandas, openpyxl,
 XlsxWriter, and python-docx. The `playwright` feature installs Chromium and automatically adds

@@ -23,7 +23,7 @@ interface CliOptions {
   features: SandboxImageFeature[];
   apt: string[];
   npm: string[];
-  pip: string[];
+  uv: string[];
   versions: Partial<SandboxImageVersions>;
   dockerPath: string;
   build: boolean;
@@ -47,7 +47,7 @@ export interface SandboxImagePromptResult {
   features: SandboxImageFeature[];
   apt: string[];
   npm: string[];
-  pip: string[];
+  uv: string[];
   tag?: string;
   output?: string;
   build: boolean;
@@ -70,8 +70,34 @@ const generatedFileNames = new Set([
   "Dockerfile",
   "anvia-sandbox.json",
   "package.json",
-  "requirements.txt",
+  "pyproject.toml",
 ]);
+
+const commonAptPackages = [
+  { value: "git", label: "Git", hint: "Source control and repository operations" },
+  { value: "curl", label: "curl", hint: "HTTP downloads and API debugging" },
+  { value: "jq", label: "jq", hint: "JSON processing from the shell" },
+  { value: "ffmpeg", label: "FFmpeg", hint: "Audio and video processing" },
+  { value: "imagemagick", label: "ImageMagick", hint: "Image conversion and editing" },
+  { value: "poppler-utils", label: "Poppler tools", hint: "PDF inspection and conversion" },
+  { value: "libreoffice", label: "LibreOffice", hint: "Large; office document conversion" },
+] as const;
+
+const commonNpmPackages = [
+  { value: "pdfkit@0.19.1", label: "PDFKit", hint: "Generate PDF documents" },
+  { value: "sharp@0.35.3", label: "Sharp", hint: "Resize and transform images" },
+  { value: "exceljs@4.4.0", label: "ExcelJS", hint: "Read and write Excel workbooks" },
+  { value: "docx@9.7.1", label: "docx", hint: "Generate Word documents" },
+  { value: "pptxgenjs@4.0.1", label: "PptxGenJS", hint: "Generate PowerPoint presentations" },
+] as const;
+
+const commonUvPackages = [
+  { value: "httpx==0.28.1", label: "HTTPX", hint: "Modern HTTP client" },
+  { value: "beautifulsoup4==4.15.0", label: "Beautiful Soup", hint: "HTML and XML parsing" },
+  { value: "scipy==1.18.0", label: "SciPy", hint: "Scientific computing" },
+  { value: "scikit-learn==1.9.0", label: "scikit-learn", hint: "Machine learning utilities" },
+  { value: "polars==1.42.1", label: "Polars", hint: "Fast dataframe processing" },
+] as const;
 
 const defaultIo: SandboxImageCliIo = {
   log: console.log,
@@ -112,7 +138,7 @@ export async function runCli(
       (options.runtimes.length === 0 &&
         options.features.length === 0 &&
         options.npm.length === 0 &&
-        options.pip.length === 0);
+        options.uv.length === 0);
     if (shouldPrompt) {
       const isTTY = dependencies.isTTY ?? (process.stdin.isTTY && process.stdout.isTTY);
       if (!isTTY) {
@@ -133,7 +159,7 @@ export async function runCli(
       packages: {
         apt: options.apt,
         npm: options.npm,
-        pip: options.pip,
+        uv: options.uv,
       },
       versions: options.versions,
     };
@@ -210,7 +236,7 @@ async function promptForImage(
     runtimes.length === 0 &&
     features.length === 0 &&
     options.npm.length === 0 &&
-    options.pip.length === 0
+    options.uv.length === 0
   ) {
     const capabilities = await prompts.multiselect<SandboxImageRuntime | SandboxImageFeature>({
       message: "Select runtimes and features",
@@ -218,7 +244,7 @@ async function promptForImage(
       options: [
         { value: "node", label: "Node.js", hint: "Includes npm and pnpm" },
         { value: "bun", label: "Bun", hint: "Includes bun and bunx" },
-        { value: "python", label: "Python", hint: "Includes pip, uv, and uvx" },
+        { value: "python", label: "Python", hint: "Includes uv and uvx" },
         { value: "artifacts", label: "Reporting and artifacts", hint: "Adds Python automatically" },
         { value: "playwright", label: "Playwright + Chromium", hint: "Adds Node.js automatically" },
       ],
@@ -228,12 +254,27 @@ async function promptForImage(
     features = capabilities.filter(isFeature);
   }
 
-  const apt = await optionalPackagePrompt(prompts, "Extra apt packages", options.apt);
-  if (apt === undefined) return cancelPrompt(prompts);
-  const npm = await optionalPackagePrompt(prompts, "Extra npm packages", options.npm);
-  if (npm === undefined) return cancelPrompt(prompts);
-  const pip = await optionalPackagePrompt(prompts, "Extra pip requirements", options.pip);
-  if (pip === undefined) return cancelPrompt(prompts);
+  const aptResult = await selectCommonPackages(
+    prompts,
+    "Select common apt tools (optional)",
+    commonAptPackages,
+    options.apt,
+  );
+  if (aptResult === undefined) return cancelPrompt(prompts);
+  const npmResult = await selectCommonPackages(
+    prompts,
+    "Select common npm libraries (optional)",
+    commonNpmPackages,
+    options.npm,
+  );
+  if (npmResult === undefined) return cancelPrompt(prompts);
+  const uvResult = await selectCommonPackages(
+    prompts,
+    "Select common Python libraries with uv (optional)",
+    commonUvPackages,
+    options.uv,
+  );
+  if (uvResult === undefined) return cancelPrompt(prompts);
 
   const tagResult =
     options.tag ??
@@ -265,27 +306,30 @@ async function promptForImage(
     name,
     runtimes,
     features,
-    apt,
-    npm,
-    pip,
+    apt: aptResult,
+    npm: npmResult,
+    uv: uvResult,
     tag: String(tagResult),
     output: String(outputResult),
     build: Boolean(buildResult),
   };
 }
 
-async function optionalPackagePrompt(
+async function selectCommonPackages(
   prompts: typeof import("@clack/prompts"),
   message: string,
+  options: readonly { value: string; label: string; hint: string }[],
   existing: readonly string[],
 ): Promise<string[] | undefined> {
-  if (existing.length > 0) return [...existing];
-  const result = await prompts.text({
+  const commonValues = new Set(options.map((option) => option.value));
+  const result = await prompts.multiselect<string>({
     message,
-    placeholder: "Optional; separate entries with commas",
+    required: false,
+    options: [...options],
+    initialValues: existing.filter((value) => commonValues.has(value)),
   });
   if (prompts.isCancel(result)) return undefined;
-  return splitPackageList(result);
+  return [...new Set([...existing, ...result])];
 }
 
 function cancelPrompt(prompts: typeof import("@clack/prompts")): undefined {
@@ -430,7 +474,7 @@ function applyPromptResult(options: CliOptions, result: SandboxImagePromptResult
     features: result.features,
     apt: result.apt,
     npm: result.npm,
-    pip: result.pip,
+    uv: result.uv,
     build: result.build,
     buildExplicit: true,
   };
@@ -445,7 +489,7 @@ function parseArgs(argv: string[]): CliOptions {
     features: [],
     apt: [],
     npm: [],
-    pip: [],
+    uv: [],
     versions: {},
     dockerPath: "docker",
     build: true,
@@ -491,8 +535,8 @@ function parseArgs(argv: string[]): CliOptions {
       case "--npm":
         options.npm.push(value());
         break;
-      case "--pip":
-        options.pip.push(value());
+      case "--uv":
+        options.uv.push(value());
         break;
       case "--node-version":
         options.versions.node = value();
@@ -564,13 +608,6 @@ function isFeature(value: string): value is SandboxImageFeature {
   return value === "artifacts" || value === "playwright";
 }
 
-function splitPackageList(value: string): string[] {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
 function assertInteractiveNodeVersion(): void {
   const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
   if (major < 20 || (major === 20 && minor < 12)) {
@@ -621,7 +658,7 @@ Options:
                                  Curated feature to include; repeatable
   --apt <package>                Additional apt package; repeatable
   --npm <package[@version]>      Additional npm package; repeatable
-  --pip <requirement>            Additional pip requirement; repeatable
+  --uv <requirement>             Additional Python package installed with uv; repeatable
   --tag <tag>                    Local image tag
   --output <directory>           Generated context directory
   --node-version <version>       Override Node.js version

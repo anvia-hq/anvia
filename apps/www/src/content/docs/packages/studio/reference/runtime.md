@@ -100,4 +100,9 @@ Purpose: route-level runtime behavior for Studio agent runs.
 
 Return behavior: non-streaming runs return `PromptResponse`; streaming runs emit newline-delimited Studio run events.
 
+Studio automatically applies core's default completion retry policy to every agent run. Transient
+model failures receive up to three total attempts with bounded jittered backoff. Streaming model
+calls retry only when the provider fails before emitting any non-error event, so partial output is
+never replayed.
+
 Notable errors: invalid request bodies return `StudioErrorResponse` with `bad_request`.

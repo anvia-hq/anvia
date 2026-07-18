@@ -39,7 +39,7 @@ import {
   type VectorSearchToolOptions,
 } from "@anvia/core/vector-store";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   createInMemoryStudioStore,
@@ -88,6 +88,37 @@ class QueueModel {
   }
 }
 
+type CompletionOutcome = { response: CompletionResponse } | { error: unknown };
+
+class FlakyQueueModel {
+  readonly provider = "test";
+  readonly defaultModel = "test";
+  readonly capabilities = {
+    streaming: false,
+    tools: true,
+    toolChoice: true,
+    imageInput: true,
+    documentInput: true,
+    outputSchema: true,
+    reasoning: true,
+  };
+  readonly requests: CompletionRequest[] = [];
+
+  constructor(private readonly outcomes: CompletionOutcome[]) {}
+
+  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+    this.requests.push(request);
+    const outcome = this.outcomes.shift();
+    if (outcome === undefined) {
+      throw new Error("No queued outcome");
+    }
+    if ("error" in outcome) {
+      throw outcome.error;
+    }
+    return outcome.response;
+  }
+}
+
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
   readonly defaultModel = "test";
@@ -102,7 +133,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(
+    private readonly responses: Array<
+      Iterable<CompletionStreamEvent> | AsyncIterable<CompletionStreamEvent>
+    >,
+  ) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
@@ -123,8 +158,18 @@ class StreamingQueueModel implements StreamingCompletionModel {
     if (response === undefined) {
       throw new Error("No queued stream response");
     }
-    yield* response;
+    for await (const event of response) {
+      yield event;
+    }
   }
+}
+
+async function* streamThenThrow(
+  events: CompletionStreamEvent[],
+  error: unknown,
+): AsyncIterable<CompletionStreamEvent> {
+  yield* events;
+  throw error;
 }
 
 class GatedReasoningModel implements StreamingCompletionModel {
@@ -1668,6 +1713,34 @@ describe("Anvia studio", () => {
     ]);
   });
 
+  it("retries transient completion failures for buffered agent runs", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("recovered")]) },
+    ]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    try {
+      const res = await runner.fetch(
+        new Request("http://runner.test/agents/support/runs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: "hi" }),
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toMatchObject({ output: "recovered" });
+      expect(model.requests).toHaveLength(2);
+      expect(model.requests[1]).toBe(model.requests[0]);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
   it("passes trace options to observed non-streaming runs and preserves trace output", async () => {
     const observer = new TraceObserver();
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
@@ -1724,6 +1797,38 @@ describe("Anvia studio", () => {
       { type: "turn_end", turn: 1 },
       { type: "final", output: "hello" },
     ]);
+  });
+
+  it("retries transient streaming failures before the first provider event", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new StreamingQueueModel([
+      streamThenThrow([], error),
+      [{ type: "text_delta", delta: "recovered" }],
+    ]);
+    const agent = new AgentBuilder("support", model).build();
+    const runner = new Studio([agent]);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    try {
+      const res = await runner.fetch(
+        new Request("http://runner.test/agents/support/runs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: "hi", stream: true }),
+        }),
+      );
+      const events = await readJsonl(res);
+
+      expect(res.status).toBe(200);
+      expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }));
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: "final", output: "recovered" }),
+      );
+      expect(model.requests).toHaveLength(2);
+      expect(model.requests[1]).toBe(model.requests[0]);
+    } finally {
+      random.mockRestore();
+    }
   });
 
   it("accepts shared UI-style agent run requests", async () => {
@@ -3903,6 +4008,7 @@ describe("Anvia studio", () => {
         error: expect.objectContaining({ message: "stream failed" }),
       }),
     );
+    expect(model.requests).toHaveLength(1);
 
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
     await expect(loaded.json()).resolves.toMatchObject({

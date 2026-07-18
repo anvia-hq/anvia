@@ -313,6 +313,7 @@ function createRunRequest(props: {
             ? [...props.body.history, props.promptMessage]
             : props.body.message,
         );
+  request.withCompletionRetries();
   if (props.body.maxTurns !== undefined) {
     request.maxTurns(props.body.maxTurns);
   }

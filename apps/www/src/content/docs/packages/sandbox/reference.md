@@ -9,6 +9,36 @@ sidebar:
 ---
 Import from `@anvia/sandbox`.
 
+## Image builder CLI
+
+```sh
+pnpm dlx @anvia/sandbox create-image [options]
+```
+
+The CLI requires Node.js 20.12 or newer. With a terminal it prompts for runtimes and features. In a
+non-interactive environment, provide `--name` and at least one repeatable `--runtime` or `--feature`
+flag.
+
+| Option | Behavior |
+| --- | --- |
+| `--runtime node\|bun\|python` | Add a runtime; repeatable. |
+| `--feature artifacts\|playwright` | Add a curated capability; repeatable. |
+| `--apt`, `--npm`, `--pip` | Add a package; repeatable. Unpinned packages produce a warning. |
+| `--tag <tag>` | Set the local image tag. Defaults to `anvia-sandbox-<name>:latest`. |
+| `--output <path>` | Set the generated context path. Defaults to `.anvia/sandbox-images/<name>`. |
+| `--no-build` | Write the context without running `docker build`. |
+| `--dry-run` | Print the generated files without writing or building. |
+| `--force` | Regenerate files in a context previously created by this CLI. |
+
+Runtime versions can be overridden with `--node-version`, `--pnpm-version`, `--bun-version`,
+`--python-version`, `--uv-version`, and `--playwright-version`. `--docker-path` selects a non-default
+Docker executable.
+
+Generated contexts contain a Dockerfile, a restrictive `.dockerignore`, and
+`anvia-sandbox.json`. The manifest records selected capabilities, versions, packages, and generated
+files. Regeneration never recursively deletes the directory or overwrites a directory without a
+recognized manifest.
+
 ## DockerSandbox
 
 ```ts

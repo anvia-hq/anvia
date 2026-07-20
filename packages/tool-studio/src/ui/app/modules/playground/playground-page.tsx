@@ -6,14 +6,7 @@ import {
   ChatIcon,
   StopIcon,
 } from "@hugeicons/core-free-icons";
-import {
-  type ChangeEvent,
-  type KeyboardEvent,
-  lazy,
-  type RefObject,
-  Suspense,
-  useMemo,
-} from "react";
+import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import type {
   StudioConfig,
   StudioModelSummary,
@@ -39,14 +32,7 @@ import { StudioPageShell } from "../../components/ui/studio";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
 import type { RunState, TranscriptEntry } from "../shared/types";
-import { assistantResponseMetricsByEntryId } from "./response-metrics";
-import { WorkingDuration } from "./working-duration";
-
-const TranscriptItem = lazy(() =>
-  import("./transcript-item").then((module) => ({
-    default: module.TranscriptItem,
-  })),
-);
+import { SmoothedTranscript } from "./smoothed-transcript";
 
 export function PlaygroundPage(props: {
   agents: StudioConfig["agents"];
@@ -56,6 +42,7 @@ export function PlaygroundPage(props: {
   decidingApprovals: Set<string>;
   hasMessages: boolean;
   isStreaming: boolean;
+  transcriptResetKey: string | number;
   workingStartedAt?: number | undefined;
   messages: TranscriptEntry[];
   prompt: string;
@@ -89,28 +76,19 @@ export function PlaygroundPage(props: {
   onSelectModel: (modelRef: string) => void;
   onTranscriptScroll: () => void;
 }) {
-  const responseMetricsByEntryId = useMemo(
-    () =>
-      assistantResponseMetricsByEntryId({
-        entries: props.messages,
-        traceSummaries: props.sessionTraceSummaries,
-        logs: props.sessionLogs,
-      }),
-    [props.messages, props.sessionLogs, props.sessionTraceSummaries],
-  );
-  const workingResponseEntryId =
-    props.workingStartedAt === undefined ? undefined : currentTurnAssistantEntryId(props.messages);
-
   return (
     <StudioPageShell className="grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1">
       <div className="grid min-h-0 min-w-0">
         <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
           <section
-            className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [scrollbar-gutter:stable]"
+            className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 [overflow-anchor:none] [scrollbar-gutter:stable]"
             ref={props.transcriptScrollerRef}
             onScroll={props.onTranscriptScroll}
           >
-            <div className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8">
+            <div
+              className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8"
+              data-studio-transcript-content=""
+            >
               {!props.hasMessages ? (
                 <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
                   <div className="grid max-w-xl gap-4 text-center">
@@ -125,30 +103,19 @@ export function PlaygroundPage(props: {
                   </div>
                 </div>
               ) : null}
-              <Suspense fallback={null}>
-                {props.messages.map((message) => (
-                  <TranscriptItem
-                    key={message.entryId}
-                    entry={message}
-                    metrics={responseMetricsByEntryId.get(message.entryId)}
-                    workingStartedAt={
-                      message.entryId === workingResponseEntryId
-                        ? props.workingStartedAt
-                        : undefined
-                    }
-                    decidingApprovals={props.decidingApprovals}
-                    answeringQuestions={props.answeringQuestions}
-                    onApprovalDecision={props.onApprovalDecision}
-                    onQuestionAnswer={props.onQuestionAnswer}
-                    onOpenTrace={props.onOpenTrace}
-                  />
-                ))}
-              </Suspense>
-              {props.workingStartedAt !== undefined && workingResponseEntryId === undefined ? (
-                <article className="max-w-[min(82ch,100%)] justify-self-start text-foreground">
-                  <WorkingDuration startedAt={props.workingStartedAt} />
-                </article>
-              ) : null}
+              <SmoothedTranscript
+                answeringQuestions={props.answeringQuestions}
+                decidingApprovals={props.decidingApprovals}
+                isStreaming={props.isStreaming}
+                messages={props.messages}
+                resetKey={props.transcriptResetKey}
+                sessionLogs={props.sessionLogs}
+                sessionTraceSummaries={props.sessionTraceSummaries}
+                workingStartedAt={props.workingStartedAt}
+                onApprovalDecision={props.onApprovalDecision}
+                onOpenTrace={props.onOpenTrace}
+                onQuestionAnswer={props.onQuestionAnswer}
+              />
             </div>
           </section>
           <form
@@ -312,19 +279,6 @@ export function PlaygroundPage(props: {
       />
     </StudioPageShell>
   );
-}
-
-function currentTurnAssistantEntryId(entries: TranscriptEntry[]): number | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.kind === "message" && entry.role === "assistant") {
-      return entry.entryId;
-    }
-    if (entry?.kind === "message" && entry.role === "user") {
-      return undefined;
-    }
-  }
-  return undefined;
 }
 
 function PlaygroundSessionsPanel(props: {

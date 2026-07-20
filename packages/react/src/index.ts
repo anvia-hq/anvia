@@ -8,6 +8,10 @@ export {
   defaultEventToQuestion,
 } from "./human-input";
 export { initialMessagesFromMemory } from "./memory";
+export type {
+  SmoothStreamItemAdapter,
+  StreamSmoothingLifecycle,
+} from "./stream-smoothing";
 export { readJsonlStream, readSseStream } from "./streams";
 export type { CreateFetchTransportOptions } from "./transport";
 export { createChatTransport, createFetchTransport } from "./transport";
@@ -55,8 +59,11 @@ export type {
 } from "./use-completion";
 export { useCompletion } from "./use-completion";
 export type {
-  StreamAnimationMode,
-  StreamSmoothingPreset,
+  UseSmoothStreamItemsOptions,
+  UseSmoothStreamItemsResult,
+} from "./use-smooth-stream-items";
+export { useSmoothStreamItems } from "./use-smooth-stream-items";
+export type {
   UseSmoothStreamTextOptions,
   UseSmoothStreamTextResult,
 } from "./use-smooth-stream-text";

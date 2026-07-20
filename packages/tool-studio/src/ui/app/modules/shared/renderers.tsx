@@ -1,75 +1,87 @@
+import { StreamMarkdown, type StreamMarkdownProps } from "@anvia/react-ui/stream";
 import type React from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/utils";
 import { parseToolDisplayValue } from "./format";
 import { isRecord } from "./object";
 
-export function MarkdownText(props: { text: string; size?: "sm" | "base" }) {
+type MarkdownComponents = NonNullable<StreamMarkdownProps["components"]>;
+type MarkdownSize = "sm" | "base";
+
+const markdownComponents: Record<MarkdownSize, MarkdownComponents> = {
+  base: createMarkdownComponents("base"),
+  sm: createMarkdownComponents("sm"),
+};
+
+export function MarkdownText(props: {
+  live?: boolean | undefined;
+  text: string;
+  size?: MarkdownSize;
+}) {
+  const size = props.size ?? "sm";
   return (
-    <div
+    <StreamMarkdown
       className={cn(
         "prose max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-sm prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current",
-        props.size === "base" ? "text-base" : "prose-sm",
+        size === "base" ? "text-base" : "prose-sm",
       )}
-    >
-      <ReactMarkdown
-        components={{
-          table({ children }) {
-            return (
-              <div className="my-4 w-full min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/90 shadow-sm">
-                <div className="min-w-0 overflow-x-auto">
-                  <table
-                    className={cn(
-                      "m-0 w-full min-w-full border-separate border-spacing-0 text-left",
-                      props.size === "base" ? "text-base" : "text-sm",
-                    )}
-                  >
-                    {children}
-                  </table>
-                </div>
-              </div>
-            );
-          },
-          thead({ children }) {
-            return <thead className="bg-muted/45">{children}</thead>;
-          },
-          tbody({ children }) {
-            return <tbody>{children}</tbody>;
-          },
-          tr({ children }) {
-            return <tr className="group/row align-top">{children}</tr>;
-          },
-          th({ children }) {
-            return (
-              <th
-                className="border-b border-border px-4 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground first:pl-5 last:pr-5"
-                style={{ paddingBottom: "0.625rem", paddingTop: "0.625rem" }}
-              >
-                {children}
-              </th>
-            );
-          },
-          td({ children }) {
-            return (
-              <td
-                className={cn(
-                  "border-b border-border/70 px-4 leading-6 text-foreground [overflow-wrap:anywhere] first:pl-5 last:pr-5 group-last/row:border-b-0",
-                  props.size === "base" ? "text-base" : "text-sm",
-                )}
-                style={{ paddingBottom: "0.75rem", paddingTop: "0.75rem" }}
-              >
-                {children}
-              </td>
-            );
-          },
-        }}
-        remarkPlugins={[remarkGfm]}
-      >
-        {props.text}
-      </ReactMarkdown>
-    </div>
+      components={markdownComponents[size]}
+      content={props.text}
+      live={props.live === true}
+    />
   );
+}
+
+function createMarkdownComponents(size: MarkdownSize): MarkdownComponents {
+  return {
+    table({ children }) {
+      return (
+        <div className="my-4 w-full min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/90 shadow-sm">
+          <div className="min-w-0 overflow-x-auto">
+            <table
+              className={cn(
+                "m-0 w-full min-w-full border-separate border-spacing-0 text-left",
+                size === "base" ? "text-base" : "text-sm",
+              )}
+            >
+              {children}
+            </table>
+          </div>
+        </div>
+      );
+    },
+    thead({ children }) {
+      return <thead className="bg-muted/45">{children}</thead>;
+    },
+    tbody({ children }) {
+      return <tbody>{children}</tbody>;
+    },
+    tr({ children }) {
+      return <tr className="group/row align-top">{children}</tr>;
+    },
+    th({ children }) {
+      return (
+        <th
+          className="border-b border-border px-4 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground first:pl-5 last:pr-5"
+          style={{ paddingBottom: "0.625rem", paddingTop: "0.625rem" }}
+        >
+          {children}
+        </th>
+      );
+    },
+    td({ children }) {
+      return (
+        <td
+          className={cn(
+            "border-b border-border/70 px-4 leading-6 text-foreground [overflow-wrap:anywhere] first:pl-5 last:pr-5 group-last/row:border-b-0",
+            size === "base" ? "text-base" : "text-sm",
+          )}
+          style={{ paddingBottom: "0.75rem", paddingTop: "0.75rem" }}
+        >
+          {children}
+        </td>
+      );
+    },
+  };
 }
 
 export function ToolPayload(props: { title: string; value: string }) {

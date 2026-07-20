@@ -49,6 +49,7 @@ export type { MessageEntityProps } from "./entity";
 export type {
   MessageAttachmentPart,
   MessagePartsFilter,
+  MessageStreamOptions,
   MessageToolPart,
   MessageToolRenderWhen,
 } from "./parts";

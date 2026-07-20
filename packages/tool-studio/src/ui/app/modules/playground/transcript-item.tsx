@@ -5,7 +5,7 @@ import {
   PathIcon,
   Wrench01Icon,
 } from "@hugeicons/core-free-icons";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
@@ -17,8 +17,10 @@ import type { ToolApproval, ToolMessage, ToolQuestion, TranscriptEntry } from ".
 import type { AssistantResponseMetrics, ResponseUsageMetrics } from "./response-metrics";
 import { WorkingDuration } from "./working-duration";
 
-export function TranscriptItem(props: {
+export const TranscriptItem = memo(function TranscriptItem(props: {
   entry: TranscriptEntry;
+  displayText?: string | undefined;
+  live?: boolean | undefined;
   metrics?: AssistantResponseMetrics | undefined;
   workingStartedAt?: number | undefined;
   decidingApprovals: Set<string>;
@@ -30,6 +32,7 @@ export function TranscriptItem(props: {
   ) => void;
   onOpenTrace: (traceId: string) => void;
 }) {
+  const displayText = props.displayText ?? ("text" in props.entry ? props.entry.text : "");
   if (props.entry.kind === "reasoning") {
     return (
       <article
@@ -37,7 +40,7 @@ export function TranscriptItem(props: {
         data-entry-id={String(props.entry.entryId)}
       >
         <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Reasoning</div>
-        <MarkdownText size="base" text={props.entry.text} />
+        <MarkdownText live={props.live} size="base" text={displayText} />
       </article>
     );
   }
@@ -55,7 +58,7 @@ export function TranscriptItem(props: {
   }
 
   const traceId = props.entry.role === "assistant" ? props.entry.traceId : undefined;
-  const hasTable = props.entry.role === "assistant" && hasMarkdownTable(props.entry.text);
+  const hasTable = props.entry.role === "assistant" && hasMarkdownTable(displayText);
   const isError =
     props.entry.role === "assistant" && "tone" in props.entry && props.entry.tone === "error";
   const isPending =
@@ -97,8 +100,8 @@ export function TranscriptItem(props: {
       data-entry-id={String(props.entry.entryId)}
     >
       {isPending ? <AssistantLoadingIndicator /> : null}
-      {props.entry.text.trim().length === 0 ? null : (
-        <MarkdownText size="base" text={props.entry.text} />
+      {displayText.trim().length === 0 ? null : (
+        <MarkdownText live={props.live} size="base" text={displayText} />
       )}
       {showAssistantFooter ? (
         <AssistantResponseFooter
@@ -113,7 +116,7 @@ export function TranscriptItem(props: {
       ) : null}
     </article>
   );
-}
+});
 
 function AssistantResponseFooter(props: {
   durationMs?: number | undefined;

@@ -84,12 +84,31 @@ const ThreadViewport = forwardRef<HTMLDivElement, ThreadViewportProps>(function 
     }
   }, [autoScroll, messages, thread]);
 
+  useEffect(() => {
+    const viewport = thread.viewportRef.current;
+    if (viewport === null || !autoScroll || typeof ResizeObserver !== "function") {
+      return;
+    }
+    const content = viewport.querySelector<HTMLElement>("[data-anvia-thread-messages]");
+    if (content === null) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (thread.atBottom) {
+        thread.scrollToBottom("auto");
+      }
+    });
+    observer.observe(viewport);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [autoScroll, thread]);
+
   const handleScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
       onScroll?.(event);
       const node = event.currentTarget;
       const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-      thread.setAtBottom(distanceFromBottom < 8);
+      thread.setAtBottom(distanceFromBottom < 80);
     },
     [onScroll, thread],
   );

@@ -1,5 +1,6 @@
 [data-anvia-thread-viewport] {
   overflow: auto;
+  overflow-anchor: none;
   min-height: 0;
 }
 
@@ -88,22 +89,12 @@
   opacity: 0.55;
 }
 
-@keyframes anvia-stream-fade-in {
-  from {
-    opacity: 0.35;
-  }
-
+@keyframes anvia-stream-gradient-settle {
   to {
     opacity: 1;
   }
 }
 
-[data-anvia-stream-animation="fadeIn"][data-streaming] {
-  animation: anvia-stream-fade-in 180ms ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-anvia-stream-animation="fadeIn"][data-streaming] {
-    animation: none;
-  }
+[data-anvia-stream-reveal] {
+  animation: anvia-stream-gradient-settle 180ms linear both;
 }

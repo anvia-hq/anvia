@@ -27,13 +27,14 @@
   },
   "scripts": {
     "build": "pnpm run build:deps && tsup && vite build --config vite.config.ts",
-    "build:deps": "(test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build) && pnpm --filter @anvia/server --filter @anvia/react build",
+    "build:deps": "(test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build) && pnpm --filter @anvia/server --filter @anvia/react --filter @anvia/react-ui build",
     "coverage": "pnpm run build:deps && vitest run --coverage",
     "test": "pnpm run build:deps && vitest run",
     "typecheck": "pnpm run build:deps && tsc --noEmit"
   },
   "dependencies": {
     "@anvia/react": "workspace:*",
+    "@anvia/react-ui": "workspace:*",
     "@anvia/server": "workspace:*",
     "@hono/node-server": "^2.0.8",
     "@hugeicons/core-free-icons": "^4.2.2",
@@ -51,7 +52,6 @@
     "hono": "^4.12.27",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-markdown": "^10.1.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -62,7 +62,6 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
-    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.2.4",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",

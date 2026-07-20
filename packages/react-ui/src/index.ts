@@ -26,6 +26,7 @@ export type {
   MessageAttachmentPart,
   MessageEntityProps,
   MessagePartsFilter,
+  MessageStreamOptions,
   MessageToolPart,
   MessageToolRenderWhen,
 } from "./message/index";
@@ -64,6 +65,8 @@ export type {
   SelectionToolbarContextValue,
   ThreadContextValue,
 } from "./shared";
+export type { StreamMarkdownProps } from "./stream/index";
+export { StreamMarkdown } from "./stream/index";
 export type {
   ThreadListController,
   ThreadListItemContextValue,

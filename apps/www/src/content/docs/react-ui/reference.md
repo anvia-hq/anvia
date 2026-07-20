@@ -219,10 +219,10 @@ provider supplied by that list.
 | --- | --- | --- | --- |
 | `Message.Root` | `article` | child function via parent | Provides one `UIMessage`. |
 | `Message.Content` | `div` | element props | Wraps message body. |
-| `Message.Parts` | `div` | `filter`, child function | Renders message parts. |
+| `Message.Parts` | `div` | `filter`, `stream`, child function | Renders message parts and can preserve text/tool reveal order. |
 | `Message.Part` | `div` | child function | Provides one `UIMessagePart`. |
-| `Message.Text` | `span` | element props | Renders text part as plain text. |
-| `Message.Markdown` | `div` | `components`, `remarkPlugins`, `renderEntity` | Renders text with GitHub-flavored Markdown and validated Composer entities. |
+| `Message.Text` | `span` | `stream`, element props | Renders text part as plain text. |
+| `Message.Markdown` | `div` | `stream`, `components`, `remarkPlugins`, `renderEntity` | Renders stable-block GitHub-flavored Markdown and validated Composer entities. |
 | `Message.Entity` | `span` | `entity`, span props | Renders headless semantic entity markup. |
 | `Message.CodeBlock` | `pre` | `code`, `language` | Markdown code block helper. |
 | `Message.Reasoning` | `details` | element props | Renders reasoning parts. |

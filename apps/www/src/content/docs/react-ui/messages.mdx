@@ -9,6 +9,7 @@ sidebar:
 ---
 
 import CodeVariants from "../../../components/docs/CodeVariants.astro";
+import StreamSmoothingComparison from "../../../components/docs/StreamSmoothingComparison.astro";
 import { defaultRendererVariants, messageRowVariants, customRendererVariants, markdownVariants } from "../../../lib/react-ui-code-variants";
 
 `Message.Root` renders one Anvia `UIMessage`. `Message.Parts` renders the message's streamed
@@ -149,34 +150,106 @@ code, fenced code, or link destinations remain literal. Regular Markdown links, 
 plugins, and `components.span` overrides continue to work. Entity `data` is never serialized into
 the DOM.
 
-### Opt-in streaming animation
+### Opt-in stream smoothing
 
-`useChat(...)` continues to own the real message state. Enable display smoothing only on the latest
-assistant message while its response is streaming:
+Stream smoothing changes only what is displayed. `useChat(...)` still receives and stores the
+complete source message immediately.
+
+<StreamSmoothingComparison />
+
+Use these rules:
+
+1. Put `stream` on `Message.Parts` when a response can contain reasoning, text, and tools. This
+   preserves their reveal order.
+2. Keep the `stream` prop mounted when the request finishes. Change `isStreaming` from `true` to
+   `false`; removing `stream` immediately would skip the completion drain.
+3. Use a stable `resetKey` for the displayed response. `message.id` is the normal choice and also
+   prevents loaded history from replaying.
+
+The recommended mixed-part integration is:
 
 ```tsx
 <Thread.Messages>
-  {(message) => (
-    <Message.Root>
-      <Message.Content>
-        <Message.Markdown
-          animate
-          isStreaming={
-            chat.status === "streaming" &&
-            message.role === "assistant" &&
-            chat.messages.at(-1)?.id === message.id
-          }
-          animationMode="smooth"
-          smoothingPreset="balanced"
-        />
-      </Message.Content>
-    </Message.Root>
-  )}
+  {(message) => {
+    const isAssistant = message.role === "assistant";
+    const isLatestAssistant = isAssistant && chat.messages.at(-1)?.id === message.id;
+    const stream = {
+      // true while source events arrive; false starts the final drain
+      isStreaming: isLatestAssistant && chat.status === "streaming",
+      // keep stable for this response; change it when switching responses
+      resetKey: message.id,
+      // errors should show their complete source text immediately
+      flushImmediately: isLatestAssistant && chat.status === "error",
+    };
+
+    return (
+      <Message.Root>
+        <Message.Content>
+          <Message.Parts {...(isAssistant ? { stream } : {})}>
+            {(part) => (part.type === "text" ? <Message.Markdown /> : <Message.Part />)}
+          </Message.Parts>
+        </Message.Content>
+      </Message.Root>
+    );
+  }}
 </Thread.Messages>
 ```
 
-Use `animationMode="fadeIn"` to combine the same progressive reveal with the optional stylesheet's
-entry fade. Reduced-motion preferences and non-streaming content display immediately.
+`Message.Parts` smooths text and reasoning parts. A new tool part waits until preceding buffered
+text is visible, while updates to a tool that is already visible render immediately.
+
+#### Stream lifecycle
+
+| Option | Set it to | What happens |
+| --- | --- | --- |
+| `isStreaming` | `true` only while source events are arriving | The display follows the buffered source timeline. |
+| `isStreaming` | `false` after completion or stop | Remaining buffered text drains smoothly, usually within 700 ms. |
+| `resetKey` | A stable message or session identifier | Existing content seeds immediately when the identifier changes. |
+| `flushImmediately` | `true` for a terminal error or forced completion | The display synchronizes to the complete source without draining. |
+
+Do not conditionally remove `stream` as soon as `chat.status` becomes `"idle"`. Keep it present for
+assistant messages and let `isStreaming: false` finish the drain:
+
+```tsx
+// Avoid: this removes smoothing before its buffered tail can drain.
+{chat.status === "streaming" ? (
+  <Message.Parts stream={{ isStreaming: true, resetKey: message.id }} />
+) : (
+  <Message.Parts />
+)}
+
+// Use: the same lifecycle remains mounted through completion.
+<Message.Parts
+  stream={{
+    isStreaming: chat.status === "streaming",
+    resetKey: message.id,
+  }}
+/>
+```
+
+#### Text-only rendering
+
+If the surface renders one text value and has no later tool parts to order, put the same lifecycle
+directly on `Message.Text` or `Message.Markdown`:
+
+```tsx
+<Message.Markdown
+  stream={{
+    isStreaming: isLatestAssistant && chat.status === "streaming",
+    resetKey: message.id,
+    flushImmediately: isLatestAssistant && chat.status === "error",
+  }}
+/>
+```
+
+This smooths only Markdown text. Use `Message.Parts` instead when tool cards must wait behind text.
+The standalone `StreamMarkdown` component does not perform pacing by itself; it renders whatever
+display string its `content` prop receives.
+
+The fixed pacing adapts to source throughput, preserves grapheme boundaries, bounds its backlog,
+and drains completion without a snap. The Markdown renderer keeps completed blocks stable and
+applies the live-tail opacity treatment only to the growing final block. Pacing works without the
+optional stylesheet; import `@anvia/react-ui/styles.css` to enable the 180 ms opacity settle.
 
 ## Filtering parts
 

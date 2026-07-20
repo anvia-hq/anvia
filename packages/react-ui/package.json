@@ -52,6 +52,11 @@
       "types": "./dist/selection-toolbar/index.d.ts",
       "import": "./dist/selection-toolbar/index.js"
     },
+    "./stream": {
+      "types": "./dist/stream/index.d.ts",
+      "import": "./dist/stream/index.js"
+    },
+    "./stream/styles.css": "./dist/stream/styles.css",
     "./shared": {
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
@@ -63,7 +68,7 @@
     "./styles.css": "./dist/styles.css"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/selection-toolbar/index.ts src/shared.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom && cp src/styles.css dist/styles.css",
+    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom && cp src/styles.css dist/styles.css && cp src/stream/styles.css dist/stream/styles.css",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -80,11 +85,12 @@
     "@tiptap/pm": "^3.27.3",
     "@tiptap/react": "^3.27.3",
     "@tiptap/suggestion": "^3.27.3",
+    "marked": "^15.0.12",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
-    "@anvia/react": ">=0.7.8 <1.0.0",
+    "@anvia/react": ">=0.9.0 <1.0.0",
     "react": ">=18",
     "react-dom": ">=18"
   },

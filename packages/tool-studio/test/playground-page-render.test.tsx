@@ -64,6 +64,7 @@ function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): 
       attachmentInputRef={createRef<HTMLInputElement>()}
       promptRef={createRef<HTMLTextAreaElement>()}
       transcriptScrollerRef={createRef<HTMLElement>()}
+      transcriptResetKey={0}
       onAddPromptAttachments={vi.fn()}
       onApprovalDecision={vi.fn()}
       onDeleteSession={vi.fn()}

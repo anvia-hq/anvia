@@ -85,22 +85,22 @@ describe("Message primitives", () => {
 
     const text = container.querySelector("[data-anvia-text]");
     expect(text?.textContent).toBe("Hello world");
-    expect(text?.hasAttribute("data-anvia-stream-animation")).toBe(false);
+    expect(text?.hasAttribute("data-streaming")).toBe(false);
     expect(raf.request).not.toHaveBeenCalled();
   });
 
-  it("uses smoothed text when Message.Text animation is enabled", () => {
+  it("uses smoothed text when Message.Text receives a stream lifecycle", () => {
     const raf = installAnimationFrame();
-    const props = { animate: true, isStreaming: true, reducedMotion: false };
+    const props = { stream: { isStreaming: true, resetKey: "msg_1" } };
     const { container, rerender } = render(textView("Hello", props));
 
     rerender(textView("Hello world", props));
 
     const text = container.querySelector("[data-anvia-text]");
     expect(text?.textContent).toBe("Hello");
-    expect(text?.getAttribute("data-anvia-stream-animation")).toBe("smooth");
+    expect(text?.hasAttribute("data-streaming")).toBe(true);
 
-    actAnimationFrame(raf);
+    act(() => raf.advance(230));
 
     expect(text?.textContent).not.toBe("Hello world");
     expect(text?.textContent?.startsWith("Hello")).toBe(true);
@@ -109,13 +109,11 @@ describe("Message primitives", () => {
     expect(text?.textContent).toBe("Hello world");
   });
 
-  it("preserves custom Message.Text children when animation is enabled", () => {
+  it("preserves custom Message.Text children when streaming is enabled", () => {
     const raf = installAnimationFrame();
     const props = {
-      animate: true,
       children: "Custom content",
-      isStreaming: true,
-      reducedMotion: false,
+      stream: { isStreaming: true, resetKey: "msg_1" },
     };
     const { container, rerender } = render(textView("Hello", props));
 
@@ -123,6 +121,67 @@ describe("Message primitives", () => {
 
     expect(container.querySelector("[data-anvia-text]")?.textContent).toBe("Custom content");
     expect(raf.request).not.toHaveBeenCalled();
+  });
+
+  it("delays a later tool until parent-controlled text finishes", () => {
+    const raf = installAnimationFrame();
+    const stream = { isStreaming: true, resetKey: "msg_1" };
+    const initial = textMessage("msg_1", "assistant", "A");
+    const next: UIMessage = {
+      ...initial,
+      parts: [
+        { id: initial.parts[0]?.id ?? "text_1", type: "text", text: "Text before the tool" },
+        {
+          id: "tool_1",
+          type: "tool",
+          toolCallId: "call_1",
+          toolName: "search",
+          state: "input-available",
+        },
+      ],
+    };
+    const { container, rerender } = render(partsStreamView(initial, stream));
+
+    rerender(partsStreamView(next, stream));
+    expect(container.querySelector("[data-anvia-tool]")).toBeNull();
+
+    act(() => raf.advance(230));
+    expect(container.querySelector("[data-anvia-tool]")).toBeNull();
+
+    drainAnimationFrames(raf);
+    expect(container.querySelector("[data-anvia-tool]")).not.toBeNull();
+    expect(
+      container.querySelector("[data-anvia-message-parts]")?.hasAttribute("data-streaming"),
+    ).toBe(true);
+  });
+
+  it("does not let a filtered reasoning part delay a visible tool", () => {
+    installAnimationFrame();
+    const stream = { isStreaming: true, resetKey: "msg_1" };
+    const initial: UIMessage = {
+      id: "msg_1",
+      role: "assistant",
+      parts: [{ id: "reasoning_1", type: "reasoning", text: "A" }],
+    };
+    const next: UIMessage = {
+      ...initial,
+      parts: [
+        { id: "reasoning_1", type: "reasoning", text: "Reasoning still being revealed" },
+        {
+          id: "tool_1",
+          type: "tool",
+          toolCallId: "call_1",
+          toolName: "search",
+          state: "input-available",
+        },
+      ],
+    };
+    const filter = (part: UIMessage["parts"][number]) => part.type !== "reasoning";
+    const { container, rerender } = render(partsStreamView(initial, stream, filter));
+
+    rerender(partsStreamView(next, stream, filter));
+
+    expect(container.querySelector("[data-anvia-tool]")).not.toBeNull();
   });
 
   it("supports custom tool rendering with input and output in one component", () => {
@@ -586,17 +645,14 @@ describe("Message primitives", () => {
     const markdown = container.querySelector("[data-anvia-markdown]");
     expect(markdown?.textContent).toBe("Hello world");
     expect(markdown?.querySelector("strong")?.textContent).toBe("world");
-    expect(markdown?.hasAttribute("data-anvia-stream-animation")).toBe(false);
+    expect(markdown?.hasAttribute("data-streaming")).toBe(false);
     expect(raf.request).not.toHaveBeenCalled();
   });
 
-  it("uses smoothed markdown text and fade-in attributes when enabled", () => {
+  it("uses smoothed markdown text and a live-tail reveal while streaming", () => {
     const raf = installAnimationFrame();
     const props = {
-      animate: true,
-      animationMode: "fadeIn" as const,
-      isStreaming: true,
-      reducedMotion: false,
+      stream: { isStreaming: true, resetKey: "msg_1" },
     };
     const { container, rerender } = render(markdownView("Hello", props));
 
@@ -604,11 +660,11 @@ describe("Message primitives", () => {
 
     const markdown = container.querySelector("[data-anvia-markdown]");
     expect(markdown?.textContent).toBe("Hello");
-    expect(markdown?.getAttribute("data-anvia-stream-animation")).toBe("fadeIn");
     expect(markdown?.hasAttribute("data-streaming")).toBe(true);
 
-    actAnimationFrame(raf);
+    act(() => raf.advance(250));
     expect(markdown?.textContent).not.toBe("Hello world");
+    expect(markdown?.querySelector("[data-anvia-stream-reveal]")).not.toBeNull();
 
     drainAnimationFrames(raf);
     expect(markdown?.textContent).toBe("Hello world");
@@ -617,7 +673,7 @@ describe("Message primitives", () => {
 
   it("preserves code block behavior after animated markdown completes", () => {
     const raf = installAnimationFrame();
-    const props = { animate: true, isStreaming: true, reducedMotion: false };
+    const props = { stream: { isStreaming: true, resetKey: "msg_1" } };
     const { container, rerender } = render(markdownView("Code:\n\n", props));
 
     rerender(markdownView("Code:\n\n```ts\nconst ok = true;\n```", props));
@@ -828,6 +884,24 @@ function markdownView(
   );
 }
 
+function partsStreamView(
+  message: UIMessage,
+  stream: NonNullable<ComponentProps<typeof Message.Parts>["stream"]>,
+  filter?: ComponentProps<typeof Message.Parts>["filter"],
+): ReactElement {
+  return (
+    <ChatProvider controller={createChatController({ messages: [message] })}>
+      <Thread.Root>
+        <Thread.Messages>
+          <Message.Root>
+            <Message.Parts {...(filter === undefined ? {} : { filter })} stream={stream} />
+          </Message.Root>
+        </Thread.Messages>
+      </Thread.Root>
+    </ChatProvider>
+  );
+}
+
 function markdownEntityView(
   markdown: string,
   entities: ComposerEntity[],
@@ -899,8 +973,10 @@ function literalizeEntityNodes(value: unknown): void {
 }
 
 function installAnimationFrame() {
+  let now = 0;
   let nextId = 0;
   const callbacks = new Map<number, FrameRequestCallback>();
+  vi.spyOn(performance, "now").mockImplementation(() => now);
   const request = vi.fn((callback: FrameRequestCallback) => {
     const id = ++nextId;
     callbacks.set(id, callback);
@@ -917,23 +993,22 @@ function installAnimationFrame() {
     cancel,
     pending: () => callbacks.size,
     request,
-    step() {
-      const pending = [...callbacks.values()];
-      callbacks.clear();
-      for (const callback of pending) {
-        callback(0);
+    advance(durationMs: number) {
+      const target = now + durationMs;
+      while (callbacks.size > 0 && now < target) {
+        now = Math.min(target, now + 1_000 / 60);
+        const pending = [...callbacks.values()];
+        callbacks.clear();
+        for (const callback of pending) {
+          callback(now);
+        }
       }
+      now = target;
     },
   };
 }
 
-function actAnimationFrame(raf: AnimationFrameHarness): void {
-  act(() => raf.step());
-}
-
 function drainAnimationFrames(raf: AnimationFrameHarness): void {
-  for (let frame = 0; frame < 100 && raf.pending() > 0; frame += 1) {
-    actAnimationFrame(raf);
-  }
+  act(() => raf.advance(2_000));
   expect(raf.pending()).toBe(0);
 }

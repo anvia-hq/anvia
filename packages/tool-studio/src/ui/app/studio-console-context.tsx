@@ -56,6 +56,7 @@ export type StudioConsoleContextValue = {
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   promptRef: RefObject<HTMLTextAreaElement | null>;
   transcriptScrollerRef: RefObject<HTMLElement | null>;
+  transcriptResetKey: string | number;
   activateRoute: (page: ActivePage) => void;
   navigateFallback: (preferred: ActivePage) => void;
   navigatePage: (page: ActivePage) => void;

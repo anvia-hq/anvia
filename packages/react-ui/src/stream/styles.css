@@ -1,0 +1,9 @@
+@keyframes anvia-stream-gradient-settle {
+  to {
+    opacity: 1;
+  }
+}
+
+[data-anvia-stream-reveal] {
+  animation: anvia-stream-gradient-settle 180ms linear both;
+}

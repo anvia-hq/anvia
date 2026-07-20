@@ -118,6 +118,24 @@ application state.
 Use `Message.Markdown` when text parts should render GitHub-flavored Markdown; pass `components` to
 replace code blocks or other Markdown elements with app-owned components.
 
+For a streaming mixed-part response, put the lifecycle on `Message.Parts` so tool cards remain
+behind buffered text:
+
+```tsx
+<Message.Parts
+  stream={{
+    isStreaming: chat.status === "streaming" && chat.messages.at(-1)?.id === message.id,
+    resetKey: message.id,
+    flushImmediately: chat.status === "error",
+  }}
+>
+  {(part) => (part.type === "text" ? <Message.Markdown /> : <Message.Part />)}
+</Message.Parts>
+```
+
+Keep the lifecycle present with `isStreaming: false` at completion to allow the buffered tail to
+drain. Change `resetKey` when the displayed conversation changes.
+
 ## Completion panels
 
 Use `Completion.Root`, `Completion.Output`, `Completion.Form`, `Completion.Input`,

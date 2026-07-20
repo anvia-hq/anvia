@@ -59,6 +59,7 @@ export function StudioConsole() {
   const [status, setStatus] = useState("Loading");
   const [, setError] = useState("");
   const [runState, setRunState] = useState<RunState>("idle");
+  const [transcriptResetKey, setTranscriptResetKey] = useState(0);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const transcriptScrollerRef = useRef<HTMLElement | null>(null);
@@ -90,6 +91,27 @@ export function StudioConsole() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activePage, messages]);
+
+  useEffect(() => {
+    if (activePage !== "playground" || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const scroller = transcriptScrollerRef.current;
+    if (scroller === null) {
+      return;
+    }
+    const content = scroller.querySelector<HTMLElement>("[data-studio-transcript-content]");
+    if (content === null) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (transcriptStickToBottomRef.current) {
+        scroller.scrollTop = scroller.scrollHeight;
+      }
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [activePage]);
 
   const loadConfig = useCallback(async () => {
     setStatus("Loading");
@@ -215,6 +237,7 @@ export function StudioConsole() {
       traceSummaries: StudioTraceSummary[],
       options: { updatePath?: boolean },
     ) => {
+      setTranscriptResetKey((current) => current + 1);
       setTranscriptSequence(nextSequence(session.transcript));
       setSelectedAgentId(session.agentId);
       setSelectedModelRef(sessionModelRef(session));
@@ -235,6 +258,7 @@ export function StudioConsole() {
         return;
       }
       resetTranscriptSequence();
+      setTranscriptResetKey((current) => current + 1);
       setMessages([]);
       setSessionTraceSummaries([]);
       setPrompt("");
@@ -298,6 +322,7 @@ export function StudioConsole() {
         return;
       }
       resetTranscriptSequence();
+      setTranscriptResetKey((current) => current + 1);
       sessions.clearSelectedSession();
       setMessages([]);
       setSessionTraceSummaries([]);
@@ -322,6 +347,7 @@ export function StudioConsole() {
       setSelectedAgentId(agentId);
       setSelectedModelRef("");
       resetTranscriptSequence();
+      setTranscriptResetKey((current) => current + 1);
       sessions.clearSelectedSession();
       setMessages([]);
       setSessionTraceSummaries([]);
@@ -476,6 +502,7 @@ export function StudioConsole() {
     attachmentInputRef,
     promptRef,
     transcriptScrollerRef,
+    transcriptResetKey,
     activateRoute,
     navigateFallback,
     navigatePage,

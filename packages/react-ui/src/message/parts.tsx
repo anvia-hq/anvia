@@ -1,16 +1,19 @@
 import {
-  type StreamAnimationMode,
-  type StreamSmoothingPreset,
+  type SmoothStreamItemAdapter,
+  type StreamSmoothingLifecycle,
   type UIAttachment,
   type UIMessagePart,
-  type UseSmoothStreamTextOptions,
+  useSmoothStreamItems,
   useSmoothStreamText,
 } from "@anvia/react";
-import { type ComponentPropsWithoutRef, createElement, forwardRef, type ReactNode } from "react";
-import ReactMarkdown, {
-  type Components,
-  type Options as ReactMarkdownOptions,
-} from "react-markdown";
+import {
+  type ComponentPropsWithoutRef,
+  createElement,
+  forwardRef,
+  type ReactNode,
+  useMemo,
+} from "react";
+import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Attachment } from "../attachment/index";
@@ -25,6 +28,7 @@ import {
 import { entitiesForTextSegment, messageTextLayout, validComposerEntities } from "../entities";
 import { stringifyValue } from "../format";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { StreamMarkdown } from "../stream";
 import { MessageEntity } from "./entity";
 import { createMessageEntityRemarkPlugin, messageEntityRehypeOptions } from "./markdown-entities";
 
@@ -36,40 +40,100 @@ export type MessageToolRenderWhen = "always" | "pending" | "settled";
 export type MessageAttachmentPart = Extract<UIMessagePart, { type: "attachment" }>;
 type MessageAttachmentChildren = ReactNode | ((attachment: UIAttachment) => ReactNode);
 
-type MessageStreamAnimationProps = {
-  animate?: boolean;
-  animationMode?: StreamAnimationMode;
-  isStreaming?: boolean;
-  smoothingPreset?: StreamSmoothingPreset;
-  reducedMotion?: boolean;
+export type MessageStreamOptions = StreamSmoothingLifecycle;
+
+type MessageStreamProps = {
+  stream?: MessageStreamOptions;
+};
+
+const messagePartStreamAdapter: SmoothStreamItemAdapter<UIMessagePart> = {
+  getKey: (part) => part.id,
+  getText: (part) => (part.type === "text" || part.type === "reasoning" ? part.text : undefined),
+  withText: (part, text) => {
+    if (part.type === "text" || part.type === "reasoning") {
+      return part.text === text ? part : { ...part, text };
+    }
+    return part;
+  },
 };
 
 type MessagePartsProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: MessagePartChildren;
   filter?: MessagePartsFilter;
-};
+} & MessageStreamProps;
 
 const MessageParts = forwardRef<HTMLDivElement, MessagePartsProps>(function MessageParts(
-  { children, filter, ...props },
+  { children, filter, stream, ...props },
   ref,
 ) {
   const { message } = useMessage();
   const parts = filter === undefined ? message.parts : message.parts.filter(filter);
+  if (stream !== undefined) {
+    return (
+      <SmoothedMessageParts {...props} parts={parts} ref={ref} stream={stream}>
+        {children}
+      </SmoothedMessageParts>
+    );
+  }
 
   return renderPrimitive(
     "div",
     {
       ...props,
-      children: parts.map((part) => (
-        <InternalMessagePartProvider key={part.id} part={part}>
-          {typeof children === "function" ? children(part) : (children ?? <MessagePart />)}
-        </InternalMessagePartProvider>
-      )),
+      children: renderMessagePartNodes(parts, children),
       "data-anvia-message-parts": "",
     } as PrimitiveProps<"div">,
     ref,
   );
 });
+
+type SmoothedMessagePartsProps = Omit<PrimitiveProps<"div">, "children"> & {
+  children?: MessagePartChildren;
+  parts: readonly UIMessagePart[];
+  stream: MessageStreamOptions;
+};
+
+const SmoothedMessageParts = forwardRef<HTMLDivElement, SmoothedMessagePartsProps>(
+  function SmoothedMessageParts({ children, parts, stream, ...props }, ref) {
+    const smooth = useSmoothStreamItems(parts, {
+      adapter: messagePartStreamAdapter,
+      isStreaming: stream.isStreaming,
+      resetKey: stream.resetKey,
+      ...(stream.flushImmediately === undefined
+        ? {}
+        : { flushImmediately: stream.flushImmediately }),
+    });
+
+    return renderPrimitive(
+      "div",
+      {
+        ...props,
+        children: renderMessagePartNodes(smooth.items, children, smooth.liveItemKey),
+        "data-anvia-message-parts": "",
+        "data-draining": smooth.isDraining ? "" : undefined,
+        "data-streaming": stream.isStreaming ? "" : undefined,
+      } as PrimitiveProps<"div">,
+      ref,
+    );
+  },
+);
+
+function renderMessagePartNodes(
+  parts: readonly UIMessagePart[],
+  children: MessagePartChildren | undefined,
+  liveItemKey?: string | null,
+): ReactNode[] {
+  return parts.map((part) => (
+    <InternalMessagePartProvider
+      isLive={liveItemKey === part.id}
+      key={part.id}
+      part={part}
+      streamControlled={liveItemKey !== undefined}
+    >
+      {typeof children === "function" ? children(part) : (children ?? <MessagePart />)}
+    </InternalMessagePartProvider>
+  ));
+}
 
 type MessagePartProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: MessagePartChildren;
@@ -95,59 +159,50 @@ const MessagePart = forwardRef<HTMLDivElement, MessagePartProps>(function Messag
   );
 });
 
-type MessageTextProps = PrimitiveProps<"span"> & MessageStreamAnimationProps;
+type MessageTextProps = PrimitiveProps<"span"> & MessageStreamProps;
 
 const MessageText = forwardRef<HTMLSpanElement, MessageTextProps>(function MessageText(props, ref) {
-  const { part } = useMessagePart();
+  const { part, streamControlled } = useMessagePart();
   if (part.type !== "text") {
     return null;
   }
 
-  return <MessageTextContent {...props} content={part.text} ref={ref} />;
+  return (
+    <MessageTextContent
+      {...props}
+      content={part.text}
+      partId={part.id}
+      ref={ref}
+      streamControlled={streamControlled}
+    />
+  );
 });
 
 type MessageTextContentProps = MessageTextProps & {
   content: string;
+  partId: string;
+  streamControlled: boolean;
 };
 
 const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
-  function MessageTextContent(
-    {
-      animate = false,
-      animationMode = "smooth",
-      isStreaming,
-      smoothingPreset,
-      reducedMotion,
-      content,
-      ...props
-    },
-    ref,
-  ) {
-    const animationEnabled = animate && props.children === undefined;
-    const smooth = useSmoothStreamText(
-      content,
-      smoothStreamOptions(
-        animationEnabled,
-        animationMode,
-        isStreaming,
-        smoothingPreset,
-        reducedMotion,
-      ),
-    );
-    const animationActive =
-      animationEnabled &&
-      animationMode !== "none" &&
-      isStreaming !== false &&
-      reducedMotion !== true;
+  function MessageTextContent({ content, partId, stream, streamControlled, ...props }, ref) {
+    const ownsStream = stream !== undefined && !streamControlled && props.children === undefined;
+    const smooth = useSmoothStreamText(content, {
+      isStreaming: ownsStream ? stream.isStreaming : false,
+      resetKey: ownsStream ? stream.resetKey : partId,
+      ...(ownsStream && stream.flushImmediately !== undefined
+        ? { flushImmediately: stream.flushImmediately }
+        : {}),
+    });
 
     return renderPrimitive(
       "span",
       {
         ...props,
-        children: props.children ?? (animationEnabled ? smooth.text : content),
+        children: props.children ?? (ownsStream ? smooth.text : content),
         "data-anvia-text": "",
-        "data-anvia-stream-animation": animationEnabled ? animationMode : undefined,
-        "data-streaming": animationActive ? "" : undefined,
+        "data-draining": ownsStream && smooth.isDraining ? "" : undefined,
+        "data-streaming": ownsStream && stream.isStreaming ? "" : undefined,
       } as PrimitiveProps<"span">,
       ref,
     );
@@ -155,7 +210,7 @@ const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
 );
 
 type MessageMarkdownProps = Omit<PrimitiveProps<"div">, "children"> &
-  MessageStreamAnimationProps & {
+  MessageStreamProps & {
     children?: string;
     components?: Components;
     renderEntity?: ((entity: ComposerEntity) => ReactNode) | undefined;
@@ -186,64 +241,100 @@ const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(functio
       : undefined;
   const entities =
     segment === undefined ? validEntities : entitiesForTextSegment(validEntities, segment);
+  const lastPart = message.parts.at(-1);
+  const liveEligible = part?.type === "text" ? lastPart?.id === part.id : lastPart?.type === "text";
 
-  return <MessageMarkdownContent {...props} entities={entities} markdown={markdown} ref={ref} />;
+  return (
+    <MessageMarkdownContent
+      {...props}
+      entities={entities}
+      liveEligible={liveEligible}
+      markdown={markdown}
+      ref={ref}
+      resetKey={message.id}
+      streamControlled={partContext?.streamControlled ?? false}
+      streamLive={partContext?.isLive ?? false}
+    />
+  );
 });
 
 type MessageMarkdownContentProps = Omit<MessageMarkdownProps, "children"> & {
   entities: ComposerEntity[];
+  liveEligible: boolean;
   markdown: string;
+  resetKey: string;
+  streamControlled: boolean;
+  streamLive: boolean;
 };
 
 const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContentProps>(
   function MessageMarkdownContent(
     {
-      animate = false,
-      animationMode = "smooth",
-      isStreaming,
-      smoothingPreset,
-      reducedMotion,
       components,
       renderEntity,
       remarkPlugins,
       entities,
+      liveEligible,
       markdown,
+      resetKey,
+      stream,
+      streamControlled,
+      streamLive,
       ...props
     },
     ref,
   ) {
-    const smooth = useSmoothStreamText(
-      markdown,
-      smoothStreamOptions(animate, animationMode, isStreaming, smoothingPreset, reducedMotion),
-    );
-    const animationActive =
-      animate && animationMode !== "none" && isStreaming !== false && reducedMotion !== true;
-    const renderedMarkdown = animate ? smooth.text : markdown;
-    const renderedEntities = validComposerEntities(renderedMarkdown, {
-      composer: { entities },
+    const ownsStream = stream !== undefined && !streamControlled;
+    const smooth = useSmoothStreamText(markdown, {
+      isStreaming: ownsStream ? stream.isStreaming : false,
+      resetKey: ownsStream ? stream.resetKey : resetKey,
+      ...(ownsStream && stream.flushImmediately !== undefined
+        ? { flushImmediately: stream.flushImmediately }
+        : {}),
     });
-
-    return renderPrimitive(
-      "div",
-      {
-        ...props,
-        children: (
-          <ReactMarkdown
-            components={markdownComponents(components, renderedEntities, renderEntity)}
-            remarkPlugins={[
+    const renderedMarkdown = ownsStream ? smooth.text : markdown;
+    const renderedEntities = useMemo(
+      () =>
+        entities.length === 0
+          ? entities
+          : validComposerEntities(renderedMarkdown, {
+              composer: { entities },
+            }),
+      [entities, renderedMarkdown],
+    );
+    const renderedComponents = useMemo(
+      () => markdownComponents(components, renderedEntities, renderEntity),
+      [components, renderEntity, renderedEntities],
+    );
+    const renderedRemarkPlugins = useMemo(
+      () =>
+        renderedEntities.length === 0
+          ? remarkPlugins
+          : [
               createMessageEntityRemarkPlugin(renderedMarkdown, renderedEntities),
               ...(remarkPlugins ?? [remarkGfm]),
-            ]}
-            remarkRehypeOptions={messageEntityRehypeOptions()}
-          >
-            {renderedMarkdown}
-          </ReactMarkdown>
-        ),
-        "data-anvia-markdown": "",
-        "data-anvia-stream-animation": animate ? animationMode : undefined,
-        "data-streaming": animationActive ? "" : undefined,
-      } as PrimitiveProps<"div">,
-      ref,
+            ],
+      [remarkPlugins, renderedEntities, renderedMarkdown],
+    );
+    const live = streamControlled
+      ? streamLive
+      : ownsStream && liveEligible && (stream.isStreaming || smooth.isDraining);
+
+    return (
+      <StreamMarkdown
+        {...props}
+        components={renderedComponents}
+        content={renderedMarkdown}
+        data-anvia-markdown=""
+        data-draining={ownsStream && smooth.isDraining ? "" : undefined}
+        data-streaming={ownsStream && stream.isStreaming ? "" : undefined}
+        live={live}
+        ref={ref}
+        remarkPlugins={renderedRemarkPlugins}
+        remarkRehypeOptions={
+          renderedEntities.length === 0 ? undefined : messageEntityRehypeOptions()
+        }
+      />
     );
   },
 );
@@ -295,20 +386,6 @@ function markdownComponents(
       return <span {...elementProps} />;
     },
   };
-}
-
-function smoothStreamOptions(
-  enabled: boolean,
-  mode: StreamAnimationMode,
-  isStreaming: boolean | undefined,
-  preset: StreamSmoothingPreset | undefined,
-  reducedMotion: boolean | undefined,
-): UseSmoothStreamTextOptions {
-  const options: UseSmoothStreamTextOptions = { enabled, mode };
-  if (isStreaming !== undefined) options.isStreaming = isStreaming;
-  if (preset !== undefined) options.preset = preset;
-  if (reducedMotion !== undefined) options.reducedMotion = reducedMotion;
-  return options;
 }
 
 type MessageCodeBlockProps = Omit<PrimitiveProps<"pre">, "children"> & {

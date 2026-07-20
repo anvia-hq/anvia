@@ -60,18 +60,25 @@ support inline `@`, `/`, `$`, or other entity chips; selected entities are submi
 `metadata.composer.entities`. Use `Composer.TextareaInput` when you need the previous native
 textarea behavior.
 
-Streaming text animation is opt-in and display-only. Keep `useChat` as the owner of transport and
-`UIMessage[]` state, then enable smoothing on the latest streaming assistant message:
+Streaming smoothing is opt-in and display-only. Keep `useChat` as the owner of transport and
+`UIMessage[]` state. Keep the lifecycle mounted after streaming stops so its buffered tail drains;
+`Message.Parts` also keeps later tool parts behind text that has not been revealed yet:
 
 ```tsx
-<Message.Markdown
-  animate
-  isStreaming={
-    chat.status === "streaming" &&
-    message.role === "assistant" &&
-    chat.messages.at(-1)?.id === message.id
-  }
-  animationMode="smooth"
-  smoothingPreset="balanced"
-/>
+<Message.Parts
+  stream={{
+    isStreaming:
+      chat.status === "streaming" &&
+      message.role === "assistant" &&
+      chat.messages.at(-1)?.id === message.id,
+    resetKey: message.id,
+    flushImmediately: chat.status === "error",
+  }}
+>
+  {(part) => (part.type === "text" ? <Message.Markdown /> : <Message.Part />)}
+</Message.Parts>
 ```
+
+For app-owned text state, `StreamMarkdown` is available from `@anvia/react-ui/stream`. It is a
+context-free renderer: pass the already displayed text as `content`, set `live` only for its growing
+tail, and import `@anvia/react-ui/stream/styles.css` for the settle animation.

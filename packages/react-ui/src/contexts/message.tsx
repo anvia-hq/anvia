@@ -6,7 +6,9 @@ export type MessageContextValue = {
 };
 
 export type MessagePartContextValue = {
+  isLive: boolean;
   part: UIMessagePart;
+  streamControlled: boolean;
 };
 
 const MessageContext = createContext<MessageContextValue | undefined>(undefined);
@@ -24,12 +26,20 @@ export function InternalMessageProvider({
 
 export function InternalMessagePartProvider({
   part,
+  isLive = false,
+  streamControlled = false,
   children,
 }: {
   part: UIMessagePart;
+  isLive?: boolean;
+  streamControlled?: boolean;
   children?: ReactNode;
 }): ReactElement {
-  return createElement(MessagePartContext.Provider, { value: { part } }, children);
+  return createElement(
+    MessagePartContext.Provider,
+    { value: { isLive, part, streamControlled } },
+    children,
+  );
 }
 
 export function useMessage(): MessageContextValue {

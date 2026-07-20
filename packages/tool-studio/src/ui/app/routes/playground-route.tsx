@@ -58,6 +58,7 @@ export function PlaygroundRoute() {
       attachmentInputRef={studio.attachmentInputRef}
       promptRef={studio.promptRef}
       transcriptScrollerRef={studio.transcriptScrollerRef}
+      transcriptResetKey={studio.transcriptResetKey}
       onAddPromptAttachments={studio.addPromptAttachments}
       onApprovalDecision={studio.decideToolApproval}
       onDeleteSession={studio.setDeleteCandidate}

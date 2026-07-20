@@ -2,7 +2,11 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
+      "@anvia/react-ui/stream": new URL("../react-ui/src/stream/index.ts", import.meta.url)
+        .pathname,
+      "@anvia/react": new URL("../react/src/index.ts", import.meta.url).pathname,
       "@anvia/core/agent": new URL("../core/src/agent/index.ts", import.meta.url).pathname,
       "@anvia/core/completion": new URL("../core/src/completion/index.ts", import.meta.url)
         .pathname,

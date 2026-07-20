@@ -19,6 +19,8 @@ Subpath entrypoints are also available:
 - `@anvia/react-ui/message`
 - `@anvia/react-ui/selection-toolbar`
 - `@anvia/react-ui/shared`
+- `@anvia/react-ui/stream`
+- `@anvia/react-ui/stream/styles.css`
 - `@anvia/react-ui/thread-list`
 - `@anvia/react-ui/styles.css`
 
@@ -158,22 +160,22 @@ const ThreadListItem: {
 };
 ```
 
-## Streamed text animation
+## Streamed text smoothing
 
-`Message.Text` and `Message.Markdown` accept these optional display props:
+`Message.Parts`, `Message.Text`, and `Message.Markdown` accept an optional `stream` lifecycle:
 
 ```ts
-type MessageStreamAnimationProps = {
-  animate?: boolean;
-  animationMode?: "none" | "smooth" | "fadeIn";
-  isStreaming?: boolean;
-  smoothingPreset?: "realtime" | "balanced" | "silky";
-  reducedMotion?: boolean;
+type MessageStreamOptions = {
+  isStreaming: boolean;
+  resetKey: string | number;
+  flushImmediately?: boolean;
 };
 ```
 
-Animation is disabled by default. When enabled, these renderers pass their existing text through
-`useSmoothStreamText`; the underlying `useChat` controller and `UIMessage[]` remain unchanged.
+Smoothing is disabled by default. Keep `stream` present when `isStreaming` changes to `false` so
+buffered text drains. `Message.Parts` smooths text and reasoning together and delays later opaque
+parts, such as tools, until preceding text is visible. The underlying `useChat` controller and
+`UIMessage[]` remain unchanged.
 
 `Message.Markdown` also accepts `renderEntity?: (entity: ComposerEntity) => ReactNode`. Valid
 entities from `message.metadata.composer.entities` render through `Message.Entity` by default.
@@ -186,6 +188,25 @@ type MessageEntityProps = React.HTMLAttributes<HTMLSpanElement> & {
 
 The default span emits `data-anvia-message-entity`, `data-entity-id`, and `data-trigger-id`. It does
 not serialize `entity.data` into the DOM.
+
+## StreamMarkdown
+
+Import `StreamMarkdown` from `@anvia/react-ui` or `@anvia/react-ui/stream`:
+
+```ts
+type StreamMarkdownProps = React.HTMLAttributes<HTMLDivElement> & {
+  content: string;
+  live?: boolean;
+  components?: Components;
+  remarkPlugins?: ReactMarkdownOptions["remarkPlugins"];
+  remarkRehypeOptions?: ReactMarkdownOptions["remarkRehypeOptions"];
+};
+```
+
+`StreamMarkdown` is context-free and does not pace content itself. It keeps completed top-level
+Markdown blocks stable as `content` grows and applies a two-band reveal only to text in the final
+live block. Preformatted code is excluded. Import `@anvia/react-ui/stream/styles.css` when using the
+subpath by itself.
 
 ## Providers
 
@@ -507,4 +528,5 @@ non-archived threads by default and accepts `archived` for archived lists.
 ## Styling
 
 Import `@anvia/react-ui/styles.css` for functional prototype styling, or target the emitted
-`data-anvia-*` attributes directly. Application CSS owns layout, spacing, colors, and cards.
+`data-anvia-*` attributes directly. Standalone `StreamMarkdown` consumers can import only
+`@anvia/react-ui/stream/styles.css`. Application CSS owns layout, spacing, colors, and cards.

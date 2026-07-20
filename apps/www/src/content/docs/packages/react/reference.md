@@ -426,35 +426,67 @@ continues tailing live events until `stream_end`. Custom `createRequest` callbac
 ## useSmoothStreamText
 
 ```ts
-type StreamAnimationMode = "none" | "smooth" | "fadeIn";
-type StreamSmoothingPreset = "realtime" | "balanced" | "silky";
-
-type UseSmoothStreamTextOptions = {
-  enabled?: boolean;
-  mode?: StreamAnimationMode;
-  isStreaming?: boolean;
-  preset?: StreamSmoothingPreset;
-  reducedMotion?: boolean;
-  largeAppendChars?: number;
+type StreamSmoothingLifecycle = {
+  isStreaming: boolean;
+  resetKey: string | number;
+  flushImmediately?: boolean;
 };
+
+type UseSmoothStreamTextOptions = StreamSmoothingLifecycle;
 
 type UseSmoothStreamTextResult = {
   text: string;
   isAnimating: boolean;
+  isDraining: boolean;
   flush(): void;
-  reset(nextText?: string): void;
 };
 
 function useSmoothStreamText(
   content: string,
-  options?: UseSmoothStreamTextOptions,
+  options: UseSmoothStreamTextOptions,
 ): UseSmoothStreamTextResult;
 ```
 
-Purpose: progressively reveal append-only display text with `requestAnimationFrame`. It does not
-consume transport events, update `UIMessage[]`, or replace `useChat`. Replacement text, large
-appends over the default 500-character threshold, disabled animation, stopped streaming, and
-reduced motion synchronize immediately.
+Purpose: buffer and pace append-only display text with elapsed-time `requestAnimationFrame`
+updates. It does not consume transport events, update `UIMessage[]`, or replace `useChat`.
+
+Keep the hook mounted when `isStreaming` changes to `false`; it enters a bounded completion drain
+instead of snapping to the target. Change `resetKey` when loading a different conversation so its
+existing content seeds immediately. `flushImmediately` and `flush()` reveal the complete target,
+including for terminal errors, hidden tabs, and non-animation environments. Reveals respect
+grapheme boundaries and the internal backlog is bounded.
+
+## useSmoothStreamItems
+
+```ts
+type SmoothStreamItemAdapter<T> = {
+  getKey(item: T): string;
+  getText(item: T): string | undefined;
+  withText(item: T, text: string): T;
+};
+
+type UseSmoothStreamItemsOptions<T> = StreamSmoothingLifecycle & {
+  adapter: SmoothStreamItemAdapter<T>;
+};
+
+type UseSmoothStreamItemsResult<T> = {
+  items: readonly T[];
+  isAnimating: boolean;
+  isDraining: boolean;
+  liveItemKey: string | null;
+  flush(): void;
+};
+
+function useSmoothStreamItems<T>(
+  items: readonly T[],
+  options: UseSmoothStreamItemsOptions<T>,
+): UseSmoothStreamItemsResult<T>;
+```
+
+Purpose: apply the same smoothing state machine to ordered heterogeneous items. Return text only
+for items that should be paced; return `undefined` for opaque items such as tools. Opaque items are
+held behind preceding buffered text, while updates to an already visible opaque item are applied
+immediately. `liveItemKey` identifies the current growing item for a tail-only visual treatment.
 
 ## useCompletion
 

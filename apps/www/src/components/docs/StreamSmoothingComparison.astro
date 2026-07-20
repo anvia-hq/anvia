@@ -1,0 +1,494 @@
+<figure class="stream-comparison" data-stream-comparison>
+  <div class="stream-comparison__header">
+    <div>
+      <span class="stream-comparison__eyebrow">Interactive comparison</span>
+      <h4>Same source events, different display</h4>
+    </div>
+
+    <button type="button" class="stream-comparison__replay" data-stream-replay>
+      <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+        <path d="M4.5 6.5V2.75m0 0H8.25m-3.75 0 2.02 2.02A6.25 6.25 0 1 1 3.75 10" />
+      </svg>
+      Replay
+    </button>
+  </div>
+
+  <div class="stream-comparison__grid">
+    <section class="stream-panel" aria-label="Without smoothing: source updates">
+      <div class="stream-panel__header">
+        <div>
+          <span class="stream-panel__kicker">Without smoothing</span>
+          <h5>Source updates</h5>
+        </div>
+        <span class="stream-panel__status" data-stream-direct-status>
+          <span aria-hidden="true"></span>
+          Waiting
+        </span>
+      </div>
+
+      <div class="stream-panel__output" aria-label="Direct streamed text">
+        <span data-stream-direct-output></span><span class="stream-panel__cursor" aria-hidden="true"></span>
+      </div>
+
+      <div class="stream-panel__footer">
+        <span>Immediate</span>
+        <span data-stream-direct-count>0 chars</span>
+      </div>
+    </section>
+
+    <section class="stream-panel stream-panel--smooth" aria-label="With smoothing: buffered display">
+      <div class="stream-panel__header">
+        <div>
+          <span class="stream-panel__kicker">With smoothing</span>
+          <h5>Buffered display</h5>
+        </div>
+        <span class="stream-panel__status" data-stream-smooth-status>
+          <span aria-hidden="true"></span>
+          Waiting
+        </span>
+      </div>
+
+      <div class="stream-panel__output" aria-label="Smoothed streamed text">
+        <span data-stream-smooth-output></span><span class="stream-panel__cursor" aria-hidden="true"></span>
+      </div>
+
+      <div class="stream-panel__footer">
+        <span>Paced</span>
+        <span data-stream-smooth-count>0 chars</span>
+      </div>
+    </section>
+  </div>
+
+  <figcaption>
+    Both views receive the same bursty source and finish with identical text. Smoothing changes only
+    the display cadence; the stored message is unchanged.
+  </figcaption>
+</figure>
+
+<script>
+  const sourceChunks = [
+    { atMs: 100, text: "Here’s" },
+    { atMs: 145, text: " the rollout plan:" },
+    { atMs: 500, text: " validate" },
+    { atMs: 540, text: " the schema," },
+    { atMs: 880, text: " stream every response," },
+    { atMs: 920, text: " and keep" },
+    { atMs: 1_260, text: " tool calls in order." },
+  ] as const;
+  const bufferMs = 225;
+  const completionDrainMs = 700;
+
+  const comparisons = document.querySelectorAll<HTMLElement>("[data-stream-comparison]");
+
+  comparisons.forEach((comparison) => {
+    if (comparison.dataset.initialized === "true") {
+      return;
+    }
+
+    comparison.dataset.initialized = "true";
+
+    const directOutput = comparison.querySelector<HTMLElement>("[data-stream-direct-output]");
+    const smoothOutput = comparison.querySelector<HTMLElement>("[data-stream-smooth-output]");
+    const directCount = comparison.querySelector<HTMLElement>("[data-stream-direct-count]");
+    const smoothCount = comparison.querySelector<HTMLElement>("[data-stream-smooth-count]");
+    const directStatus = comparison.querySelector<HTMLElement>("[data-stream-direct-status]");
+    const smoothStatus = comparison.querySelector<HTMLElement>("[data-stream-smooth-status]");
+    const replay = comparison.querySelector<HTMLButtonElement>("[data-stream-replay]");
+
+    if (
+      !directOutput ||
+      !smoothOutput ||
+      !directCount ||
+      !smoothCount ||
+      !directStatus ||
+      !smoothStatus ||
+      !replay
+    ) {
+      return;
+    }
+
+    const fullText = sourceChunks.map((chunk) => chunk.text).join("");
+    const finalSourceAtMs = sourceChunks.at(-1)?.atMs ?? 0;
+    let animationFrame = 0;
+
+    const setStatus = (element: HTMLElement, label: string, state: string) => {
+      element.lastChild?.remove();
+      element.append(document.createTextNode(label));
+      element.dataset.state = state;
+    };
+
+    const setOutput = (element: HTMLElement, countElement: HTMLElement, text: string) => {
+      element.textContent = text;
+      countElement.textContent = `${text.length} ${text.length === 1 ? "char" : "chars"}`;
+    };
+
+    const getDirectText = (elapsedMs: number) =>
+      sourceChunks
+        .filter((chunk) => elapsedMs >= chunk.atMs)
+        .map((chunk) => chunk.text)
+        .join("");
+
+    const getBufferedTargetLength = (elapsedMs: number) => {
+      const playbackAtMs = elapsedMs - bufferMs;
+      const samples = [{ atMs: 0, totalChars: 0 }];
+      let totalChars = 0;
+
+      for (const chunk of sourceChunks) {
+        totalChars += chunk.text.length;
+        samples.push({ atMs: chunk.atMs, totalChars });
+      }
+
+      if (playbackAtMs <= 0) {
+        return 0;
+      }
+
+      for (let index = 1; index < samples.length; index += 1) {
+        const previous = samples[index - 1];
+        const next = samples[index];
+        if (!previous || !next || playbackAtMs > next.atMs) {
+          continue;
+        }
+
+        const progress = Math.min(
+          Math.max((playbackAtMs - previous.atMs) / (next.atMs - previous.atMs), 0),
+          1,
+        );
+        return previous.totalChars + (next.totalChars - previous.totalChars) * progress;
+      }
+
+      return fullText.length;
+    };
+
+    const play = () => {
+      cancelAnimationFrame(animationFrame);
+      setOutput(directOutput, directCount, "");
+      setOutput(smoothOutput, smoothCount, "");
+      setStatus(directStatus, "Waiting", "waiting");
+      setStatus(smoothStatus, "Buffering", "waiting");
+      comparison.dataset.playing = "true";
+
+      const startedAt = performance.now();
+      let lastFrameAt = startedAt;
+      let smoothCursor = 0;
+
+      const tick = (now: number) => {
+        const elapsedMs = now - startedAt;
+        const elapsedSinceFrameMs = Math.min(Math.max(now - lastFrameAt, 0), 64);
+        const directText = getDirectText(elapsedMs);
+        const sourceComplete = elapsedMs >= finalSourceAtMs;
+        const bufferedTarget = getBufferedTargetLength(elapsedMs);
+        const pendingChars = Math.max(0, fullText.length - smoothCursor);
+        const playbackPendingChars = Math.max(0, bufferedTarget - smoothCursor);
+        const streamingRate = Math.min(360, 200 + playbackPendingChars * 4);
+        const drainDeadlineAtMs = finalSourceAtMs + completionDrainMs;
+        const remainingDrainMs = Math.max(drainDeadlineAtMs - elapsedMs, 1);
+        const completionRate = Math.min(1_600, Math.max(140, (pendingChars / remainingDrainMs) * 1_000));
+        const charsPerSecond = sourceComplete ? completionRate : streamingRate;
+        const nextTarget = sourceComplete ? fullText.length : bufferedTarget;
+
+        smoothCursor = Math.min(
+          nextTarget,
+          smoothCursor + (elapsedSinceFrameMs / 1_000) * charsPerSecond,
+        );
+
+        const smoothText = fullText.slice(0, Math.floor(smoothCursor));
+        setOutput(directOutput, directCount, directText);
+        setOutput(smoothOutput, smoothCount, smoothText);
+
+        setStatus(
+          directStatus,
+          sourceComplete ? "Complete" : directText.length === 0 ? "Waiting" : "Receiving",
+          sourceComplete ? "complete" : directText.length === 0 ? "waiting" : "active",
+        );
+        setStatus(
+          smoothStatus,
+          smoothText.length >= fullText.length
+            ? "Complete"
+            : sourceComplete
+              ? "Draining"
+              : smoothText.length === 0
+                ? "Buffering"
+                : "Playing",
+          smoothText.length >= fullText.length
+            ? "complete"
+            : sourceComplete
+              ? "draining"
+              : smoothText.length === 0
+                ? "waiting"
+                : "active",
+        );
+
+        lastFrameAt = now;
+
+        if (smoothText.length < fullText.length) {
+          animationFrame = requestAnimationFrame(tick);
+          return;
+        }
+
+        comparison.dataset.playing = "false";
+      };
+
+      animationFrame = requestAnimationFrame(tick);
+    };
+
+    replay.addEventListener("click", play);
+
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) {
+            return;
+          }
+
+          observer.disconnect();
+          play();
+        },
+        { threshold: 0.35 },
+      );
+      observer.observe(comparison);
+    } else {
+      play();
+    }
+  });
+</script>
+
+<style>
+  .stream-comparison {
+    --comparison-accent: #2bf563;
+    --comparison-border: rgba(255, 255, 255, 0.09);
+    --comparison-panel: rgba(255, 255, 255, 0.025);
+    margin: 1.35rem 0 0;
+    overflow: hidden;
+    border: 1px solid var(--comparison-border);
+    border-radius: 0.9rem;
+    background:
+      linear-gradient(135deg, rgba(43, 245, 99, 0.03) 0 1px, transparent 1px 28px),
+      #101011;
+  }
+
+  .stream-comparison__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--comparison-border);
+    padding: 1rem 1.1rem;
+  }
+
+  .stream-comparison__eyebrow,
+  .stream-panel__kicker,
+  .stream-panel__footer,
+  .stream-panel__status {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+
+  .stream-comparison__eyebrow {
+    color: color-mix(in srgb, var(--comparison-accent) 72%, transparent);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .stream-comparison h4,
+  .stream-comparison h5 {
+    margin: 0;
+    color: rgb(244 244 245);
+    font-weight: 650;
+  }
+
+  .stream-comparison h4 {
+    margin-top: 0.25rem;
+    font-size: 1rem;
+  }
+
+  .stream-comparison h5 {
+    margin-top: 0.2rem;
+    font-size: 0.9rem;
+  }
+
+  .stream-comparison__replay {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.55rem;
+    background: rgba(255, 255, 255, 0.055);
+    padding: 0.5rem 0.7rem;
+    color: rgb(228 228 231);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .stream-comparison__replay:hover {
+    border-color: rgba(43, 245, 99, 0.32);
+    background: rgba(43, 245, 99, 0.08);
+    color: var(--comparison-accent);
+  }
+
+  .stream-comparison__replay:focus-visible {
+    outline: 2px solid var(--comparison-accent);
+    outline-offset: 2px;
+  }
+
+  .stream-comparison__replay svg {
+    width: 0.9rem;
+    height: 0.9rem;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .stream-comparison[data-playing="true"] .stream-comparison__replay svg {
+    animation: stream-comparison-spin 900ms linear infinite;
+  }
+
+  .stream-comparison__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .stream-panel {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--comparison-border);
+    border-radius: 0.7rem;
+    background: var(--comparison-panel);
+  }
+
+  .stream-panel--smooth {
+    border-color: rgba(43, 245, 99, 0.2);
+    background: rgba(43, 245, 99, 0.035);
+  }
+
+  .stream-panel__header,
+  .stream-panel__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .stream-panel__header {
+    min-height: 3.7rem;
+    border-bottom: 1px solid var(--comparison-border);
+    padding: 0.75rem;
+  }
+
+  .stream-panel__kicker {
+    color: rgb(113 113 122);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .stream-panel--smooth .stream-panel__kicker {
+    color: color-mix(in srgb, var(--comparison-accent) 68%, transparent);
+  }
+
+  .stream-panel__status {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.35rem;
+    color: rgb(161 161 170);
+    font-size: 0.62rem;
+  }
+
+  .stream-panel__status > span {
+    width: 0.38rem;
+    height: 0.38rem;
+    border-radius: 999px;
+    background: rgb(82 82 91);
+  }
+
+  .stream-panel__status[data-state="active"] > span,
+  .stream-panel__status[data-state="draining"] > span {
+    background: var(--comparison-accent);
+    box-shadow: 0 0 0 0.2rem rgba(43, 245, 99, 0.1);
+  }
+
+  .stream-panel__status[data-state="complete"] > span {
+    background: rgb(161 161 170);
+  }
+
+  .stream-panel__output {
+    min-height: 8.25rem;
+    padding: 1rem 0.9rem;
+    color: rgb(228 228 231);
+    font-size: 0.88rem;
+    line-height: 1.75;
+  }
+
+  .stream-panel__cursor {
+    display: inline-block;
+    width: 0.42rem;
+    height: 1em;
+    margin-left: 0.16rem;
+    translate: 0 0.12em;
+    background: currentColor;
+    opacity: 0.35;
+    animation: stream-comparison-blink 900ms steps(1, end) infinite;
+  }
+
+  .stream-comparison[data-playing="false"] .stream-panel__cursor {
+    display: none;
+  }
+
+  .stream-panel__footer {
+    border-top: 1px solid var(--comparison-border);
+    padding: 0.55rem 0.75rem;
+    color: rgb(113 113 122);
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .stream-comparison figcaption {
+    border-top: 1px solid var(--comparison-border);
+    padding: 0.8rem 1.1rem;
+    color: rgb(161 161 170);
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+
+  @keyframes stream-comparison-spin {
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  @keyframes stream-comparison-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 42rem) {
+    .stream-comparison__grid {
+      grid-template-columns: 1fr;
+    }
+
+    .stream-panel__output {
+      min-height: 6.75rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stream-comparison__replay svg,
+    .stream-panel__cursor {
+      animation: none !important;
+    }
+  }
+</style>

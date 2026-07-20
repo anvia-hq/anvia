@@ -110,7 +110,7 @@ class OpenAIResponsesCompletionModel implements StreamingCompletionModel {
 
 Purpose: completion adapter for OpenAI Responses API.
 
-Return behavior: non-streaming calls return normalized `CompletionResponse`; streaming calls yield normalized completion events.
+Return behavior: non-streaming calls return normalized `CompletionResponse`; streaming calls yield normalized completion events. A Responses API `response.failed` event includes normalized usage when the failed response supplies it. Network errors and failures without provider usage omit it.
 
 Notable errors: rejects or yields errors from OpenAI Responses API calls.
 

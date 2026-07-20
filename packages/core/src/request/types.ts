@@ -28,6 +28,12 @@ export type AgentDeltaEvent =
     }
   | { type: "tool_call"; toolCall: ToolCall };
 
+export type AgentErrorStreamEvent = {
+  type: "error";
+  error: unknown;
+  usage: Usage;
+};
+
 export type AgentChildStreamEvent<RawResponse = unknown> =
   | {
       type: "turn_start";
@@ -82,10 +88,7 @@ export type AgentChildStreamEvent<RawResponse = unknown> =
       trace?: AgentTraceInfo | undefined;
       guardrails?: GuardrailDecisionRecord[] | undefined;
     }
-  | {
-      type: "error";
-      error: unknown;
-    };
+  | AgentErrorStreamEvent;
 
 export type AgentStreamEvent<RawResponse = unknown> =
   | AgentChildStreamEvent<RawResponse>

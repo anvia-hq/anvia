@@ -2737,6 +2737,7 @@ describe("Anvia studio", () => {
       expect.objectContaining({
         type: "error",
         error: expect.objectContaining({ reason: "Blocked by existing hook." }),
+        usage: Usage.empty(),
       }),
     );
   });
@@ -4002,7 +4003,14 @@ describe("Anvia studio", () => {
 
     expect(run.status).toBe(200);
     expect(run.headers.get("content-type")).toContain("application/x-ndjson");
-    expect(await readJsonl(run)).toContainEqual(
+    const events = await readJsonl(run);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "error",
+        usage: Usage.empty(),
+      }),
+    );
+    expect(events).toContainEqual(
       expect.objectContaining({
         type: "error",
         error: expect.objectContaining({ message: "stream failed" }),

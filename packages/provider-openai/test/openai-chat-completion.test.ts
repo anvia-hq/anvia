@@ -317,6 +317,19 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
+  it("does not fabricate usage before a Chat Completions usage chunk", () => {
+    const events = fromOpenAIChatCompletionStreamChunk({
+      id: "cmpl_without_usage",
+      choices: [{ index: 0, finish_reason: "stop", delta: { content: "done" } }],
+    });
+
+    expect(events).toEqual([
+      { type: "text_delta", delta: "done" },
+      { type: "message_id", id: "cmpl_without_usage" },
+    ]);
+    expect(events.some((event) => event.type === "final")).toBe(false);
+  });
+
   it("assembles Devscale-style streamed tool fragments into one valid call", async () => {
     const calls: unknown[] = [];
     const model = openAIChatModelWithStreams([

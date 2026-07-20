@@ -30,7 +30,7 @@ for await (const event of request.stream()) {
       await ui.finish(event.output, event.usage);
       break;
     case "error":
-      await ui.fail(event.error);
+      await ui.fail(event.error, event.usage);
       break;
   }
 }
@@ -50,7 +50,7 @@ Agent streams can emit:
 - `"turn_end"` with the provider response for a turn
 - `"agent_tool_event"` for events from a nested agent used as a tool
 - `"final"` with output, usage, messages, run id, and trace metadata
-- `"error"` when the run fails
+- `"error"` with cumulative authoritative usage when the run fails
 
 Do not send every event directly to a browser. Tool arguments, tool results, reasoning content, and provider metadata can contain private data. Filter the stream for each surface.
 
@@ -67,7 +67,11 @@ function toClientEvent(event: AgentStreamEvent) {
     return { type: "done", output: event.output, usage: event.usage };
   }
   if (event.type === "error") {
-    return { type: "error", message: "The assistant could not complete the request." };
+    return {
+      type: "error",
+      message: "The assistant could not complete the request.",
+      usage: event.usage,
+    };
   }
   if (event.type === "tool_call") {
     return { type: "status", label: "Checking data" };
@@ -76,6 +80,16 @@ function toClientEvent(event: AgentStreamEvent) {
 ```
 
 Internal tools can receive richer events. User-facing streams should usually expose text, status, final output, and safe error messages only.
+
+## Error Usage Compatibility
+
+`AgentStreamEvent` error records require `usage`. Code that constructs agent events in tests, mocks,
+or custom runtimes must now include it. Use the cumulative authoritative usage received by the run,
+or `Usage.empty()` when no provider has reported usage yet.
+
+Provider-level `CompletionStreamEvent` errors keep usage optional. Network interruptions, provider
+failures without usage, and Chat Completions streams that end before their usage chunk cannot be
+accounted exactly. Anvia does not estimate those tokens from text or request contents.
 
 ## Nested Agent Events
 

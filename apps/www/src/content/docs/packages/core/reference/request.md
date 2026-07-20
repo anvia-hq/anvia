@@ -90,6 +90,12 @@ Return behavior: `messages` contains the new run messages, not the full prior hi
 ```ts
 type AgentChildStreamEvent = Exclude<AgentStreamEvent, { type: "agent_tool_event" }>;
 
+type AgentErrorStreamEvent = {
+  type: "error";
+  error: unknown;
+  usage: Usage;
+};
+
 type AgentStreamEvent =
   | { type: "turn_start"; turn: number; prompt: Message; history: Message[] }
   | { type: "text_delta"; turn: number; delta: string }
@@ -99,12 +105,16 @@ type AgentStreamEvent =
   | { type: "agent_tool_event"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; agentId: string; agentName?: string; event: AgentChildStreamEvent }
   | { type: "turn_end"; turn: number; response: CompletionResponse }
   | { type: "final"; runId: string; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo }
-  | { type: "error"; error: unknown };
+  | AgentErrorStreamEvent;
 ```
 
 Purpose: streaming event union for observing agent execution.
 
 Return behavior: emitted by `PromptRequest.stream()` and `readableStream()`. `agent_tool_event` appears when a child agent is exposed with `asTool({ stream: true })`.
+
+Agent error usage is cumulative across completed turns and any failed provider attempts that report
+authoritative usage. It is `Usage.empty()` when the runtime has not received authoritative usage.
+After yielding an error event, the async iterator rejects its next read with the same error.
 
 ## Errors
 

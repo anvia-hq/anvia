@@ -585,6 +585,7 @@ export type CompletionStreamEvent<RawResponse = unknown> =
   | {
       type: "error";
       error: unknown;
+      usage?: Usage;
     };
 
 export interface StreamingCompletionModel<RawResponse = unknown, ModelName extends string = string>

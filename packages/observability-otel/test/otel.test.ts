@@ -507,7 +507,7 @@ describe("otel", () => {
       event: {
         agentId: "child",
         agentName: "Child Agent",
-        event: { type: "error", error: "child failed" },
+        event: { type: "error", error: "child failed", usage: usage(3, 1) },
       },
     });
 
@@ -516,6 +516,10 @@ describe("otel", () => {
     expect(childAgent?.status).toEqual({
       code: SpanStatusCode.ERROR,
       message: "child failed",
+    });
+    expect(childAgent?.attributes).toMatchObject({
+      "anvia.usage.input_tokens": 3,
+      "anvia.usage.output_tokens": 1,
     });
     expect(childAgent?.ended).toBe(true);
   });

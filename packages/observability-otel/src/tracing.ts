@@ -310,6 +310,9 @@ class OtelToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "error") {
+      if (isRecord(child.usage)) {
+        agent.setAttributes(compactAttributes(usageAttributesFromRecord(child.usage)));
+      }
       recordSpanError(agent, child.error);
       agent.end();
       this.childAgents.delete(agentId);

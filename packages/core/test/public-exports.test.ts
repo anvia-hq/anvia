@@ -15,12 +15,13 @@ import * as guardrails from "../src/guardrails";
 import * as hooks from "../src/hooks";
 import * as imageGeneration from "../src/image-generation";
 import type {
+  AgentErrorStreamEvent as RootAgentErrorStreamEvent,
   CompletionRetryContext as RootCompletionRetryContext,
   CompletionRetryOptions as RootCompletionRetryOptions,
   ToolContent as RootToolContentType,
 } from "../src/index";
 import * as publicCore from "../src/index";
-import { Message as RootMessage, ToolContent as RootToolContent } from "../src/index";
+import { Message as RootMessage, ToolContent as RootToolContent, Usage } from "../src/index";
 import * as internalAgent from "../src/internal/agent";
 import * as loaders from "../src/loaders";
 import * as mcp from "../src/mcp";
@@ -28,6 +29,8 @@ import * as modelListing from "../src/model-listing";
 import * as observability from "../src/observability";
 import * as pipeline from "../src/pipeline";
 import type {
+  AgentErrorStreamEvent as RequestAgentErrorStreamEvent,
+  AgentStreamEvent as RequestAgentStreamEvent,
   CompletionRetryContext as RequestCompletionRetryContext,
   CompletionRetryOptions as RequestCompletionRetryOptions,
 } from "../src/request";
@@ -92,6 +95,21 @@ describe("public exports", () => {
     expect("ToolApprovalRequiredError" in request).toBe(true);
     expectTypeOf<RootCompletionRetryContext>().toEqualTypeOf<RequestCompletionRetryContext>();
     expectTypeOf<RootCompletionRetryOptions>().toEqualTypeOf<RequestCompletionRetryOptions>();
+    expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<RequestAgentErrorStreamEvent>();
+    expectTypeOf<
+      Extract<RequestAgentStreamEvent, { type: "error" }>
+    >().toEqualTypeOf<RequestAgentErrorStreamEvent>();
+
+    const errorEvent: RequestAgentErrorStreamEvent = {
+      type: "error",
+      error: new Error("failed"),
+      usage: Usage.empty(),
+    };
+    expect(errorEvent.usage).toEqual(Usage.empty());
+
+    // @ts-expect-error Agent runtime error events require cumulative usage.
+    const missingUsage: RequestAgentErrorStreamEvent = { type: "error", error: "failed" };
+    void missingUsage;
   });
 
   it("does not expose removed experimental UI stream creators", () => {

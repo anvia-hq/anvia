@@ -305,7 +305,7 @@ type CompletionStreamEvent<RawResponse = unknown> =
   | { type: "tool_call"; toolCall: ToolCall }
   | { type: "message_id"; id: string }
   | { type: "final"; response: CompletionResponse<RawResponse> }
-  | { type: "error"; error: unknown };
+  | { type: "error"; error: unknown; usage?: Usage };
 
 interface StreamingCompletionModel<RawResponse = unknown> extends CompletionModel<RawResponse> {
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent<RawResponse>>;
@@ -314,7 +314,9 @@ interface StreamingCompletionModel<RawResponse = unknown> extends CompletionMode
 
 Purpose: provider adapter interfaces. The metadata fields identify the adapter, its default model name, and the normalized request features the adapter supports.
 
-Return behavior: streaming models yield deltas and finish with a `final` event.
+Return behavior: streaming models yield deltas and finish with a `final` event. Provider error events
+may include authoritative usage for the failed request; adapters omit it when the provider does not
+report usage.
 
 Notable errors: provider adapters can throw transport, authentication, provider validation, stream, or capability validation errors.
 

@@ -19,6 +19,15 @@ describe("StreamMarkdown", () => {
     expect(splitStreamMarkdownBlocks(markdown)).toEqual([{ content: markdown, startOffset: 0 }]);
   });
 
+  it("keeps a GFM table intact as one rendered block", () => {
+    const markdown = "| Name | Status |\n| --- | --- |\n| Stream | Ready |\n";
+    expect(splitStreamMarkdownBlocks(markdown)).toEqual([{ content: markdown, startOffset: 0 }]);
+
+    const { container } = render(<StreamMarkdown content={markdown} live />);
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.querySelector("tbody")?.textContent).toContain("StreamReady");
+  });
+
   it("wraps only the live rendered tail and excludes preformatted code", () => {
     const { container } = render(
       <StreamMarkdown

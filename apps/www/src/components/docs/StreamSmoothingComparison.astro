@@ -167,6 +167,15 @@
       setStatus(smoothStatus, "Buffering", "waiting");
       comparison.dataset.playing = "true";
 
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        setOutput(directOutput, directCount, fullText);
+        setOutput(smoothOutput, smoothCount, fullText);
+        setStatus(directStatus, "Complete", "complete");
+        setStatus(smoothStatus, "Complete", "complete");
+        comparison.dataset.playing = "false";
+        return;
+      }
+
       const startedAt = performance.now();
       let lastFrameAt = startedAt;
       let smoothCursor = 0;

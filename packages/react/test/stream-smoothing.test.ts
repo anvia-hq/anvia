@@ -88,6 +88,25 @@ describe("stream smoothing state", () => {
     expect(snapshot.items).toBe(state.targetItems);
     expect(snapshot.isDraining).toBe(false);
   });
+
+  it("preserves an active drain across repeated non-streaming target updates", () => {
+    const target: Item[] = [{ id: "text", kind: "text", text: "Completion tail" }];
+    let state = createStreamSmoothingState<Item>([], { isStreaming: true, nowMs: 0 }, adapter);
+    state = updateStreamSmoothingTarget(state, target, { isStreaming: true, nowMs: 0 }, adapter);
+    state = updateStreamSmoothingTarget(state, target, { isStreaming: false, nowMs: 100 }, adapter);
+    const displayedBeforeRerender = state.displayedItems;
+
+    state = updateStreamSmoothingTarget(
+      state,
+      [...target],
+      { isStreaming: false, nowMs: 120 },
+      adapter,
+    );
+
+    expect(state.displayedItems).toEqual(displayedBeforeRerender);
+    expect(state.displayedItems).not.toBe(state.targetItems);
+    expect(getStreamSmoothingSnapshot(state, adapter).isDraining).toBe(true);
+  });
 });
 
 function advanceForFrameRate(target: Item[], framesPerSecond: number): number {

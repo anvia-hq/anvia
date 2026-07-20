@@ -77,7 +77,7 @@ export function updateStreamSmoothingTarget<T>(
 ): StreamSmoothingState<T> {
   const targetItems = [...items];
 
-  if (!state.isSourceStreaming && !options.isStreaming) {
+  if (!state.isSourceStreaming && !options.isStreaming && !hasPendingContent(state, adapter)) {
     return createStreamSmoothingState(targetItems, options, adapter);
   }
 

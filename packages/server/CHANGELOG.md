@@ -1,5 +1,12 @@
 # @anvia/server
 
+## 0.5.12
+
+### Patch Changes
+
+- Updated dependencies [d9ac48c]
+  - @anvia/core@0.14.0
+
 ## 0.5.11
 
 ### Patch Changes

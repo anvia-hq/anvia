@@ -26,13 +26,13 @@ A support UI needs to show "looking up order", stream the answer, persist the fi
 ## Server Runner
 
 ```ts
-import type { AgentStreamEvent } from "@anvia/core";
+import type { AgentStreamEvent, Usage } from "@anvia/core";
 
 type SupportUiEvent =
   | { type: "activity"; label: string }
   | { type: "text"; delta: string }
   | { type: "final"; output: string; runId: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; usage: Usage };
 
 export async function* runSupportTurnStream(input: SupportStreamInput) {
   const user = await input.auth.requireUser();
@@ -109,7 +109,7 @@ function toSupportUiEvent(event: AgentStreamEvent): SupportUiEvent | undefined {
   }
 
   if (event.type === "error") {
-    return { type: "error", message: "The run failed." };
+    return { type: "error", message: "The run failed.", usage: event.usage };
   }
 }
 ```

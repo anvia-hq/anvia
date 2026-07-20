@@ -479,6 +479,33 @@ describe("OpenAI Responses mapping", () => {
 
     expect(
       fromOpenAIStreamEvent({
+        type: "response.failed",
+        response: {
+          id: "resp_failed_with_usage",
+          error: { code: "server_error", message: "The billed response failed." },
+          usage: {
+            input_tokens: 11,
+            output_tokens: 4,
+            total_tokens: 15,
+            input_tokens_details: { cached_tokens: 2 },
+          },
+        },
+        sequence_number: 3,
+      }),
+    ).toEqual({
+      type: "error",
+      error: { code: "server_error", message: "The billed response failed." },
+      usage: {
+        ...Usage.empty(),
+        inputTokens: 11,
+        outputTokens: 4,
+        totalTokens: 15,
+        cachedInputTokens: 2,
+      },
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
         type: "response.incomplete",
         response: {
           id: "resp_incomplete",
@@ -494,7 +521,7 @@ describe("OpenAI Responses mapping", () => {
             total_tokens: 5,
           },
         },
-        sequence_number: 3,
+        sequence_number: 4,
       }),
     ).toEqual({
       type: "final",

@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import { type JsonObject, type JsonValue, Usage } from "@anvia/core/completion";
 import type { PipelineRunEvent } from "@anvia/core/pipeline";
 import type { Context, Hono } from "hono";
 import type {
@@ -378,7 +378,7 @@ async function* pipelineRunEvents(props: {
       if (log !== undefined) {
         events.push({ type: "pipeline_log", log });
       }
-      events.push({ type: "error", error: serializeError(error) } as AgentRunStreamEvent);
+      events.push({ type: "error", error: serializeError(error), usage: Usage.empty() });
     })
     .finally(() => events.close());
 

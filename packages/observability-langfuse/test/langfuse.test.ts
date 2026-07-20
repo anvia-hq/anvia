@@ -983,7 +983,7 @@ describe("langfuse", () => {
       toolCallId: "call-child",
       event: {
         agentId: "child",
-        event: { type: "error", error: new Error("child failed") },
+        event: { type: "error", error: new Error("child failed"), usage: usage(3, 1) },
       },
     });
     await tool?.error?.({
@@ -1001,6 +1001,7 @@ describe("langfuse", () => {
         level: "ERROR",
         statusMessage: "child failed",
         output: { error: "child failed" },
+        metadata: { usage: usage(3, 1) },
       }),
     );
     expect(parentTool.update).toHaveBeenCalledWith(

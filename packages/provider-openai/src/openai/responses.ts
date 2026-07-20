@@ -222,23 +222,9 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
     }
   }
 
-  const usageSource = isPlainObject(raw.usage) ? raw.usage : {};
-  const inputTokens = numberFrom(usageSource.input_tokens);
-  const outputTokens = numberFrom(usageSource.output_tokens);
-  const totalTokens = numberFrom(usageSource.total_tokens) || inputTokens + outputTokens;
-  const details = isPlainObject(usageSource.input_tokens_details)
-    ? usageSource.input_tokens_details
-    : {};
-
   const result: CompletionResponse = {
     choice,
-    usage: {
-      ...Usage.empty(),
-      inputTokens,
-      outputTokens,
-      totalTokens,
-      cachedInputTokens: numberFrom(details.cached_tokens),
-    },
+    usage: usageFromOpenAIResponse(raw.usage),
     rawResponse: response,
   };
 
@@ -339,7 +325,14 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
   }
 
   if (event.type === "response.failed" && isPlainObject(event.response)) {
-    return { type: "error", error: event.response.error ?? event.response };
+    const mapped: CompletionStreamEvent = {
+      type: "error",
+      error: event.response.error ?? event.response,
+    };
+    if (isPlainObject(event.response.usage)) {
+      mapped.usage = usageFromOpenAIResponse(event.response.usage);
+    }
+    return mapped;
   }
 
   if (event.type === "error" || event.type === "response.error") {
@@ -347,6 +340,24 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
   }
 
   return undefined;
+}
+
+function usageFromOpenAIResponse(usage: unknown): Usage {
+  const usageSource = isPlainObject(usage) ? usage : {};
+  const inputTokens = numberFrom(usageSource.input_tokens);
+  const outputTokens = numberFrom(usageSource.output_tokens);
+  const totalTokens = numberFrom(usageSource.total_tokens) || inputTokens + outputTokens;
+  const details = isPlainObject(usageSource.input_tokens_details)
+    ? usageSource.input_tokens_details
+    : {};
+
+  return {
+    ...Usage.empty(),
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens: numberFrom(details.cached_tokens),
+  };
 }
 
 function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {

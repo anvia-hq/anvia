@@ -5,6 +5,7 @@ import {
   type AgentEventAppendInput,
   type AgentEventRecord,
   type AgentEventStore,
+  type AgentRunErrorArgs,
   type AgentStreamEvent,
   AssistantContent,
   type CompletionRequest,
@@ -13,14 +14,18 @@ import {
   cancelPrompt,
   createHook,
   createMiddleware,
+  createObserver,
   createTool,
   createToolMiddleware,
+  defineGuardrailPolicy,
+  defineOutputGuardrail,
   getAssistantGenerationMetadata,
   Message,
   PromptCancelledError,
   type StreamingCompletionModel,
   ToolOutput,
   toReadableStream,
+  Usage,
 } from "./helpers/imports";
 
 class StreamingQueueModel implements StreamingCompletionModel {
@@ -160,6 +165,152 @@ describe("PromptRequest streaming", () => {
     expect(model.requests).toHaveLength(2);
   });
 
+  it("includes authoritative failed-attempt usage exactly once after a retry succeeds", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const failedUsage = usage(4, 1);
+    const successfulUsage = usage(6, 3);
+    const model = new StreamingQueueModel([
+      [{ type: "error", error, usage: failedUsage }],
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("ready")], successfulUsage),
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const events = await collect(
+      agent.prompt("hi").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).stream(),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      output: "ready",
+      usage: Usage.add(failedUsage, successfulUsage),
+    });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("keeps successful final-event usage unchanged", async () => {
+    const finalUsage = usage(5, 4);
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("done")], finalUsage),
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const events = await collect(agent.prompt("hi").stream());
+
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "done", usage: finalUsage });
+  });
+
+  it("includes authoritative provider failure usage exactly once", async () => {
+    const error = new Error("provider failed");
+    const providerUsage = usage(7, 2);
+    const model = new StreamingQueueModel([[{ type: "error", error, usage: providerUsage }]]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent).toEqual({ type: "error", error, usage: providerUsage });
+    await expect(iterator.next()).rejects.toBe(error);
+  });
+
+  it("uses empty usage when the first provider failure has no authoritative usage", async () => {
+    const error = new Error("provider failed before usage");
+    const model = new StreamingQueueModel([[{ type: "error", error }]]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent).toEqual({ type: "error", error, usage: Usage.empty() });
+    await expect(iterator.next()).rejects.toBe(error);
+  });
+
+  it("retains completed turn usage when a later provider call fails before usage", async () => {
+    const firstUsage = usage(8, 2);
+    const error = new Error("second turn failed");
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse(
+            [AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })],
+            firstUsage,
+          ),
+        },
+      ],
+      [{ type: "error", error }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+    const iterator = agent.prompt("add").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent.usage).toEqual(firstUsage);
+    await expect(iterator.next()).rejects.toBe(error);
+  });
+
+  it("shares completed tool-turn usage with the observer and terminal error event", async () => {
+    const turnUsage = usage(9, 3);
+    let observedError: AgentRunErrorArgs | undefined;
+    const observer = createObserver({
+      startRun() {
+        return {
+          end() {},
+          error(args) {
+            observedError = args;
+          },
+        };
+      },
+    });
+    const failingTool = createTool({
+      name: "fail",
+      description: "Fail",
+      input: z.object({}),
+      output: z.string(),
+      execute() {
+        throw new Error("tool failed");
+      },
+    });
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse(
+            [AssistantContent.toolCall("call_1", "fail", {})],
+            turnUsage,
+          ),
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .observe(observer)
+      .tool(failingTool)
+      .hook(
+        createHook({
+          onToolError() {
+            return cancelPrompt("stop after tool failure");
+          },
+        }),
+      )
+      .build();
+    const iterator = agent.prompt("fail").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent.usage).toEqual(turnUsage);
+    expect(observedError?.usage).toBe(errorEvent.usage);
+    await expect(iterator.next()).rejects.toBe(errorEvent.error);
+  });
+
   it("applies completion retries through PromptRequest readable streams", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new StreamingQueueModel([
@@ -199,7 +350,7 @@ describe("PromptRequest streaming", () => {
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", delta: "partial" });
-    expect(await nextEvent(iterator)).toEqual({ type: "error", error });
+    expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
     await expect(iterator.next()).rejects.toBe(error);
     expect(model.requests).toHaveLength(1);
   });
@@ -218,7 +369,7 @@ describe("PromptRequest streaming", () => {
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
-    expect(await nextEvent(iterator)).toEqual({ type: "error", error });
+    expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
     await expect(iterator.next()).rejects.toBe(error);
     expect(model.requests).toHaveLength(1);
   });
@@ -251,8 +402,14 @@ describe("PromptRequest streaming", () => {
     expect(events.at(-1)).toMatchObject({ type: "final", output: "safe" });
   });
 
-  it("does not emit final before the run end hook succeeds", async () => {
-    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+  it("retains completed usage when the run end hook cancels before final", async () => {
+    const finalUsage = usage(5, 2);
+    const model = new StreamingQueueModel([
+      [
+        { type: "text_delta", delta: "done" },
+        { type: "final", response: completionResponse([], finalUsage) },
+      ],
+    ]);
     const agent = new AgentBuilder("test-agent", model)
       .hook(
         createHook({
@@ -276,7 +433,102 @@ describe("PromptRequest streaming", () => {
       "turn_end",
       "error",
     ]);
+    expect(events.at(-1)).toMatchObject({ type: "error", usage: finalUsage });
     await expect(iterator.next()).rejects.toBeInstanceOf(PromptCancelledError);
+  });
+
+  it("retains completed usage when an output guardrail fails", async () => {
+    const finalUsage = usage(4, 2);
+    const guardrailError = new Error("guardrail failed");
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("done")], finalUsage),
+        },
+      ],
+    ]);
+    const outputGuardrail = defineOutputGuardrail({
+      id: "failing-output",
+      check() {
+        throw guardrailError;
+      },
+    });
+    const agent = new AgentBuilder("test-agent", model)
+      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
+      .build();
+    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent).toEqual({ type: "error", error: guardrailError, usage: finalUsage });
+    await expect(iterator.next()).rejects.toBe(guardrailError);
+  });
+
+  it("retains completed usage when event persistence fails", async () => {
+    const finalUsage = usage(7, 3);
+    const persistenceError = new Error("event persistence failed");
+    let failed = false;
+    const eventStore: AgentEventStore = {
+      async append(input) {
+        if (!failed && eventType(input.event) === "turn_end") {
+          failed = true;
+          throw persistenceError;
+        }
+      },
+      async load() {
+        return [];
+      },
+    };
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("done")], finalUsage),
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("test-agent", model)
+      .eventStore(eventStore, { include: "all" })
+      .build();
+    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent).toEqual({ type: "error", error: persistenceError, usage: finalUsage });
+    await expect(iterator.next()).rejects.toBe(persistenceError);
+  });
+
+  it("retains every completed turn usage when the max-turn limit fails the run", async () => {
+    const firstUsage = usage(3, 1);
+    const secondUsage = usage(6, 2);
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse(
+            [AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })],
+            firstUsage,
+          ),
+        },
+      ],
+      [
+        {
+          type: "final",
+          response: completionResponse(
+            [AssistantContent.toolCall("call_2", "add", { x: 3, y: 4 })],
+            secondUsage,
+          ),
+        },
+      ],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).tool(addTool).defaultMaxTurns(0).build();
+    const iterator = agent.prompt("loop").stream()[Symbol.asyncIterator]();
+
+    const errorEvent = await nextAgentError(iterator);
+
+    expect(errorEvent.usage).toEqual(Usage.add(firstUsage, secondUsage));
+    await expect(iterator.next()).rejects.toBe(errorEvent.error);
   });
 
   it("rejects concurrent stream execution on the same prompt request", async () => {
@@ -1089,6 +1341,37 @@ async function nextEvent<T>(iterator: AsyncIterator<T>): Promise<T> {
     throw new Error("Expected another stream event");
   }
   return next.value;
+}
+
+async function nextAgentError(
+  iterator: AsyncIterator<AgentStreamEvent>,
+): Promise<Extract<AgentStreamEvent, { type: "error" }>> {
+  while (true) {
+    const event = await nextEvent(iterator);
+    if (event.type === "error") {
+      return event;
+    }
+  }
+}
+
+function usage(inputTokens: number, outputTokens: number): ReturnType<typeof Usage.empty> {
+  return {
+    ...Usage.empty(),
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+  };
+}
+
+function completionResponse(
+  choice: CompletionResponse["choice"],
+  responseUsage: CompletionResponse["usage"],
+): CompletionResponse {
+  return {
+    choice,
+    usage: responseUsage,
+    rawResponse: {},
+  };
 }
 
 function deferred<T>(): {

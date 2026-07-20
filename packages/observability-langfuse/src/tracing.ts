@@ -767,13 +767,13 @@ class LangfuseToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "error") {
-      agent
-        .update({
-          level: "ERROR",
-          statusMessage: errorMessage(child.error),
-          output: { error: errorMessage(child.error) },
-        })
-        .end();
+      const update: Parameters<LangfuseAgent["update"]>[0] = {
+        level: "ERROR",
+        statusMessage: errorMessage(child.error),
+        output: { error: errorMessage(child.error) },
+      };
+      if (isRecord(child.usage)) update.metadata = { usage: child.usage };
+      agent.update(update).end();
       this.childAgents.delete(agentId);
     }
   }

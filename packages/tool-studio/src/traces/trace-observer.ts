@@ -333,6 +333,8 @@ class ChildAgentToolTraceAccumulator {
     }
 
     if (child.type === "error") {
+      const metadata = this.childMetadata(agentId, agentName, childTurn);
+      if (isRecord(child.usage)) metadata.usage = toJsonValue(child.usage);
       this.completedObservations.push(
         traceObservation({
           kind: "tool",
@@ -341,7 +343,7 @@ class ChildAgentToolTraceAccumulator {
           turn: this.parent.turn,
           startedAt: new Date(),
           error: serializeError(child.error),
-          metadata: this.childMetadata(agentId, agentName, childTurn),
+          metadata,
         }),
       );
     }

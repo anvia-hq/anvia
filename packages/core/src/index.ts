@@ -84,6 +84,7 @@ export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "
 export type { CompletionRetryContext, CompletionRetryOptions } from "./request/retry";
 export type {
   AgentChildStreamEvent,
+  AgentErrorStreamEvent,
   AgentStreamEvent,
   PromptResponse,
 } from "./request/types";

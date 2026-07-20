@@ -462,6 +462,9 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             try {
               for await (const event of this.agent.model.streamCompletion(request)) {
                 if (event.type === "error") {
+                  if (event.usage !== undefined) {
+                    usage = Usage.add(usage, event.usage);
+                  }
                   throw event.error;
                 }
                 hasProviderProgress = true;
@@ -669,9 +672,14 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     } catch (error) {
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
       this.runState = finalError instanceof PromptCancelledError ? "cancelled" : "errored";
-      await runObservers.error({ error: finalError, usage, messages: [...newMessages] });
+      const finalUsage = usage;
+      await runObservers.error({
+        error: finalError,
+        usage: finalUsage,
+        messages: [...newMessages],
+      });
       await this.memoryRecorder.recordError(runId, finalError, newMessages);
-      yield await emit({ type: "error", error: finalError });
+      yield await emit({ type: "error", error: finalError, usage: finalUsage });
       throw finalError;
     }
   }

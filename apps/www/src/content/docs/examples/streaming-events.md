@@ -136,6 +136,15 @@ The session memory store records conversation messages as the stream is consumed
 ## Browser State
 
 ```ts
+type SupportUiState = {
+  activity: string[];
+  text: string;
+  runId?: string;
+  error?: string;
+  usage?: Usage;
+  done: boolean;
+};
+
 export function reduceSupportEvent(state: SupportUiState, event: SupportUiEvent) {
   if (event.type === "activity") {
     return { ...state, activity: [...state.activity, event.label] };
@@ -147,7 +156,7 @@ export function reduceSupportEvent(state: SupportUiState, event: SupportUiEvent)
     return { ...state, text: event.output, runId: event.runId, done: true };
   }
   if (event.type === "error") {
-    return { ...state, error: event.message, done: true };
+    return { ...state, error: event.message, usage: event.usage, done: true };
   }
   return state;
 }

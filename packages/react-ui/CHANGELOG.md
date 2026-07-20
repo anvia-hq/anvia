@@ -1,5 +1,13 @@
 # @anvia/react-ui
 
+## 0.6.0
+
+### Minor Changes
+
+- 129f37c: Replace stream animation presets with lifecycle-driven, buffered smoothing for text and ordered
+  mixed items. Add stable-block live Markdown rendering and use the pipeline in the Studio Playground
+  transcript.
+
 ## 0.5.1
 
 ### Patch Changes

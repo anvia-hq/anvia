@@ -52,9 +52,6 @@ export function SmoothedTranscript(props: {
     [props.messages, props.sessionLogs, props.sessionTraceSummaries],
   );
   const retainedWorkingStartedAtRef = useRef(props.workingStartedAt);
-  if (props.workingStartedAt !== undefined) {
-    retainedWorkingStartedAtRef.current = props.workingStartedAt;
-  }
   const visibleWorkingStartedAt =
     props.workingStartedAt ??
     (smoothed.isDraining ? retainedWorkingStartedAtRef.current : undefined);
@@ -67,6 +64,9 @@ export function SmoothedTranscript(props: {
     : undefined;
 
   useEffect(() => {
+    if (props.workingStartedAt !== undefined) {
+      retainedWorkingStartedAtRef.current = props.workingStartedAt;
+    }
     if (!smoothed.isDraining && props.workingStartedAt === undefined) {
       retainedWorkingStartedAtRef.current = undefined;
     }

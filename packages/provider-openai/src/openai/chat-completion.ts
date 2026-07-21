@@ -100,10 +100,9 @@ export class OpenAIChatCompletionModel
     const streamOptions = isPlainObject(params.stream_options) ? params.stream_options : {};
     params.stream_options = { ...streamOptions, include_usage: true };
     const stream = await this.client.chat.completions.create(params as never);
-    const streamState = new OpenAIChatCompletionToolStreamState();
+    const streamState = new OpenAIChatCompletionStreamState();
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
-      const mapping = mapOpenAIChatCompletionStreamChunk(chunk);
-      streamState.accept(mapping);
+      const mapping = streamState.mapChunk(chunk);
       for (const event of mapping.events) {
         yield event;
       }
@@ -228,17 +227,17 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
   const message = isPlainObject(firstChoice?.message) ? firstChoice.message : {};
   const choice: AssistantContentType[] = [];
 
+  const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
+  if (reasoning !== undefined && reasoning.length > 0) {
+    choice.push(AssistantContent.reasoning(reasoning));
+  }
+
   if (typeof message.content === "string" && message.content.length > 0) {
     choice.push(AssistantContent.text(message.content));
   }
 
   if (typeof message.refusal === "string" && message.refusal.length > 0) {
     choice.push(AssistantContent.text(message.refusal));
-  }
-
-  const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
-  if (reasoning !== undefined && reasoning.length > 0) {
-    choice.push(AssistantContent.reasoning(reasoning));
   }
 
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -271,7 +270,10 @@ export function fromOpenAIChatCompletionStreamChunk(chunk: unknown): CompletionS
   return mapOpenAIChatCompletionStreamChunk(chunk).events;
 }
 
-function mapOpenAIChatCompletionStreamChunk(chunk: unknown): ChatCompletionStreamChunkMapping {
+function mapOpenAIChatCompletionStreamChunk(
+  chunk: unknown,
+  reasoningId?: string,
+): ChatCompletionStreamChunkMapping {
   if (!isPlainObject(chunk)) {
     return { events: [], hasToolCalls: false, hasFinishReason: false };
   }
@@ -282,17 +284,21 @@ function mapOpenAIChatCompletionStreamChunk(chunk: unknown): ChatCompletionStrea
 
   if (choice !== undefined && isPlainObject(choice.delta)) {
     const delta = choice.delta;
+    const reasoning = stringFrom(delta.reasoning) ?? stringFrom(delta.reasoning_content);
+    if (reasoning !== undefined && reasoning.length > 0) {
+      const event: CompletionStreamEvent = { type: "reasoning_delta", delta: reasoning };
+      if (reasoningId !== undefined) {
+        event.id = reasoningId;
+      }
+      events.push(event);
+    }
+
     if (typeof delta.content === "string" && delta.content.length > 0) {
       events.push({ type: "text_delta", delta: delta.content });
     }
 
     if (typeof delta.refusal === "string" && delta.refusal.length > 0) {
       events.push({ type: "text_delta", delta: delta.refusal });
-    }
-
-    const reasoning = stringFrom(delta.reasoning) ?? stringFrom(delta.reasoning_content);
-    if (reasoning !== undefined && reasoning.length > 0) {
-      events.push({ type: "reasoning_delta", delta: reasoning });
     }
 
     const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
@@ -341,12 +347,19 @@ function mapOpenAIChatCompletionStreamChunk(chunk: unknown): ChatCompletionStrea
   return mapping;
 }
 
-class OpenAIChatCompletionToolStreamState {
+class OpenAIChatCompletionStreamState {
+  private readonly reasoningId = crypto.randomUUID();
   private hasToolCalls = false;
   private hasFinishReason = false;
   private finishReason: unknown;
 
-  accept(mapping: ChatCompletionStreamChunkMapping): void {
+  mapChunk(chunk: unknown): ChatCompletionStreamChunkMapping {
+    const mapping = mapOpenAIChatCompletionStreamChunk(chunk, this.reasoningId);
+    this.accept(mapping);
+    return mapping;
+  }
+
+  private accept(mapping: ChatCompletionStreamChunkMapping): void {
     this.hasToolCalls ||= mapping.hasToolCalls;
     if (!mapping.hasFinishReason) {
       return;

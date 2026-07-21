@@ -1,5 +1,12 @@
 # @anvia/openai
 
+## 0.3.23
+
+### Patch Changes
+
+- 1d8c883: Ensure OpenAI-compatible Chat Completions reasoning chunks retain a stable per-response identity and
+  appear before visible answer content.
+
 ## 0.3.22
 
 ### Patch Changes

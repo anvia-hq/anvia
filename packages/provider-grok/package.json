@@ -1,6 +1,6 @@
 {
   "name": "@anvia/grok",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Grok provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

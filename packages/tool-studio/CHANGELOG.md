@@ -1,5 +1,14 @@
 # @anvia/studio
 
+## 0.7.39
+
+### Patch Changes
+
+- 2ae2087: Update upstream runtime dependencies for provider, vector store, observability, React UI,
+  and Studio packages.
+- Updated dependencies [2ae2087]
+  - @anvia/react-ui@0.6.1
+
 ## 0.7.38
 
 ### Patch Changes

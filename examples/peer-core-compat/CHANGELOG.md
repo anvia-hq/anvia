@@ -1,5 +1,13 @@
 # peer-core-compat
 
+## 0.1.45
+
+### Patch Changes
+
+- Updated dependencies [2ae2087]
+  - @anvia/openai@0.3.24
+  - @anvia/studio@0.7.39
+
 ## 0.1.44
 
 ### Patch Changes

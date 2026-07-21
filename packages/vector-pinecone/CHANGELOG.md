@@ -1,5 +1,12 @@
 # @anvia/pinecone
 
+## 0.3.8
+
+### Patch Changes
+
+- 2ae2087: Update upstream runtime dependencies for provider, vector store, observability, React UI,
+  and Studio packages.
+
 ## 0.3.7
 
 ### Patch Changes

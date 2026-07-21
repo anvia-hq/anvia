@@ -1,5 +1,12 @@
 # @anvia/openai
 
+## 0.3.24
+
+### Patch Changes
+
+- 2ae2087: Update upstream runtime dependencies for provider, vector store, observability, React UI,
+  and Studio packages.
+
 ## 0.3.23
 
 ### Patch Changes

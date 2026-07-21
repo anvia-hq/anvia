@@ -1,5 +1,12 @@
 # @anvia/mistral
 
+## 0.3.6
+
+### Patch Changes
+
+- 2ae2087: Update upstream runtime dependencies for provider, vector store, observability, React UI,
+  and Studio packages.
+
 ## 0.3.5
 
 ### Patch Changes

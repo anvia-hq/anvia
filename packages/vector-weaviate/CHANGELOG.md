@@ -1,5 +1,12 @@
 # @anvia/weaviate
 
+## 0.2.5
+
+### Patch Changes
+
+- 2ae2087: Update upstream runtime dependencies for provider, vector store, observability, React UI,
+  and Studio packages.
+
 ## 0.2.4
 
 ### Patch Changes

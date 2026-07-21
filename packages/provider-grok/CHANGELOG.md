@@ -1,5 +1,14 @@
 # @anvia/grok
 
+## 0.2.10
+
+### Patch Changes
+
+- 2ae2087: Update upstream runtime dependencies for provider, vector store, observability, React UI,
+  and Studio packages.
+- Updated dependencies [2ae2087]
+  - @anvia/openai@0.3.24
+
 ## 0.2.9
 
 ### Patch Changes

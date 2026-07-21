@@ -227,9 +227,106 @@ describe("OpenAI chat-completions client path", () => {
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.text("created"),
       AssistantContent.reasoning("provider reasoning text"),
+      AssistantContent.text("created"),
     ]);
+  });
+
+  it("uses one stable reasoning id for interleaved Chat Completions chunks", async () => {
+    const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
+
+    const events = await collectStreamEvents(model);
+    const reasoningEvents = streamedReasoningEvents(events);
+
+    expect(reasoningEvents).toHaveLength(2);
+    expect(reasoningEvents[0]?.id).toEqual(expect.any(String));
+    expect(reasoningEvents[0]?.id).not.toBe("");
+    expect(reasoningEvents[1]?.id).toBe(reasoningEvents[0]?.id);
+  });
+
+  it("uses a different reasoning id for each streamCompletion invocation", async () => {
+    const model = openAIChatModelWithStreams([
+      reasoningInterleaveStream(),
+      reasoningInterleaveStream(),
+    ]);
+
+    const firstId = streamedReasoningEvents(await collectStreamEvents(model))[0]?.id;
+    const secondId = streamedReasoningEvents(await collectStreamEvents(model))[0]?.id;
+
+    expect(firstId).toEqual(expect.any(String));
+    expect(secondId).toEqual(expect.any(String));
+    expect(secondId).not.toBe(firstId);
+  });
+
+  it("assembles interleaved reasoning and text into one ordered Agent response", async () => {
+    const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    const events = await collect(agent.prompt("introduce yourself").stream());
+    const turnEnd = events.find((event) => event.type === "turn_end");
+
+    expect(turnEnd?.type).toBe("turn_end");
+    if (turnEnd?.type !== "turn_end") {
+      throw new Error("Expected AgentBuilder to emit a turn_end event");
+    }
+    expect(turnEnd.response.choice).toEqual([
+      {
+        type: "reasoning",
+        id: expect.any(String),
+        text: "Let me provide a straightforward introduction.",
+      },
+      AssistantContent.text("Hello, Indra Zulfi! I'm DeepSeek V4 Pro"),
+    ]);
+  });
+
+  it("maps reasoning before visible text within the same chunk", () => {
+    expect(
+      fromOpenAIChatCompletionStreamChunk({
+        choices: [
+          {
+            index: 0,
+            finish_reason: null,
+            delta: {
+              content: "answer",
+              reasoning_content: "think",
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      { type: "reasoning_delta", delta: "think" },
+      { type: "text_delta", delta: "answer" },
+    ]);
+  });
+
+  it("emits text-only Chat Completions deltas incrementally and unchanged", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          choices: [{ index: 0, finish_reason: null, delta: { content: "hello" } }],
+        },
+        {
+          choices: [{ index: 0, finish_reason: "stop", delta: { content: " world" } }],
+        },
+      ],
+    ]);
+    const iterator = model
+      .streamCompletion({
+        chatHistory: [Message.user("say hello")],
+        documents: [],
+        tools: [],
+      })
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "text_delta", delta: "hello" },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "text_delta", delta: " world" },
+    });
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("rejects malformed non-streaming tool arguments", () => {
@@ -708,6 +805,51 @@ function finalTextStream(): unknown[] {
   ];
 }
 
+function reasoningInterleaveStream(): unknown[] {
+  return [
+    {
+      id: "chatcmpl-repro",
+      choices: [
+        {
+          index: 0,
+          finish_reason: null,
+          delta: { reasoning_content: "Let me provide a straightfo" },
+        },
+      ],
+    },
+    {
+      id: "chatcmpl-repro",
+      choices: [
+        {
+          index: 0,
+          finish_reason: null,
+          delta: { content: "Hello, Indra Z" },
+        },
+      ],
+    },
+    {
+      id: "chatcmpl-repro",
+      choices: [
+        {
+          index: 0,
+          finish_reason: null,
+          delta: { reasoning_content: "rward introduction." },
+        },
+      ],
+    },
+    {
+      id: "chatcmpl-repro",
+      choices: [
+        {
+          index: 0,
+          finish_reason: "stop",
+          delta: { content: "ulfi! I'm DeepSeek V4 Pro" },
+        },
+      ],
+    },
+  ];
+}
+
 async function collectStreamEvents(
   model: OpenAIChatCompletionModel,
 ): Promise<CompletionStreamEvent[]> {
@@ -732,4 +874,13 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
     result.push(event);
   }
   return result;
+}
+
+function streamedReasoningEvents(
+  events: CompletionStreamEvent[],
+): Array<Extract<CompletionStreamEvent, { type: "reasoning_delta" }>> {
+  return events.filter(
+    (event): event is Extract<CompletionStreamEvent, { type: "reasoning_delta" }> =>
+      event.type === "reasoning_delta",
+  );
 }

@@ -7,6 +7,31 @@ import { applyAnviaStreamEvent } from "../src/ui-messages";
 type UIToolPart = Extract<UIMessagePart, { type: "tool" }>;
 
 describe("@anvia/react UI message reducer", () => {
+  it("merges interleaved reasoning deltas with the same id at their first position", () => {
+    const messages = reduceEvents([
+      {
+        type: "reasoning_delta",
+        id: "stable-r",
+        delta: "Let me provide a straightfo",
+      },
+      { type: "text_delta", delta: "Hello, Indra Z" },
+      {
+        type: "reasoning_delta",
+        id: "stable-r",
+        delta: "rward introduction.",
+      },
+      { type: "text_delta", delta: "ulfi! I'm DeepSeek V4 Pro" },
+    ]);
+
+    expect(partSummary(messages)).toEqual([
+      {
+        type: "reasoning",
+        text: "Let me provide a straightforward introduction.",
+      },
+      { type: "text", text: "Hello, Indra Zulfi! I'm DeepSeek V4 Pro" },
+    ]);
+  });
+
   it("keeps reused provider tool ids isolated across turns", () => {
     let messages: UIMessage[] = [];
     const events = [

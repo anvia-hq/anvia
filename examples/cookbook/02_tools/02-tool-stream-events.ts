@@ -34,8 +34,11 @@ const agent = new AgentBuilder("agent", agentModel)
   .build();
 
 // Provisional deltas let the UI show a tool as soon as the model names it.
+const preparedToolIds = new Set<string>();
+
 for await (const event of agent.prompt("What is the weather in Jakarta?").stream()) {
-  if (event.type === "tool_call_delta" && event.name) {
+  if (event.type === "tool_call_delta" && event.name && !preparedToolIds.has(event.id)) {
+    preparedToolIds.add(event.id);
     console.log(`Preparing ${event.name} tool...`);
   }
 

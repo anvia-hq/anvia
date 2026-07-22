@@ -17,6 +17,7 @@ Use streaming when a UI needs progressive text, when an operations surface needs
 ```ts
 const session = agent.session(threadId);
 const request = session.prompt(message);
+const preparedToolIds = new Set<string>();
 
 for await (const event of request.stream()) {
   switch (event.type) {
@@ -24,7 +25,10 @@ for await (const event of request.stream()) {
       await ui.writeText(event.delta);
       break;
     case "tool_call_delta":
-      if (event.name) await ui.showToolPreparing(event.name);
+      if (event.name && !preparedToolIds.has(event.id)) {
+        preparedToolIds.add(event.id);
+        await ui.showToolPreparing(event.name);
+      }
       break;
     case "tool_call":
       await ui.showToolPending(event.toolCall.function.name);

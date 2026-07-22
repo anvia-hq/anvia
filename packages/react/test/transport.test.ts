@@ -809,9 +809,52 @@ describe("@anvia/react useChat", () => {
     ]);
   });
 
+  it("replaces streamed tool input when a provider sends a completed snapshot", async () => {
+    const transport: EventTransport<UIStreamRequest, CompletionStreamEvent> = {
+      send: async function* () {
+        yield {
+          type: "tool_call_delta",
+          id: "tool_1",
+          name: "lookup",
+          argumentsDelta: '{"query":',
+        };
+        yield {
+          type: "tool_call_delta",
+          id: "tool_1",
+          name: "lookup",
+          argumentsDelta: '{"query":"Anvia"}',
+          argumentsMode: "replace",
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.send("lookup");
+    });
+
+    expect(result.current.messages[1]?.parts).toEqual([
+      expect.objectContaining({
+        type: "tool",
+        toolName: "lookup",
+        toolCallId: "tool_1",
+        state: "input-streaming",
+        input: '{"query":"Anvia"}',
+      }),
+    ]);
+  });
+
   it("applies raw agent stream events", async () => {
     const transport: EventTransport<UIStreamRequest, AgentStreamEvent> = {
       send: async function* () {
+        yield {
+          type: "tool_call_delta",
+          turn: 1,
+          id: "fc_1",
+          callId: "call_1",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        };
         yield {
           type: "tool_call",
           turn: 1,
@@ -844,6 +887,14 @@ describe("@anvia/react useChat", () => {
     });
 
     expect(result.current.text).toBe("7");
+    expect(result.current.events[0]).toEqual({
+      type: "tool_call_delta",
+      turn: 1,
+      id: "fc_1",
+      callId: "call_1",
+      name: "add",
+      argumentsDelta: '{"x":2,"y":5}',
+    });
     expect(result.current.messages).toMatchObject([
       { role: "user", parts: [{ type: "text", text: "add" }] },
       {

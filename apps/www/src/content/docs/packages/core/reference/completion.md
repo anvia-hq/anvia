@@ -301,7 +301,7 @@ interface CompletionModel<RawResponse = unknown> {
 type CompletionStreamEvent<RawResponse = unknown> =
   | { type: "text_delta"; delta: string }
   | { type: "reasoning_delta"; delta: string; id?: string; contentType?: ReasoningContent["type"]; signature?: string }
-  | { type: "tool_call_delta"; id: string; callId?: string; name?: string; argumentsDelta?: string; signature?: string }
+  | { type: "tool_call_delta"; id: string; callId?: string; name?: string; argumentsDelta?: string; argumentsMode?: ToolCallArgumentsMode; signature?: string }
   | { type: "tool_call"; toolCall: ToolCall }
   | { type: "message_id"; id: string }
   | { type: "final"; response: CompletionResponse<RawResponse> }
@@ -313,6 +313,9 @@ interface StreamingCompletionModel<RawResponse = unknown> extends CompletionMode
 ```
 
 Purpose: provider adapter interfaces. The metadata fields identify the adapter, its default model name, and the normalized request features the adapter supports.
+
+`ToolCallArgumentsMode` is `"append" | "replace"`. An omitted mode means append. Providers use
+`"replace"` when a completion event contains a full argument snapshot rather than the next fragment.
 
 Return behavior: streaming models yield deltas and finish with a `final` event. Provider error events
 may include authoritative usage for the failed request; adapters omit it when the provider does not

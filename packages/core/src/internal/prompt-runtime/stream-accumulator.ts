@@ -58,7 +58,11 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (event.name !== undefined && event.name.length > 0) toolCall.name = event.name;
       if (event.signature !== undefined) toolCall.signature = event.signature;
       if (event.argumentsDelta !== undefined) {
-        toolCall.argumentsText += event.argumentsDelta;
+        if (event.argumentsMode === "replace") {
+          toolCall.argumentsText = event.argumentsDelta;
+        } else {
+          toolCall.argumentsText += event.argumentsDelta;
+        }
       }
       return undefined;
     }

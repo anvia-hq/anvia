@@ -241,6 +241,51 @@ describe("Message primitives", () => {
     expect(screen.getByText('Output: {"status":"blocked"}')).toBeTruthy();
   });
 
+  it("renders provisional tool call deltas as pending tool UI", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "assistant_1",
+        role: "assistant",
+        parts: [
+          {
+            id: "tool_1",
+            type: "tool",
+            toolName: "write_file",
+            toolCallId: "call_1",
+            state: "input-streaming",
+            input: '{"path":',
+          },
+        ],
+      },
+    ];
+
+    const { container } = render(
+      <ChatProvider controller={createChatController({ messages, status: "streaming" })}>
+        <Thread.Root>
+          <Thread.Messages>
+            <Message.Root>
+              <Message.Parts>
+                <Message.Part>
+                  <Message.Tool renderWhen="pending">
+                    <Message.ToolName />
+                    <Message.ToolStatus />
+                    <Message.ToolInput />
+                  </Message.Tool>
+                </Message.Part>
+              </Message.Parts>
+            </Message.Root>
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>,
+    );
+
+    const tool = container.querySelector("[data-anvia-tool]");
+    expect(tool?.getAttribute("data-state")).toBe("input-streaming");
+    expect(screen.getByText("write_file")).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
+    expect(screen.getByText('{"path":')).toBeTruthy();
+  });
+
   it("filters message parts and gates tool rendering by state", () => {
     const messages: UIMessage[] = [
       {

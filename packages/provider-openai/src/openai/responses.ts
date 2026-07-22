@@ -281,19 +281,22 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
     }
   }
 
-  if (
-    event.type === "response.function_call_arguments.delta" ||
-    event.type === "response.function_call_arguments.done"
-  ) {
+  if (event.type === "response.function_call_arguments.delta") {
     return toolCallDelta(
       stringFrom(event.item_id) ?? stringFrom(event.output_item_id) ?? crypto.randomUUID(),
       {
-        argumentsDelta:
-          typeof event.delta === "string"
-            ? event.delta
-            : typeof event.arguments === "string"
-              ? event.arguments
-              : undefined,
+        argumentsDelta: typeof event.delta === "string" ? event.delta : undefined,
+      },
+    );
+  }
+
+  if (event.type === "response.function_call_arguments.done") {
+    return toolCallDelta(
+      stringFrom(event.item_id) ?? stringFrom(event.output_item_id) ?? crypto.randomUUID(),
+      {
+        name: stringFrom(event.name),
+        argumentsDelta: typeof event.arguments === "string" ? event.arguments : undefined,
+        argumentsMode: "replace",
       },
     );
   }
@@ -604,12 +607,14 @@ function toolCallDelta(
     callId?: string | undefined;
     name?: string | undefined;
     argumentsDelta?: string | undefined;
+    argumentsMode?: "append" | "replace" | undefined;
   },
 ): CompletionStreamEvent {
   const event: CompletionStreamEvent = { type: "tool_call_delta", id };
   if (values.callId !== undefined) event.callId = values.callId;
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+  if (values.argumentsMode !== undefined) event.argumentsMode = values.argumentsMode;
   return event;
 }
 

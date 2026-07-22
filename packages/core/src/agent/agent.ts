@@ -138,7 +138,11 @@ export class Agent<M extends CompletionModel = CompletionModel> {
           isStreamingCompletionModel(this.model)
         ) {
           let output = "";
-          for await (const event of childRequest.stream()) {
+          const childStream =
+            context.includeToolCallDeltas === false
+              ? childRequest.stream({ includeToolCallDeltas: false })
+              : childRequest.stream();
+          for await (const event of childStream) {
             const streamEvent: ToolCallStreamEvent = {
               agentId: this.id,
               event,

@@ -10,6 +10,7 @@ import {
   type JsonValue,
   type Message as MessageType,
   type StreamingCompletionModel,
+  type ToolCallArgumentsMode,
   type ToolChoice,
   type ToolContent,
   type ToolDefinition,
@@ -467,6 +468,7 @@ export function fromGeminiGenerateContentStreamChunk(chunk: unknown): Completion
       toolCallDelta(call.id ?? call.name, {
         callId: call.id,
         argumentsDelta: JSON.stringify(call.args ?? {}),
+        argumentsMode: "replace",
       }),
     );
   }
@@ -653,6 +655,7 @@ function toolCallDelta(
     callId?: string | undefined;
     name?: string | undefined;
     argumentsDelta?: string | undefined;
+    argumentsMode?: ToolCallArgumentsMode | undefined;
     signature?: string | undefined;
   },
 ): CompletionStreamEvent {
@@ -660,6 +663,7 @@ function toolCallDelta(
   if (values.callId !== undefined) event.callId = values.callId;
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+  if (values.argumentsMode !== undefined) event.argumentsMode = values.argumentsMode;
   if (values.signature !== undefined) event.signature = values.signature;
   return event;
 }

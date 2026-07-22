@@ -550,6 +550,8 @@ export interface CompletionModel<RawResponse = unknown, ModelName extends string
   completion(request: CompletionRequest<ModelName>): Promise<CompletionResponse<RawResponse>>;
 }
 
+export type ToolCallArgumentsMode = "append" | "replace";
+
 export type CompletionStreamEvent<RawResponse = unknown> =
   | {
       type: "text_delta";
@@ -568,6 +570,7 @@ export type CompletionStreamEvent<RawResponse = unknown> =
       callId?: string;
       name?: string;
       argumentsDelta?: string;
+      argumentsMode?: ToolCallArgumentsMode;
       signature?: string;
     }
   | {

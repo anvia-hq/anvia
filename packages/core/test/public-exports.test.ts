@@ -16,6 +16,11 @@ import * as hooks from "../src/hooks";
 import * as imageGeneration from "../src/image-generation";
 import type {
   AgentErrorStreamEvent as RootAgentErrorStreamEvent,
+  AgentStreamEvent as RootAgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas as RootAgentStreamEventWithoutToolCallDeltas,
+  AgentStreamEventWithToolCallDeltas as RootAgentStreamEventWithToolCallDeltas,
+  AgentStreamOptions as RootAgentStreamOptions,
+  AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
   CompletionRetryContext as RootCompletionRetryContext,
   CompletionRetryOptions as RootCompletionRetryOptions,
   ToolContent as RootToolContentType,
@@ -31,6 +36,10 @@ import * as pipeline from "../src/pipeline";
 import type {
   AgentErrorStreamEvent as RequestAgentErrorStreamEvent,
   AgentStreamEvent as RequestAgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas as RequestAgentStreamEventWithoutToolCallDeltas,
+  AgentStreamEventWithToolCallDeltas as RequestAgentStreamEventWithToolCallDeltas,
+  AgentStreamOptions as RequestAgentStreamOptions,
+  AgentToolCallDeltaEvent as RequestAgentToolCallDeltaEvent,
   CompletionRetryContext as RequestCompletionRetryContext,
   CompletionRetryOptions as RequestCompletionRetryOptions,
 } from "../src/request";
@@ -96,6 +105,18 @@ describe("public exports", () => {
     expectTypeOf<RootCompletionRetryContext>().toEqualTypeOf<RequestCompletionRetryContext>();
     expectTypeOf<RootCompletionRetryOptions>().toEqualTypeOf<RequestCompletionRetryOptions>();
     expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<RequestAgentErrorStreamEvent>();
+    expectTypeOf<RootAgentStreamOptions>().toEqualTypeOf<RequestAgentStreamOptions>();
+    expectTypeOf<RootAgentToolCallDeltaEvent>().toEqualTypeOf<RequestAgentToolCallDeltaEvent>();
+    expectTypeOf<RootAgentStreamEvent>().toEqualTypeOf<RequestAgentStreamEvent>();
+    expectTypeOf<RootAgentStreamEventWithoutToolCallDeltas>().toEqualTypeOf<RequestAgentStreamEventWithoutToolCallDeltas>();
+    expectTypeOf<RootAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<RequestAgentStreamEventWithToolCallDeltas>();
+    expectTypeOf<
+      Extract<RequestAgentStreamEvent, { type: "tool_call_delta" }>
+    >().toEqualTypeOf<RequestAgentToolCallDeltaEvent>();
+    expectTypeOf<
+      Extract<RequestAgentStreamEventWithoutToolCallDeltas, { type: "tool_call_delta" }>
+    >().toBeNever();
+    expectTypeOf<RequestAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<RequestAgentStreamEvent>();
     expectTypeOf<
       Extract<RequestAgentStreamEvent, { type: "error" }>
     >().toEqualTypeOf<RequestAgentErrorStreamEvent>();

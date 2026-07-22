@@ -12,6 +12,12 @@ import type { SendMessageInput } from "./types";
 
 type UIToolMessagePart = Extract<UIMessagePart, { type: "tool" }>;
 
+type AssistantToolPartUpdateOptions = {
+  aliases?: Array<string | undefined>;
+  inputMatch?: JsonValue;
+  replaceInput?: boolean;
+};
+
 export function createUserMessage(input: SendMessageInput): UIMessage | undefined {
   if (isUIMessage(input)) {
     return input;
@@ -148,7 +154,9 @@ export function applyAnviaStreamEvent(
     if (typeof event.callId === "string") part.callId = event.callId;
     if (turn !== undefined) part.turn = turn;
     if (typeof event.argumentsDelta === "string") part.input = event.argumentsDelta;
-    return updateAssistantToolPart(messages, part);
+    return updateAssistantToolPart(messages, part, {
+      replaceInput: event.argumentsMode === "replace",
+    });
   }
 
   if (event.type === "tool_call" && isToolCall(event.toolCall)) {
@@ -188,12 +196,12 @@ export function applyAnviaStreamEvent(
     };
     if (providerCallId !== undefined) part.callId = providerCallId;
     if (turn !== undefined) part.turn = turn;
-    return updateAssistantToolPart(
-      messages,
-      part,
-      [providerCallId, internalCallId],
-      parseJsonValue(event.args),
-    );
+    const updateOptions: AssistantToolPartUpdateOptions = {
+      aliases: [providerCallId, internalCallId],
+    };
+    const inputMatch = parseJsonValue(event.args);
+    if (inputMatch !== undefined) updateOptions.inputMatch = inputMatch;
+    return updateAssistantToolPart(messages, part, updateOptions);
   }
 
   if (event.type === "message_id" && typeof event.id === "string") {
@@ -358,6 +366,7 @@ function updateMessagePart(
   messages: UIMessage[],
   messageId: string,
   part: UIMessagePart,
+  options: { replaceToolInput?: boolean } = {},
 ): UIMessage[] {
   const existingMessage = messages.find((message) => message.id === messageId);
   const current =
@@ -383,7 +392,7 @@ function updateMessagePart(
     ) {
       parts[partIndex] = { ...currentPart, text: `${currentPart.text}${part.text}` };
     } else if (currentPart?.type === "tool" && part.type === "tool") {
-      parts[partIndex] = mergeToolPart(currentPart, part);
+      parts[partIndex] = mergeToolPart(currentPart, part, options);
     } else {
       parts[partIndex] = part;
     }
@@ -394,8 +403,7 @@ function updateMessagePart(
 function updateAssistantToolPart(
   messages: UIMessage[],
   part: UIToolMessagePart,
-  aliases: Array<string | undefined> = [],
-  inputMatch?: JsonValue,
+  options: AssistantToolPartUpdateOptions = {},
 ): UIMessage[] {
   const current = ensureAssistantMessage(messages);
   const assistant = current[current.length - 1];
@@ -403,7 +411,12 @@ function updateAssistantToolPart(
     return current;
   }
 
-  const existingPart = findMatchingToolPart(assistant, part, aliases, inputMatch);
+  const existingPart = findMatchingToolPart(
+    assistant,
+    part,
+    options.aliases ?? [],
+    options.inputMatch,
+  );
   let nextPart = part;
   if (existingPart !== undefined) {
     nextPart = {
@@ -415,7 +428,9 @@ function updateAssistantToolPart(
     if (callId !== undefined) nextPart.callId = callId;
   }
 
-  return updateMessagePart(current, assistant.id, nextPart);
+  return options.replaceInput === true
+    ? updateMessagePart(current, assistant.id, nextPart, { replaceToolInput: true })
+    : updateMessagePart(current, assistant.id, nextPart);
 }
 
 function findMatchingToolPart(
@@ -457,6 +472,7 @@ function findMatchingToolPart(
 function mergeToolPart(
   currentPart: UIToolMessagePart,
   nextPart: UIToolMessagePart,
+  options: { replaceToolInput?: boolean } = {},
 ): UIToolMessagePart {
   const merged: UIToolMessagePart = { ...currentPart, ...nextPart };
 
@@ -468,7 +484,11 @@ function mergeToolPart(
   }
   if (nextPart.input === undefined && currentPart.input !== undefined) {
     merged.input = currentPart.input;
-  } else if (typeof currentPart.input === "string" && typeof nextPart.input === "string") {
+  } else if (
+    options.replaceToolInput !== true &&
+    typeof currentPart.input === "string" &&
+    typeof nextPart.input === "string"
+  ) {
     merged.input = `${currentPart.input}${nextPart.input}`;
   }
   if (nextPart.output === undefined && currentPart.output !== undefined) {

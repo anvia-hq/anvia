@@ -26,6 +26,7 @@ import type {
   ToolApprovalRequest,
   ToolApprovalRunContext,
   ToolApprovalsOptions,
+  ToolCallContext,
   ToolCallStreamEvent,
 } from "../../tool";
 import { parseToolArgs, toolResultContentToText } from "../../tool";
@@ -64,6 +65,7 @@ export type ToolExecutionObservation = {
   turn: number;
   runObservers: ActiveAgentRunObservers;
   toolDefinitions?: ToolDefinition[];
+  includeToolCallDeltas?: boolean;
 };
 
 export type ToolExecutionRunContext = {
@@ -80,6 +82,7 @@ export class ToolCallExecutor {
     private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,
     private readonly requestMiddlewares: AgentMiddleware[],
+    private readonly includeToolCallDeltas: boolean,
     private readonly cancel: (reason: string) => Error,
   ) {}
 
@@ -277,7 +280,7 @@ export class ToolCallExecutor {
       : effectiveArgs;
     hookArgs.args = middlewareArgs;
     try {
-      return await this.agent.callTool(toolCall.function.name, middlewareArgs, {
+      const toolContext: ToolCallContext = {
         emitStreamEvent: async (event) => {
           const streamEventArgs: AgentToolStreamEventArgs = {
             turn: observation?.turn ?? 0,
@@ -296,7 +299,9 @@ export class ToolCallExecutor {
             onStreamEvent?.(payload);
           }
         },
-      });
+      };
+      toolContext.includeToolCallDeltas = this.includeToolCallDeltas;
+      return await this.agent.callTool(toolCall.function.name, middlewareArgs, toolContext);
     } catch (error) {
       const errorAction = await this.activeHook?.onToolError?.({
         ...hookArgs,

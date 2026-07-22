@@ -3,6 +3,7 @@ import type {
   Message as MessageType,
   ReasoningContentType,
   ToolCall,
+  ToolCallArgumentsMode,
   ToolResultContent,
   Usage,
 } from "../completion/index";
@@ -34,7 +35,23 @@ export type AgentErrorStreamEvent = {
   usage: Usage;
 };
 
-export type AgentChildStreamEvent<RawResponse = unknown> =
+export type AgentStreamOptions = {
+  /** @default true */
+  includeToolCallDeltas?: boolean;
+};
+
+export type AgentToolCallDeltaEvent = {
+  type: "tool_call_delta";
+  turn: number;
+  id: string;
+  callId?: string;
+  name?: string;
+  argumentsDelta?: string;
+  argumentsMode?: ToolCallArgumentsMode;
+  signature?: string;
+};
+
+type AgentChildStreamEventBase<RawResponse = unknown> =
   | {
       type: "turn_start";
       turn: number;
@@ -90,15 +107,34 @@ export type AgentChildStreamEvent<RawResponse = unknown> =
     }
   | AgentErrorStreamEvent;
 
+export type AgentChildStreamEventWithoutToolCallDeltas<RawResponse = unknown> =
+  AgentChildStreamEventBase<RawResponse>;
+
+export type AgentChildStreamEvent<RawResponse = unknown> =
+  | AgentChildStreamEventBase<RawResponse>
+  | AgentToolCallDeltaEvent;
+
+export type AgentChildStreamEventWithToolCallDeltas<RawResponse = unknown> =
+  AgentChildStreamEvent<RawResponse>;
+
+type AgentToolStreamEvent<ChildEvent> = {
+  type: "agent_tool_event";
+  turn: number;
+  toolName: string;
+  toolCallId?: string;
+  internalCallId: string;
+  agentId: string;
+  agentName?: string;
+  event: ChildEvent;
+};
+
+export type AgentStreamEventWithoutToolCallDeltas<RawResponse = unknown> =
+  | AgentChildStreamEventWithoutToolCallDeltas<RawResponse>
+  | AgentToolStreamEvent<AgentChildStreamEventWithoutToolCallDeltas<RawResponse>>;
+
 export type AgentStreamEvent<RawResponse = unknown> =
   | AgentChildStreamEvent<RawResponse>
-  | {
-      type: "agent_tool_event";
-      turn: number;
-      toolName: string;
-      toolCallId?: string;
-      internalCallId: string;
-      agentId: string;
-      agentName?: string;
-      event: AgentChildStreamEvent<RawResponse>;
-    };
+  | AgentToolStreamEvent<AgentChildStreamEvent<RawResponse>>;
+
+export type AgentStreamEventWithToolCallDeltas<RawResponse = unknown> =
+  AgentStreamEvent<RawResponse>;

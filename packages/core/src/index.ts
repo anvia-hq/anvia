@@ -84,8 +84,14 @@ export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "
 export type { CompletionRetryContext, CompletionRetryOptions } from "./request/retry";
 export type {
   AgentChildStreamEvent,
+  AgentChildStreamEventWithoutToolCallDeltas,
+  AgentChildStreamEventWithToolCallDeltas,
   AgentErrorStreamEvent,
   AgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas,
+  AgentStreamEventWithToolCallDeltas,
+  AgentStreamOptions,
+  AgentToolCallDeltaEvent,
   PromptResponse,
 } from "./request/types";
 export type { ZodSchema } from "./schema";

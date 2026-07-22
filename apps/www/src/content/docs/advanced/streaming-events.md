@@ -23,6 +23,9 @@ for await (const event of request.stream()) {
     case "text_delta":
       await ui.writeText(event.delta);
       break;
+    case "tool_call_delta":
+      if (event.name) await ui.showToolPreparing(event.name);
+      break;
     case "tool_call":
       await ui.showToolPending(event.toolCall.function.name);
       break;
@@ -45,6 +48,7 @@ Agent streams can emit:
 - `"turn_start"` with the current prompt and history for the turn
 - `"text_delta"` for incremental assistant text
 - `"reasoning_delta"` when the provider emits reasoning content
+- `"tool_call_delta"` for provisional tool metadata and argument fragments
 - `"tool_call"` when the model asks for a tool
 - `"tool_result"` after a tool returns or is skipped
 - `"turn_end"` with the provider response for a turn
@@ -53,6 +57,14 @@ Agent streams can emit:
 - `"error"` with cumulative authoritative usage when the run fails
 
 Do not send every event directly to a browser. Tool arguments, tool results, reasoning content, and provider metadata can contain private data. Filter the stream for each surface.
+
+`tool_call_delta` availability depends on the provider. Treat its arguments as opaque text: fragments
+can be incomplete, and `argumentsMode: "replace"` indicates a full snapshot. The completed
+`tool_call` remains authoritative and is the only event used for execution.
+
+Tool-call deltas are emitted by default. Pass `{ includeToolCallDeltas: false }` to `stream()` or
+`readableStream()` only when integrating with a strict legacy consumer that cannot ignore new event
+types.
 
 ## Client-Safe Projection
 

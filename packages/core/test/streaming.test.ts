@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import {
   AgentBuilder,
@@ -7,6 +7,8 @@ import {
   type AgentEventStore,
   type AgentRunErrorArgs,
   type AgentStreamEvent,
+  type AgentStreamEventWithoutToolCallDeltas,
+  type AgentStreamEventWithToolCallDeltas,
   AssistantContent,
   type CompletionRequest,
   type CompletionResponse,
@@ -102,6 +104,20 @@ const addTool = createTool({
 });
 
 describe("PromptRequest streaming", () => {
+  it("types tool call deltas by default and narrows explicit opt-out streams", () => {
+    const model = new StreamingQueueModel([]);
+    const agent = new AgentBuilder("test-agent", model).build();
+
+    expectTypeOf(agent.prompt("hi").stream()).toEqualTypeOf<AsyncIterable<AgentStreamEvent>>();
+    expectTypeOf(agent.prompt("hi").stream({ includeToolCallDeltas: false })).toEqualTypeOf<
+      AsyncIterable<AgentStreamEventWithoutToolCallDeltas>
+    >();
+    expectTypeOf(agent.prompt("hi").stream({ includeToolCallDeltas: true })).toEqualTypeOf<
+      AsyncIterable<AgentStreamEvent>
+    >();
+    expectTypeOf<AgentStreamEventWithToolCallDeltas>().toEqualTypeOf<AgentStreamEvent>();
+  });
+
   it("streams text deltas and final response", async () => {
     const model = new StreamingQueueModel([
       [
@@ -333,6 +349,41 @@ describe("PromptRequest streaming", () => {
     expect(events.some((event) => event.type === "error")).toBe(false);
     expect(events.at(-1)).toMatchObject({ type: "final", output: "ready" });
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("serializes tool call deltas through PromptRequest readable streams by default", async () => {
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+          argumentsMode: "replace",
+        },
+      ],
+      [{ type: "text_delta", delta: "7" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+
+    const text = await readAll(agent.prompt("add").readableStream());
+    const events = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(events).toContainEqual({
+      type: "tool_call_delta",
+      turn: 1,
+      id: "call_1",
+      name: "add",
+      argumentsDelta: '{"x":2,"y":5}',
+      argumentsMode: "replace",
+    });
+    expect(events.findIndex((event) => event.type === "tool_call_delta")).toBeLessThan(
+      events.findIndex((event) => event.type === "tool_call"),
+    );
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
   });
 
   it("does not retry after a provider delta has been observed", async () => {
@@ -751,6 +802,13 @@ describe("PromptRequest streaming", () => {
     const events = await collect(agent.prompt("add").stream());
 
     expect(events).toContainEqual({
+      type: "tool_call_delta",
+      turn: 1,
+      id: "call_1",
+      name: "add",
+      argumentsDelta: '{"x":2,"y":5}',
+    });
+    expect(events).toContainEqual({
       type: "tool_call",
       turn: 1,
       toolCall: AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }),
@@ -764,8 +822,108 @@ describe("PromptRequest streaming", () => {
         result: "7",
       }),
     );
+    expect(events.findIndex((event) => event.type === "tool_call_delta")).toBeLessThan(
+      events.findIndex((event) => event.type === "tool_call"),
+    );
     expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("supports explicitly disabling tool call deltas", async () => {
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        },
+      ],
+      [{ type: "text_delta", delta: "7" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+
+    const events = await collect(agent.prompt("add").stream({ includeToolCallDeltas: false }));
+
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_call_delta" }));
+    expect(events).toContainEqual({
+      type: "tool_call",
+      turn: 1,
+      toolCall: AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }),
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "tool_result", toolName: "add", result: "7" }),
+    );
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
+  });
+
+  it("emits tool call deltas by default before response middleware completes", async () => {
+    let providerFinished = false;
+    const firstTurn = (async function* (): AsyncIterable<CompletionStreamEvent> {
+      yield {
+        type: "tool_call_delta",
+        id: "tool_1",
+        callId: "call_1",
+        name: "add",
+        argumentsDelta: '{"x":2,"y":5}',
+        signature: "signed",
+      };
+      providerFinished = true;
+    })();
+    const middlewareStarted = deferred<void>();
+    const releaseMiddleware = deferred<void>();
+    const model = new StreamingQueueModel([firstTurn, [{ type: "text_delta", delta: "7" }]]);
+    const agent = new AgentBuilder("test-agent", model)
+      .tool(addTool)
+      .middleware(
+        createMiddleware({
+          async onCompletionResponse({ response }) {
+            middlewareStarted.resolve();
+            await releaseMiddleware.promise;
+            return { response };
+          },
+        }),
+      )
+      .build();
+    const iterator = agent.prompt("add").stream()[Symbol.asyncIterator]();
+
+    expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
+    expect(await nextEvent(iterator)).toEqual({
+      type: "tool_call_delta",
+      turn: 1,
+      id: "tool_1",
+      callId: "call_1",
+      name: "add",
+      argumentsDelta: '{"x":2,"y":5}',
+      signature: "signed",
+    });
+    expect(providerFinished).toBe(false);
+
+    const completedToolCall = iterator.next();
+    await middlewareStarted.promise;
+    let completedToolCallSettled = false;
+    void completedToolCall.then(() => {
+      completedToolCallSettled = true;
+    });
+    await Promise.resolve();
+    expect(completedToolCallSettled).toBe(false);
+
+    releaseMiddleware.resolve();
+    await expect(completedToolCall).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: "tool_call",
+        turn: 1,
+        toolCall: AssistantContent.toolCall("tool_1", "add", { x: 2, y: 5 }, "call_1"),
+      },
+    });
+    expect(providerFinished).toBe(true);
+
+    const remaining = await collectIterator(iterator);
+    expect(remaining).toContainEqual(
+      expect.objectContaining({ type: "tool_result", toolName: "add", result: "7" }),
+    );
+    expect(remaining.at(-1)).toMatchObject({ type: "final", output: "7" });
   });
 
   it("streams transformed tool results from middleware", async () => {
@@ -1025,7 +1183,7 @@ describe("PromptRequest streaming", () => {
     expect(events.at(-1)).toMatchObject({ type: "final", output: "parent done" });
   });
 
-  it("streams child tool calls and child tool results from streaming agent tools", async () => {
+  it("suppresses child tool call deltas when the parent stream explicitly opts out", async () => {
     const parentModel = new StreamingQueueModel([
       [
         {
@@ -1038,8 +1196,10 @@ describe("PromptRequest streaming", () => {
     const childModel = new StreamingQueueModel([
       [
         {
-          type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_add", "add", { x: 2, y: 5 }),
+          type: "tool_call_delta",
+          id: "call_add",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
         },
       ],
       [{ type: "text_delta", delta: "7" }],
@@ -1052,9 +1212,12 @@ describe("PromptRequest streaming", () => {
       .tool(childAgent.asTool({ name: "ask_child", stream: true }))
       .build();
 
-    const events = await collect(parentAgent.prompt("delegate").stream());
+    const events = await collect(
+      parentAgent.prompt("delegate").stream({ includeToolCallDeltas: false }),
+    );
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
+    expect(childEvents.map((event) => eventType(event.event))).not.toContain("tool_call_delta");
     expect(childEvents).toContainEqual(
       expect.objectContaining({
         type: "agent_tool_event",
@@ -1079,6 +1242,71 @@ describe("PromptRequest streaming", () => {
         type: "tool_result",
         toolName: "ask_child",
         result: "7",
+      }),
+    );
+  });
+
+  it("propagates tool call deltas through streaming agent tools by default", async () => {
+    const eventStore = new RecordingEventStore();
+    const parentModel = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call",
+          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "add" }),
+        },
+      ],
+      [{ type: "text_delta", delta: "parent done" }],
+    ]);
+    const childModel = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_add",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        },
+      ],
+      [{ type: "text_delta", delta: "7" }],
+    ]);
+    const childAgent = new AgentBuilder("child", childModel)
+      .tool(addTool)
+      .defaultMaxTurns(2)
+      .build();
+    const parentAgent = new AgentBuilder("parent", parentModel)
+      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
+      .eventStore(eventStore)
+      .build();
+
+    const events = await collect(parentAgent.prompt("delegate").stream());
+    const childEvents = events.filter((event) => event.type === "agent_tool_event");
+
+    expect(childEvents).toContainEqual(
+      expect.objectContaining({
+        type: "agent_tool_event",
+        event: {
+          type: "tool_call_delta",
+          turn: 1,
+          id: "call_add",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        },
+      }),
+    );
+    expect(childEvents).toContainEqual(
+      expect.objectContaining({
+        type: "agent_tool_event",
+        event: expect.objectContaining({
+          type: "tool_call",
+          toolCall: AssistantContent.toolCall("call_add", "add", { x: 2, y: 5 }),
+        }),
+      }),
+    );
+    expect(eventStore.appendCalls).toContainEqual(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          type: "agent_tool_event",
+          event: expect.objectContaining({ type: "tool_call_delta", id: "call_add" }),
+        }),
       }),
     );
   });

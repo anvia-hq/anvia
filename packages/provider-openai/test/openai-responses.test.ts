@@ -417,6 +417,33 @@ describe("OpenAI Responses mapping", () => {
 
     expect(
       fromOpenAIStreamEvent({
+        type: "response.function_call_arguments.delta",
+        item_id: "tool_1",
+        delta: '{"query":',
+      }),
+    ).toEqual({
+      type: "tool_call_delta",
+      id: "tool_1",
+      argumentsDelta: '{"query":',
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.function_call_arguments.done",
+        item_id: "tool_1",
+        name: "lookup",
+        arguments: '{"query":"x"}',
+      }),
+    ).toEqual({
+      type: "tool_call_delta",
+      id: "tool_1",
+      name: "lookup",
+      argumentsDelta: '{"query":"x"}',
+      argumentsMode: "replace",
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
         type: "response.output_item.done",
         item: {
           type: "function_call",

@@ -138,6 +138,27 @@ describe("CompletionStreamAccumulator", () => {
     ]);
   });
 
+  it("replaces accumulated tool arguments with a completed snapshot", () => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "ExecCommand",
+      argumentsDelta: '{"command":',
+    });
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      argumentsDelta: '{"command":"pwd"}',
+      argumentsMode: "replace",
+    });
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }),
+    ]);
+  });
+
   it("preserves valid scalar JSON tool arguments", () => {
     const accumulator = new CompletionStreamAccumulator();
 

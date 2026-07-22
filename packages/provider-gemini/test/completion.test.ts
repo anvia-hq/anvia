@@ -305,6 +305,44 @@ describe("Gemini completion mapping", () => {
     ]);
   });
 
+  it("marks streamed Gemini tool arguments as replacement snapshots", () => {
+    expect(
+      fromGeminiGenerateContentStreamChunk({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  functionCall: {
+                    id: "call-1",
+                    name: "write_file",
+                    args: { path: "README.md" },
+                  },
+                  thoughtSignature: "tool_sig",
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        type: "tool_call_delta",
+        id: "call-1",
+        callId: "call-1",
+        name: "write_file",
+        signature: "tool_sig",
+      },
+      {
+        type: "tool_call_delta",
+        id: "call-1",
+        callId: "call-1",
+        argumentsDelta: '{"path":"README.md"}',
+        argumentsMode: "replace",
+      },
+    ]);
+  });
+
   it("maps Gemini thought summaries and thought signatures", () => {
     expect(
       fromGeminiGenerateContentResponse({

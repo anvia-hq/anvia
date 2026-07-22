@@ -12,7 +12,6 @@ import {
   Message,
   type Message as MessageType,
   type ToolCall,
-  type ToolDefinition,
   type ToolResult,
   textFromAssistantContent,
   Usage,
@@ -33,11 +32,16 @@ import { createAsyncQueue } from "../internal/async-queue";
 import { PromptRequestMemory } from "../internal/prompt-runtime/memory";
 import { fetchDynamicContext, fetchToolDefinitions } from "../internal/prompt-runtime/retrieval";
 import { CompletionStreamAccumulator } from "../internal/prompt-runtime/stream-accumulator";
-import { addTurn, isGenerationDeltaEvent } from "../internal/prompt-runtime/stream-events";
+import {
+  addTurn,
+  addTurnToToolCallDelta,
+  isGenerationDeltaEvent,
+} from "../internal/prompt-runtime/stream-events";
 import {
   type AgentToolEventPayload,
   ToolCallExecutor,
   type ToolExecutionEventPayload,
+  type ToolExecutionObservation,
   type ToolResultEventPayload,
 } from "../internal/prompt-runtime/tool-execution";
 import { extractRagText } from "../internal/rag-text";
@@ -60,7 +64,12 @@ import {
   resolveCompletionRetryOptions,
   waitForCompletionRetry,
 } from "./retry";
-import type { AgentStreamEvent, PromptResponse } from "./types";
+import type {
+  AgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas,
+  AgentStreamOptions,
+  PromptResponse,
+} from "./types";
 
 export class PromptRequest<M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
@@ -352,12 +361,19 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     }
   }
 
-  async *stream(): AsyncIterable<AgentStreamEvent> {
+  stream(): AsyncIterable<AgentStreamEvent>;
+  stream(options: {
+    includeToolCallDeltas: false;
+  }): AsyncIterable<AgentStreamEventWithoutToolCallDeltas>;
+  stream(options: { includeToolCallDeltas?: true }): AsyncIterable<AgentStreamEvent>;
+  stream(options: AgentStreamOptions): AsyncIterable<AgentStreamEvent>;
+  async *stream(options: AgentStreamOptions = {}): AsyncIterable<AgentStreamEvent> {
     if (!this.agent.model.capabilities.streaming || !isStreamingCompletionModel(this.agent.model)) {
       throw new Error("This completion model does not support streaming");
     }
 
     this.startRun();
+    const includeToolCallDeltas = options.includeToolCallDeltas !== false;
     const runId = globalThis.crypto.randomUUID();
     const emit = async (event: AgentStreamEvent): Promise<AgentStreamEvent> => {
       await this.recordAgentEvent(runId, event);
@@ -472,6 +488,9 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
                   firstDeltaMs = Date.now() - generationStartedAt;
                 }
                 const mapped = accumulator.accept(event);
+                if (includeToolCallDeltas && event.type === "tool_call_delta") {
+                  yield await emit(addTurnToToolCallDelta(currentTurns, event));
+                }
                 if (mapped !== undefined) {
                   await generationObservers.update?.({ turn: currentTurns, delta: mapped });
                   if (mapped.type === "tool_call") {
@@ -646,6 +665,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             turn: currentTurns,
             runObservers,
             toolDefinitions: request.tools,
+            includeToolCallDeltas,
           },
         );
         toolResultsPromise.then(
@@ -684,8 +704,8 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     }
   }
 
-  readableStream(): ReadableStream<Uint8Array> {
-    return toReadableStream(this.stream());
+  readableStream(options: AgentStreamOptions = {}): ReadableStream<Uint8Array> {
+    return toReadableStream(this.stream(options));
   }
 
   private async runCompletion(
@@ -830,11 +850,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     newMessages: MessageType[],
     onResult?: (result: ToolResultEventPayload) => void,
     onStreamEvent?: (event: AgentToolEventPayload) => void,
-    observation?: {
-      turn: number;
-      runObservers: ActiveAgentRunObservers;
-      toolDefinitions?: ToolDefinition[];
-    },
+    observation?: ToolExecutionObservation,
   ): Promise<ToolResult[]> {
     const executor = new ToolCallExecutor(
       this.agent,
@@ -847,6 +863,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       },
       this.concurrency,
       this.requestMiddlewares,
+      observation?.includeToolCallDeltas ?? false,
       (reason) => this.cancelled(newMessages, reason),
     );
     return executor.execute(toolCalls, onResult, onStreamEvent, observation);

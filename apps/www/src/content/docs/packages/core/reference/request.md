@@ -29,7 +29,8 @@ class PromptRequest<M extends CompletionModel = CompletionModel> {
   approvals(options: ToolApprovalsOptions): this;
   send(): Promise<PromptResponse>;
   stream(): AsyncIterable<AgentStreamEvent>;
-  readableStream(options?: ReadableStreamOptions): ReadableStream<AgentStreamEvent>;
+  stream(options: { includeToolCallDeltas: false }): AsyncIterable<AgentStreamEventWithoutToolCallDeltas>;
+  readableStream(options?: AgentStreamOptions): ReadableStream<Uint8Array>;
 }
 ```
 
@@ -96,21 +97,55 @@ type AgentErrorStreamEvent = {
   usage: Usage;
 };
 
+type AgentStreamOptions = {
+  includeToolCallDeltas?: boolean;
+};
+
+type AgentToolCallDeltaEvent = {
+  type: "tool_call_delta";
+  turn: number;
+  id: string;
+  callId?: string;
+  name?: string;
+  argumentsDelta?: string;
+  argumentsMode?: "append" | "replace";
+  signature?: string;
+};
+
 type AgentStreamEvent =
   | { type: "turn_start"; turn: number; prompt: Message; history: Message[] }
   | { type: "text_delta"; turn: number; delta: string }
   | { type: "reasoning_delta"; turn: number; delta: string; id?: string; contentType?: "text" | "summary" | "encrypted" | "redacted"; signature?: string }
+  | AgentToolCallDeltaEvent
   | { type: "tool_call"; turn: number; toolCall: ToolCall }
   | { type: "tool_result"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; args: string; result: string }
   | { type: "agent_tool_event"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; agentId: string; agentName?: string; event: AgentChildStreamEvent }
   | { type: "turn_end"; turn: number; response: CompletionResponse }
   | { type: "final"; runId: string; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo }
   | AgentErrorStreamEvent;
+
+type AgentChildStreamEventWithoutToolCallDeltas = Exclude<
+  AgentChildStreamEvent,
+  { type: "tool_call_delta" }
+>;
+
+type AgentStreamEventWithoutToolCallDeltas =
+  | AgentChildStreamEventWithoutToolCallDeltas
+  | { type: "agent_tool_event"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; agentId: string; agentName?: string; event: AgentChildStreamEventWithoutToolCallDeltas };
+
+type AgentChildStreamEventWithToolCallDeltas = AgentChildStreamEvent;
+type AgentStreamEventWithToolCallDeltas = AgentStreamEvent;
 ```
 
 Purpose: streaming event union for observing agent execution.
 
 Return behavior: emitted by `PromptRequest.stream()` and `readableStream()`. `agent_tool_event` appears when a child agent is exposed with `asTool({ stream: true })`.
+
+Tool-call deltas are provisional events emitted by default. They are emitted immediately, including
+through streaming child agents, and may precede completion-response middleware. Missing
+`argumentsMode` means append; `"replace"` means the fragment is a full snapshot. Only a completed
+`tool_call` is safe to execute. Pass `{ includeToolCallDeltas: false }` for strict legacy consumers;
+the returned stream then narrows to `AgentStreamEventWithoutToolCallDeltas`.
 
 Agent error usage is cumulative across completed turns and any failed provider attempts that report
 authoritative usage. It is `Usage.empty()` when the runtime has not received authoritative usage.

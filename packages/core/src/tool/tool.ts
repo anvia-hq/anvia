@@ -48,6 +48,7 @@ export type ToolCallStreamEvent = {
 
 export type ToolCallContext = {
   emitStreamEvent?(event: ToolCallStreamEvent): void | Promise<void>;
+  includeToolCallDeltas?: boolean;
 };
 
 export interface Tool<Args = unknown, Output = unknown> {

@@ -81,6 +81,10 @@ or filter tool parts before wrappers are created:
 />
 ```
 
+`renderWhen="pending"` includes both provisional `input-streaming` parts created from
+`tool_call_delta` events and completed `input-available` tool calls. This lets an application show a
+“Preparing tool…” state as soon as the provider identifies the tool.
+
 ## Human input
 
 `HumanInput.Approvals` and `HumanInput.Questions` read `useChat` human-input state and call the

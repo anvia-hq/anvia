@@ -33,8 +33,12 @@ const agent = new AgentBuilder("agent", agentModel)
   .defaultMaxTurns(2)
   .build();
 
-// Tool streaming exposes the model request, local tool result, and final text.
+// Provisional deltas let the UI show a tool as soon as the model names it.
 for await (const event of agent.prompt("What is the weather in Jakarta?").stream()) {
+  if (event.type === "tool_call_delta" && event.name) {
+    console.log(`Preparing ${event.name} tool...`);
+  }
+
   if (event.type === "tool_call") {
     console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
   }

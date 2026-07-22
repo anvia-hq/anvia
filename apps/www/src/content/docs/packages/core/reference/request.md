@@ -30,6 +30,8 @@ class PromptRequest<M extends CompletionModel = CompletionModel> {
   send(): Promise<PromptResponse>;
   stream(): AsyncIterable<AgentStreamEvent>;
   stream(options: { includeToolCallDeltas: false }): AsyncIterable<AgentStreamEventWithoutToolCallDeltas>;
+  stream(options: { includeToolCallDeltas?: true }): AsyncIterable<AgentStreamEvent>;
+  stream(options: AgentStreamOptions): AsyncIterable<AgentStreamEvent>;
   readableStream(options?: AgentStreamOptions): ReadableStream<Uint8Array>;
 }
 ```

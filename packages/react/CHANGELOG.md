@@ -1,5 +1,15 @@
 # @anvia/react
 
+## 0.9.2
+
+### Patch Changes
+
+- ca24a5e: Emit public tool-call deltas by default for responsive application status, provide an explicit
+  legacy opt-out, propagate the setting through streaming agent tools, and handle append-versus-replace
+  argument snapshots consistently in React clients.
+- Updated dependencies [ca24a5e]
+  - @anvia/core@0.15.0
+
 ## 0.9.1
 
 ### Patch Changes

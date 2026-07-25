@@ -114,7 +114,7 @@ describe("Mistral completion mapping", () => {
           metadata: { composer: { entities: [] } },
         }),
         Message.assistant([AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" })]),
-        Message.tool(ToolContent.toolResult("call_1", "shipped")),
+        Message.tool(ToolContent.toolResult("call_1", "shipped", { toolName: "lookup_order" })),
       ],
       documents: [{ id: "policy", text: "Refunds take 5 days." }],
       tools: [
@@ -153,7 +153,7 @@ describe("Mistral completion mapping", () => {
         {
           role: "tool",
           toolCallId: "call_1",
-          name: "call_1",
+          name: "lookup_order",
           content: "shipped",
         },
       ],
@@ -194,6 +194,80 @@ describe("Mistral completion mapping", () => {
       type: "function",
       function: { name: "lookup" },
     });
+  });
+
+  it("does not allow additional params to override model or messages", () => {
+    const params = toMistralChatParams("mistral-large-latest", {
+      chatHistory: [Message.user("hi")],
+      documents: [],
+      tools: [],
+      additionalParams: {
+        model: "unsafe-model",
+        messages: [{ role: "user", content: "injected" }],
+        topP: 0.9,
+      },
+    });
+
+    expect(params).toEqual({
+      model: "mistral-large-latest",
+      messages: [{ role: "user", content: "hi" }],
+      topP: 0.9,
+    });
+  });
+
+  it("falls back to the tool call id for the tool message name when no tool name is set", () => {
+    expect(
+      mistralMessageHelpers.messageToMistralMessages(
+        Message.tool(ToolContent.toolResult("call_1", "shipped")),
+      ),
+    ).toEqual([
+      {
+        role: "tool",
+        toolCallId: "call_1",
+        name: "call_1",
+        content: "shipped",
+      },
+    ]);
+  });
+
+  it("throws on malformed tool call arguments instead of coercing them", () => {
+    expect(() =>
+      fromMistralChatResponse({
+        choices: [
+          {
+            message: {
+              toolCalls: [
+                {
+                  id: "call_1",
+                  function: { name: "lookup_order", arguments: '{"id":' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toThrow('Mistral returned tool call "call_1" with malformed JSON arguments');
+  });
+
+  it("derives deterministic ids for tool calls missing an id", () => {
+    const response = fromMistralChatResponse({
+      id: "cmpl_9",
+      choices: [
+        {
+          message: {
+            toolCalls: [
+              { function: { name: "first", arguments: "{}" } },
+              { function: { name: "second", arguments: "{}" } },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("cmpl_9-tool-0", "first", {}),
+      AssistantContent.toolCall("cmpl_9-tool-1", "second", {}),
+    ]);
   });
 
   it("exposes helper conversion for assistant tool-use history", () => {

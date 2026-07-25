@@ -19,7 +19,7 @@ import {
 } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
 import { orderedRequestMessages } from "../request-messages";
-import { isPlainObject, numberFrom, parseJsonValue, schemaName, stringFrom } from "../utils";
+import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
 import type { MistralCompletionModelName } from "./models";
 
 type MistralChatParams = Record<string, unknown>;
@@ -112,7 +112,11 @@ export function toMistralChatParams(
   }
 
   if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    Object.assign(params, request.additionalParams);
+    const additionalParams = { ...request.additionalParams };
+    // Model and messages define the request identity; keep them aligned with traceRequest.
+    delete additionalParams.model;
+    delete additionalParams.messages;
+    Object.assign(params, additionalParams);
   }
 
   return params;
@@ -177,11 +181,11 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
   }
 
   const toolCalls = toolCallsFrom(message);
-  for (const toolCall of toolCalls) {
+  for (const [index, toolCall] of toolCalls.entries()) {
     const fn = isPlainObject(toolCall.function) ? toolCall.function : {};
-    const id = stringFrom(toolCall.id) ?? crypto.randomUUID();
+    const id = stringFrom(toolCall.id) ?? deterministicToolCallId(raw.id, index);
     const name = stringFrom(fn.name) ?? "";
-    const args = parseToolArguments(fn.arguments);
+    const args = parseToolArgumentsValue(id, fn.arguments);
     choice.push(AssistantContent.toolCall(id, name, args));
   }
 
@@ -322,7 +326,7 @@ function toolContentToMistralMessage(content: ToolContent): MistralChatMessage {
   return {
     role: "tool",
     toolCallId: content.callId ?? content.id,
-    name: content.id,
+    name: content.toolName ?? content.id,
     content: content.content
       .map((item) =>
         item.type === "text" ? item.text : `[image:${item.mediaType ?? "image/png"}]`,
@@ -408,11 +412,16 @@ function stringContent(content: unknown): string | undefined {
   return undefined;
 }
 
-function parseToolArguments(args: unknown): JsonValue {
+function parseToolArgumentsValue(toolCallId: string, args: unknown): JsonValue {
   if (typeof args === "string") {
-    return parseJsonValue(args);
+    return parseToolArguments(toolCallId, args);
   }
   return toJsonValue(args);
+}
+
+function deterministicToolCallId(responseId: unknown, index: number): string {
+  const prefix = typeof responseId === "string" && responseId.length > 0 ? responseId : "mistral";
+  return `${prefix}-tool-${index.toString()}`;
 }
 
 function toJsonValue(value: unknown): JsonValue {

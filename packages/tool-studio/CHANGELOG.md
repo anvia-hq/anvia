@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 0.7.41
+
+### Patch Changes
+
+- 7f4ce71: Update upstream runtime patch dependencies for React UI and Studio packages.
+- Updated dependencies [7f4ce71]
+  - @anvia/react-ui@0.6.2
+
 ## 0.7.40
 
 ### Patch Changes

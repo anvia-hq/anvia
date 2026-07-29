@@ -517,7 +517,7 @@ class LangfuseRunObserver implements AgentRunObserver {
         : [],
     };
     if (this.captureMode === "full" && args.providerRequest !== undefined) {
-      metadata.providerRequest = this.redactInputValue(args.providerRequest);
+      metadata.providerRequest = args.providerRequest;
     }
     if (args.modelInfo !== undefined) {
       const modelInfo: Record<string, unknown> = {
@@ -789,12 +789,16 @@ class LangfuseToolObserver implements AgentToolObserver {
     const agent = this.childAgent(agentId, agentName, args);
 
     if (child.type === "turn_start") {
+      const promptMessage = isRecord(child.prompt) ? (child.prompt as Message) : undefined;
+      const historyMessages = Array.isArray(child.history)
+        ? (child.history.filter(isRecord) as Message[])
+        : [];
       agent.startObservation(
         `${agentLabel(agentId, agentName)}.turn.${childTurn}.start`,
         {
           input: this.run.redactInputValue({
-            prompt: modelInputMessage(child.prompt as Message),
-            history: modelInputMessages(child.history as Message[]),
+            prompt: promptMessage === undefined ? undefined : modelInputMessage(promptMessage),
+            history: modelInputMessages(historyMessages),
           }),
           metadata: asMetadata(
             this.run.redactInputValue(childMetadata(args, agentId, agentName, childTurn)),
@@ -809,7 +813,7 @@ class LangfuseToolObserver implements AgentToolObserver {
       const request = child.request;
       const modelInfo = isRecord(child.modelInfo) ? child.modelInfo : undefined;
       const messages = Array.isArray(request.chatHistory)
-        ? modelInputMessages(request.chatHistory as Message[])
+        ? modelInputMessages(request.chatHistory.filter(isRecord) as Message[])
         : [];
       const input: Record<string, unknown> = {
         instructions: typeof request.instructions === "string" ? request.instructions : undefined,

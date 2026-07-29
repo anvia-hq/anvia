@@ -34,7 +34,7 @@ export function modelParameters(
 export function usageDetails(
   usage: AgentGenerationEndArgs["response"]["usage"],
 ): Record<string, number> {
-  if (usage.details !== undefined) {
+  if (usage.details !== undefined && Object.keys(usage.details).length > 0) {
     return { ...usage.details };
   }
   return {

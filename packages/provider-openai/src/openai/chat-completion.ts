@@ -15,12 +15,18 @@ import {
   type ToolChoice,
   type ToolContent,
   type ToolDefinition,
-  Usage,
   type UserContent,
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
-import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
+import {
+  isPlainObject,
+  normalizeOpenAIUsage,
+  numberFrom,
+  parseToolArguments,
+  schemaName,
+  stringFrom,
+} from "../utils";
 import type { OpenAICompletionModelName } from "./models";
 
 type ChatCompletionParams = Record<string, unknown>;
@@ -451,7 +457,7 @@ function isTerminalFinishReason(value: unknown): boolean {
   return value !== undefined && value !== null;
 }
 
-function usageFromOpenAIChatCompletion(usage: unknown): Usage {
+function usageFromOpenAIChatCompletion(usage: unknown) {
   const usageSource = isPlainObject(usage) ? usage : {};
   const promptDetails = isPlainObject(usageSource.prompt_tokens_details)
     ? usageSource.prompt_tokens_details
@@ -461,27 +467,12 @@ function usageFromOpenAIChatCompletion(usage: unknown): Usage {
     : {};
   const inputTokens = numberFrom(usageSource.prompt_tokens);
   const outputTokens = numberFrom(usageSource.completion_tokens);
-  const cachedInputTokens = Math.min(inputTokens, numberFrom(promptDetails.cached_tokens));
-  const reasoningOutputTokens = Math.min(
-    outputTokens,
-    numberFrom(completionDetails.reasoning_tokens),
-  );
-  const totalTokens = inputTokens + outputTokens;
-
-  return {
-    ...Usage.empty(),
+  return normalizeOpenAIUsage({
     inputTokens,
     outputTokens,
-    totalTokens,
-    cachedInputTokens,
-    details: {
-      input: inputTokens - cachedInputTokens,
-      input_cached_tokens: cachedInputTokens,
-      output: outputTokens - reasoningOutputTokens,
-      output_reasoning_tokens: reasoningOutputTokens,
-      total: totalTokens,
-    },
-  };
+    cachedInputTokens: numberFrom(promptDetails.cached_tokens),
+    reasoningOutputTokens: numberFrom(completionDetails.reasoning_tokens),
+  });
 }
 
 function messageToChatMessages(message: MessageType): ChatMessage[] {

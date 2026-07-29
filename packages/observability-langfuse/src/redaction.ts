@@ -192,32 +192,7 @@ function redactMessage(message: Message, redactStringFn: (s: string) => string):
 }
 
 function redactMessageContent(value: unknown, redactStringFn: (s: string) => string): unknown {
-  if (typeof value === "string") {
-    return isBase64DataUrl(value) ? value : redactStringFn(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactMessageContent(entry, redactStringFn));
-  }
-  if (value === null || typeof value !== "object") {
-    return value;
-  }
-  const record = value as Record<string, unknown>;
-  const result: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(record)) {
-    if (
-      key === "data" &&
-      typeof entry === "string" &&
-      (record.type === "base64" ||
-        record.type === "image" ||
-        record.type === "encrypted" ||
-        record.type === "redacted")
-    ) {
-      result[key] = entry;
-    } else {
-      result[key] = redactMessageContent(entry, redactStringFn);
-    }
-  }
-  return result;
+  return redactValue(value, 0, redactStringFn);
 }
 
 function isBase64DataUrl(value: string): boolean {

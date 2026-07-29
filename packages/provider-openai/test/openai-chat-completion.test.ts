@@ -232,6 +232,33 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
+  it("normalizes cached and reasoning token usage into exclusive details", () => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [{ message: { role: "assistant", content: "done" } }],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 4,
+        prompt_tokens_details: { cached_tokens: 3 },
+        completion_tokens_details: { reasoning_tokens: 2 },
+      },
+    });
+
+    expect(response.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 4,
+      totalTokens: 14,
+      cachedInputTokens: 3,
+      cacheCreationInputTokens: 0,
+      details: {
+        input: 7,
+        input_cached_tokens: 3,
+        output: 2,
+        output_reasoning_tokens: 2,
+        total: 14,
+      },
+    });
+  });
+
   it("uses one stable reasoning id for interleaved Chat Completions chunks", async () => {
     const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
 

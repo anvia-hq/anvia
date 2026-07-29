@@ -23,18 +23,17 @@ export function validateCaptureMaxBytes(value: number | undefined): number {
   return resolved;
 }
 
-export function sanitizeTraceValue<T>(value: T, maxBytes: number): T | TruncatedTraceValue {
+export function sanitizeTraceValue<T>(
+  value: T,
+  maxBytes: number,
+): T | TruncatedTraceValue | OmittedTraceValue {
   validateCaptureMaxBytes(maxBytes);
   const sanitized = sanitizeValue(value, 0, new WeakSet<object>()) as T;
   let serialized: string;
   try {
     serialized = JSON.stringify(sanitized) ?? String(sanitized);
   } catch {
-    return {
-      anviaTraceValue: "truncated",
-      originalBytes: maxBytes + 1,
-      preview: "[UNSERIALIZABLE]",
-    };
+    return omitted("unserializable");
   }
   const originalBytes = utf8Bytes(serialized);
   if (originalBytes <= maxBytes) {
@@ -58,17 +57,8 @@ function sanitizeValue(value: unknown, depth: number, seen: WeakSet<object>): un
     }
     return value;
   }
-  if (
-    value instanceof ArrayBuffer ||
-    ArrayBuffer.isView(value) ||
-    (typeof Buffer !== "undefined" && Buffer.isBuffer(value))
-  ) {
-    const byteLength =
-      value instanceof ArrayBuffer
-        ? value.byteLength
-        : ArrayBuffer.isView(value)
-          ? value.byteLength
-          : (value as Buffer).byteLength;
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    const byteLength = value.byteLength;
     return omitted("binary", byteLength);
   }
   if (value === null || typeof value !== "object") {
@@ -129,5 +119,7 @@ function boundedPreview(value: string, originalBytes: number, maxBytes: number):
 }
 
 function utf8Bytes(value: string): number {
-  return Buffer.byteLength(value, "utf8");
+  return typeof Buffer === "undefined"
+    ? new TextEncoder().encode(value).byteLength
+    : Buffer.byteLength(value, "utf8");
 }

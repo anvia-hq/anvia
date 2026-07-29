@@ -21,12 +21,18 @@ import {
   type ToolContent,
   type ToolDefinition,
   type ToolResultContent,
-  Usage,
   type UserContent,
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
-import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
+import {
+  isPlainObject,
+  normalizeOpenAIUsage,
+  numberFrom,
+  parseToolArguments,
+  schemaName,
+  stringFrom,
+} from "../utils";
 import type { OpenAICompletionModelName } from "./models";
 
 type ResponsesCreateParams = Record<string, unknown>;
@@ -392,34 +398,22 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
   return undefined;
 }
 
-function usageFromOpenAIResponse(usage: unknown): Usage {
+function usageFromOpenAIResponse(usage: unknown) {
   const usageSource = isPlainObject(usage) ? usage : {};
   const inputTokens = numberFrom(usageSource.input_tokens);
   const outputTokens = numberFrom(usageSource.output_tokens);
-  const totalTokens = inputTokens + outputTokens;
   const inputDetails = isPlainObject(usageSource.input_tokens_details)
     ? usageSource.input_tokens_details
     : {};
   const outputDetails = isPlainObject(usageSource.output_tokens_details)
     ? usageSource.output_tokens_details
     : {};
-  const cachedInputTokens = Math.min(inputTokens, numberFrom(inputDetails.cached_tokens));
-  const reasoningOutputTokens = Math.min(outputTokens, numberFrom(outputDetails.reasoning_tokens));
-
-  return {
-    ...Usage.empty(),
+  return normalizeOpenAIUsage({
     inputTokens,
     outputTokens,
-    totalTokens,
-    cachedInputTokens,
-    details: {
-      input: inputTokens - cachedInputTokens,
-      input_cached_tokens: cachedInputTokens,
-      output: outputTokens - reasoningOutputTokens,
-      output_reasoning_tokens: reasoningOutputTokens,
-      total: totalTokens,
-    },
-  };
+    cachedInputTokens: numberFrom(inputDetails.cached_tokens),
+    reasoningOutputTokens: numberFrom(outputDetails.reasoning_tokens),
+  });
 }
 
 function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {

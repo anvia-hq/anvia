@@ -271,6 +271,44 @@ describe("message attachment content", () => {
     ).toBeUndefined();
   });
 
+  it("rejects incomplete or inconsistent generation usage details", () => {
+    const messageWithDetails = (details: Record<string, number>) =>
+      Message.assistant("assistant", {
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              model: "test-model",
+              usage: {
+                inputTokens: 7,
+                outputTokens: 2,
+                totalTokens: 9,
+                cachedInputTokens: 1,
+                cacheCreationInputTokens: 0,
+                details,
+              },
+            },
+          },
+        },
+      });
+
+    expect(
+      getAssistantGenerationMetadata(
+        messageWithDetails({ input: 6, input_cached_tokens: 1, output: 2 }),
+      ),
+    ).toBeUndefined();
+    expect(
+      getAssistantGenerationMetadata(
+        messageWithDetails({ input: 6, input_cached_tokens: 1, output: 2, total: 10 }),
+      ),
+    ).toBeUndefined();
+    expect(
+      getAssistantGenerationMetadata(
+        messageWithDetails({ input: 6, input_cached_tokens: 1, output: 2, total: 9 }),
+      ),
+    ).toMatchObject({ usage: { details: { total: 9 } } });
+  });
+
   it("validates strict JSON values without accepting lossy structures", () => {
     const shared = { value: 1 };
     expect(isJsonValue({ shared, duplicate: shared, list: [null, true, 1, "ok"] })).toBe(true);

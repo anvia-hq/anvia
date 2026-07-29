@@ -7,6 +7,7 @@ export {
   defaultEventToApproval,
   defaultEventToQuestion,
 } from "./human-input";
+export type { InitialMessagesFromMemoryOptions } from "./memory";
 export { initialMessagesFromMemory } from "./memory";
 export type {
   SmoothStreamItemAdapter,

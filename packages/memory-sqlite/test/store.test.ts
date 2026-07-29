@@ -203,6 +203,70 @@ describe("SqliteMemoryStore", () => {
     expect(await store.load(context)).toEqual([]);
   });
 
+  it("atomically compacts a prefix and rejects stale revisions", async () => {
+    const store = createSqliteMemoryStore();
+    const context = { sessionId: "thread-compaction", userId: "user-1" };
+    await store.append({
+      context,
+      runId: "run-1",
+      turn: 1,
+      messages: [userMessage, assistantMessage],
+    });
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 1,
+      messages: [userMessage],
+    });
+    const stale = await store.compaction.load(context);
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 2,
+      messages: [assistantMessage],
+    });
+    const summary: Extract<Message, { role: "system" }> = {
+      role: "system",
+      content: "Earlier conversation summary",
+    };
+
+    await expect(
+      store.compaction.commit({
+        context,
+        revision: stale.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:1",
+      }),
+    ).resolves.toBe("conflict");
+
+    const current = await store.compaction.load(context);
+    await expect(
+      store.compaction.commit({
+        context,
+        revision: current.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:2",
+      }),
+    ).resolves.toBe("committed");
+    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+
+    const [conversation] = await store.inspector.listConversations({ limit: 1 });
+    const inspected =
+      conversation === undefined
+        ? undefined
+        : await store.inspector.getConversation(conversation.ref);
+    expect(inspected).toMatchObject({
+      messageCount: 3,
+      messages: [
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 2, runId: "run-2", turn: 1, message: userMessage },
+        { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
+      ],
+    });
+  });
+
   it("inspects persisted conversations by opaque row reference", async () => {
     const store = createSqliteMemoryStore();
     await store.append({

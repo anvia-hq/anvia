@@ -202,6 +202,71 @@ describe("Drizzle memory public API", () => {
     expect(await store.load(context)).toEqual([]);
   });
 
+  it("atomically compacts a prefix and rejects stale revisions", async () => {
+    const db = new FakeDrizzleDb();
+    const store = createDrizzleMemoryStore(db);
+    const context = { sessionId: "thread-compaction", userId: "user-1" };
+    await store.append({
+      context,
+      runId: "run-1",
+      turn: 1,
+      messages: [userMessage, assistantMessage],
+    });
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 1,
+      messages: [userMessage],
+    });
+    const stale = await store.compaction.load(context);
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 2,
+      messages: [assistantMessage],
+    });
+    const summary: Extract<Message, { role: "system" }> = {
+      role: "system",
+      content: "Earlier conversation summary",
+    };
+
+    await expect(
+      store.compaction.commit({
+        context,
+        revision: stale.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:1",
+      }),
+    ).resolves.toBe("conflict");
+
+    const current = await store.compaction.load(context);
+    await expect(
+      store.compaction.commit({
+        context,
+        revision: current.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:2",
+      }),
+    ).resolves.toBe("committed");
+    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+
+    const [conversation] = await store.inspector.listConversations({ limit: 1 });
+    const inspected =
+      conversation === undefined
+        ? undefined
+        : await store.inspector.getConversation(conversation.ref);
+    expect(inspected).toMatchObject({
+      messageCount: 3,
+      messages: [
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 2, runId: "run-2", turn: 1, message: userMessage },
+        { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
+      ],
+    });
+  });
+
   it("inspects persisted conversations with ordered message records", async () => {
     const store = createDrizzleMemoryStore(new FakeDrizzleDb());
     await store.append({
@@ -441,6 +506,7 @@ type SessionRow = {
 };
 
 type MessageRow = {
+  id: string;
   memorySessionId: string;
   position: number;
   runId: string;
@@ -462,6 +528,7 @@ class FakeDrizzleDb {
   readonly messages = new Map<string, MessageRow[]>();
   readonly errors: ErrorRow[] = [];
   private nextSessionId = 1;
+  private nextMessageId = 1;
 
   select(selection?: unknown): FakeSelectBuilder {
     return new FakeSelectBuilder(this, selection);
@@ -518,6 +585,21 @@ class FakeDrizzleDb {
 
     if (fromTable !== agentMemoryMessages) {
       return [];
+    }
+
+    if (hasSelection(selection, "id")) {
+      const scopeKey = String(extractParam(condition));
+      const session = this.sessions.get(scopeKey);
+      if (session === undefined) {
+        return [];
+      }
+      return [...(this.messages.get(session.id) ?? [])]
+        .sort((left, right) => left.position - right.position)
+        .map((row) => ({
+          id: row.id,
+          position: row.position,
+          message: row.message,
+        }));
     }
 
     if (hasSelection(selection, "runId")) {
@@ -586,6 +668,7 @@ class FakeDrizzleDb {
         this.messages.set(memorySessionId, [
           ...(this.messages.get(memorySessionId) ?? []),
           {
+            id: `message-${this.nextMessageId++}`,
             memorySessionId,
             position: Number(record.position),
             runId: String(record.runId),
@@ -610,6 +693,20 @@ class FakeDrizzleDb {
   }
 
   deleteRows(table: unknown, condition: unknown): void {
+    if (table === agentMemoryMessages) {
+      const rawIds = extractParam(condition);
+      const ids = new Set(
+        Array.isArray(rawIds) ? rawIds.map(String) : extractParams(condition).map(String),
+      );
+      for (const [sessionId, messages] of this.messages) {
+        this.messages.set(
+          sessionId,
+          messages.filter((message) => !ids.has(message.id)),
+        );
+      }
+      return;
+    }
+
     if (table !== agentMemorySessions) {
       return;
     }
@@ -721,6 +818,32 @@ function extractParam(condition: unknown): unknown {
     isRecord(condition) && Array.isArray(condition.queryChunks) ? condition.queryChunks : [];
   const param = chunks.find((chunk) => isRecord(chunk) && chunk.constructor.name === "Param");
   return isRecord(param) ? param.value : undefined;
+}
+
+function extractParams(condition: unknown): unknown[] {
+  const values: unknown[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item);
+      }
+      return;
+    }
+    if (!isRecord(value)) {
+      return;
+    }
+    if (value.constructor.name === "Param") {
+      values.push(value.value);
+      return;
+    }
+    if (Array.isArray(value.queryChunks)) {
+      for (const chunk of value.queryChunks) {
+        visit(chunk);
+      }
+    }
+  };
+  visit(condition);
+  return values;
 }
 
 function hasSelection(selection: unknown, key: string): boolean {

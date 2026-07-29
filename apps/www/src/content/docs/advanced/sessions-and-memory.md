@@ -120,6 +120,47 @@ Memory supports three save policies:
 
 Failed runs can call `recordError` when your store implements it. Use that for diagnostics and recovery records without treating partial output as normal conversation memory.
 
+## Compact Long Conversations
+
+Use automatic compaction when long-lived sessions would otherwise send an ever-growing transcript
+to the model. Supply an explicit completion model for summarization so its provider, quality, and
+cost remain an application decision:
+
+```ts
+import { AgentBuilder, createSummaryMemoryCompactor } from "@anvia/core";
+
+const agent = new AgentBuilder("support", model)
+  .memory(memoryStore, {
+    savePolicy: "turn",
+    compaction: {
+      maxMessages: 40,
+      keepRecentUserTurns: 4,
+      compactor: createSummaryMemoryCompactor(summaryModel, {
+        maxTokens: 1024,
+      }),
+    },
+  })
+  .build();
+```
+
+When the stored history plus the incoming prompt exceeds `maxMessages`, core summarizes the older
+prefix and retains the configured number of complete user-led turns. The summary is committed
+atomically before the main model call. Prisma, Drizzle, Postgres, and SQLite memory stores support
+this operation without an additional database migration.
+
+Compaction is durable housekeeping rather than audit storage. It remains committed if the
+subsequent agent run fails, while the event store and observability integrations retain run-level
+records. Summary-model tokens are included in the run's aggregate usage.
+
+The summary model receives a text representation of the older transcript. Use a provider whose
+data handling is appropriate for that conversation. Binary image and document bodies and raw
+reasoning are omitted, but visible messages, tool arguments, and textual tool results are included.
+
+Concurrent updates are checked with an opaque store revision. Core reloads and regenerates once
+after a conflict, then raises `MemoryCompactionConflictError` rather than overwriting newer memory.
+Custom stores must expose the optional `MemoryCompactionStore` capability before they can be used
+with this option.
+
 ## Session Operations
 
 Use `session.messages()` when a product or internal surface needs to show the current stored transcript:
@@ -236,7 +277,10 @@ export async function POST(request: Request, params: { threadId: string }) {
 }
 ```
 
-The loaded memory messages are API data. `initialMessagesFromMemory(...)` converts core `Message[]` into `UIMessage[]` for browser rendering. It does not write memory, and it does not change what the model sees.
+The loaded memory messages are API data. `initialMessagesFromMemory(...)` converts core `Message[]`
+into `UIMessage[]` for browser rendering. It hides durable compaction-summary system messages by
+default; pass `{ includeCompactionSummaries: true }` when an internal UI should display them. It
+does not write memory, and it does not change what the model sees.
 
 The POST route should use the latest user message with `agent.session(...).prompt(...)`; the configured `MemoryStore` loads prior history server-side. Do not send the full hydrated transcript back as the session prompt. See [React UI persistence](/docs/react-ui/persistence) for the client-side `initialMessages` pattern.
 

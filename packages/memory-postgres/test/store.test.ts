@@ -149,6 +149,7 @@ type FakePgState = {
   messages: Map<
     string,
     Array<{
+      id: string;
       position: number;
       runId: string;
       turn: number;
@@ -240,6 +241,9 @@ class FakePgClient implements PostgresMemoryClientLike {
       for (let index = 0; index < values.length; index += 6) {
         const memorySessionId = values[index] as string;
         const row = {
+          id: `${memorySessionId}:message:${values[index + 3] as number}:${
+            values[index + 1] as string
+          }`,
           position: values[index + 3] as number,
           runId: values[index + 1] as string,
           turn: values[index + 2] as number,
@@ -252,6 +256,22 @@ class FakePgClient implements PostgresMemoryClientLike {
         ]);
       }
       return { rows: [] };
+    }
+
+    if (text.includes("SELECT m.id, m.position, m.message")) {
+      const session = this.state.sessions.get(values[0] as string);
+      return {
+        rows:
+          session === undefined
+            ? []
+            : [...(this.state.messages.get(session.id) ?? [])]
+                .sort((left, right) => left.position - right.position)
+                .map((row) => ({
+                  id: row.id,
+                  position: row.position,
+                  message: row.message,
+                })),
+      };
     }
 
     if (text.includes("COUNT(m.id)::integer AS message_count")) {
@@ -298,6 +318,17 @@ class FakePgClient implements PostgresMemoryClientLike {
               .sort((left, right) => left.position - right.position)
               .map((row) => ({ message: row.message }));
       return { rows };
+    }
+
+    if (text.startsWith("DELETE FROM") && text.includes("WHERE id = ANY")) {
+      const ids = new Set(values[0] as string[]);
+      for (const [sessionId, messages] of this.state.messages) {
+        this.state.messages.set(
+          sessionId,
+          messages.filter((message) => !ids.has(message.id)),
+        );
+      }
+      return { rows: [] };
     }
 
     if (text.startsWith("DELETE FROM")) {
@@ -425,6 +456,71 @@ describe("PostgresMemoryStore", () => {
     expect(client.queries.some((query) => query.includes("pg_advisory_xact_lock"))).toBe(true);
     expect(client.queries.filter((query) => query === "BEGIN")).toHaveLength(2);
     expect(client.queries.filter((query) => query === "COMMIT")).toHaveLength(2);
+  });
+
+  it("atomically compacts a prefix and rejects stale revisions", async () => {
+    const client = new FakePgClient();
+    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const context = { sessionId: "thread-compaction", userId: "user-1" };
+    await store.append({
+      context,
+      runId: "run-1",
+      turn: 1,
+      messages: [userMessage, assistantMessage],
+    });
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 1,
+      messages: [userMessage],
+    });
+    const stale = await store.compaction.load(context);
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 2,
+      messages: [assistantMessage],
+    });
+    const summary: Extract<Message, { role: "system" }> = {
+      role: "system",
+      content: "Earlier conversation summary",
+    };
+
+    await expect(
+      store.compaction.commit({
+        context,
+        revision: stale.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:1",
+      }),
+    ).resolves.toBe("conflict");
+
+    const current = await store.compaction.load(context);
+    await expect(
+      store.compaction.commit({
+        context,
+        revision: current.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:2",
+      }),
+    ).resolves.toBe("committed");
+    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+
+    const [conversation] = await store.inspector.listConversations({ limit: 1 });
+    const inspected =
+      conversation === undefined
+        ? undefined
+        : await store.inspector.getConversation(conversation.ref);
+    expect(inspected).toMatchObject({
+      messageCount: 3,
+      messages: [
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 2, runId: "run-2", turn: 1, message: userMessage },
+        { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
+      ],
+    });
   });
 
   it("inspects persisted conversations with message storage metadata", async () => {

@@ -213,6 +213,30 @@ describe("@anvia/react useChat", () => {
     ]);
   });
 
+  it("hides durable compaction summaries unless explicitly included", () => {
+    const summary = Message.system("Earlier conversation summary", {
+      metadata: {
+        anvia: {
+          memoryCompaction: {
+            version: 1,
+            compactedMessageCount: 8,
+          },
+        },
+      },
+    });
+    const messages = [summary, Message.user("recent"), Message.assistant("recent answer")];
+
+    expect(initialMessagesFromMemory(messages).map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+    ]);
+    expect(
+      initialMessagesFromMemory(messages, {
+        includeCompactionSummaries: true,
+      }).map((message) => message.role),
+    ).toEqual(["system", "user", "assistant"]);
+  });
+
   it("hydrates useChat with initial messages created from memory", () => {
     const memoryMessages = [Message.user("hello"), Message.assistant("hi")];
     const initialMessages = initialMessagesFromMemory(memoryMessages);

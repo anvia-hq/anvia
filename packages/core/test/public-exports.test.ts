@@ -30,6 +30,7 @@ import { Message as RootMessage, ToolContent as RootToolContent, Usage } from ".
 import * as internalAgent from "../src/internal/agent";
 import * as loaders from "../src/loaders";
 import * as mcp from "../src/mcp";
+import * as memory from "../src/memory";
 import * as modelListing from "../src/model-listing";
 import * as observability from "../src/observability";
 import * as pipeline from "../src/pipeline";
@@ -185,6 +186,15 @@ describe("public exports", () => {
     expect("createCompletion" in publicCore).toBe(true);
     expect("createParsedCompletion" in publicCore).toBe(true);
     expect("createCompletionStream" in publicCore).toBe(true);
+  });
+
+  it("exposes memory compaction helpers from root and memory entrypoints", () => {
+    expect(publicCore).toHaveProperty("createSummaryMemoryCompactor");
+    expect(publicCore).toHaveProperty("isMemoryCompactionSummary");
+    expect(publicCore).toHaveProperty("MemoryCompactionError");
+    expect(publicCore).toHaveProperty("MemoryCompactionConflictError");
+    expect(memory).toHaveProperty("createSummaryMemoryCompactor");
+    expect(memory).toHaveProperty("isMemoryCompactionSummary");
   });
 
   it("exposes guardrail helpers from the root entrypoint", () => {

@@ -78,12 +78,28 @@ export {
   toolCallControl,
 } from "./hooks";
 export type {
+  MemoryCompactionCommitInput,
+  MemoryCompactionCommitResult,
+  MemoryCompactionOptions,
+  MemoryCompactionSnapshot,
+  MemoryCompactionStore,
+  MemoryCompactor,
+  MemoryCompactorInput,
+  MemoryCompactorResult,
   MemoryConversation,
   MemoryConversationListOptions,
   MemoryConversationMessage,
   MemoryConversationSummary,
   MemoryInspector,
   MemoryStore,
+  ResolvedMemoryCompactionOptions,
+  SummaryMemoryCompactorOptions,
+} from "./memory";
+export {
+  createSummaryMemoryCompactor,
+  isMemoryCompactionSummary,
+  MemoryCompactionConflictError,
+  MemoryCompactionError,
 } from "./memory";
 export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./request/errors";
 export type { CompletionRetryContext, CompletionRetryOptions } from "./request/retry";

@@ -32,7 +32,7 @@ import {
 import type { PromptHook } from "../hooks";
 import { runControl } from "../hooks";
 import { createAsyncQueue } from "../internal/async-queue";
-import { PromptRequestMemory } from "../internal/prompt-runtime/memory";
+import { type MemoryPreparation, PromptRequestMemory } from "../internal/prompt-runtime/memory";
 import { fetchDynamicContext, fetchToolDefinitions } from "../internal/prompt-runtime/retrieval";
 import { CompletionStreamAccumulator } from "../internal/prompt-runtime/stream-accumulator";
 import {
@@ -48,6 +48,7 @@ import {
   type ToolResultEventPayload,
 } from "../internal/prompt-runtime/tool-execution";
 import { extractRagText } from "../internal/rag-text";
+import { MemoryCompactionError } from "../memory/errors";
 import type { MemoryContext } from "../memory/types";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
 import type {
@@ -221,7 +222,10 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       }
 
       newMessages = [this.promptMessage];
-      this.chatHistory = await this.memoryRecorder.prepareRun(runId, newMessages);
+      const memoryPreparation = await this.memoryRecorder.prepareRun(runId, newMessages);
+      this.chatHistory = memoryPreparation.history;
+      usage = Usage.add(usage, memoryPreparation.usage);
+      await this.recordMemoryCompaction(memoryPreparation, runObservers);
       const pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
       while (currentTurns <= this.maxTurnCount + 1) {
@@ -357,6 +361,9 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
       throw new MaxTurnsError(this.maxTurnCount, [...this.chatHistory, ...newMessages], lastPrompt);
     } catch (error) {
+      if (error instanceof MemoryCompactionError && error.usage !== undefined) {
+        usage = Usage.add(usage, error.usage);
+      }
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
       this.runState = finalError instanceof PromptCancelledError ? "cancelled" : "errored";
       await runObservers.error({ error: finalError, usage, messages: [...newMessages] });
@@ -424,7 +431,10 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       }
 
       newMessages = [this.promptMessage];
-      this.chatHistory = await this.memoryRecorder.prepareRun(runId, newMessages);
+      const memoryPreparation = await this.memoryRecorder.prepareRun(runId, newMessages);
+      this.chatHistory = memoryPreparation.history;
+      usage = Usage.add(usage, memoryPreparation.usage);
+      await this.recordMemoryCompaction(memoryPreparation, runObservers);
       const pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
       while (currentTurns <= this.maxTurnCount + 1) {
@@ -701,6 +711,9 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
       throw new MaxTurnsError(this.maxTurnCount, [...this.chatHistory, ...newMessages], lastPrompt);
     } catch (error) {
+      if (error instanceof MemoryCompactionError && error.usage !== undefined) {
+        usage = Usage.add(usage, error.usage);
+      }
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
       this.runState = finalError instanceof PromptCancelledError ? "cancelled" : "errored";
       const finalUsage = usage;
@@ -930,6 +943,28 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       name: "guardrail.decision",
       level: decision.action === "block" ? "WARNING" : "DEFAULT",
       attributes: guardrailDecisionAttributes(decision),
+    });
+  }
+
+  private async recordMemoryCompaction(
+    preparation: MemoryPreparation,
+    runObservers: ActiveAgentRunObservers,
+  ): Promise<void> {
+    const compaction = preparation.compaction;
+    if (compaction === undefined) {
+      return;
+    }
+    await runObservers.event({
+      name: "memory.compaction",
+      attributes: {
+        originalMessageCount: compaction.originalMessageCount,
+        compactedMessageCount: compaction.compactedMessageCount,
+        retainedMessageCount: compaction.retainedMessageCount,
+        conflictRetries: compaction.conflictRetries,
+        inputTokens: preparation.usage.inputTokens,
+        outputTokens: preparation.usage.outputTokens,
+        totalTokens: preparation.usage.totalTokens,
+      },
     });
   }
 

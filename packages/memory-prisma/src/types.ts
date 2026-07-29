@@ -42,6 +42,7 @@ export type PrismaMemoryMessageDelegate = {
   findMany(args: unknown): Promise<PrismaMemoryMessageRow[]>;
   findFirst(args: unknown): Promise<PrismaMemoryPositionRow | null>;
   createMany(args: unknown): Promise<unknown>;
+  deleteMany?(args: unknown): Promise<{ count: number }>;
 };
 
 export type PrismaMemoryErrorDelegate = {

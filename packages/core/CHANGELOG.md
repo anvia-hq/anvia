@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 0.16.0
+
+### Minor Changes
+
+- 32634d6: Add provider-executed tool contracts to the unified tools API, normalize citations and provider
+  tool events, and expose Grok live search, code interpreter, collections search, remote MCP, batch
+  TTS/STT, Grok 4.5 defaults, and documented image ratio handling.
+
 ## 0.15.0
 
 ### Minor Changes

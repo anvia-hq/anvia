@@ -17,7 +17,7 @@ The current provider packages are:
 | `@anvia/anthropic` | `AnthropicClient`, `AnthropicVertexClient` | Claude completions through Anthropic or Google Vertex AI |
 | `@anvia/gemini` | `GeminiClient` | Gemini API and Vertex AI completions, embeddings, image generation, transcription, and model listing |
 | `@anvia/mistral` | `MistralClient` | Mistral completions, embeddings, OCR, and model listing |
-| `@anvia/grok` | `GrokClient` | xAI Grok completions, image generation, and model listing |
+| `@anvia/grok` | `GrokClient` | xAI completions, live search, batch speech, image generation, and model listing |
 
 ## Install Shape
 
@@ -71,7 +71,10 @@ Keep provider choice in configuration or model factories. Application workflows 
 
 ## Provider Capabilities
 
-Provider packages expose different model factories because vendors expose different APIs. For example, OpenAI exposes audio generation, Gemini exposes both Gemini-native image generation and Imagen, Mistral exposes OCR, and Grok exposes xAI image generation. Anthropic currently exposes completion and model listing only.
+Provider packages expose different model factories because vendors expose different APIs. For
+example, OpenAI exposes audio generation, Gemini exposes both Gemini-native image generation and
+Imagen, Mistral exposes OCR, and Grok exposes xAI server tools, batch speech, and image generation.
+Anthropic currently exposes completion and model listing only.
 
 Read [Capability matrix](/docs/providers/capability-matrix) before assuming a provider supports a workflow. Then test the exact model id you plan to run in production.
 

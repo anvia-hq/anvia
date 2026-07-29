@@ -2,7 +2,8 @@
 
 Grok provider adapter for Anvia.
 
-Use this package when you want Anvia agents, extractors, pipelines, image generation, or model listing to run on xAI Grok APIs.
+Use this package when you want Anvia agents, live search, server-executed tools, batch speech,
+image generation, or model listing to run on xAI APIs.
 
 ## Installation
 
@@ -26,7 +27,7 @@ const client = new GrokClient({
   apiKey,
 });
 
-const model = client.completionModel("grok-4.3");
+const model = client.completionModel(); // grok-4.5
 
 const agent = new AgentBuilder("assistant", model)
   .instructions("Answer clearly and concisely.")
@@ -69,6 +70,43 @@ const response = await model.completion({
 });
 ```
 
+## Live Search And Server Tools
+
+Grok's Responses API can execute web search, X search, code interpreter, collections search, and
+remote MCP tools on xAI's servers. Pass them through the same `.tools(...)` API as local executable
+tools:
+
+```ts
+import { AgentBuilder } from "@anvia/core";
+import { GrokClient, tools as grokTools } from "@anvia/grok";
+
+const grok = new GrokClient({ apiKey: process.env.XAI_API_KEY });
+
+const researcher = new AgentBuilder("researcher", grok.completionModel())
+  .tools([
+    localDatabaseTool,
+    grokTools.webSearch({ allowedDomains: ["x.ai"] }),
+    grokTools.xSearch({ allowedHandles: ["xai"] }),
+    grokTools.codeInterpreter(),
+  ])
+  .additionalParams({ max_turns: 5 })
+  .build();
+
+const result = await researcher.prompt("Summarize the latest xAI updates.").send();
+
+console.log(result.output);
+console.log(result.sources);
+console.log(result.providerToolCalls);
+```
+
+The builder partitions tools internally: local tools remain in Anvia's executable `ToolSet`, while
+Grok tools are sent to xAI and never executed locally. Server tools are supported by the Responses
+adapter, not the Chat Completions adapter. Legacy raw `additionalParams.tools` arrays are merged
+after local and typed provider tools.
+
+Remote MCP authorization and headers are sent to xAI but omitted from Anvia's request trace
+summary.
+
 ## Image Generation
 
 ```ts
@@ -87,6 +125,31 @@ console.log(result.mediaType, result.image.byteLength);
 ```
 
 The adapter requests base64 responses by default. If xAI returns image URLs, it fetches those URLs and returns bytes to satisfy Anvia's core image generation contract.
+Exact xAI-supported aspect ratios are preserved; other width/height ratios map to `auto`. An
+explicit `additionalParams.aspect_ratio` takes precedence.
+
+## Batch Speech
+
+```ts
+const speech = await client.audioGenerationModel().audioGeneration({
+  text: "Hello from Grok.",
+  voice: "eve",
+  speed: 1,
+  additionalParams: {
+    language: "en",
+    output_format: { codec: "mp3", sample_rate: 24_000 },
+  },
+});
+
+const transcript = await client.transcriptionModel().transcription({
+  data: speech.audio,
+  filename: "speech.mp3",
+  language: "en",
+});
+```
+
+These factories implement Anvia's batch `AudioGenerationModel` and `TranscriptionModel` contracts.
+Realtime voice and streaming speech are not included.
 
 ## Model Listing
 
@@ -96,9 +159,10 @@ const models = await client.listModels();
 
 Use listing for inventory. Keep a separate app allowlist for production-enabled model ids.
 
-## Unsupported xAI SDK Surfaces
+## Unsupported xAI Surfaces
 
-The xAI Python SDK also exposes native video, tokenizer, files, batch, collections, stored completions, compaction, deferred chat, and telemetry APIs. This package does not implement those in v1 because Anvia core does not currently expose matching provider-neutral contracts.
+This package does not currently expose image editing, video generation, realtime voice, streaming
+speech, file or collection management, batches, stored completions, compaction, or telemetry.
 
 ## Exports
 
@@ -106,7 +170,10 @@ The xAI Python SDK also exposes native video, tokenizer, files, batch, collectio
 - `GrokResponsesCompletionModel`
 - `GrokChatCompletionModel`
 - `GrokImageGenerationModel`
-- model constants such as `GROK_4_3`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
+- `GrokAudioGenerationModel`
+- `GrokTranscriptionModel`
+- typed `tools` factories for xAI server-executed tools
+- model constants such as `GROK_4_5`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
 - `grok`
 
 ## Development

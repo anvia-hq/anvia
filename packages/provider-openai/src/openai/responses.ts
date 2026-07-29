@@ -5,12 +5,15 @@ import {
   type CompletionModelCapabilities,
   type CompletionRequest,
   type CompletionResponse,
+  type CompletionSource,
   type CompletionStreamEvent,
   type DocumentContent,
   type ImageContent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  type ProviderTool,
+  type ProviderToolCall,
   type Reasoning,
   type ReasoningContent,
   type StreamingCompletionModel,
@@ -41,6 +44,7 @@ export class OpenAIResponsesCompletionModel
     documentInput: true,
     outputSchema: true,
     reasoning: true,
+    providerTools: true,
   };
 
   constructor(
@@ -96,10 +100,6 @@ export function toOpenAIResponsesParams(
     params.instructions = request.instructions;
   }
 
-  if (request.tools.length > 0) {
-    params.tools = request.tools.map(toolDefinitionToOpenAI);
-  }
-
   if (request.temperature !== undefined) {
     params.temperature = request.temperature;
   }
@@ -127,6 +127,21 @@ export function toOpenAIResponsesParams(
     Object.assign(params, request.additionalParams);
   }
 
+  const additionalTools = params.tools;
+  if (additionalTools !== undefined && !Array.isArray(additionalTools)) {
+    throw new TypeError("Responses additionalParams.tools must be an array.");
+  }
+  const tools = [
+    ...request.tools.map(toolDefinitionToOpenAI),
+    ...(request.providerTools ?? []).map(providerToolToOpenAI),
+    ...(additionalTools ?? []),
+  ];
+  if (tools.length > 0) {
+    params.tools = tools;
+  } else {
+    delete params.tools;
+  }
+
   return params;
 }
 
@@ -135,6 +150,7 @@ function providerRequestSummary(
   request: CompletionRequest<OpenAICompletionModelName>,
   options: { stream?: boolean | undefined },
 ): JsonObject {
+  const summarizedTools = Array.isArray(params.tools) ? params.tools : [];
   return compactJsonObject({
     provider: "openai",
     api: "responses",
@@ -142,8 +158,14 @@ function providerRequestSummary(
     model: stringFrom(params.model),
     parameterKeys: Object.keys(params).sort(),
     inputCount: Array.isArray(params.input) ? params.input.length : undefined,
-    toolCount: request.tools.length,
-    toolNames: request.tools.map((tool) => tool.name),
+    toolCount: summarizedTools.length,
+    toolNames: summarizedTools.flatMap((tool) => {
+      if (!isPlainObject(tool)) {
+        return [];
+      }
+      const name = stringFrom(tool.name) ?? stringFrom(tool.type);
+      return name === undefined ? [] : [name];
+    }),
     hasInstructions: typeof params.instructions === "string" && params.instructions.length > 0,
     hasOutputSchema: request.outputSchema !== undefined,
     temperature: request.temperature,
@@ -199,6 +221,7 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
   const raw = response as Record<string, unknown>;
   const output = Array.isArray(raw.output) ? raw.output : [];
   const choice: AssistantContentType[] = [];
+  const providerToolCalls: ProviderToolCall[] = [];
 
   for (const item of output) {
     if (!isPlainObject(item)) {
@@ -220,8 +243,14 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
     if (item.type === "reasoning") {
       choice.push(reasoningItemToAssistantContent(item));
     }
+
+    const providerToolCall = providerToolCallFromOutputItem(item);
+    if (providerToolCall !== undefined) {
+      providerToolCalls.push(providerToolCall);
+    }
   }
 
+  const sources = sourcesFromOpenAIResponse(raw, output);
   const result: CompletionResponse = {
     choice,
     usage: usageFromOpenAIResponse(raw.usage),
@@ -230,6 +259,12 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
 
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
+  }
+  if (sources.length > 0) {
+    result.sources = sources;
+  }
+  if (providerToolCalls.length > 0) {
+    result.providerToolCalls = providerToolCalls;
   }
 
   return result;
@@ -277,8 +312,16 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
       );
     }
     if (typeof item.id === "string") {
-      return { type: "message_id", id: item.id };
+      const providerToolCall = providerToolCallFromOutputItem(item);
+      return providerToolCall === undefined
+        ? { type: "message_id", id: item.id }
+        : { type: "provider_tool_call", toolCall: providerToolCall };
     }
+  }
+
+  if (event.type === "response.output_text.annotation.added" && isPlainObject(event.annotation)) {
+    const source = sourceFromAnnotation(event.annotation);
+    return source === undefined ? undefined : { type: "source", source };
   }
 
   if (event.type === "response.function_call_arguments.delta") {
@@ -314,6 +357,10 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
           stringFrom(item.call_id),
         ),
       };
+    }
+    const providerToolCall = providerToolCallFromOutputItem(item);
+    if (providerToolCall !== undefined) {
+      return { type: "provider_tool_call", toolCall: providerToolCall };
     }
   }
 
@@ -567,6 +614,13 @@ function toolDefinitionToOpenAI(tool: ToolDefinition): ResponsesInputItem {
   };
 }
 
+function providerToolToOpenAI(tool: ProviderTool): ResponsesInputItem {
+  return {
+    ...(tool.configuration ?? {}),
+    type: tool.name,
+  };
+}
+
 function toolChoiceToOpenAI(toolChoice: ToolChoice): unknown {
   if (toolChoice === "auto" || toolChoice === "required" || toolChoice === "none") {
     return toolChoice;
@@ -598,6 +652,127 @@ function messageOutputToAssistantContent(item: Record<string, unknown>): Assista
     }
 
     return [];
+  });
+}
+
+const PROVIDER_TOOL_OUTPUT_TYPES = new Set([
+  "web_search_call",
+  "x_search_call",
+  "code_interpreter_call",
+  "file_search_call",
+  "mcp_call",
+]);
+
+function providerToolCallFromOutputItem(
+  item: Record<string, unknown>,
+): ProviderToolCall | undefined {
+  if (typeof item.type !== "string" || !PROVIDER_TOOL_OUTPUT_TYPES.has(item.type)) {
+    return undefined;
+  }
+  const toolCall: ProviderToolCall = {
+    id: stringFrom(item.id) ?? crypto.randomUUID(),
+    name: item.type.replace(/_call$/, ""),
+  };
+  const status = stringFrom(item.status);
+  if (status !== undefined) {
+    toolCall.status = status;
+  }
+  const detailEntries = Object.entries(item).filter(
+    ([key, value]) => key !== "id" && key !== "type" && key !== "status" && value !== undefined,
+  );
+  if (detailEntries.length > 0) {
+    toolCall.details = compactJsonObject(Object.fromEntries(detailEntries));
+  }
+  return toolCall;
+}
+
+function sourcesFromOpenAIResponse(
+  response: Record<string, unknown>,
+  output: unknown[],
+): CompletionSource[] {
+  const sources: CompletionSource[] = [];
+  if (Array.isArray(response.citations)) {
+    for (const citation of response.citations) {
+      if (typeof citation === "string") {
+        sources.push({ type: "url", url: citation });
+      } else if (isPlainObject(citation)) {
+        const source = sourceFromAnnotation(citation);
+        if (source !== undefined) {
+          sources.push(source);
+        }
+      }
+    }
+  }
+  for (const item of output) {
+    if (!isPlainObject(item) || item.type !== "message" || !Array.isArray(item.content)) {
+      continue;
+    }
+    for (const content of item.content) {
+      if (!isPlainObject(content) || !Array.isArray(content.annotations)) {
+        continue;
+      }
+      for (const annotation of content.annotations) {
+        if (!isPlainObject(annotation)) {
+          continue;
+        }
+        const source = sourceFromAnnotation(annotation);
+        if (source !== undefined) {
+          sources.push(source);
+        }
+      }
+    }
+  }
+  return dedupeSources(sources);
+}
+
+function sourceFromAnnotation(annotation: Record<string, unknown>): CompletionSource | undefined {
+  const url = stringFrom(annotation.url);
+  if (url === undefined) {
+    return undefined;
+  }
+  const source: CompletionSource = { type: "url", url };
+  const title = stringFrom(annotation.title);
+  if (title !== undefined) source.title = title;
+  const id = stringFrom(annotation.id);
+  if (id !== undefined) source.id = id;
+  const startIndex = numberFromOptional(annotation.start_index ?? annotation.startIndex);
+  if (startIndex !== undefined) source.startIndex = startIndex;
+  const endIndex = numberFromOptional(annotation.end_index ?? annotation.endIndex);
+  if (endIndex !== undefined) source.endIndex = endIndex;
+  return source;
+}
+
+function numberFromOptional(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function dedupeSources(sources: CompletionSource[]): CompletionSource[] {
+  const urlsWithStructuredSources = new Set(
+    sources.flatMap((source) =>
+      source.title !== undefined ||
+      source.id !== undefined ||
+      source.startIndex !== undefined ||
+      source.endIndex !== undefined
+        ? [source.url]
+        : [],
+    ),
+  );
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    const isBare =
+      source.title === undefined &&
+      source.id === undefined &&
+      source.startIndex === undefined &&
+      source.endIndex === undefined;
+    if (isBare && urlsWithStructuredSources.has(source.url)) {
+      return false;
+    }
+    const key = `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
   });
 }
 

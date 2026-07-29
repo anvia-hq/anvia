@@ -81,12 +81,17 @@ type PromptResponse = {
   usage: Usage;
   messages: Message[];
   trace?: AgentTraceInfo;
+  guardrails?: GuardrailDecisionRecord[];
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
 };
 ```
 
 Purpose: final non-streaming agent result.
 
-Return behavior: `messages` contains the new run messages, not the full prior history unless history was manually included.
+Return behavior: `messages` contains the new run messages, not the full prior history unless history
+was manually included. `sources` and `providerToolCalls` aggregate provider-executed tool artifacts
+across all completion turns.
 
 ## AgentStreamEvent
 
@@ -120,10 +125,12 @@ type AgentStreamEvent =
   | { type: "reasoning_delta"; turn: number; delta: string; id?: string; contentType?: "text" | "summary" | "encrypted" | "redacted"; signature?: string }
   | AgentToolCallDeltaEvent
   | { type: "tool_call"; turn: number; toolCall: ToolCall }
+  | { type: "source"; turn: number; source: CompletionSource }
+  | { type: "provider_tool_call"; turn: number; toolCall: ProviderToolCall }
   | { type: "tool_result"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; args: string; result: string }
   | { type: "agent_tool_event"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; agentId: string; agentName?: string; event: AgentChildStreamEvent }
   | { type: "turn_end"; turn: number; response: CompletionResponse }
-  | { type: "final"; runId: string; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo }
+  | { type: "final"; runId: string; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo; sources?: CompletionSource[]; providerToolCalls?: ProviderToolCall[] }
   | AgentErrorStreamEvent;
 
 type AgentChildStreamEventWithoutToolCallDeltas = Exclude<
@@ -148,6 +155,9 @@ through streaming child agents, and may precede completion-response middleware. 
 `argumentsMode` means append; `"replace"` means the fragment is a full snapshot. Only a completed
 `tool_call` is safe to execute. Pass `{ includeToolCallDeltas: false }` for strict legacy consumers;
 the returned stream then narrows to `AgentStreamEventWithoutToolCallDeltas`.
+
+Provider `source` and `provider_tool_call` events describe server-executed tools and are never
+passed to Anvia's local tool executor. The final agent event aggregates them across model turns.
 
 Agent error usage is cumulative across completed turns and any failed provider attempts that report
 authoritative usage. It is `Usage.empty()` when the runtime has not received authoritative usage.

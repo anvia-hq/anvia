@@ -427,6 +427,56 @@ export type ToolDefinition = {
   parameters: JsonObject;
 };
 
+/**
+ * A tool executed by the model provider rather than by Anvia's local tool runtime.
+ *
+ * Provider packages expose typed factories for these values. Application code can
+ * pass them through the same high-level `tools` APIs used for local tools.
+ */
+export type ProviderTool = {
+  kind: "provider";
+  provider: string;
+  name: string;
+  configuration?: JsonObject;
+};
+
+export type CompletionTool = ToolDefinition | ProviderTool;
+
+export function isProviderTool(value: unknown): value is ProviderTool {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Partial<ProviderTool>;
+  return (
+    candidate.kind === "provider" &&
+    typeof candidate.provider === "string" &&
+    candidate.provider.trim().length > 0 &&
+    typeof candidate.name === "string" &&
+    candidate.name.trim().length > 0 &&
+    (candidate.configuration === undefined ||
+      (typeof candidate.configuration === "object" &&
+        candidate.configuration !== null &&
+        !Array.isArray(candidate.configuration) &&
+        isJsonValue(candidate.configuration)))
+  );
+}
+
+export type CompletionSource = {
+  type: "url";
+  url: string;
+  title?: string;
+  id?: string;
+  startIndex?: number;
+  endIndex?: number;
+};
+
+export type ProviderToolCall = {
+  id: string;
+  name: string;
+  status?: string;
+  details?: JsonObject;
+};
+
 export type Usage = {
   inputTokens: number;
   outputTokens: number;
@@ -439,6 +489,8 @@ export type AssistantGenerationMetadata = {
   provider: string;
   model: string;
   usage: Usage;
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
 };
 
 export const Usage = {
@@ -481,11 +533,21 @@ export function getAssistantGenerationMetadata(
   ) {
     return undefined;
   }
-  return {
+  const metadata: AssistantGenerationMetadata = {
     provider: generation.provider,
     model: generation.model,
     usage: { ...generation.usage },
   };
+  if (isCompletionSourceArray(generation.sources)) {
+    metadata.sources = generation.sources.map((source) => ({ ...source }));
+  }
+  if (isProviderToolCallArray(generation.providerToolCalls)) {
+    metadata.providerToolCalls = generation.providerToolCalls.map((toolCall) => ({
+      ...toolCall,
+      ...(toolCall.details === undefined ? {} : { details: { ...toolCall.details } }),
+    }));
+  }
+  return metadata;
 }
 
 function isJsonObjectValue(value: JsonValue | undefined): value is JsonObject {
@@ -509,12 +571,43 @@ function isNonnegativeFiniteNumber(value: JsonValue | undefined): value is numbe
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+function isCompletionSourceArray(value: JsonValue | undefined): value is CompletionSource[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (source) =>
+        isJsonObjectValue(source) &&
+        source.type === "url" &&
+        typeof source.url === "string" &&
+        (source.title === undefined || typeof source.title === "string") &&
+        (source.id === undefined || typeof source.id === "string") &&
+        (source.startIndex === undefined || typeof source.startIndex === "number") &&
+        (source.endIndex === undefined || typeof source.endIndex === "number"),
+    )
+  );
+}
+
+function isProviderToolCallArray(value: JsonValue | undefined): value is ProviderToolCall[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (toolCall) =>
+        isJsonObjectValue(toolCall) &&
+        typeof toolCall.id === "string" &&
+        typeof toolCall.name === "string" &&
+        (toolCall.status === undefined || typeof toolCall.status === "string") &&
+        (toolCall.details === undefined || isJsonObjectValue(toolCall.details)),
+    )
+  );
+}
+
 export type CompletionRequest<ModelName extends string = string> = {
   model?: ModelName;
   instructions?: string;
   chatHistory: Message[];
   documents: Document[];
   tools: ToolDefinition[];
+  providerTools?: ProviderTool[];
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
@@ -527,6 +620,8 @@ export type CompletionResponse<RawResponse = unknown> = {
   usage: Usage;
   rawResponse: RawResponse;
   messageId?: string;
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
 };
 
 export type CompletionModelCapabilities = {
@@ -537,6 +632,7 @@ export type CompletionModelCapabilities = {
   documentInput: boolean;
   outputSchema: boolean;
   reasoning: boolean;
+  providerTools?: boolean;
 };
 
 export interface CompletionModel<RawResponse = unknown, ModelName extends string = string> {
@@ -576,6 +672,14 @@ export type CompletionStreamEvent<RawResponse = unknown> =
   | {
       type: "tool_call";
       toolCall: ToolCall;
+    }
+  | {
+      type: "source";
+      source: CompletionSource;
+    }
+  | {
+      type: "provider_tool_call";
+      toolCall: ProviderToolCall;
     }
   | {
       type: "message_id";
@@ -619,6 +723,10 @@ export function assertCompletionRequestSupported(
 
   if (request.tools.length > 0 && !capabilities.tools) {
     throw new CompletionCapabilityError(`${modelLabel} does not support tool definitions.`);
+  }
+
+  if ((request.providerTools?.length ?? 0) > 0 && capabilities.providerTools !== true) {
+    throw new CompletionCapabilityError(`${modelLabel} does not support provider-executed tools.`);
   }
 
   if (request.toolChoice !== undefined && !capabilities.toolChoice) {

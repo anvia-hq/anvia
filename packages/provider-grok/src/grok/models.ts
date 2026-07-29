@@ -1,6 +1,7 @@
 import type { ModelId } from "@anvia/core/model-listing";
 
 export type KnownGrokCompletionModelName =
+  | "grok-4.5"
   | "grok-4.20"
   | "grok-4.20-0309-non-reasoning"
   | "grok-4.20-0309-reasoning"

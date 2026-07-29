@@ -7,10 +7,13 @@ import {
   type CompletionModel,
   CompletionRequestBuilder,
   type CompletionResponse,
+  type CompletionSource,
+  getAssistantGenerationMetadata,
   type JsonObject,
   type JsonValue,
   Message,
   type Message as MessageType,
+  type ProviderToolCall,
   type ToolCall,
   type ToolResult,
   textFromAssistantContent,
@@ -241,7 +244,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           .instructions(this.agent.instructions)
           .messages(historyForRequest)
           .documents([...this.agent.staticContext, ...dynamicContext])
-          .tools(toolDefs)
+          .tools([...toolDefs, ...this.agent.providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)
           .additionalParams(this.agent.additionalParams)
@@ -308,6 +311,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             messages: [...newMessages],
             trace: runObservers.trace,
             guardrails: [...this.guardrailDecisions],
+            ...generationArtifacts(newMessages),
           };
           await this.runRunEndHook(result, newMessages);
           await runObservers.end(result);
@@ -449,7 +453,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           .instructions(this.agent.instructions)
           .messages(historyForRequest)
           .documents([...this.agent.staticContext, ...dynamicContext])
-          .tools(toolDefs)
+          .tools([...toolDefs, ...this.agent.providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)
           .additionalParams(this.agent.additionalParams)
@@ -595,7 +599,11 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             pendingTurnMessages,
           );
           if (!emittedTurnEnd && (bufferResponseEvents || bufferOutputDeltas)) {
-            for (const event of responseStreamEvents(currentTurns, response)) {
+            for (const event of responseStreamEvents(
+              currentTurns,
+              response,
+              bufferResponseEvents,
+            )) {
               yield await emit(event);
             }
           }
@@ -609,6 +617,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             messages: [...newMessages],
             trace: runObservers.trace,
             guardrails: [...this.guardrailDecisions],
+            ...generationArtifacts(newMessages),
           };
           await this.runRunEndHook(result, newMessages);
           await runObservers.end(result);
@@ -627,6 +636,8 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             messages: result.messages,
             trace: result.trace,
             guardrails: result.guardrails,
+            sources: result.sources,
+            providerToolCalls: result.providerToolCalls,
           });
           return;
         }
@@ -757,6 +768,10 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           provider: this.agent.model.provider,
           model: request.model ?? this.agent.model.defaultModel,
           usage: { ...response.usage },
+          ...(response.sources === undefined ? {} : { sources: response.sources }),
+          ...(response.providerToolCalls === undefined
+            ? {}
+            : { providerToolCalls: response.providerToolCalls }),
         },
       },
     };
@@ -1221,7 +1236,11 @@ function normalizeSteeringInput(input: string | MessageType | MessageType[]): Me
   return Array.isArray(input) ? [...input] : [input];
 }
 
-function responseStreamEvents(turn: number, response: CompletionResponse): AgentStreamEvent[] {
+function responseStreamEvents(
+  turn: number,
+  response: CompletionResponse,
+  includeProviderArtifacts = true,
+): AgentStreamEvent[] {
   const events: AgentStreamEvent[] = [];
   for (const item of response.choice) {
     if (item.type === "text") {
@@ -1257,7 +1276,37 @@ function responseStreamEvents(turn: number, response: CompletionResponse): Agent
       events.push({ type: "tool_call", turn, toolCall: item });
     }
   }
+  if (includeProviderArtifacts) {
+    for (const source of response.sources ?? []) {
+      events.push({ type: "source", turn, source });
+    }
+    for (const toolCall of response.providerToolCalls ?? []) {
+      events.push({ type: "provider_tool_call", turn, toolCall });
+    }
+  }
   return events;
+}
+
+function generationArtifacts(messages: MessageType[]): {
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
+} {
+  const sources = new Map<string, CompletionSource>();
+  const providerToolCalls = new Map<string, ProviderToolCall>();
+  for (const message of messages) {
+    const metadata = getAssistantGenerationMetadata(message);
+    for (const source of metadata?.sources ?? []) {
+      const key = `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
+      sources.set(key, source);
+    }
+    for (const toolCall of metadata?.providerToolCalls ?? []) {
+      providerToolCalls.set(toolCall.id, toolCall);
+    }
+  }
+  return {
+    ...(sources.size === 0 ? {} : { sources: [...sources.values()] }),
+    ...(providerToolCalls.size === 0 ? {} : { providerToolCalls: [...providerToolCalls.values()] }),
+  };
 }
 
 type ReasoningDeltaEvent = Extract<AgentStreamEvent, { type: "reasoning_delta" }>;

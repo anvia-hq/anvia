@@ -58,6 +58,8 @@ type AgentRunEndArgs = {
   output: string;
   usage: Usage;
   messages: Message[];
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
 };
 
 type AgentRunErrorArgs = { error: unknown; usage: Usage; messages: Message[] };

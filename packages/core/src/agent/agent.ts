@@ -6,6 +6,7 @@ import type {
   JsonObject,
   JsonValue,
   Message as MessageType,
+  ProviderTool,
   ToolChoice,
 } from "../completion/index";
 import type { GuardrailPolicy } from "../guardrails";
@@ -49,6 +50,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
   readonly maxTokens: number | undefined;
   readonly additionalParams: JsonValue | undefined;
   readonly toolSet: ToolSet;
+  readonly providerTools: ProviderTool[];
   readonly toolChoice: ToolChoice | undefined;
   readonly defaultMaxTurns: number | undefined;
   readonly hook: PromptHook | undefined;
@@ -77,6 +79,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     this.maxTokens = options.maxTokens;
     this.additionalParams = options.additionalParams;
     this.toolSet = options.toolSet ?? new ToolSet();
+    this.providerTools = [...(options.providerTools ?? [])];
     this.toolChoice = options.toolChoice;
     this.defaultMaxTurns = options.defaultMaxTurns ?? DEFAULT_MAX_TURNS;
     this.hook = options.hook;

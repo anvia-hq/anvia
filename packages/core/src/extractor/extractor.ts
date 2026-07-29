@@ -73,7 +73,7 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
           .instructions(this.agent.instructions)
           .messages(history ?? [])
           .documents(this.agent.staticContext)
-          .tools(toolDefs)
+          .tools([...toolDefs, ...this.agent.providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)
           .additionalParams(this.agent.additionalParams)

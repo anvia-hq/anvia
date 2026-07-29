@@ -31,7 +31,7 @@ const grok = new GrokClient({
   apiKey: process.env.XAI_API_KEY,
 });
 
-const model = grok.completionModel("grok-4.3");
+const model = grok.completionModel(); // defaults to grok-4.5
 
 export const agent = new AgentBuilder("grok-agent", model)
   .instructions("Answer clearly and concisely.")
@@ -46,8 +46,42 @@ const grok = new GrokClient({
   completionApi: "chat",
 });
 
-const model = grok.completionModel("grok-4.3");
+const model = grok.completionModel("grok-4.5");
 ```
+
+## Live Search And Server Tools
+
+The Responses adapter supports xAI's web search, X search, code interpreter, collections search,
+and remote MCP tools:
+
+```ts
+import { AgentBuilder } from "@anvia/core/agent";
+import { GrokClient, tools as grokTools } from "@anvia/grok";
+
+const grok = new GrokClient({ apiKey: process.env.XAI_API_KEY });
+
+const agent = new AgentBuilder("researcher", grok.completionModel())
+  .tools([
+    localDatabaseTool,
+    grokTools.webSearch({ allowedDomains: ["x.ai"] }),
+    grokTools.xSearch({ allowedHandles: ["xai"] }),
+    grokTools.codeInterpreter(),
+  ])
+  .additionalParams({ max_turns: 5 })
+  .build();
+
+const result = await agent.prompt("What are the latest xAI updates?").send();
+
+console.log(result.sources);
+console.log(result.providerToolCalls);
+```
+
+`.tools(...)` accepts local executable tools and provider-executed tools in one array. Anvia keeps
+the local tools in its `ToolSet` and sends the Grok tools only to xAI. Sources and provider tool
+status are available on completion responses, agent results, agent streams, and generated
+assistant-message metadata.
+
+Typed server tools require the Responses adapter. The Chat Completions adapter rejects them.
 
 ## Image Generation
 
@@ -63,7 +97,29 @@ const result = await imageModel.imageGeneration({
 });
 ```
 
-The adapter maps the requested dimensions to xAI's `aspect_ratio` parameter and requests base64 image output when available. Provider-specific image options can be passed through `additionalParams`.
+The adapter maps exact supported dimensions to xAI's `aspect_ratio` parameter and uses `auto` for
+unsupported ratios. Provider-specific image options can be passed through `additionalParams`; an
+explicit `additionalParams.aspect_ratio` wins.
+
+## Batch Audio And Transcription
+
+```ts
+const audio = await grok.audioGenerationModel().audioGeneration({
+  text: "Hello from Grok.",
+  voice: "eve",
+  speed: 1,
+  additionalParams: { language: "en" },
+});
+
+const transcript = await grok.transcriptionModel().transcription({
+  data: audio.audio,
+  filename: "speech.mp3",
+  language: "en",
+});
+```
+
+The adapter covers batch TTS and STT through Anvia's existing core contracts. It does not expose
+xAI's realtime voice or streaming speech APIs.
 
 ## Model Listing
 
@@ -82,11 +138,15 @@ Use model listing for inventory and startup checks. Still smoke test the exact m
 | Text completion | supported |
 | Streaming completion | supported |
 | Tools and tool choice | supported through the OpenAI-compatible completion adapters |
+| Server-executed tools | web search, X search, code interpreter, file search, and remote MCP through Responses |
+| Citations | normalized final sources and stream events |
 | Structured output schema | supported through the OpenAI-compatible completion adapters |
 | Image input | supported when the selected xAI model supports it |
 | Document input | supported by the Responses adapter when the selected xAI model supports it |
 | Image generation | supported |
+| Audio generation | supported through batch TTS |
+| Transcription | supported through batch STT |
 | Model listing | supported |
-| Embeddings, audio, transcription, OCR, video, files, batches | not exposed by this package |
+| Embeddings, OCR, video, file management, collection management, batches | not exposed by this package |
 
 Read [Capability matrix](/docs/providers/capability-matrix) for a provider-by-provider comparison.

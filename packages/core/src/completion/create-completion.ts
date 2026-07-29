@@ -5,6 +5,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   CompletionStreamEvent,
+  CompletionTool,
   Document,
   JsonObject,
   JsonValue,
@@ -14,7 +15,12 @@ import type {
   ToolDefinition,
   Usage,
 } from "./types";
-import { assertCompletionRequestSupported, Message, textFromAssistantContent } from "./types";
+import {
+  assertCompletionRequestSupported,
+  isProviderTool,
+  Message,
+  textFromAssistantContent,
+} from "./types";
 
 export type CreateCompletionInput = string | MessageType | MessageType[];
 
@@ -23,7 +29,7 @@ export type CreateCompletionBaseOptions = {
   messages?: MessageType[] | undefined;
   instructions?: string | undefined;
   documents?: Document[] | undefined;
-  tools?: ToolDefinition[] | undefined;
+  tools?: CompletionTool[] | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   toolChoice?: ToolChoice | undefined;
@@ -129,11 +135,14 @@ function toCompletionRequest(
     throw new Error(`${helperName} requires input or messages.`);
   }
 
+  const configuredTools = options.tools ?? [];
   const request: CompletionRequest = {
     chatHistory,
     documents: [...(options.documents ?? [])],
-    tools: [...(options.tools ?? [])],
+    tools: configuredTools.filter((tool): tool is ToolDefinition => !isProviderTool(tool)),
   };
+  const providerTools = configuredTools.filter(isProviderTool);
+  if (providerTools.length > 0) request.providerTools = providerTools;
 
   if (options.instructions !== undefined && options.instructions.length > 0) {
     request.instructions = options.instructions;

@@ -4,7 +4,7 @@ import {
   Message,
 } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
-import { GrokChatCompletionModel, GrokResponsesCompletionModel } from "../src/index";
+import { GrokChatCompletionModel, GrokResponsesCompletionModel, tools } from "../src/index";
 
 describe("Grok completion models", () => {
   it("exposes Responses capability metadata with Grok provider identity", () => {
@@ -20,7 +20,62 @@ describe("Grok completion models", () => {
       documentInput: true,
       outputSchema: true,
       reasoning: true,
+      providerTools: true,
     });
+  });
+
+  it("combines local, Grok, and legacy raw Responses tools", async () => {
+    const calls: unknown[] = [];
+    const model = new GrokResponsesCompletionModel(
+      {
+        responses: {
+          create: async (params: unknown) => {
+            calls.push(params);
+            return { output: [], usage: {} };
+          },
+        },
+      } as never,
+      "grok-test",
+    );
+
+    await model.completion({
+      chatHistory: [Message.user("research")],
+      documents: [],
+      tools: [{ name: "local", description: "Local", parameters: { type: "object" } }],
+      providerTools: [tools.webSearch({ allowedDomains: ["x.ai"] })],
+      additionalParams: { tools: [{ type: "code_interpreter" }], max_turns: 5 },
+    });
+
+    expect(calls).toEqual([
+      {
+        model: "grok-test",
+        input: [{ role: "user", content: "research" }],
+        tools: [
+          {
+            type: "function",
+            name: "local",
+            description: "Local",
+            parameters: { type: "object" },
+          },
+          { type: "web_search", filters: { allowed_domains: ["x.ai"] } },
+          { type: "code_interpreter" },
+        ],
+        max_turns: 5,
+      },
+    ]);
+  });
+
+  it("rejects non-Grok provider tools", async () => {
+    const model = new GrokResponsesCompletionModel({} as never, "grok-test");
+
+    await expect(
+      model.completion({
+        chatHistory: [Message.user("research")],
+        documents: [],
+        tools: [],
+        providerTools: [{ kind: "provider", provider: "other", name: "web_search" }],
+      }),
+    ).rejects.toThrow('provider tool "web_search" from "other"');
   });
 
   it("passes Grok Responses requests through the OpenAI-compatible adapter", async () => {
@@ -119,6 +174,27 @@ describe("Grok completion models", () => {
       stream: true,
       model: "grok-test",
     });
+  });
+
+  it("redacts remote MCP secrets from Responses traces", () => {
+    const model = new GrokResponsesCompletionModel({} as never, "grok-test");
+    const trace = model.traceRequest({
+      chatHistory: [Message.user("research")],
+      documents: [],
+      tools: [],
+      providerTools: [
+        tools.mcp({
+          serverUrl: "https://mcp.example.com",
+          serverLabel: "example",
+          authorization: "secret-token",
+          headers: { "X-Secret": "secret-header" },
+        }),
+      ],
+    });
+
+    expect(JSON.stringify(trace)).not.toContain("secret-token");
+    expect(JSON.stringify(trace)).not.toContain("secret-header");
+    expect(trace).toMatchObject({ toolNames: ["mcp"], toolCount: 1 });
   });
 
   it("exposes Chat capability metadata with Grok provider identity", () => {

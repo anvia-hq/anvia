@@ -18,6 +18,8 @@ Always smoke test the exact provider model id, account, region, endpoint, and `a
 | Text completion | yes | yes | yes | yes | yes |
 | Streaming completion | yes | yes | yes | yes | yes |
 | Tools | yes | yes | yes | yes | yes |
+| Provider-executed tools | Responses yes | no | no | no | Responses yes |
+| Normalized citations and provider-tool events | Responses yes | no | no | no | Responses yes |
 | Tool choice | yes | yes | yes | yes | yes |
 | Structured output schema | yes | no | yes | yes | yes |
 | Chat image input | yes | yes | yes | no | yes |
@@ -35,8 +37,8 @@ Text document content and static context can still be represented as text. The d
 | --- | --- | --- | --- | --- | --- |
 | Embeddings | yes | no | yes | yes | no |
 | Image generation | yes | no | yes | no | yes |
-| Audio generation | yes | no | no | no | no |
-| Transcription | yes | no | yes | no | no |
+| Audio generation | yes | no | no | no | yes |
+| Transcription | yes | no | yes | no | yes |
 | OCR | no | no | no | yes | no |
 | Model listing | yes | yes | yes | yes | yes |
 

@@ -42,6 +42,7 @@
     "providers:10": "tsx -r dotenv/config 04_providers_and_multimodal/10-list-models.ts dotenv_config_path=../../.env",
     "providers:11": "tsx -r dotenv/config 04_providers_and_multimodal/11-anthropic-text-call.ts dotenv_config_path=../../.env",
     "providers:12": "tsx -r dotenv/config 04_providers_and_multimodal/12-grok-text-call.ts dotenv_config_path=../../.env",
+    "providers:13": "tsx -r dotenv/config 04_providers_and_multimodal/13-grok-live-search.ts dotenv_config_path=../../.env",
     "providers-and-multimodal": "tsx -r dotenv/config 04_providers_and_multimodal/01-gemini-text-call.ts dotenv_config_path=../../.env",
     "pipelines": "tsx -r dotenv/config 05_pipelines/01-step-transform.ts dotenv_config_path=../../.env",
     "pipelines:01": "tsx -r dotenv/config 05_pipelines/01-step-transform.ts dotenv_config_path=../../.env",

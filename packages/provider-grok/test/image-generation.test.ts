@@ -138,6 +138,9 @@ describe("Grok image generation", () => {
     expect(aspectRatio(1024, 1024)).toBe("1:1");
     expect(aspectRatio(1920, 1080)).toBe("16:9");
     expect(aspectRatio(768, 1024)).toBe("3:4");
+    expect(aspectRatio(13, 6)).toBe("19.5:9");
+    expect(aspectRatio(20, 9)).toBe("20:9");
+    expect(aspectRatio(7, 5)).toBe("auto");
   });
 
   it("rejects invalid aspect ratio dimensions", () => {

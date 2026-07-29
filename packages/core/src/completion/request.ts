@@ -2,14 +2,16 @@ import type {
   CompletionModel,
   CompletionRequest,
   CompletionResponse,
+  CompletionTool,
   Document,
   JsonObject,
   JsonValue,
   Message as MessageType,
+  ProviderTool,
   ToolChoice,
   ToolDefinition,
 } from "./types";
-import { assertCompletionRequestSupported } from "./types";
+import { assertCompletionRequestSupported, isProviderTool } from "./types";
 
 type ModelNameOf<M extends CompletionModel> =
   M extends CompletionModel<unknown, infer ModelName> ? ModelName : string;
@@ -23,6 +25,7 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
   private history: MessageType[] = [];
   private docs: Document[] = [];
   private toolDefs: ToolDefinition[] = [];
+  private providerToolDefs: ProviderTool[] = [];
   private temp: number | undefined;
   private maxTokenCount: number | undefined;
   private choice: ToolChoice | undefined;
@@ -56,8 +59,14 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
     return this;
   }
 
-  tools(tools: ToolDefinition[]): this {
-    this.toolDefs.push(...tools);
+  tools(tools: CompletionTool[]): this {
+    for (const tool of tools) {
+      if (isProviderTool(tool)) {
+        this.providerToolDefs.push(tool);
+      } else {
+        this.toolDefs.push(tool);
+      }
+    }
     return this;
   }
 
@@ -94,6 +103,7 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
       tools: [...this.toolDefs],
     };
 
+    if (this.providerToolDefs.length > 0) request.providerTools = [...this.providerToolDefs];
     if (this.requestModel !== undefined) request.model = this.requestModel;
     if (instructions !== undefined) request.instructions = instructions;
     if (this.temp !== undefined) request.temperature = this.temp;

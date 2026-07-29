@@ -80,8 +80,29 @@ export function aspectRatio(width: number, height: number): string {
   const normalizedWidth = validateDimension(width, "width");
   const normalizedHeight = validateDimension(height, "height");
   const divisor = gcd(normalizedWidth, normalizedHeight);
-  return `${normalizedWidth / divisor}:${normalizedHeight / divisor}`;
+  const reduced = `${normalizedWidth / divisor}:${normalizedHeight / divisor}`;
+  if (reduced === "13:6") {
+    return "19.5:9";
+  }
+  if (reduced === "6:13") {
+    return "9:19.5";
+  }
+  return SUPPORTED_ASPECT_RATIOS.has(reduced) ? reduced : "auto";
 }
+
+const SUPPORTED_ASPECT_RATIOS = new Set([
+  "1:1",
+  "16:9",
+  "9:16",
+  "4:3",
+  "3:4",
+  "3:2",
+  "2:3",
+  "2:1",
+  "1:2",
+  "20:9",
+  "9:20",
+]);
 
 function validateDimension(value: number, name: "width" | "height"): number {
   if (!Number.isFinite(value)) {

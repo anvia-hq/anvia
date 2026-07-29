@@ -1,6 +1,8 @@
 import type {
   CompletionResponse,
+  CompletionSource,
   Message as MessageType,
+  ProviderToolCall,
   ReasoningContentType,
   ToolCall,
   ToolCallArgumentsMode,
@@ -16,6 +18,8 @@ export type PromptResponse = {
   messages: MessageType[];
   trace?: AgentTraceInfo | undefined;
   guardrails?: GuardrailDecisionRecord[] | undefined;
+  sources?: CompletionSource[] | undefined;
+  providerToolCalls?: ProviderToolCall[] | undefined;
 };
 
 export type AgentDeltaEvent =
@@ -27,7 +31,9 @@ export type AgentDeltaEvent =
       contentType?: ReasoningContentType;
       signature?: string;
     }
-  | { type: "tool_call"; toolCall: ToolCall };
+  | { type: "tool_call"; toolCall: ToolCall }
+  | { type: "source"; source: CompletionSource }
+  | { type: "provider_tool_call"; toolCall: ProviderToolCall };
 
 export type AgentErrorStreamEvent = {
   type: "error";
@@ -77,6 +83,16 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
       toolCall: ToolCall;
     }
   | {
+      type: "source";
+      turn: number;
+      source: CompletionSource;
+    }
+  | {
+      type: "provider_tool_call";
+      turn: number;
+      toolCall: ProviderToolCall;
+    }
+  | {
       type: "tool_result";
       turn: number;
       toolName: string;
@@ -104,6 +120,8 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
       messages: MessageType[];
       trace?: AgentTraceInfo | undefined;
       guardrails?: GuardrailDecisionRecord[] | undefined;
+      sources?: CompletionSource[] | undefined;
+      providerToolCalls?: ProviderToolCall[] | undefined;
     }
   | AgentErrorStreamEvent;
 

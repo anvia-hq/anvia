@@ -3,6 +3,7 @@ import type {
   Document,
   JsonObject,
   JsonValue,
+  ProviderTool,
   ToolChoice,
 } from "../completion/index";
 import type { GuardrailPolicy } from "../guardrails";
@@ -26,6 +27,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   maxTokens?: number | undefined;
   additionalParams?: JsonValue | undefined;
   toolSet?: ToolSet | undefined;
+  providerTools?: ProviderTool[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
   hook?: PromptHook | undefined;

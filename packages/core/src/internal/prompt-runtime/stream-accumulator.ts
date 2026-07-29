@@ -1,8 +1,10 @@
 import type {
   AssistantContent as AssistantContentType,
   CompletionResponse,
+  CompletionSource,
   CompletionStreamEvent,
   JsonValue,
+  ProviderToolCall,
   ReasoningContent,
   ToolCall,
 } from "../../completion/index";
@@ -35,6 +37,8 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   private reasoningByKey = new Map<string, ReasoningState>();
   private reasoningKeyById = new Map<string, string>();
   private toolCalls = new Map<string, PartialToolCall>();
+  private sources = new Map<string, CompletionSource>();
+  private providerToolCalls = new Map<string, ProviderToolCall>();
   private finalResponse: CompletionResponse<RawResponse> | undefined;
   private messageId: string | undefined;
   private nextTextKey = 0;
@@ -72,6 +76,16 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       return { type: "tool_call", toolCall: event.toolCall };
     }
 
+    if (event.type === "source") {
+      this.sources.set(sourceKey(event.source), event.source);
+      return { type: "source", source: event.source };
+    }
+
+    if (event.type === "provider_tool_call") {
+      this.providerToolCalls.set(event.toolCall.id, event.toolCall);
+      return { type: "provider_tool_call", toolCall: event.toolCall };
+    }
+
     if (event.type === "message_id") {
       this.messageId = event.id;
       return undefined;
@@ -89,7 +103,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     const accumulatedResponse = this.buildAccumulatedResponse();
     if (this.finalResponse !== undefined) {
       if (accumulatedResponse.choice.length === 0) {
-        return this.withMessageIdFallback(this.finalResponse, accumulatedResponse);
+        return this.withAccumulatedArtifacts(this.finalResponse, accumulatedResponse);
       }
       return this.mergeFinalResponse(accumulatedResponse, this.finalResponse);
     }
@@ -133,6 +147,14 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     if (this.messageId !== undefined) {
       response.messageId = this.messageId;
     }
+    const sources = [...this.sources.values()];
+    if (sources.length > 0) {
+      response.sources = sources;
+    }
+    const providerToolCalls = [...this.providerToolCalls.values()];
+    if (providerToolCalls.length > 0) {
+      response.providerToolCalls = providerToolCalls;
+    }
     return response;
   }
 
@@ -170,7 +192,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (finalResponse.messageId !== undefined) {
         mergedResponse.messageId = finalResponse.messageId;
       }
-      return this.withMessageIdFallback(mergedResponse, accumulatedResponse);
+      return this.withAccumulatedArtifacts(mergedResponse, accumulatedResponse);
     }
 
     const finalById = new Map<string, ToolCall>();
@@ -211,7 +233,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       }
     }
 
-    return this.withMessageIdFallback({ ...finalResponse, choice }, accumulatedResponse);
+    return this.withAccumulatedArtifacts({ ...finalResponse, choice }, accumulatedResponse);
   }
 
   private appendText(delta: string): void {
@@ -284,6 +306,23 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     return { ...response, messageId: accumulatedResponse.messageId };
   }
 
+  private withAccumulatedArtifacts(
+    response: CompletionResponse<RawResponse>,
+    accumulatedResponse: CompletionResponse<RawResponse>,
+  ): CompletionResponse<RawResponse> {
+    const withMessageId = this.withMessageIdFallback(response, accumulatedResponse);
+    const sources = mergeSources(accumulatedResponse.sources, response.sources);
+    const providerToolCalls = mergeProviderToolCalls(
+      accumulatedResponse.providerToolCalls,
+      response.providerToolCalls,
+    );
+    return {
+      ...withMessageId,
+      ...(sources.length === 0 ? {} : { sources }),
+      ...(providerToolCalls.length === 0 ? {} : { providerToolCalls }),
+    };
+  }
+
   private createTextKey(): string {
     this.nextTextKey += 1;
     return `text_${this.nextTextKey.toString()}`;
@@ -341,6 +380,32 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
     reasoning.content.push({ type: "redacted", data: event.delta });
   }
+}
+
+function sourceKey(source: CompletionSource): string {
+  return `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
+}
+
+function mergeSources(
+  accumulated: CompletionSource[] | undefined,
+  final: CompletionSource[] | undefined,
+): CompletionSource[] {
+  const sources = new Map<string, CompletionSource>();
+  for (const source of [...(accumulated ?? []), ...(final ?? [])]) {
+    sources.set(sourceKey(source), source);
+  }
+  return [...sources.values()];
+}
+
+function mergeProviderToolCalls(
+  accumulated: ProviderToolCall[] | undefined,
+  final: ProviderToolCall[] | undefined,
+): ProviderToolCall[] {
+  const toolCalls = new Map<string, ProviderToolCall>();
+  for (const toolCall of [...(accumulated ?? []), ...(final ?? [])]) {
+    toolCalls.set(toolCall.id, toolCall);
+  }
+  return [...toolCalls.values()];
 }
 
 function reasoningContent(reasoning: ReasoningState): AssistantContentType {

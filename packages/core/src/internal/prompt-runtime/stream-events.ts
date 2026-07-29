@@ -16,6 +16,12 @@ export function addTurn(turn: number, event: AgentDeltaEvent): AgentStreamEvent 
     if (event.signature !== undefined) mapped.signature = event.signature;
     return mapped;
   }
+  if (event.type === "source") {
+    return { type: "source", turn, source: event.source };
+  }
+  if (event.type === "provider_tool_call") {
+    return { type: "provider_tool_call", turn, toolCall: event.toolCall };
+  }
   return { type: "tool_call", turn, toolCall: event.toolCall };
 }
 
@@ -41,6 +47,8 @@ export function isGenerationDeltaEvent(type: string): boolean {
     type === "text_delta" ||
     type === "reasoning_delta" ||
     type === "tool_call_delta" ||
-    type === "tool_call"
+    type === "tool_call" ||
+    type === "source" ||
+    type === "provider_tool_call"
   );
 }

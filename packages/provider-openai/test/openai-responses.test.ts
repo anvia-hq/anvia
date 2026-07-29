@@ -29,7 +29,49 @@ describe("OpenAI Responses mapping", () => {
       documentInput: true,
       outputSchema: true,
       reasoning: true,
+      providerTools: true,
     });
+  });
+
+  it("merges local, provider, and raw Responses tools without overwriting", () => {
+    const params = toOpenAIResponsesParams("gpt-5", {
+      chatHistory: [Message.user("research")],
+      documents: [],
+      tools: [{ name: "local", description: "Local", parameters: { type: "object" } }],
+      providerTools: [
+        {
+          kind: "provider",
+          provider: "openai",
+          name: "web_search",
+          configuration: { filters: { allowed_domains: ["example.com"] } },
+        },
+      ],
+      additionalParams: {
+        tools: [{ type: "code_interpreter" }],
+      },
+    });
+
+    expect(params.tools).toEqual([
+      {
+        type: "function",
+        name: "local",
+        description: "Local",
+        parameters: { type: "object" },
+      },
+      { type: "web_search", filters: { allowed_domains: ["example.com"] } },
+      { type: "code_interpreter" },
+    ]);
+  });
+
+  it("rejects non-array raw Responses tools", () => {
+    expect(() =>
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [Message.user("research")],
+        documents: [],
+        tools: [],
+        additionalParams: { tools: "web_search" },
+      }),
+    ).toThrow("additionalParams.tools must be an array");
   });
 
   it("maps internal tools and tool outputs to Responses API params", () => {
@@ -229,6 +271,57 @@ describe("OpenAI Responses mapping", () => {
       cachedInputTokens: 3,
     });
     expect(response.messageId).toBe("resp_1");
+  });
+
+  it("maps citations and provider-executed tool calls", () => {
+    const response = fromOpenAIResponse({
+      citations: ["https://x.ai/news"],
+      output: [
+        {
+          type: "web_search_call",
+          id: "search_1",
+          status: "completed",
+          action: { type: "search", query: "xAI news" },
+        },
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: "News [[1]](https://x.ai/news)",
+              annotations: [
+                {
+                  type: "url_citation",
+                  url: "https://x.ai/news",
+                  title: "1",
+                  start_index: 5,
+                  end_index: 31,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.sources).toEqual([
+      {
+        type: "url",
+        url: "https://x.ai/news",
+        title: "1",
+        startIndex: 5,
+        endIndex: 31,
+      },
+    ]);
+    expect(response.providerToolCalls).toEqual([
+      {
+        id: "search_1",
+        name: "web_search",
+        status: "completed",
+        details: { action: { type: "search", query: "xAI news" } },
+      },
+    ]);
   });
 
   it("rejects malformed non-streaming Responses tool arguments", () => {
@@ -456,6 +549,48 @@ describe("OpenAI Responses mapping", () => {
     ).toEqual({
       type: "tool_call",
       toolCall: AssistantContent.toolCall("call_1", "lookup", { query: "x" }, "fc_1"),
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.output_text.annotation.added",
+        annotation: {
+          type: "url_citation",
+          url: "https://x.ai/news",
+          title: "1",
+          start_index: 5,
+          end_index: 31,
+        },
+      }),
+    ).toEqual({
+      type: "source",
+      source: {
+        type: "url",
+        url: "https://x.ai/news",
+        title: "1",
+        startIndex: 5,
+        endIndex: 31,
+      },
+    });
+
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.output_item.done",
+        item: {
+          type: "web_search_call",
+          id: "search_1",
+          status: "completed",
+          action: { type: "search", query: "xAI news" },
+        },
+      }),
+    ).toEqual({
+      type: "provider_tool_call",
+      toolCall: {
+        id: "search_1",
+        name: "web_search",
+        status: "completed",
+        details: { action: { type: "search", query: "xAI news" } },
+      },
     });
   });
 

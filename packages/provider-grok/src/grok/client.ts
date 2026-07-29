@@ -4,10 +4,13 @@ import {
   ModelListingError,
 } from "@anvia/core/model-listing";
 import OpenAI from "openai";
+import { GrokAudioGenerationModel } from "./audio-generation";
 import { GrokChatCompletionModel, GrokResponsesCompletionModel } from "./completion";
-import { GROK_4_3, GROK_IMAGINE_IMAGE, XAI_BASE_URL } from "./constants";
+import { GROK_4_5, GROK_IMAGINE_IMAGE, XAI_BASE_URL } from "./constants";
+import type { GrokHttpOptions } from "./http";
 import { GrokImageGenerationModel } from "./image-generation";
 import type { GrokCompletionModelName, GrokImageGenerationModelName } from "./models";
+import { GrokTranscriptionModel } from "./transcription";
 
 export type GrokClientOptions = {
   apiKey?: string | undefined;
@@ -22,22 +25,31 @@ export class GrokClient implements ModelListingClient {
   readonly client: OpenAI;
   private readonly completionApi: "responses" | "chat";
   private readonly fetchFn: typeof fetch | undefined;
+  private readonly httpOptions: GrokHttpOptions;
 
   constructor(options: GrokClientOptions = {}) {
     this.completionApi = options.completionApi ?? "responses";
+    const baseUrl = options.baseUrl ?? clientString(options.client, "baseURL") ?? XAI_BASE_URL;
+    const apiKey = options.apiKey ?? clientString(options.client, "apiKey");
     this.client =
       options.client ??
       new OpenAI({
-        apiKey: requireApiKey(options.apiKey),
-        baseURL: options.baseUrl ?? XAI_BASE_URL,
+        apiKey: requireApiKey(apiKey),
+        baseURL: baseUrl,
         defaultHeaders: options.headers,
         fetch: options.fetch,
       });
-    this.fetchFn = options.fetch ?? defaultFetch();
+    this.fetchFn = options.fetch ?? clientFetch(options.client) ?? defaultFetch();
+    this.httpOptions = {
+      apiKey,
+      baseUrl,
+      headers: options.headers ?? clientHeaders(options.client),
+      fetch: this.fetchFn,
+    };
   }
 
   completionModel(
-    model: GrokCompletionModelName = GROK_4_3,
+    model: GrokCompletionModelName = GROK_4_5,
   ): GrokResponsesCompletionModel | GrokChatCompletionModel {
     return this.completionApi === "chat"
       ? new GrokChatCompletionModel(this.client, model)
@@ -48,6 +60,14 @@ export class GrokClient implements ModelListingClient {
     model: GrokImageGenerationModelName = GROK_IMAGINE_IMAGE,
   ): GrokImageGenerationModel {
     return new GrokImageGenerationModel(this.client, model, this.fetchFn);
+  }
+
+  audioGenerationModel(): GrokAudioGenerationModel {
+    return new GrokAudioGenerationModel(this.httpOptions);
+  }
+
+  transcriptionModel(): GrokTranscriptionModel {
+    return new GrokTranscriptionModel(this.httpOptions);
   }
 
   async listModels(): Promise<ModelList> {
@@ -73,6 +93,37 @@ function requireApiKey(apiKey: string | undefined): string {
 
 function defaultFetch(): typeof fetch | undefined {
   return typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : undefined;
+}
+
+function clientString(client: OpenAI | undefined, key: "apiKey" | "baseURL"): string | undefined {
+  if (client === undefined) {
+    return undefined;
+  }
+  const value = (client as unknown as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function clientFetch(client: OpenAI | undefined): typeof fetch | undefined {
+  if (client === undefined) {
+    return undefined;
+  }
+  const value = (client as unknown as Record<string, unknown>).fetch;
+  return typeof value === "function" ? (value as typeof fetch) : undefined;
+}
+
+function clientHeaders(client: OpenAI | undefined): Record<string, string> | undefined {
+  if (client === undefined) {
+    return undefined;
+  }
+  const value = (client as unknown as Record<string, unknown>).defaultHeaders;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, headerValue]) =>
+      typeof headerValue === "string" ? [[key, headerValue]] : [],
+    ),
+  );
 }
 
 async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {

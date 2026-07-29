@@ -29,10 +29,13 @@ class GrokClient {
     model?: GrokCompletionModelName,
   ): GrokResponsesCompletionModel | GrokChatCompletionModel;
   imageGenerationModel(model?: GrokImageGenerationModelName): GrokImageGenerationModel;
+  audioGenerationModel(): GrokAudioGenerationModel;
+  transcriptionModel(): GrokTranscriptionModel;
 }
 ```
 
-Purpose: factory for xAI Grok completion, image generation, and model listing adapters.
+Purpose: factory for xAI Grok completion, image generation, batch TTS/STT, and model listing
+adapters.
 
 Return behavior: `completionModel(...)` returns the Responses adapter by default or the Chat Completions adapter when `completionApi: "chat"` is set. `listModels()` fetches xAI's `/models` endpoint and returns a normalized `ModelList`.
 
@@ -71,6 +74,10 @@ Purpose: OpenAI-compatible completion adapters for xAI's Responses and Chat Comp
 
 Return behavior: non-streaming calls return normalized `CompletionResponse`; streaming calls yield normalized completion events.
 
+The Responses adapter accepts typed Grok provider tools and normalizes `CompletionSource`,
+`ProviderToolCall`, `source`, and `provider_tool_call` data. The Chat adapter does not support
+provider-executed tools.
+
 Notable errors: rejects unsupported requests through the delegated OpenAI-compatible adapter; rejects or yields provider SDK errors for transport failures.
 
 ## GrokImageGenerationModel
@@ -93,10 +100,44 @@ Return behavior: maps Anvia width and height to xAI `aspect_ratio`, requests bas
 
 Notable errors: rejects when the provider response contains no image data or when URL image output is returned without a fetch implementation.
 
+Unsupported ratios map to `auto`; explicit `additionalParams.aspect_ratio` overrides the mapped
+value.
+
+## Grok Server Tools
+
+```ts
+const tools: {
+  webSearch(options?: GrokWebSearchOptions): GrokProviderTool;
+  xSearch(options?: GrokXSearchOptions): GrokProviderTool;
+  codeInterpreter(): GrokProviderTool;
+  fileSearch(options: GrokFileSearchOptions): GrokProviderTool;
+  mcp(options: GrokMcpOptions): GrokProviderTool;
+};
+```
+
+Purpose: typed xAI Responses configurations for web search, X search, code interpreter,
+collections search, and remote MCP.
+
+Return behavior: returns `ProviderTool` values accepted by core `.tool(...)` and `.tools(...)`
+APIs. The factories validate documented exclusivity, count, date, URL, and required-field rules.
+
+## GrokAudioGenerationModel And GrokTranscriptionModel
+
+```ts
+class GrokAudioGenerationModel implements AudioGenerationModel;
+class GrokTranscriptionModel implements TranscriptionModel;
+```
+
+Purpose: batch xAI `/v1/tts` and `/v1/stt` adapters using Anvia's core media contracts.
+
+Return behavior: TTS returns binary or decoded base64 audio. STT returns normalized text and keeps
+the provider JSON as `rawResponse`.
+
 ## Constants
 
 ```ts
 const XAI_BASE_URL = "https://api.x.ai/v1";
+const GROK_4_5 = "grok-4.5";
 const GROK_4_3 = "grok-4.3";
 const GROK_4_20 = "grok-4.20";
 const GROK_4_20_NON_REASONING = "grok-4.20-non-reasoning";
@@ -115,8 +156,12 @@ namespace grok {
   GrokResponsesCompletionModel;
   GrokChatCompletionModel;
   GrokImageGenerationModel;
+  GrokAudioGenerationModel;
+  GrokTranscriptionModel;
+  tools;
   XAI_BASE_URL;
   GROK_4_3;
+  GROK_4_5;
   GROK_4_20;
   GROK_4_20_NON_REASONING;
   GROK_BUILD_0_1;

@@ -1,4 +1,12 @@
-import type { CompletionModel, Document, JsonObject, JsonValue, ToolChoice } from "../completion";
+import {
+  type CompletionModel,
+  type Document,
+  isProviderTool,
+  type JsonObject,
+  type JsonValue,
+  type ProviderTool,
+  type ToolChoice,
+} from "../completion";
 import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
 import { appendGuardrailPolicies } from "../guardrails";
 import type { PromptHook } from "../hooks";
@@ -48,6 +56,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private memoryRegistration: MemoryRegistration | undefined;
   private eventStoreRegistration: AgentEventStoreRegistration | undefined;
   private activeToolSet = new ToolSet();
+  private providerToolDefs: ProviderTool[] = [];
 
   constructor(
     agentId: string,
@@ -88,13 +97,19 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  tool(tool: AnyTool): this {
-    this.activeToolSet.addTool(tool);
+  tool(tool: AnyTool | ProviderTool): this {
+    if (isProviderTool(tool)) {
+      this.providerToolDefs.push(tool);
+    } else {
+      this.activeToolSet.addTool(tool);
+    }
     return this;
   }
 
-  tools(tools: AnyTool[]): this {
-    this.activeToolSet.addTools(tools);
+  tools(tools: Array<AnyTool | ProviderTool>): this {
+    for (const tool of tools) {
+      this.tool(tool);
+    }
     return this;
   }
 
@@ -226,6 +241,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       maxTokens: this.maxTokenCount,
       additionalParams: this.params,
       toolSet: this.activeToolSet,
+      providerTools: this.providerToolDefs,
       toolChoice: this.choice,
       defaultMaxTurns: this.turns,
       hook: this.requestHook,

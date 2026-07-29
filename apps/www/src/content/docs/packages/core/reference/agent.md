@@ -22,8 +22,8 @@ class AgentBuilder<M extends CompletionModel = CompletionModel> {
   context(text: string, id?: string): this;
   dynamicContext<T>(index: VectorSearchIndex<T>, options: DynamicContextOptions<T>): this;
   dynamicTools(index: VectorSearchIndex<ToolSearchDocument>, options: DynamicToolOptions): this;
-  tool(tool: Tool): this;
-  tools(tools: Tool[]): this;
+  tool(tool: Tool | ProviderTool): this;
+  tools(tools: Array<Tool | ProviderTool>): this;
   useToolSet(toolSet: ToolSet): this;
   mcp(servers: McpServer[]): this;
   skills(skillSet: SkillSet): this;
@@ -51,7 +51,10 @@ class AgentBuilder<M extends CompletionModel = CompletionModel> {
 
 Purpose: fluent builder for immutable runnable agent configuration.
 
-Return behavior: mutator methods return `this`; `build()` returns a built agent object. `Agent` is exported as a type for annotations, but the runtime constructor is internal.
+Return behavior: mutator methods return `this`; `build()` returns a built agent object. `Agent` is
+exported as a type for annotations, but the runtime constructor is internal. Local tools are stored
+in the executable `ToolSet`; provider tools are stored separately and passed only to compatible
+completion models.
 
 Notable errors: the constructor rejects an empty agent id. `outputSchema(...)` can throw if the schema cannot be converted to provider JSON schema.
 

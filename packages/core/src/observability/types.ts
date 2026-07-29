@@ -2,9 +2,11 @@ import type {
   CompletionModelCapabilities,
   CompletionRequest,
   CompletionResponse,
+  CompletionSource,
   JsonObject,
   JsonValue,
   Message,
+  ProviderToolCall,
   ToolCall,
   ToolDefinition,
   ToolResultContent,
@@ -49,6 +51,8 @@ export type AgentRunEndArgs = {
   output: string;
   usage: Usage;
   messages: Message[];
+  sources?: CompletionSource[] | undefined;
+  providerToolCalls?: ProviderToolCall[] | undefined;
 };
 
 export type AgentRunErrorArgs = {

@@ -96,6 +96,8 @@ type AssistantGenerationMetadata = {
   provider: string;
   model: string;
   usage: Usage;
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
 };
 
 function getAssistantGenerationMetadata(
@@ -153,8 +155,9 @@ the reserved `metadata.anvia.generation` namespace:
 Usage belongs to that individual model generation, so tool loops can contain multiple assistant
 messages with distinct usage. The model is the effective request model after middleware, falling
 back to the completion model's default. `getAssistantGenerationMetadata(...)` safely reads this
-namespace and returns `undefined` for manual, legacy, or malformed messages. Raw provider responses,
-timing, traces, costs, and finish reasons are not copied into message metadata.
+namespace and returns `undefined` for manual, legacy, or malformed messages. Normalized sources and
+provider-executed tool calls are copied when present. Raw provider responses, timing, traces, costs,
+and finish reasons are not copied into message metadata.
 
 Notable errors: factories throw `TypeError` when metadata is not a strict JSON value.
 
@@ -203,7 +206,7 @@ Set `toolName` on persisted tool results when the result is created without a ne
 
 Notable errors: none directly.
 
-## ToolChoice and ToolDefinition
+## ToolChoice, ToolDefinition, And ProviderTool
 
 ```ts
 type ToolChoice =
@@ -217,11 +220,24 @@ type ToolDefinition = {
   description: string;
   parameters: JsonObject;
 };
+
+type ProviderTool = {
+  kind: "provider";
+  provider: string;
+  name: string;
+  configuration?: JsonObject;
+};
+
+type CompletionTool = ToolDefinition | ProviderTool;
+
+function isProviderTool(value: unknown): value is ProviderTool;
 ```
 
-Purpose: provider-facing tool selection and JSON schema definitions.
+Purpose: provider-facing tool selection, local JSON schema definitions, and provider-executed tool
+configuration. Provider packages expose typed factories for `ProviderTool` values.
 
-Return behavior: passed through completion requests.
+Return behavior: high-level `.tools(...)` APIs accept both kinds. Normalized requests keep local
+definitions in `tools` and provider-executed definitions in `providerTools`.
 
 Notable errors: providers can reject unsupported tool choice modes.
 
@@ -257,6 +273,7 @@ type CompletionRequest = {
   chatHistory: Message[];
   documents: Document[];
   tools: ToolDefinition[];
+  providerTools?: ProviderTool[];
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
@@ -269,6 +286,24 @@ type CompletionResponse<RawResponse = unknown> = {
   usage: Usage;
   rawResponse: RawResponse;
   messageId?: string;
+  sources?: CompletionSource[];
+  providerToolCalls?: ProviderToolCall[];
+};
+
+type CompletionSource = {
+  type: "url";
+  url: string;
+  title?: string;
+  id?: string;
+  startIndex?: number;
+  endIndex?: number;
+};
+
+type ProviderToolCall = {
+  id: string;
+  name: string;
+  status?: string;
+  details?: JsonObject;
 };
 ```
 
@@ -289,6 +324,7 @@ type CompletionModelCapabilities = {
   documentInput: boolean;
   outputSchema: boolean;
   reasoning: boolean;
+  providerTools?: boolean;
 };
 
 interface CompletionModel<RawResponse = unknown> {
@@ -303,6 +339,8 @@ type CompletionStreamEvent<RawResponse = unknown> =
   | { type: "reasoning_delta"; delta: string; id?: string; contentType?: ReasoningContent["type"]; signature?: string }
   | { type: "tool_call_delta"; id: string; callId?: string; name?: string; argumentsDelta?: string; argumentsMode?: ToolCallArgumentsMode; signature?: string }
   | { type: "tool_call"; toolCall: ToolCall }
+  | { type: "source"; source: CompletionSource }
+  | { type: "provider_tool_call"; toolCall: ProviderToolCall }
   | { type: "message_id"; id: string }
   | { type: "final"; response: CompletionResponse<RawResponse> }
   | { type: "error"; error: unknown; usage?: Usage };
@@ -363,7 +401,7 @@ type CreateCompletionBaseOptions = {
   messages?: Message[];
   instructions?: string;
   documents?: Document[];
-  tools?: ToolDefinition[];
+  tools?: CompletionTool[];
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
@@ -420,7 +458,11 @@ Return behavior: `createCompletion(...)` always returns a promise for the final 
 
 Notable errors: `createCompletion(...)` rejects if input is empty or the request uses unsupported model features. `createCompletionStream(...)` throws before returning the stream when validation fails or when the model does not support streaming. `createParsedCompletion(...)` also rejects when the response text is not valid JSON or does not match `schema`.
 
-Direct completion streams are raw model streams. They can include text deltas, reasoning deltas, tool call deltas, tool calls, message ids, final responses, and errors. They do not execute tools and do not emit agent stream events such as `turn_start`, `tool_result`, `agent_tool_event`, or agent `final` output. `@anvia/react` hooks consume these raw completion streams by default.
+Direct completion streams are raw model streams. They can include text deltas, reasoning deltas,
+tool call deltas, local tool calls, sources, provider-executed tool calls, message ids, final
+responses, and errors. They do not execute tools and do not emit agent stream events such as
+`turn_start`, `tool_result`, `agent_tool_event`, or agent `final` output. `@anvia/react` hooks
+consume these raw completion streams by default.
 
 ## CompletionRequestBuilder
 
@@ -431,7 +473,7 @@ class CompletionRequestBuilder<M extends CompletionModel = CompletionModel> {
   instructions(instructions: string | undefined): this;
   messages(messages: Message[]): this;
   documents(documents: Document[]): this;
-  tools(tools: ToolDefinition[]): this;
+  tools(tools: CompletionTool[]): this;
   temperature(temperature: number | undefined): this;
   maxTokens(maxTokens: number | undefined): this;
   toolChoice(toolChoice: ToolChoice | undefined): this;

@@ -1,5 +1,12 @@
 # @anvia/react
 
+## 0.9.4
+
+### Patch Changes
+
+- Updated dependencies [693ce2a]
+  - @anvia/core@0.17.0
+
 ## 0.9.3
 
 ### Patch Changes

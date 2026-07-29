@@ -1,5 +1,14 @@
 # @anvia/openai
 
+## 0.4.1
+
+### Patch Changes
+
+- 693ce2a: Trace complete model inputs and nested agent generations in Langfuse with safe and full capture
+  modes, consistent redaction, native prompt and time-to-first-token attributes, and reliable score
+  queue flushing. Normalize provider token totals and expose mutually exclusive usage detail buckets
+  for accurate cache- and reasoning-aware cost inference.
+
 ## 0.4.0
 
 ### Minor Changes

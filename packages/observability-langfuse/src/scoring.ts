@@ -14,6 +14,8 @@ export class LangfuseScoreError extends Error {
   }
 }
 
+class RetryableLangfuseScoreError extends LangfuseScoreError {}
+
 export type ScoreQueueOptions = {
   baseUrl: string;
   publicKey: string;
@@ -121,7 +123,11 @@ export class ScoreQueue {
   async shutdown(): Promise<void> {
     this.closed = true;
     this.clearScheduledTimer();
-    await this.flush();
+    try {
+      await this.flush();
+    } catch {
+      // Shutdown is best-effort so a score delivery failure cannot block SDK teardown.
+    }
   }
 
   private scheduleTimer(): void {
@@ -135,11 +141,7 @@ export class ScoreQueue {
   }
 
   private triggerBackgroundFlush(): void {
-    void this.flush().catch(() => {
-      if (!this.closed && this.pending.length > 0) {
-        this.scheduleTimer();
-      }
-    });
+    void this.flush().catch(() => {});
   }
 
   private clearScheduledTimer(): void {
@@ -185,7 +187,7 @@ export class ScoreQueue {
         await this.sleep(computeBackoff(attempt));
       }
     }
-    throw new LangfuseScoreError(
+    throw new RetryableLangfuseScoreError(
       `Langfuse score batch failed after ${this.maxRetries} attempts`,
       scores,
       lastError,
@@ -193,14 +195,26 @@ export class ScoreQueue {
   }
 
   private async drain(): Promise<void> {
+    let permanentError: LangfuseScoreError | undefined;
     while (this.pending.length > 0) {
       const batch = this.pending.splice(0, this.batchSize);
       try {
         await this.sendBatch(batch);
       } catch (error) {
+        if (error instanceof RetryableLangfuseScoreError) {
+          this.pending.unshift(...batch);
+          throw error;
+        }
+        if (error instanceof LangfuseScoreError) {
+          permanentError ??= error;
+          continue;
+        }
         this.pending.unshift(...batch);
         throw error;
       }
+    }
+    if (permanentError !== undefined) {
+      throw permanentError;
     }
   }
 }

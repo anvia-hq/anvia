@@ -619,13 +619,25 @@ function isNonnegativeFiniteNumber(value: JsonValue | undefined): value is numbe
 }
 
 function isUsageDetailsValue(value: JsonValue | undefined): value is JsonObject | undefined {
-  return (
-    value === undefined ||
-    (isJsonObjectValue(value) &&
-      Object.values(value).every(
-        (detail) => detail !== undefined && isNonnegativeFiniteNumber(detail),
-      ))
-  );
+  if (value === undefined) {
+    return true;
+  }
+  if (!isJsonObjectValue(value)) {
+    return false;
+  }
+  let total: number | undefined;
+  let bucketSum = 0;
+  for (const [key, detail] of Object.entries(value)) {
+    if (detail === undefined || !isNonnegativeFiniteNumber(detail)) {
+      return false;
+    }
+    if (key === "total") {
+      total = detail;
+    } else {
+      bucketSum += detail;
+    }
+  }
+  return total !== undefined && total === bucketSum;
 }
 
 function isCompletionSourceArray(value: JsonValue | undefined): value is CompletionSource[] {

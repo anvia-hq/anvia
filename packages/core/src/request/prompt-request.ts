@@ -474,6 +474,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           providerRequest,
         );
         const generationObservers = await runObservers.startGeneration(generationStartArgs);
+        const generationStartedAt = Date.now();
         yield await emit({
           type: "generation_start",
           turn: currentTurns,
@@ -481,7 +482,6 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           modelInfo: generationStartArgs.modelInfo,
         });
         const accumulator = new CompletionStreamAccumulator();
-        const generationStartedAt = Date.now();
         let firstDeltaMs: number | undefined;
         const bufferResponseEvents = this.shouldBufferStreamResponseEvents();
         const emittedToolCallIds = new Set<string>();

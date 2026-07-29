@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
   AgentBuilder,
@@ -140,6 +140,28 @@ describe("PromptRequest streaming", () => {
     expect(events.at(-1)).toMatchObject({ type: "final", output: "hello" });
     expect(model.requests[0]?.instructions).toBe("system");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hi"));
+  });
+
+  it("measures first-delta latency from before generation_start is emitted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    try {
+      const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
+      const agent = new AgentBuilder("test-agent", model).build();
+      const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value).toMatchObject({ type: "turn_start" });
+      expect((await iterator.next()).value).toMatchObject({ type: "generation_start" });
+      vi.advanceTimersByTime(50);
+      expect((await iterator.next()).value).toMatchObject({ type: "text_delta" });
+      expect((await iterator.next()).value).toMatchObject({
+        type: "turn_end",
+        firstDeltaMs: 50,
+      });
+      expect((await iterator.next()).value).toMatchObject({ type: "final" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("retries a transient stream failure before the first provider event", async () => {

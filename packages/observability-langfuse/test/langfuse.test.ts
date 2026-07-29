@@ -1,5 +1,6 @@
 import {
   AssistantContent,
+  type JsonValue,
   Message,
   type Message as MessageType,
   type Usage,
@@ -1064,6 +1065,58 @@ describe("langfuse", () => {
         output: "7",
         metadata: expect.objectContaining({ parentToolName: "ask_child" }),
       }),
+    );
+  });
+
+  it("ignores malformed streamed child turn inputs", async () => {
+    const root = fakeObservation("root", "trace-1", "obs-root");
+    const turn = fakeObservation("turn", "trace-1", "obs-turn");
+    const parentTool = fakeObservation("parent-tool", "trace-1", "obs-parent-tool");
+    const childAgent = fakeObservation("child-agent", "trace-1", "obs-child-agent");
+    const childTurnEvent = fakeObservation("child-turn-event", "trace-1", "obs-child-turn-event");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(parentTool);
+    parentTool.startObservation.mockReturnValueOnce(childAgent);
+    childAgent.startObservation.mockReturnValueOnce(childTurnEvent);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const run = (await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("delegate"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    const toolCall = AssistantContent.toolCall("call-child", "ask_child", {});
+    const tool = await run.startTool?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+    });
+
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: { type: "turn_start", turn: 1, prompt: "invalid", history: null } as never,
+      },
+    });
+
+    expect(childAgent.startObservation).toHaveBeenCalledWith(
+      "Child_Agent.turn.1.start",
+      expect.objectContaining({
+        input: { prompt: undefined, history: [] },
+      }),
+      { asType: "event" },
     );
   });
 
@@ -2308,7 +2361,29 @@ describe("ScoreQueue", () => {
       ]),
     });
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(queue.depth()).toBe(2);
+    expect(queue.depth()).toBe(0);
+  });
+
+  it("drops a permanent poison batch and continues draining later scores", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("bad", { status: 400 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const { queue } = makeQueue({
+      batchSize: 2,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    queue.enqueue(scoreArgs({ name: "poison-1" }));
+    queue.enqueue(scoreArgs({ name: "poison-2" }));
+    queue.enqueue(scoreArgs({ name: "later" }));
+
+    await expect(queue.flush()).rejects.toThrow(/HTTP 400/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual([
+      expect.objectContaining({ name: "later" }),
+    ]);
+    expect(queue.depth()).toBe(0);
   });
 
   it("gives up after maxRetries and throws LangfuseScoreError", async () => {
@@ -2327,6 +2402,24 @@ describe("ScoreQueue", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(sleepMock).toHaveBeenCalledTimes(2);
+    expect(queue.depth()).toBe(1);
+  });
+
+  it("does not start an unbounded background retry loop", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    const setTimer = vi.fn();
+    const { queue } = makeQueue({
+      batchSize: 1,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      maxRetries: 2,
+      setTimer,
+    });
+
+    queue.enqueue(scoreArgs());
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(setTimer).not.toHaveBeenCalled();
+    expect(queue.depth()).toBe(1);
   });
 
   it("size threshold triggers an immediate flush without waiting for the timer", async () => {
@@ -2350,6 +2443,21 @@ describe("ScoreQueue", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(queue.depth()).toBe(0);
+    expect(() => queue.enqueue(scoreArgs())).toThrow(/shut down/);
+  });
+
+  it("shutdown remains best-effort when pending scores cannot be delivered", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    const { queue } = makeQueue({
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      maxRetries: 1,
+    });
+
+    queue.enqueue(scoreArgs());
+    await expect(queue.shutdown()).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(queue.depth()).toBe(1);
     expect(() => queue.enqueue(scoreArgs())).toThrow(/shut down/);
   });
 });
@@ -2445,6 +2553,15 @@ describe("score queue integration", () => {
 });
 
 describe("usageDetailsFromRecord", () => {
+  it("falls back to standard totals when typed details are empty", async () => {
+    const { usageDetails } = await import("../src/helpers");
+    expect(usageDetails({ ...usage(1, 2), details: {} })).toEqual({
+      input: 1,
+      output: 2,
+      total: 3,
+    });
+  });
+
   it("prefers explicit mutually exclusive details", async () => {
     const { usageDetailsFromRecord } = await import("../src/helpers");
     expect(
@@ -3752,6 +3869,24 @@ describe("PII redaction", () => {
     });
   });
 
+  it("redactMessages bounds deeply nested content", async () => {
+    const { createPiiRedactor } = await import("../src/redaction");
+    const r = createPiiRedactor();
+    let nested: Record<string, JsonValue> = { value: "alice@example.com" };
+    for (let depth = 0; depth < 20_000; depth += 1) {
+      nested = { nested };
+    }
+
+    expect(() =>
+      r.redactMessages([
+        {
+          role: "assistant",
+          content: [{ type: "tool_call", id: "c", function: { name: "x", arguments: nested } }],
+        },
+      ]),
+    ).not.toThrow();
+  });
+
   it("redactObject recurses into nested objects and arrays", async () => {
     const { createPiiRedactor } = await import("../src/redaction");
     const r = createPiiRedactor();
@@ -3836,6 +3971,13 @@ describe("Langfuse trace capture", () => {
       preview: expect.any(String),
     });
     expect(Buffer.byteLength(JSON.stringify(captured), "utf8")).toBeLessThanOrEqual(160);
+  });
+
+  it("omits values that remain unserializable after sanitization", () => {
+    expect(sanitizeTraceValue(1n, 1_000)).toEqual({
+      anviaTraceValue: "omitted",
+      reason: "unserializable",
+    });
   });
 });
 

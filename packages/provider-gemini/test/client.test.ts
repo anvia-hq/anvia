@@ -47,6 +47,27 @@ describe("GeminiClient", () => {
     });
   });
 
+  it("forwards explicit Google authentication options to Vertex AI", () => {
+    const credentials = {
+      client_email: "service-account@example.iam.gserviceaccount.com",
+      private_key: "private-key",
+    };
+
+    expect(
+      toGoogleGenAIOptions({
+        vertexai: true,
+        project: "project",
+        location: "us-central1",
+        googleAuthOptions: { credentials },
+      }),
+    ).toEqual({
+      vertexai: true,
+      project: "project",
+      location: "us-central1",
+      googleAuthOptions: { credentials },
+    });
+  });
+
   it("validates explicit Gemini and Vertex credentials", () => {
     expect(() => new GeminiClient()).toThrow("Missing Gemini apiKey");
     expect(() => new GeminiClient({ vertexai: true, project: "project" })).toThrow(

@@ -14,7 +14,7 @@ The current provider packages are:
 | Package | Main client | Primary use |
 | --- | --- | --- |
 | `@anvia/openai` | `OpenAIClient` | OpenAI completions, embeddings, image generation, audio generation, transcription, and model listing |
-| `@anvia/anthropic` | `AnthropicClient` | Claude completions through Anthropic |
+| `@anvia/anthropic` | `AnthropicClient`, `AnthropicVertexClient` | Claude completions through Anthropic or Google Vertex AI |
 | `@anvia/gemini` | `GeminiClient` | Gemini API and Vertex AI completions, embeddings, image generation, transcription, and model listing |
 | `@anvia/mistral` | `MistralClient` | Mistral completions, embeddings, OCR, and model listing |
 | `@anvia/grok` | `GrokClient` | xAI Grok completions, image generation, and model listing |

@@ -12,8 +12,8 @@ sidebar:
 
 | Field | Value |
 | --- | --- |
-| Anvia SDK | No dedicated package |
-| Compatibility | Anthropic-compatible metadata |
+| Anvia SDK | @anvia/anthropic |
+| Compatibility | Anthropic on Vertex AI |
 | API URL | Not listed in models.dev |
 | Environment | `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_PROJECT` |
 | Provider docs | [https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude) |
@@ -21,7 +21,18 @@ sidebar:
 
 ## Anvia Usage
 
-Anvia does not currently ship a dedicated provider package for this endpoint. Use the connection details here for evaluation, then build a custom integration against `@anvia/core` completion contracts if you need to run it today.
+This provider maps to `AnthropicVertexClient` in the Anvia Anthropic provider. Use the [Anthropic provider](/docs/providers/anthropic#vertex-ai) guide for authentication and production setup.
+
+```ts
+import { AnthropicVertexClient } from "@anvia/anthropic";
+
+const client = new AnthropicVertexClient({
+  projectId: process.env.GOOGLE_VERTEX_PROJECT,
+  region: process.env.GOOGLE_VERTEX_LOCATION ?? "global",
+});
+
+const model = client.completionModel("claude-3-5-haiku@20241022");
+```
 
 ## Capabilities
 
@@ -53,4 +64,3 @@ Anvia does not currently ship a dedicated provider package for this endpoint. Us
 | `claude-sonnet-4@20250514`<br />Claude Sonnet 4 | claude-sonnet | image, pdf, text | text | tools, reasoning, temperature | context: 200000 / output: 64000 | input: 3 / output: 15 / cache_read: 0.3 / cache_write: 3.75 | 2025-05-22 |
 
 Read [Gateway caveats](/docs/providers/gateway-caveats) before enabling this provider in production.
-

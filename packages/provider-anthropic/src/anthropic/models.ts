@@ -23,6 +23,7 @@ export type KnownAnthropicCompletionModelName =
   | "claude-sonnet-4-20250514"
   | "claude-sonnet-4-5"
   | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6";
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5";
 
 export type AnthropicCompletionModelName = ModelId<KnownAnthropicCompletionModelName>;

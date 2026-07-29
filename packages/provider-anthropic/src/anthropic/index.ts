@@ -4,3 +4,7 @@ export type {
   AnthropicCompletionModelName,
   KnownAnthropicCompletionModelName,
 } from "./models";
+export {
+  AnthropicVertexClient,
+  type AnthropicVertexClientOptions,
+} from "./vertex-client";

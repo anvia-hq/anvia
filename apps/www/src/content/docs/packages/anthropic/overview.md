@@ -21,7 +21,9 @@ The package owns mapping Anvia completion requests, tools, multimodal content, a
 
 ## Public surface
 
-The main documented exports are `AnthropicClient`, `AnthropicCompletionModel`, `Helper Namespaces`. The reference page lists the package entrypoint and public symbols that are checked by the docs reference coverage script.
+The main documented exports are `AnthropicClient`, `AnthropicVertexClient`,
+`AnthropicCompletionModel`, and the helper namespace. The reference page lists the package
+entrypoint and public symbols that are checked by the docs reference coverage script.
 
 ## Next pages
 

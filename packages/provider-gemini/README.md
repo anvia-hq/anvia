@@ -53,6 +53,29 @@ const client = new GeminiClient({
 const model = client.completionModel("gemini-2.5-flash");
 ```
 
+The Google SDK uses Application Default Credentials. For a service-account JSON file, set
+`GOOGLE_APPLICATION_CREDENTIALS` before starting the application:
+
+```sh
+export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/service-account.json"
+```
+
+Trusted credential objects can also be passed explicitly:
+
+```ts
+const client = new GeminiClient({
+  vertexai: true,
+  project: "my-gcp-project",
+  location: "us-central1",
+  googleAuthOptions: {
+    credentials: serviceAccountJson,
+  },
+});
+```
+
+Validate externally supplied credential configurations before using them. Never commit credential
+JSON or service-account keys.
+
 ## Embeddings
 
 ```ts

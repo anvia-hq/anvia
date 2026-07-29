@@ -32,6 +32,33 @@ Return behavior: `completionModel(...)` returns a streaming Anvia completion mod
 
 Notable errors: constructor throws when neither `client` nor `apiKey` is supplied; `listModels()` rejects with `ModelListingError` when the provider request fails.
 
+## AnthropicVertexClient
+
+```ts
+type AnthropicVertexClientOptions = AnthropicVertexSdkOptions & {
+  client?: AnthropicVertex;
+};
+
+class AnthropicVertexClient {
+  readonly client: AnthropicVertex;
+  constructor(options?: AnthropicVertexClientOptions);
+  completionModel(model?: AnthropicCompletionModelName): AnthropicCompletionModel;
+}
+```
+
+Purpose: factory for Claude completion models through Google Vertex AI.
+
+Configuration behavior: accepts the official SDK's `projectId`, `region`, `googleAuth`,
+`authClient`, `accessToken`, and transport options. The SDK can resolve project, region, and Google
+Application Default Credentials from the environment.
+
+Return behavior: `completionModel(...)` returns the shared streaming Anthropic completion adapter
+and defaults to `claude-sonnet-5`.
+
+Notable errors: construction fails when no region is passed and `CLOUD_ML_REGION` is unset.
+Credential and provider failures are surfaced by the official Vertex SDK. Model listing is not
+available on this client.
+
 ## Model Name Types
 
 ```ts
@@ -46,7 +73,10 @@ Purpose: typed model identifiers for autocomplete while preserving support for c
 
 ```ts
 class AnthropicCompletionModel implements StreamingCompletionModel {
-  constructor(client: Anthropic, defaultModel?: AnthropicCompletionModelName);
+  constructor(
+    client: Anthropic | AnthropicVertex,
+    defaultModel?: AnthropicCompletionModelName,
+  );
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
@@ -63,6 +93,7 @@ Notable errors: rejects or yields SDK/provider errors.
 ```ts
 namespace anthropic {
   AnthropicClient;
+  AnthropicVertexClient;
   AnthropicCompletionModel;
 }
 ```

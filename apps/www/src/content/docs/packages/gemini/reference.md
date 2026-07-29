@@ -14,7 +14,13 @@ Import from `@anvia/gemini`.
 ```ts
 type GeminiClientOptions =
   | { apiKey?: string; vertexai?: false; client?: GoogleGenAI }
-  | { vertexai: true; project?: string; location?: string; client?: GoogleGenAI };
+  | {
+      vertexai: true;
+      project?: string;
+      location?: string;
+      googleAuthOptions?: GoogleGenAIOptions["googleAuthOptions"];
+      client?: GoogleGenAI;
+    };
 
 class GeminiClient {
   readonly client: GoogleGenAI;
@@ -34,6 +40,10 @@ class GeminiClient {
 Purpose: factory for Gemini API or Vertex AI-backed completion, embedding, image generation, transcription, and model listing.
 
 Return behavior: creates or uses a `GoogleGenAI` client, then returns Gemini completion and embedding models. `listModels()` fetches the Gemini model list and returns a normalized `ModelList`.
+
+Authentication behavior: Vertex mode forwards `googleAuthOptions` to the Google SDK, supporting
+trusted credential objects, preconfigured auth clients, and other `GoogleAuthOptions`. When omitted,
+the SDK uses Google Application Default Credentials.
 
 Notable errors: underlying SDK calls can fail for missing credentials, invalid project/location, or API errors; `listModels()` rejects with `ModelListingError` when the provider request fails.
 

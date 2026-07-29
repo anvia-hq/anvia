@@ -21,7 +21,9 @@ import type {
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import {
   type LangfuseAgent,
+  type LangfuseEventAttributes,
   type LangfuseGeneration,
+  type LangfuseGenerationAttributes,
   LangfuseOtelSpanAttributes,
   type LangfuseSpan,
   type LangfuseTool,
@@ -30,6 +32,7 @@ import {
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { sanitizeTraceValue, validateCaptureMaxBytes } from "./capture.js";
 import {
   type LangfuseResolvedConfig,
   langfuseResolvedConfigSymbol,
@@ -50,6 +53,7 @@ import {
 import { createPiiRedactor, type PiiRedactor } from "./redaction.js";
 import { ScoreQueue } from "./scoring.js";
 import type {
+  LangfuseCaptureMode,
   LangfuseRedactionMode,
   LangfuseScoreArgs,
   LangfuseTraceHandle,
@@ -77,6 +81,8 @@ class LangfuseAgentObserver implements LangfuseTracing {
   private readonly redactor: PiiRedactor | undefined;
   private readonly redactInputs: LangfuseRedactionMode | undefined;
   private readonly redactOutputs: LangfuseRedactionMode | undefined;
+  private readonly captureMode: LangfuseCaptureMode;
+  private readonly captureMaxBytes: number;
 
   constructor(options: LangfuseTracingOptions) {
     const resolvedConfig = resolveLangfuseConfig(options);
@@ -121,6 +127,8 @@ class LangfuseAgentObserver implements LangfuseTracing {
         : null;
     this.redactInputs = options.redactInputs;
     this.redactOutputs = options.redactOutputs;
+    this.captureMode = options.captureMode ?? "safe";
+    this.captureMaxBytes = validateCaptureMaxBytes(options.captureMaxBytes);
     this.redactor =
       options.redactInputs !== undefined || options.redactOutputs !== undefined
         ? createPiiRedactor(options.redaction)
@@ -129,19 +137,25 @@ class LangfuseAgentObserver implements LangfuseTracing {
 
   async startRun(args: AgentRunStartArgs): Promise<AgentRunObserver> {
     const traceId = args.trace?.traceId;
-    const redactedInput = this.maybeRedactInput({
+    const capturedInput = this.captureInput({
+      instructions: args.instructions,
       prompt: args.prompt,
       history: args.history,
     });
+    const capturedTraceMetadata = this.captureInput(args.trace?.metadata ?? {});
     const metadata: Record<string, unknown> = {
       agentName: args.agentName,
       agentDescription: args.agentDescription,
       maxTurns: args.maxTurns,
     };
     if (this.serviceName !== undefined) metadata.serviceName = this.serviceName;
-    Object.assign(metadata, args.trace?.metadata);
+    if (isRecord(capturedTraceMetadata)) {
+      Object.assign(metadata, capturedTraceMetadata);
+    } else {
+      metadata.traceMetadata = capturedTraceMetadata;
+    }
     const rootAttributes: Parameters<typeof startObservation>[1] = {
-      input: redactedInput,
+      input: capturedInput,
       metadata,
     };
     if (args.trace?.version !== undefined) {
@@ -162,7 +176,7 @@ class LangfuseAgentObserver implements LangfuseTracing {
             },
           },
     );
-    applyTraceAttributes(root, args);
+    applyTraceAttributes(root, args, capturedTraceMetadata);
 
     const promptRef = resolvePromptRef(args);
     const runObserver = new LangfuseRunObserver(
@@ -176,6 +190,8 @@ class LangfuseAgentObserver implements LangfuseTracing {
         redactor: this.redactor,
         redactInputs: this.redactInputs,
         redactOutputs: this.redactOutputs,
+        captureMode: this.captureMode,
+        captureMaxBytes: this.captureMaxBytes,
       },
     );
     this.currentHandle = runObserver.getHandle();
@@ -212,14 +228,12 @@ class LangfuseAgentObserver implements LangfuseTracing {
     return this.currentHandle;
   }
 
-  private maybeRedactInput<T>(value: T): T {
-    if (this.redactor === undefined || this.redactInputs === undefined) return value;
-    return applyRedaction(this.redactor, value, this.redactInputs);
-  }
-
-  private maybeRedactOutput<T>(value: T): T {
-    if (this.redactor === undefined || this.redactOutputs === undefined) return value;
-    return applyRedaction(this.redactor, value, this.redactOutputs);
+  private captureInput<T>(value: T): unknown {
+    const redacted =
+      this.redactor === undefined || this.redactInputs === undefined
+        ? value
+        : applyRedaction(this.redactor, value, this.redactInputs);
+    return sanitizeTraceValue(redacted, this.captureMaxBytes);
   }
 
   async score(args: LangfuseScoreArgs): Promise<void> {
@@ -299,7 +313,11 @@ function buildScoreBody(score: LangfuseScoreArgs): Record<string, unknown> {
   return body;
 }
 
-function applyTraceAttributes(root: LangfuseAgent, args: AgentRunStartArgs): void {
+function applyTraceAttributes(
+  root: LangfuseAgent,
+  args: AgentRunStartArgs,
+  capturedMetadata: unknown,
+): void {
   const traceName = args.trace?.name ?? args.agentName;
   if (traceName !== undefined) {
     root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_NAME, traceName);
@@ -313,7 +331,9 @@ function applyTraceAttributes(root: LangfuseAgent, args: AgentRunStartArgs): voi
   if (args.trace?.tags !== undefined) {
     root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, args.trace.tags);
   }
-  for (const [key, value] of Object.entries(args.trace?.metadata ?? {})) {
+  for (const [key, value] of Object.entries(
+    isRecord(capturedMetadata) ? capturedMetadata : { value: capturedMetadata },
+  )) {
     const serialized = serializeMetadataValue(value);
     if (serialized === undefined) {
       continue;
@@ -342,9 +362,6 @@ function applyRedaction<T>(redactor: PiiRedactor, value: T, mode: LangfuseRedact
   if (typeof value === "string") {
     return redactor.redactString(value) as unknown as T;
   }
-  if (Array.isArray(value)) {
-    return redactor.redactMessages(value as never) as unknown as T;
-  }
   if (value !== null && typeof value === "object") {
     return redactor.redactObject(value);
   }
@@ -354,6 +371,9 @@ function applyRedaction<T>(redactor: PiiRedactor, value: T, mode: LangfuseRedact
 function resolvePromptRef(args: AgentRunStartArgs): AgentRunPromptRef | undefined {
   if (args.promptRef !== undefined) {
     return args.promptRef;
+  }
+  if (args.trace?.promptRef !== undefined) {
+    return args.trace.promptRef;
   }
   const metadata = args.trace?.metadata;
   if (metadata === undefined) {
@@ -406,6 +426,21 @@ function serializeMetadataValue(value: unknown): string | undefined {
   }
 }
 
+function asMetadata(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : { value };
+}
+
+function eventStartTime(value: Date | string | undefined): Date | undefined {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 class LangfuseRunObserver implements AgentRunObserver {
   private readonly turnSpans = new Map<number, LangfuseSpan>();
   // Assigned by LangfuseAgentObserver.startRun so that the run can
@@ -417,6 +452,8 @@ class LangfuseRunObserver implements AgentRunObserver {
   private readonly redactor: PiiRedactor | undefined;
   private readonly redactInputs: LangfuseRedactionMode | undefined;
   private readonly redactOutputs: LangfuseRedactionMode | undefined;
+  private readonly captureMode: LangfuseCaptureMode;
+  private readonly captureMaxBytes: number;
 
   constructor(
     private readonly root: LangfuseAgent,
@@ -426,6 +463,8 @@ class LangfuseRunObserver implements AgentRunObserver {
       redactor: PiiRedactor | undefined;
       redactInputs: LangfuseRedactionMode | undefined;
       redactOutputs: LangfuseRedactionMode | undefined;
+      captureMode: LangfuseCaptureMode;
+      captureMaxBytes: number;
     },
   ) {
     this.handle = this.buildHandle();
@@ -433,28 +472,53 @@ class LangfuseRunObserver implements AgentRunObserver {
     this.redactor = redaction.redactor;
     this.redactInputs = redaction.redactInputs;
     this.redactOutputs = redaction.redactOutputs;
+    this.captureMode = redaction.captureMode;
+    this.captureMaxBytes = redaction.captureMaxBytes;
   }
 
-  redactInputValue<T>(value: T): T {
-    if (this.redactor === undefined || this.redactInputs === undefined) return value;
-    return applyRedaction(this.redactor, value, this.redactInputs);
+  redactInputValue<T>(value: T): unknown {
+    const redacted =
+      this.redactor === undefined || this.redactInputs === undefined
+        ? value
+        : applyRedaction(this.redactor, value, this.redactInputs);
+    return sanitizeTraceValue(redacted, this.captureMaxBytes);
   }
 
-  redactOutputValue<T>(value: T): T {
-    if (this.redactor === undefined || this.redactOutputs === undefined) return value;
-    return applyRedaction(this.redactor, value, this.redactOutputs);
+  redactOutputValue<T>(value: T): unknown {
+    const redacted =
+      this.redactor === undefined || this.redactOutputs === undefined
+        ? value
+        : applyRedaction(this.redactor, value, this.redactOutputs);
+    return sanitizeTraceValue(redacted, this.captureMaxBytes);
   }
 
   startGeneration(args: AgentGenerationStartArgs): AgentGenerationObserver {
     this.closeEarlierTurns(args.turn);
     const turn = this.turnSpan(args.turn);
-    const redactedChatHistory = this.redactInputValue(modelInputMessages(args.request.chatHistory));
+    const safeInput: Record<string, unknown> = {
+      instructions: args.request.instructions,
+      messages: modelInputMessages(args.request.chatHistory),
+    };
+    if (this.captureMode === "full") {
+      safeInput.documents = args.request.documents;
+      safeInput.tools = args.request.tools;
+      safeInput.providerTools = args.request.providerTools;
+      safeInput.outputSchema = args.request.outputSchema;
+      safeInput.additionalParams = args.request.additionalParams;
+    }
     const metadata: Record<string, unknown> = {
       turn: args.turn,
-      toolCount: args.request.tools.length,
+      documentCount: args.request.documents.length,
+      toolNames: args.request.tools.map((tool) => tool.name),
+      providerToolNames: args.request.providerTools?.map((tool) => tool.name) ?? [],
       hasOutputSchema: args.request.outputSchema !== undefined,
+      additionalParamKeys: isRecord(args.request.additionalParams)
+        ? Object.keys(args.request.additionalParams)
+        : [],
     };
-    if (args.providerRequest !== undefined) metadata.providerRequest = args.providerRequest;
+    if (this.captureMode === "full" && args.providerRequest !== undefined) {
+      metadata.providerRequest = this.redactInputValue(args.providerRequest);
+    }
     if (args.modelInfo !== undefined) {
       const modelInfo: Record<string, unknown> = {
         provider: args.modelInfo.provider,
@@ -466,37 +530,44 @@ class LangfuseRunObserver implements AgentRunObserver {
       metadata.modelInfo = modelInfo;
     }
     Object.assign(metadata, promptMetadata(this.promptRef));
-    const generation = turn.startObservation(
-      `model.turn.${args.turn}`,
-      {
-        input: redactedChatHistory,
-        model: args.request.model ?? "default",
-        modelParameters: modelParameters(args.request),
-        metadata,
-      },
-      { asType: "generation" },
-    );
-    return new LangfuseGenerationObserver(generation, this);
+    const generationAttributes: LangfuseGenerationAttributes = {
+      input: this.redactInputValue(safeInput),
+      model: args.request.model ?? args.modelInfo?.defaultModel ?? "default",
+      modelParameters: modelParameters(args.request),
+      metadata: asMetadata(this.redactInputValue(metadata)),
+    };
+    if (this.promptRef?.version !== undefined) {
+      generationAttributes.prompt = {
+        name: this.promptRef.name,
+        version: this.promptRef.version,
+        isFallback: false,
+      };
+    }
+    const generation = turn.startObservation(`model.turn.${args.turn}`, generationAttributes, {
+      asType: "generation",
+    });
+    return new LangfuseGenerationObserver(generation, this, new Date());
   }
 
   startTool(args: AgentToolStartArgs): AgentToolObserver {
     const turn = this.turnSpan(args.turn);
-    const redactedArgs = this.redactInputValue(args.args);
     const metadata: Record<string, unknown> = {
       turn: args.turn,
       internalCallId: args.internalCallId,
       toolCallId: args.toolCallId,
     };
-    if (args.toolDefinition !== undefined) metadata.toolDefinition = args.toolDefinition;
-    if (args.toolMetadata !== undefined) metadata.toolMetadata = args.toolMetadata;
+    if (this.captureMode === "full") {
+      if (args.toolDefinition !== undefined) metadata.toolDefinition = args.toolDefinition;
+      if (args.toolMetadata !== undefined) metadata.toolMetadata = args.toolMetadata;
+    }
     const tool = turn.startObservation(
       `tool.${args.toolName}`,
       {
-        input: {
-          args: redactedArgs,
+        input: this.redactInputValue({
+          args: args.args,
           toolCall: args.toolCall,
-        },
-        metadata,
+        }),
+        metadata: asMetadata(this.redactInputValue(metadata)),
       },
       { asType: "tool" },
     );
@@ -506,13 +577,19 @@ class LangfuseRunObserver implements AgentRunObserver {
   end(args: AgentRunEndArgs): void {
     this.closeAllTurns();
     const redactedOutput = this.redactOutputValue(args.output);
+    const metadata: Record<string, unknown> = {
+      usage: args.usage,
+      messageCount: args.messages.length,
+      sources: this.redactOutputValue(args.sources),
+      providerToolCalls: this.redactOutputValue(args.providerToolCalls),
+    };
+    if (this.captureMode === "full") {
+      metadata.messages = this.redactTranscript(args.messages);
+    }
     this.root
       .update({
         output: redactedOutput,
-        metadata: {
-          usage: args.usage,
-          messages: args.messages,
-        },
+        metadata,
       })
       .end();
     this.clearCurrentHandle?.();
@@ -520,26 +597,38 @@ class LangfuseRunObserver implements AgentRunObserver {
 
   error(args: AgentRunErrorArgs): void {
     this.closeAllTurns();
+    const redactedError = this.redactOutputValue(errorMessage(args.error));
+    const metadata: Record<string, unknown> = {
+      usage: args.usage,
+      messageCount: args.messages.length,
+    };
+    if (this.captureMode === "full") {
+      metadata.messages = this.redactTranscript(args.messages);
+    }
     this.root
       .update({
         level: "ERROR",
-        statusMessage: errorMessage(args.error),
+        statusMessage: typeof redactedError === "string" ? redactedError : "Agent run failed",
         output: {
-          error: errorMessage(args.error),
+          error: redactedError,
         },
-        metadata: {
-          usage: args.usage,
-          messages: args.messages,
-        },
+        metadata,
       })
       .end();
     this.clearCurrentHandle?.();
   }
 
   event(args: AgentRunEventArgs): void {
-    const metadata: Record<string, unknown> = {};
-    Object.assign(metadata, args.attributes);
-    this.root.startObservation(args.name, { metadata }, { asType: "event" }).end();
+    const metadata = asMetadata(this.redactOutputValue(args.attributes ?? {}));
+    const attributes: LangfuseEventAttributes = { metadata };
+    if (args.level !== undefined) {
+      attributes.level = args.level;
+    }
+    const startTime = eventStartTime(args.timestamp);
+    this.root.startObservation(args.name, attributes, {
+      asType: "event",
+      ...(startTime === undefined ? {} : { startTime }),
+    });
   }
 
   getHandle(): LangfuseTraceHandle {
@@ -551,13 +640,15 @@ class LangfuseRunObserver implements AgentRunObserver {
       traceId: this.trace.traceId ?? "",
       observationId: this.trace.observationId ?? "",
       addAttributes: (attributes) => {
-        this.root.update({ metadata: attributes });
+        this.root.update({ metadata: asMetadata(this.redactOutputValue(attributes)) });
         this.setCurrentHandle?.(this.handle);
       },
       addEvent: (name, attributes) => {
-        const metadata: Record<string, unknown> = {};
-        Object.assign(metadata, attributes);
-        this.root.startObservation(name, { metadata }, { asType: "event" }).end();
+        this.root.startObservation(
+          name,
+          { metadata: asMetadata(this.redactOutputValue(attributes ?? {})) },
+          { asType: "event" },
+        );
         this.setCurrentHandle?.(this.handle);
       },
     };
@@ -595,17 +686,34 @@ class LangfuseRunObserver implements AgentRunObserver {
     }
     this.turnSpans.clear();
   }
+
+  isFullCapture(): boolean {
+    return this.captureMode === "full";
+  }
+
+  redactTranscript(messages: Message[]): unknown {
+    const inputRedacted =
+      this.redactor === undefined || this.redactInputs === undefined
+        ? messages
+        : applyRedaction(this.redactor, messages, this.redactInputs);
+    const outputRedacted =
+      this.redactor === undefined || this.redactOutputs === undefined
+        ? inputRedacted
+        : applyRedaction(this.redactor, inputRedacted, this.redactOutputs);
+    return sanitizeTraceValue(outputRedacted, this.captureMaxBytes);
+  }
 }
 
 class LangfuseGenerationObserver implements AgentGenerationObserver {
   constructor(
     private readonly generation: LangfuseGeneration,
     private readonly run: LangfuseRunObserver,
+    private readonly startedAt: Date,
   ) {}
 
   update(args: AgentGenerationUpdateArgs): void {
     this.generation.update({
-      output: { delta: args.delta },
+      output: this.run.redactOutputValue({ delta: args.delta }),
     });
   }
 
@@ -614,25 +722,35 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
     const redactedChoice = this.run.redactOutputValue(args.response.choice);
     const metadata: Record<string, unknown> = { turn: args.turn };
     if (args.firstDeltaMs !== undefined) metadata.firstDeltaMs = args.firstDeltaMs;
-    this.generation
-      .update({
-        output: {
-          messageId: args.response.messageId,
-          content: redactedChoice,
-          text: redactedText,
-        },
-        usageDetails: usageDetails(args.response.usage),
-        metadata,
-      })
-      .end();
+    const output: Record<string, unknown> = {
+      messageId: args.response.messageId,
+      content: redactedChoice,
+      text: redactedText,
+      sources: this.run.redactOutputValue(args.response.sources),
+      providerToolCalls: this.run.redactOutputValue(args.response.providerToolCalls),
+    };
+    const completionStartTime =
+      args.firstDeltaMs === undefined
+        ? undefined
+        : new Date(this.startedAt.getTime() + args.firstDeltaMs);
+    const update: LangfuseGenerationAttributes = {
+      output,
+      usageDetails: usageDetails(args.response.usage),
+      metadata,
+    };
+    if (completionStartTime !== undefined) {
+      update.completionStartTime = completionStartTime;
+    }
+    this.generation.update(update).end();
   }
 
   error(args: AgentGenerationErrorArgs): void {
+    const redactedError = this.run.redactOutputValue(errorMessage(args.error));
     this.generation
       .update({
         level: "ERROR",
-        statusMessage: errorMessage(args.error),
-        output: { error: errorMessage(args.error) },
+        statusMessage: typeof redactedError === "string" ? redactedError : "Generation failed",
+        output: { error: redactedError },
         metadata: { turn: args.turn },
       })
       .end();
@@ -641,7 +759,10 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
 
 class LangfuseToolObserver implements AgentToolObserver {
   private readonly childAgents = new Map<string, LangfuseAgent>();
-  private readonly childGenerations = new Map<string, LangfuseGeneration>();
+  private readonly childGenerations = new Map<
+    string,
+    { generation: LangfuseGeneration; startedAt: Date }
+  >();
   private readonly childTools: Array<{
     agentId: string;
     toolName: string;
@@ -668,38 +789,156 @@ class LangfuseToolObserver implements AgentToolObserver {
     const agent = this.childAgent(agentId, agentName, args);
 
     if (child.type === "turn_start") {
+      agent.startObservation(
+        `${agentLabel(agentId, agentName)}.turn.${childTurn}.start`,
+        {
+          input: this.run.redactInputValue({
+            prompt: modelInputMessage(child.prompt as Message),
+            history: modelInputMessages(child.history as Message[]),
+          }),
+          metadata: asMetadata(
+            this.run.redactInputValue(childMetadata(args, agentId, agentName, childTurn)),
+          ),
+        },
+        { asType: "event" },
+      );
+      return;
+    }
+
+    if (child.type === "generation_start" && isRecord(child.request)) {
+      const request = child.request;
+      const modelInfo = isRecord(child.modelInfo) ? child.modelInfo : undefined;
+      const messages = Array.isArray(request.chatHistory)
+        ? modelInputMessages(request.chatHistory as Message[])
+        : [];
+      const input: Record<string, unknown> = {
+        instructions: typeof request.instructions === "string" ? request.instructions : undefined,
+        messages,
+      };
+      if (this.run.isFullCapture()) {
+        input.documents = request.documents;
+        input.tools = request.tools;
+        input.providerTools = request.providerTools;
+        input.outputSchema = request.outputSchema;
+        input.additionalParams = request.additionalParams;
+      }
+      const toolNames = Array.isArray(request.tools)
+        ? request.tools
+            .filter(isRecord)
+            .map((tool) => tool.name)
+            .filter((name): name is string => typeof name === "string")
+        : [];
+      const providerToolNames = Array.isArray(request.providerTools)
+        ? request.providerTools
+            .filter(isRecord)
+            .map((tool) => tool.name)
+            .filter((name): name is string => typeof name === "string")
+        : [];
       const generation = agent.startObservation(
         `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
         {
-          input: {
-            prompt: modelInputMessage(child.prompt as Message),
-            history: modelInputMessages(child.history as Message[]),
-          },
-          metadata: childMetadata(args, agentId, agentName, childTurn),
+          input: this.run.redactInputValue(input),
+          model:
+            typeof request.model === "string"
+              ? request.model
+              : typeof modelInfo?.defaultModel === "string"
+                ? modelInfo.defaultModel
+                : "default",
+          modelParameters: modelParameters(request as AgentGenerationStartArgs["request"]),
+          metadata: asMetadata(
+            this.run.redactInputValue({
+              ...childMetadata(args, agentId, agentName, childTurn),
+              documentCount: Array.isArray(request.documents) ? request.documents.length : 0,
+              toolNames,
+              providerToolNames,
+              hasOutputSchema: request.outputSchema !== undefined,
+              modelInfo,
+            }),
+          ),
         },
         { asType: "generation" },
       );
-      this.childGenerations.set(generationKey(agentId, childTurn), generation);
+      this.childGenerations.set(generationKey(agentId, childTurn), {
+        generation,
+        startedAt: new Date(),
+      });
       return;
     }
 
     if (child.type === "turn_end") {
-      const generation = this.childGenerations.get(generationKey(agentId, childTurn));
-      if (generation !== undefined) {
+      const childGeneration = this.childGenerations.get(generationKey(agentId, childTurn));
+      if (childGeneration !== undefined) {
         const update: Parameters<LangfuseGeneration["update"]>[0] = {
-          output: child.response,
-          metadata: childMetadata(args, agentId, agentName, childTurn),
+          output: this.run.redactOutputValue(child.response),
+          metadata: asMetadata(
+            this.run.redactOutputValue(childMetadata(args, agentId, agentName, childTurn)),
+          ),
         };
         if (isRecord(child.response) && isRecord(child.response.usage)) {
           update.usageDetails = usageDetailsFromRecord(child.response.usage);
         }
-        generation.update(update).end();
+        if (typeof child.firstDeltaMs === "number") {
+          update.completionStartTime = new Date(
+            childGeneration.startedAt.getTime() + child.firstDeltaMs,
+          );
+        }
+        childGeneration.generation.update(update).end();
         this.childGenerations.delete(generationKey(agentId, childTurn));
       }
       return;
     }
 
+    if (
+      child.type === "text_delta" ||
+      child.type === "reasoning_delta" ||
+      child.type === "tool_call_delta"
+    ) {
+      const childGeneration = this.childGenerations.get(generationKey(agentId, childTurn));
+      childGeneration?.generation.update({
+        output: this.run.redactOutputValue({ delta: child }),
+      });
+      return;
+    }
+
+    if (child.type === "source" || child.type === "provider_tool_call") {
+      const childGeneration = this.childGenerations.get(generationKey(agentId, childTurn));
+      const parent = childGeneration?.generation ?? agent;
+      parent.startObservation(
+        `${agentLabel(agentId, agentName)}.${child.type}`,
+        {
+          output: this.run.redactOutputValue(
+            child.type === "source" ? child.source : child.toolCall,
+          ),
+          metadata: asMetadata(
+            this.run.redactOutputValue(childMetadata(args, agentId, agentName, childTurn)),
+          ),
+        },
+        { asType: "event" },
+      );
+      return;
+    }
+
+    if (child.type === "guardrail_decision") {
+      agent
+        .startObservation(
+          `${agentLabel(agentId, agentName)}.guardrail`,
+          {
+            output: this.run.redactOutputValue(child.decision),
+            metadata: asMetadata(
+              this.run.redactOutputValue(childMetadata(args, agentId, agentName, childTurn)),
+            ),
+          },
+          { asType: "guardrail" },
+        )
+        .end();
+      return;
+    }
+
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
+      const childGeneration = this.childGenerations.get(generationKey(agentId, childTurn));
+      childGeneration?.generation.update({
+        output: this.run.redactOutputValue({ toolCall: child.toolCall }),
+      });
       const toolCall = child.toolCall;
       const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
       const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
@@ -712,15 +951,17 @@ class LangfuseToolObserver implements AgentToolObserver {
       const childTool = agent.startObservation(
         `${agentLabel(agentId, agentName)}.${toolName}`,
         {
-          input: {
+          input: this.run.redactInputValue({
             args: toolCallFunction?.arguments ?? {},
             toolCall,
-          },
-          metadata: {
-            ...childMetadata(args, agentId, agentName, childTurn),
-            toolName,
-            toolCallId,
-          },
+          }),
+          metadata: asMetadata(
+            this.run.redactInputValue({
+              ...childMetadata(args, agentId, agentName, childTurn),
+              toolName,
+              toolCallId,
+            }),
+          ),
         },
         { asType: "tool" },
       );
@@ -743,15 +984,19 @@ class LangfuseToolObserver implements AgentToolObserver {
         childTool.ended = true;
         childTool.tool
           .update({
-            output: typeof child.result === "string" ? child.result : child,
-            metadata: {
-              ...childMetadata(args, agentId, agentName, childTurn),
-              toolName,
-              toolCallId,
-              internalCallId:
-                typeof child.internalCallId === "string" ? child.internalCallId : undefined,
-              args: typeof child.args === "string" ? child.args : undefined,
-            },
+            output: this.run.redactOutputValue(
+              typeof child.result === "string" ? child.result : child,
+            ),
+            metadata: asMetadata(
+              this.run.redactInputValue({
+                ...childMetadata(args, agentId, agentName, childTurn),
+                toolName,
+                toolCallId,
+                internalCallId:
+                  typeof child.internalCallId === "string" ? child.internalCallId : undefined,
+                args: typeof child.args === "string" ? child.args : undefined,
+              }),
+            ),
           })
           .end();
       }
@@ -759,18 +1004,35 @@ class LangfuseToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "final") {
-      const update: Parameters<LangfuseAgent["update"]>[0] = { output: child.output };
-      if (isRecord(child.usage)) update.metadata = { usage: child.usage };
+      const update: Parameters<LangfuseAgent["update"]>[0] = {
+        output: this.run.redactOutputValue(child.output),
+      };
+      const metadata: Record<string, unknown> = {};
+      if (isRecord(child.usage)) metadata.usage = child.usage;
+      if (this.run.isFullCapture() && Array.isArray(child.messages)) {
+        metadata.messages = this.run.redactTranscript(child.messages as Message[]);
+      }
+      if (Object.keys(metadata).length > 0) update.metadata = metadata;
       agent.update(update).end();
       this.childAgents.delete(agentId);
       return;
     }
 
     if (child.type === "error") {
+      const redactedError = this.run.redactOutputValue(errorMessage(child.error));
+      const childGeneration = this.childGenerations.get(generationKey(agentId, childTurn));
+      childGeneration?.generation
+        .update({
+          level: "ERROR",
+          statusMessage: typeof redactedError === "string" ? redactedError : "Generation failed",
+          output: { error: redactedError },
+        })
+        .end();
+      this.childGenerations.delete(generationKey(agentId, childTurn));
       const update: Parameters<LangfuseAgent["update"]>[0] = {
         level: "ERROR",
-        statusMessage: errorMessage(child.error),
-        output: { error: errorMessage(child.error) },
+        statusMessage: typeof redactedError === "string" ? redactedError : "Child agent failed",
+        output: { error: redactedError },
       };
       if (isRecord(child.usage)) update.metadata = { usage: child.usage };
       agent.update(update).end();
@@ -802,11 +1064,12 @@ class LangfuseToolObserver implements AgentToolObserver {
 
   error(args: AgentToolErrorArgs): void {
     this.endOpenChildren();
+    const redactedError = this.run.redactOutputValue(errorMessage(args.error));
     this.tool
       .update({
         level: "ERROR",
-        statusMessage: errorMessage(args.error),
-        output: { error: errorMessage(args.error) },
+        statusMessage: typeof redactedError === "string" ? redactedError : "Tool failed",
+        output: { error: redactedError },
         metadata: {
           turn: args.turn,
           internalCallId: args.internalCallId,
@@ -828,7 +1091,9 @@ class LangfuseToolObserver implements AgentToolObserver {
     const agent = this.tool.startObservation(
       `${agentLabel(agentId, agentName)}.run`,
       {
-        metadata: childMetadata(args, agentId, agentName, args.turn),
+        metadata: asMetadata(
+          this.run.redactInputValue(childMetadata(args, agentId, agentName, args.turn)),
+        ),
       },
       { asType: "agent" },
     );
@@ -860,7 +1125,7 @@ class LangfuseToolObserver implements AgentToolObserver {
 
   private endOpenChildren(): void {
     for (const generation of this.childGenerations.values()) {
-      generation.end();
+      generation.generation.end();
     }
     this.childGenerations.clear();
     for (const tool of this.childTools) {

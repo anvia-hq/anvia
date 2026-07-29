@@ -121,6 +121,7 @@ type AgentToolCallDeltaEvent = {
 
 type AgentStreamEvent =
   | { type: "turn_start"; turn: number; prompt: Message; history: Message[] }
+  | { type: "generation_start"; turn: number; request: CompletionRequest; modelInfo: AgentGenerationModelInfo }
   | { type: "text_delta"; turn: number; delta: string }
   | { type: "reasoning_delta"; turn: number; delta: string; id?: string; contentType?: "text" | "summary" | "encrypted" | "redacted"; signature?: string }
   | AgentToolCallDeltaEvent
@@ -129,7 +130,7 @@ type AgentStreamEvent =
   | { type: "provider_tool_call"; turn: number; toolCall: ProviderToolCall }
   | { type: "tool_result"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; args: string; result: string }
   | { type: "agent_tool_event"; turn: number; toolName: string; toolCallId?: string; internalCallId: string; agentId: string; agentName?: string; event: AgentChildStreamEvent }
-  | { type: "turn_end"; turn: number; response: CompletionResponse }
+  | { type: "turn_end"; turn: number; response: CompletionResponse; firstDeltaMs?: number }
   | { type: "final"; runId: string; output: string; usage: Usage; messages: Message[]; trace?: AgentTraceInfo; sources?: CompletionSource[]; providerToolCalls?: ProviderToolCall[] }
   | AgentErrorStreamEvent;
 
@@ -149,6 +150,10 @@ type AgentStreamEventWithToolCallDeltas = AgentStreamEvent;
 Purpose: streaming event union for observing agent execution.
 
 Return behavior: emitted by `PromptRequest.stream()` and `readableStream()`. `agent_tool_event` appears when a child agent is exposed with `asTool({ stream: true })`.
+
+`generation_start` is emitted after request middleware has produced the provider-facing normalized
+request. It exposes model context needed by nested observers but does not include the provider-native
+request summary. `turn_end.firstDeltaMs` carries time to first generation delta when available.
 
 Tool-call deltas are provisional events emitted by default. They are emitted immediately, including
 through streaming child agents, and may precede completion-response middleware. Missing

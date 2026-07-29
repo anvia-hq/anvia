@@ -456,13 +456,31 @@ function usageFromOpenAIChatCompletion(usage: unknown): Usage {
   const promptDetails = isPlainObject(usageSource.prompt_tokens_details)
     ? usageSource.prompt_tokens_details
     : {};
+  const completionDetails = isPlainObject(usageSource.completion_tokens_details)
+    ? usageSource.completion_tokens_details
+    : {};
+  const inputTokens = numberFrom(usageSource.prompt_tokens);
+  const outputTokens = numberFrom(usageSource.completion_tokens);
+  const cachedInputTokens = Math.min(inputTokens, numberFrom(promptDetails.cached_tokens));
+  const reasoningOutputTokens = Math.min(
+    outputTokens,
+    numberFrom(completionDetails.reasoning_tokens),
+  );
+  const totalTokens = inputTokens + outputTokens;
 
   return {
     ...Usage.empty(),
-    inputTokens: numberFrom(usageSource.prompt_tokens),
-    outputTokens: numberFrom(usageSource.completion_tokens),
-    totalTokens: numberFrom(usageSource.total_tokens),
-    cachedInputTokens: numberFrom(promptDetails.cached_tokens),
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens,
+    details: {
+      input: inputTokens - cachedInputTokens,
+      input_cached_tokens: cachedInputTokens,
+      output: outputTokens - reasoningOutputTokens,
+      output_reasoning_tokens: reasoningOutputTokens,
+      total: totalTokens,
+    },
   };
 }
 

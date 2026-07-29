@@ -477,12 +477,21 @@ export type ProviderToolCall = {
   details?: JsonObject;
 };
 
+/**
+ * Provider-normalized, mutually exclusive usage buckets.
+ *
+ * Every token should appear in exactly one non-total bucket. `total` is the
+ * only aggregate key and should equal the sum of the other buckets.
+ */
+export type UsageDetails = Record<string, number>;
+
 export type Usage = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
   cachedInputTokens: number;
   cacheCreationInputTokens: number;
+  details?: UsageDetails;
 };
 
 export type AssistantGenerationMetadata = {
@@ -504,15 +513,47 @@ export const Usage = {
     };
   },
   add(left: Usage, right: Usage): Usage {
-    return {
+    const result: Usage = {
       inputTokens: left.inputTokens + right.inputTokens,
       outputTokens: left.outputTokens + right.outputTokens,
       totalTokens: left.totalTokens + right.totalTokens,
       cachedInputTokens: left.cachedInputTokens + right.cachedInputTokens,
       cacheCreationInputTokens: left.cacheCreationInputTokens + right.cacheCreationInputTokens,
     };
+    const details = addUsageDetails(left, right);
+    if (details !== undefined) {
+      result.details = details;
+    }
+    return result;
   },
 };
+
+function addUsageDetails(left: Usage, right: Usage): UsageDetails | undefined {
+  if (isEmptyUsage(left) && left.details === undefined) {
+    return right.details === undefined ? undefined : { ...right.details };
+  }
+  if (isEmptyUsage(right) && right.details === undefined) {
+    return left.details === undefined ? undefined : { ...left.details };
+  }
+  if (left.details === undefined || right.details === undefined) {
+    return undefined;
+  }
+  const details: UsageDetails = { ...left.details };
+  for (const [key, value] of Object.entries(right.details)) {
+    details[key] = (details[key] ?? 0) + value;
+  }
+  return details;
+}
+
+function isEmptyUsage(usage: Usage): boolean {
+  return (
+    usage.inputTokens === 0 &&
+    usage.outputTokens === 0 &&
+    usage.totalTokens === 0 &&
+    usage.cachedInputTokens === 0 &&
+    usage.cacheCreationInputTokens === 0
+  );
+}
 
 export function getAssistantGenerationMetadata(
   message: Message,
@@ -536,7 +577,12 @@ export function getAssistantGenerationMetadata(
   const metadata: AssistantGenerationMetadata = {
     provider: generation.provider,
     model: generation.model,
-    usage: { ...generation.usage },
+    usage: {
+      ...generation.usage,
+      ...(generation.usage.details === undefined
+        ? {}
+        : { details: { ...generation.usage.details } }),
+    },
   };
   if (isCompletionSourceArray(generation.sources)) {
     metadata.sources = generation.sources.map((source) => ({ ...source }));
@@ -563,12 +609,23 @@ function isUsageValue(value: JsonValue | undefined): value is JsonObject & Usage
     isNonnegativeFiniteNumber(value.outputTokens) &&
     isNonnegativeFiniteNumber(value.totalTokens) &&
     isNonnegativeFiniteNumber(value.cachedInputTokens) &&
-    isNonnegativeFiniteNumber(value.cacheCreationInputTokens)
+    isNonnegativeFiniteNumber(value.cacheCreationInputTokens) &&
+    isUsageDetailsValue(value.details)
   );
 }
 
 function isNonnegativeFiniteNumber(value: JsonValue | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isUsageDetailsValue(value: JsonValue | undefined): value is JsonObject | undefined {
+  return (
+    value === undefined ||
+    (isJsonObjectValue(value) &&
+      Object.values(value).every(
+        (detail) => detail !== undefined && isNonnegativeFiniteNumber(detail),
+      ))
+  );
 }
 
 function isCompletionSourceArray(value: JsonValue | undefined): value is CompletionSource[] {

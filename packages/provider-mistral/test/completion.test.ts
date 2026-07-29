@@ -328,6 +328,11 @@ describe("Mistral completion mapping", () => {
       inputTokens: 3,
       outputTokens: 4,
       totalTokens: 7,
+      details: {
+        input: 3,
+        output: 4,
+        total: 7,
+      },
     });
   });
 
@@ -373,6 +378,11 @@ describe("Mistral completion mapping", () => {
             inputTokens: 1,
             outputTokens: 1,
             totalTokens: 2,
+            details: {
+              input: 1,
+              output: 1,
+              total: 2,
+            },
           },
         }),
       },

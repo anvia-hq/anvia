@@ -607,14 +607,28 @@ function candidateParts(response: Record<string, unknown>): Array<Record<string,
 
 function usageFromGemini(usage: unknown): Usage {
   const raw = isPlainObject(usage) ? usage : {};
-  const inputTokens = numberFrom(raw.promptTokenCount);
-  const outputTokens = numberFrom(raw.candidatesTokenCount);
+  const promptInputTokens = numberFrom(raw.promptTokenCount);
+  const toolInputTokens = numberFrom(raw.toolUsePromptTokenCount);
+  const inputTokens = promptInputTokens + toolInputTokens;
+  const candidateOutputTokens = numberFrom(raw.candidatesTokenCount);
+  const reasoningOutputTokens = numberFrom(raw.thoughtsTokenCount);
+  const outputTokens = candidateOutputTokens + reasoningOutputTokens;
+  const cachedInputTokens = Math.min(promptInputTokens, numberFrom(raw.cachedContentTokenCount));
+  const totalTokens = inputTokens + outputTokens;
   return {
     ...Usage.empty(),
     inputTokens,
     outputTokens,
-    totalTokens: numberFrom(raw.totalTokenCount) || inputTokens + outputTokens,
-    cachedInputTokens: numberFrom(raw.cachedContentTokenCount),
+    totalTokens,
+    cachedInputTokens,
+    details: {
+      input: promptInputTokens - cachedInputTokens,
+      input_cached_tokens: cachedInputTokens,
+      input_tool_use_tokens: toolInputTokens,
+      output: candidateOutputTokens,
+      output_reasoning_tokens: reasoningOutputTokens,
+      total: totalTokens,
+    },
   };
 }
 

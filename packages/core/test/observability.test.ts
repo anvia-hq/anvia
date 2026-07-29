@@ -175,7 +175,12 @@ describe("agent observability", () => {
 
     const result = await agent
       .prompt("hello")
-      .withTrace({ name: "test-run", userId: "user_1", metadata: { case: "text" } })
+      .withTrace({
+        name: "test-run",
+        userId: "user_1",
+        metadata: { case: "text" },
+        promptRef: { name: "support.system", version: 3 },
+      })
       .send();
 
     expect(result.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
@@ -191,7 +196,9 @@ describe("agent observability", () => {
           name: "test-run",
           userId: "user_1",
           metadata: { case: "text" },
+          promptRef: { name: "support.system", version: 3 },
         },
+        promptRef: { name: "support.system", version: 3 },
       },
     });
     expect(observer.events).toContainEqual(

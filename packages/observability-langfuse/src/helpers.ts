@@ -34,24 +34,34 @@ export function modelParameters(
 export function usageDetails(
   usage: AgentGenerationEndArgs["response"]["usage"],
 ): Record<string, number> {
+  if (usage.details !== undefined) {
+    return { ...usage.details };
+  }
   return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+    input: usage.inputTokens,
+    output: usage.outputTokens,
+    total: usage.totalTokens,
   };
 }
 
 export function usageDetailsFromRecord(usage: Record<string, unknown>): Record<string, number> {
+  if (isRecord(usage.details)) {
+    const details = Object.fromEntries(
+      Object.entries(usage.details).filter(
+        (entry): entry is [string, number] =>
+          typeof entry[1] === "number" && Number.isFinite(entry[1]) && entry[1] >= 0,
+      ),
+    );
+    if (Object.keys(details).length > 0) {
+      return details;
+    }
+  }
   return {
-    inputTokens: numberValue(usage.inputTokens) ?? 0,
-    outputTokens: numberValue(usage.outputTokens) ?? 0,
-    totalTokens:
+    input: numberValue(usage.inputTokens) ?? 0,
+    output: numberValue(usage.outputTokens) ?? 0,
+    total:
       numberValue(usage.totalTokens) ??
       (numberValue(usage.inputTokens) ?? 0) + (numberValue(usage.outputTokens) ?? 0),
-    cachedInputTokens: numberValue(usage.cachedInputTokens) ?? 0,
-    cacheCreationInputTokens: numberValue(usage.cacheCreationInputTokens) ?? 0,
   };
 }
 

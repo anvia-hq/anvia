@@ -26,6 +26,7 @@ type AgentTraceOptions = {
   version?: string;
   traceId?: string;
   failOnObserverError?: boolean;
+  promptRef?: AgentRunPromptRef;
 };
 ```
 
@@ -94,7 +95,18 @@ Notable errors: observer errors are ignored unless `failOnObserverError` is enab
 ## Generation and Tool Observer Types
 
 ```ts
-type AgentGenerationStartArgs = { turn: number; request: CompletionRequest };
+type AgentGenerationModelInfo = {
+  provider: string;
+  defaultModel: string;
+  capabilities?: CompletionModelCapabilities;
+};
+
+type AgentGenerationStartArgs = {
+  turn: number;
+  request: CompletionRequest;
+  providerRequest?: JsonObject;
+  modelInfo?: AgentGenerationModelInfo;
+};
 type AgentGenerationEndArgs<RawResponse = unknown> = {
   turn: number;
   response: CompletionResponse<RawResponse>;

@@ -131,6 +131,7 @@ describe("PromptRequest streaming", () => {
 
     expect(events.map((event) => event.type)).toEqual([
       "turn_start",
+      "generation_start",
       "text_delta",
       "text_delta",
       "turn_end",
@@ -155,6 +156,7 @@ describe("PromptRequest streaming", () => {
 
     expect(events.map((event) => event.type)).toEqual([
       "turn_start",
+      "generation_start",
       "text_delta",
       "turn_end",
       "final",
@@ -400,6 +402,11 @@ describe("PromptRequest streaming", () => {
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "generation_start",
+      request: { chatHistory: [Message.user("hi")] },
+      modelInfo: { provider: "test", defaultModel: "test" },
+    });
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", delta: "partial" });
     expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
     await expect(iterator.next()).rejects.toBe(error);
@@ -420,6 +427,7 @@ describe("PromptRequest streaming", () => {
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
+    expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start" });
     expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
     await expect(iterator.next()).rejects.toBe(error);
     expect(model.requests).toHaveLength(1);
@@ -477,9 +485,11 @@ describe("PromptRequest streaming", () => {
     events.push(await nextEvent(iterator));
     events.push(await nextEvent(iterator));
     events.push(await nextEvent(iterator));
+    events.push(await nextEvent(iterator));
 
     expect(events.map((event) => event.type)).toEqual([
       "turn_start",
+      "generation_start",
       "text_delta",
       "turn_end",
       "error",
@@ -610,6 +620,10 @@ describe("PromptRequest streaming", () => {
       prompt: Message.user("hi"),
     });
     expect(await nextEvent(iterator)).toMatchObject({
+      type: "generation_start",
+      turn: 1,
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
       type: "text_delta",
       turn: 1,
       delta: "first",
@@ -621,6 +635,7 @@ describe("PromptRequest streaming", () => {
     const rest = await collectIterator(iterator);
     expect(rest.map((event) => event.type)).toEqual([
       "turn_start",
+      "generation_start",
       "text_delta",
       "turn_end",
       "final",
@@ -703,6 +718,7 @@ describe("PromptRequest streaming", () => {
     const secondSteer = Message.user("second steer");
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
+    expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
@@ -888,6 +904,7 @@ describe("PromptRequest streaming", () => {
     const iterator = agent.prompt("add").stream()[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
+    expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start", turn: 1 });
     expect(await nextEvent(iterator)).toEqual({
       type: "tool_call_delta",
       turn: 1,
@@ -1076,6 +1093,7 @@ describe("PromptRequest streaming", () => {
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
+    expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "tool_call",
       toolCall: AssistantContent.toolCall("call_slow", "slow_tool", {}),
@@ -1157,6 +1175,7 @@ describe("PromptRequest streaming", () => {
 
     expect(childEvents.map((event) => event.event.type)).toEqual([
       "turn_start",
+      "generation_start",
       "text_delta",
       "text_delta",
       "turn_end",

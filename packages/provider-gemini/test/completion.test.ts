@@ -266,7 +266,9 @@ describe("Gemini completion mapping", () => {
       usageMetadata: {
         promptTokenCount: 3,
         candidatesTokenCount: 4,
-        totalTokenCount: 7,
+        thoughtsTokenCount: 2,
+        toolUsePromptTokenCount: 2,
+        totalTokenCount: 11,
         cachedContentTokenCount: 1,
       },
     });
@@ -278,10 +280,18 @@ describe("Gemini completion mapping", () => {
       AssistantContent.toolCall("call-1", "lookup_order", { id: "A1" }, "call-1"),
     ]);
     expect(response.usage).toMatchObject({
-      inputTokens: 3,
-      outputTokens: 4,
-      totalTokens: 7,
+      inputTokens: 5,
+      outputTokens: 6,
+      totalTokens: 11,
       cachedInputTokens: 1,
+      details: {
+        input: 2,
+        input_cached_tokens: 1,
+        input_tool_use_tokens: 2,
+        output: 4,
+        output_reasoning_tokens: 2,
+        total: 11,
+      },
     });
   });
 

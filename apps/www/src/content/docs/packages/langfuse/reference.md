@@ -9,6 +9,16 @@ sidebar:
 ---
 Import from `@anvia/langfuse`.
 
+## LangfuseCaptureMode
+
+```ts
+type LangfuseCaptureMode = "safe" | "full";
+```
+
+Purpose: choose between bounded model input plus request summaries (`"safe"`) and richer request
+capture including documents, tools, schemas, additional parameters, and provider-native requests
+(`"full"`).
+
 ## LangfuseTracingOptions
 
 ```ts
@@ -23,13 +33,17 @@ type LangfuseTracingOptions = {
   scoreBatchSize?: number;
   scoreFlushIntervalMs?: number;
   scoreMaxRetries?: number;
+  captureMode?: "safe" | "full";
+  captureMaxBytes?: number;
   redactInputs?: LangfuseRedactionMode;
   redactOutputs?: LangfuseRedactionMode;
   redaction?: LangfuseRedactionOptions;
 };
 ```
 
-Purpose: configure Langfuse tracing, scoring, batching, and redaction.
+Purpose: configure Langfuse tracing, scoring, request capture, and redaction. `captureMode` defaults
+to `"safe"` and `captureMaxBytes` defaults to 262,144 bytes per captured value, with a minimum of
+96 bytes.
 
 Return behavior: consumed by `langfuse.create(...)`.
 

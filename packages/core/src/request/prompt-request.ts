@@ -52,6 +52,7 @@ import type { MemoryContext } from "../memory/types";
 import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
 import type {
   AgentGenerationEndArgs,
+  AgentGenerationModelInfo,
   AgentGenerationStartArgs,
   AgentTraceOptions,
 } from "../observability/types";
@@ -467,9 +468,18 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
-        const generationObservers = await runObservers.startGeneration(
-          this.generationStartArgs(currentTurns, request, providerRequest),
+        const generationStartArgs = this.generationStartArgs(
+          currentTurns,
+          request,
+          providerRequest,
         );
+        const generationObservers = await runObservers.startGeneration(generationStartArgs);
+        yield await emit({
+          type: "generation_start",
+          turn: currentTurns,
+          request,
+          modelInfo: generationStartArgs.modelInfo,
+        });
         const accumulator = new CompletionStreamAccumulator();
         const generationStartedAt = Date.now();
         let firstDeltaMs: number | undefined;
@@ -561,7 +571,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
                 yield await emit(event);
               }
             }
-            yield await emit({ type: "turn_end", turn: currentTurns, response });
+            yield await emit({
+              type: "turn_end",
+              turn: currentTurns,
+              response,
+              firstDeltaMs,
+            });
             emittedTurnEnd = true;
           }
           if (this.steeringMessages.length > 0) {
@@ -608,7 +623,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             }
           }
           if (!emittedTurnEnd) {
-            yield await emit({ type: "turn_end", turn: currentTurns, response });
+            yield await emit({
+              type: "turn_end",
+              turn: currentTurns,
+              response,
+              firstDeltaMs,
+            });
           }
 
           const result: PromptResponse = {
@@ -659,7 +679,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           [assistantMessage],
           pendingTurnMessages,
         );
-        yield await emit({ type: "turn_end", turn: currentTurns, response });
+        yield await emit({
+          type: "turn_end",
+          turn: currentTurns,
+          response,
+          firstDeltaMs,
+        });
 
         const toolResultEvents = createAsyncQueue<ToolExecutionEventPayload>();
         const toolResultsPromise = this.executeToolCalls(
@@ -798,8 +823,8 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     turn: number,
     request: ReturnType<CompletionRequestBuilder["build"]>,
     providerRequest: JsonObject | undefined,
-  ): AgentGenerationStartArgs {
-    const args: AgentGenerationStartArgs = {
+  ): AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } {
+    const args: AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } = {
       turn,
       request,
       modelInfo: {
@@ -958,6 +983,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         agentDescription: this.agent.description,
         instructions: this.agent.instructions,
         trace: this.traceOptions,
+        promptRef: this.traceOptions?.promptRef,
         prompt: this.promptMessage,
         history: this.chatHistory,
         maxTurns: this.maxTurnCount,

@@ -63,6 +63,8 @@ explicit options always win.
 | `environment` | `LANGFUSE_TRACING_ENVIRONMENT`| Tag attached to every trace.                               |
 | `release`     | `LANGFUSE_RELEASE`            | Tag attached to every trace.                               |
 | `serviceName` | `LANGFUSE_SERVICE_NAME`       | Recorded on the root observation and as the OTel `service.name` resource attribute. |
+| `captureMode` | —                             | `"safe"` (default) records instructions/messages plus request summaries; `"full"` includes documents, tool definitions, schemas, and additional parameters. |
+| `captureMaxBytes` | —                          | Maximum encoded size per captured value; defaults to 262,144 bytes and must be at least 96. |
 
 ```ts
 const tracing = langfuse.create({
@@ -73,24 +75,26 @@ const tracing = langfuse.create({
 
 ## Observation metadata
 
-The adapter records extra data on Langfuse observations so the UI
-shows everything the agent runtime emits:
+The adapter records structured model and runtime data while keeping
+the default capture surface bounded:
 
-- **Generation observations** carry `providerRequest` and `modelInfo`
-  (with `provider`, `defaultModel`, and `capabilities`) on start, and
-  `firstDeltaMs` on end. `usageDetails` always includes
-  `cachedInputTokens` and `cacheCreationInputTokens`.
+- **Generation observations** carry system instructions, model messages,
+  the resolved model, and `modelInfo`. Full capture also includes the
+  sanitized `providerRequest`.
+  `completionStartTime` and `firstDeltaMs` provide native time-to-first-token data.
+- **Usage details** use mutually exclusive `input`, `output`, cache, and
+  reasoning buckets so Langfuse can infer cost without double counting.
 - **Generation observations** receive a `generation.update({ output: { delta } })`
   call for every streaming delta (`text_delta`, `reasoning_delta`,
   `tool_call`), so the Langfuse UI reflects partial output as the
   model produces it.
-- **Tool observations** carry `toolDefinition` and `toolMetadata` on
-  start, and `structuredResult` on end.
+- **Tool observations** carry arguments on start and structured results on
+  end. Definitions and tool metadata are included when `captureMode: "full"`.
 - **Root run observation** carries `serviceName` and the configured
   `metadata` from `AgentRunStartArgs`.
 
-User-supplied `trace.metadata` always wins over the built-in fields
-above (the spread order preserves it).
+Binary and base64 bodies are replaced with omission markers. Oversized
+values are replaced with deterministic bounded previews.
 
 ## Eval Scores
 
@@ -231,8 +235,8 @@ trace?.addEvent("validation.passed");
 trace?.addAttributes({ quality: "high" });
 ```
 
-`addEvent` creates a Langfuse `event` observation under the active
-root and ends it immediately. `addAttributes` updates the root
+`addEvent` creates an instantaneous Langfuse `event` observation under the active
+root. `addAttributes` updates the root
 observation's metadata. Both calls bubble up to Langfuse via the
 existing OpenTelemetry span processor.
 
@@ -369,13 +373,12 @@ const prompts = createLangfusePromptClient(tracing);
 const prompt = await prompts.getPrompt("support.system");
 console.log(prompt.prompt, prompt.version);
 
-await tracing.startRun({
-  agentName: "support",
-  prompt: { role: "user", content: [{ type: "text", text: "hi" }] },
-  history: [],
-  maxTurns: 3,
-  promptRef: { name: "support.system", version: prompt.version },
-});
+await agent
+  .prompt("hi")
+  .withTrace({
+    promptRef: { name: "support.system", version: prompt.version },
+  })
+  .send();
 ```
 
 `promptRef` is also accepted on `trace.metadata` (keys
@@ -424,9 +427,10 @@ const tracing = langfuse.create({
 });
 ```
 
-- `redactInputs` redacts text on root inputs, chat history, and tool
-  arguments.
-- `redactOutputs` redacts generation output text and tool results.
+- `redactInputs` redacts system instructions, root inputs, chat history,
+  tool arguments, request metadata, and nested-agent inputs.
+- `redactOutputs` redacts streaming/final generation output, errors,
+  tool results, transcripts, and nested-agent outputs.
 - `"deep"` recurses into nested objects and arrays (in addition to
   top-level strings).
 

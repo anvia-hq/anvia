@@ -50,6 +50,7 @@ export class ScoreQueue {
   private readonly pending: LangfuseScoreArgs[] = [];
   private timer: unknown = null;
   private flushing: Promise<void> | null = null;
+  private closed = false;
   private readonly baseUrl: string;
   private readonly publicKey: string;
   private readonly secretKey: string;
@@ -77,9 +78,12 @@ export class ScoreQueue {
   }
 
   enqueue(score: LangfuseScoreArgs): void {
+    if (this.closed) {
+      throw new Error("Langfuse score queue is shut down");
+    }
     this.pending.push(score);
     if (this.pending.length >= this.batchSize) {
-      void this.flush();
+      this.triggerBackgroundFlush();
       return;
     }
     this.scheduleTimer();
@@ -90,23 +94,32 @@ export class ScoreQueue {
   }
 
   async flush(): Promise<void> {
-    if (this.flushing !== null) {
-      await this.flushing;
-      return;
-    }
-    if (this.pending.length === 0) {
-      this.clearScheduledTimer();
-      return;
-    }
-    const batch = this.pending.splice(0, this.pending.length);
     this.clearScheduledTimer();
-    this.flushing = this.sendBatch(batch).finally(() => {
-      this.flushing = null;
-    });
-    await this.flushing;
+    while (true) {
+      if (this.flushing !== null) {
+        await this.flushing;
+        if (this.pending.length === 0) {
+          return;
+        }
+        continue;
+      }
+      if (this.pending.length === 0) {
+        return;
+      }
+      const draining = this.drain();
+      this.flushing = draining;
+      try {
+        await draining;
+      } finally {
+        if (this.flushing === draining) {
+          this.flushing = null;
+        }
+      }
+    }
   }
 
   async shutdown(): Promise<void> {
+    this.closed = true;
     this.clearScheduledTimer();
     await this.flush();
   }
@@ -117,8 +130,16 @@ export class ScoreQueue {
     }
     this.timer = this.setTimer(() => {
       this.timer = null;
-      void this.flush();
+      this.triggerBackgroundFlush();
     }, this.flushIntervalMs);
+  }
+
+  private triggerBackgroundFlush(): void {
+    void this.flush().catch(() => {
+      if (!this.closed && this.pending.length > 0) {
+        this.scheduleTimer();
+      }
+    });
   }
 
   private clearScheduledTimer(): void {
@@ -169,6 +190,18 @@ export class ScoreQueue {
       scores,
       lastError,
     );
+  }
+
+  private async drain(): Promise<void> {
+    while (this.pending.length > 0) {
+      const batch = this.pending.splice(0, this.batchSize);
+      try {
+        await this.sendBatch(batch);
+      } catch (error) {
+        this.pending.unshift(...batch);
+        throw error;
+      }
+    }
   }
 }
 

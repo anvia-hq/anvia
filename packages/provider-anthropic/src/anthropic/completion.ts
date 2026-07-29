@@ -166,12 +166,16 @@ function applyAnthropicStreamUsage(
   fields: AnthropicStreamUsageFields,
 ): boolean {
   let changed = false;
+  let uncachedInputTokens = Math.max(
+    0,
+    usage.inputTokens - usage.cachedInputTokens - usage.cacheCreationInputTokens,
+  );
 
   if (event.type === "message_start" && isPlainObject(event.message)) {
     const source = isPlainObject(event.message.usage) ? event.message.usage : undefined;
     if (source !== undefined) {
       if ("input_tokens" in source) {
-        usage.inputTokens = numberFrom(source.input_tokens);
+        uncachedInputTokens = numberFrom(source.input_tokens);
         fields.inputTokens = true;
         changed = true;
       }
@@ -198,28 +202,52 @@ function applyAnthropicStreamUsage(
   }
 
   if (changed) {
-    usage.totalTokens = usage.inputTokens + usage.outputTokens;
+    Object.assign(
+      usage,
+      anthropicUsage(
+        uncachedInputTokens,
+        usage.outputTokens,
+        usage.cachedInputTokens,
+        usage.cacheCreationInputTokens,
+      ),
+    );
   }
 
   return changed;
 }
 
 function mergeUsage(base: Usage, stream: Usage, fields: AnthropicStreamUsageFields): Usage {
-  const inputTokens = fields.inputTokens ? stream.inputTokens : base.inputTokens;
+  const baseUncachedInputTokens = Math.max(
+    0,
+    base.inputTokens - base.cachedInputTokens - base.cacheCreationInputTokens,
+  );
+  const streamUncachedInputTokens = Math.max(
+    0,
+    stream.inputTokens - stream.cachedInputTokens - stream.cacheCreationInputTokens,
+  );
+  const uncachedInputTokens = fields.inputTokens
+    ? streamUncachedInputTokens
+    : baseUncachedInputTokens;
   const outputTokens = fields.outputTokens ? stream.outputTokens : base.outputTokens;
-  return {
-    inputTokens,
+  const cachedInputTokens = fields.cachedInputTokens
+    ? stream.cachedInputTokens
+    : base.cachedInputTokens;
+  const cacheCreationInputTokens = fields.cacheCreationInputTokens
+    ? stream.cacheCreationInputTokens
+    : base.cacheCreationInputTokens;
+  return anthropicUsage(
+    uncachedInputTokens,
     outputTokens,
-    totalTokens: inputTokens + outputTokens,
-    cachedInputTokens: fields.cachedInputTokens ? stream.cachedInputTokens : base.cachedInputTokens,
-    cacheCreationInputTokens: fields.cacheCreationInputTokens
-      ? stream.cacheCreationInputTokens
-      : base.cacheCreationInputTokens,
-  };
+    cachedInputTokens,
+    cacheCreationInputTokens,
+  );
 }
 
 function copyUsage(usage: Usage): Usage {
-  return { ...usage };
+  return {
+    ...usage,
+    ...(usage.details === undefined ? {} : { details: { ...usage.details } }),
+  };
 }
 
 export function toAnthropicMessagesParams(
@@ -350,16 +378,15 @@ export function fromAnthropicMessage(response: unknown): CompletionResponse {
   }
 
   const usageSource = isPlainObject(raw.usage) ? raw.usage : {};
+  const usage = anthropicUsage(
+    numberFrom(usageSource.input_tokens),
+    numberFrom(usageSource.output_tokens),
+    numberFrom(usageSource.cache_read_input_tokens),
+    numberFrom(usageSource.cache_creation_input_tokens),
+  );
   const result: CompletionResponse = {
     choice,
-    usage: {
-      ...Usage.empty(),
-      inputTokens: numberFrom(usageSource.input_tokens),
-      outputTokens: numberFrom(usageSource.output_tokens),
-      totalTokens: numberFrom(usageSource.input_tokens) + numberFrom(usageSource.output_tokens),
-      cachedInputTokens: numberFrom(usageSource.cache_read_input_tokens),
-      cacheCreationInputTokens: numberFrom(usageSource.cache_creation_input_tokens),
-    },
+    usage,
     rawResponse: response,
   };
 
@@ -368,6 +395,31 @@ export function fromAnthropicMessage(response: unknown): CompletionResponse {
   }
 
   return result;
+}
+
+function anthropicUsage(
+  uncachedInputTokens: number,
+  outputTokens: number,
+  cachedInputTokens: number,
+  cacheCreationInputTokens: number,
+): Usage {
+  const inputTokens = uncachedInputTokens + cachedInputTokens + cacheCreationInputTokens;
+  const totalTokens = inputTokens + outputTokens;
+  return {
+    ...Usage.empty(),
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens,
+    cacheCreationInputTokens,
+    details: {
+      input: uncachedInputTokens,
+      cache_read_input_tokens: cachedInputTokens,
+      cache_creation_input_tokens: cacheCreationInputTokens,
+      output: outputTokens,
+      total: totalTokens,
+    },
+  };
 }
 
 export function fromAnthropicStreamEvent(event: unknown): CompletionStreamEvent[] {

@@ -396,17 +396,29 @@ function usageFromOpenAIResponse(usage: unknown): Usage {
   const usageSource = isPlainObject(usage) ? usage : {};
   const inputTokens = numberFrom(usageSource.input_tokens);
   const outputTokens = numberFrom(usageSource.output_tokens);
-  const totalTokens = numberFrom(usageSource.total_tokens) || inputTokens + outputTokens;
-  const details = isPlainObject(usageSource.input_tokens_details)
+  const totalTokens = inputTokens + outputTokens;
+  const inputDetails = isPlainObject(usageSource.input_tokens_details)
     ? usageSource.input_tokens_details
     : {};
+  const outputDetails = isPlainObject(usageSource.output_tokens_details)
+    ? usageSource.output_tokens_details
+    : {};
+  const cachedInputTokens = Math.min(inputTokens, numberFrom(inputDetails.cached_tokens));
+  const reasoningOutputTokens = Math.min(outputTokens, numberFrom(outputDetails.reasoning_tokens));
 
   return {
     ...Usage.empty(),
     inputTokens,
     outputTokens,
     totalTokens,
-    cachedInputTokens: numberFrom(details.cached_tokens),
+    cachedInputTokens,
+    details: {
+      input: inputTokens - cachedInputTokens,
+      input_cached_tokens: cachedInputTokens,
+      output: outputTokens - reasoningOutputTokens,
+      output_reasoning_tokens: reasoningOutputTokens,
+      total: totalTokens,
+    },
   };
 }
 

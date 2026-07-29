@@ -1793,6 +1793,11 @@ describe("Anvia studio", () => {
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
     expect(await readJsonl(res)).toMatchObject([
       { type: "turn_start", turn: 1 },
+      {
+        type: "generation_start",
+        turn: 1,
+        modelInfo: { provider: "test", defaultModel: "test" },
+      },
       { type: "text_delta", turn: 1, delta: "hello" },
       { type: "turn_end", turn: 1 },
       { type: "final", output: "hello" },

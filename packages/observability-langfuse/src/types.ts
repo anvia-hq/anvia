@@ -2,6 +2,7 @@ import type { JsonValue } from "@anvia/core/completion";
 import type { AgentObserver } from "@anvia/core/observability";
 
 export type LangfuseRedactionMode = boolean | "deep";
+export type LangfuseCaptureMode = "safe" | "full";
 
 export type LangfuseRedactionOptions = {
   patterns?: RedactorPattern[];
@@ -24,6 +25,8 @@ export type LangfuseTracingOptions = {
   scoreBatchSize?: number | undefined;
   scoreFlushIntervalMs?: number | undefined;
   scoreMaxRetries?: number | undefined;
+  captureMode?: LangfuseCaptureMode | undefined;
+  captureMaxBytes?: number | undefined;
   redactInputs?: LangfuseRedactionMode | undefined;
   redactOutputs?: LangfuseRedactionMode | undefined;
   redaction?: LangfuseRedactionOptions | undefined;

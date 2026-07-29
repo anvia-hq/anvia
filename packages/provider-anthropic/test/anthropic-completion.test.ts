@@ -268,11 +268,18 @@ describe("Anthropic Messages mapping", () => {
     expect(response.choice).toEqual([AssistantContent.toolCall("toolu_1", "add", { x: 2, y: 5 })]);
     expect(response.usage).toEqual({
       ...Usage.empty(),
-      inputTokens: 10,
+      inputTokens: 15,
       outputTokens: 5,
-      totalTokens: 15,
+      totalTokens: 20,
       cachedInputTokens: 3,
       cacheCreationInputTokens: 2,
+      details: {
+        input: 10,
+        cache_read_input_tokens: 3,
+        cache_creation_input_tokens: 2,
+        output: 5,
+        total: 20,
+      },
     });
     expect(response.messageId).toBe("msg_1");
   });
@@ -447,9 +454,9 @@ describe("Anthropic Messages mapping", () => {
       type: "final",
       output: "Hello",
       usage: {
-        inputTokens: 10,
+        inputTokens: 13,
         outputTokens: 4,
-        totalTokens: 14,
+        totalTokens: 17,
         cachedInputTokens: 3,
       },
     });
@@ -484,11 +491,18 @@ describe("Anthropic Messages mapping", () => {
 
     expect(response.usage).toEqual({
       ...Usage.empty(),
-      inputTokens: 20,
+      inputTokens: 32,
       outputTokens: 6,
-      totalTokens: 26,
+      totalTokens: 38,
       cachedInputTokens: 7,
       cacheCreationInputTokens: 5,
+      details: {
+        input: 20,
+        cache_read_input_tokens: 7,
+        cache_creation_input_tokens: 5,
+        output: 6,
+        total: 38,
+      },
     });
   });
 
@@ -634,11 +648,18 @@ describe("Anthropic Messages mapping", () => {
     expect(response.choice).toEqual([AssistantContent.text("Full final text")]);
     expect(response.usage).toEqual({
       ...Usage.empty(),
-      inputTokens: 10,
+      inputTokens: 13,
       outputTokens: 4,
-      totalTokens: 14,
+      totalTokens: 17,
       cachedInputTokens: 2,
       cacheCreationInputTokens: 1,
+      details: {
+        input: 10,
+        cache_read_input_tokens: 2,
+        cache_creation_input_tokens: 1,
+        output: 4,
+        total: 17,
+      },
     });
   });
 

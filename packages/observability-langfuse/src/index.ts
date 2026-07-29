@@ -15,6 +15,7 @@ export { createPiiRedactor, DEFAULT_PATTERNS } from "./redaction.js";
 export { LangfuseScoreError } from "./scoring.js";
 export { langfuse } from "./tracing.js";
 export type {
+  LangfuseCaptureMode,
   LangfuseChatMessage,
   LangfuseDataset,
   LangfuseDatasetClient,

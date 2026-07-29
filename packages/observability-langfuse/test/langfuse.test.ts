@@ -11,6 +11,7 @@ import type {
   AgentToolObserver,
 } from "@anvia/core/observability";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sanitizeTraceValue } from "../src/capture";
 import { createLangfuseDatasetClient } from "../src/dataset-client";
 import { runEvalAsExperiment } from "../src/experiment-runner";
 import { createLangfuseEvalReporter as createReporter, langfuse } from "../src/index";
@@ -83,6 +84,120 @@ afterEach(() => {
 });
 
 describe("langfuse", () => {
+  it("captures system instructions and falls back to the provider default model", async () => {
+    const root = fakeObservation("root", "trace-system", "obs-root-system");
+    const turn = fakeObservation("turn", "trace-system", "obs-turn-system");
+    const generation = fakeObservation("generation", "trace-system", "obs-generation-system");
+    root.startObservation.mockReturnValueOnce(turn);
+    turn.startObservation.mockReturnValueOnce(generation);
+    mocks.startObservation.mockReturnValueOnce(root);
+
+    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.startRun({
+      instructions: "You are a careful support agent.",
+      prompt: userMessage("hello"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    expect(mocks.startObservation).toHaveBeenCalledWith(
+      "agent.run",
+      expect.objectContaining({
+        input: expect.objectContaining({
+          instructions: "You are a careful support agent.",
+        }),
+      }),
+      { asType: "agent" },
+    );
+
+    const requestWithoutModel = { ...generationStartArgs().request };
+    delete requestWithoutModel.model;
+    await run.startGeneration?.({
+      ...generationStartArgs(),
+      request: {
+        ...requestWithoutModel,
+        instructions: "You are a careful support agent.",
+      },
+      modelInfo: {
+        provider: "test",
+        defaultModel: "provider-default",
+      },
+    });
+
+    expect(turn.startObservation).toHaveBeenCalledWith(
+      "model.turn.1",
+      expect.objectContaining({
+        model: "provider-default",
+        input: expect.objectContaining({
+          instructions: "You are a careful support agent.",
+        }),
+      }),
+      { asType: "generation" },
+    );
+  });
+
+  it("keeps rich request fields opt-in while retaining safe summaries", async () => {
+    const request: AgentGenerationStartArgs["request"] = {
+      ...generationStartArgs().request,
+      documents: [{ id: "policy", text: "private policy" }],
+      tools: [{ name: "lookup", description: "Lookup", parameters: { type: "object" } }],
+      providerTools: [{ kind: "provider", provider: "test", name: "search" }],
+      outputSchema: { type: "object" },
+      additionalParams: { seed: 7 },
+    };
+
+    for (const [captureMode, includesFullFields] of [
+      ["safe", false],
+      ["full", true],
+    ] as const) {
+      const root = fakeObservation(`root-${captureMode}`, "trace-capture", "obs-root-capture");
+      const turn = fakeObservation(`turn-${captureMode}`, "trace-capture", "obs-turn-capture");
+      const generation = fakeObservation(
+        `generation-${captureMode}`,
+        "trace-capture",
+        "obs-generation-capture",
+      );
+      root.startObservation.mockReturnValueOnce(turn);
+      turn.startObservation.mockReturnValueOnce(generation);
+      mocks.startObservation.mockReturnValueOnce(root);
+
+      const tracing = langfuse.create({
+        publicKey: "pk",
+        secretKey: "sk",
+        captureMode,
+      });
+      const run = (await tracing.startRun({
+        prompt: userMessage("hello"),
+        history: [],
+        maxTurns: 1,
+      })) as AgentRunObserver;
+      await run.startGeneration?.({
+        ...generationStartArgs(),
+        request,
+        providerRequest: {
+          model: "provider-model",
+          messages: [{ role: "user", content: "provider payload" }],
+        },
+      });
+
+      const attributes = turn.startObservation.mock.calls[0]?.[1] as {
+        input: Record<string, unknown>;
+        metadata: Record<string, unknown>;
+      };
+      expect(attributes.metadata).toMatchObject({
+        documentCount: 1,
+        toolNames: ["lookup"],
+        providerToolNames: ["search"],
+        hasOutputSchema: true,
+        additionalParamKeys: ["seed"],
+      });
+      expect("documents" in attributes.input).toBe(includesFullFields);
+      expect("tools" in attributes.input).toBe(includesFullFields);
+      expect("outputSchema" in attributes.input).toBe(includesFullFields);
+      expect("providerRequest" in attributes.metadata).toBe(includesFullFields);
+    }
+  });
+
   it("creates tracing from explicit options and delegates lifecycle methods", async () => {
     const tracing = langfuse.create({
       publicKey: "public",
@@ -243,7 +358,11 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = langfuse.create({
+      publicKey: "pk",
+      secretKey: "sk",
+      captureMode: "full",
+    });
     const run = (await tracing.startRun({
       agentName: "support",
       prompt: userMessage("hi"),
@@ -308,7 +427,11 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = langfuse.create({
+      publicKey: "pk",
+      secretKey: "sk",
+      captureMode: "full",
+    });
     const run = (await tracing.startRun({
       agentName: "support",
       prompt: userMessage("hi"),
@@ -393,6 +516,7 @@ describe("langfuse", () => {
     expect(generation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({ firstDeltaMs: 12 }),
+        completionStartTime: expect.any(Date),
       }),
     );
   });
@@ -437,7 +561,11 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = langfuse.create({
+      publicKey: "pk",
+      secretKey: "sk",
+      captureMode: "full",
+    });
     const run = (await tracing.startRun({
       agentName: "support",
       prompt: userMessage("hi"),
@@ -575,6 +703,7 @@ describe("langfuse", () => {
       publicKey: "option-public",
       secretKey: "option-secret",
       baseUrl: "https://option.test",
+      captureMode: "full",
     });
     const run = await tracing.startRun({
       agentName: "support",
@@ -595,7 +724,11 @@ describe("langfuse", () => {
     expect(mocks.startObservation).toHaveBeenCalledWith(
       "support",
       expect.objectContaining({
-        input: { prompt: userMessage("Summarize ticket"), history: [] },
+        input: {
+          instructions: undefined,
+          prompt: userMessage("Summarize ticket"),
+          history: [],
+        },
         metadata: expect.objectContaining({
           agentName: "support",
           agentDescription: "Support agent",
@@ -660,14 +793,20 @@ describe("langfuse", () => {
       "model.turn.1",
       expect.objectContaining({
         model: "test-model",
-        metadata: { turn: 1, toolCount: 0, hasOutputSchema: false },
+        metadata: expect.objectContaining({
+          turn: 1,
+          documentCount: 0,
+          toolNames: [],
+          providerToolNames: [],
+          hasOutputSchema: false,
+        }),
       }),
       { asType: "generation" },
     );
     expect(generation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         output: expect.objectContaining({ text: "Done" }),
-        usageDetails: expect.objectContaining({ inputTokens: 2, outputTokens: 3, totalTokens: 5 }),
+        usageDetails: expect.objectContaining({ input: 2, output: 3, total: 5 }),
       }),
     );
     expect(turn.startObservation).toHaveBeenCalledWith(
@@ -699,7 +838,11 @@ describe("langfuse", () => {
     mocks.startObservation.mockReturnValueOnce(root);
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = langfuse.create({
+      publicKey: "pk",
+      secretKey: "sk",
+      captureMode: "full",
+    });
     const run = (await tracing.startRun({
       prompt: Message.user("hello", { metadata }),
       history: [Message.user("earlier", { metadata })],
@@ -709,6 +852,7 @@ describe("langfuse", () => {
       "agent.run",
       expect.objectContaining({
         input: {
+          instructions: undefined,
           prompt: expect.objectContaining({ metadata }),
           history: [expect.objectContaining({ metadata })],
         },
@@ -723,8 +867,10 @@ describe("langfuse", () => {
         chatHistory: [Message.user("hello", { metadata })],
       },
     });
-    const generationInput = turn.startObservation.mock.calls[0]?.[1]?.input as MessageType[];
-    expect(generationInput[0]).not.toHaveProperty("metadata");
+    const generationInput = turn.startObservation.mock.calls[0]?.[1]?.input as {
+      messages: MessageType[];
+    };
+    expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run.end({
       output: "done",
@@ -745,12 +891,16 @@ describe("langfuse", () => {
     const turn = fakeObservation("turn", "trace-1", "obs-turn");
     const parentTool = fakeObservation("parent-tool", "trace-1", "obs-parent-tool");
     const childAgent = fakeObservation("child-agent", "trace-1", "obs-child-agent");
+    const childTurnEvent = fakeObservation("child-turn-event", "trace-1", "obs-child-turn-event");
     const childGeneration = fakeObservation("child-generation", "trace-1", "obs-child-generation");
     const childTool = fakeObservation("child-tool", "trace-1", "obs-child-tool");
     root.startObservation.mockReturnValueOnce(turn);
     turn.startObservation.mockReturnValueOnce(parentTool);
     parentTool.startObservation.mockReturnValueOnce(childAgent);
-    childAgent.startObservation.mockReturnValueOnce(childGeneration).mockReturnValueOnce(childTool);
+    childAgent.startObservation
+      .mockReturnValueOnce(childTurnEvent)
+      .mockReturnValueOnce(childGeneration)
+      .mockReturnValueOnce(childTool);
     mocks.startObservation.mockReturnValueOnce(root);
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
@@ -783,6 +933,19 @@ describe("langfuse", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: { type: "turn_start", turn: 1, prompt: userMessage("inspect"), history: [] },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: '{"prompt":"inspect"}',
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: childGenerationStartEvent(),
       },
     });
     await tool?.streamEvent?.({
@@ -1018,12 +1181,16 @@ describe("langfuse", () => {
     const turn = fakeObservation("turn", "trace-1", "obs-turn");
     const parentTool = fakeObservation("parent-tool", "trace-1", "obs-parent-tool");
     const childAgent = fakeObservation("child-agent", "trace-1", "obs-child-agent");
+    const childTurnEvent = fakeObservation("child-turn-event", "trace-1", "obs-child-turn-event");
     const childGeneration = fakeObservation("child-generation", "trace-1", "obs-child-generation");
     const childTool = fakeObservation("child-tool", "trace-1", "obs-child-tool");
     root.startObservation.mockReturnValueOnce(turn);
     turn.startObservation.mockReturnValueOnce(parentTool);
     parentTool.startObservation.mockReturnValueOnce(childAgent);
-    childAgent.startObservation.mockReturnValueOnce(childGeneration).mockReturnValueOnce(childTool);
+    childAgent.startObservation
+      .mockReturnValueOnce(childTurnEvent)
+      .mockReturnValueOnce(childGeneration)
+      .mockReturnValueOnce(childTool);
     mocks.startObservation.mockReturnValueOnce(root);
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
@@ -1053,6 +1220,18 @@ describe("langfuse", () => {
       event: {
         agentId: "child",
         event: { type: "turn_start", turn: 1, prompt: userMessage("inspect"), history: [] },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        event: childGenerationStartEvent(),
       },
     });
     await tool?.streamEvent?.({
@@ -2025,6 +2204,44 @@ describe("ScoreQueue", () => {
     expect(queue.depth()).toBe(0);
   });
 
+  it("limits every request body to scoreBatchSize", async () => {
+    const { queue, fetchMock } = makeQueue({ batchSize: 2 });
+    for (let index = 0; index < 5; index += 1) {
+      queue.enqueue(scoreArgs({ name: `score-${index}` }));
+    }
+
+    await queue.flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const sizes = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).length);
+    expect(sizes).toEqual([2, 2, 1]);
+  });
+
+  it("drains scores enqueued while a flush is active", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstResponse = new Promise<Response>((resolve) => {
+      releaseFirst = () => resolve(new Response(null, { status: 204 }));
+    });
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(firstResponse)
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { queue } = makeQueue({
+      batchSize: 2,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    queue.enqueue(scoreArgs({ name: "first" }));
+    queue.enqueue(scoreArgs({ name: "second" }));
+    const flush = queue.flush();
+    queue.enqueue(scoreArgs({ name: "during-flush" }));
+    releaseFirst?.();
+
+    await flush;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(queue.depth()).toBe(0);
+  });
+
   it("flush returns when the response is 2xx and clears the queue", async () => {
     const { queue, fetchMock } = makeQueue();
     queue.enqueue(scoreArgs());
@@ -2091,6 +2308,7 @@ describe("ScoreQueue", () => {
       ]),
     });
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(queue.depth()).toBe(2);
   });
 
   it("gives up after maxRetries and throws LangfuseScoreError", async () => {
@@ -2132,6 +2350,7 @@ describe("ScoreQueue", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(queue.depth()).toBe(0);
+    expect(() => queue.enqueue(scoreArgs())).toThrow(/shut down/);
   });
 });
 
@@ -2226,7 +2445,7 @@ describe("score queue integration", () => {
 });
 
 describe("usageDetailsFromRecord", () => {
-  it("includes cache token fields when present", async () => {
+  it("prefers explicit mutually exclusive details", async () => {
     const { usageDetailsFromRecord } = await import("../src/helpers");
     expect(
       usageDetailsFromRecord({
@@ -2235,17 +2454,24 @@ describe("usageDetailsFromRecord", () => {
         totalTokens: 3,
         cachedInputTokens: 4,
         cacheCreationInputTokens: 5,
+        details: {
+          input: 1,
+          cache_read_input_tokens: 4,
+          cache_creation_input_tokens: 5,
+          output: 2,
+          total: 12,
+        },
       }),
     ).toEqual({
-      inputTokens: 1,
-      outputTokens: 2,
-      totalTokens: 3,
-      cachedInputTokens: 4,
-      cacheCreationInputTokens: 5,
+      input: 1,
+      cache_read_input_tokens: 4,
+      cache_creation_input_tokens: 5,
+      output: 2,
+      total: 12,
     });
   });
 
-  it("defaults cache token fields to 0 when absent", async () => {
+  it("falls back to standard totals when details are absent", async () => {
     const { usageDetailsFromRecord } = await import("../src/helpers");
     expect(
       usageDetailsFromRecord({
@@ -2253,22 +2479,18 @@ describe("usageDetailsFromRecord", () => {
         outputTokens: 2,
       }),
     ).toEqual({
-      inputTokens: 1,
-      outputTokens: 2,
-      totalTokens: 3,
-      cachedInputTokens: 0,
-      cacheCreationInputTokens: 0,
+      input: 1,
+      output: 2,
+      total: 3,
     });
   });
 
   it("defaults every field to 0 when given an empty record", async () => {
     const { usageDetailsFromRecord } = await import("../src/helpers");
     expect(usageDetailsFromRecord({})).toEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedInputTokens: 0,
-      cacheCreationInputTokens: 0,
+      input: 0,
+      output: 0,
+      total: 0,
     });
   });
 });
@@ -2347,7 +2569,7 @@ describe("LangfuseTraceHandle", () => {
     expect(root.update).toHaveBeenCalledWith({ metadata: { quality: "high", score: 0.9 } });
   });
 
-  it("addEvent creates an event observation under the root and ends it", async () => {
+  it("addEvent creates an auto-ended event observation under the root", async () => {
     const root = fakeObservation("root", "trace-10", "obs-root-10");
     const event = fakeObservation("event", "trace-10", "obs-event-1");
     root.startObservation.mockReturnValueOnce(event);
@@ -2367,7 +2589,7 @@ describe("LangfuseTraceHandle", () => {
       { metadata: { docCount: 4 } },
       { asType: "event" },
     );
-    expect(event.end).toHaveBeenCalledOnce();
+    expect(event.end).not.toHaveBeenCalled();
   });
 
   it("event? on the run observer creates an event observation", async () => {
@@ -2394,7 +2616,35 @@ describe("LangfuseTraceHandle", () => {
       { metadata: { checks: 3 } },
       { asType: "event" },
     );
-    expect(event.end).toHaveBeenCalledOnce();
+    expect(event.end).not.toHaveBeenCalled();
+  });
+
+  it("maps runtime event level and timestamp to native event attributes", async () => {
+    const root = fakeObservation("root", "trace-event", "obs-root-event");
+    const event = fakeObservation("event", "trace-event", "obs-event");
+    root.startObservation.mockReturnValueOnce(event);
+    mocks.startObservation.mockReturnValueOnce(root);
+    const timestamp = new Date("2026-01-02T03:04:05.000Z");
+
+    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const runObserver = (await tracing.startRun({
+      prompt: userMessage("hi"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    await runObserver.event?.({
+      name: "guardrail.warning",
+      level: "WARNING",
+      timestamp,
+      attributes: { rule: "pii" },
+    });
+
+    expect(root.startObservation).toHaveBeenCalledWith(
+      "guardrail.warning",
+      { level: "WARNING", metadata: { rule: "pii" } },
+      { asType: "event", startTime: timestamp },
+    );
+    expect(event.end).not.toHaveBeenCalled();
   });
 
   it("multiple addEvent calls within one run all create observations", async () => {
@@ -2429,8 +2679,8 @@ describe("LangfuseTraceHandle", () => {
       { metadata: {} },
       { asType: "event" },
     );
-    expect(eventA.end).toHaveBeenCalledOnce();
-    expect(eventB.end).toHaveBeenCalledOnce();
+    expect(eventA.end).not.toHaveBeenCalled();
+    expect(eventB.end).not.toHaveBeenCalled();
   });
 
   it("sequential runs replace the handle (last-write-wins)", async () => {
@@ -2500,6 +2750,27 @@ function generationStartArgs(): AgentGenerationStartArgs {
       documents: [],
       tools: [],
       additionalParams: {},
+    },
+  };
+}
+
+function childGenerationStartEvent() {
+  return {
+    type: "generation_start" as const,
+    turn: 1,
+    request: generationStartArgs().request,
+    modelInfo: {
+      provider: "test",
+      defaultModel: "test-model",
+      capabilities: {
+        streaming: true,
+        tools: true,
+        toolChoice: true,
+        imageInput: false,
+        documentInput: false,
+        outputSchema: true,
+        reasoning: true,
+      },
     },
   };
 }
@@ -3368,6 +3639,11 @@ describe("Langfuse prompt attribute binding", () => {
     expect(turn.startObservation).toHaveBeenCalledWith(
       "model.turn.1",
       expect.objectContaining({
+        prompt: {
+          name: "support.system",
+          version: 5,
+          isFallback: false,
+        },
         metadata: expect.objectContaining({
           promptName: "support.system",
           promptVersion: 5,
@@ -3489,6 +3765,24 @@ describe("PII redaction", () => {
     });
   });
 
+  it("redactObject redacts arbitrary arrays without scanning binary payloads", async () => {
+    const { createPiiRedactor } = await import("../src/redaction");
+    const r = createPiiRedactor();
+    const binary = new Uint8Array([1, 2, 3]);
+    const out = r.redactObject([
+      { uri: "mailto:alice@example.com" },
+      { type: "image", data: "alice@example.com" },
+      { url: "data:image/png;base64,alice@example.com" },
+      binary,
+    ]);
+    expect(out).toEqual([
+      { uri: "mailto:[REDACTED]" },
+      { type: "image", data: "alice@example.com" },
+      { url: "data:image/png;base64,alice@example.com" },
+      binary,
+    ]);
+  });
+
   it("redactObject returns primitives unchanged", async () => {
     const { createPiiRedactor } = await import("../src/redaction");
     const r = createPiiRedactor();
@@ -3512,6 +3806,36 @@ describe("PII redaction", () => {
     expect(r.redactString("ssn 123-45-6789 not alice@example.com")).toBe(
       "ssn [REDACTED] not alice@example.com",
     );
+  });
+});
+
+describe("Langfuse trace capture", () => {
+  it("rejects limits too small to contain a truncation marker", () => {
+    expect(() => sanitizeTraceValue("hello", 95)).toThrow(/at least 96/);
+  });
+
+  it("omits base64 bodies before capture", () => {
+    expect(
+      sanitizeTraceValue({ type: "image", mediaType: "image/png", data: "a".repeat(200) }, 1_000),
+    ).toEqual({
+      type: "image",
+      mediaType: "image/png",
+      data: {
+        anviaTraceValue: "omitted",
+        reason: "base64",
+        originalBytes: 200,
+      },
+    });
+  });
+
+  it("replaces oversized values with a bounded deterministic envelope", () => {
+    const captured = sanitizeTraceValue({ text: "x".repeat(1_000) }, 160);
+    expect(captured).toMatchObject({
+      anviaTraceValue: "truncated",
+      originalBytes: expect.any(Number),
+      preview: expect.any(String),
+    });
+    expect(Buffer.byteLength(JSON.stringify(captured), "utf8")).toBeLessThanOrEqual(160);
   });
 });
 
@@ -3592,8 +3916,12 @@ describe("Langfuse redaction integration", () => {
     });
 
     const call = turn.startObservation.mock.calls[0];
-    const input = (call?.[1] as { input: Array<{ content: Array<{ text?: string }> }> }).input;
-    expect(input[0]?.content[0]?.text).toBe("hello [REDACTED]");
+    const input = (
+      call?.[1] as {
+        input: { messages: Array<{ content: Array<{ text?: string }> }> };
+      }
+    ).input;
+    expect(input.messages[0]?.content[0]?.text).toBe("hello [REDACTED]");
   });
 
   it("with redactOutputs: true the generation output text is redacted", async () => {

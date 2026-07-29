@@ -241,6 +241,15 @@ definitions in `tools` and provider-executed definitions in `providerTools`.
 
 Notable errors: providers can reject unsupported tool choice modes.
 
+## UsageDetails
+
+```ts
+type UsageDetails = Record<string, number>;
+```
+
+Purpose: represent mutually exclusive provider pricing buckets. The `total` key is the only
+aggregate and equals the sum of every other bucket.
+
 ## Usage
 
 ```ts
@@ -250,6 +259,7 @@ type Usage = {
   totalTokens: number;
   cachedInputTokens: number;
   cacheCreationInputTokens: number;
+  details?: UsageDetails;
 };
 
 const Usage: {
@@ -258,9 +268,12 @@ const Usage: {
 };
 ```
 
-Purpose: normalized token accounting.
+Purpose: normalized token accounting. Top-level input and output counts are inclusive totals.
+`details`, when present, contains mutually exclusive provider pricing buckets; `total` is its only
+aggregate key.
 
-Return behavior: `empty()` returns zeroed usage; `add(...)` sums matching fields.
+Return behavior: `empty()` returns zeroed usage. `add(...)` sums matching fields and keeps
+`details` only when the resulting breakdown remains complete.
 
 Notable errors: none directly.
 

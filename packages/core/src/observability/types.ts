@@ -29,6 +29,7 @@ export type AgentTraceOptions = {
   version?: string | undefined;
   traceId?: string | undefined;
   failOnObserverError?: boolean | undefined;
+  promptRef?: AgentRunPromptRef | undefined;
 };
 
 export type AgentRunPromptRef = {
@@ -61,15 +62,17 @@ export type AgentRunErrorArgs = {
   messages: Message[];
 };
 
+export type AgentGenerationModelInfo = {
+  provider: string;
+  defaultModel: string;
+  capabilities?: CompletionModelCapabilities | undefined;
+};
+
 export type AgentGenerationStartArgs = {
   turn: number;
   request: CompletionRequest;
   providerRequest?: JsonObject | undefined;
-  modelInfo?: {
-    provider: string;
-    defaultModel: string;
-    capabilities?: CompletionModelCapabilities | undefined;
-  };
+  modelInfo?: AgentGenerationModelInfo | undefined;
 };
 
 export type AgentGenerationEndArgs<RawResponse = unknown> = {

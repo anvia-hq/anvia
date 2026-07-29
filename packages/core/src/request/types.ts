@@ -1,4 +1,5 @@
 import type {
+  CompletionRequest,
   CompletionResponse,
   CompletionSource,
   Message as MessageType,
@@ -10,7 +11,7 @@ import type {
   Usage,
 } from "../completion/index";
 import type { GuardrailDecisionRecord } from "../guardrails";
-import type { AgentTraceInfo } from "../observability/types";
+import type { AgentGenerationModelInfo, AgentTraceInfo } from "../observability/types";
 
 export type PromptResponse = {
   output: string;
@@ -65,6 +66,12 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
       history: MessageType[];
     }
   | {
+      type: "generation_start";
+      turn: number;
+      request: CompletionRequest;
+      modelInfo: AgentGenerationModelInfo;
+    }
+  | {
       type: "text_delta";
       turn: number;
       delta: string;
@@ -106,6 +113,7 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
       type: "turn_end";
       turn: number;
       response: CompletionResponse<RawResponse>;
+      firstDeltaMs?: number | undefined;
     }
   | {
       type: "guardrail_decision";

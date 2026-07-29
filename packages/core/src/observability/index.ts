@@ -1,6 +1,7 @@
 export type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
+  AgentGenerationModelInfo,
   AgentGenerationObserver,
   AgentGenerationStartArgs,
   AgentGenerationUpdateArgs,

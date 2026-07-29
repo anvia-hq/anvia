@@ -151,13 +151,30 @@ function redactValue(
   redactStringFn: (s: string) => string,
 ): unknown {
   if (depth > MAX_DEPTH) return value;
-  if (typeof value === "string") return redactStringFn(value);
+  if (typeof value === "string") {
+    return isBase64DataUrl(value) ? value : redactStringFn(value);
+  }
   if (Array.isArray(value))
     return value.map((entry) => redactValue(entry, depth + 1, redactStringFn));
   if (value !== null && typeof value === "object") {
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      return value;
+    }
+    const record = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value)) {
-      out[key] = redactValue(entry, depth + 1, redactStringFn);
+    for (const [key, entry] of Object.entries(record)) {
+      if (
+        key === "data" &&
+        typeof entry === "string" &&
+        (record.type === "base64" ||
+          record.type === "image" ||
+          record.type === "encrypted" ||
+          record.type === "redacted")
+      ) {
+        out[key] = entry;
+      } else {
+        out[key] = redactValue(entry, depth + 1, redactStringFn);
+      }
     }
     return out;
   }
@@ -165,14 +182,44 @@ function redactValue(
 }
 
 function redactMessage(message: Message, redactStringFn: (s: string) => string): Message {
-  if (!Array.isArray(message.content)) return message;
-  const newContent = message.content.map((part) => {
-    if (part === null || typeof part !== "object") return part;
-    const rec = part as Record<string, unknown>;
-    if (rec.type === "text" && typeof rec.text === "string") {
-      return { ...part, text: redactStringFn(rec.text) };
+  if (message.role === "system") {
+    return { ...message, content: redactStringFn(message.content) };
+  }
+  return {
+    ...message,
+    content: redactMessageContent(message.content, redactStringFn) as never,
+  };
+}
+
+function redactMessageContent(value: unknown, redactStringFn: (s: string) => string): unknown {
+  if (typeof value === "string") {
+    return isBase64DataUrl(value) ? value : redactStringFn(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactMessageContent(entry, redactStringFn));
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (
+      key === "data" &&
+      typeof entry === "string" &&
+      (record.type === "base64" ||
+        record.type === "image" ||
+        record.type === "encrypted" ||
+        record.type === "redacted")
+    ) {
+      result[key] = entry;
+    } else {
+      result[key] = redactMessageContent(entry, redactStringFn);
     }
-    return part;
-  });
-  return { ...message, content: newContent as never };
+  }
+  return result;
+}
+
+function isBase64DataUrl(value: string): boolean {
+  return /^data:[^;,]+;base64,/i.test(value);
 }

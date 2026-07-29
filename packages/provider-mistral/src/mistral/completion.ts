@@ -259,11 +259,17 @@ function usageFromMistral(usage: unknown): Usage {
   const raw = isPlainObject(usage) ? usage : {};
   const inputTokens = numberFrom(raw.promptTokens) || numberFrom(raw.prompt_tokens);
   const outputTokens = numberFrom(raw.completionTokens) || numberFrom(raw.completion_tokens);
+  const totalTokens = inputTokens + outputTokens;
   return {
     ...Usage.empty(),
     inputTokens,
     outputTokens,
-    totalTokens: numberFrom(raw.totalTokens) || numberFrom(raw.total_tokens),
+    totalTokens,
+    details: {
+      input: inputTokens,
+      output: outputTokens,
+      total: totalTokens,
+    },
   };
 }
 

@@ -269,6 +269,13 @@ describe("OpenAI Responses mapping", () => {
       outputTokens: 5,
       totalTokens: 15,
       cachedInputTokens: 3,
+      details: {
+        input: 7,
+        input_cached_tokens: 3,
+        output: 5,
+        output_reasoning_tokens: 0,
+        total: 15,
+      },
     });
     expect(response.messageId).toBe("resp_1");
   });
@@ -663,6 +670,13 @@ describe("OpenAI Responses mapping", () => {
         outputTokens: 4,
         totalTokens: 15,
         cachedInputTokens: 2,
+        details: {
+          input: 9,
+          input_cached_tokens: 2,
+          output: 4,
+          output_reasoning_tokens: 0,
+          total: 15,
+        },
       },
     });
 
@@ -694,6 +708,13 @@ describe("OpenAI Responses mapping", () => {
           inputTokens: 2,
           outputTokens: 3,
           totalTokens: 5,
+          details: {
+            input: 2,
+            input_cached_tokens: 0,
+            output: 3,
+            output_reasoning_tokens: 0,
+            total: 5,
+          },
         },
         rawResponse: expect.objectContaining({ id: "resp_incomplete" }),
         messageId: "resp_incomplete",

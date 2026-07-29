@@ -85,6 +85,10 @@ For memory-backed chats, load the saved core messages on the server with `sessio
 return them from your API as Anvia `Message[]`. The React page converts that payload with
 `initialMessagesFromMemory(...)` before passing it to `useChat`.
 
+The helper hides durable memory-compaction summaries by default so the synthetic system message
+does not appear in the user transcript. Internal tools can pass
+`{ includeCompactionSummaries: true }` to display it.
+
 ```ts
 export async function GET(request: Request, params: { threadId: string }) {
   const user = await requireUser(request);

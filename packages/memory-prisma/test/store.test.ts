@@ -20,6 +20,7 @@ type SessionRow = {
 };
 
 type MessageRow = {
+  id: string;
   memorySessionId: string;
   runId: string;
   turn: number;
@@ -59,7 +60,7 @@ type FindFirstArgs = {
 };
 
 type CreateManyArgs = {
-  data: MessageRow[];
+  data: Array<Omit<MessageRow, "id">>;
 };
 
 type CreateErrorArgs = {
@@ -178,6 +179,7 @@ class FakePrisma {
   readonly errors: ErrorRow[] = [];
   readonly transactionOptions: Array<PrismaMemoryTransactionOptions | undefined> = [];
   private nextSessionId = 1;
+  private nextMessageId = 1;
 
   readonly agentMemorySession = {
     upsert: async (rawArgs: unknown) => {
@@ -263,6 +265,8 @@ class FakePrisma {
           .filter((message) => message.memorySessionId === memorySessionId)
           .sort((left, right) => left.position - right.position)
           .map((message) => ({
+            id: message.id,
+            memorySessionId: message.memorySessionId,
             position: message.position,
             runId: message.runId,
             turn: message.turn,
@@ -275,7 +279,7 @@ class FakePrisma {
       return this.messages
         .filter((message) => message.memorySessionId === session.id)
         .sort((left, right) => left.position - right.position)
-        .map((message) => ({ message: message.message }));
+        .map((message) => ({ ...message }));
     },
     findFirst: async (rawArgs: unknown) => {
       const args = rawArgs as FindFirstArgs;
@@ -286,8 +290,20 @@ class FakePrisma {
     },
     createMany: async (rawArgs: unknown) => {
       const args = rawArgs as CreateManyArgs;
-      this.messages.push(...args.data);
+      this.messages.push(
+        ...args.data.map((data) => ({
+          ...data,
+          id: `message_${this.nextMessageId++}`,
+        })),
+      );
       return { count: args.data.length };
+    },
+    deleteMany: async (rawArgs: unknown) => {
+      const args = rawArgs as { where: { id: { in: string[] } } };
+      const ids = new Set(args.where.id.in);
+      const previousLength = this.messages.length;
+      removeWhere(this.messages, (message) => ids.has(message.id));
+      return { count: previousLength - this.messages.length };
     },
   };
 
@@ -406,6 +422,85 @@ describe("PrismaMemoryStore", () => {
       { isolationLevel: "Serializable" },
       { isolationLevel: "Serializable" },
     ]);
+  });
+
+  it("atomically compacts a prefix and rejects stale revisions", async () => {
+    const prisma = new FakePrisma();
+    const store = createPrismaMemoryStore(prisma.client);
+    const compaction = store.compaction;
+    if (compaction === undefined) {
+      throw new Error("Expected Prisma compaction capability");
+    }
+    const context = { sessionId: "thread-compaction", userId: "user-1" };
+    await store.append({
+      context,
+      runId: "run-1",
+      turn: 1,
+      messages: [Message.user("old"), Message.assistant("old answer")],
+    });
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 1,
+      messages: [Message.user("recent")],
+    });
+    const stale = await compaction.load(context);
+    await store.append({
+      context,
+      runId: "run-2",
+      turn: 2,
+      messages: [Message.assistant("recent answer")],
+    });
+    const summary = Message.system("Earlier conversation summary") as Extract<
+      MessageType,
+      { role: "system" }
+    >;
+
+    await expect(
+      compaction.commit({
+        context,
+        revision: stale.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:1",
+      }),
+    ).resolves.toBe("conflict");
+
+    const current = await compaction.load(context);
+    await expect(
+      compaction.commit({
+        context,
+        revision: current.revision,
+        compactedMessageCount: 2,
+        summary,
+        runId: "memory-compaction:2",
+      }),
+    ).resolves.toBe("committed");
+    await expect(store.load(context)).resolves.toEqual([
+      summary,
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+
+    const conversations = await store.inspector?.listConversations({ limit: 1 });
+    const conversation = conversations?.[0];
+    const inspected =
+      conversation === undefined
+        ? undefined
+        : await store.inspector?.getConversation(conversation.ref);
+    expect(inspected).toMatchObject({
+      messageCount: 3,
+      messages: [
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 2, runId: "run-2", turn: 1, message: Message.user("recent") },
+        {
+          position: 3,
+          runId: "run-2",
+          turn: 2,
+          message: Message.assistant("recent answer"),
+        },
+      ],
+    });
   });
 
   it("inspects conventional Prisma sessions when read delegates are available", async () => {
@@ -636,6 +731,7 @@ describe("PrismaMemoryStore", () => {
       create: { scopeKey, sessionId: "thread_123", metadata: {} },
     });
     prisma.messages.push({
+      id: "malformed_1",
       memorySessionId: session.id,
       runId: "run_1",
       turn: 1,
@@ -658,6 +754,7 @@ describe("PrismaMemoryStore", () => {
       create: { scopeKey, sessionId: "thread_123", metadata: {} },
     });
     prisma.messages.push({
+      id: "malformed_2",
       memorySessionId: session.id,
       runId: "run_1",
       turn: 1,

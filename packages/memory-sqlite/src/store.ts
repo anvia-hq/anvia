@@ -6,6 +6,10 @@ import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendInput,
+  MemoryCompactionCommitInput,
+  MemoryCompactionCommitResult,
+  MemoryCompactionSnapshot,
+  MemoryCompactionStore,
   MemoryContext,
   MemoryConversation,
   MemoryConversationListOptions,
@@ -39,6 +43,12 @@ type PositionRow = {
 };
 
 type MessageRow = {
+  message_json: string;
+};
+
+type CompactionMessageRow = {
+  id: string;
+  position: number;
   message_json: string;
 };
 
@@ -88,6 +98,10 @@ export class SqliteMemoryStore implements MemoryStore {
   readonly inspector: MemoryInspector = {
     listConversations: (options) => this.listConversations(options),
     getConversation: (ref) => this.getConversation(ref),
+  };
+  readonly compaction: MemoryCompactionStore = {
+    load: (context) => this.loadCompactionSnapshot(context),
+    commit: (input) => this.commitCompaction(input),
   };
   private db: DatabaseSyncType | undefined;
 
@@ -220,6 +234,95 @@ export class SqliteMemoryStore implements MemoryStore {
         $now: new Date().toISOString(),
       });
       db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private async loadCompactionSnapshot(context: MemoryContext): Promise<MemoryCompactionSnapshot> {
+    const rows = this.database()
+      .prepare(
+        `SELECT m.id, m.position, m.message_json
+         FROM anvia_memory_messages m
+         INNER JOIN anvia_memory_sessions s ON s.id = m.memory_session_id
+         WHERE s.scope_key = $scopeKey
+         ORDER BY m.position ASC`,
+      )
+      .all({ $scopeKey: this.scopeKey(context) }) as CompactionMessageRow[];
+    return {
+      revision: compactionRevision(rows),
+      messages: rows.map((row) => this.messageFromJson(row.message_json)),
+    };
+  }
+
+  private async commitCompaction(
+    input: MemoryCompactionCommitInput,
+  ): Promise<MemoryCompactionCommitResult> {
+    this.validateInputMessages([input.summary]);
+    assertCompactedMessageCount(input.compactedMessageCount);
+    const db = this.database();
+    const scopeKey = this.scopeKey(input.context);
+
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      const rows = db
+        .prepare(
+          `SELECT m.id, m.position, m.message_json
+           FROM anvia_memory_messages m
+           INNER JOIN anvia_memory_sessions s ON s.id = m.memory_session_id
+           WHERE s.scope_key = $scopeKey
+           ORDER BY m.position ASC`,
+        )
+        .all({ $scopeKey: scopeKey }) as CompactionMessageRow[];
+      if (
+        compactionRevision(rows) !== input.revision ||
+        input.compactedMessageCount > rows.length
+      ) {
+        db.exec("ROLLBACK");
+        return "conflict";
+      }
+      const boundary = rows[input.compactedMessageCount - 1];
+      if (boundary === undefined) {
+        db.exec("ROLLBACK");
+        return "conflict";
+      }
+      const sessionId = this.upsertSession(input.context, scopeKey);
+      const deleteMessage = db.prepare("DELETE FROM anvia_memory_messages WHERE id = $id");
+      for (const row of rows.slice(0, input.compactedMessageCount)) {
+        deleteMessage.run({ $id: row.id });
+      }
+      db.prepare(
+        `INSERT INTO anvia_memory_messages (
+          id,
+          memory_session_id,
+          run_id,
+          turn,
+          position,
+          role,
+          message_json,
+          created_at
+        ) VALUES (
+          $id,
+          $memorySessionId,
+          $runId,
+          0,
+          $position,
+          $role,
+          $messageJson,
+          $now
+        )`,
+      ).run({
+        $id: randomUUID(),
+        $memorySessionId: sessionId,
+        $runId: input.runId,
+        $position: boundary.position,
+        $role: input.summary.role,
+        $messageJson: JSON.stringify(input.summary),
+        $now: new Date().toISOString(),
+      });
+      db.exec("COMMIT");
+      return "committed";
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
@@ -444,6 +547,16 @@ function resolveOptions(options: SqliteMemoryStoreOptions): ResolvedSqliteMemory
     validateMessages: options.validateMessages ?? true,
     createIfMissing: options.createIfMissing ?? true,
   };
+}
+
+function compactionRevision(rows: CompactionMessageRow[]): string {
+  return JSON.stringify(rows.map((row) => row.id));
+}
+
+function assertCompactedMessageCount(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new RangeError("compactedMessageCount must be a positive integer.");
+  }
 }
 
 function databaseSync(): DatabaseSyncConstructor {

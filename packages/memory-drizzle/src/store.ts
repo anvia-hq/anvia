@@ -1,6 +1,10 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendInput,
+  MemoryCompactionCommitInput,
+  MemoryCompactionCommitResult,
+  MemoryCompactionSnapshot,
+  MemoryCompactionStore,
   MemoryContext,
   MemoryConversation,
   MemoryConversationListOptions,
@@ -8,7 +12,7 @@ import type {
   MemoryErrorInput,
   MemoryInspector,
 } from "@anvia/core/memory";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import { drizzleMemorySchema } from "./schema.js";
 import type {
@@ -68,6 +72,12 @@ type MessageRow = {
   message: unknown;
 };
 
+type CompactionMessageRow = {
+  id: string;
+  position: number;
+  message: unknown;
+};
+
 type InspectionSessionRow = {
   ref: string;
   sessionId: string;
@@ -117,6 +127,10 @@ export class DrizzleMemoryStore implements MemoryStore {
   readonly inspector: MemoryInspector = {
     listConversations: (options) => this.listConversations(options),
     getConversation: (ref) => this.getConversation(ref),
+  };
+  readonly compaction: MemoryCompactionStore = {
+    load: (context) => this.loadCompactionSnapshot(context),
+    commit: (input) => this.commitCompaction(input),
   };
 
   constructor(
@@ -196,6 +210,76 @@ export class DrizzleMemoryStore implements MemoryStore {
         error: serializeUnknownError(input.error),
         messages: input.messages,
       });
+    });
+  }
+
+  private async loadCompactionSnapshot(context: MemoryContext): Promise<MemoryCompactionSnapshot> {
+    const db = runtimeDatabase(this.db);
+    const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+    const rows = (await db
+      .select({
+        id: messages.id,
+        position: messages.position,
+        message: messages.message,
+      })
+      .from(messages)
+      .innerJoin(sessions, eq(messages.memorySessionId, sessions.id))
+      .where(eq(sessions.scopeKey, this.scopeKey(context)))
+      .orderBy(asc(messages.position))) as CompactionMessageRow[];
+    return {
+      revision: compactionRevision(rows),
+      messages: rows.map((row) =>
+        this.options.validateMessages ? parseMemoryMessage(row.message) : (row.message as Message),
+      ),
+    };
+  }
+
+  private async commitCompaction(
+    input: MemoryCompactionCommitInput,
+  ): Promise<MemoryCompactionCommitResult> {
+    this.validateInputMessages([input.summary]);
+    assertCompactedMessageCount(input.compactedMessageCount);
+    const scopeKey = this.scopeKey(input.context);
+
+    return this.transaction(async (tx) => {
+      await this.lock(tx, scopeKey);
+      const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+      const rows = (await tx
+        .select({
+          id: messages.id,
+          position: messages.position,
+          message: messages.message,
+        })
+        .from(messages)
+        .innerJoin(sessions, eq(messages.memorySessionId, sessions.id))
+        .where(eq(sessions.scopeKey, scopeKey))
+        .orderBy(asc(messages.position))) as CompactionMessageRow[];
+      if (
+        compactionRevision(rows) !== input.revision ||
+        input.compactedMessageCount > rows.length
+      ) {
+        return "conflict";
+      }
+      const boundary = rows[input.compactedMessageCount - 1];
+      if (boundary === undefined) {
+        return "conflict";
+      }
+      const session = await this.upsertSession(tx, input.context, scopeKey);
+      await tx.delete(messages).where(
+        inArray(
+          messages.id,
+          rows.slice(0, input.compactedMessageCount).map((row) => row.id),
+        ),
+      );
+      await tx.insert(messages).values({
+        memorySessionId: session.id,
+        runId: input.runId,
+        turn: 0,
+        position: boundary.position,
+        role: input.summary.role,
+        message: input.summary,
+      });
+      return "committed";
     });
   }
 
@@ -377,6 +461,16 @@ function metadataValue(metadata: JsonObject | undefined, path: string): JsonValu
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function compactionRevision(rows: CompactionMessageRow[]): string {
+  return JSON.stringify(rows.map((row) => row.id));
+}
+
+function assertCompactedMessageCount(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new RangeError("compactedMessageCount must be a positive integer.");
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,10 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendInput,
+  MemoryCompactionCommitInput,
+  MemoryCompactionCommitResult,
+  MemoryCompactionSnapshot,
+  MemoryCompactionStore,
   MemoryContext,
   MemoryConversation,
   MemoryConversationListOptions,
@@ -44,6 +48,12 @@ type PositionRow = {
 };
 
 type MessageRow = {
+  message: unknown;
+};
+
+type CompactionMessageRow = {
+  id: string;
+  position: number | string;
   message: unknown;
 };
 
@@ -133,6 +143,10 @@ export class PostgresMemoryStore implements MemoryStore {
   readonly inspector: MemoryInspector = {
     listConversations: (options) => this.listConversations(options),
     getConversation: (ref) => this.getConversation(ref),
+  };
+  readonly compaction: MemoryCompactionStore = {
+    load: (context) => this.loadCompactionSnapshot(context),
+    commit: (input) => this.commitCompaction(input),
   };
 
   private constructor(
@@ -227,6 +241,72 @@ export class PostgresMemoryStore implements MemoryStore {
           JSON.stringify(input.messages),
         ],
       );
+    });
+  }
+
+  private async loadCompactionSnapshot(context: MemoryContext): Promise<MemoryCompactionSnapshot> {
+    const result = await this.client.query(
+      `SELECT m.id, m.position, m.message
+       FROM ${this.tables.messages} m
+       INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
+       WHERE s.scope_key = $1
+       ORDER BY m.position ASC`,
+      [this.scopeKey(context)],
+    );
+    const rows = result.rows as CompactionMessageRow[];
+    return {
+      revision: compactionRevision(rows),
+      messages: rows.map((row) => this.messageFromValue(row.message)),
+    };
+  }
+
+  private async commitCompaction(
+    input: MemoryCompactionCommitInput,
+  ): Promise<MemoryCompactionCommitResult> {
+    this.validateInputMessages([input.summary]);
+    assertCompactedMessageCount(input.compactedMessageCount);
+    const scopeKey = this.scopeKey(input.context);
+
+    return this.transaction(async (tx) => {
+      if (this.options.lock === "advisory") {
+        await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
+      }
+      const result = await tx.query(
+        `SELECT m.id, m.position, m.message
+         FROM ${this.tables.messages} m
+         INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
+         WHERE s.scope_key = $1
+         ORDER BY m.position ASC`,
+        [scopeKey],
+      );
+      const rows = result.rows as CompactionMessageRow[];
+      if (
+        compactionRevision(rows) !== input.revision ||
+        input.compactedMessageCount > rows.length
+      ) {
+        return "conflict";
+      }
+      const boundary = rows[input.compactedMessageCount - 1];
+      if (boundary === undefined) {
+        return "conflict";
+      }
+      const session = await this.upsertSession(tx, input.context, scopeKey);
+      const compactedRows = rows.slice(0, input.compactedMessageCount);
+      await tx.query(`DELETE FROM ${this.tables.messages} WHERE id = ANY($1::uuid[])`, [
+        compactedRows.map((row) => row.id),
+      ]);
+      await this.insertMessages(
+        tx,
+        session.id,
+        {
+          context: input.context,
+          runId: input.runId,
+          turn: 0,
+          messages: [input.summary],
+        },
+        Number(boundary.position),
+      );
+      return "committed";
     });
   }
 
@@ -426,6 +506,16 @@ function resolveOptions(options: PostgresMemoryStoreOptions): ResolvedPostgresMe
     createIfMissing: options.createIfMissing ?? true,
     lock: options.lock ?? "advisory",
   };
+}
+
+function compactionRevision(rows: CompactionMessageRow[]): string {
+  return JSON.stringify(rows.map((row) => row.id));
+}
+
+function assertCompactedMessageCount(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new RangeError("compactedMessageCount must be a positive integer.");
+  }
 }
 
 function resolveTables(options: PostgresMemorySchemaOptions): ResolvedPostgresMemoryTables {

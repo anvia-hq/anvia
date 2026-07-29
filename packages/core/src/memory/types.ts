@@ -1,4 +1,4 @@
-import type { JsonObject, Message } from "../completion/types";
+import type { JsonObject, Message, SystemMessage, Usage } from "../completion/types";
 
 export type MemorySavePolicy = "message" | "turn" | "run";
 
@@ -58,18 +58,75 @@ export interface MemoryInspector {
 
 export interface MemoryStore {
   readonly inspector?: MemoryInspector | undefined;
+  readonly compaction?: MemoryCompactionStore | undefined;
   load(context: MemoryContext): Promise<Message[]>;
   append(input: MemoryAppendInput): Promise<void>;
   clear(context: MemoryContext): Promise<void>;
   recordError?(input: MemoryErrorInput): Promise<void>;
 }
 
+export type MemoryCompactionSnapshot = {
+  /** Opaque store revision used to reject stale compaction commits. */
+  revision: string;
+  messages: Message[];
+};
+
+export type MemoryCompactionCommitInput = {
+  context: MemoryContext;
+  revision: string;
+  compactedMessageCount: number;
+  summary: SystemMessage;
+  runId: string;
+};
+
+export type MemoryCompactionCommitResult = "committed" | "conflict";
+
+/** Optional durable prefix-replacement capability used by automatic memory compaction. */
+export interface MemoryCompactionStore {
+  load(context: MemoryContext): Promise<MemoryCompactionSnapshot>;
+  commit(input: MemoryCompactionCommitInput): Promise<MemoryCompactionCommitResult>;
+}
+
+export type MemoryCompactorInput = {
+  context: MemoryContext;
+  messages: Message[];
+};
+
+export type MemoryCompactorResult = {
+  summary: string;
+  usage?: Usage | undefined;
+};
+
+export type MemoryCompactor = (input: MemoryCompactorInput) => Promise<MemoryCompactorResult>;
+
+export type SummaryMemoryCompactorOptions = {
+  instructions?: string | undefined;
+  maxTokens?: number | undefined;
+  temperature?: number | undefined;
+};
+
+export type MemoryCompactionOptions = {
+  maxMessages: number;
+  keepRecentUserTurns?: number | undefined;
+  compactor: MemoryCompactor;
+  conflictRetries?: number | undefined;
+};
+
+export type ResolvedMemoryCompactionOptions = {
+  maxMessages: number;
+  keepRecentUserTurns: number;
+  compactor: MemoryCompactor;
+  conflictRetries: number;
+};
+
 export type MemoryOptions = {
   savePolicy?: MemorySavePolicy | undefined;
+  compaction?: MemoryCompactionOptions | undefined;
 };
 
 export type ResolvedMemoryOptions = {
   savePolicy: MemorySavePolicy;
+  compaction?: ResolvedMemoryCompactionOptions | undefined;
 };
 
 export type MemoryRegistration = {

@@ -207,9 +207,15 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   }
 
   memory(store: MemoryStore, options: MemoryOptions = {}): this {
+    const resolvedOptions = resolveMemoryOptions(options);
+    if (resolvedOptions.compaction !== undefined && store.compaction === undefined) {
+      throw new TypeError(
+        "Memory compaction requires a store with the optional compaction capability.",
+      );
+    }
     this.memoryRegistration = {
       store,
-      options: resolveMemoryOptions(options),
+      options: resolvedOptions,
     };
     return this;
   }

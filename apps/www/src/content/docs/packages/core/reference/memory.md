@@ -14,6 +14,7 @@ Import from `@anvia/core` or `@anvia/core/memory`.
 ```ts
 interface MemoryStore {
   readonly inspector?: MemoryInspector;
+  readonly compaction?: MemoryCompactionStore;
   load(context: MemoryContext): Promise<Message[]>;
   append(input: MemoryAppendInput): Promise<void>;
   clear(context: MemoryContext): Promise<void>;
@@ -72,6 +73,41 @@ Custom stores do not need to implement this capability.
 Return behavior: implementations list newest conversations first and return messages in storage
 position order. Inspection does not import, copy, clear, or otherwise mutate product memory.
 
+## MemoryCompactionStore
+
+```ts
+type MemoryCompactionSnapshot = {
+  revision: string;
+  messages: Message[];
+};
+
+type MemoryCompactionCommitInput = {
+  context: MemoryContext;
+  revision: string;
+  compactedMessageCount: number;
+  summary: SystemMessage;
+  runId: string;
+};
+
+type MemoryCompactionCommitResult = "committed" | "conflict";
+
+interface MemoryCompactionStore {
+  load(context: MemoryContext): Promise<MemoryCompactionSnapshot>;
+  commit(input: MemoryCompactionCommitInput): Promise<MemoryCompactionCommitResult>;
+}
+```
+
+Purpose: optional durable prefix replacement used by automatic agent memory compaction. The
+official Prisma, Drizzle, Postgres, and SQLite stores implement this capability.
+
+Return behavior: `load(...)` returns ordered messages and an opaque revision. `commit(...)`
+atomically replaces `compactedMessageCount` messages with one summary only when the revision still
+matches. A concurrent memory update returns `"conflict"` without changing the transcript.
+
+Notable errors: stores reject invalid summary messages and invalid compacted counts. Applications
+implementing custom stores must perform the revision check and prefix replacement in one
+transaction.
+
 ## MemoryContext
 
 ```ts
@@ -119,10 +155,12 @@ type MemorySavePolicy = "message" | "turn" | "run";
 
 type MemoryOptions = {
   savePolicy?: MemorySavePolicy | undefined;
+  compaction?: MemoryCompactionOptions | undefined;
 };
 
 type ResolvedMemoryOptions = {
   savePolicy: MemorySavePolicy;
+  compaction?: ResolvedMemoryCompactionOptions | undefined;
 };
 
 function resolveMemoryOptions(options?: MemoryOptions): ResolvedMemoryOptions;
@@ -132,13 +170,64 @@ Purpose: configures when `AgentSession` appends messages to the configured store
 
 Return behavior: `resolveMemoryOptions(...)` fills the default `savePolicy: "message"`. `AgentBuilder.memory(store, options?)` stores the resolved policy in `MemoryRegistration`.
 
-Notable errors: none directly.
+Notable errors: invalid compaction limits throw `RangeError`, and a missing compactor function
+throws `TypeError`.
 
 | Policy | Behavior |
 | --- | --- |
 | `"message"` | Save completed user, assistant, and tool-result messages as they become available. |
 | `"turn"` | Save completed messages after each model/tool loop turn. |
 | `"run"` | Save only after a successful final response. |
+
+## Automatic Compaction
+
+```ts
+type MemoryCompactorInput = {
+  context: MemoryContext;
+  messages: Message[];
+};
+
+type MemoryCompactorResult = {
+  summary: string;
+  usage?: Usage;
+};
+
+type MemoryCompactor = (
+  input: MemoryCompactorInput,
+) => Promise<MemoryCompactorResult>;
+
+type MemoryCompactionOptions = {
+  maxMessages: number;
+  keepRecentUserTurns?: number;
+  compactor: MemoryCompactor;
+  conflictRetries?: number;
+};
+
+type SummaryMemoryCompactorOptions = {
+  instructions?: string;
+  maxTokens?: number;
+  temperature?: number;
+};
+
+function createSummaryMemoryCompactor(
+  model: CompletionModel,
+  options?: SummaryMemoryCompactorOptions,
+): MemoryCompactor;
+
+function isMemoryCompactionSummary(message: Message): boolean;
+```
+
+Purpose: summarize older user-led turns when stored history plus the incoming prompt exceeds
+`maxMessages`. The default retained tail is four user-led turns, conflict commits are retried once,
+and the built-in summary model is limited to 1,024 output tokens.
+
+Return behavior: the summary is stored as a tagged system message, retained rows preserve their
+original storage metadata, and summary-model usage is included in the agent run total.
+`isMemoryCompactionSummary(...)` detects the framework metadata tag.
+
+Notable errors: `MemoryCompactionError` reports compactor failures or empty summaries.
+`MemoryCompactionConflictError` reports exhausted concurrent-update retries. Configuring compaction
+with a custom store that lacks `MemoryCompactionStore` throws during agent construction.
 
 ## Registration and Session Types
 

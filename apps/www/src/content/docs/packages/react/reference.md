@@ -342,14 +342,22 @@ Purpose: named chat transport helper built on the fetch transport.
 ## initialMessagesFromMemory
 
 ```ts
-function initialMessagesFromMemory(messages: Message[]): UIMessage[];
+type InitialMessagesFromMemoryOptions = {
+  includeCompactionSummaries?: boolean;
+};
+
+function initialMessagesFromMemory(
+  messages: Message[],
+  options?: InitialMessagesFromMemoryOptions,
+): UIMessage[];
 ```
 
 Purpose: convert stored Anvia memory messages into the `UIMessage[]` shape accepted by
 `useChat({ initialMessages })`.
 
 The helper adapts core message data for React state. It does not depend on a specific database
-schema.
+schema. Tagged durable memory-compaction summaries are hidden by default; set
+`includeCompactionSummaries: true` to expose them as system UI messages.
 
 ## useChat
 

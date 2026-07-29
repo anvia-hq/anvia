@@ -16,6 +16,8 @@ pnpm add @anvia/gemini @anvia/core
 
 Set `GEMINI_API_KEY` in the server environment. Keep provider keys on the server side; browser clients should call an application route that owns the model request.
 For Vertex AI, construct `GeminiClient` with `vertexai: true`, `project`, and `location` instead of an API key.
+Vertex mode uses Google Application Default Credentials. Set `GOOGLE_APPLICATION_CREDENTIALS` for a
+service-account JSON file, or pass trusted credentials through `googleAuthOptions`.
 
 ## Minimum setup
 
@@ -35,6 +37,19 @@ const agent = new AgentBuilder("assistant", model)
 
 const response = await agent.prompt("Summarize this ticket.").send();
 console.log(response.output);
+```
+
+## Vertex AI setup
+
+```ts
+const client = new GeminiClient({
+  vertexai: true,
+  project: process.env.GOOGLE_CLOUD_PROJECT,
+  location: "us-central1",
+  googleAuthOptions: {
+    credentials: serviceAccountJson,
+  },
+});
 ```
 
 

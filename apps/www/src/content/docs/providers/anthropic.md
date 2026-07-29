@@ -1,13 +1,13 @@
 ---
 title: Anthropic provider
-description: Use @anvia/anthropic for Claude completion models.
+description: Use @anvia/anthropic for Claude through Anthropic or Google Vertex AI.
 section: providers
 sidebar:
   group: Provider guides
   order: 20
 ---
 
-`@anvia/anthropic` adapts Anthropic's SDK to Anvia completion and model-listing contracts. Use it when agents, extractors, or pipelines should run on Claude models through Anthropic.
+`@anvia/anthropic` adapts Anthropic's direct and Vertex AI SDKs to Anvia completion contracts. Use it when agents, extractors, or pipelines should run on Claude through Anthropic or Google Vertex AI.
 
 ## Install
 
@@ -28,6 +28,38 @@ export const anthropic = new AnthropicClient({
 `AnthropicClient` accepts `apiKey`, `baseUrl`, or an already-created Anthropic SDK `client`.
 
 Use [Anthropic-Compatible](/docs/providers/anthropic-compatible) when you want to target a non-Anthropic endpoint through the Anvia Anthropic adapter.
+
+## Vertex AI
+
+Use `AnthropicVertexClient` for Claude on Google Vertex AI:
+
+```ts
+import { AnthropicVertexClient } from "@anvia/anthropic";
+
+const vertexAnthropic = new AnthropicVertexClient({
+  projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
+  region: process.env.CLOUD_ML_REGION ?? "global",
+});
+
+const model = vertexAnthropic.completionModel("claude-sonnet-5");
+```
+
+The client follows Google Application Default Credentials. For a service-account JSON file, set
+`GOOGLE_APPLICATION_CREDENTIALS` in the server environment:
+
+```sh
+export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/service-account.json"
+export ANTHROPIC_VERTEX_PROJECT_ID="my-gcp-project"
+export CLOUD_ML_REGION="global"
+```
+
+`AnthropicVertexClientOptions` also accepts the official SDK's `googleAuth`, `authClient`,
+`accessToken`, and transport options. Use a preconfigured `GoogleAuth` or `AuthClient` when the
+application needs explicit credentials or service-account impersonation. Validate externally
+supplied credential configuration before using it, and never commit credential JSON.
+
+Vertex AI does not expose Anthropic's Models API, so `AnthropicVertexClient` intentionally has no
+`listModels()` method.
 
 ## Completion Models
 
@@ -64,8 +96,9 @@ The adapter preserves structured thinking and reasoning content in assistant his
 const models = await anthropic.listModels();
 ```
 
-Listing returns normalized model inventory when the upstream API supports it. Use it for admin visibility, not capability proof.
+Listing returns normalized model inventory from the direct Anthropic API. Use it for admin visibility, not capability proof.
 
 ## Exports
 
-The root package exports `AnthropicClient`, `AnthropicCompletionModel`, `AnthropicClientOptions`, and the `anthropic` namespace.
+The root package exports `AnthropicClient`, `AnthropicVertexClient`, `AnthropicCompletionModel`,
+their option and model-name types, and the `anthropic` namespace.

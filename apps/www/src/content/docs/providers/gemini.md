@@ -37,6 +37,32 @@ const vertexGemini = new GeminiClient({
 
 `GeminiClient` requires either `apiKey` for Gemini API mode or `vertexai: true` with `project` and `location` for Vertex AI mode. You can also pass an already-created `GoogleGenAI` `client`.
 
+### Vertex authentication
+
+Vertex mode uses Google Application Default Credentials. Point ADC at a service-account JSON file
+with `GOOGLE_APPLICATION_CREDENTIALS`:
+
+```sh
+export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/service-account.json"
+```
+
+For trusted credential objects or a preconfigured auth client, pass the Google SDK's
+`googleAuthOptions`:
+
+```ts
+const vertexGemini = new GeminiClient({
+  vertexai: true,
+  project: process.env.GOOGLE_CLOUD_PROJECT,
+  location: "us-central1",
+  googleAuthOptions: {
+    credentials: serviceAccountJson,
+  },
+});
+```
+
+Validate externally supplied credential configuration before using it, and never commit credential
+JSON or service-account keys.
+
 ## Completion Models
 
 ```ts

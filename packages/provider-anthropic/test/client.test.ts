@@ -1,12 +1,17 @@
 import { Message } from "@anvia/core/completion";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
   AnthropicClient,
   AnthropicCompletionModel,
   type AnthropicCompletionModelName,
+  AnthropicVertexClient,
 } from "../src/index";
 
 describe("Anthropic client", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("types known Anthropic models while accepting custom model strings", () => {
     const anthropic = new AnthropicClient({
       client: { messages: { create: async () => ({}) } } as never,
@@ -50,6 +55,89 @@ describe("Anthropic client", () => {
         max_tokens: 1024,
         messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
       },
+    ]);
+  });
+
+  it("creates an Anthropic Vertex client with explicit routing and authentication", () => {
+    const anthropic = new AnthropicVertexClient({
+      projectId: "project",
+      region: "global",
+      authClient: {} as never,
+    });
+
+    expect(anthropic.client.projectId).toBe("project");
+    expect(anthropic.client.region).toBe("global");
+    expect(anthropic.completionModel().defaultModel).toBe("claude-sonnet-5");
+    anthropic.completionModel("claude-sonnet-4-5@20250929");
+  });
+
+  it("allows the Anthropic Vertex SDK to resolve project and region from the environment", () => {
+    vi.stubEnv("ANTHROPIC_VERTEX_PROJECT_ID", "environment-project");
+    vi.stubEnv("CLOUD_ML_REGION", "us");
+
+    const anthropic = new AnthropicVertexClient({
+      authClient: {} as never,
+    });
+
+    expect(anthropic.client.projectId).toBe("environment-project");
+    expect(anthropic.client.region).toBe("us");
+  });
+
+  it("uses an injected Anthropic Vertex Messages client for completions and streams", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const anthropic = new AnthropicVertexClient({
+      client: {
+        messages: {
+          create: async (params: Record<string, unknown>) => {
+            calls.push(params);
+            if (params.stream === true) {
+              return asyncIterable([
+                { type: "message_start", message: { id: "msg_stream" } },
+                {
+                  type: "content_block_delta",
+                  index: 0,
+                  delta: { type: "text_delta", text: "streamed" },
+                },
+                {
+                  type: "message_stop",
+                  message: {
+                    id: "msg_stream",
+                    content: [{ type: "text", text: "streamed" }],
+                  },
+                },
+              ]);
+            }
+            return {
+              id: "msg_completion",
+              content: [{ type: "text", text: "completed" }],
+              usage: {},
+            };
+          },
+        },
+      } as never,
+    });
+    const model = anthropic.completionModel();
+    const request = {
+      chatHistory: [Message.user("hello")],
+      documents: [],
+      tools: [],
+    };
+
+    await expect(model.completion(request)).resolves.toMatchObject({
+      messageId: "msg_completion",
+    });
+    const events = [];
+    for await (const event of model.streamCompletion(request)) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      response: { messageId: "msg_stream" },
+    });
+    expect(calls).toEqual([
+      expect.objectContaining({ model: "claude-sonnet-5" }),
+      expect.objectContaining({ model: "claude-sonnet-5", stream: true }),
     ]);
   });
 

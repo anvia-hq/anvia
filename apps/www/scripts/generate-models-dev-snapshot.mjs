@@ -199,6 +199,25 @@ function anviaUsageMarkdown(provider) {
   const modelId = provider.models[0]?.id ?? "provider/model";
   const envName = provider.env?.[0] ?? "PROVIDER_API_KEY";
 
+  if (provider.id === "google-vertex-anthropic") {
+    return [
+      "## Anvia Usage",
+      "",
+      "This provider maps to `AnthropicVertexClient` in the Anvia Anthropic provider. Use the [Anthropic provider](/docs/providers/anthropic#vertex-ai) guide for authentication and production setup.",
+      "",
+      "```ts",
+      'import { AnthropicVertexClient } from "@anvia/anthropic";',
+      "",
+      "const client = new AnthropicVertexClient({",
+      "  projectId: process.env.GOOGLE_VERTEX_PROJECT,",
+      '  region: process.env.GOOGLE_VERTEX_LOCATION ?? "global",',
+      "});",
+      "",
+      `const model = client.completionModel(${JSON.stringify(modelId)});`,
+      "```",
+    ].join("\n");
+  }
+
   if (provider.category === "openai-compatible" && provider.api !== undefined) {
     return [
       "## Anvia Usage",
@@ -338,6 +357,9 @@ function anviaSdkLabel(provider) {
   if (provider.id === "anthropic") {
     return "@anvia/anthropic";
   }
+  if (provider.id === "google-vertex-anthropic") {
+    return "@anvia/anthropic";
+  }
   if (provider.id === "google" || provider.id === "google-vertex") {
     return "@anvia/gemini";
   }
@@ -351,6 +373,7 @@ function anviaSdkLabel(provider) {
 function compatibilityLabel(provider) {
   if (provider.id === "openai") return "First-party OpenAI endpoint";
   if (provider.id === "anthropic") return "First-party Anthropic endpoint";
+  if (provider.id === "google-vertex-anthropic") return "Anthropic on Vertex AI";
   if (provider.id === "google") return "Gemini API provider";
   if (provider.id === "google-vertex") return "Vertex AI provider";
   if (provider.id === "mistral") return "First-party Mistral endpoint";

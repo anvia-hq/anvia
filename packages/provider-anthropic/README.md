@@ -52,9 +52,62 @@ const client = new AnthropicClient({
 const model = client.completionModel("provider/model-name");
 ```
 
+## Vertex AI
+
+Use Anthropic's official Vertex SDK through `AnthropicVertexClient`:
+
+```ts
+import { AnthropicVertexClient } from "@anvia/anthropic";
+
+const client = new AnthropicVertexClient({
+  projectId: "my-gcp-project",
+  region: "global",
+});
+
+const model = client.completionModel("claude-sonnet-5");
+```
+
+The client follows the standard Google authentication flow. It reads
+`ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` when project and region are omitted, and supports
+Application Default Credentials such as `GOOGLE_APPLICATION_CREDENTIALS`:
+
+```sh
+export ANTHROPIC_VERTEX_PROJECT_ID="my-gcp-project"
+export CLOUD_ML_REGION="global"
+export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/service-account.json"
+```
+
+For custom authentication, pass the official SDK's `googleAuth`, `authClient`, or `accessToken`
+options:
+
+```sh
+pnpm add google-auth-library
+```
+
+```ts
+import { GoogleAuth } from "google-auth-library";
+
+const client = new AnthropicVertexClient({
+  projectId: "my-gcp-project",
+  region: "global",
+  googleAuth: new GoogleAuth({
+    credentials: serviceAccountJson,
+    scopes: "https://www.googleapis.com/auth/cloud-platform",
+  }),
+});
+```
+
+You can also pass a preconfigured `authClient`, including impersonated credentials. Validate
+externally supplied credential configurations before using them, and never commit credential JSON
+or service-account keys.
+
+Vertex AI does not expose Anthropic's Models API, so `AnthropicVertexClient` intentionally does not
+provide `listModels()`.
+
 ## Exports
 
 - `AnthropicClient`
+- `AnthropicVertexClient`
 - `AnthropicCompletionModel`
 - `anthropic`
 

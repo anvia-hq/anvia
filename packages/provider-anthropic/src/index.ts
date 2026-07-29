@@ -4,5 +4,7 @@ export {
   type AnthropicClientOptions,
   AnthropicCompletionModel,
   type AnthropicCompletionModelName,
+  AnthropicVertexClient,
+  type AnthropicVertexClientOptions,
   type KnownAnthropicCompletionModelName,
 } from "./anthropic/index";

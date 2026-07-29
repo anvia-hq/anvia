@@ -1,4 +1,5 @@
 import type { Anthropic } from "@anthropic-ai/sdk";
+import type { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import {
   AssistantContent,
   type AssistantContent as AssistantContentType,
@@ -46,7 +47,7 @@ export class AnthropicCompletionModel
   };
 
   constructor(
-    private readonly client: Anthropic,
+    private readonly client: Anthropic | AnthropicVertex,
     readonly defaultModel: AnthropicCompletionModelName = "claude-sonnet-4-20250514",
   ) {}
 

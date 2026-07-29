@@ -3,7 +3,7 @@ import {
   type ModelListingClient,
   ModelListingError,
 } from "@anvia/core/model-listing";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, type GoogleGenAIOptions } from "@google/genai";
 import { GeminiCompletionModel } from "./completion";
 import { GeminiEmbeddingModel, type GeminiEmbeddingModelOptions } from "./embedding";
 import {
@@ -31,6 +31,7 @@ type VertexClientOptions = {
   vertexai: true;
   project?: string | undefined;
   location?: string | undefined;
+  googleAuthOptions?: GoogleGenAIOptions["googleAuthOptions"];
   apiKey?: never;
 };
 
@@ -87,12 +88,15 @@ export class GeminiClient implements ModelListingClient {
   }
 }
 
-export function toGoogleGenAIOptions(options: GeminiClientOptions): Record<string, unknown> {
+export function toGoogleGenAIOptions(options: GeminiClientOptions): GoogleGenAIOptions {
   if (options.vertexai === true) {
     return {
       vertexai: true,
       project: requireOption(options.project, "project", "Vertex Gemini"),
       location: requireOption(options.location, "location", "Vertex Gemini"),
+      ...(options.googleAuthOptions === undefined
+        ? {}
+        : { googleAuthOptions: options.googleAuthOptions }),
     };
   }
 

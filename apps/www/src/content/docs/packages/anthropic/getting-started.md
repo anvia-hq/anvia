@@ -16,6 +16,10 @@ pnpm add @anvia/anthropic @anvia/core
 
 Set `ANTHROPIC_API_KEY` in the server environment. Keep provider keys on the server side; browser clients should call an application route that owns the model request.
 
+For Vertex AI, use `AnthropicVertexClient` with Google Application Default Credentials. Set
+`GOOGLE_APPLICATION_CREDENTIALS`, `ANTHROPIC_VERTEX_PROJECT_ID`, and `CLOUD_ML_REGION`, or pass the
+official Vertex SDK authentication options explicitly.
+
 ## Minimum setup
 
 ```ts
@@ -35,6 +39,22 @@ const agent = new AgentBuilder("assistant", model)
 const response = await agent.prompt("Summarize this ticket.").send();
 console.log(response.output);
 ```
+
+## Vertex AI setup
+
+```ts
+import { AnthropicVertexClient } from "@anvia/anthropic";
+
+const client = new AnthropicVertexClient({
+  projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
+  region: process.env.CLOUD_ML_REGION ?? "global",
+});
+
+const model = client.completionModel("claude-sonnet-5");
+```
+
+`AnthropicVertexClient` supports completions and streaming, but not model listing because Vertex AI
+does not expose Anthropic's Models API.
 
 ## Next step
 

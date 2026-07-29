@@ -1,5 +1,12 @@
 # @anvia/gemini
 
+## 0.3.0
+
+### Minor Changes
+
+- fa8a398: Add first-class Google Vertex authentication options for Gemini and a dedicated Anthropic Vertex
+  client with Application Default Credentials and custom Google authentication support.
+
 ## 0.2.14
 
 ### Patch Changes

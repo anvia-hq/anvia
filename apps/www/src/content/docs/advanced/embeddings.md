@@ -113,6 +113,35 @@ const embedded = await embedDocuments(embeddingModel, documents, {
 
 Start conservatively. Higher concurrency can improve backfill speed, but it can also trigger provider rate limits or overload local embedding models.
 
+## Hybrid Dense + Sparse Embeddings
+
+For hybrid retrieval (for example Qdrant RRF), embed documents with both a dense model and a
+sparse model such as FastEmbed SPLADE++:
+
+```ts
+import { embedHybridDocuments } from "@anvia/core/embeddings";
+import {
+  createFastEmbedEmbeddingModel,
+  createFastEmbedSparseEmbeddingModel,
+} from "@anvia/fastembed";
+
+const dense = await createFastEmbedEmbeddingModel();
+const sparse = await createFastEmbedSparseEmbeddingModel();
+
+const embedded = await embedHybridDocuments(
+  { dense, sparse },
+  articles,
+  {
+    id: (article) => article.slug,
+    content: (article) => `${article.title}\n${article.body}`,
+  },
+);
+```
+
+Each result includes `embeddings` and aligned `sparseEmbeddings`. Use a hybrid-capable store such
+as `@anvia/qdrant` with `connect({ hybrid: true })` and `index({ dense, sparse, fusion: "rrf" })`.
+The search request shape stays `{ query, topK }` — fusion happens inside the store.
+
 ## Metadata Values
 
 Vector metadata supports strings, numbers, booleans, and `null`. Avoid nested objects in metadata. If you need richer source information, keep it in your product database and store a stable id in vector metadata.

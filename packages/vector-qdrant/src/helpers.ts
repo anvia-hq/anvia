@@ -44,15 +44,33 @@ export function parseDocument<T>(document: unknown): T {
 
 export function qdrantPoints<T, Metadata extends VectorMetadata>(
   document: EmbeddedDocument<T, Metadata>,
+  options: {
+    hybrid?: boolean | undefined;
+    denseVectorName?: string | undefined;
+    sparseVectorName?: string | undefined;
+  } = {},
 ): Array<{
   id: string;
-  vector: number[];
+  vector: number[] | Record<string, unknown>;
   payload: Record<string, unknown>;
 }> {
   if (document.embeddings.length === 0) {
     throw new Error(`Document ${document.id} has no embeddings`);
   }
   assertNoReservedMetadata(document.metadata);
+
+  const hybrid = options.hybrid === true;
+  if (hybrid) {
+    const sparseEmbeddings = document.sparseEmbeddings;
+    if (sparseEmbeddings === undefined || sparseEmbeddings.length !== document.embeddings.length) {
+      throw new Error(
+        `Hybrid Qdrant upsert requires sparseEmbeddings aligned with embeddings for document ${document.id}`,
+      );
+    }
+  }
+
+  const denseName = options.denseVectorName ?? "dense";
+  const sparseName = options.sparseVectorName ?? "sparse";
 
   return document.embeddings.map((embedding, index) => {
     const logicalId =
@@ -62,9 +80,30 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
       [documentPayloadKey]: serializeDocument(document.document),
     };
     Object.assign(payload, document.metadata);
+
+    if (!hybrid) {
+      return {
+        id: pointId(logicalId),
+        vector: embedding.vector,
+        payload,
+      };
+    }
+
+    const sparse = document.sparseEmbeddings?.[index];
+    if (sparse === undefined) {
+      throw new Error(
+        `Hybrid Qdrant upsert requires sparseEmbeddings aligned with embeddings for document ${document.id}`,
+      );
+    }
     return {
       id: pointId(logicalId),
-      vector: embedding.vector,
+      vector: {
+        [denseName]: embedding.vector,
+        [sparseName]: {
+          indices: sparse.vector.indices,
+          values: sparse.vector.values,
+        },
+      },
       payload,
     };
   });

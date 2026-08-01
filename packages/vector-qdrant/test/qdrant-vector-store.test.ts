@@ -1,3 +1,4 @@
+import type { SparseEmbedding, SparseEmbeddingModel } from "@anvia/core/embeddings";
 import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
 import { vectorFilter } from "@anvia/core/vector-store";
 import { describe, expect, it } from "vitest";
@@ -12,11 +13,25 @@ class MockEmbeddingModel implements EmbeddingModel {
   }
 }
 
+class MockSparseEmbeddingModel implements SparseEmbeddingModel {
+  async embedTexts(texts: string[]): Promise<SparseEmbedding[]> {
+    return texts.map((document) => ({
+      document,
+      vector: { indices: [1, 2], values: [0.5, 0.25] },
+    }));
+  }
+
+  async embedQuery(query: string): Promise<SparseEmbedding> {
+    return { document: query, vector: { indices: [7], values: [1] } };
+  }
+}
+
 class MockQdrantClient {
   readonly collections = new Set<string>();
   readonly creates: unknown[] = [];
   readonly upserts: unknown[] = [];
   readonly searches: unknown[] = [];
+  readonly queries: unknown[] = [];
 
   async getCollection(collectionName: string): Promise<unknown> {
     if (!this.collections.has(collectionName)) {
@@ -67,6 +82,23 @@ class MockQdrantClient {
       },
     ];
   }
+
+  async query(collectionName: string, options: unknown): Promise<unknown> {
+    this.queries.push({ collectionName, options });
+    return {
+      points: [
+        {
+          id: "point1",
+          score: 1.2,
+          payload: {
+            __anvia_document_id: "doc1",
+            __anvia_document: JSON.stringify({ title: "Cat guide" }),
+            kind: "animal",
+          },
+        },
+      ],
+    };
+  }
 }
 
 describe("QdrantVectorStore", () => {
@@ -88,6 +120,143 @@ describe("QdrantVectorStore", () => {
         },
       },
     });
+  });
+
+  it("creates a hybrid collection with named dense and sparse vectors", async () => {
+    const client = new MockQdrantClient();
+
+    await QdrantVectorStore.connect({
+      client,
+      collectionName: "hybrid_docs",
+      vectorSize: 2,
+      hybrid: true,
+    });
+
+    expect(client.creates[0]).toEqual({
+      collectionName: "hybrid_docs",
+      options: {
+        vectors: {
+          dense: {
+            size: 2,
+            distance: "Cosine",
+          },
+        },
+        sparse_vectors: {
+          sparse: {},
+        },
+      },
+    });
+  });
+
+  it("upserts hybrid points and searches with prefetch RRF", async () => {
+    const client = new MockQdrantClient();
+    const dense = new MockEmbeddingModel();
+    const sparse = new MockSparseEmbeddingModel();
+    const store = await QdrantVectorStore.connect<{ title: string }>({
+      client,
+      collectionName: "hybrid_docs",
+      vectorSize: 2,
+      hybrid: true,
+    });
+
+    await store.upsertDocuments([
+      {
+        id: "doc1",
+        document: { title: "Cat guide" },
+        embeddings: [{ document: "Cat guide", vector: [1, 0] }],
+        sparseEmbeddings: [
+          { document: "Cat guide", vector: { indices: [1, 2], values: [0.5, 0.25] } },
+        ],
+        metadata: { kind: "animal" },
+      },
+    ]);
+
+    const results = await store.index({ dense, sparse }).search({
+      query: "cat",
+      topK: 2,
+    });
+
+    expect(client.upserts[0]).toMatchObject({
+      options: {
+        points: [
+          {
+            vector: {
+              dense: [1, 0],
+              sparse: { indices: [1, 2], values: [0.5, 0.25] },
+            },
+          },
+        ],
+      },
+    });
+    expect(client.searches).toEqual([]);
+    expect(client.queries[0]).toMatchObject({
+      collectionName: "hybrid_docs",
+      options: {
+        prefetch: [
+          { query: [1, 0], using: "dense", limit: 10 },
+          { query: { indices: [7], values: [1] }, using: "sparse", limit: 10 },
+        ],
+        query: { fusion: "rrf" },
+        limit: 2,
+        with_payload: true,
+      },
+    });
+    expect(results).toEqual([
+      {
+        id: "doc1",
+        score: 1.2,
+        document: { title: "Cat guide" },
+        metadata: { kind: "animal" },
+      },
+    ]);
+  });
+
+  it("rejects hybrid index on dense-only collections", async () => {
+    const client = new MockQdrantClient();
+    const store = await QdrantVectorStore.connect({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    expect(() =>
+      store.index({
+        dense: new MockEmbeddingModel(),
+        sparse: new MockSparseEmbeddingModel(),
+      }),
+    ).toThrow("hybrid: true");
+  });
+
+  it("rejects dense-only index on hybrid collections", async () => {
+    const client = new MockQdrantClient();
+    const store = await QdrantVectorStore.connect({
+      client,
+      collectionName: "hybrid_docs",
+      vectorSize: 2,
+      hybrid: true,
+    });
+
+    expect(() => store.index(new MockEmbeddingModel())).toThrow("dense, sparse");
+  });
+
+  it("rejects hybrid upsert without sparse embeddings", async () => {
+    const client = new MockQdrantClient();
+    const store = await QdrantVectorStore.connect({
+      client,
+      collectionName: "hybrid_docs",
+      vectorSize: 2,
+      hybrid: true,
+    });
+
+    await expect(
+      store.upsertDocuments([
+        {
+          id: "doc1",
+          document: "missing sparse",
+          embeddings: [{ document: "missing sparse", vector: [1, 0] }],
+        },
+      ]),
+    ).rejects.toThrow("sparseEmbeddings");
   });
 
   it("respects createIfMissing false", async () => {

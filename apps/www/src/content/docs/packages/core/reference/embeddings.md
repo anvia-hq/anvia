@@ -30,6 +30,33 @@ Return behavior: `embedTexts(...)` must return one embedding per input text.
 
 Notable errors: provider implementations may throw; helpers throw when the returned count does not match the input count.
 
+## SparseEmbeddingModel and SparseEmbedding
+
+```ts
+type SparseVector = {
+  indices: number[];
+  values: number[];
+};
+
+type SparseEmbedding = {
+  document: string;
+  vector: SparseVector;
+};
+
+interface SparseEmbeddingModel {
+  readonly maxBatchSize?: number;
+  embedTexts(texts: string[]): Promise<SparseEmbedding[]>;
+  embedQuery(query: string): Promise<SparseEmbedding>;
+}
+```
+
+Purpose: sparse lexical/neural encoder contract for hybrid retrieval channels.
+
+Return behavior: `embedTexts(...)` encodes passages for indexing; `embedQuery(...)` encodes
+search queries and may use a different representation for models such as SPLADE.
+
+Notable errors: helpers throw when returned sparse embedding counts do not match input length.
+
 ## EmbeddedDocument and Metadata
 
 ```ts
@@ -41,12 +68,14 @@ type EmbeddedDocument<T, Metadata extends VectorMetadata = VectorMetadata> = {
   document: T;
   metadata?: Metadata;
   embeddings: Embedding[];
+  sparseEmbeddings?: SparseEmbedding[];
 };
 ```
 
 Purpose: document plus one or more embeddings for vector stores.
 
-Return behavior: produced by `embedDocuments(...)`.
+Return behavior: produced by `embedDocuments(...)` or `embedHybridDocuments(...)`. When sparse
+vectors are present they must be aligned 1:1 with `embeddings` by chunk index.
 
 Notable errors: none directly.
 
@@ -59,11 +88,16 @@ type EmbedDocumentsOptions<T, Metadata extends VectorMetadata = VectorMetadata> 
   metadata?: (document: T, index: number) => Metadata | undefined;
   concurrency?: number;
 };
+
+type EmbedHybridDocumentsOptions = {
+  dense: EmbeddingModel;
+  sparse: SparseEmbeddingModel;
+};
 ```
 
 Purpose: controls how typed documents become embedding inputs and metadata.
 
-Return behavior: used by `embedDocuments(...)`.
+Return behavior: used by `embedDocuments(...)` and `embedHybridDocuments(...)`.
 
 Notable errors: invalid content callbacks can throw and fail embedding.
 
@@ -72,16 +106,31 @@ Notable errors: invalid content callbacks can throw and fail embedding.
 ```ts
 function embedText(model: EmbeddingModel, text: string): Promise<Embedding>;
 function embedTexts(model: EmbeddingModel, texts: string[]): Promise<Embedding[]>;
+function embedSparseTexts(
+  model: SparseEmbeddingModel,
+  texts: string[],
+): Promise<SparseEmbedding[]>;
+function embedSparseQuery(
+  model: SparseEmbeddingModel,
+  query: string,
+): Promise<SparseEmbedding>;
 function embedDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
   model: EmbeddingModel,
   documents: T[],
   options: EmbedDocumentsOptions<T, Metadata>,
 ): Promise<Array<EmbeddedDocument<T, Metadata>>>;
+function embedHybridDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
+  models: { dense: EmbeddingModel; sparse: SparseEmbeddingModel },
+  documents: T[],
+  options: EmbedDocumentsOptions<T, Metadata>,
+): Promise<Array<EmbeddedDocument<T, Metadata>>>;
 ```
 
-Purpose: normalize batching, concurrency, and count validation.
+Purpose: batch dense and sparse embedding helpers for typed documents.
 
-Return behavior: `embedTexts([])` returns `[]`; `embedText(...)` returns the first embedding from a single-item call.
+Return behavior: `embedTexts([])` returns `[]`; `embedText(...)` returns the first embedding from a
+single-item call; `embedHybridDocuments(...)` attaches aligned dense and sparse vectors for hybrid
+stores such as Qdrant RRF search.
 
 Notable errors: throws when the embedding model returns no embedding or a mismatched embedding count.
 

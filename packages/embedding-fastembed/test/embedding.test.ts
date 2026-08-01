@@ -17,6 +17,12 @@ vi.mock("fastembed", () => ({
   FlagEmbedding: {
     init: initMock,
   },
+  SparseEmbeddingModel: {
+    SpladePPEnV1: "prithivida/Splade_PP_en_v1",
+  },
+  SparseTextEmbedding: {
+    init: vi.fn(),
+  },
 }));
 
 describe("FastEmbedEmbeddingModel", () => {

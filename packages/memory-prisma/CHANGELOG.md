@@ -1,5 +1,13 @@
 # @anvia/memory-prisma
 
+## 0.3.0
+
+### Minor Changes
+
+- eff30fb: Add opt-in, model-generated durable memory compaction with atomic conflict detection, official
+  database-adapter support, aggregate usage accounting, and React hydration that hides synthetic
+  summary messages by default.
+
 ## 0.2.4
 
 ### Patch Changes

@@ -86,7 +86,7 @@ type PrismaMemoryStoreOptions = {
 
 Purpose: configure scope generation, failed-run storage, message validation, and transaction options.
 
-Return behavior: defaults to `errors: "store"`, `validateMessages: true`, and a scope using `sessionId` plus `userId`. Use `scope.metadataKeys` to add tenant or workspace ids to the database key. Use `scope.includeUserId: false` only when a memory thread should intentionally be shared across users. Use a `scope(context)` function when the app owns a custom canonical memory key.
+Return behavior: defaults to `errors: "store"`, `validateMessages: true`, and a scope using `sessionId` plus `userId`. Use `scope.metadataKeys` to add tenant or workspace ids to the database key. Use `scope.includeUserId: false` only when a memory thread should intentionally be shared across users. Use a `scope(context)` function when the app owns a custom canonical memory key. Compaction commits always open interactive transactions with `isolationLevel: "Serializable"` so concurrent prefix replacements cannot both pass the revision check; other store writes still use the caller-provided `transaction` options as-is.
 
 ## Delegate Types
 

@@ -20,6 +20,7 @@ import type {
   PrismaMemoryScopeOptions,
   PrismaMemorySessionCreateData,
   PrismaMemoryStoreOptions,
+  PrismaMemoryTransactionOptions,
 } from "./types.js";
 
 const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
@@ -210,47 +211,60 @@ export class PrismaMemoryStore implements MemoryStore {
     this.validateInputMessages([input.summary]);
     assertCompactedMessageCount(input.compactedMessageCount);
 
-    return this.delegates.transaction(async (tx) => {
-      const rows = (await tx.messages.findMany({
-        where: { memorySession: { scopeKey: this.scopeKey(input.context) } },
-        orderBy: { position: "asc" },
-        select: { id: true, memorySessionId: true, position: true, message: true },
-      })) as PrismaCompactionMessageRow[];
-      if (
-        compactionRevision(rows) !== input.revision ||
-        input.compactedMessageCount > rows.length
-      ) {
-        return "conflict";
-      }
-      const boundary = rows[input.compactedMessageCount - 1];
-      if (boundary === undefined || tx.messages.deleteMany === undefined) {
-        return "conflict";
-      }
-      const deleted = await tx.messages.deleteMany({
-        where: {
-          id: {
-            in: rows.slice(0, input.compactedMessageCount).map((row) => row.id),
+    try {
+      return await this.delegates.transaction(async (tx) => {
+        const rows = (await tx.messages.findMany({
+          where: { memorySession: { scopeKey: this.scopeKey(input.context) } },
+          orderBy: { position: "asc" },
+          select: { id: true, memorySessionId: true, position: true, message: true },
+        })) as PrismaCompactionMessageRow[];
+        if (
+          compactionRevision(rows) !== input.revision ||
+          input.compactedMessageCount > rows.length
+        ) {
+          return "conflict";
+        }
+        const boundary = rows[input.compactedMessageCount - 1];
+        if (boundary === undefined) {
+          return "conflict";
+        }
+        if (tx.messages.deleteMany === undefined) {
+          throw new Error(
+            "PrismaMemoryStore transaction did not provide a messages deleteMany delegate.",
+          );
+        }
+        const deleted = await tx.messages.deleteMany({
+          where: {
+            id: {
+              in: rows.slice(0, input.compactedMessageCount).map((row) => row.id),
+            },
           },
-        },
-      });
-      if (deleted.count !== input.compactedMessageCount) {
+        });
+        if (deleted.count !== input.compactedMessageCount) {
+          // Throw so Prisma rolls back the deleteMany before mapping to "conflict".
+          throw new MemoryCompactionConflictAbort();
+        }
+        const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+        await tx.messages.createMany({
+          data: [
+            {
+              memorySessionId: session.id,
+              runId: input.runId,
+              turn: 0,
+              position: boundary.position,
+              role: input.summary.role,
+              message: input.summary,
+            },
+          ],
+        });
+        return "committed";
+      }, compactionTransactionOptions(this.options.transaction));
+    } catch (error) {
+      if (error instanceof MemoryCompactionConflictAbort) {
         return "conflict";
       }
-      const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
-      await tx.messages.createMany({
-        data: [
-          {
-            memorySessionId: session.id,
-            runId: input.runId,
-            turn: 0,
-            position: boundary.position,
-            role: input.summary.role,
-            message: input.summary,
-          },
-        ],
-      });
-      return "committed";
-    }, this.options.transaction);
+      throw error;
+    }
   }
 
   private async listConversations(
@@ -469,6 +483,24 @@ function hasInspectionDelegates(delegates: PrismaMemoryDelegates): boolean {
 
 function compactionRevision(rows: PrismaCompactionMessageRow[]): string {
   return JSON.stringify(rows.map((row) => row.id));
+}
+
+function compactionTransactionOptions(
+  options: PrismaMemoryStoreOptions["transaction"],
+): PrismaMemoryTransactionOptions {
+  return {
+    ...options,
+    // Compaction is a read/check/delete/insert sequence without advisory locks.
+    // Serializable prevents concurrent commits from both passing the revision check.
+    isolationLevel: "Serializable",
+  };
+}
+
+class MemoryCompactionConflictAbort extends Error {
+  constructor() {
+    super("Memory compaction conflict");
+    this.name = "MemoryCompactionConflictAbort";
+  }
 }
 
 function assertCompactedMessageCount(value: number): void {

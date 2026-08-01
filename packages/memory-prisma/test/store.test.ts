@@ -322,7 +322,13 @@ class FakePrisma {
       agentMemoryError: this.agentMemoryError,
       $transaction: async (operation, options) => {
         this.transactionOptions.push(options);
-        return operation(this.client);
+        const snapshot = this.snapshotState();
+        try {
+          return await operation(this.client);
+        } catch (error) {
+          this.restoreState(snapshot);
+          throw error;
+        }
       },
     };
   }
@@ -334,9 +340,40 @@ class FakePrisma {
       errors: this.agentMemoryError,
       transaction: async (operation, options) => {
         this.transactionOptions.push(options);
-        return operation(this.delegates);
+        const snapshot = this.snapshotState();
+        try {
+          return await operation(this.delegates);
+        } catch (error) {
+          this.restoreState(snapshot);
+          throw error;
+        }
       },
     };
+  }
+
+  private snapshotState() {
+    return {
+      sessions: new Map(
+        [...this.sessions.entries()].map(([key, session]) => [key, { ...session }]),
+      ),
+      messages: this.messages.map((message) => ({ ...message })),
+      errors: this.errors.map((error) => ({ ...error })),
+      nextSessionId: this.nextSessionId,
+      nextMessageId: this.nextMessageId,
+    };
+  }
+
+  private restoreState(snapshot: ReturnType<FakePrisma["snapshotState"]>) {
+    this.sessions.clear();
+    for (const [key, session] of snapshot.sessions) {
+      this.sessions.set(key, session);
+    }
+    this.messages.length = 0;
+    this.messages.push(...snapshot.messages);
+    this.errors.length = 0;
+    this.errors.push(...snapshot.errors);
+    this.nextSessionId = snapshot.nextSessionId;
+    this.nextMessageId = snapshot.nextMessageId;
   }
 }
 
@@ -476,6 +513,7 @@ describe("PrismaMemoryStore", () => {
         runId: "memory-compaction:2",
       }),
     ).resolves.toBe("committed");
+    expect(prisma.transactionOptions.at(-1)).toEqual({ isolationLevel: "Serializable" });
     await expect(store.load(context)).resolves.toEqual([
       summary,
       Message.user("recent"),
@@ -501,6 +539,146 @@ describe("PrismaMemoryStore", () => {
         },
       ],
     });
+  });
+
+  it("throws when the transaction client omits messages.deleteMany", async () => {
+    const prisma = new FakePrisma();
+    const context = { sessionId: "thread-missing-delete", userId: "user-1" };
+    const seed = createPrismaMemoryStore(prisma.client);
+    await seed.append({
+      context,
+      runId: "run-1",
+      turn: 1,
+      messages: [Message.user("old"), Message.assistant("old answer"), Message.user("recent")],
+    });
+    const snapshot = await seed.compaction?.load(context);
+    if (snapshot === undefined) {
+      throw new Error("Expected Prisma compaction capability");
+    }
+
+    const store = PrismaMemoryStore.fromDelegates({
+      sessions: prisma.agentMemorySession,
+      messages: prisma.agentMemoryMessage,
+      errors: prisma.agentMemoryError,
+      transaction: async (operation, options) => {
+        prisma.transactionOptions.push(options);
+        return operation({
+          sessions: prisma.agentMemorySession,
+          messages: {
+            findMany: prisma.agentMemoryMessage.findMany,
+            findFirst: prisma.agentMemoryMessage.findFirst,
+            createMany: prisma.agentMemoryMessage.createMany,
+          },
+          transaction: async (nested) =>
+            nested({
+              sessions: prisma.agentMemorySession,
+              messages: {
+                findMany: prisma.agentMemoryMessage.findMany,
+                findFirst: prisma.agentMemoryMessage.findFirst,
+                createMany: prisma.agentMemoryMessage.createMany,
+              },
+              transaction: async () => {
+                throw new Error("Nested transactions are not supported.");
+              },
+            }),
+        });
+      },
+    });
+    const compaction = store.compaction;
+    if (compaction === undefined) {
+      throw new Error("Expected Prisma compaction capability");
+    }
+
+    await expect(
+      compaction.commit({
+        context,
+        revision: snapshot.revision,
+        compactedMessageCount: 2,
+        summary: Message.system("summary") as Extract<MessageType, { role: "system" }>,
+        runId: "memory-compaction:missing-delete",
+      }),
+    ).rejects.toThrow("messages deleteMany delegate");
+  });
+
+  it("rolls back prefix deletes when deleteMany reports a count mismatch", async () => {
+    const prisma = new FakePrisma();
+    const context = { sessionId: "thread-delete-mismatch", userId: "user-1" };
+    const seed = createPrismaMemoryStore(prisma.client);
+    await seed.append({
+      context,
+      runId: "run-1",
+      turn: 1,
+      messages: [Message.user("old"), Message.assistant("old answer"), Message.user("recent")],
+    });
+    const before = await seed.load(context);
+    const snapshot = await seed.compaction?.load(context);
+    if (snapshot === undefined) {
+      throw new Error("Expected Prisma compaction capability");
+    }
+
+    const store = PrismaMemoryStore.fromDelegates({
+      sessions: prisma.agentMemorySession,
+      messages: {
+        ...prisma.agentMemoryMessage,
+        deleteMany: async () => ({ count: 0 }),
+      },
+      errors: prisma.agentMemoryError,
+      transaction: async (operation, options) => {
+        prisma.transactionOptions.push(options);
+        const sessions = new Map(
+          [...prisma.sessions.entries()].map(([key, session]) => [key, { ...session }]),
+        );
+        const messages = prisma.messages.map((message) => ({ ...message }));
+        try {
+          return await operation({
+            sessions: prisma.agentMemorySession,
+            messages: {
+              findMany: prisma.agentMemoryMessage.findMany,
+              findFirst: prisma.agentMemoryMessage.findFirst,
+              createMany: prisma.agentMemoryMessage.createMany,
+              deleteMany: async () => {
+                prisma.messages.length = 0;
+                return { count: 0 };
+              },
+            },
+            errors: prisma.agentMemoryError,
+            transaction: async (nested) =>
+              nested({
+                sessions: prisma.agentMemorySession,
+                messages: prisma.agentMemoryMessage,
+                errors: prisma.agentMemoryError,
+                transaction: async () => {
+                  throw new Error("Nested transactions are not supported.");
+                },
+              }),
+          });
+        } catch (error) {
+          prisma.sessions.clear();
+          for (const [key, session] of sessions) {
+            prisma.sessions.set(key, session);
+          }
+          prisma.messages.length = 0;
+          prisma.messages.push(...messages);
+          throw error;
+        }
+      },
+    });
+    const compaction = store.compaction;
+    if (compaction === undefined) {
+      throw new Error("Expected Prisma compaction capability");
+    }
+
+    await expect(
+      compaction.commit({
+        context,
+        revision: snapshot.revision,
+        compactedMessageCount: 2,
+        summary: Message.system("summary") as Extract<MessageType, { role: "system" }>,
+        runId: "memory-compaction:delete-mismatch",
+      }),
+    ).resolves.toBe("conflict");
+    await expect(seed.load(context)).resolves.toEqual(before);
+    expect(prisma.transactionOptions.at(-1)).toEqual({ isolationLevel: "Serializable" });
   });
 
   it("inspects conventional Prisma sessions when read delegates are available", async () => {

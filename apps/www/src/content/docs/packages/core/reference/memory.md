@@ -219,15 +219,22 @@ function isMemoryCompactionSummary(message: Message): boolean;
 
 Purpose: summarize older user-led turns when stored history plus the incoming prompt exceeds
 `maxMessages`. The default retained tail is four user-led turns, conflict commits are retried once,
-and the built-in summary model is limited to 1,024 output tokens.
+and the built-in summary model is limited to 1,024 output tokens. Compacting turns invoke the
+summary model on the hot path before the main completion; a conflict retry regenerates the summary.
+
+Compaction runs only when there are more user messages than `keepRecentUserTurns`. Transcripts that
+exceed `maxMessages` without enough user-led turns to retain that tail are left unchanged.
 
 Return behavior: the summary is stored as a tagged system message, retained rows preserve their
 original storage metadata, and summary-model usage is included in the agent run total.
-`isMemoryCompactionSummary(...)` detects the framework metadata tag.
+`isMemoryCompactionSummary(...)` detects the framework metadata tag. Long inline document text is
+truncated in the summary prompt; binary media bodies and raw reasoning are omitted.
 
-Notable errors: `MemoryCompactionError` reports compactor failures or empty summaries.
-`MemoryCompactionConflictError` reports exhausted concurrent-update retries. Configuring compaction
-with a custom store that lacks `MemoryCompactionStore` throws during agent construction.
+Notable errors: `MemoryCompactionError` reports compactor failures or empty summaries and fails the
+prompt before the main model call. `MemoryCompactionConflictError` reports exhausted
+concurrent-update retries. Configuring compaction with a custom store that lacks
+`MemoryCompactionStore` throws during agent construction. Prisma stores omit the capability when the
+messages delegate does not expose `deleteMany`.
 
 ## Registration and Session Types
 

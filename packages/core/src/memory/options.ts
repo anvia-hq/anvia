@@ -1,3 +1,4 @@
+import { assertNonnegativeInteger, assertPositiveInteger } from "./assert";
 import type { MemoryOptions, ResolvedMemoryOptions } from "./types";
 
 export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemoryOptions {
@@ -21,16 +22,4 @@ export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemor
     };
   }
   return resolved;
-}
-
-function assertPositiveInteger(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError(`${name} must be a positive integer.`);
-  }
-}
-
-function assertNonnegativeInteger(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new RangeError(`${name} must be a nonnegative integer.`);
-  }
 }

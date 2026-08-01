@@ -16,15 +16,9 @@ class PromptRequest<M extends CompletionModel = CompletionModel> {
   maxTurns(maxTurns: number): this;
   withCompletionRetries(options?: CompletionRetryOptions): this;
   withHook(hook: PromptHook): this;
-  /** @deprecated Use withHook instead. */
-  requestHook(hook: PromptHook): this;
   withToolConcurrency(concurrency: number): this;
   withMiddleware(middleware: AgentMiddleware): this;
   withMiddlewares(middlewares: AgentMiddleware[]): this;
-  /** @deprecated Use withMiddleware instead. */
-  withToolMiddleware(middleware: ToolMiddleware): this;
-  /** @deprecated Use withMiddlewares instead. */
-  withToolMiddlewares(middlewares: ToolMiddleware[]): this;
   withTrace(trace: AgentTraceOptions): this;
   approvals(options: ToolApprovalsOptions): this;
   send(): Promise<PromptResponse>;

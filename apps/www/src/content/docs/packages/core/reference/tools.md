@@ -169,17 +169,9 @@ interface AgentMiddleware {
   onCompletionResponse?(args: CompletionResponseMiddlewareArgs): CompletionResponseMiddlewareResult | Promise<CompletionResponseMiddlewareResult>;
   onToolInput?(args: ToolInputMiddlewareArgs): ToolInputMiddlewareResult | Promise<ToolInputMiddlewareResult>;
   onToolOutput?(args: ToolOutputMiddlewareArgs): ToolOutputMiddlewareResult | Promise<ToolOutputMiddlewareResult>;
-  /** @deprecated Use onToolOutput instead. */
-  onResult?(args: ToolResultMiddlewareArgs): string | undefined | Promise<string | undefined>;
 }
 
 function createMiddleware(middleware: AgentMiddleware): AgentMiddleware;
-
-/** @deprecated Use AgentMiddleware instead. */
-type ToolMiddleware = AgentMiddleware;
-
-/** @deprecated Use createMiddleware instead. */
-function createToolMiddleware(middleware: ToolMiddleware): ToolMiddleware;
 ```
 
 Purpose: transform model requests, model responses, tool inputs, and tool outputs during agent runs.

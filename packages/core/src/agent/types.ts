@@ -38,10 +38,6 @@ export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   dynamicContexts?: DynamicContextRegistration[] | undefined;
   dynamicTools?: DynamicToolRegistration[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
-  /**
-   * @deprecated Use `middlewares` instead.
-   */
-  toolMiddlewares?: AgentMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;
   eventStore?: AgentEventStoreRegistration | undefined;
 };

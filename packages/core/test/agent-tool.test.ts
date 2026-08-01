@@ -221,7 +221,6 @@ describe("Agent.asTool", () => {
 
     expect(agent.staticContext).toEqual([{ id: "static_doc_0", text: "initial context" }]);
     expect(agent.middlewares).toHaveLength(0);
-    expect(agent.toolMiddlewares).toBe(agent.middlewares);
     expect(agent.observers).toHaveLength(0);
     expect(agent.guardrails).toHaveLength(0);
     expect(agent.dynamicContexts).toHaveLength(0);

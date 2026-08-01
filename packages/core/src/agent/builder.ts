@@ -17,7 +17,7 @@ import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from ".
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { SkillSet } from "../skills";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
-import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
+import type { AgentMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
@@ -172,20 +172,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   middlewares(middlewares: AgentMiddleware[]): this {
     this.middlewareRegistrations.push(...middlewares);
     return this;
-  }
-
-  /**
-   * @deprecated Use `middleware` instead.
-   */
-  toolMiddleware(middleware: ToolMiddleware): this {
-    return this.middleware(middleware);
-  }
-
-  /**
-   * @deprecated Use `middlewares` instead.
-   */
-  toolMiddlewares(middlewares: ToolMiddleware[]): this {
-    return this.middlewares(middlewares);
   }
 
   observe(observer: AgentObserver, options: ObserveOptions = {}): this {

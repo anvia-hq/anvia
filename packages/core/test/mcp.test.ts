@@ -9,8 +9,8 @@ import {
   type CompletionStreamEvent,
   connectMcp,
   createHook,
+  createMiddleware,
   createTool,
-  createToolMiddleware,
   type McpClient,
   type McpConnection,
   type McpServer,
@@ -330,9 +330,9 @@ describe("MCP tools", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model)
       .mcp([fakeMcpServer()])
-      .toolMiddleware(
-        createToolMiddleware({
-          onResult({ result }) {
+      .middleware(
+        createMiddleware({
+          onToolOutput({ result }) {
             return `mcp:${result}`;
           },
         }),

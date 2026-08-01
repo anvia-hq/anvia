@@ -138,12 +138,11 @@ export type {
   CompletionResponseMiddlewareResult,
   ToolInputMiddlewareArgs,
   ToolInputMiddlewareResult,
-  ToolMiddleware,
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
   ToolResultMiddlewareArgs,
 } from "./tool/middleware";
-export { createMiddleware, createToolMiddleware } from "./tool/middleware";
+export { createMiddleware } from "./tool/middleware";
 export type {
   CreateUIAttachment,
   UIAttachment,

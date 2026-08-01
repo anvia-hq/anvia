@@ -10,7 +10,6 @@ import {
   createHook,
   createMiddleware,
   createTool,
-  createToolMiddleware,
   MaxTurnsError,
   Message,
   PromptCancelledError,
@@ -438,8 +437,8 @@ describe("PromptRequest", () => {
       response([AssistantContent.text("done")]),
     ]);
     const events: string[] = [];
-    const outputGate = createToolMiddleware({
-      onResult({ toolName, result, originalResult, toolCallId }) {
+    const outputGate = createMiddleware({
+      onToolOutput({ toolName, result, originalResult, toolCallId }) {
         events.push(`${toolName}:${toolCallId}:${originalResult}`);
         return `stored:${result}`;
       },
@@ -451,7 +450,7 @@ describe("PromptRequest", () => {
     });
     const agent = new AgentBuilder("test-agent", model)
       .tool(addTool)
-      .toolMiddleware(outputGate)
+      .middleware(outputGate)
       .hook(hook)
       .build();
 
@@ -528,9 +527,9 @@ describe("PromptRequest", () => {
     const seen: string[] = [];
     const agent = new AgentBuilder("test-agent", model)
       .tool(screenshotTool)
-      .toolMiddleware(
-        createToolMiddleware({
-          onResult({ result, structuredResult, originalStructuredResult }) {
+      .middleware(
+        createMiddleware({
+          onToolOutput({ result, structuredResult, originalStructuredResult }) {
             seen.push(
               `${result}:${structuredResult?.length ?? 0}:${originalStructuredResult?.length ?? 0}`,
             );
@@ -561,32 +560,32 @@ describe("PromptRequest", () => {
       response([AssistantContent.text("done")]),
     ]);
     const events: string[] = [];
-    const keep = createToolMiddleware({
-      onResult({ result, originalResult }) {
+    const keep = createMiddleware({
+      onToolOutput({ result, originalResult }) {
         events.push(`keep:${result}:${originalResult}`);
         return undefined;
       },
     });
-    const agentAppend = createToolMiddleware({
-      onResult({ result, originalResult }) {
+    const agentAppend = createMiddleware({
+      onToolOutput({ result, originalResult }) {
         events.push(`agent:${result}:${originalResult}`);
         return `${result}:agent`;
       },
     });
-    const requestAppend = createToolMiddleware({
-      onResult({ result, originalResult }) {
+    const requestAppend = createMiddleware({
+      onToolOutput({ result, originalResult }) {
         events.push(`request:${result}:${originalResult}`);
         return `${result}:request`;
       },
     });
     const agent = new AgentBuilder("test-agent", model)
       .tool(addTool)
-      .toolMiddlewares([keep, agentAppend])
+      .middlewares([keep, agentAppend])
       .build();
 
-    await expect(
-      agent.prompt("add").withToolMiddleware(requestAppend).send(),
-    ).resolves.toMatchObject({ output: "done" });
+    await expect(agent.prompt("add").withMiddleware(requestAppend).send()).resolves.toMatchObject({
+      output: "done",
+    });
 
     expect(events).toEqual(["keep:7:7", "agent:7:7", "request:7:agent:7"]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -775,9 +774,9 @@ describe("PromptRequest", () => {
             },
           }),
         ])
-        .withToolMiddleware(
-          createToolMiddleware({
-            onResult({ result }) {
+        .withMiddleware(
+          createMiddleware({
+            onToolOutput({ result }) {
               return `${result}:legacy`;
             },
           }),
@@ -1401,7 +1400,7 @@ describe("PromptRequest", () => {
     });
   });
 
-  it("uses requestHook for one request instead of the agent hook", async () => {
+  it("uses withHook for one request instead of the agent hook", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("request hook used")]),
@@ -1418,7 +1417,7 @@ describe("PromptRequest", () => {
     });
     const agent = new AgentBuilder("test-agent", model).tool(addTool).hook(agentHook).build();
 
-    await expect(agent.prompt("add").requestHook(requestHook).send()).resolves.toMatchObject({
+    await expect(agent.prompt("add").withHook(requestHook).send()).resolves.toMatchObject({
       output: "request hook used",
     });
 

@@ -61,10 +61,6 @@ export class Agent<M extends CompletionModel = CompletionModel> {
   readonly dynamicContexts: DynamicContextRegistration[];
   readonly dynamicTools: DynamicToolRegistration[];
   readonly middlewares: AgentMiddleware[];
-  /**
-   * @deprecated Use `middlewares` instead.
-   */
-  readonly toolMiddlewares: AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
   readonly eventStore: AgentEventStoreRegistration | undefined;
 
@@ -89,8 +85,7 @@ export class Agent<M extends CompletionModel = CompletionModel> {
     this.guardrails = [...(options.guardrails ?? [])];
     this.dynamicContexts = [...(options.dynamicContexts ?? [])];
     this.dynamicTools = [...(options.dynamicTools ?? [])];
-    this.middlewares = [...(options.middlewares ?? options.toolMiddlewares ?? [])];
-    this.toolMiddlewares = this.middlewares;
+    this.middlewares = [...(options.middlewares ?? [])];
     this.memory = options.memory;
     this.eventStore = options.eventStore;
   }

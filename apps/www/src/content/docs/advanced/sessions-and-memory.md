@@ -108,6 +108,50 @@ export const memoryStore: MemoryStore = {
 
 Use `context.metadata` for safe routing data such as tenant id, region, or product surface. Do not trust the session id alone for authorization.
 
+To enable automatic compaction on a custom store, expose the optional `compaction` capability. `load`
+returns the ordered transcript plus an opaque revision. `commit` must check that revision and replace
+the compacted prefix with the summary in one transaction, returning `"conflict"` when another writer
+changed the session first:
+
+```ts
+import type { MemoryCompactionStore, MemoryStore } from "@anvia/core";
+
+const compaction: MemoryCompactionStore = {
+  async load(context) {
+    const rows = await readOrderedMessageRows(context);
+    return {
+      revision: JSON.stringify(rows.map((row) => row.id)),
+      messages: rows.map((row) => row.message),
+    };
+  },
+  async commit(input) {
+    return replacePrefixIfRevisionMatches({
+      context: input.context,
+      revision: input.revision,
+      compactedMessageCount: input.compactedMessageCount,
+      summary: input.summary,
+      runId: input.runId,
+    });
+  },
+};
+
+export const memoryStore: MemoryStore = {
+  compaction,
+  async load(context) {
+    return (await compaction.load(context)).messages;
+  },
+  async append(input) {
+    await appendMessages(input);
+  },
+  async clear(context) {
+    await clearStoredSessionMessages(context.sessionId, context.userId);
+  },
+};
+```
+
+`AgentBuilder.memory(store, { compaction })` throws during construction when compaction options are
+set but `store.compaction` is missing.
+
 ## Save Policies
 
 Memory supports three save policies:
@@ -144,9 +188,18 @@ const agent = new AgentBuilder("support", model)
 ```
 
 When the stored history plus the incoming prompt exceeds `maxMessages`, core summarizes the older
-prefix and retains the configured number of complete user-led turns. The summary is committed
-atomically before the main model call. Prisma, Drizzle, Postgres, and SQLite memory stores support
-this operation without an additional database migration.
+prefix and retains the configured number of complete user-led turns. Start `maxMessages` near about
+half of the message budget you want in the main prompt, and keep three to six recent user turns so
+the model still sees the live thread. The summary is committed atomically before the main model
+call, so compacting turns pay an extra summary-model round-trip on the hot path. Prisma, Drizzle,
+Postgres, and SQLite memory stores support this operation without an additional database migration.
+Prisma enables the capability when the messages delegate exposes `deleteMany`; a partial client
+without that method leaves `store.compaction` undefined and agent construction fails if compaction
+options are configured.
+
+Compaction only runs when there are more user messages than `keepRecentUserTurns`. If the transcript
+already exceeds `maxMessages` but does not contain enough user-led turns to retain a complete tail,
+core leaves the history unchanged rather than summarizing into the live turn.
 
 Compaction is durable housekeeping rather than audit storage. It remains committed if the
 subsequent agent run fails, while the event store and observability integrations retain run-level
@@ -154,10 +207,16 @@ records. Summary-model tokens are included in the run's aggregate usage.
 
 The summary model receives a text representation of the older transcript. Use a provider whose
 data handling is appropriate for that conversation. Binary image and document bodies and raw
-reasoning are omitted, but visible messages, tool arguments, and textual tool results are included.
+reasoning are omitted, long inline document text is truncated, and visible messages, tool
+arguments, and textual tool results are included.
 
-Concurrent updates are checked with an opaque store revision. Core reloads and regenerates once
-after a conflict, then raises `MemoryCompactionConflictError` rather than overwriting newer memory.
+Concurrent updates are checked with an opaque store revision. Core reloads and regenerates the
+summary after a conflict (one retry by default), which can mean a second summary-model call, then
+raises `MemoryCompactionConflictError` rather than overwriting newer memory. Empty summaries,
+summary-model failures, and exhausted conflicts fail the prompt before the main completion. Catch
+`MemoryCompactionError` in product code if you want a fallback such as retrying without compaction;
+otherwise let the error surface so operators see the failed housekeeping turn.
+
 Custom stores must expose the optional `MemoryCompactionStore` capability before they can be used
 with this option.
 

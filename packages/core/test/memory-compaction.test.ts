@@ -220,6 +220,75 @@ describe("memory compaction", () => {
     expect(store.commitCalls).toHaveLength(0);
   });
 
+  it("does not compact when there are too few user turns to retain", async () => {
+    const history = [
+      Message.assistant("opening"),
+      Message.toolResult("call-1", "tool output"),
+      Message.assistant("follow-up"),
+      Message.user("only user turn"),
+      Message.assistant("answer"),
+      Message.assistant("extra"),
+    ];
+    const store = new CompactingMemoryStore(history);
+    const compactor = vi.fn(async () => ({ summary: "unused" }));
+    const model = new QueueModel([response("done")]);
+    const agent = new AgentBuilder("test", model)
+      .memory(store, {
+        compaction: {
+          maxMessages: 4,
+          keepRecentUserTurns: 2,
+          compactor,
+        },
+      })
+      .build();
+
+    await agent.session(context.sessionId).prompt("next").send();
+
+    expect(history.length + 1).toBeGreaterThan(4);
+    expect(compactor).not.toHaveBeenCalled();
+    expect(store.commitCalls).toHaveLength(0);
+    expect(store.snapshot().filter(isMemoryCompactionSummary)).toHaveLength(0);
+  });
+
+  it("truncates long inline document text in the summary prompt", async () => {
+    const longDocument = "D".repeat(2_500);
+    const history = [
+      Message.user([
+        {
+          type: "document",
+          source: { type: "text", text: longDocument, mediaType: "text/plain" },
+        },
+      ]),
+      Message.assistant("noted"),
+      Message.user("second"),
+      Message.assistant("second answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ];
+    const store = new CompactingMemoryStore(history);
+    const summaryModel = new QueueModel([response("summary")]);
+    const mainModel = new QueueModel([response("done")]);
+    const agent = new AgentBuilder("test", mainModel)
+      .memory(store, {
+        compaction: {
+          maxMessages: 6,
+          keepRecentUserTurns: 1,
+          compactor: createSummaryMemoryCompactor(summaryModel),
+        },
+      })
+      .build();
+
+    await agent.session(context.sessionId).prompt("next").send();
+
+    const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
+    const serialized =
+      summaryPrompt?.role === "user" && summaryPrompt.content[0]?.type === "text"
+        ? summaryPrompt.content[0].text
+        : "";
+    expect(serialized).toContain("[truncated 500 chars]");
+    expect(serialized).not.toContain(longDocument);
+  });
+
   it("retries one stale commit and counts both summary calls", async () => {
     const history = [
       Message.user("first"),

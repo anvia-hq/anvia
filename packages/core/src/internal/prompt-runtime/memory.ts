@@ -184,16 +184,7 @@ export class PromptRequestMemory {
           messages: prefix,
         });
       } catch (error) {
-        if (error instanceof MemoryCompactionError) {
-          throw new MemoryCompactionError(error.message, {
-            cause: error,
-            usage: error.usage === undefined ? usage : Usage.add(usage, error.usage),
-          });
-        }
-        throw new MemoryCompactionError("Memory compactor failed.", {
-          cause: error,
-          usage,
-        });
+        throw remappedCompactorError(error, usage);
       }
       if (result.usage !== undefined) {
         usage = Usage.add(usage, result.usage);
@@ -255,8 +246,42 @@ function compactedPrefixLength(
   const userMessageIndexes = messages.flatMap((message, index) =>
     message.role === "user" ? [index] : [],
   );
+  // Keep the recent user-led tail intact. If there are not enough user messages to retain a
+  // complete tail, skip compaction even when the transcript already exceeds maxMessages.
   if (userMessageIndexes.length <= keepRecentUserTurns) {
     return 0;
   }
   return userMessageIndexes[userMessageIndexes.length - keepRecentUserTurns] ?? 0;
+}
+
+function remappedCompactorError(error: unknown, usage: ReturnType<typeof Usage.empty>): Error {
+  if (error instanceof MemoryCompactionError) {
+    const mergedUsage =
+      error.usage === undefined
+        ? usage
+        : isEmptyUsage(usage)
+          ? error.usage
+          : Usage.add(usage, error.usage);
+    if (mergedUsage === error.usage || (error.usage === undefined && isEmptyUsage(usage))) {
+      return error;
+    }
+    return new MemoryCompactionError(error.message, {
+      cause: error,
+      usage: mergedUsage,
+    });
+  }
+  return new MemoryCompactionError("Memory compactor failed.", {
+    cause: error,
+    usage,
+  });
+}
+
+function isEmptyUsage(usage: ReturnType<typeof Usage.empty>): boolean {
+  return (
+    usage.inputTokens === 0 &&
+    usage.outputTokens === 0 &&
+    usage.totalTokens === 0 &&
+    usage.cachedInputTokens === 0 &&
+    usage.cacheCreationInputTokens === 0
+  );
 }

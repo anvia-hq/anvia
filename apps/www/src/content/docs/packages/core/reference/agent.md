@@ -35,10 +35,6 @@ class AgentBuilder<M extends CompletionModel = CompletionModel> {
   hook(hook: PromptHook): this;
   middleware(middleware: AgentMiddleware): this;
   middlewares(middlewares: AgentMiddleware[]): this;
-  /** @deprecated Use middleware instead. */
-  toolMiddleware(middleware: ToolMiddleware): this;
-  /** @deprecated Use middlewares instead. */
-  toolMiddlewares(middlewares: ToolMiddleware[]): this;
   observe(observer: AgentObserver, options?: ObserveOptions): this;
   approvals(options: ToolApprovalsOptions): this;
   guardrails(policies: GuardrailPolicy | GuardrailPolicy[]): this;

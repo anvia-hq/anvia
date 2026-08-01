@@ -354,7 +354,7 @@ function handleStreamingAgentRun(
     props.questionRuntime.createHook(questionContext),
   );
   if (effectiveHook !== undefined) {
-    run.request.requestHook(effectiveHook);
+    run.request.withHook(effectiveHook);
   }
 
   const runStream = mergeRunAndApprovalEvents(run.request.stream(), runtimeEvents);
@@ -442,7 +442,7 @@ async function startBufferedSessionRun(
   if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
   run.request.approvals(props.approvalRuntime.createApprovals(approvalContext));
   if (effectiveHook !== undefined) {
-    run.request.requestHook(effectiveHook);
+    run.request.withHook(effectiveHook);
   }
 }
 

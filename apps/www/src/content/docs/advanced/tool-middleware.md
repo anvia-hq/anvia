@@ -143,11 +143,11 @@ const requireSmallResponses = createMiddleware({
 
 Use this for cross-cutting request policy. Avoid large hidden prompt rewrites; stable behavior belongs in instructions, tools, or the runner.
 
-## Deprecations
+## Removed aliases
 
-Use `createMiddleware`, `.middleware(...)`, `.middlewares(...)`, `.withMiddleware(...)`, and `onToolOutput`.
+Prefer `createMiddleware`, `.middleware(...)`, `.middlewares(...)`, `.withMiddleware(...)` / `.withMiddlewares(...)`, `.withHook(...)`, and `onToolOutput`.
 
-Older names such as `createToolMiddleware`, `.toolMiddleware(...)`, `.toolMiddlewares(...)`, `.withToolMiddleware(...)`, and `onResult` are still present for compatibility, but new docs and application code should use the middleware names.
+The older aliases (`createToolMiddleware`, `ToolMiddleware`, `.toolMiddleware(...)`, `.toolMiddlewares(...)`, `.withToolMiddleware(...)`, `.withToolMiddlewares(...)`, `.requestHook(...)`, and `onResult`) have been removed.
 
 ## Middleware Checklist
 

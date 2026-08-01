@@ -10,7 +10,7 @@ import {
   type CompletionResponse,
   type CompletionStreamEvent,
   createHook,
-  createToolMiddleware,
+  createMiddleware,
   loadSkills,
   Message,
   SkillValidationError,
@@ -286,9 +286,9 @@ describe("skills", () => {
     const events: string[] = [];
     const agent = new AgentBuilder("test-agent", model)
       .skills(skillSet)
-      .toolMiddleware(
-        createToolMiddleware({
-          onResult({ result }) {
+      .middleware(
+        createMiddleware({
+          onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
@@ -335,9 +335,9 @@ describe("skills", () => {
     const events: string[] = [];
     const agent = new AgentBuilder("test-agent", model)
       .tools(skillSet.tools)
-      .toolMiddleware(
-        createToolMiddleware({
-          onResult({ result }) {
+      .middleware(
+        createMiddleware({
+          onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },

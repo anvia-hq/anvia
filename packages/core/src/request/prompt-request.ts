@@ -59,7 +59,7 @@ import type {
 } from "../observability/types";
 import { toReadableStream } from "../streaming";
 import type { ToolApprovalsOptions } from "../tool";
-import type { AgentMiddleware, ToolMiddleware } from "../tool/middleware";
+import type { AgentMiddleware } from "../tool/middleware";
 import { MaxTurnsError, PromptCancelledError } from "./errors";
 import {
   type CompletionRetryOptions,
@@ -139,13 +139,6 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  /**
-   * @deprecated Use `withHook` instead.
-   */
-  requestHook(hook: PromptHook): this {
-    return this.withHook(hook);
-  }
-
   withToolConcurrency(concurrency: number): this {
     this.concurrency = Math.max(1, concurrency);
     return this;
@@ -159,20 +152,6 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
   withMiddlewares(middlewares: AgentMiddleware[]): this {
     this.requestMiddlewares.push(...middlewares);
     return this;
-  }
-
-  /**
-   * @deprecated Use `withMiddleware` instead.
-   */
-  withToolMiddleware(middleware: ToolMiddleware): this {
-    return this.withMiddleware(middleware);
-  }
-
-  /**
-   * @deprecated Use `withMiddlewares` instead.
-   */
-  withToolMiddlewares(middlewares: ToolMiddleware[]): this {
-    return this.withMiddlewares(middlewares);
   }
 
   withTrace(trace: AgentTraceOptions): this {

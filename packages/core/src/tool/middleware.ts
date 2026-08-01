@@ -78,28 +78,10 @@ export interface AgentMiddleware<RawResponse = unknown> {
   ): MaybePromise<CompletionResponseMiddlewareResult<RawResponse>>;
   onToolInput?(args: ToolInputMiddlewareArgs): MaybePromise<ToolInputMiddlewareResult>;
   onToolOutput?(args: ToolOutputMiddlewareArgs): MaybePromise<ToolOutputMiddlewareResult>;
-  /**
-   * @deprecated Use `onToolOutput` instead.
-   */
-  onResult?(args: ToolResultMiddlewareArgs): string | undefined | Promise<string | undefined>;
 }
-
-/**
- * @deprecated Use `AgentMiddleware` instead.
- */
-export type ToolMiddleware<RawResponse = unknown> = AgentMiddleware<RawResponse>;
 
 export function createMiddleware<RawResponse = unknown>(
   middleware: AgentMiddleware<RawResponse>,
 ): AgentMiddleware<RawResponse> {
-  return middleware;
-}
-
-/**
- * @deprecated Use `createMiddleware` instead.
- */
-export function createToolMiddleware<RawResponse = unknown>(
-  middleware: ToolMiddleware<RawResponse>,
-): ToolMiddleware<RawResponse> {
   return middleware;
 }

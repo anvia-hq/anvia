@@ -349,16 +349,6 @@ export class ToolCallExecutor {
         }
         replaced = true;
       }
-      const legacyReplacement = await middleware.onResult?.({
-        ...args,
-        result,
-        structuredResult,
-      });
-      if (legacyReplacement !== undefined) {
-        result = legacyReplacement;
-        structuredResult = undefined;
-        replaced = true;
-      }
     }
     return replaced ? (structuredResult ?? result) : undefined;
   }

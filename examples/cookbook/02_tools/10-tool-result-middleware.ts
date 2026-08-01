@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentBuilder } from "@anvia/core/agent";
-import { createTool, createToolMiddleware } from "@anvia/core/tool";
+import { createMiddleware, createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -24,8 +24,8 @@ const longReportTool = createTool({
       .repeat(20),
 });
 
-const outputGate = createToolMiddleware({
-  async onResult({ toolName, result, internalCallId }) {
+const outputGate = createMiddleware({
+  async onToolOutput({ toolName, result, internalCallId }) {
     if (result.length <= 1_000) {
       return undefined;
     }
@@ -50,7 +50,7 @@ const agentModel = client.completionModel("gpt-5.5");
 const agent = new AgentBuilder("agent", agentModel)
   .instructions("Use tools when useful. Summarize tool results briefly.")
   .tool(longReportTool)
-  .toolMiddleware(outputGate)
+  .middleware(outputGate)
   .defaultMaxTurns(2)
   .build();
 

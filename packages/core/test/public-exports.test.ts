@@ -67,11 +67,11 @@ describe("public exports", () => {
 
   it("exposes middleware helpers from public entrypoints", () => {
     expect("createMiddleware" in publicCore).toBe(true);
-    expect("createToolMiddleware" in publicCore).toBe(true);
+    expect("createToolMiddleware" in publicCore).toBe(false);
     expect("createMiddleware" in publicAgent).toBe(false);
     expect("createToolMiddleware" in publicAgent).toBe(false);
     expect("createMiddleware" in tool).toBe(true);
-    expect("createToolMiddleware" in tool).toBe(true);
+    expect("createToolMiddleware" in tool).toBe(false);
   });
 
   it("keeps runtime Agent and AgentSession out of public entrypoints", () => {

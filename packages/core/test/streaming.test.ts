@@ -18,7 +18,6 @@ import {
   createMiddleware,
   createObserver,
   createTool,
-  createToolMiddleware,
   defineGuardrailPolicy,
   defineOutputGuardrail,
   getAssistantGenerationMetadata,
@@ -979,9 +978,9 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model)
       .tool(addTool)
-      .toolMiddleware(
-        createToolMiddleware({
-          onResult({ result }) {
+      .middleware(
+        createMiddleware({
+          onToolOutput({ result }) {
             return `stored:${result}`;
           },
         }),

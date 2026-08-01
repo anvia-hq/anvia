@@ -54,6 +54,12 @@ console.log(results);
 
 ## Hybrid search (dense + sparse RRF)
 
+Also install `@anvia/fastembed` and `fastembed` when using local SPLADE++ sparse embeddings:
+
+```sh
+pnpm add @anvia/fastembed fastembed
+```
+
 ```ts
 import { embedHybridDocuments } from "@anvia/core/embeddings";
 import {

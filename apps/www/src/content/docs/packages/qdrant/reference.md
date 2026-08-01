@@ -48,13 +48,14 @@ type QdrantHybridIndexOptions = {
   prefetchLimit?: number;
 };
 
+type QdrantIndexOptions = EmbeddingModel | QdrantHybridIndexOptions;
+
 class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetadata> {
   static connect<T, Metadata extends VectorMetadata = VectorMetadata>(
     options: QdrantVectorStoreConnectOptions,
   ): Promise<QdrantVectorStore<T, Metadata>>;
   upsertDocuments(documents: Array<EmbeddedDocument<T, Metadata>>): Promise<void>;
-  index(model: EmbeddingModel): QdrantVectorIndex<T, Metadata>;
-  index(options: QdrantHybridIndexOptions): QdrantVectorIndex<T, Metadata>;
+  index(options: QdrantIndexOptions): QdrantVectorIndex<T, Metadata>;
 }
 ```
 

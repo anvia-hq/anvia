@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import type { EmbeddedDocument, VectorMetadata } from "@anvia/core/embeddings";
 import type { VectorSearchResult } from "@anvia/core/vector-store";
 import {
+  defaultDenseVectorName,
+  defaultSparseVectorName,
   documentIdPayloadKey,
   documentPayloadKey,
   type QdrantClientLike,
@@ -69,8 +71,8 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
     }
   }
 
-  const denseName = options.denseVectorName ?? "dense";
-  const sparseName = options.sparseVectorName ?? "sparse";
+  const denseName = options.denseVectorName ?? defaultDenseVectorName;
+  const sparseName = options.sparseVectorName ?? defaultSparseVectorName;
 
   return document.embeddings.map((embedding, index) => {
     const logicalId =

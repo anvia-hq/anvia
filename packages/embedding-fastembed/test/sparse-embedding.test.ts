@@ -64,4 +64,20 @@ describe("FastEmbedSparseEmbeddingModel", () => {
     expect(model.model).toBe("prithivida/Splade_PP_en_v1");
     expect(initMock).toHaveBeenCalled();
   });
+
+  it("rejects bigint typed-array sparse vectors", async () => {
+    const runtime: FastEmbedSparseRuntime = {
+      passageEmbed: vi.fn(async function* () {
+        yield [{ indices: new BigInt64Array([1n]), values: new Float32Array([1]) }];
+      }),
+      queryEmbed: vi.fn(async () => ({
+        indices: new BigUint64Array([1n]),
+        values: new Float32Array([1]),
+      })),
+    };
+    const model = new FastEmbedSparseEmbeddingModel(runtime);
+
+    await expect(model.embedTexts(["alpha"])).rejects.toThrow("invalid vector");
+    await expect(model.embedQuery("search")).rejects.toThrow("invalid vector");
+  });
 });

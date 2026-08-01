@@ -220,6 +220,50 @@ describe("memory compaction", () => {
     expect(store.commitCalls).toHaveLength(0);
   });
 
+  it("validates compaction options and defaults keepRecentUserTurns to 4", () => {
+    const store = new CompactingMemoryStore([]);
+    const model = new QueueModel([]);
+    const compactor = async () => ({ summary: "summary" });
+
+    expect(() =>
+      new AgentBuilder("test", model).memory(store, {
+        compaction: { maxMessages: 0, compactor },
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      new AgentBuilder("test", model).memory(store, {
+        compaction: { maxMessages: 4, keepRecentUserTurns: 0, compactor },
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      new AgentBuilder("test", model).memory(store, {
+        compaction: { maxMessages: 4, conflictRetries: -1, compactor },
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      new AgentBuilder("test", model).memory(store, {
+        compaction: {
+          maxMessages: 4,
+          compactor: "nope" as unknown as () => Promise<{ summary: string }>,
+        },
+      }),
+    ).toThrow(TypeError);
+
+    const agent = new AgentBuilder("test", model)
+      .memory(store, {
+        compaction: {
+          maxMessages: 8,
+          compactor,
+        },
+      })
+      .build();
+    expect(agent.memory?.options.compaction).toMatchObject({
+      maxMessages: 8,
+      keepRecentUserTurns: 4,
+      conflictRetries: 1,
+    });
+  });
+
   it("does not compact when there are too few user turns to retain", async () => {
     const history = [
       Message.assistant("opening"),

@@ -52,7 +52,10 @@ function vectorToArray(vector: unknown): number[] | undefined {
   }
 
   if (ArrayBuffer.isView(vector) && !(vector instanceof DataView)) {
-    return Array.from(vector as unknown as ArrayLike<number>);
+    const values = Array.from(vector as unknown as ArrayLike<unknown>);
+    if (values.every((item) => typeof item === "number")) {
+      return values;
+    }
   }
 
   return undefined;
@@ -63,7 +66,10 @@ function numberArray(value: unknown): number[] | undefined {
     return value;
   }
   if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-    return Array.from(value as unknown as ArrayLike<number>);
+    const values = Array.from(value as unknown as ArrayLike<unknown>);
+    if (values.every((item) => typeof item === "number")) {
+      return values;
+    }
   }
   return undefined;
 }

@@ -42,6 +42,12 @@ const results = await store.index(embeddings).search({
 
 ## Hybrid search
 
+Also install a sparse embedding model. For local SPLADE++:
+
+```bash
+pnpm add @anvia/fastembed fastembed
+```
+
 ```ts
 import { embedHybridDocuments } from "@anvia/core/embeddings";
 import {

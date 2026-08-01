@@ -1,19 +1,11 @@
-# @anvia/qdrant
+# `@anvia/qdrant`
 
-Qdrant vector store adapter for Anvia.
+Qdrant adapter for Anvia vector stores.
 
-Use this package when you want to store Anvia embedded documents in Qdrant and query them through Anvia's vector search interfaces.
+## Install
 
-## Installation
-
-```sh
+```bash
 pnpm add @anvia/qdrant @anvia/core @qdrant/js-client-rest
-```
-
-In this monorepo, the package is available through the workspace:
-
-```sh
-pnpm --filter @anvia/qdrant build
 ```
 
 ## Usage
@@ -23,82 +15,63 @@ import { embedDocuments } from "@anvia/core/embeddings";
 import { OpenAIClient } from "@anvia/openai";
 import { QdrantVectorStore } from "@anvia/qdrant";
 
-const openai = new OpenAIClient({
-  apiKey,
-});
-
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
 const embeddings = openai.embeddingModel("text-embedding-3-small");
 
 const documents = await embedDocuments(
   embeddings,
-  [
-    {
-      id: "password-reset",
-      title: "Password reset policy",
-      body: "Password reset links expire after 30 minutes.",
-      product: "support",
-    },
-    {
-      id: "priority-support",
-      title: "Priority support",
-      body: "Enterprise customers receive priority support.",
-      product: "support",
-    },
-  ],
+  [{ id: "1", text: "Anvia is a TypeScript AI toolkit." }],
   {
     id: (document) => document.id,
-    content: (document) => `${document.title}\n${document.body}`,
-    metadata: (document) => ({
-      product: document.product,
-      title: document.title,
-    }),
+    content: (document) => document.text,
   },
 );
 
 const store = await QdrantVectorStore.connect({
-  collectionName: "support_docs",
+  collectionName: "docs",
   vectorSize: 1536,
 });
 
 await store.upsertDocuments(documents);
 
-const index = store.index(embeddings);
-const results = await index.search({
-  query: "How long does a password reset link last?",
-  topK: 3,
+const results = await store.index(embeddings).search({
+  query: "What is Anvia?",
+  topK: 5,
 });
-
-console.log(results);
 ```
 
-## Qdrant
-
-By default, `QdrantVectorStore.connect` creates a `QdrantClient` from the `@qdrant/js-client-rest` package. You can also pass a custom client:
+## Hybrid search
 
 ```ts
+import { embedHybridDocuments } from "@anvia/core/embeddings";
+import {
+  createFastEmbedEmbeddingModel,
+  createFastEmbedSparseEmbeddingModel,
+} from "@anvia/fastembed";
+import { QdrantVectorStore } from "@anvia/qdrant";
+
+const dense = await createFastEmbedEmbeddingModel();
+const sparse = await createFastEmbedSparseEmbeddingModel();
+
 const store = await QdrantVectorStore.connect({
-  client,
-  collectionName: "support_docs",
-  vectorSize: 1536,
-  createIfMissing: true,
+  collectionName: "docs_hybrid",
+  vectorSize: 384,
+  hybrid: true,
 });
-```
 
-Qdrant requires collection dimensions before creating a collection, so `vectorSize` is required.
+await store.upsertDocuments(
+  await embedHybridDocuments(
+    { dense, sparse },
+    [{ id: "1", text: "Anvia is a TypeScript AI toolkit." }],
+    {
+      id: (document) => document.id,
+      content: (document) => document.text,
+    },
+  ),
+);
 
-`connect(...)` is async by design. It verifies or creates the Qdrant collection before returning a store, so configuration and connection errors fail early instead of surfacing later from `upsertDocuments(...)` or `search(...)`. Constructors stay synchronous and side-effect free.
-
-## Exports
-
-- `QdrantVectorStore`
-- `QdrantVectorIndex`
-- `filterToQdrantFilter`
-- `QdrantVectorStoreConnectOptions`
-
-## Development
-
-```sh
-pnpm --filter @anvia/qdrant typecheck
-pnpm --filter @anvia/qdrant test
-pnpm --filter @anvia/qdrant build
+const results = await store.index({ dense, sparse, fusion: "rrf" }).search({
+  query: "What is Anvia?",
+  topK: 5,
+});
 ```

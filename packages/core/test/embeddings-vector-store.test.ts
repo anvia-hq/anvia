@@ -17,12 +17,17 @@ import {
   type Embedding,
   type EmbeddingModel,
   embedDocuments,
+  embedHybridDocuments,
+  embedSparseQuery,
+  embedSparseTexts,
   embedText,
   embedTexts,
   embedTools,
   euclideanDistance,
   InMemoryVectorStore,
   manhattanDistance,
+  type SparseEmbedding,
+  type SparseEmbeddingModel,
   type StreamingCompletionModel,
   Usage,
   vectorFilter,
@@ -39,6 +44,21 @@ class KeywordEmbeddingModel implements EmbeddingModel {
   async embedTexts(texts: string[]): Promise<Embedding[]> {
     this.calls.push(texts);
     return texts.map((document) => ({ document, vector: vectorFor(document) }));
+  }
+}
+
+class KeywordSparseEmbeddingModel implements SparseEmbeddingModel {
+  readonly maxBatchSize = 8;
+
+  async embedTexts(texts: string[]): Promise<SparseEmbedding[]> {
+    return texts.map((document) => ({
+      document,
+      vector: sparseVectorFor(document),
+    }));
+  }
+
+  async embedQuery(query: string): Promise<SparseEmbedding> {
+    return { document: query, vector: sparseVectorFor(query) };
   }
 }
 
@@ -180,6 +200,32 @@ describe("embeddings", () => {
       },
       { id: "b", metadata: { title: "Dogs" }, embeddings: [{ document: "dog" }] },
     ]);
+  });
+
+  it("embeds hybrid dense and sparse documents with aligned vectors", async () => {
+    const dense = new KeywordEmbeddingModel();
+    const sparse = new KeywordSparseEmbeddingModel();
+    const docs = [
+      { id: "a", texts: ["cat guide"] },
+      { id: "b", texts: ["dog note", "dog care"] },
+    ];
+
+    const embedded = await embedHybridDocuments({ dense, sparse }, docs, {
+      id: (doc) => doc.id,
+      content: (doc) => doc.texts,
+    });
+
+    expect(embedded).toHaveLength(2);
+    expect(embedded[0]?.embeddings).toHaveLength(1);
+    expect(embedded[0]?.sparseEmbeddings).toHaveLength(1);
+    expect(embedded[1]?.embeddings).toHaveLength(2);
+    expect(embedded[1]?.sparseEmbeddings).toHaveLength(2);
+    expect(embedded[0]?.sparseEmbeddings?.[0]?.vector.indices.length).toBeGreaterThan(0);
+
+    await expect(embedSparseTexts(sparse, ["alpha", "beta"])).resolves.toHaveLength(2);
+    await expect(embedSparseQuery(sparse, "query")).resolves.toMatchObject({
+      document: "query",
+    });
   });
 
   it("computes vector distances", () => {
@@ -618,6 +664,24 @@ function vectorFor(text: string): number[] {
     return [0.25, 0, 0.75];
   }
   return [0, 0, 1];
+}
+
+function sparseVectorFor(text: string): { indices: number[]; values: number[] } {
+  const tokens = text
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((token) => token.length > 0);
+  const indices: number[] = [];
+  const values: number[] = [];
+  for (const token of tokens) {
+    let hash = 0;
+    for (let index = 0; index < token.length; index += 1) {
+      hash = (hash * 31 + token.charCodeAt(index)) >>> 0;
+    }
+    indices.push(hash % 10_000);
+    values.push(1);
+  }
+  return { indices, values };
 }
 
 async function sampleEmbedded(model: EmbeddingModel) {

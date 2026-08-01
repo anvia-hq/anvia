@@ -73,6 +73,19 @@ const embeddingModel = await createFastEmbedEmbeddingModel({
 });
 ```
 
+## Sparse embeddings (SPLADE++)
+
+```ts
+import { createFastEmbedSparseEmbeddingModel } from "@anvia/fastembed";
+
+const sparse = await createFastEmbedSparseEmbeddingModel();
+const [passage] = await sparse.embedTexts(["Password reset links expire after 30 minutes."]);
+const query = await sparse.embedQuery("How long does a reset link last?");
+```
+
+The default sparse model is `prithivida/Splade_PP_en_v1`. Use it with dense embeddings and a
+hybrid-capable store such as `@anvia/qdrant` (`hybrid: true` + RRF).
+
 ## Exports
 
 - `FastEmbedEmbeddingModel`
@@ -81,6 +94,12 @@ const embeddingModel = await createFastEmbedEmbeddingModel({
 - `FastEmbedEmbeddingModelName`
 - `FastEmbedEmbeddingModelOptions`
 - `FastEmbedRuntime`
+- `FastEmbedSparseEmbeddingModel`
+- `createFastEmbedSparseEmbeddingModel`
+- `DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL`
+- `FastEmbedSparseEmbeddingModelName`
+- `FastEmbedSparseEmbeddingModelOptions`
+- `FastEmbedSparseRuntime`
 
 ## Development
 

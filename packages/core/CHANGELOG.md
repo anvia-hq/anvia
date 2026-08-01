@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 0.19.0
+
+### Minor Changes
+
+- d570f84: **Breaking:** Remove deprecated middleware and hook aliases.
+
+  Use `createMiddleware`, `AgentMiddleware`, `.middleware(...)` / `.middlewares(...)`, `.withMiddleware(...)` / `.withMiddlewares(...)`, `.withHook(...)`, and `onToolOutput` instead of `createToolMiddleware`, `ToolMiddleware`, `.toolMiddleware(...)` / `.toolMiddlewares(...)`, `.withToolMiddleware(...)` / `.withToolMiddlewares(...)`, `.requestHook(...)`, and `onResult`.
+
 ## 0.18.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 0.18.0
+
+### Minor Changes
+
+- eff30fb: Add opt-in, model-generated durable memory compaction with atomic conflict detection, official
+  database-adapter support, aggregate usage accounting, and React hydration that hides synthetic
+  summary messages by default.
+
 ## 0.17.0
 
 ### Minor Changes

@@ -71,12 +71,41 @@ function latestUserMessage(messages: Message[]): Message {
   return message;
 }
 
+function parseChatBody(value: unknown): UIStreamRequest {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Expected a JSON object chat body.");
+  }
+  const body = value as Partial<UIStreamRequest>;
+  if (!Array.isArray(body.messages) || body.stream !== true) {
+    throw new Error("Expected messages and stream: true.");
+  }
+  if (body.resume !== undefined) {
+    const resume = body.resume;
+    if (
+      typeof resume !== "object" ||
+      resume === null ||
+      typeof resume.streamId !== "string" ||
+      typeof resume.after !== "number" ||
+      !Number.isFinite(resume.after) ||
+      resume.after < 0
+    ) {
+      throw new Error("Expected a valid resume cursor.");
+    }
+  }
+  return body as UIStreamRequest;
+}
+
 export async function POST(request: Request, params: { threadId: string }) {
   const user = await requireUser(request);
-  const body = (await request.json()) as UIStreamRequest;
+  const body = parseChatBody(await request.json());
   const agent = createSupportAgent(user);
 
   if (body.resume !== undefined) {
+    await assertStreamAccess({
+      user,
+      threadId: params.threadId,
+      streamId: body.resume.streamId,
+    });
     return createEventStream({
       format: "jsonl",
       resume: {
@@ -107,6 +136,9 @@ export async function POST(request: Request, params: { threadId: string }) {
   );
 }
 ```
+
+`parseChatBody` and `assertStreamAccess` are application helpers. Validate the request at the route
+boundary, then authorize `streamId` against the authenticated user and thread before replaying.
 
 The response reader can disconnect while the run continues. The resumable server wrapper keeps
 draining the source stream into the store, so a later request can replay missed events.

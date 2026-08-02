@@ -163,6 +163,8 @@ function isResumableStreamStore(value: unknown): value is ResumableStreamStore {
     typeof value === "object" &&
     value !== null &&
     "subscribe" in value &&
-    typeof value.subscribe === "function"
+    typeof value.subscribe === "function" &&
+    "status" in value &&
+    typeof value.status === "function"
   );
 }

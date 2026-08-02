@@ -11,4 +11,5 @@ export type {
   UIMessageRole,
   UIStreamEvent,
   UIStreamRequest,
+  UIStreamResume,
 } from "./types";

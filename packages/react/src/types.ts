@@ -1,5 +1,11 @@
 import type { Message } from "@anvia/core/completion";
-import type { CreateUIAttachment, UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
+import type {
+  CreateUIAttachment,
+  UIMessage,
+  UIStreamEvent,
+  UIStreamRequest,
+  UIStreamResume,
+} from "@anvia/core/ui";
 
 export type {
   CreateUIAttachment,
@@ -10,6 +16,7 @@ export type {
   UIMessageRole,
   UIStreamEvent,
   UIStreamRequest,
+  UIStreamResume,
 } from "@anvia/core/ui";
 
 export type EventStreamFormat = "jsonl" | "sse";
@@ -23,10 +30,7 @@ export type EventTransport<TRequest, TEvent> = {
   send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
 };
 
-export type ChatResumeCursor = {
-  streamId: string;
-  after: number;
-};
+export type ChatResumeCursor = UIStreamResume;
 
 export type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
 

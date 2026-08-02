@@ -242,7 +242,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       const createRequest =
         options.createRequest ??
         ((args: CreateChatRequestArgs) => {
-          const request: UIStreamRequest & { resume?: ChatResumeCursor } = {
+          const request: UIStreamRequest = {
             messages: args.coreMessages,
             stream: true,
           };

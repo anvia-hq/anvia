@@ -73,10 +73,16 @@ export type UIMessagePart =
 
 export type UIToolMessagePart = Extract<UIMessagePart, { type: "tool" }>;
 
+export type UIStreamResume = {
+  streamId: string;
+  after: number;
+};
+
 export type UIStreamRequest = {
   messages: Message[];
   stream: true;
   metadata?: JsonValue;
+  resume?: UIStreamResume;
 };
 
 export type UIStreamEvent =

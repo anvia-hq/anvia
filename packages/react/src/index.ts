@@ -47,6 +47,7 @@ export type {
   UIMessageRole,
   UIStreamEvent,
   UIStreamRequest,
+  UIStreamResume,
   UseChatOptions,
   UseChatResult,
   UseChatStatus,

@@ -60,10 +60,16 @@ type UIMessagePart =
   | { id: string; type: "attachment"; attachment: UIAttachment }
   | { id: string; type: "error"; error: UIError };
 
+type UIStreamResume = {
+  streamId: string;
+  after: number;
+};
+
 type UIStreamRequest = {
   messages: Message[];
   stream: true;
   metadata?: JsonValue;
+  resume?: UIStreamResume;
 };
 
 type UIStreamEvent =

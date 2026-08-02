@@ -58,6 +58,10 @@ type UIStreamRequest = {
   messages: Message[];
   stream: true;
   metadata?: JsonValue;
+  resume?: {
+    streamId: string;
+    after: number;
+  };
 };
 ```
 
@@ -81,5 +85,5 @@ createEventStream(createCompletionStream(model, { messages: body.messages }));
 ```
 
 For chat streams that should survive navigation or reload, pair `useChat({ resume: { key } })` with
-an endpoint that returns `createEventStream(events, { resumable: { id, store } })` and handles
-resume bodies containing `{ resume: { streamId, after } }`.
+an endpoint that returns `createEventStream(events, { resumable: { id, store } })` and continues with
+`createEventStream({ resume: { streamId, after, store } })` when the request body includes `resume`.

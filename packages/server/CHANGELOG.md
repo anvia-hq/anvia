@@ -1,5 +1,20 @@
 # @anvia/server
 
+## 0.6.0
+
+### Minor Changes
+
+- 1ff8304: Add first-class stream resume to the shared request and response APIs.
+
+  `UIStreamRequest` now includes optional `resume: { streamId, after }`. `@anvia/server` adds a
+  `createEventStream({ resume })` / `createUIStreamResponse({ resume })` overload so routes can
+  continue in-flight streams without manually composing `resumeStreamEvents`.
+
+### Patch Changes
+
+- Updated dependencies [1ff8304]
+  - @anvia/core@0.21.0
+
 ## 0.5.18
 
 ### Patch Changes

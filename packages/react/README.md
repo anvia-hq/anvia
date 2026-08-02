@@ -66,8 +66,10 @@ type UIStreamRequest = {
 ```
 
 Hooks convert their local `UIMessage[]` state into core messages before sending. Custom
-`createRequest` callbacks receive `{ messages, uiMessages, coreMessages }`, where `messages` and
-`uiMessages` are UI-shaped for compatibility and `coreMessages` is the default wire payload.
+`createRequest` callbacks receive `{ messages, uiMessages, coreMessages, resume? }`, where
+`messages` and `uiMessages` are UI-shaped for compatibility, `coreMessages` is the default wire
+payload, and `resume` is the optional continue-stream cursor (`ChatResumeCursor` /
+`UIStreamResume`) that must be forwarded on resumable routes.
 
 The shared boundary is:
 

@@ -67,10 +67,16 @@ type UIMessagePart =
   | { id: string; type: "attachment"; attachment: UIAttachment }
   | { id: string; type: "error"; error: UIError };
 
+type UIStreamResume = {
+  streamId: string;
+  after: number;
+};
+
 type UIStreamRequest = {
   messages: Message[];
   stream: true;
   metadata?: unknown;
+  resume?: UIStreamResume;
 };
 
 type UIStreamEvent =
@@ -112,10 +118,7 @@ type CreateChatRequestArgs = {
 
 type UseChatStatus = "idle" | "streaming" | "error";
 
-type ChatResumeCursor = {
-  streamId: string;
-  after: number;
-};
+type ChatResumeCursor = UIStreamResume;
 
 type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
 
@@ -427,9 +430,10 @@ Passing `humanInput` tracks streamed tool approval and question events in `human
 
 Passing `resume: { key }` stores the active `streamId`, last event cursor, and current messages in
 `sessionStorage` by default. On mount, `useChat` sends the same endpoint a POST body with
-`resume: { streamId, after }`, unwraps `ResumableStreamEnvelope` records, replays missed events, and
-continues tailing live events until `stream_end`. Custom `createRequest` callbacks receive
-`args.resume` and should forward it when using resumable server routes.
+`resume: { streamId, after }` on `UIStreamRequest`, unwraps `ResumableStreamEnvelope` records,
+replays missed events, and continues tailing live events until `stream_end`. Custom `createRequest`
+callbacks receive `args.resume` and should forward it when using resumable server routes such as
+`createEventStream({ resume })`.
 
 ## useSmoothStreamText
 

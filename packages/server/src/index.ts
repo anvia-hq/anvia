@@ -8,6 +8,7 @@ export {
 export { createSseStream } from "./sse";
 export type {
   CreateEventStreamOptions,
+  CreateEventStreamResumeOptions,
   CreateResumableStreamOptions,
   EventStreamErrorEvent,
   EventStreamFormat,

@@ -19,10 +19,14 @@ retention.
 
 ## End-To-End Shape
 
-Use one POST route for both starting and resuming:
+Use one POST route for both starting and resuming. The shared request body is `UIStreamRequest`,
+which already includes an optional `resume` cursor:
 
 ```ts
-type ChatBody = UIStreamRequest & {
+type UIStreamRequest = {
+  messages: Message[];
+  stream: true;
+  metadata?: JsonValue;
   resume?: {
     streamId: string;
     after: number;
@@ -55,17 +59,9 @@ import type { UIStreamRequest } from "@anvia/core/ui";
 import {
   createEventStream,
   createMemoryResumableStreamStore,
-  resumeStreamEvents,
 } from "@anvia/server";
 
 const resumableStore = createMemoryResumableStreamStore();
-
-type ChatBody = UIStreamRequest & {
-  resume?: {
-    streamId: string;
-    after: number;
-  };
-};
 
 function latestUserMessage(messages: Message[]): Message {
   const message = messages.at(-1);
@@ -77,18 +73,18 @@ function latestUserMessage(messages: Message[]): Message {
 
 export async function POST(request: Request, params: { threadId: string }) {
   const user = await requireUser(request);
-  const body = (await request.json()) as ChatBody;
+  const body = (await request.json()) as UIStreamRequest;
   const agent = createSupportAgent(user);
 
   if (body.resume !== undefined) {
-    return createEventStream(
-      resumeStreamEvents({
-        id: body.resume.streamId,
+    return createEventStream({
+      format: "jsonl",
+      resume: {
+        streamId: body.resume.streamId,
         after: body.resume.after,
         store: resumableStore,
-      }),
-      { format: "jsonl" },
-    );
+      },
+    });
   }
 
   const runId = crypto.randomUUID();
@@ -220,7 +216,7 @@ export const resumableStore: ResumableStreamStore = {
 
 `subscribe(...)` is the key operation. It must first yield stored records after the requested cursor,
 then keep yielding live records while the stream is still running. Once the run closes, the iterable
-finishes and `resumeStreamEvents(...)` emits `stream_end`.
+finishes and `createEventStream({ resume })` emits `stream_end`.
 
 ## Operational Rules
 

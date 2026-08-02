@@ -152,6 +152,7 @@ export type {
   UIMessageRole,
   UIStreamEvent,
   UIStreamRequest,
+  UIStreamResume,
 } from "./ui";
 export {
   coreMessagesToUIMessages,

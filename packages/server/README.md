@@ -13,7 +13,9 @@ return createUIStreamResponse(uiEvents, {
 ## Exports
 
 - `createEventStream(events, options)` returns a streaming `Response`.
+- `createEventStream({ resume })` continues a previously started resumable stream.
 - `createUIStreamResponse(events, options)` returns a streaming `Response` for `UIStreamEvent` values.
+- `createUIStreamResponse({ resume })` continues a resumable UI stream.
 - `createJsonlStream(events, options)` returns a JSONL `ReadableStream<Uint8Array>`.
 - `createSseStream(events, options)` returns a Server-Sent Event `ReadableStream<Uint8Array>`.
 - `createResumableStream(events, options)` wraps events in resumable stream envelopes.
@@ -22,4 +24,4 @@ return createUIStreamResponse(uiEvents, {
 
 JSONL is the default transport format. Use `format: "sse"` when you need `text/event-stream` compatibility.
 Pass `resumable: { id, store }` to `createEventStream` when clients need to recover streams after
-navigation or reload.
+navigation or reload. Continue those streams with `createEventStream({ resume: { streamId, after, store } })`.

@@ -29,6 +29,20 @@ type CreateEventStreamOptions<TEvent> = {
   sse?: SseStreamOptions<TEvent>;
 };
 
+type CreateEventStreamResumeOptions<TEvent> = {
+  format?: EventStreamFormat;
+  headers?: HeadersInit;
+  status?: number;
+  statusText?: string;
+  resume: {
+    streamId: string;
+    after: number;
+    store: ResumableStreamStore<TEvent>;
+  };
+  jsonl?: JsonlStreamOptions<ResumableStreamEnvelope<TEvent>>;
+  sse?: SseStreamOptions<ResumableStreamEnvelope<TEvent>>;
+};
+
 type JsonlStreamOptions<TEvent> = {
   serialize?: (event: TEvent | EventStreamErrorEvent) => string;
 };
@@ -93,19 +107,16 @@ interface ResumableStreamStore<TEvent = unknown> {
 ```ts
 function createEventStream<TEvent>(
   events: AsyncIterable<TEvent>,
-  options?: {
-    format?: "jsonl" | "sse";
-    headers?: HeadersInit;
-    status?: number;
-    statusText?: string;
-    resumable?: CreateResumableStreamOptions<TEvent>;
-    jsonl?: JsonlStreamOptions<TEvent>;
-    sse?: SseStreamOptions<TEvent>;
-  },
+  options?: CreateEventStreamOptions<TEvent>,
+): Response;
+
+function createEventStream<TEvent>(
+  options: CreateEventStreamResumeOptions<TEvent>,
 ): Response;
 ```
 
-Purpose: convert an async iterable of events into an HTTP `Response`.
+Purpose: convert an async iterable of events into an HTTP `Response`, or continue a previously
+started resumable stream.
 
 Default behavior: writes JSONL with `content-type: application/x-ndjson; charset=utf-8`, `cache-control: no-cache, no-transform`, `connection: keep-alive`, and `x-accel-buffering: no`.
 
@@ -113,6 +124,20 @@ Use `format: "sse"` to emit `text/event-stream`.
 
 Pass `resumable: { id, store }` to wrap events in `stream_start`, `stream_event`, and
 `stream_end` envelopes and persist ordered events for later replay.
+
+Continue an in-flight stream with the resume overload:
+
+```ts
+if (body.resume !== undefined) {
+  return createEventStream({
+    resume: {
+      streamId: body.resume.streamId,
+      after: body.resume.after,
+      store,
+    },
+  });
+}
+```
 
 ## createResumableStream
 
@@ -134,21 +159,8 @@ function resumeStreamEvents<TEvent>(
 ): AsyncIterable<ResumableStreamEnvelope<TEvent>>;
 ```
 
-Purpose: replay stored events after `after`, then tail live events until the stream closes.
-
-Use it from the same route that starts a stream:
-
-```ts
-if (body.resume !== undefined) {
-  return createEventStream(
-    resumeStreamEvents({
-      id: body.resume.streamId,
-      after: body.resume.after,
-      store,
-    }),
-  );
-}
-```
+Purpose: advanced helper that replays stored events after `after`, then tails live events until the
+stream closes. Prefer `createEventStream({ resume })` from route handlers.
 
 ## createMemoryResumableStreamStore
 
@@ -166,9 +178,14 @@ function createUIStreamResponse(
   events: AsyncIterable<UIStreamEvent>,
   options?: CreateEventStreamOptions<UIStreamEvent>,
 ): Response;
+
+function createUIStreamResponse(
+  options: CreateEventStreamResumeOptions<UIStreamEvent>,
+): Response;
 ```
 
-Purpose: convert a standard `UIStreamEvent` iterable into an HTTP response for `@anvia/react` hooks.
+Purpose: convert a standard `UIStreamEvent` iterable into an HTTP response for `@anvia/react` hooks,
+or continue a resumable UI stream with the same resume overload as `createEventStream`.
 
 Default behavior: uses the same JSONL response format and headers as `createEventStream(...)` unless `format: "sse"` is passed.
 

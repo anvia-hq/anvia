@@ -1,3 +1,4 @@
+import type { UIStreamEvent } from "@anvia/core/ui";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -159,6 +160,94 @@ describe("@anvia/server streams", () => {
       eventId: 2,
       status: "completed",
     });
+  });
+
+  it("resumes through createEventStream without double-wrapping envelopes", async () => {
+    const store = createMemoryResumableStreamStore<{ type: string }>();
+    await store.open({ streamId: "run_1" });
+    await store.append({ streamId: "run_1", event: { type: "one" } });
+    await store.append({ streamId: "run_1", event: { type: "two" } });
+
+    const response = createEventStream({
+      resume: {
+        streamId: "run_1",
+        after: 1,
+        store,
+      },
+    });
+    const reader = response.body?.getReader();
+    if (reader === undefined) {
+      throw new Error("Expected response body");
+    }
+    const decoder = new TextDecoder();
+
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    expect(JSON.parse(decoder.decode(first.value))).toEqual({
+      type: "stream_start",
+      streamId: "run_1",
+      eventId: 0,
+    });
+
+    const second = await reader.read();
+    expect(second.done).toBe(false);
+    expect(JSON.parse(decoder.decode(second.value))).toEqual({
+      type: "stream_event",
+      streamId: "run_1",
+      eventId: 2,
+      event: { type: "two" },
+    });
+
+    const endRead = reader.read();
+    await store.close({ streamId: "run_1", status: "completed" });
+    const end = await endRead;
+    expect(end.done).toBe(false);
+    expect(JSON.parse(decoder.decode(end.value))).toEqual({
+      type: "stream_end",
+      streamId: "run_1",
+      eventId: 2,
+      status: "completed",
+    });
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
+  });
+
+  it("resumes UI stream responses through createUIStreamResponse", async () => {
+    const store = createMemoryResumableStreamStore<UIStreamEvent>();
+    await store.open({ streamId: "run_1" });
+    await store.append({
+      streamId: "run_1",
+      event: {
+        type: "text_delta",
+        messageId: "assistant_1",
+        partId: "assistant_1_text",
+        delta: "hi",
+      },
+    });
+    await store.close({ streamId: "run_1", status: "completed" });
+
+    const response = createUIStreamResponse({
+      resume: {
+        streamId: "run_1",
+        after: 0,
+        store,
+      },
+    });
+
+    expect(parseJsonl(await response.text())).toEqual([
+      { type: "stream_start", streamId: "run_1", eventId: 0 },
+      {
+        type: "stream_event",
+        streamId: "run_1",
+        eventId: 1,
+        event: {
+          type: "text_delta",
+          messageId: "assistant_1",
+          partId: "assistant_1_text",
+          delta: "hi",
+        },
+      },
+      { type: "stream_end", streamId: "run_1", eventId: 1, status: "completed" },
+    ]);
   });
 
   it("omits the resume cursor when none is supplied", async () => {

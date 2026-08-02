@@ -15,6 +15,20 @@ export type CreateEventStreamOptions<TEvent> = {
   sse?: SseStreamOptions<TEvent>;
 };
 
+export type CreateEventStreamResumeOptions<TEvent> = {
+  format?: EventStreamFormat;
+  headers?: HeadersInit;
+  status?: number;
+  statusText?: string;
+  resume: {
+    streamId: string;
+    after: number;
+    store: ResumableStreamStore<TEvent>;
+  };
+  jsonl?: JsonlStreamOptions<ResumableStreamEnvelope<TEvent>>;
+  sse?: SseStreamOptions<ResumableStreamEnvelope<TEvent>>;
+};
+
 export type JsonlStreamOptions<TEvent> = {
   serialize?: (event: TEvent | EventStreamErrorEvent) => string;
 };

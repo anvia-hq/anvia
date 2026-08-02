@@ -67,6 +67,10 @@ type UIStreamRequest = {
   messages: Message[];
   stream: true;
   metadata?: JsonValue;
+  resume?: {
+    streamId: string;
+    after: number;
+  };
 };
 ```
 

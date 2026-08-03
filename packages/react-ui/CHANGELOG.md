@@ -1,5 +1,13 @@
 # @anvia/react-ui
 
+## 0.6.3
+
+### Patch Changes
+
+- 1684893: Prevent settled Markdown text from fading again when streaming resumes after a pause, preserve
+  in-progress reveal timing across appended chunks, and render reveal text fully opaque when reduced
+  motion is requested.
+
 ## 0.6.2
 
 ### Patch Changes

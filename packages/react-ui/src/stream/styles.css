@@ -5,5 +5,13 @@
 }
 
 [data-anvia-stream-reveal] {
-  animation: anvia-stream-gradient-settle 180ms linear both;
+  opacity: var(--anvia-stream-reveal-opacity, 1);
+  animation: anvia-stream-gradient-settle var(--anvia-stream-reveal-duration, 180ms) linear both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-anvia-stream-reveal] {
+    opacity: 1;
+    animation: none;
+  }
 }

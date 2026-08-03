@@ -1,8 +1,15 @@
 export const streamRevealConfig = {
   bandGraphemes: 2,
+  durationMs: 180,
   minimumOpacity: 0.12,
   tailGraphemes: 24,
 } as const;
+
+export type StreamRevealLifecycle = {
+  activeScope: string | null;
+  settledRevealIds: Set<string>;
+  startedAtByRevealId: Map<string, number>;
+};
 
 type MarkdownNode = {
   type: string;
@@ -20,19 +27,27 @@ type TextTarget = {
   startOffset: number;
 };
 
-type RevealBand = {
+type RevealGrapheme = {
   endOffset: number;
   opacity: number;
   startOffset: number;
 };
 
-export function createStreamGradientRevealPlugin(frameId: number) {
+export function createStreamGradientRevealPlugin(
+  lifecycleScope: string,
+  lifecycle: StreamRevealLifecycle,
+) {
   return function streamGradientRevealPlugin() {
     return (tree: MarkdownNode) => {
+      if (lifecycle.activeScope !== lifecycleScope) {
+        lifecycle.activeScope = lifecycleScope;
+        lifecycle.settledRevealIds.clear();
+        lifecycle.startedAtByRevealId.clear();
+      }
       const targets = collectTextTargets(tree);
       const renderedText = targets.map((target) => target.node.value ?? "").join("");
-      const bands = createRevealBands(renderedText);
-      wrapStreamRevealBands(targets, bands, frameId);
+      const graphemes = createRevealGraphemes(renderedText);
+      wrapStreamRevealGraphemes(targets, graphemes, lifecycleScope, lifecycle);
     };
   };
 }
@@ -69,63 +84,88 @@ function collectTextTargets(tree: MarkdownNode): TextTarget[] {
   return targets;
 }
 
-function createRevealBands(content: string): RevealBand[] {
+function createRevealGraphemes(content: string): RevealGrapheme[] {
   const tail = segmentTailGraphemeRanges(content, streamRevealConfig.tailGraphemes);
-  const bands: RevealBand[] = [];
+  const graphemes: RevealGrapheme[] = [];
 
-  for (let index = 0; index < tail.length; index += streamRevealConfig.bandGraphemes) {
-    const first = tail[index];
-    const endIndex = Math.min(index + streamRevealConfig.bandGraphemes, tail.length) - 1;
-    const last = tail[endIndex];
-    if (first === undefined || last === undefined) {
+  for (let index = 0; index < tail.length; index += 1) {
+    const grapheme = tail[index];
+    const bandStartIndex =
+      Math.floor(index / streamRevealConfig.bandGraphemes) * streamRevealConfig.bandGraphemes;
+    const bandEndIndex =
+      Math.min(bandStartIndex + streamRevealConfig.bandGraphemes, tail.length) - 1;
+    if (grapheme === undefined) {
       continue;
     }
-    const progress = tail.length === 1 ? 1 : endIndex / (tail.length - 1);
-    bands.push({
-      startOffset: first.startOffset,
-      endOffset: last.endOffset,
+    const progress = tail.length === 1 ? 1 : bandEndIndex / (tail.length - 1);
+    graphemes.push({
+      startOffset: grapheme.startOffset,
+      endOffset: grapheme.endOffset,
       opacity: Math.max(
         streamRevealConfig.minimumOpacity,
         1 - progress * (1 - streamRevealConfig.minimumOpacity),
       ),
     });
   }
-  return bands;
+  return graphemes;
 }
 
-function wrapStreamRevealBands(
+function wrapStreamRevealGraphemes(
   targets: readonly TextTarget[],
-  bands: readonly RevealBand[],
-  frameId: number,
+  graphemes: readonly RevealGrapheme[],
+  lifecycleScope: string,
+  lifecycle: StreamRevealLifecycle,
 ): void {
+  const activeRevealIds = new Set<string>();
+  const nowMs = Date.now();
   for (const target of [...targets].reverse()) {
     const value = target.node.value ?? "";
-    const intersectingBands = bands.filter(
-      (band) => band.endOffset > target.startOffset && band.startOffset < target.endOffset,
+    const intersectingGraphemes = graphemes.filter(
+      (grapheme) =>
+        grapheme.endOffset > target.startOffset && grapheme.startOffset < target.endOffset,
     );
-    if (intersectingBands.length === 0) {
+    if (intersectingGraphemes.length === 0) {
       continue;
     }
 
     const replacement: MarkdownNode[] = [];
     let cursor = 0;
-    for (const band of intersectingBands) {
-      const start = Math.max(0, band.startOffset - target.startOffset);
-      const end = Math.min(value.length, band.endOffset - target.startOffset);
+    for (const grapheme of intersectingGraphemes) {
+      const start = Math.max(0, grapheme.startOffset - target.startOffset);
+      const end = Math.min(value.length, grapheme.endOffset - target.startOffset);
       if (start > cursor) {
         replacement.push({ type: "text", value: value.slice(cursor, start) });
       }
       if (end > start) {
-        replacement.push({
-          type: "element",
-          tagName: "span",
-          properties: {
-            "data-anvia-stream-frame-id": `${frameId}:${band.startOffset}`,
-            "data-anvia-stream-opacity": String(band.opacity),
-            "data-anvia-stream-reveal": "",
-          },
-          children: [{ type: "text", value: value.slice(start, end) }],
-        });
+        const text = value.slice(start, end);
+        const absoluteStart = target.startOffset + start;
+        const absoluteEnd = target.startOffset + end;
+        const revealId = `${lifecycleScope}:${absoluteStart}:${absoluteEnd}:${hashText(text)}`;
+        activeRevealIds.add(revealId);
+        const startedAt = lifecycle.startedAtByRevealId.get(revealId) ?? nowMs;
+        lifecycle.startedAtByRevealId.set(revealId, startedAt);
+        const elapsedMs = Math.max(0, nowMs - startedAt);
+        if (elapsedMs >= streamRevealConfig.durationMs) {
+          lifecycle.settledRevealIds.add(revealId);
+        }
+        if (lifecycle.settledRevealIds.has(revealId)) {
+          replacement.push({ type: "text", value: text });
+        } else {
+          const progress = Math.min(elapsedMs / streamRevealConfig.durationMs, 1);
+          const opacity = grapheme.opacity + (1 - grapheme.opacity) * progress;
+          const remainingMs = Math.max(1, streamRevealConfig.durationMs - elapsedMs);
+          replacement.push({
+            type: "element",
+            tagName: "span",
+            properties: {
+              "data-anvia-stream-duration-ms": String(remainingMs),
+              "data-anvia-stream-opacity": String(opacity),
+              "data-anvia-stream-reveal": "",
+              "data-anvia-stream-reveal-id": revealId,
+            },
+            children: [{ type: "text", value: text }],
+          });
+        }
       }
       cursor = Math.max(cursor, end);
     }
@@ -134,6 +174,29 @@ function wrapStreamRevealBands(
     }
     target.parent.children?.splice(target.index, 1, ...replacement);
   }
+
+  pruneRevealLifecycle(lifecycle, activeRevealIds);
+}
+
+function pruneRevealLifecycle(
+  lifecycle: StreamRevealLifecycle,
+  activeRevealIds: ReadonlySet<string>,
+): void {
+  for (const revealId of lifecycle.startedAtByRevealId.keys()) {
+    if (!activeRevealIds.has(revealId)) lifecycle.startedAtByRevealId.delete(revealId);
+  }
+  for (const revealId of lifecycle.settledRevealIds) {
+    if (!activeRevealIds.has(revealId)) lifecycle.settledRevealIds.delete(revealId);
+  }
+}
+
+function hashText(text: string): string {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function segmentTailGraphemeRanges(

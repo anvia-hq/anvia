@@ -9,15 +9,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: package-release
-  cancel-in-progress: false
-
 jobs:
   version:
     name: Create release pull request
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    concurrency:
+      group: package-release-version
+      cancel-in-progress: true
     permissions:
       contents: write
       pull-requests: write
@@ -42,7 +41,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check release freshness
+        id: freshness
+        run: |
+          git fetch origin main
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping a stale release run because main has advanced."
+          fi
+
       - name: Create release pull request
+        if: steps.freshness.outputs.current == 'true'
         uses: changesets/action@v1
         with:
           version: pnpm version-packages
@@ -55,6 +66,9 @@ jobs:
     name: Publish packages to npm
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    concurrency:
+      group: package-release-publish
+      cancel-in-progress: false
     permissions:
       contents: write
       id-token: write

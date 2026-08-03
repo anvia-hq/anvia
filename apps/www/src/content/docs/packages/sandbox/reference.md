@@ -78,11 +78,30 @@ interface SandboxSession {
   execStream(options: SandboxExecOptions): AsyncIterable<SandboxExecStreamEvent>;
   readFile(path: string): Promise<Uint8Array>;
   readTextFile(path: string): Promise<string>;
+  readTextFilePage?(
+    path: string,
+    options?: SandboxTextFileReadOptions,
+  ): Promise<SandboxTextFileReadResult>;
   writeFile(path: string, data: string | Uint8Array): Promise<void>;
   writeTextFile(path: string, content: string): Promise<void>;
   listFiles(path?: string): Promise<SandboxFileEntry[]>;
   destroy(): Promise<void>;
 }
+
+type SandboxTextFileReadOptions = {
+  startLine?: number;
+  lineCount?: number;
+  maxBytes?: number;
+};
+
+type SandboxTextFileReadResult = {
+  content: string;
+  startLine: number;
+  endLine: number | null;
+  nextStartLine: number | null;
+  truncated: boolean;
+  truncatedBy: "lines" | "bytes" | null;
+};
 ```
 
 Purpose: provider-neutral contracts for sandbox clients and live workspace sessions.
@@ -319,7 +338,7 @@ type SandboxToolsOptions = {
   include?: SandboxToolName[];
   execTimeoutMs?: number;
   exec?: SandboxExecToolPolicy;
-  readFile?: SandboxFileToolPolicy;
+  readFile?: SandboxReadFileToolPolicy;
   writeFile?: SandboxFileToolPolicy;
   process?: SandboxProcessToolPolicy;
 };
@@ -347,6 +366,11 @@ type SandboxFileToolPolicy = {
   maxBytes?: number;
 };
 
+type SandboxReadFileToolPolicy = SandboxFileToolPolicy & {
+  defaultLineCount?: number;
+  maxLineCount?: number;
+};
+
 type SandboxProcessToolPolicy = {
   maxLogBytes?: number;
   defaultWaitTimeoutMs?: number;
@@ -363,6 +387,15 @@ type SandboxToolsFactory = (
 Purpose: expose a live sandbox session as Anvia tools. The default bundle remains `exec_command`,
 `read_file`, `write_file`, and `list_files`. Published-port and managed-process tools are opt-in.
 They use the existing executable allow/block policy plus `SandboxProcessToolPolicy` limits.
+
+`read_file` returns structured page metadata and accepts one-based `startLine` and `lineCount`
+arguments. It defaults to 500 lines, allows at most 2,000 lines per call, and caps content at 64
+KiB. Configure those limits with `readFile.defaultLineCount`, `readFile.maxLineCount`, and
+`readFile.maxBytes`; tool-level hard limits are 10,000 lines and 1 MiB. When `nextStartLine` is
+present, pass it as the next call's `startLine`. Docker sessions read only the bounded page inside
+the container. Custom session providers can implement `readTextFilePage(...)` for the same bounded
+I/O behavior; otherwise the tool uses `readTextFile(...)` as a compatibility fallback before
+paginating the returned text.
 
 ## Hooks
 

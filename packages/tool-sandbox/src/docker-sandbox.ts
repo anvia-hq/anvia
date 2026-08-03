@@ -12,6 +12,7 @@ import {
   SandboxTimeoutError,
 } from "./errors";
 import { containerPath, normalizeSandboxPath, parentSandboxPath } from "./path";
+import { createTextFilePage } from "./text-file";
 import type {
   DockerSandboxCreateSessionOptions,
   DockerSandboxOptions,
@@ -35,6 +36,8 @@ import type {
   SandboxProcessStopOptions,
   SandboxPublishedPort,
   SandboxSessionEvent,
+  SandboxTextFileReadOptions,
+  SandboxTextFileReadResult,
   SandboxWaitForPortOptions,
   SandboxWorkspaceOptions,
 } from "./types";
@@ -44,6 +47,8 @@ const defaultWorkdir = "/workspace";
 const defaultTimeoutMs = 30_000;
 const defaultMaxOutputBytes = 1024 * 1024;
 const defaultMaxProcesses = 4;
+const defaultTextFilePageLines = 500;
+const defaultTextFilePageBytes = 64 * 1024;
 // Docker Desktop may accept a host-side TCP connection before a container service is ready. Probe
 // Linux socket state in the container so readiness requires an all-interface listening socket.
 const portProbeScript = [
@@ -59,6 +64,15 @@ const portProbeScript = [
   '  done < "$table"',
   "done",
   "exit 1",
+].join("\n");
+const textFilePageScript = [
+  'start="$1"',
+  'count="$2"',
+  'max_bytes="$3"',
+  'file="$4"',
+  'end="$((start + count))"',
+  '[ -f "$file" ] || { echo "Not a readable file: $file" >&2; exit 66; }',
+  'sed -n "$start,$end p;$end q" "$file" | head -c "$max_bytes"',
 ].join("\n");
 
 export class DockerSandbox implements Sandbox {
@@ -622,6 +636,55 @@ class DockerSandboxSessionImpl implements DockerSandboxSession {
     return new TextDecoder().decode(bytes);
   }
 
+  async readTextFilePage(
+    filePath: string,
+    options: SandboxTextFileReadOptions = {},
+  ): Promise<SandboxTextFileReadResult> {
+    return this.runOperation(async () => {
+      const startLine = options.startLine ?? 1;
+      const lineCount = options.lineCount ?? defaultTextFilePageLines;
+      const maxBytes = options.maxBytes ?? defaultTextFilePageBytes;
+      assertTextFileReadOptions(startLine, lineCount, maxBytes);
+
+      const normalized = normalizeSandboxPath(filePath);
+      const captureBytes = maxBytes + 4;
+      const result = await runDockerCli(
+        [
+          "exec",
+          "-w",
+          this.workdir,
+          this.containerName,
+          "sh",
+          "-c",
+          textFilePageScript,
+          "anvia-read-file-page",
+          String(startLine),
+          String(lineCount),
+          String(captureBytes),
+          containerPath(this.workdir, normalized),
+        ],
+        {
+          ...this.cliOptions(),
+          maxOutputBytes: captureBytes,
+        },
+      );
+
+      if (result.exitCode !== 0) {
+        throw new SandboxDockerCommandError(
+          `Unable to read sandbox text file: ${filePath}`,
+          result,
+        );
+      }
+
+      return createTextFilePage(result.stdout, {
+        startLine,
+        lineCount,
+        maxBytes,
+        contentStartLine: startLine,
+      });
+    });
+  }
+
   async writeFile(filePath: string, data: string | Uint8Array): Promise<void> {
     await this.runOperation(async () => {
       const size = byteLength(data);
@@ -949,6 +1012,18 @@ function assertWaitOptions(timeoutMs: number, intervalMs: number): void {
   }
   if (!Number.isInteger(intervalMs) || intervalMs <= 0) {
     throw new SandboxPortError("Port wait intervalMs must be a positive integer.");
+  }
+}
+
+function assertTextFileReadOptions(startLine: number, lineCount: number, maxBytes: number): void {
+  if (!Number.isInteger(startLine) || startLine <= 0) {
+    throw new RangeError("Text file startLine must be a positive integer.");
+  }
+  if (!Number.isInteger(lineCount) || lineCount <= 0) {
+    throw new RangeError("Text file lineCount must be a positive integer.");
+  }
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
+    throw new RangeError("Text file maxBytes must be a positive integer.");
   }
 }
 

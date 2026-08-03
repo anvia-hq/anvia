@@ -86,7 +86,7 @@ describe("createSandboxTools", () => {
     );
   });
 
-  it("enforces file tool byte policies", async () => {
+  it("applies bounded read and write file policies", async () => {
     const session = createSession();
     const tools = Object.fromEntries(
       createSandboxTools(session, {
@@ -95,11 +95,27 @@ describe("createSandboxTools", () => {
       }).map((tool) => [tool.name, tool] as const),
     );
 
-    await expect(tools.read_file?.call({ path: "a.txt" })).rejects.toThrow(
-      "File content exceeds sandbox tool policy",
-    );
+    await tools.read_file?.call({ path: "a.txt" });
+    expect(session.readTextFilePage).toHaveBeenCalledWith("a.txt", {
+      startLine: 1,
+      lineCount: 500,
+      maxBytes: 4,
+    });
     await expect(tools.write_file?.call({ path: "a.txt", content: "content" })).rejects.toThrow(
       "File content exceeds sandbox tool policy",
+    );
+  });
+
+  it("enforces read_file line policies", async () => {
+    const [tool] = createSandboxTools(createSession(), {
+      include: ["read_file"],
+      readFile: { defaultLineCount: 20, maxLineCount: 50 },
+    });
+    if (tool === undefined) throw new Error("Expected read_file tool.");
+
+    await tool.call({ path: "a.txt" });
+    await expect(tool.call({ path: "a.txt", lineCount: 51 })).rejects.toThrow(
+      "File read line count exceeds sandbox tool policy",
     );
   });
 
@@ -110,14 +126,42 @@ describe("createSandboxTools", () => {
     );
 
     await tools.write_file?.call({ path: "a.txt", content: "content" });
-    const read = await tools.read_file?.call({ path: "a.txt" });
+    const read = await tools.read_file?.call({ path: "a.txt", startLine: 6, lineCount: 10 });
     const list = await tools.list_files?.call({ path: "." });
 
     expect(session.writeTextFile).toHaveBeenCalledWith("a.txt", "content");
-    expect(session.readTextFile).toHaveBeenCalledWith("a.txt");
+    expect(session.readTextFilePage).toHaveBeenCalledWith("a.txt", {
+      startLine: 6,
+      lineCount: 10,
+      maxBytes: 64 * 1024,
+    });
     expect(session.listFiles).toHaveBeenCalledWith(".");
-    expect(read).toBe("file content");
+    expect(read).toEqual({
+      content: "file content",
+      startLine: 6,
+      endLine: 6,
+      nextStartLine: null,
+      truncated: false,
+      truncatedBy: null,
+    });
     expect(list).toContain("file 12b\ta.txt");
+  });
+
+  it("falls back to bounded in-memory pagination for custom sessions", async () => {
+    const session = createSession();
+    delete session.readTextFilePage;
+    vi.mocked(session.readTextFile).mockResolvedValue("one\ntwo\nthree\nfour\n");
+    const [tool] = createSandboxTools(session, { include: ["read_file"] });
+    if (tool === undefined) throw new Error("Expected read_file tool.");
+
+    await expect(tool.call({ path: "a.txt", startLine: 2, lineCount: 2 })).resolves.toEqual({
+      content: "two\nthree\n",
+      startLine: 2,
+      endLine: 3,
+      nextStartLine: 4,
+      truncated: true,
+      truncatedBy: "lines",
+    });
   });
 
   it("creates opt-in published port and managed process tools", () => {
@@ -247,6 +291,14 @@ function createSession(): SandboxSession {
     }),
     readFile: vi.fn(async () => new TextEncoder().encode("file content")),
     readTextFile: vi.fn(async () => "file content"),
+    readTextFilePage: vi.fn(async (_path, options) => ({
+      content: "file content",
+      startLine: options?.startLine ?? 1,
+      endLine: options?.startLine ?? 1,
+      nextStartLine: null,
+      truncated: false,
+      truncatedBy: null,
+    })),
     writeFile: vi.fn(async () => undefined),
     writeTextFile: vi.fn(async () => undefined),
     listFiles: vi.fn(async () => [{ path: "a.txt", type: "file" as const, size: 12 }]),
@@ -255,8 +307,13 @@ function createSession(): SandboxSession {
 }
 
 function createManagedSession(): DockerSandboxSession {
+  const session = createSession();
+  if (session.readTextFilePage === undefined) {
+    throw new Error("Expected paginated text reader.");
+  }
   return {
-    ...createSession(),
+    ...session,
+    readTextFilePage: session.readTextFilePage,
     publishedPorts: [{ containerPort: 5173, host: "127.0.0.1", hostPort: 49_152, protocol: "tcp" }],
     waitForPort: vi.fn(async () => ({
       containerPort: 5173,

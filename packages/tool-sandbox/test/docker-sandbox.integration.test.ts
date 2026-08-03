@@ -33,8 +33,24 @@ describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
 
       await session.writeTextFile("out/result.txt", "done");
       await expect(session.readTextFile("out/result.txt")).resolves.toBe("done");
+      await session.writeTextFile("out/lines.txt", "one\ntwo\nthree\nfour\n");
+      await expect(
+        session.readTextFilePage("out/lines.txt", {
+          startLine: 2,
+          lineCount: 2,
+          maxBytes: 1_024,
+        }),
+      ).resolves.toEqual({
+        content: "two\nthree\n",
+        startLine: 2,
+        endLine: 3,
+        nextStartLine: 4,
+        truncated: true,
+        truncatedBy: "lines",
+      });
       await expect(session.listFiles("out")).resolves.toEqual([
         { path: "out/result.txt", type: "file", size: 4 },
+        { path: "out/lines.txt", type: "file", size: 19 },
       ]);
     } finally {
       await session.destroy();

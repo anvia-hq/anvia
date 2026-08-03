@@ -2,6 +2,7 @@ import { type AnyTool, createTool } from "@anvia/core/tool";
 import { z } from "zod";
 import { isSandboxPortSession, isSandboxProcessSession } from "./capabilities";
 import { SandboxToolPolicyError } from "./errors";
+import { createTextFilePage } from "./text-file";
 import type {
   SandboxExecOptions,
   SandboxExecResult,
@@ -34,6 +35,19 @@ const execCommandInput = z.object({
 
 const readFileInput = z.object({
   path: z.string().min(1).describe("Relative file path inside the sandbox."),
+  startLine: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("One-based first line to read. Defaults to 1."),
+  lineCount: z
+    .number()
+    .int()
+    .positive()
+    .max(10_000)
+    .optional()
+    .describe("Maximum lines to return. Defaults to 500."),
 });
 
 const writeFileInput = z.object({
@@ -92,6 +106,19 @@ const waitForPortInput = z.object({
 
 const textOutput = z.string();
 const maxToolLogBytes = 1024 * 1024;
+const defaultReadFileLineCount = 500;
+const defaultReadFileMaxLineCount = 2_000;
+const defaultReadFileMaxBytes = 64 * 1024;
+const maxToolReadFileBytes = 1024 * 1024;
+const maxToolReadFileLines = 10_000;
+const readFileOutput = z.object({
+  content: z.string(),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive().nullable(),
+  nextStartLine: z.number().int().positive().nullable(),
+  truncated: z.boolean(),
+  truncatedBy: z.enum(["lines", "bytes"]).nullable(),
+});
 const sandboxToolMetadataKey = Symbol.for("anvia.sandbox.tool.metadata");
 
 export function createSandboxTools(
@@ -206,13 +233,34 @@ function createExecCommandTool(session: SandboxSession, options: SandboxToolsOpt
 function createReadFileTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
   return createTool({
     name: "read_file",
-    description: "Read a text file from the sandbox workspace.",
+    description:
+      "Read a bounded page of a text file from the sandbox workspace. Continue with nextStartLine when provided.",
     input: readFileInput,
-    output: textOutput,
-    execute: async ({ path }) => {
-      const content = await session.readTextFile(path);
-      assertReadAllowed(content, options);
-      return content;
+    output: readFileOutput,
+    execute: async ({ path, startLine, lineCount }) => {
+      const limits = resolveReadFileLimits(options);
+      const effectiveStartLine = startLine ?? 1;
+      const effectiveLineCount = lineCount ?? limits.defaultLineCount;
+
+      if (effectiveLineCount > limits.maxLineCount) {
+        throw new SandboxToolPolicyError(
+          `File read line count exceeds sandbox tool policy (${effectiveLineCount} > ${limits.maxLineCount}).`,
+        );
+      }
+
+      if (session.readTextFilePage !== undefined) {
+        return session.readTextFilePage(path, {
+          startLine: effectiveStartLine,
+          lineCount: effectiveLineCount,
+          maxBytes: limits.maxBytes,
+        });
+      }
+
+      return createTextFilePage(await session.readTextFile(path), {
+        startLine: effectiveStartLine,
+        lineCount: effectiveLineCount,
+        maxBytes: limits.maxBytes,
+      });
     },
   });
 }
@@ -497,10 +545,33 @@ function assertContentAllowed(content: string, options: SandboxToolsOptions): vo
   }
 }
 
-function assertReadAllowed(content: string, options: SandboxToolsOptions): void {
-  const maxBytes = options.readFile?.maxBytes;
+function resolveReadFileLimits(options: SandboxToolsOptions): {
+  defaultLineCount: number;
+  maxLineCount: number;
+  maxBytes: number;
+} {
+  const defaultLineCount = options.readFile?.defaultLineCount ?? defaultReadFileLineCount;
+  const maxLineCount = options.readFile?.maxLineCount ?? defaultReadFileMaxLineCount;
+  const maxBytes = options.readFile?.maxBytes ?? defaultReadFileMaxBytes;
 
-  if (maxBytes !== undefined && Buffer.byteLength(content) > maxBytes) {
-    throw new SandboxToolPolicyError("File content exceeds sandbox tool policy.");
+  if (!Number.isInteger(defaultLineCount) || defaultLineCount <= 0) {
+    throw new SandboxToolPolicyError("File defaultLineCount must be a positive integer.");
   }
+  if (!Number.isInteger(maxLineCount) || maxLineCount <= 0 || maxLineCount > maxToolReadFileLines) {
+    throw new SandboxToolPolicyError(
+      `File maxLineCount must be a positive integer no greater than ${maxToolReadFileLines}.`,
+    );
+  }
+  if (defaultLineCount > maxLineCount) {
+    throw new SandboxToolPolicyError(
+      `File defaultLineCount exceeds maxLineCount (${defaultLineCount} > ${maxLineCount}).`,
+    );
+  }
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0 || maxBytes > maxToolReadFileBytes) {
+    throw new SandboxToolPolicyError(
+      `File maxBytes must be a positive integer no greater than ${maxToolReadFileBytes}.`,
+    );
+  }
+
+  return { defaultLineCount, maxLineCount, maxBytes };
 }

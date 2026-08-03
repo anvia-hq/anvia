@@ -37,7 +37,11 @@ const agent = new AgentBuilder("debugger", model)
     createSandboxTools(session, {
       include: ["exec_command", "read_file", "list_files"],
       exec: { allowedCommands: ["node", "pnpm", "ls", "cat"] },
-      readFile: { maxBytes: 64_000 },
+      readFile: {
+        defaultLineCount: 500,
+        maxLineCount: 2_000,
+        maxBytes: 64_000,
+      },
     }),
   )
   .approvals({

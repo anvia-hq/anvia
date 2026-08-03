@@ -35,10 +35,29 @@ export interface SandboxSession {
   execStream(options: SandboxExecOptions): AsyncIterable<SandboxExecStreamEvent>;
   readFile(path: string): Promise<Uint8Array>;
   readTextFile(path: string): Promise<string>;
+  readTextFilePage?(
+    path: string,
+    options?: SandboxTextFileReadOptions,
+  ): Promise<SandboxTextFileReadResult>;
   writeFile(path: string, data: string | Uint8Array): Promise<void>;
   writeTextFile(path: string, content: string): Promise<void>;
   listFiles(path?: string): Promise<SandboxFileEntry[]>;
   destroy(): Promise<void>;
+}
+
+export interface SandboxTextFileReadOptions {
+  startLine?: number;
+  lineCount?: number;
+  maxBytes?: number;
+}
+
+export interface SandboxTextFileReadResult {
+  content: string;
+  startLine: number;
+  endLine: number | null;
+  nextStartLine: number | null;
+  truncated: boolean;
+  truncatedBy: "lines" | "bytes" | null;
 }
 
 export interface SandboxPortSession extends SandboxSession {
@@ -60,7 +79,12 @@ export interface SandboxProcessSession extends SandboxSession {
   stopProcess(processId: string, options?: SandboxProcessStopOptions): Promise<SandboxProcessInfo>;
 }
 
-export interface DockerSandboxSession extends SandboxPortSession, SandboxProcessSession {}
+export interface DockerSandboxSession extends SandboxPortSession, SandboxProcessSession {
+  readTextFilePage(
+    path: string,
+    options?: SandboxTextFileReadOptions,
+  ): Promise<SandboxTextFileReadResult>;
+}
 
 export interface SandboxCreateSessionOptions {
   id?: string;
@@ -241,7 +265,7 @@ export interface SandboxToolsOptions {
   include?: SandboxToolName[];
   execTimeoutMs?: number;
   exec?: SandboxExecToolPolicy;
-  readFile?: SandboxFileToolPolicy;
+  readFile?: SandboxReadFileToolPolicy;
   writeFile?: SandboxFileToolPolicy;
   process?: SandboxProcessToolPolicy;
 }
@@ -267,6 +291,11 @@ export interface SandboxExecToolPolicy {
 
 export interface SandboxFileToolPolicy {
   maxBytes?: number;
+}
+
+export interface SandboxReadFileToolPolicy extends SandboxFileToolPolicy {
+  defaultLineCount?: number;
+  maxLineCount?: number;
 }
 
 export interface SandboxProcessToolPolicy {

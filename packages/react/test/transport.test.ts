@@ -251,6 +251,49 @@ describe("@anvia/react useChat", () => {
     expect(result.current.messages).toEqual(initialMessages);
   });
 
+  it("synchronizes context usage when callers replace messages", () => {
+    const contextUsage = {
+      model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+      usedTokens: 100_000,
+      remainingTokens: 300_000,
+      usedPercent: 25,
+      remainingPercent: 75,
+    };
+    const loadedMessage: UIMessage = {
+      id: "assistant_loaded",
+      role: "assistant",
+      parts: [{ id: "text_loaded", type: "text", text: "loaded" }],
+      metadata: { anvia: { generation: { contextUsage } } },
+    };
+    const loadedMessages = [loadedMessage];
+    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+      send: vi.fn(async function* (): AsyncIterable<UIStreamEvent> {
+        yield* [];
+      }),
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+
+    act(() => result.current.setMessages(loadedMessages));
+    expect(result.current.contextUsage).toEqual(contextUsage);
+
+    act(() => result.current.setMessages(() => []));
+    expect(result.current.contextUsage).toBeUndefined();
+
+    act(() =>
+      result.current.setMessages([
+        {
+          ...loadedMessage,
+          metadata: {
+            anvia: {
+              generation: { contextUsage: { ...contextUsage, remainingTokens: 1 } },
+            },
+          },
+        },
+      ]),
+    );
+    expect(result.current.contextUsage).toBeUndefined();
+  });
+
   it("sends converted core messages and applies UI stream events", async () => {
     const onEvent = vi.fn();
     const metadata = { composer: { entities: [{ id: "document-1" }] } };

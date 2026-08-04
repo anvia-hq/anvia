@@ -79,7 +79,7 @@ describe("context usage", () => {
     cacheCreationInputTokens: 0,
   };
 
-  it("uses provider total tokens as raw context occupancy", () => {
+  it("uses provider input tokens as raw context occupancy", () => {
     expect(
       calculateContextUsage(usage, {
         id: "model-a",
@@ -90,16 +90,16 @@ describe("context usage", () => {
         id: "model-a",
         context: { contextWindow: 100, maxInputTokens: 80, maxOutputTokens: 20 },
       },
-      usedTokens: 75,
-      remainingTokens: 25,
-      usedPercent: 75,
-      remainingPercent: 25,
+      usedTokens: 60,
+      remainingTokens: 40,
+      usedPercent: 60,
+      remainingPercent: 40,
     });
   });
 
   it("clamps percentages while preserving over-limit token usage", () => {
     const contextUsage = calculateContextUsage(
-      { ...usage, totalTokens: 125 },
+      { ...usage, inputTokens: 125, totalTokens: 140 },
       { id: "model-a", context: { contextWindow: 100 } },
     );
 

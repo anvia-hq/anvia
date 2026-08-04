@@ -97,14 +97,14 @@
   height: 0.25rem;
   overflow: hidden;
   border-radius: 9999px;
-  background: color-mix(in srgb, currentColor 20%, transparent);
+  background: color-mix(in srgb, currentcolor 20%, transparent);
 }
 
 [data-anvia-context-meter-value] {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: currentColor;
+  background: currentcolor;
 }
 
 [data-state="disabled"] {

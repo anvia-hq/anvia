@@ -56,7 +56,23 @@ function contextUsageValue(value: unknown): ContextUsage | undefined {
   ) {
     return undefined;
   }
+  const contextWindow = value.model.context.contextWindow;
+  const remainingTokens = Math.max(0, contextWindow - value.usedTokens);
+  const usedPercent = Math.min(100, (value.usedTokens / contextWindow) * 100);
+  const remainingPercent = (remainingTokens / contextWindow) * 100;
+  if (
+    value.remainingTokens !== remainingTokens ||
+    !approximatelyEqual(value.usedPercent, usedPercent) ||
+    !approximatelyEqual(value.remainingPercent, remainingPercent)
+  ) {
+    return undefined;
+  }
   return value as unknown as ContextUsage;
+}
+
+function approximatelyEqual(left: number, right: number): boolean {
+  const scale = Math.max(1, Math.abs(left), Math.abs(right));
+  return Math.abs(left - right) <= Number.EPSILON * scale * 8;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

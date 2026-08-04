@@ -109,12 +109,23 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     }) as EventTransport<TRequest, TEvent>;
   }, [options.transport, options.endpoint, options.format]);
 
-  const setMessages = useCallback<UseChatResult<TEvent>["setMessages"]>((nextMessages) => {
+  const updateMessages = useCallback<UseChatResult<TEvent>["setMessages"]>((nextMessages) => {
     const next =
       typeof nextMessages === "function" ? nextMessages(messagesRef.current) : nextMessages;
     messagesRef.current = next;
     setMessagesState(next);
   }, []);
+
+  const setMessages = useCallback<UseChatResult<TEvent>["setMessages"]>(
+    (nextMessages) => {
+      updateMessages((current) => {
+        const next = typeof nextMessages === "function" ? nextMessages(current) : nextMessages;
+        setContextUsage(contextUsageFromMessages(next));
+        return next;
+      });
+    },
+    [updateMessages],
+  );
 
   const setStreamId = useCallback((nextStreamId: string | undefined) => {
     streamIdRef.current = nextStreamId;
@@ -177,7 +188,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
         setContextUsage(contextUpdate.contextUsage);
       }
       if (mappedUIEvent !== undefined) {
-        setMessages((current) => applyUIStreamEvent(current, mappedUIEvent));
+        updateMessages((current) => applyUIStreamEvent(current, mappedUIEvent));
         return;
       }
 
@@ -188,7 +199,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 
       if (!hasCustomEventMapper) {
         let handled = false;
-        setMessages((current) => {
+        updateMessages((current) => {
           const next = applyAnviaStreamEvent(current, event);
           if (next === undefined) {
             return current;
@@ -203,15 +214,15 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 
       const delta = options.eventToDelta?.(event);
       if (delta !== undefined && delta.length > 0) {
-        setMessages((current) => appendAssistantDelta(current, delta));
+        updateMessages((current) => appendAssistantDelta(current, delta));
       }
 
       const final = options.eventToFinal?.(event);
       if (final !== undefined) {
-        setMessages((current) => replaceAssistantText(current, final));
+        updateMessages((current) => replaceAssistantText(current, final));
       }
     },
-    [options, setMessages],
+    [options, updateMessages],
   );
 
   const applyHumanInputEvent = useCallback(
@@ -264,7 +275,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
         setStreamId(runOptions.resume.streamId);
       }
 
-      setMessages(nextMessages);
+      updateMessages(nextMessages);
       setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
@@ -352,7 +363,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       clearResumeState,
       options,
       persistResumeState,
-      setMessages,
+      updateMessages,
       setStreamId,
       transport,
     ],
@@ -521,7 +532,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       abortRef.current?.abort();
       abortRef.current = undefined;
       clearResumeState();
-      setMessages(nextMessages);
+      updateMessages(nextMessages);
       setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       clearHumanInput();
@@ -529,7 +540,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       setStatus("idle");
       setIsResuming(false);
     },
-    [clearHumanInput, clearResumeState, setMessages],
+    [clearHumanInput, clearResumeState, updateMessages],
   );
 
   return {

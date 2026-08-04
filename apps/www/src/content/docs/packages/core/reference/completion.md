@@ -408,7 +408,8 @@ interface StreamingCompletionModel<RawResponse = unknown> extends CompletionMode
 Purpose: provider adapter interfaces. The metadata fields identify the adapter, its default model name, and the normalized request features the adapter supports.
 
 Context usage is the latest completed provider call's raw active occupancy. It uses
-`Usage.totalTokens`, includes the generated output, and is not cumulative across an agent run.
+`Usage.inputTokens`, does not project generated output into the next turn, and is not cumulative
+across an agent run.
 Percentages use the full model context window and are clamped to `0–100`; display-specific reserved
 headroom is intentionally left to applications. Unknown models return `undefined` unless their
 provider model receives a `modelOverrides` entry.

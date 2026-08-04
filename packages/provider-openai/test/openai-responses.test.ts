@@ -68,8 +68,8 @@ describe("OpenAI Responses mapping", () => {
     const response = await completionModel.completion(request);
 
     expect(response.contextUsage).toMatchObject({
-      usedTokens: 75,
-      remainingTokens: 399_925,
+      usedTokens: 60,
+      remainingTokens: 399_940,
       model: { id: "gpt-5", context: { contextWindow: 400_000 } },
     });
 
@@ -92,7 +92,7 @@ describe("OpenAI Responses mapping", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      response: { contextUsage: { usedTokens: 75, remainingTokens: 399_925 } },
+      response: { contextUsage: { usedTokens: 60, remainingTokens: 399_940 } },
     });
   });
 

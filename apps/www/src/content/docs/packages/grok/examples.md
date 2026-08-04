@@ -29,12 +29,12 @@ import { GrokClient } from "@anvia/grok";
 
 export function createSupportModel(): CompletionModel {
   const client = new GrokClient({ apiKey: process.env.XAI_API_KEY });
-  return client.completionModel();
+  return client.completionModel("grok-4.5");
 }
 
 export function createFallbackModel(): CompletionModel {
   const client = new GrokClient({ apiKey: process.env.XAI_API_KEY });
-  return client.completionModel();
+  return client.completionModel("grok-4.3");
 }
 ```
 The application can now choose a model before building the agent while keeping the agent factory provider-neutral.

@@ -41,7 +41,7 @@ Anvia keeps local tools in its executable `ToolSet` and sends Grok tools only to
 - Pair with `@anvia/core` for agents, direct completions, extractors, and pipelines.
 - Pair with `@anvia/server` and `@anvia/react` when exposing streamed runs to a browser UI.
 - Pair with `@anvia/logger`, `@anvia/langfuse`, or `@anvia/otel` when provider calls need operational visibility.
-- Pair provider embeddings with a vector-store package for RAG ingestion and search.
+- Pair an embedding-capable provider with a vector-store package for RAG ingestion and search.
 
 ## Do and do not
 

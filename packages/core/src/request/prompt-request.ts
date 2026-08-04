@@ -642,6 +642,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             runId,
             output: result.output,
             usage: result.usage,
+            contextUsage: result.contextUsage,
             messages: result.messages,
             trace: result.trace,
             guardrails: result.guardrails,
@@ -785,6 +786,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           provider: this.agent.model.provider,
           model: request.model ?? this.agent.model.defaultModel,
           usage: { ...response.usage },
+          ...(response.contextUsage === undefined ? {} : { contextUsage: response.contextUsage }),
           ...(response.sources === undefined ? {} : { sources: response.sources }),
           ...(response.providerToolCalls === undefined
             ? {}
@@ -1330,11 +1332,16 @@ function responseStreamEvents(
 function generationArtifacts(messages: MessageType[]): {
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
+  contextUsage?: import("../completion/index").ContextUsage;
 } {
   const sources = new Map<string, CompletionSource>();
   const providerToolCalls = new Map<string, ProviderToolCall>();
+  let contextUsage: import("../completion/index").ContextUsage | undefined;
   for (const message of messages) {
     const metadata = getAssistantGenerationMetadata(message);
+    if (metadata !== undefined) {
+      contextUsage = metadata.contextUsage;
+    }
     for (const source of metadata?.sources ?? []) {
       const key = `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
       sources.set(key, source);
@@ -1346,6 +1353,7 @@ function generationArtifacts(messages: MessageType[]): {
   return {
     ...(sources.size === 0 ? {} : { sources: [...sources.values()] }),
     ...(providerToolCalls.size === 0 ? {} : { providerToolCalls: [...providerToolCalls.values()] }),
+    ...(contextUsage === undefined ? {} : { contextUsage }),
   };
 }
 

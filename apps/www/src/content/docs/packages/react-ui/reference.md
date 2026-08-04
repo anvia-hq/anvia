@@ -160,6 +160,29 @@ const ThreadListItem: {
 };
 ```
 
+## ContextMeter
+
+```ts
+type ContextMeterProps = Omit<PrimitiveProps<"div">, "children"> & {
+  usage?: ContextUsage;
+  display?: "remaining" | "used";
+  children?: React.ReactNode | ((usage: ContextUsage) => React.ReactNode);
+};
+
+const ContextMeter: React.ForwardRefExoticComponent<ContextMeterProps>;
+```
+
+Purpose: render the context percentage from `useChat().contextUsage` or
+`useCompletion().contextUsage`. It displays remaining context by default, returns `null` when no
+snapshot is available, and emits an accessible progress bar plus `data-anvia-context-meter*`
+styling hooks.
+
+```tsx
+const chat = useChat();
+
+return <ContextMeter usage={chat.contextUsage} />;
+```
+
 ## Streamed text smoothing
 
 `Message.Parts`, `Message.Text`, and `Message.Markdown` accept an optional `stream` lifecycle:

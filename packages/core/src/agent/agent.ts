@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isStreamingCompletionModel } from "../completion/create-completion";
 import type {
   CompletionModel,
+  ContextUsage,
   Document,
   JsonObject,
   JsonValue,
@@ -9,6 +10,7 @@ import type {
   ProviderTool,
   ToolChoice,
 } from "../completion/index";
+import { getAssistantGenerationMetadata } from "../completion/types";
 import type { GuardrailPolicy } from "../guardrails";
 import type { PromptHook } from "../hooks";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
@@ -224,6 +226,21 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
       throw new Error(`Agent "${this.agent.id}" has no memory store configured.`);
     }
     return memory.store.load(this.context);
+  }
+
+  async contextUsage(): Promise<ContextUsage | undefined> {
+    const messages = await this.messages();
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message === undefined) {
+        continue;
+      }
+      const generation = getAssistantGenerationMetadata(message);
+      if (generation !== undefined) {
+        return generation.contextUsage;
+      }
+    }
+    return undefined;
   }
 
   async clear(): Promise<void> {

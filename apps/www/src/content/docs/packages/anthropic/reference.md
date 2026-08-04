@@ -76,7 +76,9 @@ class AnthropicCompletionModel implements StreamingCompletionModel {
   constructor(
     client: Anthropic | AnthropicVertex,
     defaultModel?: AnthropicCompletionModelName,
+    options?: CompletionModelMetadataOptions,
   );
+  getModelInfo(model?: AnthropicCompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

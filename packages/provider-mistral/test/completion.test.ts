@@ -33,6 +33,15 @@ describe("Mistral completion mapping", () => {
     });
   });
 
+  it("exposes model-specific context limits", () => {
+    const model = new MistralCompletionModel({} as never, "mistral-large-latest");
+
+    expect(model.getModelInfo()).toEqual({
+      id: "mistral-large-latest",
+      context: { contextWindow: 262_144, maxOutputTokens: 262_144 },
+    });
+  });
+
   it("rejects unsupported image input before provider calls", async () => {
     const calls: unknown[] = [];
     const model = new MistralCompletionModel(

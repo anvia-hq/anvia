@@ -57,14 +57,16 @@ Purpose: typed model identifiers for autocomplete while preserving support for c
 ```ts
 class GrokResponsesCompletionModel implements StreamingCompletionModel {
   readonly provider: "grok";
-  constructor(client: OpenAI, defaultModel?: GrokCompletionModelName);
+  constructor(client: OpenAI, defaultModel?: GrokCompletionModelName, options?: CompletionModelMetadataOptions);
+  getModelInfo(model?: GrokCompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
 
 class GrokChatCompletionModel implements StreamingCompletionModel {
   readonly provider: "grok-chat";
-  constructor(client: OpenAI, defaultModel?: GrokCompletionModelName);
+  constructor(client: OpenAI, defaultModel?: GrokCompletionModelName, options?: CompletionModelMetadataOptions);
+  getModelInfo(model?: GrokCompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

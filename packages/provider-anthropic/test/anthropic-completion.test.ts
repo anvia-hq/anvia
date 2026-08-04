@@ -36,6 +36,15 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
+  it("exposes model-specific context limits", () => {
+    const model = new AnthropicCompletionModel({} as never, "claude-sonnet-4-20250514");
+
+    expect(model.getModelInfo()).toEqual({
+      id: "claude-sonnet-4-20250514",
+      context: { contextWindow: 200_000, maxOutputTokens: 64_000 },
+    });
+  });
+
   it("rejects unsupported output schemas before provider calls", async () => {
     const calls: unknown[] = [];
     const model = new AnthropicCompletionModel(

@@ -1,4 +1,4 @@
-import type { ImageDetail, JsonValue, Message, Usage } from "../completion/types";
+import type { ContextUsage, ImageDetail, JsonValue, Message, Usage } from "../completion/types";
 
 export type UIMessageRole = "system" | "user" | "assistant" | "tool";
 
@@ -112,6 +112,7 @@ export type UIStreamEvent =
       type: "message_end";
       messageId: string;
       usage?: Usage;
+      contextUsage?: ContextUsage;
       metadata?: JsonValue;
     }
   | {

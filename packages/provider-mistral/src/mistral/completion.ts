@@ -3,6 +3,8 @@ import {
   type AssistantContent as AssistantContentType,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
+  type CompletionModelInfo,
+  type CompletionModelMetadataOptions,
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
@@ -10,17 +12,19 @@ import {
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
   type ToolContent,
   type ToolDefinition,
   Usage,
   type UserContent,
+  withContextUsage,
 } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
-import type { MistralCompletionModelName } from "./models";
+import { MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS, type MistralCompletionModelName } from "./models";
 
 type MistralChatParams = Record<string, unknown>;
 type MistralChatMessage = Record<string, unknown>;
@@ -42,7 +46,18 @@ export class MistralCompletionModel
   constructor(
     private readonly client: Mistral,
     readonly defaultModel: MistralCompletionModelName = "mistral-large-latest",
+    private readonly metadataOptions: CompletionModelMetadataOptions = {},
   ) {}
+
+  getModelInfo(
+    model: MistralCompletionModelName = this.defaultModel,
+  ): CompletionModelInfo<MistralCompletionModelName> | undefined {
+    return resolveCompletionModelInfo(
+      model,
+      MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS,
+      this.metadataOptions.modelOverrides,
+    );
+  }
 
   traceRequest(
     request: CompletionRequest<MistralCompletionModelName>,
@@ -58,7 +73,10 @@ export class MistralCompletionModel
     assertCompletionRequestSupported(this, request);
     const params = toMistralChatParams(this.defaultModel, request);
     const response = await this.client.chat.complete(params as never);
-    return fromMistralChatResponse(response);
+    return withContextUsage(
+      fromMistralChatResponse(response),
+      this.getModelInfo(request.model ?? this.defaultModel),
+    );
   }
 
   async *streamCompletion(
@@ -69,7 +87,15 @@ export class MistralCompletionModel
     const stream = await this.client.chat.stream(params as never);
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       for (const event of fromMistralChatStreamChunk(chunk)) {
-        yield event;
+        yield event.type === "final"
+          ? {
+              ...event,
+              response: withContextUsage(
+                event.response,
+                this.getModelInfo(request.model ?? this.defaultModel),
+              ),
+            }
+          : event;
       }
     }
   }

@@ -5,6 +5,8 @@ import {
   type AssistantContent as AssistantContentType,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
+  type CompletionModelInfo,
+  type CompletionModelMetadataOptions,
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
@@ -14,6 +16,7 @@ import {
   type JsonValue,
   type Message as MessageType,
   type ReasoningContent,
+  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
   type ToolContent,
@@ -21,10 +24,14 @@ import {
   type ToolResultContent,
   Usage,
   type UserContent,
+  withContextUsage,
 } from "@anvia/core/completion";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, stringFrom } from "../utils";
-import type { AnthropicCompletionModelName } from "./models";
+import {
+  ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
+  type AnthropicCompletionModelName,
+} from "./models";
 
 type AnthropicCreateParams = Record<string, unknown>;
 type AnthropicMessage = Record<string, unknown>;
@@ -49,7 +56,18 @@ export class AnthropicCompletionModel
   constructor(
     private readonly client: Anthropic | AnthropicVertex,
     readonly defaultModel: AnthropicCompletionModelName = "claude-sonnet-4-20250514",
+    private readonly metadataOptions: CompletionModelMetadataOptions = {},
   ) {}
+
+  getModelInfo(
+    model: AnthropicCompletionModelName = this.defaultModel,
+  ): CompletionModelInfo<AnthropicCompletionModelName> | undefined {
+    return resolveCompletionModelInfo(
+      model,
+      ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
+      this.metadataOptions.modelOverrides,
+    );
+  }
 
   traceRequest(
     request: CompletionRequest<AnthropicCompletionModelName>,
@@ -68,7 +86,10 @@ export class AnthropicCompletionModel
     assertCompletionRequestSupported(this, request);
     const params = toAnthropicMessagesParams(this.defaultModel, request);
     const response = await this.client.messages.create(params as never);
-    return fromAnthropicMessage(response);
+    return withContextUsage(
+      fromAnthropicMessage(response),
+      this.getModelInfo(request.model ?? this.defaultModel),
+    );
   }
 
   async *streamCompletion(
@@ -103,7 +124,7 @@ export class AnthropicCompletionModel
           applyAnthropicStreamUsage(event, streamUsage, streamUsageFields) || hasStreamUsage;
       }
       for (const mapped of fromAnthropicStreamEvent(event)) {
-        const streamMapped =
+        const usageMapped =
           mapped.type === "final" && hasStreamUsage
             ? {
                 ...mapped,
@@ -113,6 +134,16 @@ export class AnthropicCompletionModel
                 },
               }
             : mapped;
+        const streamMapped =
+          usageMapped.type === "final"
+            ? {
+                ...usageMapped,
+                response: withContextUsage(
+                  usageMapped.response,
+                  this.getModelInfo(request.model ?? this.defaultModel),
+                ),
+              }
+            : usageMapped;
         if (
           streamMapped.type === "tool_call_delta" &&
           streamMapped.argumentsDelta !== undefined &&
@@ -138,7 +169,13 @@ export class AnthropicCompletionModel
         if (streamMessageId !== undefined) {
           response.messageId = streamMessageId;
         }
-        yield { type: "final", response };
+        yield {
+          type: "final",
+          response: withContextUsage(
+            response,
+            this.getModelInfo(request.model ?? this.defaultModel),
+          ),
+        };
       }
     }
   }

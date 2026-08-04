@@ -187,6 +187,9 @@ function createUIStreamResponse(
 Purpose: convert a standard `UIStreamEvent` iterable into an HTTP response for `@anvia/react` hooks,
 or continue a resumable UI stream with the same resume overload as `createEventStream`.
 
+`message_end.contextUsage` is serialized unchanged, allowing the React hooks to expose the latest
+completed model call's context snapshot.
+
 Default behavior: uses the same JSONL response format and headers as `createEventStream(...)` unless `format: "sse"` is passed.
 
 ## createJsonlStream

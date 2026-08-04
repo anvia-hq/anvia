@@ -3,12 +3,15 @@ import {
   type AssistantContent as AssistantContentType,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
+  type CompletionModelInfo,
+  type CompletionModelMetadataOptions,
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolCallArgumentsMode,
   type ToolChoice,
@@ -16,10 +19,11 @@ import {
   type ToolDefinition,
   Usage,
   type UserContent,
+  withContextUsage,
 } from "@anvia/core/completion";
 import type { GoogleGenAI } from "@google/genai";
 import { orderedRequestMessages } from "../request-messages";
-import type { GeminiCompletionModelName } from "./models";
+import { GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS, type GeminiCompletionModelName } from "./models";
 
 type GeminiGenerateParams = Record<string, unknown>;
 type GeminiConfig = Record<string, unknown>;
@@ -46,7 +50,18 @@ export class GeminiCompletionModel
   constructor(
     private readonly client: GoogleGenAI,
     readonly defaultModel: GeminiCompletionModelName = "gemini-2.5-flash",
+    private readonly metadataOptions: CompletionModelMetadataOptions = {},
   ) {}
+
+  getModelInfo(
+    model: GeminiCompletionModelName = this.defaultModel,
+  ): CompletionModelInfo<GeminiCompletionModelName> | undefined {
+    return resolveCompletionModelInfo(
+      model,
+      GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS,
+      this.metadataOptions.modelOverrides,
+    );
+  }
 
   traceRequest(
     request: CompletionRequest<GeminiCompletionModelName>,
@@ -62,7 +77,10 @@ export class GeminiCompletionModel
     assertCompletionRequestSupported(this, request);
     const params = toGeminiGenerateContentParams(this.defaultModel, request);
     const response = await this.client.models.generateContent(params as never);
-    return fromGeminiGenerateContentResponse(response);
+    return withContextUsage(
+      fromGeminiGenerateContentResponse(response),
+      this.getModelInfo(request.model ?? this.defaultModel),
+    );
   }
 
   async *streamCompletion(
@@ -73,7 +91,15 @@ export class GeminiCompletionModel
     const stream = await this.client.models.generateContentStream(params as never);
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       for (const event of fromGeminiGenerateContentStreamChunk(chunk)) {
-        yield event;
+        yield event.type === "final"
+          ? {
+              ...event,
+              response: withContextUsage(
+                event.response,
+                this.getModelInfo(request.model ?? this.defaultModel),
+              ),
+            }
+          : event;
       }
     }
   }

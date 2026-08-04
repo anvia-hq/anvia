@@ -4,10 +4,13 @@ export type {
   AssistantMessage,
   AssistantMessageOptions,
   CompletionModel,
+  CompletionModelInfo,
+  CompletionModelMetadataOptions,
   CompletionRequest,
   CompletionResponse,
   CompletionSource,
   CompletionTool,
+  ContextUsage,
   CreateCompletionBaseOptions,
   CreateCompletionInput,
   CreateCompletionOptions,
@@ -21,6 +24,7 @@ export type {
   JsonPrimitive,
   JsonValue,
   MessageOptions,
+  ModelContextLimits,
   ProviderTool,
   ProviderToolCall,
   SystemMessage,
@@ -36,6 +40,7 @@ export type {
 } from "./completion/index";
 export {
   AssistantContent,
+  calculateContextUsage,
   createCompletion,
   createCompletionStream,
   createParsedCompletion,
@@ -43,9 +48,11 @@ export {
   isJsonValue,
   isProviderTool,
   Message,
+  resolveCompletionModelInfo,
   ToolContent,
   Usage,
   UserContent,
+  withContextUsage,
 } from "./completion/index";
 export type {
   GuardrailBoundary,

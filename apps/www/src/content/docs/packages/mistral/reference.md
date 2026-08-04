@@ -53,7 +53,8 @@ Purpose: typed model identifiers for autocomplete while preserving support for c
 
 ```ts
 class MistralCompletionModel implements StreamingCompletionModel {
-  constructor(client: Mistral, defaultModel?: MistralCompletionModelName);
+  constructor(client: Mistral, defaultModel?: MistralCompletionModelName, options?: CompletionModelMetadataOptions);
+  getModelInfo(model?: MistralCompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

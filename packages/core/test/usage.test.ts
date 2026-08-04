@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Usage } from "../src/completion";
+import {
+  calculateContextUsage,
+  resolveCompletionModelInfo,
+  Usage,
+  withContextUsage,
+} from "../src/completion";
 
 describe("Usage", () => {
   it("adds complete mutually exclusive details", () => {
@@ -62,5 +67,69 @@ describe("Usage", () => {
       details: { input: 2, output: 1, total: 3 },
     };
     expect(Usage.add(Usage.empty(), usage)).toEqual(usage);
+  });
+});
+
+describe("context usage", () => {
+  const usage = {
+    inputTokens: 60,
+    outputTokens: 15,
+    totalTokens: 75,
+    cachedInputTokens: 20,
+    cacheCreationInputTokens: 0,
+  };
+
+  it("uses provider total tokens as raw context occupancy", () => {
+    expect(
+      calculateContextUsage(usage, {
+        id: "model-a",
+        context: { contextWindow: 100, maxInputTokens: 80, maxOutputTokens: 20 },
+      }),
+    ).toEqual({
+      model: {
+        id: "model-a",
+        context: { contextWindow: 100, maxInputTokens: 80, maxOutputTokens: 20 },
+      },
+      usedTokens: 75,
+      remainingTokens: 25,
+      usedPercent: 75,
+      remainingPercent: 25,
+    });
+  });
+
+  it("clamps percentages while preserving over-limit token usage", () => {
+    const contextUsage = calculateContextUsage(
+      { ...usage, totalTokens: 125 },
+      { id: "model-a", context: { contextWindow: 100 } },
+    );
+
+    expect(contextUsage).toMatchObject({
+      usedTokens: 125,
+      remainingTokens: 0,
+      usedPercent: 100,
+      remainingPercent: 0,
+    });
+  });
+
+  it("returns undefined without authoritative usage or model limits", () => {
+    expect(calculateContextUsage(Usage.empty(), undefined)).toBeUndefined();
+    expect(
+      calculateContextUsage(Usage.empty(), {
+        id: "model-a",
+        context: { contextWindow: 100 },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("resolves overrides before catalogs and decorates responses", () => {
+    const info = resolveCompletionModelInfo(
+      "custom",
+      { custom: { contextWindow: 100 } },
+      { custom: { contextWindow: 200 } },
+    );
+    const response = withContextUsage({ choice: [], usage, rawResponse: {} }, info);
+
+    expect(response.contextUsage?.model.context.contextWindow).toBe(200);
+    expect(resolveCompletionModelInfo("unknown", {})).toBeUndefined();
   });
 });

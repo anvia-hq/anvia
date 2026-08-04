@@ -24,6 +24,15 @@ describe("Grok completion models", () => {
     });
   });
 
+  it("exposes model-specific context limits", () => {
+    const model = new GrokResponsesCompletionModel({} as never, "grok-4.5");
+
+    expect(model.getModelInfo()).toEqual({
+      id: "grok-4.5",
+      context: { contextWindow: 500_000 },
+    });
+  });
+
   it("combines local, Grok, and legacy raw Responses tools", async () => {
     const calls: unknown[] = [];
     const model = new GrokResponsesCompletionModel(

@@ -1,6 +1,7 @@
 import {
   AssistantContent,
   type CompletionRequest,
+  type CompletionStreamEvent,
   Message,
   ToolContent,
   Usage,
@@ -30,6 +31,68 @@ describe("OpenAI Responses mapping", () => {
       outputSchema: true,
       reasoning: true,
       providerTools: true,
+    });
+  });
+
+  it("resolves built-in, custom, and unknown model context limits", () => {
+    const model = new OpenAIResponsesCompletionModel({} as never, "gpt-5", {
+      modelOverrides: { custom: { contextWindow: 42_000, maxOutputTokens: 2_000 } },
+    });
+
+    expect(model.getModelInfo()).toMatchObject({
+      id: "gpt-5",
+      context: { contextWindow: 400_000, maxOutputTokens: 128_000 },
+    });
+    expect(model.getModelInfo("custom")).toEqual({
+      id: "custom",
+      context: { contextWindow: 42_000, maxOutputTokens: 2_000 },
+    });
+    expect(model.getModelInfo("unknown")).toBeUndefined();
+  });
+
+  it("attaches context usage to completed and streamed responses", async () => {
+    const rawResponse = {
+      output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],
+      usage: { input_tokens: 60, output_tokens: 15, total_tokens: 75 },
+    };
+    const request: CompletionRequest = {
+      chatHistory: [Message.user("hello")],
+      documents: [],
+      tools: [],
+    };
+    const completionModel = new OpenAIResponsesCompletionModel(
+      { responses: { create: async () => rawResponse } } as never,
+      "gpt-5",
+    );
+
+    const response = await completionModel.completion(request);
+
+    expect(response.contextUsage).toMatchObject({
+      usedTokens: 75,
+      remainingTokens: 399_925,
+      model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+    });
+
+    const streamModel = new OpenAIResponsesCompletionModel(
+      {
+        responses: {
+          create: async () => ({
+            async *[Symbol.asyncIterator]() {
+              yield { type: "response.completed", response: rawResponse };
+            },
+          }),
+        },
+      } as never,
+      "gpt-5",
+    );
+    const events: CompletionStreamEvent[] = [];
+    for await (const event of streamModel.streamCompletion(request)) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      response: { contextUsage: { usedTokens: 75, remainingTokens: 399_925 } },
     });
   });
 

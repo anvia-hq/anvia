@@ -7,6 +7,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
+  type ContextUsage,
   cancelPrompt,
   createHook,
   createMiddleware,
@@ -113,10 +114,12 @@ class RecordingMemoryStore implements MemoryStore {
 function response(
   choice: CompletionResponse["choice"],
   usage: CompletionResponse["usage"] = Usage.empty(),
+  contextUsage?: ContextUsage,
 ): CompletionResponse {
   return {
     choice,
     usage,
+    ...(contextUsage === undefined ? {} : { contextUsage }),
     rawResponse: {},
   };
 }
@@ -271,6 +274,48 @@ describe("agent memory", () => {
 
     expect(resultMetadata).toEqual(expected);
     expect(persistedMetadata).toEqual(expected);
+  });
+
+  it("persists and returns the latest context usage for a session", async () => {
+    const store = new RecordingMemoryStore();
+    const contextUsage: ContextUsage = {
+      model: { id: "test", context: { contextWindow: 100, maxOutputTokens: 20 } },
+      usedTokens: 25,
+      remainingTokens: 75,
+      usedPercent: 25,
+      remainingPercent: 75,
+    };
+    const model = new QueueModel([
+      response(
+        [AssistantContent.text("done")],
+        {
+          inputTokens: 20,
+          outputTokens: 5,
+          totalTokens: 25,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+        contextUsage,
+      ),
+      response([AssistantContent.text("unknown model")], {
+        inputTokens: 30,
+        outputTokens: 5,
+        totalTokens: 35,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      }),
+    ]);
+    const agent = new AgentBuilder("test-agent", model).memory(store).build();
+    const session = agent.session("context-usage");
+
+    const result = await session.prompt("hello").send();
+
+    expect(result.contextUsage).toEqual(contextUsage);
+    await expect(session.contextUsage()).resolves.toEqual(contextUsage);
+
+    const unknownResult = await session.prompt("switch model").send();
+    expect(unknownResult.contextUsage).toBeUndefined();
+    await expect(session.contextUsage()).resolves.toBeUndefined();
   });
 
   it("records failed runs after preserving completed messages", async () => {

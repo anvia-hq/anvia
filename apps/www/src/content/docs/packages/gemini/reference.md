@@ -82,7 +82,8 @@ Gemini audio generation is not implemented in v1.
 
 ```ts
 class GeminiCompletionModel implements StreamingCompletionModel {
-  constructor(client: GoogleGenAI, defaultModel?: GeminiCompletionModelName);
+  constructor(client: GoogleGenAI, defaultModel?: GeminiCompletionModelName, options?: CompletionModelMetadataOptions);
+  getModelInfo(model?: GeminiCompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

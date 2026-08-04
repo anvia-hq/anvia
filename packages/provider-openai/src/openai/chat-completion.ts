@@ -3,6 +3,8 @@ import {
   type AssistantContent as AssistantContentType,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
+  type CompletionModelInfo,
+  type CompletionModelMetadataOptions,
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
@@ -11,11 +13,13 @@ import {
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
   type ToolContent,
   type ToolDefinition,
   type UserContent,
+  withContextUsage,
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
@@ -27,7 +31,7 @@ import {
   schemaName,
   stringFrom,
 } from "../utils";
-import type { OpenAICompletionModelName } from "./models";
+import { OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS, type OpenAICompletionModelName } from "./models";
 
 type ChatCompletionParams = Record<string, unknown>;
 type ChatMessage = Record<string, unknown>;
@@ -71,7 +75,18 @@ export class OpenAIChatCompletionModel
   constructor(
     private readonly client: OpenAI,
     readonly defaultModel: OpenAICompletionModelName = "openai/gpt-5.2",
+    private readonly metadataOptions: CompletionModelMetadataOptions = {},
   ) {}
+
+  getModelInfo(
+    model: OpenAICompletionModelName = this.defaultModel,
+  ): CompletionModelInfo<OpenAICompletionModelName> | undefined {
+    return resolveCompletionModelInfo(
+      model,
+      OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS,
+      this.metadataOptions.modelOverrides,
+    );
+  }
 
   traceRequest(
     request: CompletionRequest<OpenAICompletionModelName>,
@@ -92,7 +107,10 @@ export class OpenAIChatCompletionModel
     assertCompletionRequestSupported(this, request);
     const params = toOpenAIChatCompletionParams(this.defaultModel, request);
     const response = await this.client.chat.completions.create(params as never);
-    return fromOpenAIChatCompletionResponse(response);
+    return withContextUsage(
+      fromOpenAIChatCompletionResponse(response),
+      this.getModelInfo(request.model ?? this.defaultModel),
+    );
   }
 
   async *streamCompletion(
@@ -110,7 +128,15 @@ export class OpenAIChatCompletionModel
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       const mapping = streamState.mapChunk(chunk);
       for (const event of mapping.events) {
-        yield event;
+        yield event.type === "final"
+          ? {
+              ...event,
+              response: withContextUsage(
+                event.response,
+                this.getModelInfo(request.model ?? this.defaultModel),
+              ),
+            }
+          : event;
       }
     }
     streamState.assertComplete();

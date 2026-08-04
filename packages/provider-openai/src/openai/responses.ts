@@ -3,6 +3,8 @@ import {
   type AssistantContent as AssistantContentType,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
+  type CompletionModelInfo,
+  type CompletionModelMetadataOptions,
   type CompletionRequest,
   type CompletionResponse,
   type CompletionSource,
@@ -16,12 +18,14 @@ import {
   type ProviderToolCall,
   type Reasoning,
   type ReasoningContent,
+  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
   type ToolContent,
   type ToolDefinition,
   type ToolResultContent,
   type UserContent,
+  withContextUsage,
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
 import { orderedRequestMessages } from "../request-messages";
@@ -33,7 +37,7 @@ import {
   schemaName,
   stringFrom,
 } from "../utils";
-import type { OpenAICompletionModelName } from "./models";
+import { OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS, type OpenAICompletionModelName } from "./models";
 
 type ResponsesCreateParams = Record<string, unknown>;
 type ResponsesInputItem = Record<string, unknown>;
@@ -56,7 +60,18 @@ export class OpenAIResponsesCompletionModel
   constructor(
     private readonly client: OpenAI,
     readonly defaultModel: OpenAICompletionModelName = "gpt-5",
+    private readonly metadataOptions: CompletionModelMetadataOptions = {},
   ) {}
+
+  getModelInfo(
+    model: OpenAICompletionModelName = this.defaultModel,
+  ): CompletionModelInfo<OpenAICompletionModelName> | undefined {
+    return resolveCompletionModelInfo(
+      model,
+      OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS,
+      this.metadataOptions.modelOverrides,
+    );
+  }
 
   traceRequest(
     request: CompletionRequest<OpenAICompletionModelName>,
@@ -75,7 +90,10 @@ export class OpenAIResponsesCompletionModel
     assertCompletionRequestSupported(this, request);
     const params = toOpenAIResponsesParams(this.defaultModel, request);
     const response = await this.client.responses.create(params as never);
-    return fromOpenAIResponse(response);
+    return withContextUsage(
+      fromOpenAIResponse(response),
+      this.getModelInfo(request.model ?? this.defaultModel),
+    );
   }
 
   async *streamCompletion(
@@ -87,7 +105,15 @@ export class OpenAIResponsesCompletionModel
     for await (const event of stream as unknown as AsyncIterable<unknown>) {
       const mapped = fromOpenAIStreamEvent(event);
       if (mapped !== undefined) {
-        yield mapped;
+        yield mapped.type === "final"
+          ? {
+              ...mapped,
+              response: withContextUsage(
+                mapped.response,
+                this.getModelInfo(request.model ?? this.defaultModel),
+              ),
+            }
+          : mapped;
       }
     }
   }

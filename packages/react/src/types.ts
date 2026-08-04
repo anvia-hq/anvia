@@ -1,4 +1,4 @@
-import type { Message } from "@anvia/core/completion";
+import type { ContextUsage, Message } from "@anvia/core/completion";
 import type {
   CreateUIAttachment,
   UIMessage,
@@ -202,6 +202,7 @@ export type SetMessages = (
 export type UseChatResult<TEvent = UIStreamEvent> = {
   messages: UIMessage[];
   events: TEvent[];
+  contextUsage: ContextUsage | undefined;
   suggestions?: ChatSuggestion[];
   setMessages: SetMessages;
   sendMessage(input: SendMessageInput): Promise<void>;

@@ -102,7 +102,8 @@ Notable errors: rejects on OpenAI SDK errors or mismatched embedding counts.
 
 ```ts
 class OpenAIResponsesCompletionModel implements StreamingCompletionModel {
-  constructor(client: OpenAI, defaultModel?: OpenAICompletionModelName);
+  constructor(client: OpenAI, defaultModel?: OpenAICompletionModelName, options?: CompletionModelMetadataOptions);
+  getModelInfo(model?: OpenAICompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }
@@ -118,7 +119,8 @@ Notable errors: rejects or yields errors from OpenAI Responses API calls.
 
 ```ts
 class OpenAIChatCompletionModel implements StreamingCompletionModel {
-  constructor(client: OpenAI, defaultModel?: OpenAICompletionModelName);
+  constructor(client: OpenAI, defaultModel?: OpenAICompletionModelName, options?: CompletionModelMetadataOptions);
+  getModelInfo(model?: OpenAICompletionModelName): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse>;
   streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent>;
 }

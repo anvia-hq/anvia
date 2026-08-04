@@ -523,15 +523,15 @@ export function calculateContextUsage<ModelName extends string>(
 ): ContextUsage<ModelName> | undefined {
   if (
     model === undefined ||
-    !Number.isFinite(usage.totalTokens) ||
-    usage.totalTokens <= 0 ||
+    !Number.isFinite(usage.inputTokens) ||
+    usage.inputTokens <= 0 ||
     !Number.isFinite(model.context.contextWindow) ||
     model.context.contextWindow <= 0
   ) {
     return undefined;
   }
 
-  const usedTokens = Math.max(0, usage.totalTokens);
+  const usedTokens = Math.max(0, usage.inputTokens);
   const remainingTokens = Math.max(0, model.context.contextWindow - usedTokens);
   const usedPercent = Math.min(100, (usedTokens / model.context.contextWindow) * 100);
   return {
@@ -681,7 +681,7 @@ function isContextUsageValue(value: JsonValue | undefined): value is JsonObject 
     return false;
   }
   const context = value.model.context;
-  return (
+  if (
     typeof value.model.id === "string" &&
     isJsonObjectValue(context) &&
     isPositiveFiniteNumber(context.contextWindow) &&
@@ -691,7 +691,23 @@ function isContextUsageValue(value: JsonValue | undefined): value is JsonObject 
     isNonnegativeFiniteNumber(value.remainingTokens) &&
     isPercentage(value.usedPercent) &&
     isPercentage(value.remainingPercent)
-  );
+  ) {
+    const contextWindow = context.contextWindow;
+    const remainingTokens = Math.max(0, contextWindow - value.usedTokens);
+    const usedPercent = Math.min(100, (value.usedTokens / contextWindow) * 100);
+    const remainingPercent = (remainingTokens / contextWindow) * 100;
+    return (
+      value.remainingTokens === remainingTokens &&
+      approximatelyEqual(value.usedPercent, usedPercent) &&
+      approximatelyEqual(value.remainingPercent, remainingPercent)
+    );
+  }
+  return false;
+}
+
+function approximatelyEqual(left: number, right: number): boolean {
+  const scale = Math.max(1, Math.abs(left), Math.abs(right));
+  return Math.abs(left - right) <= Number.EPSILON * scale * 8;
 }
 
 function isPositiveFiniteNumber(value: JsonValue | undefined): value is number {

@@ -309,6 +309,48 @@ describe("message attachment content", () => {
     ).toMatchObject({ usage: { details: { total: 9 } } });
   });
 
+  it("rejects internally inconsistent context usage metadata", () => {
+    const messageWithContextUsage = (contextUsage: JsonValue) =>
+      Message.assistant("assistant", {
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              model: "test-model",
+              usage: {
+                inputTokens: 60,
+                outputTokens: 15,
+                totalTokens: 75,
+                cachedInputTokens: 0,
+                cacheCreationInputTokens: 0,
+              },
+              contextUsage,
+            },
+          },
+        },
+      });
+    const validContextUsage = {
+      model: { id: "test-model", context: { contextWindow: 100 } },
+      usedTokens: 60,
+      remainingTokens: 40,
+      usedPercent: 60,
+      remainingPercent: 40,
+    };
+
+    expect(
+      getAssistantGenerationMetadata(messageWithContextUsage(validContextUsage)),
+    ).toMatchObject({ contextUsage: validContextUsage });
+    for (const inconsistent of [
+      { ...validContextUsage, remainingTokens: 90 },
+      { ...validContextUsage, usedPercent: 10 },
+      { ...validContextUsage, remainingPercent: 10 },
+    ]) {
+      expect(
+        getAssistantGenerationMetadata(messageWithContextUsage(inconsistent)),
+      ).not.toHaveProperty("contextUsage");
+    }
+  });
+
   it("validates strict JSON values without accepting lossy structures", () => {
     const shared = { value: 1 };
     expect(isJsonValue({ shared, duplicate: shared, list: [null, true, 1, "ok"] })).toBe(true);

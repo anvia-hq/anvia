@@ -34,6 +34,13 @@ describe("@anvia/react useCompletion", () => {
           response: {
             choice: [AssistantContent.text("Hello")],
             usage: Usage.empty(),
+            contextUsage: {
+              model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+              usedTokens: 200_000,
+              remainingTokens: 200_000,
+              usedPercent: 50,
+              remainingPercent: 50,
+            },
             rawResponse: {},
           },
         };
@@ -49,6 +56,10 @@ describe("@anvia/react useCompletion", () => {
     expect(result.current.status).toBe("idle");
     expect(result.current.error).toBeUndefined();
     expect(result.current.completion).toBe("Hello");
+    expect(result.current.contextUsage).toMatchObject({
+      usedTokens: 200_000,
+      remainingPercent: 50,
+    });
     expect(result.current.messages).toMatchObject([
       { role: "user", parts: [{ type: "text", text: "hello" }] },
       {

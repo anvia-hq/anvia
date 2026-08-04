@@ -82,13 +82,14 @@ Notable errors: `session(...)` throws when no memory store is configured or the 
 type AgentSession<M extends CompletionModel = CompletionModel> = {
   prompt(prompt: string | Message): PromptRequest<M>;
   messages(): Promise<Message[]>;
+  contextUsage(): Promise<ContextUsage | undefined>;
   clear(): Promise<void>;
 };
 ```
 
 Purpose: durable conversation scope created by `agent.session(sessionId, options?)`.
 
-Return behavior: `prompt(...)` loads messages from the configured memory store before the run and appends new messages according to the agent memory policy. Session prompts do not accept `Message[]`; use `agent.prompt(Message[])` for explicit stateless transcripts.
+Return behavior: `prompt(...)` loads messages from the configured memory store before the run and appends new messages according to the agent memory policy. `contextUsage()` returns the newest persisted assistant generation's context snapshot. Session prompts do not accept `Message[]`; use `agent.prompt(Message[])` for explicit stateless transcripts.
 
 Notable errors: methods throw when the built agent has no memory store configured.
 

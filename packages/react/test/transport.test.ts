@@ -282,6 +282,13 @@ describe("@anvia/react useChat", () => {
         yield {
           type: "message_end",
           messageId: "assistant_1",
+          contextUsage: {
+            model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+            usedTokens: 100_000,
+            remainingTokens: 300_000,
+            usedPercent: 25,
+            remainingPercent: 75,
+          },
           metadata: { providerMessageId: "provider_1" },
         };
       },
@@ -296,6 +303,10 @@ describe("@anvia/react useChat", () => {
     expect(result.current.status).toBe("idle");
     expect(result.current.error).toBeUndefined();
     expect(result.current.text).toBe("Hello");
+    expect(result.current.contextUsage).toMatchObject({
+      usedTokens: 100_000,
+      remainingPercent: 75,
+    });
     expect(result.current.messages).toMatchObject([
       {
         id: "user_1",
@@ -777,6 +788,13 @@ describe("@anvia/react useChat", () => {
           response: {
             choice: [AssistantContent.text("Hello")],
             usage: Usage.empty(),
+            contextUsage: {
+              model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+              usedTokens: 100_000,
+              remainingTokens: 300_000,
+              usedPercent: 25,
+              remainingPercent: 75,
+            },
             rawResponse: {},
             messageId: "provider_1",
           },
@@ -790,6 +808,10 @@ describe("@anvia/react useChat", () => {
     });
 
     expect(result.current.text).toBe("Hello");
+    expect(result.current.contextUsage).toMatchObject({
+      usedTokens: 100_000,
+      remainingPercent: 75,
+    });
     expect(result.current.messages).toMatchObject([
       { role: "user", parts: [{ type: "text", text: "hi" }] },
       {

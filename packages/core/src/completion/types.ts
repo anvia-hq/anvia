@@ -494,10 +494,77 @@ export type Usage = {
   details?: UsageDetails;
 };
 
+export type ModelContextLimits = {
+  contextWindow: number;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+};
+
+export type CompletionModelInfo<ModelName extends string = string> = {
+  id: ModelName;
+  context: ModelContextLimits;
+};
+
+export type CompletionModelMetadataOptions = {
+  modelOverrides?: Readonly<Record<string, ModelContextLimits>>;
+};
+
+export type ContextUsage<ModelName extends string = string> = {
+  model: CompletionModelInfo<ModelName>;
+  usedTokens: number;
+  remainingTokens: number;
+  usedPercent: number;
+  remainingPercent: number;
+};
+
+export function calculateContextUsage<ModelName extends string>(
+  usage: Usage,
+  model: CompletionModelInfo<ModelName> | undefined,
+): ContextUsage<ModelName> | undefined {
+  if (
+    model === undefined ||
+    !Number.isFinite(usage.totalTokens) ||
+    usage.totalTokens <= 0 ||
+    !Number.isFinite(model.context.contextWindow) ||
+    model.context.contextWindow <= 0
+  ) {
+    return undefined;
+  }
+
+  const usedTokens = Math.max(0, usage.totalTokens);
+  const remainingTokens = Math.max(0, model.context.contextWindow - usedTokens);
+  const usedPercent = Math.min(100, (usedTokens / model.context.contextWindow) * 100);
+  return {
+    model,
+    usedTokens,
+    remainingTokens,
+    usedPercent,
+    remainingPercent: 100 - usedPercent,
+  };
+}
+
+export function withContextUsage<RawResponse, ModelName extends string>(
+  response: CompletionResponse<RawResponse>,
+  model: CompletionModelInfo<ModelName> | undefined,
+): CompletionResponse<RawResponse> {
+  const contextUsage = calculateContextUsage(response.usage, model);
+  return contextUsage === undefined ? response : { ...response, contextUsage };
+}
+
+export function resolveCompletionModelInfo<ModelName extends string>(
+  model: ModelName,
+  catalog: Readonly<Record<string, ModelContextLimits>>,
+  overrides?: Readonly<Record<string, ModelContextLimits>>,
+): CompletionModelInfo<ModelName> | undefined {
+  const context = overrides?.[model] ?? catalog[model];
+  return context === undefined ? undefined : { id: model, context };
+}
+
 export type AssistantGenerationMetadata = {
   provider: string;
   model: string;
   usage: Usage;
+  contextUsage?: ContextUsage;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
 };
@@ -584,6 +651,15 @@ export function getAssistantGenerationMetadata(
         : { details: { ...generation.usage.details } }),
     },
   };
+  if (isContextUsageValue(generation.contextUsage)) {
+    metadata.contextUsage = {
+      ...generation.contextUsage,
+      model: {
+        ...generation.contextUsage.model,
+        context: { ...generation.contextUsage.model.context },
+      },
+    };
+  }
   if (isCompletionSourceArray(generation.sources)) {
     metadata.sources = generation.sources.map((source) => ({ ...source }));
   }
@@ -598,6 +674,36 @@ export function getAssistantGenerationMetadata(
 
 function isJsonObjectValue(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isContextUsageValue(value: JsonValue | undefined): value is JsonObject & ContextUsage {
+  if (!isJsonObjectValue(value) || !isJsonObjectValue(value.model)) {
+    return false;
+  }
+  const context = value.model.context;
+  return (
+    typeof value.model.id === "string" &&
+    isJsonObjectValue(context) &&
+    isPositiveFiniteNumber(context.contextWindow) &&
+    isOptionalPositiveFiniteNumber(context.maxInputTokens) &&
+    isOptionalPositiveFiniteNumber(context.maxOutputTokens) &&
+    isNonnegativeFiniteNumber(value.usedTokens) &&
+    isNonnegativeFiniteNumber(value.remainingTokens) &&
+    isPercentage(value.usedPercent) &&
+    isPercentage(value.remainingPercent)
+  );
+}
+
+function isPositiveFiniteNumber(value: JsonValue | undefined): value is number {
+  return isNonnegativeFiniteNumber(value) && value > 0;
+}
+
+function isOptionalPositiveFiniteNumber(value: JsonValue | undefined): boolean {
+  return value === undefined || isPositiveFiniteNumber(value);
+}
+
+function isPercentage(value: JsonValue | undefined): value is number {
+  return isNonnegativeFiniteNumber(value) && value <= 100;
 }
 
 function isUsageValue(value: JsonValue | undefined): value is JsonObject & Usage {
@@ -687,6 +793,7 @@ export type CompletionRequest<ModelName extends string = string> = {
 export type CompletionResponse<RawResponse = unknown> = {
   choice: AssistantContent[];
   usage: Usage;
+  contextUsage?: ContextUsage;
   rawResponse: RawResponse;
   messageId?: string;
   sources?: CompletionSource[];
@@ -708,6 +815,7 @@ export interface CompletionModel<RawResponse = unknown, ModelName extends string
   readonly provider: string;
   readonly defaultModel: ModelName;
   readonly capabilities: CompletionModelCapabilities;
+  getModelInfo?(model?: ModelName): CompletionModelInfo<ModelName> | undefined;
   traceRequest?(
     request: CompletionRequest<ModelName>,
     options?: { stream?: boolean | undefined },

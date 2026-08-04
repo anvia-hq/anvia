@@ -1,4 +1,4 @@
-import type { Message } from "@anvia/core/completion";
+import type { ContextUsage, Message } from "@anvia/core/completion";
 import {
   type UIMessage,
   type UIStreamEvent,
@@ -6,7 +6,7 @@ import {
   uiMessagesToCoreMessages,
 } from "@anvia/core/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
 import { createFetchTransport } from "./transport";
 import type { EventStreamFormat, EventTransport } from "./types";
 import {
@@ -51,6 +51,7 @@ export type UseCompletionResult<TEvent = UIStreamEvent> = {
   status: UseCompletionStatus;
   error: unknown;
   events: TEvent[];
+  contextUsage: ContextUsage | undefined;
 };
 
 export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
@@ -79,6 +80,9 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
   const [messages, setMessagesState] = useState<UIMessage[]>(() => [...initialMessages]);
   const [input, setInput] = useState("");
   const [events, setEvents] = useState<TEvent[]>([]);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | undefined>(() =>
+    contextUsageFromMessages(initialMessages),
+  );
   const [status, setStatus] = useState<UseCompletionStatus>("idle");
   const [error, setError] = useState<unknown>();
   const abortRef = useRef<AbortController | undefined>(undefined);
@@ -116,6 +120,10 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
   const applyEvent = useCallback(
     (event: TEvent) => {
       const mappedUIEvent = options.eventToUIEvent?.(event);
+      const contextUpdate = contextUsageUpdateFromEvent(mappedUIEvent ?? event);
+      if (contextUpdate !== undefined) {
+        setContextUsage(contextUpdate.contextUsage);
+      }
       if (mappedUIEvent !== undefined) {
         setMessagesState((current) => {
           const next = applyUIStreamEvent(current, mappedUIEvent);
@@ -250,6 +258,7 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
       abortRef.current = undefined;
       if (Array.isArray(messagesOrCompletion)) {
         setMessages(messagesOrCompletion);
+        setContextUsage(contextUsageFromMessages(messagesOrCompletion));
       } else if (typeof messagesOrCompletion === "string") {
         setMessages([
           {
@@ -258,8 +267,10 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
             parts: [{ id: "reset_assistant_text", type: "text", text: messagesOrCompletion }],
           },
         ]);
+        setContextUsage(undefined);
       } else {
         setMessages([]);
+        setContextUsage(undefined);
       }
       setEvents([]);
       setError(undefined);
@@ -280,6 +291,7 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
     status,
     error,
     events,
+    contextUsage,
   };
 }
 

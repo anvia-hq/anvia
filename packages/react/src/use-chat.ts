@@ -5,7 +5,7 @@ import {
   uiMessagesToCoreMessages,
 } from "@anvia/core/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
 import {
   defaultAnswerQuestion,
   defaultDecideApproval,
@@ -47,6 +47,9 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 ): UseChatResult<TEvent> {
   const [messages, setMessagesState] = useState(() => [...(options.initialMessages ?? [])]);
   const [events, setEvents] = useState<TEvent[]>([]);
+  const [contextUsage, setContextUsage] = useState(() =>
+    contextUsageFromMessages(options.initialMessages ?? []),
+  );
   const [status, setStatus] = useState<UseChatResult<TEvent>["status"]>("idle");
   const [error, setError] = useState<unknown>();
   const [approvals, setApprovals] = useState<ToolApproval[]>([]);
@@ -169,6 +172,10 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   const applyEvent = useCallback(
     (event: TEvent) => {
       const mappedUIEvent = options.eventToUIEvent?.(event);
+      const contextUpdate = contextUsageUpdateFromEvent(mappedUIEvent ?? event);
+      if (contextUpdate !== undefined) {
+        setContextUsage(contextUpdate.contextUsage);
+      }
       if (mappedUIEvent !== undefined) {
         setMessages((current) => applyUIStreamEvent(current, mappedUIEvent));
         return;
@@ -258,6 +265,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       }
 
       setMessages(nextMessages);
+      setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
       clearHumanInput();
@@ -514,6 +522,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       abortRef.current = undefined;
       clearResumeState();
       setMessages(nextMessages);
+      setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       clearHumanInput();
       setError(undefined);
@@ -526,6 +535,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   return {
     messages,
     events,
+    contextUsage,
     suggestions: options.suggestions ?? [],
     setMessages,
     sendMessage,

@@ -96,6 +96,7 @@ type AssistantGenerationMetadata = {
   provider: string;
   model: string;
   usage: Usage;
+  contextUsage?: ContextUsage;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
 };
@@ -297,6 +298,7 @@ type CompletionRequest = {
 type CompletionResponse<RawResponse = unknown> = {
   choice: AssistantContent[];
   usage: Usage;
+  contextUsage?: ContextUsage;
   rawResponse: RawResponse;
   messageId?: string;
   sources?: CompletionSource[];
@@ -329,6 +331,45 @@ Notable errors: provider adapters can throw transport, authentication, or provid
 ## Completion Models
 
 ```ts
+type ModelContextLimits = {
+  contextWindow: number;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+};
+
+type CompletionModelInfo<ModelName extends string = string> = {
+  id: ModelName;
+  context: ModelContextLimits;
+};
+
+type CompletionModelMetadataOptions = {
+  modelOverrides?: Readonly<Record<string, ModelContextLimits>>;
+};
+
+type ContextUsage = {
+  model: CompletionModelInfo;
+  usedTokens: number;
+  remainingTokens: number;
+  usedPercent: number;
+  remainingPercent: number;
+};
+
+function calculateContextUsage(
+  usage: Usage,
+  model: CompletionModelInfo | undefined,
+): ContextUsage | undefined;
+
+function resolveCompletionModelInfo(
+  model: string,
+  catalog: Readonly<Record<string, ModelContextLimits>>,
+  overrides?: Readonly<Record<string, ModelContextLimits>>,
+): CompletionModelInfo | undefined;
+
+function withContextUsage(
+  response: CompletionResponse,
+  model: CompletionModelInfo | undefined,
+): CompletionResponse;
+
 type CompletionModelCapabilities = {
   streaming: boolean;
   tools: boolean;
@@ -344,6 +385,7 @@ interface CompletionModel<RawResponse = unknown> {
   readonly provider: string;
   readonly defaultModel: string;
   readonly capabilities: CompletionModelCapabilities;
+  getModelInfo?(model?: string): CompletionModelInfo | undefined;
   completion(request: CompletionRequest): Promise<CompletionResponse<RawResponse>>;
 }
 
@@ -364,6 +406,12 @@ interface StreamingCompletionModel<RawResponse = unknown> extends CompletionMode
 ```
 
 Purpose: provider adapter interfaces. The metadata fields identify the adapter, its default model name, and the normalized request features the adapter supports.
+
+Context usage is the latest completed provider call's raw active occupancy. It uses
+`Usage.totalTokens`, includes the generated output, and is not cumulative across an agent run.
+Percentages use the full model context window and are clamped to `0–100`; display-specific reserved
+headroom is intentionally left to applications. Unknown models return `undefined` unless their
+provider model receives a `modelOverrides` entry.
 
 `ToolCallArgumentsMode` is `"append" | "replace"`. An omitted mode means append. Providers use
 `"replace"` when a completion event contains a full argument snapshot rather than the next fragment.

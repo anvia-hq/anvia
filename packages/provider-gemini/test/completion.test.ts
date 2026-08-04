@@ -31,6 +31,19 @@ describe("Gemini completion mapping", () => {
     });
   });
 
+  it("exposes model-specific context limits", () => {
+    const model = new GeminiCompletionModel({} as never, "gemini-2.5-flash");
+
+    expect(model.getModelInfo()).toEqual({
+      id: "gemini-2.5-flash",
+      context: {
+        contextWindow: 1_048_576,
+        maxInputTokens: 1_048_576,
+        maxOutputTokens: 65_536,
+      },
+    });
+  });
+
   it("sends image input to the provider", async () => {
     const calls: unknown[] = [];
     const model = new GeminiCompletionModel(

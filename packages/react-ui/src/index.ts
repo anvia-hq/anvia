@@ -14,6 +14,7 @@ export {
   useCompletionContext,
   useCompletionInput,
 } from "./completion/index";
+export { ContextMeter, type ContextMeterProps } from "./context-meter";
 export {
   HumanInput,
   useApproval,

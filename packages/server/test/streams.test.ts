@@ -455,6 +455,23 @@ describe("@anvia/server streams", () => {
     );
   });
 
+  it("preserves context usage in UI message-end events", async () => {
+    const event: UIStreamEvent = {
+      type: "message_end",
+      messageId: "msg_1",
+      contextUsage: {
+        model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+        usedTokens: 100_000,
+        remainingTokens: 300_000,
+        usedPercent: 25,
+        remainingPercent: 75,
+      },
+    };
+    const response = createUIStreamResponse(events([event]));
+
+    expect(parseJsonl(await response.text())).toEqual([event]);
+  });
+
   it("supports custom jsonl serializers", async () => {
     const text = await readText(
       createJsonlStream(events([{ type: "one" }]), {

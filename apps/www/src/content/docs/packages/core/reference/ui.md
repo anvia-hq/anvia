@@ -82,12 +82,20 @@ type UIStreamEvent =
       partId: string;
       part: Extract<UIMessagePart, { type: "tool" }>;
     }
-  | { type: "message_end"; messageId: string; usage?: Usage; metadata?: JsonValue }
+  | {
+      type: "message_end";
+      messageId: string;
+      usage?: Usage;
+      contextUsage?: ContextUsage;
+      metadata?: JsonValue;
+    }
   | { type: "error"; error: UIError };
 
 ```
 
-Purpose: shared UI message shape for React-facing completion and chat state. React hooks can consume raw completion streams, raw agent streams, or `UIStreamEvent` records.
+Purpose: shared UI message shape for React-facing completion and chat state. React hooks can consume
+raw completion streams, raw agent streams, or `UIStreamEvent` records. A terminal `message_end`
+event can carry the model-aware `contextUsage` snapshot for the completed call.
 
 ## uiMessagesToCoreMessages
 

@@ -21,6 +21,7 @@ export function createChatController(
   return {
     messages: [],
     events: [],
+    contextUsage: undefined,
     suggestions: [],
     setMessages: vi.fn(),
     sendMessage: vi.fn(async () => {}),
@@ -60,6 +61,7 @@ export function createCompletionController(
     status: "idle",
     error: undefined,
     events: [],
+    contextUsage: undefined,
     ...overrides,
   };
 }

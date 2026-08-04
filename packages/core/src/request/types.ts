@@ -2,6 +2,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   CompletionSource,
+  ContextUsage,
   Message as MessageType,
   ProviderToolCall,
   ReasoningContentType,
@@ -16,6 +17,7 @@ import type { AgentGenerationModelInfo, AgentTraceInfo } from "../observability/
 export type PromptResponse = {
   output: string;
   usage: Usage;
+  contextUsage?: ContextUsage | undefined;
   messages: MessageType[];
   trace?: AgentTraceInfo | undefined;
   guardrails?: GuardrailDecisionRecord[] | undefined;
@@ -125,6 +127,7 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
       runId: string;
       output: string;
       usage: Usage;
+      contextUsage?: ContextUsage | undefined;
       messages: MessageType[];
       trace?: AgentTraceInfo | undefined;
       guardrails?: GuardrailDecisionRecord[] | undefined;

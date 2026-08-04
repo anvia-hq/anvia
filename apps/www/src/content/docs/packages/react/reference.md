@@ -89,7 +89,13 @@ type UIStreamEvent =
       partId: string;
       part: Extract<UIMessagePart, { type: "tool" }>;
     }
-  | { type: "message_end"; messageId: string; usage?: unknown; metadata?: unknown }
+  | {
+      type: "message_end";
+      messageId: string;
+      usage?: unknown;
+      contextUsage?: ContextUsage;
+      metadata?: unknown;
+    }
   | { type: "error"; error: UIError };
 
 type SendMessageInput =
@@ -384,6 +390,7 @@ type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
 type UseChatResult<TEvent = UIStreamEvent> = {
   messages: UIMessage[];
   events: TEvent[];
+  contextUsage: ContextUsage | undefined;
   suggestions?: ChatSuggestion[];
   setMessages: SetMessages;
   sendMessage(input: SendMessageInput): Promise<void>;
@@ -425,6 +432,10 @@ function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(options?: {
 Purpose: React chat state machine that sends `UIStreamRequest` by default and accumulates response events into `UIMessage[]`.
 
 Passing `endpoint` creates a default JSONL fetch transport. Passing `transport` makes the hook independent of HTTP. `sendMessage(...)` appends a user message, keeps the full UI message history in state, and sends the converted core message history. Custom request factories receive the UI array as `messages` for compatibility and the converted array as `coreMessages`. The hook applies raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records as the assistant response arrives. Tool-call deltas produce an `input-streaming` tool part automatically; append fragments are concatenated and replacement snapshots overwrite the provisional input.
+
+`contextUsage` is the latest completed call's model-aware context snapshot. The hook reads it from
+raw completion or agent `final` events, or from a UI `message_end` event. It remains `undefined`
+when the model does not declare a context window or the provider does not report input usage.
 
 Passing `humanInput` tracks streamed tool approval and question events in `humanInput.approvals` and `humanInput.questions`. The action helpers submit approval decisions and question answers through custom handlers or the default `/approvals/:id/decision` and `/questions/:id/answer` endpoint paths.
 
@@ -536,6 +547,7 @@ type UseCompletionResult<TEvent = UIStreamEvent> = {
   status: UseCompletionStatus;
   error: unknown;
   events: TEvent[];
+  contextUsage: ContextUsage | undefined;
 };
 
 function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
@@ -546,6 +558,9 @@ function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
 Purpose: React hook for text completion streaming that also exposes the underlying assistant `messages`.
 
 By default, `complete(prompt)` appends one user `UIMessage` to the current messages, converts the full UI history to core messages, sends `{ messages, stream: true }`, and consumes raw `CompletionStreamEvent`, raw `AgentStreamEvent`, or `UIStreamEvent` records. Custom request factories receive the UI array as `messages` for compatibility and the converted array as `coreMessages`. `completion` is a convenience string derived from the latest assistant text parts.
+
+`contextUsage` follows the same terminal-event behavior as `useChat` and represents the latest
+completed model call, not a client-side token estimate of an in-progress prompt.
 
 ## createDirectTransport
 

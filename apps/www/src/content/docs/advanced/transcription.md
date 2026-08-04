@@ -11,7 +11,7 @@ Transcription converts audio bytes into text through a provider-neutral model co
 
 Use transcription in server routes, workers, upload processors, call review tools, meeting note workflows, and media pipelines.
 
-The current provider adapters with transcription are [OpenAI](/docs/providers/openai) and [Gemini](/docs/providers/gemini).
+The current provider adapters with transcription are [OpenAI](/docs/providers/openai), [Gemini](/docs/providers/gemini), and [Grok](/docs/providers/grok).
 
 ## Send A Request
 

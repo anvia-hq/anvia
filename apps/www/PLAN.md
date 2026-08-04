@@ -77,6 +77,7 @@ Adapters that connect external model providers to the runtime.
 - `@anvia/anthropic`
 - `@anvia/gemini`
 - `@anvia/mistral`
+- `@anvia/grok`
 
 ### Embeddings
 

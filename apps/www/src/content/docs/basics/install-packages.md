@@ -9,7 +9,7 @@ sidebar:
 
 Install `@anvia/core` plus one provider package. The core package is provider-neutral; a provider package turns a vendor API into a model that the core runtime can call.
 
-Read [Providers overview](/docs/providers/overview) if you need to choose between OpenAI, Anthropic, Gemini, and Mistral before continuing.
+Read [Providers overview](/docs/providers/overview) if you need to choose between OpenAI, Anthropic, Gemini, Mistral, and Grok before continuing.
 
 ## Prerequisites
 

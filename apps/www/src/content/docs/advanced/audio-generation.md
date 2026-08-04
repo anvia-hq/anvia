@@ -11,7 +11,7 @@ Audio generation turns text into audio bytes through a provider-neutral model co
 
 Use this for narration, accessibility, agent voice responses, media workflows, and generated previews. Keep generation server-side or worker-side.
 
-The current provider adapter with audio generation is [OpenAI](/docs/providers/openai).
+The current provider adapters with audio generation are [OpenAI](/docs/providers/openai) and [Grok](/docs/providers/grok).
 
 ## Send A Request
 

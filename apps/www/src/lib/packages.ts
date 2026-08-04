@@ -462,6 +462,13 @@ const packageDefinitions: PackageFamilyDefinition[] = [
         "Mistral provider adapter for Anvia.",
         true,
       ),
+      definePackage(
+        "@anvia/grok",
+        "grok",
+        "packages/provider-grok",
+        "Grok provider adapter for Anvia.",
+        true,
+      ),
     ],
   },
   {

@@ -11,7 +11,7 @@ Image generation in core is a provider-neutral contract. A provider package impl
 
 Use image generation in server-side routes, workers, or internal tools. Do not expose provider credentials or raw generation clients to browser code.
 
-The current provider adapters with image generation are [OpenAI](/docs/providers/openai) and [Gemini](/docs/providers/gemini).
+The current provider adapters with image generation are [OpenAI](/docs/providers/openai), [Gemini](/docs/providers/gemini), and [Grok](/docs/providers/grok).
 
 ## Send A Request
 

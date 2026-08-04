@@ -1,5 +1,18 @@
 # @anvia/react
 
+## 0.11.0
+
+### Minor Changes
+
+- cf1dff7: Add model-aware context limits and provider-reported active context usage to completion responses,
+  agent results, streams, persisted generation metadata, memory-backed agent sessions, React hooks,
+  server UI streams, and a React context meter primitive.
+
+### Patch Changes
+
+- Updated dependencies [cf1dff7]
+  - @anvia/core@0.22.0
+
 ## 0.10.3
 
 ### Patch Changes

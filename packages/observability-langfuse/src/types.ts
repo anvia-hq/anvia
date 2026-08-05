@@ -70,6 +70,7 @@ export type LangfuseEvalReporterOptions = {
   onMissingTrace?: "ignore" | "warn" | "throw" | undefined;
   truncateInputAt?: number | undefined;
   includeMessages?: boolean | undefined;
+  includeContext?: boolean | undefined;
 };
 
 export type LangfuseDatasetClientOptions = {

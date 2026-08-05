@@ -1,6 +1,7 @@
 import { mapWithConcurrency } from "../internal/concurrency";
 import { errorMessage } from "./format";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "./outcome";
+import { defaultEvalTraceSelector } from "./reporting";
 import type {
   EvalCase,
   EvalCaseResult,
@@ -8,6 +9,7 @@ import type {
   EvalMetricResult,
   EvalReporter,
   EvalSuiteResult,
+  EvalTraceRef,
   RunEvalSuiteOptions,
 } from "./types";
 
@@ -40,6 +42,7 @@ async function runEvalCase<Input, Output, Expected>(
   } catch (error) {
     targetError = error;
   }
+  const traceResult = await resolveTrace(options, testCase, output, targetError);
 
   const metrics: EvalMetricResult[] = [];
   for (const metric of options.metrics) {
@@ -54,6 +57,8 @@ async function runEvalCase<Input, Output, Expected>(
       targetError,
       metric,
       outcome,
+      trace: traceResult.trace,
+      traceError: traceResult.error,
       reporters: options.reporters ?? [],
       failOnReporterError: options.failOnReporterError === true,
     });
@@ -71,6 +76,26 @@ async function runEvalCase<Input, Output, Expected>(
     result.targetError = targetError;
   }
   return result;
+}
+
+async function resolveTrace<Input, Output, Expected>(
+  options: RunEvalSuiteOptions<Input, Output, Expected>,
+  testCase: EvalCase<Input, Expected>,
+  output: Output | undefined,
+  targetError: unknown,
+): Promise<{ trace?: EvalTraceRef | undefined; error?: unknown }> {
+  try {
+    const selector = options.trace ?? defaultEvalTraceSelector;
+    const trace = await selector({
+      suiteName: options.name,
+      case: testCase,
+      output,
+      targetError,
+    });
+    return trace === undefined ? {} : { trace };
+  } catch (error) {
+    return { error };
+  }
 }
 
 async function safeEvaluate<Input, Output, Expected>(
@@ -93,10 +118,17 @@ async function reportOutcome<Input, Output, Expected>(args: {
   targetError: unknown;
   metric: EvalMetric<Input, Output, unknown, Expected>;
   outcome: EvalOutcomeType;
+  trace: EvalTraceRef | undefined;
+  traceError: unknown;
   reporters: Array<EvalReporter<Input, Output, Expected>>;
   failOnReporterError: boolean;
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
+  if (args.traceError !== undefined && args.reporters.length > 0) {
+    if (args.failOnReporterError) throw args.traceError;
+    errors.push(args.traceError);
+    return errors;
+  }
   for (const reporter of args.reporters) {
     try {
       await reporter.report({
@@ -104,6 +136,7 @@ async function reportOutcome<Input, Output, Expected>(args: {
         case: args.testCase,
         output: args.output,
         targetError: args.targetError,
+        trace: args.trace,
         metric: args.metric,
         outcome: args.outcome,
       });

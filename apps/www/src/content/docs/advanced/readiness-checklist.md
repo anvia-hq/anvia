@@ -4,7 +4,7 @@ description: Review production requirements before shipping an agent.
 section: advanced
 sidebar:
   group: Quality and operations
-  order: 55
+  order: 59
 ---
 
 Use this checklist before an agent handles real users, private data, side effects, or production support workflows.

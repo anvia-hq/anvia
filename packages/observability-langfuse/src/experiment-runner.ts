@@ -2,10 +2,12 @@ import type { JsonValue } from "@anvia/core/completion";
 import type { EvalCaseResult, EvalSuiteResult, RunEvalSuiteOptions } from "@anvia/core/evals";
 import { runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseDatasetClient } from "./dataset-client.js";
+import { createLangfuseEvalReporter } from "./eval-reporter.js";
 import type {
   LangfuseDatasetClient,
   LangfuseDatasetClientOptions,
   LangfuseDatasetItem,
+  LangfuseEvalReporterOptions,
   LangfuseRunExperimentOptions,
   LangfuseRunExperimentResult,
   LangfuseTracing,
@@ -19,6 +21,9 @@ export type RunEvalAsExperimentOptions<Input, Output, Expected = unknown> = Omit
   client?: LangfuseDatasetClient;
   pageSize?: number | undefined;
   timeoutMs?: number | undefined;
+  publishScores?: boolean | undefined;
+  reporterOptions?: LangfuseEvalReporterOptions | undefined;
+  includeContexts?: boolean | undefined;
 };
 
 export type RunEvalAsExperimentResult<Input, Output, Expected = unknown> = {
@@ -38,7 +43,20 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
     experimentOptions.client ??
     createLangfuseDatasetClient(experimentOptions.tracing, clientOptions);
 
-  const suite = await runEvalSuite(evalOptions);
+  const suiteOptions: RunEvalSuiteOptions<Input, Output, Expected> =
+    experimentOptions.publishScores === true
+      ? {
+          ...evalOptions,
+          reporters: [
+            ...(evalOptions.reporters ?? []),
+            createLangfuseEvalReporter<Input, Output, Expected>(
+              experimentOptions.tracing,
+              experimentOptions.reporterOptions,
+            ),
+          ],
+        }
+      : evalOptions;
+  const suite = await runEvalSuite(suiteOptions);
 
   const items: LangfuseDatasetItem<Input, Expected>[] = evalOptions.cases.map((testCase) => {
     const item: LangfuseDatasetItem<Input, Expected> = {
@@ -48,8 +66,17 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
     if (testCase.expected !== undefined) {
       item.expected = testCase.expected;
     }
-    if (testCase.metadata !== undefined) {
-      item.metadata = testCase.metadata as Record<string, JsonValue | undefined>;
+    const metadata: Record<string, JsonValue | undefined> = {
+      ...(testCase.metadata ?? {}),
+    };
+    if (experimentOptions.includeContexts === true && testCase.context !== undefined) {
+      metadata.context = [...testCase.context];
+    }
+    if (experimentOptions.includeContexts === true && testCase.retrievalContext !== undefined) {
+      metadata.retrievalContext = [...testCase.retrievalContext];
+    }
+    if (Object.keys(metadata).length > 0) {
+      item.metadata = metadata;
     }
     return item;
   });

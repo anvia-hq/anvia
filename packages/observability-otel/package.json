@@ -1,7 +1,7 @@
 {
   "name": "@anvia/otel",
   "version": "0.2.14",
-  "description": "OpenTelemetry tracing adapter for Anvia.",
+  "description": "OpenTelemetry tracing and eval reporting adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
   "license": "MIT",
@@ -33,7 +33,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1"
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api-logs": "^0.220.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
@@ -43,6 +44,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.7.1 <1.0.0"
+    "@anvia/core": ">=0.23.0 <1.0.0"
   }
 }

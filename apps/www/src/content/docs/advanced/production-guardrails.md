@@ -4,7 +4,7 @@ description: Enforce input and output policy around agent runs.
 section: advanced
 sidebar:
   group: Quality and operations
-  order: 53
+  order: 57
 ---
 
 Guardrails are runtime policy checks around agent text boundaries. They can block or

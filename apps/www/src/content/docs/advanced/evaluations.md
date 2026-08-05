@@ -11,6 +11,21 @@ Evals are repeatable checks for behavior that depends on model output, retrieval
 
 Use unit tests for deterministic boundaries first: tools, services, filters, runners, storage, and error mapping. Use evals for the behavior that is intentionally model-dependent.
 
+## Read By Goal
+
+This page explains the eval loop: cases, targets, metrics, outcomes, concurrency, and reporters.
+Continue with the focused guide for the quality you need to measure:
+
+| Goal | Guide |
+| --- | --- |
+| Decide between deterministic, semantic, and judge-backed checks | [Choosing eval metrics](/docs/advanced/eval-metrics) |
+| Separate retrieval quality from grounded answer quality | [Evaluating RAG quality](/docs/advanced/eval-rag-quality) |
+| Design a product-specific score and rubric | [G-Eval and custom rubrics](/docs/advanced/eval-g-eval) |
+| Check relevance and memory across multiple turns | [Evaluating conversations](/docs/advanced/eval-conversations) |
+
+Use the [core eval reference](/docs/packages/core/reference/evals) when you need exact types and
+options.
+
 ## Run A Suite
 
 ```ts
@@ -76,15 +91,12 @@ Use a custom target when the product behavior lives in a runner. That lets the e
 
 ## Metric Types
 
-Core includes deterministic and model-backed metrics:
+Core includes deterministic comparisons, embedding similarity, general LLM judges, and specialized
+metrics for answer, retrieval, rubric, and conversation quality. Start deterministic. Add a judge
+only when simple selectors cannot express the behavior.
 
-- `exactMatch(...)` for labels, booleans, ids, and exact objects
-- `contains(...)` for required facts, substrings, or regular expressions
-- `semanticSimilarity(...)` for answers where wording may vary
-- `llmJudge(...)` for schema-shaped rubric judgments
-- `llmScore(...)` for scored feedback with a threshold
-
-Start deterministic. Add LLM judges only when simple selectors cannot express the behavior.
+See [Choosing eval metrics](/docs/advanced/eval-metrics) for the decision table and scoring
+semantics.
 
 ## Custom Metrics
 
@@ -118,28 +130,27 @@ const result = await runEvalSuite({
 });
 ```
 
+Reporters receive the trace reference resolved from `output.trace`, `case.input.trace`, or case
+metadata. Use the same eval suite with either observability adapter:
+
+```ts
+import { createLangfuseEvalReporter } from "@anvia/langfuse";
+import { createOtelEvalReporter } from "@anvia/otel";
+
+const reporters = [
+  createLangfuseEvalReporter(langfuseTracing, { onMissingTrace: "warn" }),
+  createOtelEvalReporter({ onMissingTrace: "warn" }),
+];
+```
+
+Langfuse stores native trace/observation scores. The OTEL adapter emits
+`gen_ai.evaluation.result` events and correlates them with the evaluated span when both trace and
+observation ids are available. Context payloads and metadata are opt-in or configurable because
+they may contain retrieved or user-provided data.
+
 Concurrency preserves result order. Reporters receive each metric outcome and can send scores to an external system.
 
 Reporter failures are captured on each metric result by default. Set `failOnReporterError: true` only when reporting must fail the job.
-
-## LLM Judges
-
-```ts
-import { llmJudge, runEvalSuite } from "@anvia/core/evals";
-import { z } from "zod";
-
-const policyJudge = llmJudge({
-  model: judgeModel,
-  schema: z.object({
-    passed: z.boolean(),
-    reason: z.string(),
-  }),
-  passes: (judgment) => judgment.passed,
-  instructions: "Decide whether the answer follows the expected support policy.",
-});
-```
-
-LLM judges use extractors internally. Keep judge prompts narrow and store judge feedback so failures are explainable.
 
 ## What To Evaluate
 

@@ -2039,6 +2039,35 @@ describe("langfuse", () => {
     );
   });
 
+  it("nests case metadata and optionally includes eval contexts", async () => {
+    const score = vi.fn();
+    const reporter = createReporter({ score }, { includeContext: true });
+
+    await reporter.report({
+      suiteName: "suite",
+      case: {
+        id: "case-1",
+        input: "input",
+        context: ["trusted fact"],
+        retrievalContext: ["retrieved chunk"],
+        metadata: { traceId: "trace-1", scenario: "rag" },
+      },
+      output: "answer",
+      metric: metric("faithfulness"),
+      outcome: EvalOutcome.pass(0.9),
+    });
+
+    expect(score).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          caseMetadata: { traceId: "trace-1", scenario: "rag" },
+          context: ["trusted fact"],
+          retrievalContext: ["retrieved chunk"],
+        }),
+      }),
+    );
+  });
+
   it("does not mutate metric.metadata or case.metadata", async () => {
     const score = vi.fn();
     const reporter = createReporter({ score });
@@ -3335,33 +3364,46 @@ describe("runEvalAsExperiment", () => {
     expect(body.datasetItemRuns[1]?.traceId).toBe("trace-b");
   });
 
-  it("wires the metric reporter and the dataset run separately", async () => {
-    vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response(null, { status: 204 })));
-
+  it("optionally wires metric scores into the dataset run", async () => {
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const reporter = createReporter(tracing);
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
     });
-    const { suite } = await runEvalAsExperiment(
+    const { suite } = await runEvalAsExperiment<
+      string,
+      { answer: string; trace: { traceId: string; observationId: string } },
+      string
+    >(
       {
         name: "smoke",
         cases: [{ id: "c-1", input: "a", expected: "a" }],
-        target: async (input) => input,
-        metrics: [exactMatch()],
-        reporters: [reporter],
+        target: async (input) => ({
+          answer: input,
+          trace: { traceId: "trace-1", observationId: "observation-1" },
+        }),
+        metrics: [exactMatch({ actual: ({ output }) => output.answer })],
       },
       {
         tracing,
         client,
         datasetName: "smoke-set",
         runName: "smoke-run",
+        publishScores: true,
       },
     );
 
     expect(suite.passed).toBe(1);
-    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    const scoreBody = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body as string,
+    ) as { traceId: string; observationId?: string; name: string; value: number };
+    expect(scoreBody).toMatchObject({
+      traceId: "trace-1",
+      observationId: "observation-1",
+      name: "exact_match",
+      value: 1,
+    });
   });
 });
 

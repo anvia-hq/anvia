@@ -1,8 +1,11 @@
 import { AgentBuilder } from "@anvia/core/agent";
+import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
-import { otel } from "@anvia/otel";
+import { createOtelEvalReporter, otel } from "@anvia/otel";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { z } from "zod";
 
@@ -10,9 +13,16 @@ const exporterOptions =
   process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT === undefined
     ? {}
     : { url: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT };
+const logExporterOptions =
+  process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT === undefined
+    ? {}
+    : { url: process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT };
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter(exporterOptions),
+  logRecordProcessors: [
+    new BatchLogRecordProcessor({ exporter: new OTLPLogExporter(logExporterOptions) }),
+  ],
 });
 
 sdk.start();
@@ -68,6 +78,22 @@ try {
 
   console.log(response.output);
   console.log("trace:", response.trace?.traceId ?? "(not available)");
+
+  const evalResult = await runEvalSuite({
+    name: "support-ticket-regression",
+    cases: [
+      {
+        id: "checkout-summary",
+        input: "Summarize ticket TICKET-1001 for the product engineering team.",
+        expected: /checkout/i,
+      },
+    ],
+    target: agentEvalTarget(agent),
+    metrics: [contains()],
+    reporters: [createOtelEvalReporter({ onMissingTrace: "warn" })],
+  });
+
+  console.log("eval:", evalResult.results[0]?.metrics[0]?.outcome);
 } finally {
   await sdk.shutdown();
 }

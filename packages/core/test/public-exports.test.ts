@@ -158,6 +158,18 @@ describe("public exports", () => {
     expect(embeddings).toHaveProperty("embedText");
     expect(evals).toHaveProperty("runEvalSuite");
     expect(evals).toHaveProperty("EvalOutcome");
+    expect(evals).toHaveProperty("defaultEvalTraceSelector");
+    expect(evals).toHaveProperty("projectEvalOutcome");
+    expect(evals).toHaveProperty("resolveEvalTraceRef");
+    expect(evals).toHaveProperty("answerRelevancy");
+    expect(evals).toHaveProperty("gEval");
+    expect(evals).toHaveProperty("promptAlignment");
+    expect(evals).toHaveProperty("jsonCorrectness");
+    expect(evals).toHaveProperty("summarization");
+    expect(evals).toHaveProperty("hallucination");
+    expect(evals).toHaveProperty("faithfulness");
+    expect(evals).toHaveProperty("turnRelevancy");
+    expect(evals).toHaveProperty("knowledgeRetention");
     expect(extractor).toHaveProperty("ExtractorBuilder");
     expect(guardrails).toHaveProperty("defineGuardrailPolicy");
     expect(guardrails).toHaveProperty("defineInputGuardrail");

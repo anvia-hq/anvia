@@ -145,6 +145,7 @@ type LangfuseEvalReporterOptions = {
   onMissingTrace?: "ignore" | "warn" | "throw";
   truncateInputAt?: number;
   includeMessages?: boolean;
+  includeContext?: boolean;
 };
 
 function createLangfuseEvalReporter<Input = unknown, Output = unknown, Expected = unknown>(
@@ -254,7 +255,9 @@ type RunEvalAsExperimentOptions = {
   runName: string;
   description?: string;
   metadata?: Record<string, JsonValue | undefined>;
-  reporters?: ReadonlyArray<EvalReporter<unknown, unknown, unknown>>;
+  publishScores?: boolean;
+  reporterOptions?: LangfuseEvalReporterOptions;
+  includeContexts?: boolean;
 };
 
 type RunEvalAsExperimentResult = {
@@ -268,7 +271,9 @@ function runEvalAsExperiment(
 ): Promise<RunEvalAsExperimentResult>;
 ```
 
-Purpose: run an eval suite and post the results as a Langfuse dataset run alongside the metric scores.
+Purpose: run an eval suite and post the results as a Langfuse dataset run. Set `publishScores` to
+attach the Langfuse eval reporter automatically; existing reporters are preserved. Set
+`includeContexts` only when trusted and retrieved context may be stored in dataset metadata.
 
 ## Prompt Management
 

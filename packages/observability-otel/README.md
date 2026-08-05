@@ -47,7 +47,7 @@ Initialize OpenTelemetry in your application before creating spans. For OTLP HTT
 ## Eval reporting
 
 ```ts
-import { runEvalSuite } from "@anvia/core/evals";
+import { agentEvalTarget, runEvalSuite } from "@anvia/core/evals";
 import { createOtelEvalReporter } from "@anvia/otel";
 
 const result = await runEvalSuite({

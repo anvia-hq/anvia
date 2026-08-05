@@ -367,6 +367,7 @@ type TurnRelevancyOptions<Input, Output, Expected = unknown> = {
   strictMode?: boolean;
   includeReason?: boolean;
   retries?: number;
+  concurrency?: number;
   turns?: ValueSelector<Input, Output, Expected, EvalTurn[] | Message[]>;
   windowSize?: number;
 };
@@ -382,7 +383,8 @@ knowledgeRetention(options: KnowledgeRetentionOptions): EvalMetric;
 
 Without a `turns` selector, both metrics accept an `EvalTurn[]`, an Anvia `Message[]`, or an output
 such as `PromptResponse` with a `messages` array. Only text from user and assistant messages is
-evaluated. `turnRelevancy` uses a sliding window of 10 interactions by default.
+evaluated. `turnRelevancy` uses a sliding window of 10 interactions by default. Both metrics limit
+judge calls within one metric to `concurrency` requests at a time, defaulting to `4`.
 
 ## agentEvalTarget
 

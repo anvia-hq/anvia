@@ -283,7 +283,7 @@ describe("evals", () => {
     ]);
   });
 
-  it("captures trace selector errors as reporter errors", async () => {
+  it("captures trace selector errors without requiring a reporter", async () => {
     const result = await runEvalSuite({
       name: "trace-selector-error",
       cases: [{ id: "case", input: "x", expected: "x" }],
@@ -292,12 +292,26 @@ describe("evals", () => {
       trace: () => {
         throw new Error("trace selection failed");
       },
-      reporters: [{ report: () => undefined }],
     });
 
     expect(result.results[0]?.metrics[0]?.reporterErrors).toEqual([
       expect.objectContaining({ message: "trace selection failed" }),
     ]);
+  });
+
+  it("throws trace selector errors without reporters when failOnReporterError is enabled", async () => {
+    await expect(
+      runEvalSuite({
+        name: "trace-selector-error-strict",
+        cases: [{ id: "case", input: "x", expected: "x" }],
+        target: async (input) => input,
+        metrics: [exactMatch()],
+        trace: () => {
+          throw new Error("strict trace selection failed");
+        },
+        failOnReporterError: true,
+      }),
+    ).rejects.toThrow("strict trace selection failed");
   });
 
   it("supports custom metrics that return invalid outcomes", async () => {

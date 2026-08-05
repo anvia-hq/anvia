@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CompletionModel, JsonObject, JsonValue, Message, Usage } from "../completion";
 import { Usage as UsageValue } from "../completion";
+import { mapWithConcurrency } from "../internal/concurrency";
 import type { ZodSchema } from "../schema";
 import { errorMessage, formatValue } from "./format";
 import { addUsage, evaluationMetadata, type JudgeResult, runJudge } from "./judge";
@@ -59,7 +60,7 @@ export type AnswerRelevancyOptions<Input, Output, Expected = unknown> = LlmEvalO
 export function answerRelevancy<Input, Output, Expected = unknown>(
   options: AnswerRelevancyOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
-  const config = higherIsBetterConfig(options, "answer_relevancy");
+  const config = metricConfig(options, "answer_relevancy");
   return numericMetric(config.name, async (args) => {
     try {
       const input = await resolveInput(options.input, args);
@@ -129,7 +130,7 @@ export function promptAlignment<Input, Output, Expected = unknown>(
   if (options.promptInstructions.length === 0) {
     throw new TypeError("promptAlignment requires at least one prompt instruction.");
   }
-  const config = higherIsBetterConfig(options, "prompt_alignment");
+  const config = metricConfig(options, "prompt_alignment");
   return numericMetric(config.name, async (args) => {
     try {
       const input = await resolveInput(options.input, args);
@@ -246,7 +247,7 @@ export type HallucinationOptions<Input, Output, Expected = unknown> = LlmEvalOpt
 export function hallucination<Input, Output, Expected = unknown>(
   options: HallucinationOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
-  const config = lowerIsBetterConfig(options, "hallucination");
+  const config = metricConfig(options, "hallucination");
   return numericMetric(config.name, async (args) => {
     try {
       const actual = await resolveActualText(options.actual, args);
@@ -298,7 +299,7 @@ export type FaithfulnessOptions<Input, Output, Expected = unknown> = LlmEvalOpti
 export function faithfulness<Input, Output, Expected = unknown>(
   options: FaithfulnessOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
-  const config = higherIsBetterConfig(options, "faithfulness");
+  const config = metricConfig(options, "faithfulness");
   const truthsExtractionLimit = validateOptionalNonNegativeInteger(
     options.truthsExtractionLimit,
     "truthsExtractionLimit",
@@ -388,7 +389,7 @@ export type SummarizationOptions<Input, Output, Expected = unknown> = LlmEvalOpt
 export function summarization<Input, Output, Expected = unknown>(
   options: SummarizationOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
-  const config = higherIsBetterConfig(options, "summarization");
+  const config = metricConfig(options, "summarization");
   const questionCount = validatePositiveInteger(options.questionCount ?? 5, "questionCount");
   const truthsExtractionLimit = validateOptionalNonNegativeInteger(
     options.truthsExtractionLimit,
@@ -574,7 +575,7 @@ export function gEval<Input, Output, Expected = unknown>(
   if (options.evaluationSteps !== undefined && options.evaluationSteps.length === 0) {
     throw new TypeError("gEval evaluationSteps must not be empty.");
   }
-  const config = higherIsBetterConfig(options, options.name);
+  const config = metricConfig(options, options.name);
   const rubric = validateRubric(options.rubric);
   const scoreRange =
     rubric.length === 0
@@ -666,6 +667,7 @@ type ConversationEvalOptions<Input, Output, Expected = unknown> = {
   strictMode?: boolean | undefined;
   includeReason?: boolean | undefined;
   retries?: number | undefined;
+  concurrency?: number | undefined;
   turns?: ValueSelector<Input, Output, Expected, ConversationSource> | undefined;
 };
 
@@ -680,8 +682,9 @@ export type TurnRelevancyOptions<Input, Output, Expected = unknown> = Conversati
 export function turnRelevancy<Input, Output, Expected = unknown>(
   options: TurnRelevancyOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
-  const config = conversationConfig(options, "turn_relevancy");
+  const config = metricConfig(options, "turn_relevancy");
   const windowSize = validatePositiveInteger(options.windowSize ?? 10, "windowSize");
+  const concurrency = validatePositiveInteger(options.concurrency ?? 4, "concurrency");
   return numericMetric(config.name, async (args) => {
     try {
       const turns = await resolveTurns(options.turns, args);
@@ -689,17 +692,15 @@ export function turnRelevancy<Input, Output, Expected = unknown>(
       const windows = interactions.map((_, index) =>
         interactions.slice(Math.max(0, index - windowSize + 1), index + 1).flat(),
       );
-      const verdictResults = await Promise.all(
-        windows.map((window) =>
-          runJudge({
-            model: options.model,
-            schema: binaryVerdictSchema,
-            instructions:
-              "Judge whether the final assistant reply is relevant to the preceding conversation. Return yes for relevant and no for irrelevant, with a concise reason.",
-            prompt: jsonPrompt({ turns: window }),
-            retries: config.retries,
-          }),
-        ),
+      const verdictResults = await mapWithConcurrency(windows, concurrency, (window) =>
+        runJudge({
+          model: options.model,
+          schema: binaryVerdictSchema,
+          instructions:
+            "Judge whether the final assistant reply is relevant to the preceding conversation. Return yes for relevant and no for irrelevant, with a concise reason.",
+          prompt: jsonPrompt({ turns: window }),
+          retries: config.retries,
+        }),
       );
       const verdicts = verdictResults.map((result, index) => ({
         interaction: index + 1,
@@ -723,7 +724,7 @@ export function turnRelevancy<Input, Output, Expected = unknown>(
         threshold: config.threshold,
         strictMode: config.strictMode,
         comment: reasonResult.reason,
-        details: { windowSize, interactionCount: interactions.length, verdicts },
+        details: { windowSize, concurrency, interactionCount: interactions.length, verdicts },
         usage,
       });
     } catch (error) {
@@ -741,27 +742,26 @@ export type KnowledgeRetentionOptions<Input, Output, Expected = unknown> = Conve
 export function knowledgeRetention<Input, Output, Expected = unknown>(
   options: KnowledgeRetentionOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
-  const config = conversationConfig(options, "knowledge_retention");
+  const config = metricConfig(options, "knowledge_retention");
+  const concurrency = validatePositiveInteger(options.concurrency ?? 4, "concurrency");
   return numericMetric(config.name, async (args) => {
     try {
       const turns = await resolveTurns(options.turns, args);
       const userTurns = turns
         .map((turn, index) => ({ turn, index }))
         .filter((entry) => entry.turn.role === "user");
-      const knowledgeResults = await Promise.all(
-        userTurns.map((entry) =>
-          runJudge({
-            model: options.model,
-            schema: factsSchema,
-            instructions:
-              "Extract durable factual information newly supplied by the final user message. Use prior turns only to resolve references. Return concise facts; return an empty array when nothing new was supplied.",
-            prompt: jsonPrompt({
-              previousTurns: turns.slice(0, entry.index),
-              userMessage: entry.turn.content,
-            }),
-            retries: config.retries,
+      const knowledgeResults = await mapWithConcurrency(userTurns, concurrency, (entry) =>
+        runJudge({
+          model: options.model,
+          schema: factsSchema,
+          instructions:
+            "Extract durable factual information newly supplied by the final user message. Use prior turns only to resolve references. Return concise facts; return an empty array when nothing new was supplied.",
+          prompt: jsonPrompt({
+            previousTurns: turns.slice(0, entry.index),
+            userMessage: entry.turn.content,
           }),
-        ),
+          retries: config.retries,
+        }),
       );
       const knowledge = userTurns.map((entry, index) => ({
         turnIndex: entry.index,
@@ -777,17 +777,15 @@ export function knowledgeRetention<Input, Output, Expected = unknown>(
             .flatMap((item) => item.facts),
         }))
         .filter((entry) => entry.facts.length > 0);
-      const verdictResults = await Promise.all(
-        assistantChecks.map((entry) =>
-          runJudge({
-            model: options.model,
-            schema: z.object({ attrition: z.boolean(), reason: z.string() }),
-            instructions:
-              "Determine whether the assistant reply forgets, contradicts, or unnecessarily asks again for information already supplied by the user. Set attrition true only when knowledge was lost.",
-            prompt: jsonPrompt({ knownFacts: entry.facts, assistantReply: entry.turn.content }),
-            retries: config.retries,
-          }),
-        ),
+      const verdictResults = await mapWithConcurrency(assistantChecks, concurrency, (entry) =>
+        runJudge({
+          model: options.model,
+          schema: z.object({ attrition: z.boolean(), reason: z.string() }),
+          instructions:
+            "Determine whether the assistant reply forgets, contradicts, or unnecessarily asks again for information already supplied by the user. Set attrition true only when knowledge was lost.",
+          prompt: jsonPrompt({ knownFacts: entry.facts, assistantReply: entry.turn.content }),
+          retries: config.retries,
+        }),
       );
       const verdicts = assistantChecks.map((entry, index) => ({
         turnIndex: entry.index,
@@ -816,7 +814,7 @@ export function knowledgeRetention<Input, Output, Expected = unknown>(
         threshold: config.threshold,
         strictMode: config.strictMode,
         comment: reasonResult.reason,
-        details: { knowledge, verdicts },
+        details: { concurrency, knowledge, verdicts },
         usage,
       });
     } catch (error) {
@@ -832,16 +830,24 @@ function numericMetric<Input, Output, Expected>(
   return { name, dataType: "NUMERIC", evaluate };
 }
 
-function conversationConfig<Input, Output, Expected>(
-  options: ConversationEvalOptions<Input, Output, Expected>,
-  defaultName: string,
-): {
+type MetricConfig = {
   name: string;
   threshold: number;
   strictMode: boolean;
   includeReason: boolean;
   retries: number;
-} {
+};
+
+function metricConfig(
+  options: {
+    name?: string | undefined;
+    threshold?: number | undefined;
+    strictMode?: boolean | undefined;
+    includeReason?: boolean | undefined;
+    retries?: number | undefined;
+  },
+  defaultName: string,
+): MetricConfig {
   return {
     name: options.name ?? defaultName,
     threshold: validateThreshold(options.threshold ?? 0.5),
@@ -849,32 +855,6 @@ function conversationConfig<Input, Output, Expected>(
     includeReason: options.includeReason ?? true,
     retries: validateRetries(options.retries ?? 0),
   };
-}
-
-function higherIsBetterConfig<Input, Output, Expected>(
-  options: LlmEvalOptions<Input, Output, Expected>,
-  defaultName: string,
-): {
-  name: string;
-  threshold: number;
-  strictMode: boolean;
-  includeReason: boolean;
-  retries: number;
-} {
-  return {
-    name: options.name ?? defaultName,
-    threshold: validateThreshold(options.threshold ?? 0.5),
-    strictMode: options.strictMode ?? false,
-    includeReason: options.includeReason ?? true,
-    retries: validateRetries(options.retries ?? 0),
-  };
-}
-
-function lowerIsBetterConfig<Input, Output, Expected>(
-  options: LlmEvalOptions<Input, Output, Expected>,
-  defaultName: string,
-): ReturnType<typeof higherIsBetterConfig<Input, Output, Expected>> {
-  return higherIsBetterConfig(options, defaultName);
 }
 
 function higherOutcome(args: {

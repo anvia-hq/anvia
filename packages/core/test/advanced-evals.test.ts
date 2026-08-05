@@ -43,6 +43,56 @@ class QueueJudgeModel implements CompletionModel {
   }
 }
 
+type JudgeRoute = {
+  matches: string;
+  response: CompletionResponse;
+};
+
+class RoutedJudgeModel implements CompletionModel {
+  readonly provider = "test";
+  readonly defaultModel = "routed-judge";
+  readonly capabilities = {
+    streaming: false,
+    tools: true,
+    toolChoice: true,
+    imageInput: true,
+    documentInput: true,
+    outputSchema: true,
+    reasoning: true,
+  };
+  readonly requests: CompletionRequest[] = [];
+  maxActiveRequests = 0;
+  private activeRequests = 0;
+  private readonly routes: JudgeRoute[];
+
+  constructor(
+    routes: JudgeRoute[],
+    private readonly delayMs = 0,
+  ) {
+    this.routes = [...routes];
+  }
+
+  async completion(request: CompletionRequest): Promise<CompletionResponse> {
+    this.requests.push(request);
+    const requestText = JSON.stringify(request);
+    const routeIndex = this.routes.findIndex((route) => requestText.includes(route.matches));
+    if (routeIndex < 0) throw new Error(`No judge response matched request: ${requestText}`);
+    const [route] = this.routes.splice(routeIndex, 1);
+    if (route === undefined) throw new Error("Matched judge route was unavailable");
+
+    this.activeRequests += 1;
+    this.maxActiveRequests = Math.max(this.maxActiveRequests, this.activeRequests);
+    try {
+      if (this.delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+      }
+      return route.response;
+    } finally {
+      this.activeRequests -= 1;
+    }
+  }
+}
+
 describe("advanced eval metrics", () => {
   it("scores answer relevancy and records a final reason with aggregate usage", async () => {
     const model = new QueueJudgeModel([
@@ -177,15 +227,24 @@ describe("advanced eval metrics", () => {
   });
 
   it("scores faithfulness and optionally penalizes ambiguous claims", async () => {
-    const responses = () => [
-      judgeResponse({ facts: ["Refunds last 30 days"] }),
-      judgeResponse({ facts: ["Refunds last 30 days", "Receipts are optional"] }),
-      judgeResponse({
-        verdicts: [
-          { verdict: "yes", reason: "supported" },
-          { verdict: "idk", reason: "not stated" },
-        ],
-      }),
+    const routes = (): JudgeRoute[] => [
+      {
+        matches: "truths from the supplied source material",
+        response: judgeResponse({ facts: ["Refunds last 30 days"] }),
+      },
+      {
+        matches: "factual claim made by the answer",
+        response: judgeResponse({ facts: ["Refunds last 30 days", "Receipts are optional"] }),
+      },
+      {
+        matches: "whether each answer claim is supported",
+        response: judgeResponse({
+          verdicts: [
+            { verdict: "yes", reason: "supported" },
+            { verdict: "idk", reason: "not stated" },
+          ],
+        }),
+      },
     ];
     const base = {
       name: "faithfulness",
@@ -200,13 +259,13 @@ describe("advanced eval metrics", () => {
     };
     const lenient = await runEvalSuite({
       ...base,
-      metrics: [faithfulness({ model: new QueueJudgeModel(responses()), includeReason: false })],
+      metrics: [faithfulness({ model: new RoutedJudgeModel(routes()), includeReason: false })],
     });
     const strict = await runEvalSuite({
       ...base,
       metrics: [
         faithfulness({
-          model: new QueueJudgeModel(responses()),
+          model: new RoutedJudgeModel(routes()),
           penalizeAmbiguousClaims: true,
           threshold: 0.75,
           includeReason: false,
@@ -219,17 +278,26 @@ describe("advanced eval metrics", () => {
   });
 
   it("returns summarization alignment and coverage breakdowns", async () => {
-    const model = new QueueJudgeModel([
-      judgeResponse({ facts: ["A", "B"] }),
-      judgeResponse({ facts: ["A", "Invented"] }),
-      judgeResponse({ answers: ["yes", "yes"] }),
-      judgeResponse({ answers: ["yes", "no"] }),
-      judgeResponse({
-        verdicts: [
-          { verdict: "yes", reason: "supported" },
-          { verdict: "no", reason: "invented" },
-        ],
-      }),
+    const model = new RoutedJudgeModel([
+      {
+        matches: "truths from the supplied source material",
+        response: judgeResponse({ facts: ["A", "B"] }),
+      },
+      {
+        matches: "factual claim made by the summary",
+        response: judgeResponse({ facts: ["A", "Invented"] }),
+      },
+      { matches: "Source", response: judgeResponse({ answers: ["yes", "yes"] }) },
+      { matches: "Summary", response: judgeResponse({ answers: ["yes", "no"] }) },
+      {
+        matches: "whether each summary claim is supported",
+        response: judgeResponse({
+          verdicts: [
+            { verdict: "yes", reason: "supported" },
+            { verdict: "no", reason: "invented" },
+          ],
+        }),
+      },
     ]);
     const result = await runEvalSuite({
       name: "summary",
@@ -348,6 +416,84 @@ describe("advanced eval metrics", () => {
     expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0.5 });
   });
 
+  it("bounds concurrent conversational judge requests", async () => {
+    const retentionModel = new RoutedJudgeModel(
+      [
+        { matches: "My name is Ada", response: judgeResponse({ facts: ["Name is Ada"] }) },
+        { matches: "I live in London", response: judgeResponse({ facts: ["City is London"] }) },
+        { matches: "I use Pro", response: judgeResponse({ facts: ["Plan is Pro"] }) },
+        {
+          matches: "Hello Ada",
+          response: judgeResponse({ attrition: false, reason: "remembered name" }),
+        },
+        {
+          matches: "London noted",
+          response: judgeResponse({ attrition: false, reason: "remembered city" }),
+        },
+        {
+          matches: "Pro plan confirmed",
+          response: judgeResponse({ attrition: false, reason: "remembered plan" }),
+        },
+      ],
+      5,
+    );
+    const result = await runEvalSuite({
+      name: "bounded-retention",
+      cases: [{ id: "case", input: "conversation" }],
+      target: () => [
+        { role: "user" as const, content: "My name is Ada" },
+        { role: "assistant" as const, content: "Hello Ada" },
+        { role: "user" as const, content: "I live in London" },
+        { role: "assistant" as const, content: "London noted" },
+        { role: "user" as const, content: "I use Pro" },
+        { role: "assistant" as const, content: "Pro plan confirmed" },
+      ],
+      metrics: [
+        knowledgeRetention({ model: retentionModel, concurrency: 2, includeReason: false }),
+      ],
+    });
+
+    expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({ outcome: "pass", score: 1 });
+    expect(retentionModel.maxActiveRequests).toBe(2);
+
+    const relevancyModel = new RoutedJudgeModel(
+      [
+        {
+          matches: "Hello Ada",
+          response: judgeResponse({ verdict: "yes", reason: "relevant" }),
+        },
+        {
+          matches: "London noted",
+          response: judgeResponse({ verdict: "yes", reason: "relevant" }),
+        },
+        {
+          matches: "Pro plan confirmed",
+          response: judgeResponse({ verdict: "yes", reason: "relevant" }),
+        },
+      ],
+      5,
+    );
+    const relevancy = await runEvalSuite({
+      name: "bounded-relevancy",
+      cases: [{ id: "case", input: "conversation" }],
+      target: () => [
+        { role: "user" as const, content: "My name is Ada" },
+        { role: "assistant" as const, content: "Hello Ada" },
+        { role: "user" as const, content: "I live in London" },
+        { role: "assistant" as const, content: "London noted" },
+        { role: "user" as const, content: "I use Pro" },
+        { role: "assistant" as const, content: "Pro plan confirmed" },
+      ],
+      metrics: [turnRelevancy({ model: relevancyModel, concurrency: 2, includeReason: false })],
+    });
+
+    expect(relevancy.results[0]?.metrics[0]?.outcome).toMatchObject({
+      outcome: "pass",
+      score: 1,
+    });
+    expect(relevancyModel.maxActiveRequests).toBe(2);
+  });
+
   it("enforces strict scoring and validates required references and G-Eval rubrics", async () => {
     const strictModel = new QueueJudgeModel([
       judgeResponse({ statements: ["Relevant", "Tangent"] }),
@@ -388,6 +534,14 @@ describe("advanced eval metrics", () => {
       ],
     });
     expect(missingContext.invalid).toBe(2);
+    expect(missingContext.results[0]?.metrics[0]?.outcome).toMatchObject({
+      outcome: "invalid",
+      reason: expect.stringContaining("context must be a non-empty array of strings"),
+    });
+    expect(missingContext.results[0]?.metrics[1]?.outcome).toMatchObject({
+      outcome: "invalid",
+      reason: expect.stringContaining("retrievalContext must be a non-empty array of strings"),
+    });
 
     expect(() =>
       gEval({

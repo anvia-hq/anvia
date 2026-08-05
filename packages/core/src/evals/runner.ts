@@ -124,7 +124,7 @@ async function reportOutcome<Input, Output, Expected>(args: {
   failOnReporterError: boolean;
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
-  if (args.traceError !== undefined && args.reporters.length > 0) {
+  if (args.traceError !== undefined) {
     if (args.failOnReporterError) throw args.traceError;
     errors.push(args.traceError);
     return errors;

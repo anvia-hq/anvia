@@ -315,6 +315,7 @@ For eval suites, `runEvalAsExperiment` runs the suite and posts a
 dataset run alongside the metric scores:
 
 ```ts
+import { agentEvalTarget } from "@anvia/core/evals";
 import { runEvalAsExperiment } from "@anvia/langfuse";
 
 const { suite, datasetRun } = await runEvalAsExperiment(
@@ -324,7 +325,7 @@ const { suite, datasetRun } = await runEvalAsExperiment(
       { id: "c-1", input: "a", expected: "A" },
       { id: "c-2", input: "b", expected: "B" },
     ],
-    target: async (input) => input.toUpperCase(),
+    target: agentEvalTarget(supportAgent),
     metrics: [/* ... */],
     reporters: [/* existing reporters still score */],
   },
@@ -341,8 +342,9 @@ console.log(suite.passed, datasetRun.posted);
 ```
 
 `publishScores` adds a Langfuse eval reporter without replacing reporters
-already configured on the suite. Set `includeContexts: true` only when case
-context may be persisted in Langfuse dataset metadata.
+already configured on the suite. `agentEvalTarget(...)` returns the response trace used to attach
+each score. Set `includeContexts: true` only when case context may be persisted in Langfuse dataset
+metadata.
 
 ### Options
 

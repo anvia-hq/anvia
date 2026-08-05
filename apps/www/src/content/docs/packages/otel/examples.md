@@ -31,7 +31,7 @@ export const tracing = otel.create({ tracerName: "support-api" });
 ## Correlated eval events
 
 ```ts
-import { runEvalSuite } from "@anvia/core/evals";
+import { agentEvalTarget, runEvalSuite } from "@anvia/core/evals";
 import { createOtelEvalReporter } from "@anvia/otel";
 
 const result = await runEvalSuite({

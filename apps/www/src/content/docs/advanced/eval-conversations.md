@@ -100,8 +100,17 @@ information.
 ```ts
 const retention = knowledgeRetention({
   model: judgeModel,
-  threshold: 0.9,
   strictMode: true,
+});
+```
+
+`strictMode: true` ignores `threshold` and passes only a perfect score. For threshold-based
+scoring, omit strict mode and set the threshold explicitly:
+
+```ts
+const retention = knowledgeRetention({
+  model: judgeModel,
+  threshold: 0.9,
 });
 ```
 
@@ -138,7 +147,11 @@ Make sure the response contains the history you intend to evaluate. If the targe
 object, use a selector:
 
 ```ts
-turnRelevancy({
+type ConversationOutput = {
+  transcript: { role: "user" | "assistant"; content: string }[];
+};
+
+turnRelevancy<unknown, ConversationOutput>({
   model: judgeModel,
   turns: ({ output }) => output.transcript,
   windowSize: 8,
@@ -162,7 +175,8 @@ case metadata so failures can be grouped later.
 ## Cost And Coverage
 
 Conversation judges scale with the number and length of turns. Use short, incident-shaped
-transcripts in pull-request checks and a broader dataset on a scheduled run. Set
+transcripts in pull-request checks and a broader dataset on a scheduled run. `concurrency` limits
+simultaneous judge calls within one conversation metric and defaults to `4`. Set
 `includeReason: false` when the per-turn verdicts are sufficient.
 
 These metrics evaluate text quality, not runtime safety. Test tool permissions, side effects,

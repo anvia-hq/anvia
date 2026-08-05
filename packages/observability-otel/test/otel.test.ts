@@ -1,4 +1,5 @@
 import { AssistantContent, Message, type ToolCall, type Usage } from "@anvia/core/completion";
+import { EvalOutcome } from "@anvia/core/evals";
 import type { AgentGenerationStartArgs } from "@anvia/core/observability";
 import {
   type Attributes,
@@ -10,11 +11,127 @@ import {
   type Tracer,
   trace,
 } from "@opentelemetry/api";
+import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { otel } from "../src/index";
+import { createOtelEvalReporter, otel } from "../src/index";
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("OpenTelemetry eval reporter", () => {
+  it("emits a correlated GenAI evaluation result event", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const logger = fakeLogger(emit);
+    const reporter = createOtelEvalReporter({ logger });
+    const traceId = "1234567890abcdef1234567890abcdef";
+    const observationId = "1234567890abcdef";
+
+    await reporter.report({
+      suiteName: "rag-quality",
+      case: { id: "case-1", input: "question", metadata: { scenario: "refund" } },
+      output: "answer",
+      trace: { traceId, observationId, responseId: "response-1" },
+      metric: {
+        name: "faithfulness",
+        dataType: "NUMERIC",
+        configId: "score-config-1",
+        metadata: { threshold: 0.8 },
+        evaluate: () => EvalOutcome.pass(0.9),
+      },
+      outcome: EvalOutcome.pass(0.9, {
+        comment: "The answer is grounded.",
+        metadata: { evaluation: { usage: { totalTokens: 12 } } },
+      }),
+    });
+
+    expect(emit).toHaveBeenCalledOnce();
+    const record = emit.mock.calls[0]?.[0] as Parameters<Logger["emit"]>[0];
+    expect(record).toMatchObject({
+      eventName: "gen_ai.evaluation.result",
+      severityNumber: SeverityNumber.INFO,
+      severityText: "INFO",
+      attributes: {
+        "gen_ai.evaluation.name": "faithfulness",
+        "gen_ai.evaluation.score.value": 0.9,
+        "gen_ai.evaluation.score.label": "pass",
+        "gen_ai.evaluation.explanation": "The answer is grounded.",
+        "gen_ai.response.id": "response-1",
+        "anvia.eval.suite.name": "rag-quality",
+        "anvia.eval.case.id": "case-1",
+        "anvia.eval.outcome": "pass",
+        "anvia.eval.data_type": "NUMERIC",
+        "anvia.eval.config_id": "score-config-1",
+        "anvia.eval.case.metadata": { scenario: "refund" },
+        "anvia.eval.metric.metadata": { threshold: 0.8 },
+        "anvia.eval.outcome.metadata": { evaluation: { usage: { totalTokens: 12 } } },
+      },
+    });
+    expect(trace.getSpanContext(record.context as Context)).toMatchObject({
+      traceId,
+      spanId: observationId,
+    });
+  });
+
+  it("emits invalid evaluations without a trace by default", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const reporter = createOtelEvalReporter({ logger: fakeLogger(emit) });
+
+    await reporter.report({
+      suiteName: "quality",
+      case: { id: "case-1", input: "question" },
+      output: "answer",
+      metric: { name: "quality", evaluate: () => EvalOutcome.invalid("missing reference") },
+      outcome: EvalOutcome.invalid("missing reference"),
+    });
+
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityNumber: SeverityNumber.ERROR,
+        attributes: expect.objectContaining({
+          "gen_ai.evaluation.score.label": "invalid",
+          "gen_ai.evaluation.explanation": "missing reference",
+          "error.type": "evaluation_invalid",
+        }),
+      }),
+    );
+  });
+
+  it("supports categorical scores and strict missing-trace handling", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const logger = fakeLogger(emit);
+    const reporter = createOtelEvalReporter({ logger, onMissingTrace: "throw" });
+    const args = {
+      suiteName: "quality",
+      case: { id: "case-1", input: "question" },
+      output: "answer",
+      metric: {
+        name: "tone",
+        dataType: "CATEGORICAL" as const,
+        evaluate: () => EvalOutcome.pass("professional"),
+      },
+      outcome: EvalOutcome.pass("professional"),
+    };
+
+    expect(() => reporter.report(args)).toThrow(/traceId and observationId/);
+    expect(emit).not.toHaveBeenCalled();
+
+    await createOtelEvalReporter({ logger }).report({
+      ...args,
+      trace: {
+        traceId: "1234567890abcdef1234567890abcdef",
+        observationId: "1234567890abcdef",
+      },
+    });
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attributes: expect.objectContaining({
+          "gen_ai.evaluation.score.label": "professional",
+          "anvia.eval.outcome": "pass",
+        }),
+      }),
+    );
+  });
 });
 
 describe("otel", () => {
@@ -719,4 +836,13 @@ function usage(inputTokens: number, outputTokens: number): Usage {
 
 function toolCall(): ToolCall {
   return AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" });
+}
+
+function fakeLogger(emit: Logger["emit"]): Logger {
+  return {
+    emit: (record) => {
+      emit(record);
+    },
+    enabled: () => true,
+  };
 }

@@ -1,12 +1,11 @@
 import type { JsonValue } from "@anvia/core/completion";
-import type { EvalOutcome, EvalReportArgs, EvalReporter } from "@anvia/core/evals";
-import type { AgentTraceInfo } from "@anvia/core/observability";
-import type {
-  LangfuseEvalReporterOptions,
-  LangfuseScoreArgs,
-  LangfuseScoreDataType,
-  LangfuseTracing,
-} from "./types.js";
+import {
+  type EvalReportArgs,
+  type EvalReporter,
+  projectEvalOutcome,
+  resolveEvalTraceRef,
+} from "@anvia/core/evals";
+import type { LangfuseEvalReporterOptions, LangfuseScoreArgs, LangfuseTracing } from "./types.js";
 
 const DEFAULT_TRUNCATE_BYTES = 2048;
 
@@ -17,6 +16,7 @@ export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Ex
   const onMissingTrace = options.onMissingTrace ?? (options.strict === true ? "throw" : "ignore");
   const truncateAt = options.truncateInputAt ?? DEFAULT_TRUNCATE_BYTES;
   const includeMessages = options.includeMessages ?? true;
+  const includeContext = options.includeContext ?? false;
 
   return {
     async report(args) {
@@ -24,7 +24,13 @@ export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Ex
         return;
       }
 
-      const trace = traceFromEvalReport(args);
+      const trace =
+        args.trace ??
+        resolveEvalTraceRef({
+          output: args.output,
+          input: args.case.input,
+          metadata: args.case.metadata,
+        });
       if (trace?.traceId === undefined || trace.traceId.length === 0) {
         if (onMissingTrace === "throw") {
           throw new Error("Langfuse eval reporter requires traceId");
@@ -39,24 +45,24 @@ export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Ex
         return;
       }
 
-      const scoreValue = buildScoreValue(args.outcome, args.metric.dataType);
+      const projection = projectEvalOutcome(args.outcome, args.metric.dataType);
       const metadata = buildScoreMetadata({
         args,
         truncateAt,
         includeMessages,
+        includeContext,
       });
-      const comment = scoreComment(args.outcome);
       const configId = resolveConfigId(args.metric);
 
       const score: LangfuseScoreArgs = {
         traceId: trace.traceId,
         name: args.metric.name,
-        value: scoreValue,
+        value: projection.value,
       };
       if (trace.observationId !== undefined) score.observationId = trace.observationId;
       if (args.metric.dataType !== undefined) score.dataType = args.metric.dataType;
       if (configId !== undefined) score.configId = configId;
-      if (comment !== undefined) score.comment = comment;
+      if (projection.explanation !== undefined) score.comment = projection.explanation;
       if (metadata !== undefined) score.metadata = metadata;
       await tracing.score(score);
     },
@@ -74,10 +80,12 @@ function buildScoreMetadata<Input, Output, Score, Expected>({
   args,
   truncateAt,
   includeMessages,
+  includeContext,
 }: {
   args: EvalReportArgs<Input, Output, Score, Expected>;
   truncateAt: number;
   includeMessages: boolean;
+  includeContext: boolean;
 }): Record<string, JsonValue | undefined> | undefined {
   const merged: Record<string, JsonValue | undefined> = {
     suiteName: args.suiteName,
@@ -86,6 +94,15 @@ function buildScoreMetadata<Input, Output, Score, Expected>({
   };
   mergeMetadata(merged, args.outcome.metadata);
   mergeMetadata(merged, args.metric.metadata);
+  if (args.case.metadata !== undefined) {
+    merged.caseMetadata = { ...args.case.metadata };
+  }
+  if (includeContext && args.case.context !== undefined) {
+    merged.context = [...args.case.context];
+  }
+  if (includeContext && args.case.retrievalContext !== undefined) {
+    merged.retrievalContext = [...args.case.retrievalContext];
+  }
   const inputSummary = truncateValue(args.case.input, truncateAt);
   if (inputSummary !== undefined) {
     merged.caseInputSummary = inputSummary;
@@ -151,99 +168,4 @@ function readMessages(output: unknown): JsonValue[] | undefined {
     }
   }
   return serialized;
-}
-
-function buildScoreValue(
-  outcome: EvalOutcome,
-  dataType: LangfuseScoreDataType | undefined,
-): number | string {
-  if (dataType === "CATEGORICAL") {
-    const score = (outcome as { score?: unknown }).score;
-    if (typeof score === "string") return score;
-    if (typeof score === "number") return String(score);
-    if (typeof score === "boolean") return score ? "true" : "false";
-    if (score === null || score === undefined) {
-      return outcome.outcome === "pass" ? "pass" : outcome.outcome === "fail" ? "fail" : "invalid";
-    }
-    try {
-      return JSON.stringify(score);
-    } catch {
-      return outcome.outcome === "pass" ? "pass" : outcome.outcome;
-    }
-  }
-  if (dataType === "BOOLEAN") {
-    const score = (outcome as { score?: unknown }).score;
-    if (typeof score === "boolean") return score ? 1 : 0;
-    if (typeof score === "number") return score === 0 ? 0 : 1;
-    return outcome.outcome === "pass" ? 1 : 0;
-  }
-  // Numeric (default)
-  if (typeof (outcome as { score?: unknown }).score === "number") {
-    return (outcome as { score: number }).score;
-  }
-  if (typeof (outcome as { score?: unknown }).score === "boolean") {
-    return (outcome as { score: boolean }).score ? 1 : 0;
-  }
-  if (
-    typeof (outcome as { score?: unknown }).score === "object" &&
-    (outcome as { score?: unknown }).score !== null &&
-    "score" in ((outcome as { score?: unknown }).score as object) &&
-    typeof ((outcome as { score?: unknown }).score as { score?: unknown }).score === "number"
-  ) {
-    return (outcome as { score: { score: number } }).score.score;
-  }
-  return outcome.outcome === "pass" ? 1 : 0;
-}
-
-function scoreComment(outcome: EvalOutcome): string | undefined {
-  return outcome.comment ?? (outcome.outcome === "invalid" ? outcome.reason : undefined);
-}
-
-function traceFromEvalReport<Input, Output, Expected>(
-  args: EvalReportArgs<Input, Output, unknown, Expected>,
-): AgentTraceInfo | undefined {
-  const outputTrace = traceFromOutput(args.output);
-  if (outputTrace !== undefined) {
-    return outputTrace;
-  }
-  const inputTrace = traceFromInput(args.case.input);
-  if (inputTrace !== undefined) {
-    return inputTrace;
-  }
-  const traceId = args.case.metadata?.traceId;
-  const observationId = args.case.metadata?.observationId;
-  if (typeof traceId !== "string") {
-    return undefined;
-  }
-  const trace: AgentTraceInfo = { traceId };
-  if (typeof observationId === "string") trace.observationId = observationId;
-  return trace;
-}
-
-function traceFromOutput(output: unknown): AgentTraceInfo | undefined {
-  if (typeof output !== "object" || output === null || !("trace" in output)) {
-    return undefined;
-  }
-  return readTrace((output as { trace?: unknown }).trace);
-}
-
-function traceFromInput(input: unknown): AgentTraceInfo | undefined {
-  if (typeof input !== "object" || input === null || !("trace" in input)) {
-    return undefined;
-  }
-  return readTrace((input as { trace?: unknown }).trace);
-}
-
-function readTrace(trace: unknown): AgentTraceInfo | undefined {
-  if (typeof trace !== "object" || trace === null) {
-    return undefined;
-  }
-  const traceId = (trace as { traceId?: unknown }).traceId;
-  const observationId = (trace as { observationId?: unknown }).observationId;
-  if (typeof traceId !== "string") {
-    return undefined;
-  }
-  const result: AgentTraceInfo = { traceId };
-  if (typeof observationId === "string") result.observationId = observationId;
-  return result;
 }

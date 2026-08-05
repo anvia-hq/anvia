@@ -114,6 +114,7 @@ const reporter = createLangfuseEvalReporter(tracing, {
   onMissingTrace: "ignore", // "ignore" | "warn" | "throw"
   truncateInputAt: 2048, // max bytes for case input/expected summaries
   includeMessages: true, // include output.messages in score metadata
+  includeContext: false, // opt in to context/retrievalContext score metadata
 });
 ```
 
@@ -130,6 +131,10 @@ const reporter = createLangfuseEvalReporter(tracing, {
 
 - `includeMessages` controls whether `output.messages` (if present)
   is included in score metadata.
+
+- `includeContext` controls whether case `context` and
+  `retrievalContext` are included in score metadata. It defaults to
+  `false` because retrieved documents may contain sensitive data.
 
 ### Trace resolution
 
@@ -327,11 +332,17 @@ const { suite, datasetRun } = await runEvalAsExperiment(
     tracing,
     datasetName: "smoke-set",
     runName: "smoke-run",
+    publishScores: true,
+    reporterOptions: { onMissingTrace: "warn" },
   },
 );
 
 console.log(suite.passed, datasetRun.posted);
 ```
+
+`publishScores` adds a Langfuse eval reporter without replacing reporters
+already configured on the suite. Set `includeContexts: true` only when case
+context may be persisted in Langfuse dataset metadata.
 
 ### Options
 

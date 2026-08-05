@@ -27,6 +27,24 @@ sdk.start();
 
 export const tracing = otel.create({ tracerName: "support-api" });
 ```
+
+## Correlated eval events
+
+```ts
+import { runEvalSuite } from "@anvia/core/evals";
+import { createOtelEvalReporter } from "@anvia/otel";
+
+const result = await runEvalSuite({
+  name: "support-regression",
+  cases,
+  target: agentEvalTarget(supportAgent),
+  metrics,
+  reporters: [createOtelEvalReporter({ onMissingTrace: "warn" })],
+});
+```
+
+Agent targets return trace identifiers with their output, so the reporter can attach each
+`gen_ai.evaluation.result` event to the evaluated observation.
 ## Harness shape
 
 ```ts

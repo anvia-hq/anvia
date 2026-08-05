@@ -4,7 +4,7 @@ description: Test agents, tools, retrieval, streaming, and provider behavior.
 section: advanced
 sidebar:
   group: Quality and operations
-  order: 52
+  order: 56
 ---
 
 Test the deterministic harness before testing model behavior. Most production bugs come from permissions, state, retrieval filters, side effects, persistence, and error mapping, not from prose quality alone.

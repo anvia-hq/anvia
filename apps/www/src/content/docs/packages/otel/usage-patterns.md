@@ -16,9 +16,13 @@ sidebar:
 - Attach `otel.create(...)` through `AgentBuilder.observe(...)`.
 - Use the same SDK/exporter setup as the rest of the service.
 - Pair with logs when run-level debugging needs both structured events and traces.
+- Add `createOtelEvalReporter()` to an eval suite to emit standard GenAI evaluation events.
+- Configure both trace and log exporters when eval events and agent spans should reach the same backend.
 
 ## Do and do not
 
 Do start the OpenTelemetry SDK before agents run. Do use stable service and deployment attributes. Do sample intentionally for high-volume workloads.
 
-Do not expect this package to start or flush the SDK. Do not put raw secrets in span attributes.
+Do not expect this package to start or flush the SDK. Do not put raw secrets in span or eval event
+attributes. Set `includeMetadata: false` if case or metric metadata is not safe for your telemetry
+backend.

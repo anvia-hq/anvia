@@ -16,6 +16,8 @@ import {
   exactMatch,
   llmJudge,
   llmScore,
+  projectEvalOutcome,
+  resolveEvalTraceRef,
   runEvalSuite,
   semanticSimilarity,
   Usage,
@@ -244,6 +246,60 @@ describe("evals", () => {
     expect(result.results[0]?.metrics[0]?.reporterErrors).toHaveLength(1);
   });
 
+  it("resolves default and selected trace references for reporters", async () => {
+    expect(
+      resolveEvalTraceRef({
+        output: { trace: { traceId: "output-trace", observationId: "output-observation" } },
+        input: { trace: { traceId: "input-trace" } },
+      }),
+    ).toEqual({ traceId: "output-trace", observationId: "output-observation" });
+
+    const traces: unknown[] = [];
+    await runEvalSuite({
+      name: "trace-selector",
+      cases: [{ id: "case", input: "x", expected: "x" }],
+      target: async (input) => input,
+      metrics: [exactMatch()],
+      trace: () => ({
+        traceId: "selected-trace",
+        observationId: "selected-observation",
+        responseId: "response-1",
+      }),
+      reporters: [
+        {
+          report: (args) => {
+            traces.push(args.trace);
+          },
+        },
+      ],
+    });
+
+    expect(traces).toEqual([
+      {
+        traceId: "selected-trace",
+        observationId: "selected-observation",
+        responseId: "response-1",
+      },
+    ]);
+  });
+
+  it("captures trace selector errors as reporter errors", async () => {
+    const result = await runEvalSuite({
+      name: "trace-selector-error",
+      cases: [{ id: "case", input: "x", expected: "x" }],
+      target: async (input) => input,
+      metrics: [exactMatch()],
+      trace: () => {
+        throw new Error("trace selection failed");
+      },
+      reporters: [{ report: () => undefined }],
+    });
+
+    expect(result.results[0]?.metrics[0]?.reporterErrors).toEqual([
+      expect.objectContaining({ message: "trace selection failed" }),
+    ]);
+  });
+
   it("supports custom metrics that return invalid outcomes", async () => {
     const result = await runEvalSuite({
       name: "custom-invalid",
@@ -283,6 +339,33 @@ describe("defineMetric", () => {
     await expect(Promise.resolve(metric.evaluate(args))).resolves.toEqual({
       outcome: "pass",
       score: "good",
+    });
+  });
+});
+
+describe("eval score projection", () => {
+  it("normalizes numeric, categorical, boolean, and structured scores", () => {
+    expect(projectEvalOutcome(EvalOutcome.pass(0.8), "NUMERIC")).toMatchObject({
+      value: 0.8,
+      numericValue: 0.8,
+      label: "pass",
+    });
+    expect(
+      projectEvalOutcome(EvalOutcome.fail("incorrect", { comment: "Mismatch" }), "CATEGORICAL"),
+    ).toMatchObject({
+      value: "incorrect",
+      categoricalValue: "incorrect",
+      label: "incorrect",
+      explanation: "Mismatch",
+    });
+    expect(projectEvalOutcome(EvalOutcome.pass(false), "BOOLEAN")).toMatchObject({ value: 0 });
+    expect(projectEvalOutcome(EvalOutcome.pass({ score: 0.4 }), undefined)).toMatchObject({
+      value: 0.4,
+    });
+    expect(projectEvalOutcome(EvalOutcome.invalid("broken"), undefined)).toMatchObject({
+      value: 0,
+      label: "invalid",
+      explanation: "broken",
     });
   });
 });

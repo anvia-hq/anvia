@@ -28,10 +28,25 @@ const tracing = langfuse.create({ serviceName: "support-evals" });
 const reporter = createLangfuseEvalReporter(tracing, {
   onMissingTrace: "warn",
   truncateInputAt: 2048,
+  includeContext: false,
 });
 
-await runEvalSuite(suite, { reporter });
+await runEvalSuite({ ...suite, reporters: [reporter] });
 await tracing.flush();
+```
+
+## Dataset experiment with scores
+
+```ts
+import { runEvalAsExperiment } from "@anvia/langfuse";
+
+await runEvalAsExperiment(evalOptions, {
+  tracing,
+  datasetName: "support-regression",
+  runName: "prompt-v3",
+  publishScores: true,
+  reporterOptions: { onMissingTrace: "warn" },
+});
 ```
 ## Harness shape
 

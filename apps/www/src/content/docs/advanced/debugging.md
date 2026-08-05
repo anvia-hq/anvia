@@ -4,7 +4,7 @@ description: Diagnose failed runs, tool errors, streaming issues, and bad contex
 section: advanced
 sidebar:
   group: Quality and operations
-  order: 54
+  order: 58
 ---
 
 Debugging an agent run is mostly about finding the boundary that failed: input, model capability, memory, retrieval, tool selection, tool execution, approvals, streaming, observers, or product mapping.

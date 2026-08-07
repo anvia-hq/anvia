@@ -45,9 +45,18 @@ console.log(suite.run.id);
 providers or capture unrelated application telemetry. Call `flush()` in short-lived processes and
 `shutdown()` before exit.
 
-Safe capture omits prompt and response bodies, and the Lens eval reporter omits case, metric,
-outcome, and run metadata by default. Opt into payload capture with `captureMode: "full"` and eval metadata
-with `createLensEvalReporter(tracing, { includeMetadata: true })`.
+Safe capture omits traced prompt and response bodies. The Lens eval reporter also omits evaluation
+case payloads and metadata by default. Enable them independently when approved for export:
+
+```ts
+const reporter = createLensEvalReporter(tracing, {
+  includePayloads: true,
+  includeMetadata: true,
+});
+```
+
+Evaluation payloads include the case input, expected value, contexts, and target output. They use
+the tracing instance's redaction transforms and `captureMaxBytes` limit.
 
 Configuration can also be provided through `ANVIA_LENS_BASE_URL`, `ANVIA_LENS_PUBLIC_KEY`,
 `ANVIA_LENS_SECRET_KEY`, `ANVIA_LENS_SERVICE_NAME`, `ANVIA_LENS_ENVIRONMENT`, and

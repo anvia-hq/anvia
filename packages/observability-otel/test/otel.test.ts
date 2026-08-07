@@ -20,6 +20,78 @@ afterEach(() => {
 });
 
 describe("OpenTelemetry eval reporter", () => {
+  it("omits case payloads unless explicitly enabled", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const reporter = createOtelEvalReporter({ logger: fakeLogger(emit) });
+
+    await reporter.report({
+      suiteName: "quality",
+      case: { id: "case-1", input: { prompt: "private" }, expected: "answer" },
+      output: { value: "answer" },
+      metric: { name: "quality", evaluate: () => EvalOutcome.pass(true) },
+      outcome: EvalOutcome.pass(true),
+    });
+
+    expect(emit.mock.calls[0]?.[0].attributes).not.toHaveProperty("anvia.eval.payload");
+    expect(emit.mock.calls[0]?.[0].attributes).not.toHaveProperty("anvia.eval.payload.status");
+  });
+
+  it("captures redacted evaluation payloads when enabled", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const reporter = createOtelEvalReporter({
+      logger: fakeLogger(emit),
+      includePayloads: true,
+      transformInput: (value) =>
+        typeof value === "string" ? value.replaceAll("secret", "<redacted>") : value,
+      transformOutput: (value) => ({ redacted: value !== undefined }),
+    });
+
+    await reporter.report({
+      suiteName: "quality",
+      case: {
+        id: "case-1",
+        input: "secret question",
+        expected: "secret answer",
+        context: ["secret context"],
+        retrievalContext: ["secret retrieval"],
+      },
+      output: { value: "secret output" },
+      metric: { name: "quality", evaluate: () => EvalOutcome.pass(true) },
+      outcome: EvalOutcome.pass(true),
+    });
+
+    const attributes = emit.mock.calls[0]?.[0].attributes;
+    expect(attributes?.["anvia.eval.payload.status"]).toBe("captured");
+    expect(JSON.parse(String(attributes?.["anvia.eval.payload"]))).toEqual({
+      input: "<redacted> question",
+      expected: "<redacted> answer",
+      context: ["secret context"],
+      retrievalContext: ["secret retrieval"],
+      output: { redacted: true },
+    });
+  });
+
+  it("omits oversized evaluation payloads without emitting partial JSON", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const reporter = createOtelEvalReporter({
+      logger: fakeLogger(emit),
+      includePayloads: true,
+      captureMaxBytes: 32,
+    });
+
+    await reporter.report({
+      suiteName: "quality",
+      case: { id: "case-1", input: "x".repeat(128) },
+      output: "answer",
+      metric: { name: "quality", evaluate: () => EvalOutcome.pass(true) },
+      outcome: EvalOutcome.pass(true),
+    });
+
+    const attributes = emit.mock.calls[0]?.[0].attributes;
+    expect(attributes?.["anvia.eval.payload.status"]).toBe("size_limit");
+    expect(attributes).not.toHaveProperty("anvia.eval.payload");
+  });
+
   it("emits a correlated GenAI evaluation result event", async () => {
     const emit = vi.fn<Logger["emit"]>();
     const logger = fakeLogger(emit);

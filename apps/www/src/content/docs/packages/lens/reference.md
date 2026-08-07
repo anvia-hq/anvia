@@ -39,8 +39,9 @@ function createLensEvalReporter<Input, Output, Expected>(
 ```
 
 Emits evaluation-run lifecycle events and standard `gen_ai.evaluation.result` log events through
-the isolated Lens log provider. Evaluation metadata is omitted by default and can be enabled with
-`includeMetadata: true`.
+the isolated Lens log provider. Evaluation metadata and case payloads are omitted by default.
+Enable them independently with `includeMetadata: true` and `includePayloads: true`. Captured
+evaluation payloads inherit the tracing instance's redaction transforms and capture-size limit.
 
 ## Configuration and redaction helpers
 

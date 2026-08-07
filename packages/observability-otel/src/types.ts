@@ -21,5 +21,9 @@ export type OtelEvalReporterOptions = {
   loggerVersion?: string | undefined;
   publishInvalid?: boolean | undefined;
   includeMetadata?: boolean | undefined;
+  includePayloads?: boolean | undefined;
+  captureMaxBytes?: number | undefined;
+  transformInput?: ((value: unknown) => unknown) | undefined;
+  transformOutput?: ((value: unknown) => unknown) | undefined;
   onMissingTrace?: "emit" | "ignore" | "warn" | "throw" | undefined;
 };

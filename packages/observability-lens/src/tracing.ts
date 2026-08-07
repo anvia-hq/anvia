@@ -20,6 +20,9 @@ const internals = Symbol("@anvia/lens.internals");
 type LensInternals = {
   loggerProvider: LoggerProvider;
   logger: ReturnType<LoggerProvider["getLogger"]>;
+  captureMaxBytes: number;
+  transformInput: ((value: unknown) => unknown) | undefined;
+  transformOutput: ((value: unknown) => unknown) | undefined;
 };
 
 type InternalLensTracing = LensTracing & { [internals]: LensInternals };
@@ -41,6 +44,9 @@ export function createLensEvalReporter<Input = unknown, Output = unknown, Expect
   return createOtelEvalReporter<Input, Output, Expected>({
     ...options,
     includeMetadata: options.includeMetadata ?? false,
+    captureMaxBytes: internal.captureMaxBytes,
+    transformInput: internal.transformInput,
+    transformOutput: internal.transformOutput,
     logger: internal.logger,
   });
 }
@@ -81,15 +87,23 @@ class LensAgentObserver implements InternalLensTracing {
       forceFlushTimeoutMillis: config.timeoutMs,
     });
     const logger = loggerProvider.getLogger("@anvia/lens", "0.1.0");
-    this[internals] = { loggerProvider, logger };
-
     const redactor = createLensRedactor(options.redaction);
+    const transformInput = options.redactInputs ? redactor.redact : undefined;
+    const transformOutput = options.redactOutputs ? redactor.redact : undefined;
+    this[internals] = {
+      loggerProvider,
+      logger,
+      captureMaxBytes: config.captureMaxBytes,
+      transformInput,
+      transformOutput,
+    };
+
     this.delegate = otel.create({
       tracer: this.tracerProvider.getTracer("@anvia/lens", "0.1.0"),
       captureMode: config.captureMode,
       captureMaxBytes: config.captureMaxBytes,
-      transformInput: options.redactInputs ? redactor.redact : undefined,
-      transformOutput: options.redactOutputs ? redactor.redact : undefined,
+      transformInput,
+      transformOutput,
     }) as LensTracing;
   }
 

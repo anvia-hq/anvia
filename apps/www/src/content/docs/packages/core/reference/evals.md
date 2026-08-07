@@ -158,6 +158,23 @@ type EvalRunContext = EvalRunOptions & {
   startedAt: string;
 };
 
+type EvalRunStartArgs = {
+  run: EvalRunContext;
+  suiteName: string;
+  caseCount: number;
+  metricNames: string[];
+};
+
+type EvalRunEndArgs = EvalRunStartArgs & {
+  status: "completed" | "failed";
+  completedAt: string;
+  durationMs: number;
+  passed?: number;
+  failed?: number;
+  invalid?: number;
+  error?: unknown;
+};
+
 type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
   name: string;
   run?: EvalRunOptions;

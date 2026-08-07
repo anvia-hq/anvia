@@ -159,7 +159,7 @@ describe("MCP connection factories", () => {
 
     const connection = mcp.http({
       name: "http-server",
-      url: "http://localhost:3000/mcp",
+      url: "https://api.example.com/mcp",
       transport: transportOptions,
     });
 
@@ -175,9 +175,26 @@ describe("MCP connection factories", () => {
     });
     expect(sdk.httpTransports).toHaveLength(1);
     expect(sdk.httpTransports[0]).toBeInstanceOf(sdk.StreamableHTTPClientTransport);
-    expect(sdk.httpTransports[0]?.url.href).toBe("http://localhost:3000/mcp");
-    expect(sdk.httpTransports[0]?.options).toBe(transportOptions);
+    expect(sdk.httpTransports[0]?.url.href).toBe("https://api.example.com/mcp");
+    expect(sdk.httpTransports[0]?.options).toMatchObject(transportOptions);
+    expect(sdk.httpTransports[0]?.options).toHaveProperty("fetch", expect.any(Function));
     expect(sdk.clients[0]?.connectCalls).toEqual([sdk.httpTransports[0]]);
+  });
+
+  it("rejects a custom fetch for streamable HTTP connections", async () => {
+    const customFetch = vi.fn(async () => new Response());
+    const connection = mcp.http({
+      name: "http-server",
+      url: "https://api.example.com/mcp",
+      transport: { fetch: customFetch },
+    });
+
+    await expect(connection.connect()).rejects.toThrow(
+      "Custom MCP transport fetch implementations are not allowed",
+    );
+    expect(customFetch).not.toHaveBeenCalled();
+    expect(sdk.clients).toHaveLength(0);
+    expect(sdk.httpTransports).toHaveLength(0);
   });
 
   it("creates legacy SSE connections with the SDK SSE transport", async () => {
@@ -191,7 +208,7 @@ describe("MCP connection factories", () => {
 
     const connection = mcp.sse({
       name: "legacy-server",
-      url: "http://localhost:3000/sse",
+      url: "https://api.example.com/sse",
       transport: transportOptions,
     });
 
@@ -207,8 +224,25 @@ describe("MCP connection factories", () => {
     });
     expect(sdk.sseTransports).toHaveLength(1);
     expect(sdk.sseTransports[0]).toBeInstanceOf(sdk.SSEClientTransport);
-    expect(sdk.sseTransports[0]?.url.href).toBe("http://localhost:3000/sse");
-    expect(sdk.sseTransports[0]?.options).toBe(transportOptions);
+    expect(sdk.sseTransports[0]?.url.href).toBe("https://api.example.com/sse");
+    expect(sdk.sseTransports[0]?.options).toMatchObject(transportOptions);
+    expect(sdk.sseTransports[0]?.options).toHaveProperty("fetch", expect.any(Function));
     expect(sdk.clients[0]?.connectCalls).toEqual([sdk.sseTransports[0]]);
+  });
+
+  it("rejects a custom fetch for legacy SSE connections", async () => {
+    const customFetch = vi.fn(async () => new Response());
+    const connection = mcp.sse({
+      name: "legacy-server",
+      url: "https://api.example.com/sse",
+      transport: { fetch: customFetch },
+    });
+
+    await expect(connection.connect()).rejects.toThrow(
+      "Custom MCP transport fetch implementations are not allowed",
+    );
+    expect(customFetch).not.toHaveBeenCalled();
+    expect(sdk.clients).toHaveLength(0);
+    expect(sdk.sseTransports).toHaveLength(0);
   });
 });

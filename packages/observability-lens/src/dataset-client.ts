@@ -54,6 +54,7 @@ export function createLensDatasetClient(
       if (normalizedName.length === 0) throw new TypeError("Anvia Lens dataset name is required");
       const items: LensDatasetItem<Input, Expected>[] = [];
       let dataset: Omit<LensDataset<Input, Expected>, "items"> | undefined;
+      let totalPages: number | undefined;
       for (let page = 1; page <= MAX_PAGINATION_PAGES; page += 1) {
         const url = new URL(`${baseUrl}/api/public/datasets/${encodeURIComponent(normalizedName)}`);
         url.searchParams.set("page", String(page));
@@ -74,8 +75,24 @@ export function createLensDatasetClient(
             "invalid_response",
           );
         }
+        if (totalPages === undefined) {
+          totalPages = parsed.totalPages;
+        } else if (totalPages !== parsed.totalPages) {
+          throw new LensDatasetError(
+            "Lens returned inconsistent dataset pagination",
+            response.status,
+            "invalid_response",
+          );
+        }
         items.push(...parsed.items);
-        if (page >= parsed.totalPages) break;
+        if (page >= totalPages) break;
+        if (page === MAX_PAGINATION_PAGES) {
+          throw new LensDatasetError(
+            "Lens dataset exceeds the pagination limit",
+            response.status,
+            "pagination_limit",
+          );
+        }
       }
       if (dataset === undefined) {
         throw new LensDatasetError("Lens returned no dataset pages", undefined, "invalid_response");

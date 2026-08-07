@@ -57,7 +57,7 @@ export. Payload capture uses the tracing instance's redaction transforms and cap
 
 ```ts
 import { runEvalSuite } from "@anvia/core/evals";
-import { createLensDatasetClient } from "@anvia/lens";
+import { createLensDatasetClient, createLensEvalReporter } from "@anvia/lens";
 
 const datasets = createLensDatasetClient(tracing);
 const dataset = await datasets.getDataset("support-cases", { version: "v2" });

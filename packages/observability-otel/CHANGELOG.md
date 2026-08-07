@@ -1,5 +1,12 @@
 # @anvia/otel
 
+## 0.4.0
+
+### Minor Changes
+
+- d02b1f5: Add safe and bounded capture controls, richer generation and tool attributes, prompt and release
+  context, run events, and stable evaluation result identifiers for native observability backends.
+
 ## 0.3.0
 
 ### Minor Changes

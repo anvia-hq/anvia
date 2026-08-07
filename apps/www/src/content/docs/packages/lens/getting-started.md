@@ -28,7 +28,10 @@ import { lens } from "@anvia/lens";
 declare const model: CompletionModel; // Supplied by your provider adapter.
 
 const tracing = lens.create();
-const agent = new AgentBuilder("support", model).observe(tracing).build();
+const agent = new AgentBuilder("support", model)
+  .name("Support Agent")
+  .observe(tracing)
+  .build();
 
 await agent.prompt("Summarize this ticket.").send();
 await tracing.flush();

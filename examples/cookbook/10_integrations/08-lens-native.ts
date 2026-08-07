@@ -34,6 +34,7 @@ class StaticSupportModel implements CompletionModel {
 const tracing = lens.create();
 const reporter = createLensEvalReporter(tracing);
 const agent = new AgentBuilder("lens-native-smoke", new StaticSupportModel())
+  .name("Lens Native Smoke")
   .instructions("Answer support questions from the supplied policy.")
   .observe(tracing)
   .build();

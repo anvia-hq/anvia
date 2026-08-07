@@ -22,7 +22,10 @@ const tracing = lens.create({
   release: "2026.08.1",
 });
 
-const agent = new AgentBuilder("support", model).observe(tracing).build();
+const agent = new AgentBuilder("support", model)
+  .name("Support Agent")
+  .observe(tracing)
+  .build();
 
 const reporter = createLensEvalReporter(tracing);
 

@@ -1,5 +1,11 @@
 # @anvia/otel
 
+## 0.6.0
+
+### Minor Changes
+
+- 6a8810b: Add opt-in evaluation case payload capture with inherited redaction and size limits.
+
 ## 0.5.0
 
 ### Minor Changes

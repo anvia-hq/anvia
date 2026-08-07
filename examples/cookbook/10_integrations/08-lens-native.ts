@@ -41,6 +41,7 @@ const agent = new AgentBuilder("lens-native-smoke", new StaticSupportModel())
 try {
   const suite = await runEvalSuite({
     name: "lens-native-smoke",
+    run: { datasetName: "lens-smoke", datasetVersion: "v2" },
     cases: [
       {
         id: `refund-window-${Date.now()}`,
@@ -60,6 +61,7 @@ try {
     JSON.stringify(
       {
         suite: suite.name,
+        runId: suite.run.id,
         caseId: result?.case.id,
         outcome: result?.metrics[0]?.outcome.outcome,
         trace: result?.output?.trace,

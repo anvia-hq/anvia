@@ -246,6 +246,74 @@ describe("evals", () => {
     expect(result.results[0]?.metrics[0]?.reporterErrors).toHaveLength(1);
   });
 
+  it("propagates one evaluation run through lifecycle hooks and reports", async () => {
+    const events: Array<{ type: string; id: string; status?: string }> = [];
+    const result = await runEvalSuite({
+      name: "release-gate",
+      run: {
+        id: "run-1",
+        datasetName: "support-cases",
+        datasetVersion: "v2",
+        metadata: { commitSha: "abc123" },
+      },
+      cases: [{ id: "case", input: "x", expected: "x" }],
+      target: async (input) => input,
+      metrics: [exactMatch()],
+      reporters: [
+        {
+          onRunStart: ({ run }) => {
+            events.push({ type: "start", id: run.id });
+          },
+          report: ({ run }) => {
+            events.push({ type: "result", id: run?.id ?? "missing" });
+          },
+          onRunEnd: ({ run, status }) => {
+            events.push({ type: "end", id: run.id, status });
+          },
+        },
+      ],
+    });
+
+    expect(events).toEqual([
+      { type: "start", id: "run-1" },
+      { type: "result", id: "run-1" },
+      { type: "end", id: "run-1", status: "completed" },
+    ]);
+    expect(result.run).toMatchObject({
+      id: "run-1",
+      datasetName: "support-cases",
+      datasetVersion: "v2",
+      metadata: { commitSha: "abc123" },
+      startedAt: expect.any(String),
+      completedAt: expect.any(String),
+    });
+    expect(result.reporterErrors).toEqual([]);
+  });
+
+  it("finishes the evaluation run as failed when strict reporting aborts", async () => {
+    const statuses: string[] = [];
+    await expect(
+      runEvalSuite({
+        name: "strict-run",
+        cases: [{ id: "case", input: "x", expected: "x" }],
+        target: async (input) => input,
+        metrics: [exactMatch()],
+        reporters: [
+          {
+            report: () => {
+              throw new Error("publish failed");
+            },
+            onRunEnd: ({ status }) => {
+              statuses.push(status);
+            },
+          },
+        ],
+        failOnReporterError: true,
+      }),
+    ).rejects.toThrow("publish failed");
+    expect(statuses).toEqual(["failed"]);
+  });
+
   it("resolves default and selected trace references for reporters", async () => {
     expect(
       resolveEvalTraceRef({

@@ -31,6 +31,11 @@ import { createLensEvalReporter } from "@anvia/lens";
 
 await runEvalSuite({
   name: "support-regression",
+  run: {
+    datasetName: "support-cases",
+    datasetVersion: "2026-08-07",
+    metadata: { commitSha: process.env.GITHUB_SHA },
+  },
   cases,
   target,
   metrics,
@@ -38,6 +43,6 @@ await runEvalSuite({
 });
 ```
 
-Evaluation events include suite, case, metric, outcome, and trace correlation when the target
-returns a trace reference. Case, metric, and outcome metadata are omitted by default; set
-`includeMetadata: true` only when that metadata is approved for export.
+Lens receives run start and finish events plus suite, case, metric, outcome, and trace correlation.
+Use the returned `result.run.id` to link directly to a run. Case, metric, outcome, and run metadata
+are omitted by default; set `includeMetadata: true` only when that metadata is approved for export.

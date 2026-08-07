@@ -58,30 +58,35 @@ const smoke = run("pnpm", ["--filter", "cookbook", "integrations:08"], {
 const payload = parseSmokeOutput(smoke);
 const traceId = payload.trace?.traceId;
 const observationId = payload.trace?.observationId;
+const runId = payload.runId;
 if (!/^[0-9a-f]{32}$/.test(traceId ?? "") || !/^[0-9a-f]{16}$/.test(observationId ?? "")) {
   throw new Error("The native smoke example did not return valid trace correlation identifiers");
+}
+if (typeof runId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(runId)) {
+  throw new Error("The native smoke example did not return an evaluation run ID");
 }
 if (payload.outcome !== "pass")
   throw new Error(`Expected a passing evaluation, got ${payload.outcome}`);
 
 await waitFor(async () => {
-  const [traces, evaluations] = clickhouse(
-    `SELECT (SELECT count() FROM trace_summaries FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}'), (SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}') FORMAT TabSeparatedRaw`,
+  const [traces, evaluations, runs] = clickhouse(
+    `SELECT (SELECT count() FROM trace_summaries FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}'), (SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' AND run_id='${runId}'), (SELECT count() FROM evaluation_runs FINAL WHERE project_id='${projectId}' AND id='${runId}' AND status='completed') FORMAT TabSeparatedRaw`,
   )
     .trim()
     .split("\t")
     .map(Number);
-  return traces === 1 && evaluations === 1;
-}, "trace and evaluation ingestion");
+  return traces === 1 && evaluations === 1 && runs === 1;
+}, "trace, evaluation, and run ingestion");
 
 const evaluation = JSON.parse(
   clickhouse(
-    `SELECT trace_id, observation_id, suite_name, case_id, metric_name, outcome, service_name, environment, release FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' ORDER BY timestamp DESC LIMIT 1 FORMAT JSONEachRow`,
+    `SELECT run_id, trace_id, observation_id, suite_name, case_id, metric_name, outcome, service_name, environment, release FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' ORDER BY timestamp DESC LIMIT 1 FORMAT JSONEachRow`,
   ).trim(),
 );
 if (evaluation.observation_id !== observationId) {
   throw new Error("The evaluation was not correlated with the expected observation");
 }
+if (evaluation.run_id !== runId) throw new Error("The evaluation was not grouped into its run");
 if (evaluation.metric_name !== "refund-policy-correctness" || evaluation.outcome !== "pass") {
   throw new Error("The stored evaluation metric or outcome is incorrect");
 }
@@ -116,6 +121,7 @@ console.log(
       projectId,
       traceId,
       observationId,
+      runId,
       evaluation: {
         suite: evaluation.suite_name,
         caseId: evaluation.case_id,

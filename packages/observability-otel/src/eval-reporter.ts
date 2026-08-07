@@ -1,6 +1,8 @@
 import {
   type EvalReportArgs,
   type EvalReporter,
+  type EvalRunEndArgs,
+  type EvalRunStartArgs,
   projectEvalOutcome,
   resolveEvalTraceRef,
 } from "@anvia/core/evals";
@@ -27,6 +29,9 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
   const includeMetadata = options.includeMetadata ?? true;
 
   return {
+    onRunStart(args) {
+      emitRunStarted(logger, args, includeMetadata);
+    },
     report(args) {
       if (args.outcome.outcome === "invalid" && !publishInvalid) return;
       const traceRef =
@@ -51,6 +56,9 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
       }
       emitEvaluation(logger, args, traceRef, eventContext, includeMetadata);
     },
+    onRunEnd(args) {
+      emitRunFinished(logger, args, includeMetadata);
+    },
   };
 }
 
@@ -70,6 +78,7 @@ function emitEvaluation<Input, Output, Score, Expected>(
     "anvia.eval.case.id": args.case.id,
     "anvia.eval.outcome": projection.outcome,
   };
+  if (args.run !== undefined) addRunAttributes(attributes, args.run, includeMetadata);
   if (projection.numericValue !== undefined) {
     attributes["gen_ai.evaluation.score.value"] = projection.numericValue;
   }
@@ -107,6 +116,62 @@ function emitEvaluation<Input, Output, Score, Expected>(
   };
   if (eventContext !== undefined) record.context = eventContext;
   logger.emit(record);
+}
+
+function emitRunStarted(logger: Logger, args: EvalRunStartArgs, includeMetadata: boolean): void {
+  const attributes: LogAttributes = {
+    "anvia.eval.run.id": args.run.id,
+    "anvia.eval.run.status": "running",
+    "anvia.eval.run.started_at": args.run.startedAt,
+    "anvia.eval.suite.name": args.suiteName,
+    "anvia.eval.run.case_count": args.caseCount,
+    "anvia.eval.run.metric_names": args.metricNames,
+  };
+  addRunAttributes(attributes, args.run, includeMetadata);
+  logger.emit({
+    eventName: "anvia.eval.run.started",
+    severityNumber: SeverityNumber.INFO,
+    severityText: "INFO",
+    attributes,
+  });
+}
+
+function emitRunFinished(logger: Logger, args: EvalRunEndArgs, includeMetadata: boolean): void {
+  const attributes: LogAttributes = {
+    "anvia.eval.run.id": args.run.id,
+    "anvia.eval.run.status": args.status,
+    "anvia.eval.run.started_at": args.run.startedAt,
+    "anvia.eval.run.completed_at": args.completedAt,
+    "anvia.eval.run.duration_ms": args.durationMs,
+    "anvia.eval.suite.name": args.suiteName,
+    "anvia.eval.run.case_count": args.caseCount,
+    "anvia.eval.run.metric_names": args.metricNames,
+  };
+  if (args.passed !== undefined) attributes["anvia.eval.run.passed"] = args.passed;
+  if (args.failed !== undefined) attributes["anvia.eval.run.failed"] = args.failed;
+  if (args.invalid !== undefined) attributes["anvia.eval.run.invalid"] = args.invalid;
+  if (args.status === "failed") attributes["error.type"] = errorType(args.error);
+  addRunAttributes(attributes, args.run, includeMetadata);
+  logger.emit({
+    eventName: "anvia.eval.run.finished",
+    severityNumber: args.status === "failed" ? SeverityNumber.ERROR : SeverityNumber.INFO,
+    severityText: args.status === "failed" ? "ERROR" : "INFO",
+    attributes,
+  });
+}
+
+function addRunAttributes(
+  attributes: LogAttributes,
+  run: EvalRunStartArgs["run"],
+  includeMetadata: boolean,
+): void {
+  attributes["anvia.eval.run.id"] = run.id;
+  attributes["anvia.eval.run.started_at"] = run.startedAt;
+  if (run.datasetName !== undefined) attributes["anvia.eval.run.dataset.name"] = run.datasetName;
+  if (run.datasetVersion !== undefined) {
+    attributes["anvia.eval.run.dataset.version"] = run.datasetVersion;
+  }
+  if (includeMetadata) addMetadata(attributes, "anvia.eval.run.metadata", run.metadata);
 }
 
 function contextFromTraceRef(ref: EvalReportArgs<unknown, unknown>["trace"]): Context | undefined {

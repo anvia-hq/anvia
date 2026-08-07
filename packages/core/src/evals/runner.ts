@@ -8,6 +8,9 @@ import type {
   EvalMetric,
   EvalMetricResult,
   EvalReporter,
+  EvalRunContext,
+  EvalRunEndArgs,
+  EvalRunStartArgs,
   EvalSuiteResult,
   EvalTraceRef,
   RunEvalSuiteOptions,
@@ -16,24 +19,79 @@ import type {
 export async function runEvalSuite<Input, Output, Expected = unknown>(
   options: RunEvalSuiteOptions<Input, Output, Expected>,
 ): Promise<EvalSuiteResult<Input, Output, Expected>> {
-  const startedAt = Date.now();
-  const results = await mapWithConcurrency(
-    options.cases,
-    Math.max(1, Math.trunc(options.concurrency ?? 1)),
-    (testCase) => runEvalCase(options, testCase),
-  );
+  const startedAtMs = Date.now();
+  const run = resolveRun(options, startedAtMs);
+  const reporters = options.reporters ?? [];
+  const lifecycle = {
+    run,
+    suiteName: options.name,
+    caseCount: options.cases.length,
+    metricNames: options.metrics.map((metric) => metric.name),
+  } satisfies EvalRunStartArgs;
+  let reporterErrors: unknown[];
+  try {
+    reporterErrors = await notifyRunStart(
+      reporters,
+      lifecycle,
+      options.failOnReporterError === true,
+    );
+  } catch (error) {
+    await notifyRunEnd(reporters, {
+      ...lifecycle,
+      status: "failed",
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAtMs,
+      error,
+    });
+    throw error;
+  }
+  let results: Array<EvalCaseResult<Input, Output, Expected>>;
+  try {
+    results = await mapWithConcurrency(
+      options.cases,
+      Math.max(1, Math.trunc(options.concurrency ?? 1)),
+      (testCase) => runEvalCase(options, testCase, run),
+    );
+  } catch (error) {
+    await notifyRunEnd(reporters, {
+      ...lifecycle,
+      status: "failed",
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAtMs,
+      error,
+    });
+    throw error;
+  }
   const counts = countOutcomes(results);
-  return {
+  const completedAt = new Date().toISOString();
+  const result: EvalSuiteResult<Input, Output, Expected> = {
     name: options.name,
+    run: { ...run, completedAt },
     results,
     ...counts,
-    durationMs: Date.now() - startedAt,
+    durationMs: Date.now() - startedAtMs,
+    reporterErrors,
   };
+  result.reporterErrors.push(
+    ...(await notifyRunEnd(
+      reporters,
+      {
+        ...lifecycle,
+        status: "completed",
+        completedAt,
+        durationMs: result.durationMs,
+        ...counts,
+      },
+      options.failOnReporterError === true,
+    )),
+  );
+  return result;
 }
 
 async function runEvalCase<Input, Output, Expected>(
   options: RunEvalSuiteOptions<Input, Output, Expected>,
   testCase: EvalCase<Input, Expected>,
+  run: EvalRunContext,
 ): Promise<EvalCaseResult<Input, Output, Expected>> {
   let output: Output | undefined;
   let targetError: unknown;
@@ -51,6 +109,7 @@ async function runEvalCase<Input, Output, Expected>(
         ? await safeEvaluate(options.name, testCase, output as Output, metric)
         : EvalOutcome.invalid(`Target failed: ${errorMessage(targetError)}`);
     const reporterErrors = await reportOutcome({
+      run,
       suiteName: options.name,
       testCase,
       output,
@@ -112,6 +171,7 @@ async function safeEvaluate<Input, Output, Expected>(
 }
 
 async function reportOutcome<Input, Output, Expected>(args: {
+  run: EvalRunContext;
   suiteName: string;
   testCase: EvalCase<Input, Expected>;
   output: Output | undefined;
@@ -132,6 +192,7 @@ async function reportOutcome<Input, Output, Expected>(args: {
   for (const reporter of args.reporters) {
     try {
       await reporter.report({
+        run: args.run,
         suiteName: args.suiteName,
         case: args.testCase,
         output: args.output,
@@ -144,6 +205,69 @@ async function reportOutcome<Input, Output, Expected>(args: {
       if (args.failOnReporterError) {
         throw error;
       }
+      errors.push(error);
+    }
+  }
+  return errors;
+}
+
+function resolveRun<Input, Output, Expected>(
+  options: RunEvalSuiteOptions<Input, Output, Expected>,
+  startedAtMs: number,
+): EvalRunContext {
+  const id = options.run?.id ?? globalThis.crypto.randomUUID();
+  if (id.trim().length === 0 || id.length > 128) {
+    throw new TypeError("Evaluation run id must contain 1 to 128 characters");
+  }
+  for (const [label, value] of [
+    ["dataset name", options.run?.datasetName],
+    ["dataset version", options.run?.datasetVersion],
+  ] as const) {
+    if (value !== undefined && (value.trim().length === 0 || value.length > 256)) {
+      throw new TypeError(`Evaluation run ${label} must contain 1 to 256 characters`);
+    }
+  }
+  return {
+    id,
+    startedAt: new Date(startedAtMs).toISOString(),
+    ...(options.run?.datasetName === undefined ? {} : { datasetName: options.run.datasetName }),
+    ...(options.run?.datasetVersion === undefined
+      ? {}
+      : { datasetVersion: options.run.datasetVersion }),
+    ...(options.run?.metadata === undefined ? {} : { metadata: options.run.metadata }),
+  };
+}
+
+async function notifyRunStart(
+  reporters: Array<EvalReporter<unknown, unknown, unknown>>,
+  args: EvalRunStartArgs,
+  failOnReporterError: boolean,
+): Promise<unknown[]> {
+  const errors: unknown[] = [];
+  for (const reporter of reporters) {
+    if (reporter.onRunStart === undefined) continue;
+    try {
+      await reporter.onRunStart(args);
+    } catch (error) {
+      if (failOnReporterError) throw error;
+      errors.push(error);
+    }
+  }
+  return errors;
+}
+
+async function notifyRunEnd(
+  reporters: Array<EvalReporter<unknown, unknown, unknown>>,
+  args: EvalRunEndArgs,
+  failOnReporterError = false,
+): Promise<unknown[]> {
+  const errors: unknown[] = [];
+  for (const reporter of reporters) {
+    if (reporter.onRunEnd === undefined) continue;
+    try {
+      await reporter.onRunEnd(args);
+    } catch (error) {
+      if (failOnReporterError) throw error;
       errors.push(error);
     }
   }

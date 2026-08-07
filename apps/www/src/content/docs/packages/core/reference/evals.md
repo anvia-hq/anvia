@@ -87,6 +87,7 @@ Purpose: evaluates one case output and records normalized metric results. `defin
 
 ```ts
 type EvalReportArgs<Input, Output, Score = unknown, Expected = unknown> = {
+  run?: EvalRunContext;
   suiteName: string;
   case: EvalCase<Input, Expected>;
   output?: Output;
@@ -107,7 +108,9 @@ type EvalTraceSelector<Input, Output, Expected = unknown> = (
 ) => EvalTraceRef | undefined | Promise<EvalTraceRef | undefined>;
 
 type EvalReporter<Input = unknown, Output = unknown, Expected = unknown> = {
+  onRunStart?(args: EvalRunStartArgs): void | Promise<void>;
   report(args: EvalReportArgs<Input, Output, unknown, Expected>): void | Promise<void>;
+  onRunEnd?(args: EvalRunEndArgs): void | Promise<void>;
 };
 ```
 
@@ -143,8 +146,21 @@ pass, fail, and invalid outcomes.
 ## runEvalSuite
 
 ```ts
+type EvalRunOptions = {
+  id?: string;
+  datasetName?: string;
+  datasetVersion?: string;
+  metadata?: EvalMetadata;
+};
+
+type EvalRunContext = EvalRunOptions & {
+  id: string;
+  startedAt: string;
+};
+
 type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
   name: string;
+  run?: EvalRunOptions;
   cases: Array<EvalCase<Input, Expected>>;
   target: EvalTarget<Input, Output, Expected>;
   metrics: Array<EvalMetric<Input, Output, unknown, Expected>>;
@@ -156,11 +172,13 @@ type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
 
 type EvalSuiteResult<Input, Output, Expected = unknown> = {
   name: string;
+  run: EvalRunContext & { completedAt: string };
   results: Array<EvalCaseResult<Input, Output, Expected>>;
   passed: number;
   failed: number;
   invalid: number;
   durationMs: number;
+  reporterErrors: unknown[];
 };
 
 function runEvalSuite<Input, Output, Expected>(
@@ -170,7 +188,10 @@ function runEvalSuite<Input, Output, Expected>(
 
 Purpose: runs cases through a target, evaluates each metric, calls optional reporters, and returns ordered results.
 
-Return behavior: target errors become invalid metric outcomes. Reporter errors are collected unless `failOnReporterError` is true.
+Return behavior: `runEvalSuite(...)` generates a stable run ID unless one is supplied. Target errors
+become invalid metric outcomes. Reporter errors are collected unless `failOnReporterError` is true.
+`EvalRunStartArgs` and `EvalRunEndArgs` let reporters persist the run lifecycle around individual
+metric events.
 
 ## Built-in Metrics
 

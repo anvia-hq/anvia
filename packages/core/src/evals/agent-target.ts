@@ -3,23 +3,23 @@ import type { Message } from "../completion";
 import type { PromptResponse } from "../request/types";
 import type { EvalCase, EvalTarget } from "./types";
 
-export type AgentEvalTargetOptions<Input, Output = PromptResponse> = {
-  prompt?: ((input: Input, testCase: EvalCase<Input>) => string | Message) | undefined;
-  output?: ((response: PromptResponse, testCase: EvalCase<Input>) => Output) | undefined;
+export type AgentEvalTargetOptions<Input, Output = PromptResponse, Expected = unknown> = {
+  prompt?: ((input: Input, testCase: EvalCase<Input, Expected>) => string | Message) | undefined;
+  output?: ((response: PromptResponse, testCase: EvalCase<Input, Expected>) => Output) | undefined;
 };
 
-export function agentEvalTarget<Input>(
+export function agentEvalTarget<Input, Expected = unknown>(
   agent: Agent,
-  options?: AgentEvalTargetOptions<Input, PromptResponse>,
-): EvalTarget<Input, PromptResponse>;
-export function agentEvalTarget<Input, Output>(
+  options?: AgentEvalTargetOptions<Input, PromptResponse, Expected>,
+): EvalTarget<Input, PromptResponse, Expected>;
+export function agentEvalTarget<Input, Output, Expected = unknown>(
   agent: Agent,
-  options: AgentEvalTargetOptions<Input, Output>,
-): EvalTarget<Input, Output>;
-export function agentEvalTarget<Input, Output>(
+  options: AgentEvalTargetOptions<Input, Output, Expected>,
+): EvalTarget<Input, Output, Expected>;
+export function agentEvalTarget<Input, Output, Expected>(
   agent: Agent,
-  options: AgentEvalTargetOptions<Input, Output | PromptResponse> = {},
-): EvalTarget<Input, Output | PromptResponse> {
+  options: AgentEvalTargetOptions<Input, Output | PromptResponse, Expected> = {},
+): EvalTarget<Input, Output | PromptResponse, Expected> {
   return async (input, testCase) => {
     const prompt = options.prompt?.(input, testCase) ?? String(input);
     const response = await agent.prompt(prompt).send();

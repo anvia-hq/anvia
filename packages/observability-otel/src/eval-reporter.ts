@@ -79,7 +79,11 @@ function emitEvaluation<Input, Output, Score, Expected>(
     "includePayloads" | "captureMaxBytes" | "transformInput" | "transformOutput"
   >,
 ): void {
-  const projection = projectEvalOutcome(args.outcome, args.metric.dataType);
+  const projection = projectEvalOutcome(
+    args.outcome,
+    args.metric.dataType,
+    args.metric.projectScore,
+  );
   const attributes: LogAttributes = {
     "anvia.eval.id": globalThis.crypto.randomUUID(),
     "gen_ai.evaluation.name": args.metric.name,

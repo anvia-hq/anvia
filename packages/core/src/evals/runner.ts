@@ -18,9 +18,28 @@ import type {
   RunEvalSuiteOptions,
 } from "./types";
 
-export async function runEvalSuite<Input, Output, Expected = unknown>(
-  options: RunEvalSuiteOptions<Input, Output, Expected>,
-): Promise<EvalSuiteResult<Input, Output, Expected>> {
+export async function runEvalSuite<
+  Input,
+  Output,
+  Expected = unknown,
+  const Metrics extends readonly EvalMetric<
+    NoInfer<Input>,
+    NoInfer<Output>,
+    unknown,
+    NoInfer<Expected>,
+    string
+  >[] = readonly EvalMetric<NoInfer<Input>, NoInfer<Output>, unknown, NoInfer<Expected>, string>[],
+>(
+  options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
+): Promise<EvalSuiteResult<Input, Output, Expected, Metrics>>;
+export async function runEvalSuite<
+  Input,
+  Output,
+  Expected,
+  Metrics extends readonly EvalMetric<Input, Output, unknown, Expected, string>[],
+>(
+  options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
+): Promise<EvalSuiteResult<Input, Output, Expected, Metrics>> {
   validateSuiteOptions(options);
   const startedAtMs = Date.now();
   const run = resolveRun(options, startedAtMs);
@@ -48,7 +67,7 @@ export async function runEvalSuite<Input, Output, Expected = unknown>(
     });
     throw error;
   }
-  let results: Array<EvalCaseResult<Input, Output, Expected>>;
+  let results: Array<EvalCaseResult<Input, Output, Expected, Metrics>>;
   let aggregates: Awaited<ReturnType<typeof aggregateResult>>;
   try {
     results = await runEvalCases(options, run);
@@ -64,7 +83,7 @@ export async function runEvalSuite<Input, Output, Expected = unknown>(
     throw error;
   }
   const completedAt = new Date().toISOString();
-  const result: EvalSuiteResult<Input, Output, Expected> = {
+  const result: EvalSuiteResult<Input, Output, Expected, Metrics> = {
     name: options.name,
     run: { ...run, completedAt },
     results,
@@ -94,12 +113,17 @@ export async function runEvalSuite<Input, Output, Expected = unknown>(
   return result;
 }
 
-async function runEvalCases<Input, Output, Expected>(
-  options: RunEvalSuiteOptions<Input, Output, Expected>,
+async function runEvalCases<
+  Input,
+  Output,
+  Expected,
+  Metrics extends readonly EvalMetric<Input, Output, unknown, Expected, string>[],
+>(
+  options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
   run: EvalRunContext,
-): Promise<Array<EvalCaseResult<Input, Output, Expected>>> {
+): Promise<Array<EvalCaseResult<Input, Output, Expected, Metrics>>> {
   const concurrency = Math.max(1, Math.trunc(options.concurrency ?? 1));
-  const results = new Array<EvalCaseResult<Input, Output, Expected>>(options.cases.length);
+  const results = new Array<EvalCaseResult<Input, Output, Expected, Metrics>>(options.cases.length);
   let nextIndex = 0;
   let failure: { error: unknown } | undefined;
 
@@ -126,11 +150,16 @@ async function runEvalCases<Input, Output, Expected>(
   return results;
 }
 
-async function runEvalCase<Input, Output, Expected>(
-  options: RunEvalSuiteOptions<Input, Output, Expected>,
+async function runEvalCase<
+  Input,
+  Output,
+  Expected,
+  Metrics extends readonly EvalMetric<Input, Output, unknown, Expected, string>[],
+>(
+  options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
   testCase: EvalCase<Input, Expected>,
   run: EvalRunContext,
-): Promise<EvalCaseResult<Input, Output, Expected>> {
+): Promise<EvalCaseResult<Input, Output, Expected, Metrics>> {
   let output: Output | undefined;
   let targetError: unknown;
   try {
@@ -170,10 +199,14 @@ async function runEvalCase<Input, Output, Expected>(
     metrics.push(metricResult);
   }
 
-  const result: EvalCaseResult<Input, Output, Expected> = {
+  const scores = Object.fromEntries(
+    metrics.map((metric) => [metric.metricName, metric.outcome]),
+  ) as EvalCaseResult<Input, Output, Expected, Metrics>["scores"];
+  const result: EvalCaseResult<Input, Output, Expected, Metrics> = {
     case: testCase,
     outcome: caseOutcome(targetError, metrics),
-    metrics,
+    metrics: metrics as EvalCaseResult<Input, Output, Expected, Metrics>["metrics"],
+    scores,
   };
   if (output !== undefined) {
     result.output = output;
@@ -227,7 +260,7 @@ async function reportOutcome<Input, Output, Expected>(args: {
   outcome: EvalOutcomeType;
   trace: EvalTraceRef | undefined;
   traceError: unknown;
-  reporters: Array<EvalReporter<Input, Output, Expected>>;
+  reporters: readonly EvalReporter<Input, Output, Expected>[];
   failOnReporterError: boolean;
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
@@ -285,8 +318,8 @@ function resolveRun<Input, Output, Expected>(
   };
 }
 
-async function notifyRunStart(
-  reporters: Array<EvalReporter<unknown, unknown, unknown>>,
+async function notifyRunStart<Input, Output, Expected>(
+  reporters: readonly EvalReporter<Input, Output, Expected>[],
   args: EvalRunStartArgs,
   failOnReporterError: boolean,
 ): Promise<unknown[]> {
@@ -303,8 +336,8 @@ async function notifyRunStart(
   return errors;
 }
 
-async function notifyRunEnd(
-  reporters: Array<EvalReporter<unknown, unknown, unknown>>,
+async function notifyRunEnd<Input, Output, Expected>(
+  reporters: readonly EvalReporter<Input, Output, Expected>[],
   args: EvalRunEndArgs,
   failOnReporterError = false,
 ): Promise<unknown[]> {
@@ -364,9 +397,14 @@ function caseOutcome(
   return "pass";
 }
 
-async function aggregateResult<Input, Output, Expected>(
-  options: RunEvalSuiteOptions<Input, Output, Expected>,
-  results: Array<EvalCaseResult<Input, Output, Expected>>,
+async function aggregateResult<
+  Input,
+  Output,
+  Expected,
+  Metrics extends readonly EvalMetric<Input, Output, unknown, Expected, string>[],
+>(
+  options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
+  results: Array<EvalCaseResult<Input, Output, Expected, Metrics>>,
 ): Promise<{
   metrics: EvalTotals;
   cases: EvalTotals;

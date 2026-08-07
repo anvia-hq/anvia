@@ -45,7 +45,11 @@ export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Ex
         return;
       }
 
-      const projection = projectEvalOutcome(args.outcome, args.metric.dataType);
+      const projection = projectEvalOutcome(
+        args.outcome,
+        args.metric.dataType,
+        args.metric.projectScore,
+      );
       const metadata = buildScoreMetadata({
         args,
         truncateAt,

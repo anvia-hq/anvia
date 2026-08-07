@@ -7,7 +7,14 @@ import { errorMessage, formatValue } from "./format";
 import { addUsage, evaluationMetadata, type JudgeResult, runJudge } from "./judge";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "./outcome";
 import { resolveActualText, resolveExpected } from "./selectors";
-import type { EvalMetric, EvalMetricArgs, EvalTurn, SelectorOrValue, ValueSelector } from "./types";
+import type {
+  EvalCaseRequirements,
+  EvalMetric,
+  EvalMetricArgs,
+  EvalTurn,
+  SelectorOrValue,
+  ValueSelector,
+} from "./types";
 
 type Verdict = {
   verdict: "yes" | "no" | "idk";
@@ -63,10 +70,15 @@ export type AnswerRelevancyOptions<Input, Output, Expected = unknown> = LlmEvalO
   Expected
 >;
 
-export function answerRelevancy<Input, Output, Expected = unknown>(
-  options: AnswerRelevancyOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
-  const config = metricConfig(options, "answer_relevancy");
+export function answerRelevancy<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: AnswerRelevancyOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name> {
+  const config = metricConfig<Name>(options, "answer_relevancy");
   return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const input = await resolveInput(options.input, args);
@@ -130,13 +142,18 @@ export type PromptAlignmentOptions<Input, Output, Expected = unknown> = LlmEvalO
   promptInstructions: string[];
 };
 
-export function promptAlignment<Input, Output, Expected = unknown>(
-  options: PromptAlignmentOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
+export function promptAlignment<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: PromptAlignmentOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name> {
   if (options.promptInstructions.length === 0) {
     throw new TypeError("promptAlignment requires at least one prompt instruction.");
   }
-  const config = metricConfig(options, "prompt_alignment");
+  const config = metricConfig<Name>(options, "prompt_alignment");
   return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const input = await resolveInput(options.input, args);
@@ -188,15 +205,23 @@ export type JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected = unkno
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
 
-export function jsonCorrectness<Input, Output, SchemaOutput, Expected = unknown>(
-  options: JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
+export function jsonCorrectness<
+  Input,
+  Output,
+  SchemaOutput,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, number, Expected, Name> {
   const threshold = validateThreshold(options.threshold ?? 0.5);
   const retries = validateRetries(options.retries ?? 0);
   const includeReason = options.includeReason ?? true;
   const strictMode = options.strictMode ?? true;
   return numericMetric(
-    options.name ?? "json_correctness",
+    (options.name ?? "json_correctness") as Name,
     {
       threshold: strictMode ? 1 : threshold,
       required: options.required ?? true,
@@ -260,10 +285,37 @@ export type HallucinationOptions<Input, Output, Expected = unknown> = LlmEvalOpt
   context?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
 };
 
-export function hallucination<Input, Output, Expected = unknown>(
-  options: HallucinationOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
-  const config = metricConfig(options, "hallucination");
+export function hallucination<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: HallucinationOptions<Input, Output, Expected> & {
+    context: Exclude<HallucinationOptions<Input, Output, Expected>["context"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, number, Expected, Name>;
+export function hallucination<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: Omit<HallucinationOptions<Input, Output, Expected>, "context"> & {
+    context?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, number, Expected, Name, { context: string[] }>;
+export function hallucination<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: HallucinationOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name, EvalCaseRequirements> {
+  const config = metricConfig<Name>(options, "hallucination");
   return numericMetric(config.name, config, "lower_is_better", async (args) => {
     try {
       const actual = await resolveActualText(options.actual, args);
@@ -312,10 +364,25 @@ export type FaithfulnessOptions<Input, Output, Expected = unknown> = LlmEvalOpti
   penalizeAmbiguousClaims?: boolean | undefined;
 };
 
-export function faithfulness<Input, Output, Expected = unknown>(
-  options: FaithfulnessOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
-  const config = metricConfig(options, "faithfulness");
+export function faithfulness<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: FaithfulnessOptions<Input, Output, Expected> & {
+    name?: Name | undefined;
+    retrievalContext: Exclude<
+      FaithfulnessOptions<Input, Output, Expected>["retrievalContext"],
+      undefined
+    >;
+  },
+): EvalMetric<Input, Output, number, Expected, Name>;
+export function faithfulness<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: Omit<FaithfulnessOptions<Input, Output, Expected>, "retrievalContext"> & {
+    name?: Name | undefined;
+    retrievalContext?: undefined;
+  },
+): EvalMetric<Input, Output, number, Expected, Name, { retrievalContext: string[] }>;
+export function faithfulness<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: FaithfulnessOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name, EvalCaseRequirements> {
+  const config = metricConfig<Name>(options, "faithfulness");
   const truthsExtractionLimit = validateOptionalNonNegativeInteger(
     options.truthsExtractionLimit,
     "truthsExtractionLimit",
@@ -409,12 +476,12 @@ export type AbstentionOptions<Input, Output, Expected = unknown> = {
   retries?: number | undefined;
 };
 
-export function abstention<Input, Output, Expected = unknown>(
-  options: AbstentionOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, AbstentionCategory, Expected> {
+export function abstention<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: AbstentionOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, AbstentionCategory, Expected, Name> {
   const retries = validateRetries(options.retries ?? 0);
   return {
-    name: options.name ?? "abstention",
+    name: (options.name ?? "abstention") as Name,
     required: options.required ?? true,
     dataType: "CATEGORICAL",
     async evaluate(args) {
@@ -503,10 +570,15 @@ export type SummarizationOptions<Input, Output, Expected = unknown> = LlmEvalOpt
   truthsExtractionLimit?: number | undefined;
 };
 
-export function summarization<Input, Output, Expected = unknown>(
-  options: SummarizationOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
-  const config = metricConfig(options, "summarization");
+export function summarization<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: SummarizationOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name> {
+  const config = metricConfig<Name>(options, "summarization");
   const questionCount = validatePositiveInteger(options.questionCount ?? 5, "questionCount");
   const truthsExtractionLimit = validateOptionalNonNegativeInteger(
     options.truthsExtractionLimit,
@@ -676,9 +748,9 @@ export type GEvalOptions<Input, Output, Expected = unknown> = Omit<
   retrievalContext?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
 };
 
-export function gEval<Input, Output, Expected = unknown>(
-  options: GEvalOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
+export function gEval<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: GEvalOptions<Input, Output, Expected> & { name: Name },
+): EvalMetric<Input, Output, number, Expected, Name> {
   if (options.name.trim().length === 0) throw new TypeError("gEval name must not be empty.");
   if (options.evaluationParams.length === 0) {
     throw new TypeError("gEval requires at least one evaluation parameter.");
@@ -692,7 +764,7 @@ export function gEval<Input, Output, Expected = unknown>(
   if (options.evaluationSteps !== undefined && options.evaluationSteps.length === 0) {
     throw new TypeError("gEval evaluationSteps must not be empty.");
   }
-  const config = metricConfig(options, options.name);
+  const config = metricConfig<Name>(options, options.name);
   const rubric = validateRubric(options.rubric);
   const scoreRange =
     rubric.length === 0
@@ -797,10 +869,15 @@ export type TurnRelevancyOptions<Input, Output, Expected = unknown> = Conversati
   windowSize?: number | undefined;
 };
 
-export function turnRelevancy<Input, Output, Expected = unknown>(
-  options: TurnRelevancyOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
-  const config = metricConfig(options, "turn_relevancy");
+export function turnRelevancy<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: TurnRelevancyOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name> {
+  const config = metricConfig<Name>(options, "turn_relevancy");
   const windowSize = validatePositiveInteger(options.windowSize ?? 10, "windowSize");
   const concurrency = validatePositiveInteger(options.concurrency ?? 4, "concurrency");
   return numericMetric(config.name, config, "higher_is_better", async (args) => {
@@ -857,10 +934,15 @@ export type KnowledgeRetentionOptions<Input, Output, Expected = unknown> = Conve
   Expected
 >;
 
-export function knowledgeRetention<Input, Output, Expected = unknown>(
-  options: KnowledgeRetentionOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
-  const config = metricConfig(options, "knowledge_retention");
+export function knowledgeRetention<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: KnowledgeRetentionOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name> {
+  const config = metricConfig<Name>(options, "knowledge_retention");
   const concurrency = validatePositiveInteger(options.concurrency ?? 4, "concurrency");
   return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
@@ -941,12 +1023,12 @@ export function knowledgeRetention<Input, Output, Expected = unknown>(
   });
 }
 
-function numericMetric<Input, Output, Expected>(
-  name: string,
+function numericMetric<Input, Output, Expected, const Name extends string>(
+  name: Name,
   config: { threshold: number; required: boolean; strictMode?: boolean | undefined },
   direction: "higher_is_better" | "lower_is_better",
   evaluate: (args: EvalMetricArgs<Input, Output, Expected>) => Promise<EvalOutcomeType<number>>,
-): EvalMetric<Input, Output, number, Expected> {
+): EvalMetric<Input, Output, number, Expected, Name> {
   return {
     name,
     required: config.required,
@@ -958,8 +1040,8 @@ function numericMetric<Input, Output, Expected>(
   };
 }
 
-type MetricConfig = {
-  name: string;
+type MetricConfig<Name extends string = string> = {
+  name: Name;
   threshold: number;
   strictMode: boolean;
   includeReason: boolean;
@@ -967,7 +1049,7 @@ type MetricConfig = {
   required: boolean;
 };
 
-function metricConfig(
+function metricConfig<const Name extends string>(
   options: {
     name?: string | undefined;
     threshold?: number | undefined;
@@ -977,9 +1059,9 @@ function metricConfig(
     required?: boolean | undefined;
   },
   defaultName: string,
-): MetricConfig {
+): MetricConfig<Name> {
   return {
-    name: options.name ?? defaultName,
+    name: (options.name ?? defaultName) as Name,
     threshold: validateThreshold(options.threshold ?? 0.5),
     strictMode: options.strictMode ?? false,
     includeReason: options.includeReason ?? true,

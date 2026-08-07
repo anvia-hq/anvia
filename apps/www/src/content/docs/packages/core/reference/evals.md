@@ -48,12 +48,13 @@ Purpose: normalized metric result. Use `EvalOutcome.pass(...)`, `EvalOutcome.fai
 ## EvalMetric
 
 ```ts
-type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
-  name: string;
+type EvalMetric<Input, Output, Score = unknown, Expected = unknown, Name extends string = string> = {
+  name: Name;
   required?: boolean;
   direction?: "higher_is_better" | "lower_is_better";
   threshold?: number;
   dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
+  projectScore?(score: Score): number | string | boolean;
   configId?: string;
   scoreConfigId?: string;
   metadata?: Record<string, JsonValue | undefined>;
@@ -81,6 +82,7 @@ type EvalCaseResult<Input, Output, Expected = unknown> = {
   output?: Output;
   targetError?: unknown;
   metrics: EvalMetricResult[];
+  scores: Record<string, EvalOutcome<unknown>>;
 };
 
 function defineMetric<Input, Output, Score, Expected>(
@@ -93,6 +95,47 @@ default. A target error or required invalid metric makes the case invalid; other
 failure makes it fail. Optional metrics remain visible but do not gate the case or CLI exit code.
 `defineMetric` is an identity helper that preserves type inference.
 
+## Type-safe suite definitions
+
+```ts
+const cases = defineEvalCases([
+  { id: "refund", input: "When?", expected: "30 days" },
+]);
+
+const suite = defineEvalSuite({
+  name: "support",
+  cases,
+  target: async (input) => ({ output: await answer(input) }),
+  metrics: [
+    exactMatch({ name: "correct", actual: selectPromptOutput }),
+    answerRelevancy({ name: "relevant", model }),
+  ] as const,
+});
+
+const result = await runEvalSuite(suite);
+result.results[0].scores.correct; // EvalOutcome<boolean>
+result.results[0].scores.relevant; // EvalOutcome<number>
+```
+
+`defineEvalSuite()` anchors inference from readonly cases, the target return value, and the metric
+tuple. Literal case ids and metric names are retained. Metrics that read `case.expected`,
+`case.context`, or `case.retrievalContext` implicitly make those fields mandatory. Supplying an
+explicit metric selector removes that case requirement.
+
+Use its type-only form to define custom metrics without repeating all application types:
+
+```ts
+const supportEvals = defineEvalSuite<string, PromptResponse, string>();
+const noLeak = supportEvals.defineMetric({
+  name: "no_secret_leak",
+  dataType: "BOOLEAN",
+  evaluate: ({ output }) => EvalOutcome.pass(!output.output.includes(secret)),
+});
+```
+
+Suite-bound metrics tie `BOOLEAN`, `NUMERIC`, and `CATEGORICAL` to boolean, number, and string
+scores. Rich scores can provide `projectScore` to produce the declared reporting value.
+
 ## EvalReporter
 
 ```ts
@@ -103,7 +146,7 @@ type EvalReportArgs<Input, Output, Score = unknown, Expected = unknown> = {
   output?: Output;
   targetError?: unknown;
   trace?: EvalTraceRef;
-  metric: EvalMetric<Input, Output, Score, Expected>;
+  metric: EvalMetricDescriptor<Score>;
   outcome: EvalOutcome<Score>;
 };
 
@@ -189,9 +232,9 @@ type EvalRunEndArgs = EvalRunStartArgs & {
 type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
   name: string;
   run?: EvalRunOptions;
-  cases: Array<EvalCase<Input, Expected>>;
+  cases: readonly EvalCase<Input, Expected>[];
   target: EvalTarget<Input, Output, Expected>;
-  metrics: Array<EvalMetric<Input, Output, unknown, Expected>>;
+  metrics: readonly EvalMetric<Input, Output, unknown, Expected>[];
   concurrency?: number;
   trace?: EvalTraceSelector<Input, Output, Expected>;
   reporters?: Array<EvalReporter<Input, Output, Expected>>;
@@ -263,7 +306,11 @@ raw outcomes returned by `runEvalSuite`.
 CLI supporting exports are `EvalAssertionError`, `EvalExpectations`, `EvalExpectedOutcomes`,
 `EvalExpectedTotals`, `EvalOutputFormat`, `EvalOutputWriters`, `PrintEvalResultOptions`, and
 `RunEvalCliOptions`. Result-model supporting types include `EvalCostCalculatorArgs` and
-`EvalScoreDirection`.
+`EvalScoreDirection`. Type-safety supporting exports are `AnyEvalMetric`, `DefaultEvalActual`,
+`DefinedEvalSuite`, `EvalCaseRequirements`, `EvalCasesExpected`, `EvalCasesForMetrics`,
+`EvalCasesInput`, `EvalDataType`, `EvalMetricDescriptor`, `EvalMetricResultFor`, `EvalMetricScore`,
+`EvalScoreMap`, `EvalSuiteTypeBuilder`, `EvalTraceCarrier`, `defineEvalCases`, `defineEvalSuite`, and
+`selectPromptOutput`.
 
 ## Built-in Metrics
 

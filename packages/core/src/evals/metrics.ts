@@ -6,7 +6,7 @@ import type { ZodSchema } from "../schema";
 import { errorMessage, formatValue, stableComparable } from "./format";
 import { EvalOutcome } from "./outcome";
 import { resolveActual, resolveActualText, resolveExpected, resolveJudgePrompt } from "./selectors";
-import type { EvalMetric, SelectorOrValue, ValueSelector } from "./types";
+import type { EvalCaseRequirements, EvalMetric, SelectorOrValue, ValueSelector } from "./types";
 
 export type ExactMatchOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
@@ -15,11 +15,23 @@ export type ExactMatchOptions<Input, Output, Expected = unknown> = {
   expected?: SelectorOrValue<Input, Output, Expected, unknown> | undefined;
 };
 
-export function exactMatch<Input, Output, Expected = unknown>(
-  options: ExactMatchOptions<Input, Output, Expected> = {},
-): EvalMetric<Input, Output, boolean, Expected> {
+export function exactMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ExactMatchOptions<Input, Output, Expected> & {
+    expected: Exclude<ExactMatchOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function exactMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  options?: Omit<ExactMatchOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: unknown }>;
+export function exactMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ExactMatchOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return {
-    name: options.name ?? "exact_match",
+    name: (options.name ?? "exact_match") as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -45,11 +57,23 @@ export type ContainsOptions<Input, Output, Expected = unknown> = {
   expected?: SelectorOrValue<Input, Output, Expected, string | RegExp> | undefined;
 };
 
-export function contains<Input, Output, Expected = unknown>(
-  options: ContainsOptions<Input, Output, Expected> = {},
-): EvalMetric<Input, Output, boolean, Expected> {
+export function contains<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ContainsOptions<Input, Output, Expected> & {
+    expected: Exclude<ContainsOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function contains<Input, Output, Expected = unknown, const Name extends string = string>(
+  options?: Omit<ContainsOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: string | RegExp }>;
+export function contains<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ContainsOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return {
-    name: options.name ?? "contains",
+    name: (options.name ?? "contains") as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -78,11 +102,11 @@ export type NotContainsOptions<Input, Output, Expected = unknown> = ContainsOpti
   Expected
 >;
 
-export function notContains<Input, Output, Expected = unknown>(
-  options: NotContainsOptions<Input, Output, Expected> = {},
-): EvalMetric<Input, Output, boolean, Expected> {
+export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: NotContainsOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return {
-    name: options.name ?? "not_contains",
+    name: (options.name ?? "not_contains") as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -119,9 +143,9 @@ export type ContainsAllOptions<Input, Output, Expected = unknown> = ContainsList
   Expected
 >;
 
-export function containsAll<Input, Output, Expected = unknown>(
-  options: ContainsAllOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ContainsAllOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return containsListMetric("contains_all", "all", options);
 }
 
@@ -131,19 +155,19 @@ export type ContainsAnyOptions<Input, Output, Expected = unknown> = ContainsList
   Expected
 >;
 
-export function containsAny<Input, Output, Expected = unknown>(
-  options: ContainsAnyOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ContainsAnyOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return containsListMetric("contains_any", "any", options);
 }
 
-function containsListMetric<Input, Output, Expected>(
+function containsListMetric<Input, Output, Expected, const Name extends string>(
   defaultName: string,
   mode: "all" | "any",
-  options: ContainsListOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+  options: ContainsListOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return {
-    name: options.name ?? defaultName,
+    name: (options.name ?? defaultName) as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -177,9 +201,9 @@ export type MatchesOptions<Input, Output, Expected = unknown> = {
   expected?: SelectorOrValue<Input, Output, Expected, RegExp> | undefined;
 };
 
-export function matches<Input, Output, Expected = unknown>(
-  options: MatchesOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: MatchesOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return regexMetric("matches", false, options);
 }
 
@@ -189,19 +213,19 @@ export type DoesNotMatchOptions<Input, Output, Expected = unknown> = MatchesOpti
   Expected
 >;
 
-export function doesNotMatch<Input, Output, Expected = unknown>(
-  options: DoesNotMatchOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: DoesNotMatchOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return regexMetric("does_not_match", true, options);
 }
 
-function regexMetric<Input, Output, Expected>(
+function regexMetric<Input, Output, Expected, const Name extends string>(
   defaultName: string,
   negate: boolean,
-  options: MatchesOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+  options: MatchesOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return {
-    name: options.name ?? defaultName,
+    name: (options.name ?? defaultName) as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -232,11 +256,11 @@ export type MaxLengthOptions<Input, Output, Expected = unknown> = {
   max: SelectorOrValue<Input, Output, Expected, number>;
 };
 
-export function maxLength<Input, Output, Expected = unknown>(
-  options: MaxLengthOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+export function maxLength<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: MaxLengthOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return {
-    name: options.name ?? "max_length",
+    name: (options.name ?? "max_length") as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -262,11 +286,16 @@ export type RequiredFieldsOptions<Input, Output, Expected = unknown> = {
   expected: SelectorOrValue<Input, Output, Expected, readonly string[]>;
 };
 
-export function requiredFields<Input, Output, Expected = unknown>(
-  options: RequiredFieldsOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, boolean, Expected> {
+export function requiredFields<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: RequiredFieldsOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
   return {
-    name: options.name ?? "required_fields",
+    name: (options.name ?? "required_fields") as Name,
     required: options.required ?? true,
     dataType: "BOOLEAN",
     direction: "higher_is_better",
@@ -323,11 +352,38 @@ export type SemanticSimilarityOptions<Input, Output, Expected = unknown> = {
   expected?: SelectorOrValue<Input, Output, Expected, string> | undefined;
 };
 
-export function semanticSimilarity<Input, Output, Expected = unknown>(
-  options: SemanticSimilarityOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, number, Expected> {
+export function semanticSimilarity<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: SemanticSimilarityOptions<Input, Output, Expected> & {
+    expected: Exclude<SemanticSimilarityOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, number, Expected, Name>;
+export function semanticSimilarity<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: Omit<SemanticSimilarityOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, number, Expected, Name, { expected: string }>;
+export function semanticSimilarity<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: SemanticSimilarityOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, number, Expected, Name, EvalCaseRequirements> {
   return {
-    name: options.name ?? "semantic_similarity",
+    name: (options.name ?? "semantic_similarity") as Name,
     required: options.required ?? true,
     dataType: "NUMERIC",
     direction: "higher_is_better",
@@ -364,9 +420,15 @@ export type LlmJudgeOptions<Input, Output, SchemaOutput, Expected = unknown> = {
   prompt?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
 
-export function llmJudge<Input, Output, SchemaOutput, Expected = unknown>(
-  options: LlmJudgeOptions<Input, Output, SchemaOutput, Expected>,
-): EvalMetric<Input, Output, SchemaOutput, Expected> {
+export function llmJudge<
+  Input,
+  Output,
+  SchemaOutput,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: LlmJudgeOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, SchemaOutput, Expected, Name> {
   const extractor = new ExtractorBuilder(options.model, options.schema)
     .instructions(
       options.instructions ??
@@ -376,7 +438,7 @@ export function llmJudge<Input, Output, SchemaOutput, Expected = unknown>(
     .build();
 
   return {
-    name: options.name ?? "llm_judge",
+    name: (options.name ?? "llm_judge") as Name,
     required: options.required ?? true,
     async evaluate(args) {
       try {
@@ -409,9 +471,9 @@ export type LlmScoreOptions<Input, Output, Expected = unknown> = {
   prompt?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
 
-export function llmScore<Input, Output, Expected = unknown>(
-  options: LlmScoreOptions<Input, Output, Expected>,
-): EvalMetric<Input, Output, LlmScoreMetricScore, Expected> {
+export function llmScore<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: LlmScoreOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, LlmScoreMetricScore, Expected, Name> {
   const criteria = Array.isArray(options.criteria) ? options.criteria.join("\n") : options.criteria;
   const extractor = new ExtractorBuilder(
     options.model,
@@ -428,9 +490,10 @@ export function llmScore<Input, Output, Expected = unknown>(
     .build();
 
   return {
-    name: options.name ?? "llm_score",
+    name: (options.name ?? "llm_score") as Name,
     required: options.required ?? true,
     dataType: "NUMERIC",
+    projectScore: (score) => score.score,
     direction: "higher_is_better",
     threshold: options.threshold,
     async evaluate(args) {

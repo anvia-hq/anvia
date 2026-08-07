@@ -1,3 +1,4 @@
+import { defineEvalSuite, exactMatch, selectPromptOutput } from "@anvia/core/evals";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveLensConfig } from "../src/config";
 import { createLensRedactor } from "../src/redaction";
@@ -78,6 +79,23 @@ describe("createLensRedactor", () => {
 });
 
 describe("Lens eval ergonomics", () => {
+  it("accepts infrastructure reporters without application generic wrappers", () => {
+    vi.stubEnv("ANVIA_LENS_BASE_URL", "");
+    vi.stubEnv("ANVIA_LENS_PUBLIC_KEY", "");
+    vi.stubEnv("ANVIA_LENS_SECRET_KEY", "");
+    const tracing = lens.createFromEnv({ optional: true, serviceName: "typed-evals" });
+    const reporter = createLensEvalReporter(tracing);
+    const suite = defineEvalSuite({
+      name: "typed lens",
+      cases: [{ id: "case", input: "hello", expected: "hello" }],
+      target: (input) => ({ output: input }),
+      metrics: [exactMatch({ actual: selectPromptOutput })],
+      reporters: [reporter],
+    });
+
+    expect(suite.reporters).toEqual([reporter]);
+  });
+
   it("returns no-op tracing when optional environment configuration is absent", async () => {
     vi.stubEnv("ANVIA_LENS_BASE_URL", undefined);
     vi.stubEnv("ANVIA_LENS_PUBLIC_KEY", undefined);

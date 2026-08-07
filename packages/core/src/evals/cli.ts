@@ -1,5 +1,11 @@
 import { runEvalSuite } from "./runner";
-import type { EvalOutcomeStatus, EvalSuiteResult, EvalTotals, RunEvalSuiteOptions } from "./types";
+import type {
+  EvalMetric,
+  EvalOutcomeStatus,
+  EvalSuiteResult,
+  EvalTotals,
+  RunEvalSuiteOptions,
+} from "./types";
 
 export type EvalOutputFormat = "pretty" | "json" | "quiet";
 
@@ -25,11 +31,18 @@ export type PrintEvalResultOptions = {
   output?: EvalOutputWriters | undefined;
 };
 
-export type RunEvalCliOptions<Input, Output, Expected = unknown> = RunEvalSuiteOptions<
+export type RunEvalCliOptions<
   Input,
   Output,
-  Expected
-> & {
+  Expected = unknown,
+  Metrics extends readonly EvalMetric<
+    NoInfer<Input>,
+    NoInfer<Output>,
+    unknown,
+    NoInfer<Expected>,
+    string
+  >[] = readonly EvalMetric<NoInfer<Input>, NoInfer<Output>, unknown, NoInfer<Expected>, string>[],
+> = RunEvalSuiteOptions<Input, Output, Expected, Metrics> & {
   format?: EvalOutputFormat | undefined;
   exitCode?: boolean | undefined;
   expectations?: EvalExpectations | undefined;
@@ -90,11 +103,24 @@ export function assertEvalOutcomes(
   }
 }
 
-export async function runEvalCli<Input, Output, Expected = unknown>(
-  options: RunEvalCliOptions<Input, Output, Expected>,
-): Promise<EvalSuiteResult<Input, Output, Expected>> {
+export async function runEvalCli<
+  Input,
+  Output,
+  Expected = unknown,
+  const Metrics extends readonly EvalMetric<
+    NoInfer<Input>,
+    NoInfer<Output>,
+    unknown,
+    NoInfer<Expected>,
+    string
+  >[] = readonly EvalMetric<NoInfer<Input>, NoInfer<Output>, unknown, NoInfer<Expected>, string>[],
+>(
+  options: RunEvalCliOptions<Input, Output, Expected, Metrics>,
+): Promise<EvalSuiteResult<Input, Output, Expected, Metrics>> {
   const { format, exitCode, expectations, output, ...suiteOptions } = options;
-  const result = await runEvalSuite(suiteOptions as RunEvalSuiteOptions<Input, Output, Expected>);
+  const result = await runEvalSuite(
+    suiteOptions as RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
+  );
   printEvalResult(result, { format, output });
   const code = evalExitCode(result, expectations);
   const mismatches = expectationMismatches(result, expectations);

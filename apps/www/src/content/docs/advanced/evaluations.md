@@ -114,20 +114,25 @@ semantics.
 
 ## Custom Metrics
 
-Use `defineMetric(...)` or a plain metric object:
+Use a suite-bound metric helper to establish application types once:
 
 ```ts
-import { EvalOutcome, defineMetric } from "@anvia/core/evals";
+import { EvalOutcome, defineEvalSuite } from "@anvia/core/evals";
 
-const noHandoffMetric = defineMetric({
+const supportEvals = defineEvalSuite<string, PromptResponse, string>();
+const noHandoffMetric = supportEvals.defineMetric({
   name: "no_support_handoff",
+  dataType: "BOOLEAN",
   evaluate({ output }) {
-    return output.includes("contact support")
+    return output.output.includes("contact support")
       ? EvalOutcome.fail(false, { comment: "Answer fell back to support handoff." })
       : EvalOutcome.pass(true);
   },
 });
 ```
+
+Standalone `defineMetric(...)` and plain metric objects remain available. Use
+`selectPromptOutput` when a metric should explicitly inspect the string inside a `PromptResponse`.
 
 Return `invalid(...)` when the case cannot be judged, for example because expected data is missing or the target failed.
 

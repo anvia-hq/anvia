@@ -48,6 +48,22 @@ export type EvalOutcomeStatus = "pass" | "fail" | "invalid";
 
 export type EvalScoreDirection = "higher_is_better" | "lower_is_better";
 
+export type EvalDataType = "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
+
+export type EvalTraceCarrier = {
+  trace: EvalTraceRef;
+};
+
+export type DefaultEvalActual<Output> = Output extends { output: infer Text extends string }
+  ? Text
+  : Output;
+
+export type EvalCaseRequirements = {
+  expected?: unknown;
+  context?: string[];
+  retrievalContext?: string[];
+};
+
 export type EvalTotals = {
   total: number;
   passed: number;
@@ -83,22 +99,31 @@ export type EvalMetricArgs<Input, Output, Expected = unknown> = {
   output: Output;
 };
 
-export type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
-  name: string;
+export type EvalMetric<
+  Input,
+  Output,
+  Score = unknown,
+  Expected = unknown,
+  Name extends string = string,
+  Requirements extends EvalCaseRequirements = Record<never, never>,
+> = {
+  name: Name;
   required?: boolean | undefined;
   direction?: EvalScoreDirection | undefined;
   threshold?: number | undefined;
-  dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN" | undefined;
+  dataType?: EvalDataType | undefined;
+  projectScore?(score: Score): number | string | boolean;
   scoreConfigId?: string | undefined;
   configId?: string | undefined;
   metadata?: EvalMetadata | undefined;
+  readonly caseRequirements?: Requirements | undefined;
   evaluate(
     args: EvalMetricArgs<Input, Output, Expected>,
   ): EvalOutcome<Score> | Promise<EvalOutcome<Score>>;
 };
 
-export type EvalMetricResult<Score = unknown> = {
-  metricName: string;
+export type EvalMetricResult<Score = unknown, Name extends string = string> = {
+  metricName: Name;
   required: boolean;
   direction?: EvalScoreDirection | undefined;
   threshold?: number | undefined;
@@ -106,24 +131,60 @@ export type EvalMetricResult<Score = unknown> = {
   reporterErrors: unknown[];
 };
 
-export type EvalCaseResult<Input, Output, Expected = unknown> = {
+export type AnyEvalMetric = EvalMetric<never, never, unknown, never, string>;
+
+export type EvalMetricScore<Metric> = Metric extends {
+  evaluate(...args: never[]): infer Result;
+}
+  ? Awaited<Result> extends EvalOutcome<infer Score>
+    ? Score
+    : never
+  : never;
+
+export type EvalMetricResultFor<Metric> = Metric extends { name: infer Name extends string }
+  ? EvalMetricResult<EvalMetricScore<Metric>, Name>
+  : never;
+
+export type EvalScoreMap<Metrics extends readonly AnyEvalMetric[]> = {
+  [Metric in Metrics[number] as Metric["name"]]: EvalOutcome<EvalMetricScore<Metric>>;
+};
+
+export type EvalCaseResult<
+  Input,
+  Output,
+  Expected = unknown,
+  Metrics extends readonly AnyEvalMetric[] = readonly AnyEvalMetric[],
+> = {
   case: EvalCase<Input, Expected>;
   outcome: EvalOutcomeStatus;
   output?: Output | undefined;
   targetError?: unknown;
-  metrics: EvalMetricResult[];
+  metrics: Array<EvalMetricResultFor<Metrics[number]>>;
+  scores: EvalScoreMap<Metrics>;
 };
 
-export type EvalSuiteResult<Input, Output, Expected = unknown> = {
+export type EvalSuiteResult<
+  Input,
+  Output,
+  Expected = unknown,
+  Metrics extends readonly AnyEvalMetric[] = readonly AnyEvalMetric[],
+> = {
   name: string;
   run: EvalRunContext & { completedAt: string };
-  results: Array<EvalCaseResult<Input, Output, Expected>>;
+  results: Array<EvalCaseResult<Input, Output, Expected, Metrics>>;
   metrics: EvalTotals;
   cases: EvalTotals;
   usage: EvalUsageSummary;
   cost?: EvalCostSummary | undefined;
   durationMs: number;
   reporterErrors: unknown[];
+};
+
+export type EvalMetricDescriptor<Score = unknown, Name extends string = string> = Omit<
+  EvalMetric<never, never, Score, never, Name>,
+  "evaluate"
+> & {
+  evaluate?: EvalMetric<never, never, Score, never, Name>["evaluate"];
 };
 
 export type EvalReportArgs<Input, Output, Score = unknown, Expected = unknown> = {
@@ -133,7 +194,7 @@ export type EvalReportArgs<Input, Output, Score = unknown, Expected = unknown> =
   output?: Output | undefined;
   targetError?: unknown;
   trace?: EvalTraceRef | undefined;
-  metric: EvalMetric<Input, Output, Score, Expected>;
+  metric: EvalMetricDescriptor<Score>;
   outcome: EvalOutcome<Score>;
 };
 
@@ -166,7 +227,7 @@ export type EvalTraceSelector<Input, Output, Expected = unknown> = (
   args: EvalTraceSelectorArgs<Input, Output, Expected>,
 ) => EvalTraceRef | undefined | Promise<EvalTraceRef | undefined>;
 
-export type EvalReporter<Input = unknown, Output = unknown, Expected = unknown> = {
+export type EvalReporter<in Input = unknown, in Output = unknown, in Expected = unknown> = {
   onRunStart?(args: EvalRunStartArgs): void | Promise<void>;
   report(args: EvalReportArgs<Input, Output, unknown, Expected>): void | Promise<void>;
   onRunEnd?(args: EvalRunEndArgs): void | Promise<void>;
@@ -198,15 +259,28 @@ export type EvalCostOptions<Input, Output, Expected = unknown> = {
   calculate(args: EvalCostCalculatorArgs<Input, Output, Expected>): number | Promise<number>;
 };
 
-export type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
+export type RunEvalSuiteOptions<
+  Input,
+  Output,
+  Expected = unknown,
+  Metrics extends readonly EvalMetric<
+    NoInfer<Input>,
+    NoInfer<Output>,
+    unknown,
+    NoInfer<Expected>,
+    string
+  >[] = readonly EvalMetric<NoInfer<Input>, NoInfer<Output>, unknown, NoInfer<Expected>, string>[],
+> = {
   name: string;
   run?: EvalRunOptions | undefined;
-  cases: Array<EvalCase<Input, Expected>>;
+  cases: readonly EvalCase<Input, Expected>[];
   target: EvalTarget<Input, Output, Expected>;
-  metrics: Array<EvalMetric<NoInfer<Input>, NoInfer<Output>, unknown, NoInfer<Expected>>>;
+  metrics: Metrics;
   concurrency?: number | undefined;
   trace?: EvalTraceSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>> | undefined;
-  reporters?: Array<EvalReporter<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>> | undefined;
+  reporters?:
+    | readonly EvalReporter<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>[]
+    | undefined;
   failOnReporterError?: boolean | undefined;
   targetUsage?:
     | EvalTargetUsageSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>

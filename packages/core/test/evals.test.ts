@@ -602,6 +602,13 @@ describe("eval score projection", () => {
     expect(projectEvalOutcome(EvalOutcome.pass({ score: 0.4 }), undefined)).toMatchObject({
       value: 0.4,
     });
+    expect(
+      projectEvalOutcome(
+        EvalOutcome.pass({ confidence: 0.75 }),
+        "NUMERIC",
+        (score) => score.confidence,
+      ),
+    ).toMatchObject({ value: 0.75, numericValue: 0.75 });
     expect(projectEvalOutcome(EvalOutcome.invalid("broken"), undefined)).toMatchObject({
       value: 0,
       label: "invalid",

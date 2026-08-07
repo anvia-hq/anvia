@@ -1,3 +1,4 @@
+import type { JsonValue } from "@anvia/core/completion";
 import type { EvalReporter } from "@anvia/core/evals";
 import type { AgentObserver } from "@anvia/core/observability";
 
@@ -45,3 +46,39 @@ export type LensEvalReporter<Input = unknown, Output = unknown, Expected = unkno
   Output,
   Expected
 >;
+
+export type LensDatasetClientOptions = {
+  baseUrl?: string | undefined;
+  publicKey?: string | undefined;
+  secretKey?: string | undefined;
+  pageSize?: number | undefined;
+  timeoutMs?: number | undefined;
+};
+
+export type LensDatasetGetOptions = {
+  version?: string | undefined;
+};
+
+export type LensDatasetItem<Input = unknown, Expected = unknown> = {
+  id: string;
+  input: Input;
+  expected?: Expected | undefined;
+  context?: string[] | undefined;
+  retrievalContext?: string[] | undefined;
+  metadata?: Record<string, JsonValue | undefined> | undefined;
+};
+
+export type LensDataset<Input = unknown, Expected = unknown> = {
+  name: string;
+  version: string;
+  description?: string | undefined;
+  metadata?: Record<string, JsonValue | undefined> | undefined;
+  items: LensDatasetItem<Input, Expected>[];
+};
+
+export type LensDatasetClient = {
+  getDataset<Input = unknown, Expected = unknown>(
+    name: string,
+    options?: LensDatasetGetOptions,
+  ): Promise<LensDataset<Input, Expected>>;
+};

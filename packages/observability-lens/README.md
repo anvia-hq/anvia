@@ -58,6 +58,32 @@ const reporter = createLensEvalReporter(tracing, {
 Evaluation payloads include the case input, expected value, contexts, and target output. They use
 the tracing instance's redaction transforms and `captureMaxBytes` limit.
 
+## Managed datasets
+
+Fetch an immutable dataset version managed in Lens and pass its items directly to the core eval
+runner:
+
+```ts
+import { runEvalSuite } from "@anvia/core/evals";
+import { createLensDatasetClient } from "@anvia/lens";
+
+const datasets = createLensDatasetClient(tracing);
+const dataset = await datasets.getDataset<string, string>("support-cases", { version: "v2" });
+
+await runEvalSuite({
+  name: "support-regression",
+  run: { datasetName: dataset.name, datasetVersion: dataset.version },
+  cases: dataset.items,
+  target,
+  metrics,
+  reporters: [reporter],
+});
+```
+
+The client reuses the tracing instance's base URL and project credentials, automatically paginates,
+and selects the latest published version when `version` is omitted. Draft and archived versions are
+not readable through the public API.
+
 Configuration can also be provided through `ANVIA_LENS_BASE_URL`, `ANVIA_LENS_PUBLIC_KEY`,
 `ANVIA_LENS_SECRET_KEY`, `ANVIA_LENS_SERVICE_NAME`, `ANVIA_LENS_ENVIRONMENT`, and
 `ANVIA_LENS_RELEASE`.

@@ -18,6 +18,7 @@ import type {
 const internals = Symbol("@anvia/lens.internals");
 
 type LensInternals = {
+  config: ReturnType<typeof resolveLensConfig>;
   loggerProvider: LoggerProvider;
   logger: ReturnType<LoggerProvider["getLogger"]>;
   captureMaxBytes: number;
@@ -26,6 +27,10 @@ type LensInternals = {
 };
 
 type InternalLensTracing = LensTracing & { [internals]: LensInternals };
+
+export function getResolvedLensConfig(tracing: LensTracing) {
+  return (tracing as Partial<InternalLensTracing>)[internals]?.config;
+}
 
 export const lens = {
   create(options: LensTracingOptions = {}): LensTracing {
@@ -91,6 +96,7 @@ class LensAgentObserver implements InternalLensTracing {
     const transformInput = options.redactInputs ? redactor.redact : undefined;
     const transformOutput = options.redactOutputs ? redactor.redact : undefined;
     this[internals] = {
+      config,
       loggerProvider,
       logger,
       captureMaxBytes: config.captureMaxBytes,

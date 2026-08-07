@@ -82,6 +82,61 @@ describe("Lens dataset client", () => {
     await expect(invalid).rejects.toMatchObject({ code: "invalid_response" });
   });
 
+  it("rejects inconsistent pagination instead of combining unstable pages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          response({
+            name: "changing",
+            version: "v1",
+            items: [{ id: "a", input: "first" }],
+            meta: { page: 1, limit: 1, totalItems: 2, totalPages: 2 },
+          }),
+        )
+        .mockResolvedValueOnce(
+          response({
+            name: "changing",
+            version: "v1",
+            items: [{ id: "b", input: "second" }],
+            meta: { page: 2, limit: 1, totalItems: 3, totalPages: 3 },
+          }),
+        ),
+    );
+    tracing = createTracing();
+
+    await expect(
+      createLensDatasetClient(tracing, { pageSize: 1 }).getDataset("changing"),
+    ).rejects.toMatchObject({
+      code: "invalid_response",
+      message: "Lens returned inconsistent dataset pagination",
+    });
+  });
+
+  it("rejects datasets that exceed the pagination safety limit", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        response({
+          name: "too-large",
+          version: "v1",
+          items: [{ id: "case", input: "value" }],
+          meta: { page: 1, limit: 1, totalItems: 101, totalPages: 101 },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    tracing = createTracing();
+
+    await expect(
+      createLensDatasetClient(tracing, { pageSize: 1 }).getDataset("too-large"),
+    ).rejects.toMatchObject({
+      code: "pagination_limit",
+      message: "Lens dataset exceeds the pagination limit",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(100);
+  });
+
   it("validates client options and tracing ownership", async () => {
     tracing = createTracing();
     expect(() => createLensDatasetClient(tracing as never, { pageSize: 0 })).toThrow(

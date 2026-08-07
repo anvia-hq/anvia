@@ -31,6 +31,7 @@ export type LensTracingOptions = {
 export type LensEvalReporterOptions = {
   publishInvalid?: boolean | undefined;
   includeMetadata?: boolean | undefined;
+  includePayloads?: boolean | undefined;
   onMissingTrace?: "emit" | "ignore" | "warn" | "throw" | undefined;
 };
 

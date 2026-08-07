@@ -39,10 +39,16 @@ await runEvalSuite({
   cases,
   target,
   metrics,
-  reporters: [createLensEvalReporter(tracing)],
+  reporters: [
+    createLensEvalReporter(tracing, {
+      includePayloads: true,
+      includeMetadata: true,
+    }),
+  ],
 });
 ```
 
 Lens receives run start and finish events plus suite, case, metric, outcome, and trace correlation.
-Use the returned `result.run.id` to link directly to a run. Case, metric, outcome, and run metadata
-are omitted by default; set `includeMetadata: true` only when that metadata is approved for export.
+Use the returned `result.run.id` to link directly to a run. Case payloads and metadata are omitted
+by default; enable `includePayloads` and `includeMetadata` only when those values are approved for
+export. Payload capture uses the tracing instance's redaction transforms and capture-size limit.

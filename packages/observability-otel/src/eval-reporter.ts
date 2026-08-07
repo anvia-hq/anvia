@@ -27,6 +27,7 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
   const onMissingTrace = options.onMissingTrace ?? "emit";
   const publishInvalid = options.publishInvalid ?? true;
   const includeMetadata = options.includeMetadata ?? true;
+  const includePayloads = options.includePayloads ?? false;
 
   return {
     onRunStart(args) {
@@ -54,7 +55,12 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
         }
         return;
       }
-      emitEvaluation(logger, args, traceRef, eventContext, includeMetadata);
+      emitEvaluation(logger, args, traceRef, eventContext, includeMetadata, {
+        includePayloads,
+        captureMaxBytes: options.captureMaxBytes,
+        transformInput: options.transformInput,
+        transformOutput: options.transformOutput,
+      });
     },
     onRunEnd(args) {
       emitRunFinished(logger, args, includeMetadata);
@@ -68,6 +74,10 @@ function emitEvaluation<Input, Output, Score, Expected>(
   traceRef: EvalReportArgs<Input, Output, Score, Expected>["trace"],
   eventContext: Context | undefined,
   includeMetadata: boolean,
+  payloadOptions: Pick<
+    OtelEvalReporterOptions,
+    "includePayloads" | "captureMaxBytes" | "transformInput" | "transformOutput"
+  >,
 ): void {
   const projection = projectEvalOutcome(args.outcome, args.metric.dataType);
   const attributes: LogAttributes = {
@@ -107,6 +117,9 @@ function emitEvaluation<Input, Output, Score, Expected>(
     addMetadata(attributes, "anvia.eval.metric.metadata", args.metric.metadata);
     addMetadata(attributes, "anvia.eval.outcome.metadata", args.outcome.metadata);
   }
+  if (payloadOptions.includePayloads) {
+    addEvaluationPayload(attributes, args, payloadOptions);
+  }
 
   const record: Parameters<Logger["emit"]>[0] = {
     eventName: EVALUATION_EVENT_NAME,
@@ -116,6 +129,48 @@ function emitEvaluation<Input, Output, Score, Expected>(
   };
   if (eventContext !== undefined) record.context = eventContext;
   logger.emit(record);
+}
+
+function addEvaluationPayload<Input, Output, Score, Expected>(
+  attributes: LogAttributes,
+  args: EvalReportArgs<Input, Output, Score, Expected>,
+  options: Pick<OtelEvalReporterOptions, "captureMaxBytes" | "transformInput" | "transformOutput">,
+): void {
+  const transformInput = options.transformInput ?? identity;
+  const transformOutput = options.transformOutput ?? identity;
+  const payload: Record<string, unknown> = {
+    input: transformInput(args.case.input),
+  };
+  if (args.case.expected !== undefined) payload.expected = transformInput(args.case.expected);
+  if (args.case.context !== undefined) payload.context = transformInput(args.case.context);
+  if (args.case.retrievalContext !== undefined) {
+    payload.retrievalContext = transformInput(args.case.retrievalContext);
+  }
+  if (args.output !== undefined) payload.output = transformOutput(args.output);
+
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(payload);
+  } catch {
+    attributes["anvia.eval.payload.status"] = "serialization_error";
+    return;
+  }
+  const maxBytes = options.captureMaxBytes;
+  if (
+    maxBytes !== undefined &&
+    Number.isFinite(maxBytes) &&
+    maxBytes > 0 &&
+    new TextEncoder().encode(serialized).byteLength > Math.floor(maxBytes)
+  ) {
+    attributes["anvia.eval.payload.status"] = "size_limit";
+    return;
+  }
+  attributes["anvia.eval.payload"] = serialized;
+  attributes["anvia.eval.payload.status"] = "captured";
+}
+
+function identity(value: unknown): unknown {
+  return value;
 }
 
 function emitRunStarted(logger: Logger, args: EvalRunStartArgs, includeMetadata: boolean): void {

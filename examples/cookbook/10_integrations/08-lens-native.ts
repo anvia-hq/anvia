@@ -42,10 +42,10 @@ const agent = new AgentBuilder("lens-native-smoke", new StaticSupportModel())
 try {
   const suite = await runEvalSuite({
     name: "lens-native-smoke",
-    run: { datasetName: "lens-smoke", datasetVersion: "v2" },
+    run: { datasetName: "lens-smoke", datasetVersion: "v3" },
     cases: [
       {
-        id: `refund-window-${Date.now()}`,
+        id: "refund-window",
         input: "How long are refunds available?",
         expected: "30 days",
       },

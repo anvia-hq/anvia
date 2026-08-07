@@ -303,7 +303,7 @@ function fullCapture(
     : undefined;
 }
 
-function capturedJson(
+export function capturedJson(
   value: unknown,
   direction: "input" | "output",
   options: OtelTracingOptions,
@@ -313,7 +313,7 @@ function capturedJson(
   return boundString(jsonString(transform?.(value) ?? value), options.captureMaxBytes);
 }
 
-function capturedString(
+export function capturedString(
   value: string | undefined,
   direction: "input" | "output",
   options: OtelTracingOptions,
@@ -329,9 +329,29 @@ function capturedString(
 
 function boundString(value: string, maxBytes: number | undefined): string {
   if (maxBytes === undefined || !Number.isFinite(maxBytes) || maxBytes <= 0) return value;
+  const byteLimit = Math.floor(maxBytes);
   const bytes = new TextEncoder().encode(value);
-  if (bytes.byteLength <= maxBytes) return value;
-  return `${new TextDecoder().decode(bytes.slice(0, Math.max(0, maxBytes - 14)))}<truncated>`;
+  if (bytes.byteLength <= byteLimit) return value;
+
+  const suffix = new TextEncoder().encode("<truncated>");
+  if (byteLimit <= suffix.byteLength) {
+    return new TextDecoder().decode(suffix.slice(0, byteLimit));
+  }
+
+  const prefixLimit = byteLimit - suffix.byteLength;
+  const prefix = decodeUtf8Prefix(bytes, prefixLimit);
+  return `${prefix}<truncated>`;
+}
+
+function decodeUtf8Prefix(bytes: Uint8Array, maxBytes: number): string {
+  for (let length = Math.min(bytes.byteLength, maxBytes); length > 0; length -= 1) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(0, length));
+    } catch {
+      // Retry without an incomplete trailing code point.
+    }
+  }
+  return "";
 }
 
 function serializeMetadataValue(value: unknown): string | undefined {

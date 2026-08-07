@@ -26,11 +26,15 @@ export function resolveLensConfig(options: LensTracingOptions = {}): ResolvedLen
   );
   const timeoutMs = options.timeoutMs ?? 30_000;
   const captureMaxBytes = options.captureMaxBytes ?? 262_144;
+  const captureMode = options.captureMode ?? "safe";
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError("Anvia Lens timeoutMs must be a positive number");
   }
   if (!Number.isInteger(captureMaxBytes) || captureMaxBytes < 96) {
     throw new TypeError("Anvia Lens captureMaxBytes must be an integer of at least 96 bytes");
+  }
+  if (captureMode !== "safe" && captureMode !== "full") {
+    throw new TypeError('Anvia Lens captureMode must be "safe" or "full"');
   }
   return {
     baseUrl,
@@ -42,7 +46,7 @@ export function resolveLensConfig(options: LensTracingOptions = {}): ResolvedLen
       "default",
     release: first(options.release, process.env.ANVIA_LENS_RELEASE),
     timeoutMs,
-    captureMode: options.captureMode ?? "safe",
+    captureMode,
     captureMaxBytes,
   };
 }

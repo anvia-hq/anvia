@@ -7,8 +7,10 @@ pnpm add @anvia/lens @anvia/core
 ```
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { AgentBuilder, type CompletionModel } from "@anvia/core";
 import { createLensEvalReporter, lens } from "@anvia/lens";
+
+declare const model: CompletionModel; // Supplied by your provider adapter.
 
 const tracing = lens.create({
   baseUrl: process.env.ANVIA_LENS_BASE_URL,

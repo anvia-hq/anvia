@@ -28,13 +28,14 @@ import {
 } from "@opentelemetry/api";
 import {
   agentLabel,
+  capturedJson,
+  capturedString,
   compactAttributes,
   emptyToUndefined,
   generationEndAttributes,
   generationKey,
   generationStartAttributes,
   isRecord,
-  jsonString,
   modelInputMessage,
   modelInputMessages,
   parentContextFromTraceId,
@@ -218,10 +219,14 @@ class OtelToolObserver implements AgentToolObserver {
             "anvia.parent_tool.name": args.toolName,
             "anvia.parent_tool.internal_call_id": args.internalCallId,
             "anvia.parent_tool.call_id": args.toolCallId,
-            "anvia.generation.input": jsonString({
-              prompt: modelInputMessage(child.prompt as Message),
-              history: modelInputMessages(child.history as Message[]),
-            }),
+            "anvia.generation.input": capturedJson(
+              {
+                prompt: modelInputMessage(child.prompt as Message),
+                history: modelInputMessages(child.history as Message[]),
+              },
+              "input",
+              this.options,
+            ),
           }),
         },
         trace.setSpan(ROOT_CONTEXT, agent),
@@ -237,7 +242,7 @@ class OtelToolObserver implements AgentToolObserver {
           "anvia.child_agent.id": agentId,
           "anvia.child_agent.name": agentName,
           "anvia.child_agent.turn": childTurn,
-          "anvia.generation.output": jsonString(child.response),
+          "anvia.generation.output": capturedJson(child.response, "output", this.options),
         };
         if (isRecord(child.response) && isRecord(child.response.usage)) {
           Object.assign(attributes, usageAttributesFromRecord(child.response.usage));
@@ -270,7 +275,11 @@ class OtelToolObserver implements AgentToolObserver {
             "anvia.child_agent.turn": childTurn,
             "anvia.tool.name": toolName,
             "anvia.tool.call_id": toolCallId,
-            "anvia.tool.args": jsonString(toolCallFunction?.arguments ?? {}),
+            "anvia.tool.args": capturedJson(
+              toolCallFunction?.arguments ?? {},
+              "input",
+              this.options,
+            ),
             "anvia.parent_tool.name": args.toolName,
             "anvia.parent_tool.internal_call_id": args.internalCallId,
             "anvia.parent_tool.call_id": args.toolCallId,
@@ -304,8 +313,16 @@ class OtelToolObserver implements AgentToolObserver {
             "anvia.tool.call_id": toolCallId,
             "anvia.tool.internal_call_id":
               typeof child.internalCallId === "string" ? child.internalCallId : undefined,
-            "anvia.tool.args": typeof child.args === "string" ? child.args : undefined,
-            "anvia.tool.result": typeof child.result === "string" ? child.result : undefined,
+            "anvia.tool.args": capturedString(
+              typeof child.args === "string" ? child.args : undefined,
+              "input",
+              this.options,
+            ),
+            "anvia.tool.result": capturedString(
+              typeof child.result === "string" ? child.result : undefined,
+              "output",
+              this.options,
+            ),
           }),
         );
         span.span.setStatus({ code: SpanStatusCode.OK });
@@ -316,8 +333,12 @@ class OtelToolObserver implements AgentToolObserver {
 
     if (child.type === "final") {
       const attributes: Attributes = {
-        "anvia.child_agent.output": typeof child.output === "string" ? child.output : undefined,
-        "anvia.child_agent.messages": jsonString(child.messages),
+        "anvia.child_agent.output": capturedString(
+          typeof child.output === "string" ? child.output : undefined,
+          "output",
+          this.options,
+        ),
+        "anvia.child_agent.messages": capturedJson(child.messages, "output", this.options),
       };
       if (isRecord(child.usage)) {
         Object.assign(attributes, usageAttributesFromRecord(child.usage));

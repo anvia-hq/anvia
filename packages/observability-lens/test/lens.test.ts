@@ -40,6 +40,18 @@ describe("resolveLensConfig", () => {
     vi.stubEnv("ANVIA_LENS_BASE_URL", "http://localhost");
     expect(() => resolveLensConfig()).toThrow(/publicKey is required/);
   });
+
+  it("rejects unsupported capture modes at runtime", () => {
+    expect(() =>
+      resolveLensConfig({
+        baseUrl: "http://localhost",
+        publicKey: "public",
+        secretKey: "secret",
+        serviceName: "test",
+        captureMode: "unsafe" as never,
+      }),
+    ).toThrow(/captureMode must be "safe" or "full"/);
+  });
 });
 
 describe("createLensRedactor", () => {
@@ -49,5 +61,17 @@ describe("createLensRedactor", () => {
 
     expect(result).toEqual({ email: "<redacted>", nested: ["<redacted>"] });
     expect(source.email).toBe("person@example.com");
+  });
+
+  it("redacts shared objects normally while preserving circular-reference markers", () => {
+    const shared = { email: "person@example.com" };
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    expect(createLensRedactor().redact({ first: shared, second: shared, circular })).toEqual({
+      first: { email: "<redacted>" },
+      second: { email: "<redacted>" },
+      circular: { self: "<circular>" },
+    });
   });
 });

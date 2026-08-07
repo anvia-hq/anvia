@@ -345,6 +345,32 @@ describe("otel", () => {
     expect(tracer.spans[2]?.attributes).not.toHaveProperty("anvia.tool.result");
   });
 
+  it("never exceeds small capture byte limits", async () => {
+    for (const [captureMaxBytes, expected] of [
+      [1, "<"],
+      [10, "<truncated"],
+      [11, "<truncated>"],
+    ] as const) {
+      const tracer = new FakeTracer();
+      const tracing = otel.create({
+        tracer: tracer.tracer,
+        captureMode: "full",
+        captureMaxBytes,
+      });
+
+      await tracing.startRun({
+        instructions: "sensitive payload",
+        prompt: userMessage("hello"),
+        history: [],
+        maxTurns: 1,
+      });
+
+      const captured = String(tracer.spans[0]?.attributes["anvia.agent.instructions"]);
+      expect(captured).toBe(expected);
+      expect(new TextEncoder().encode(captured).byteLength).toBeLessThanOrEqual(captureMaxBytes);
+    }
+  });
+
   it("records ad-hoc run events", async () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
@@ -673,6 +699,139 @@ describe("otel", () => {
       "anvia.child_agent.id": "child",
       "anvia.tool.result": "7",
     });
+  });
+
+  it("applies safe capture to streamed child agent payloads", async () => {
+    const tracer = new FakeTracer();
+    const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
+    const run = await tracing.startRun({
+      agentName: "support",
+      prompt: userMessage("delegate"),
+      history: [],
+      maxTurns: 2,
+    });
+    const parentToolCall = AssistantContent.toolCall("call-child", "ask_child", {
+      prompt: "private parent prompt",
+    });
+    const tool = await run?.startTool?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: '{"prompt":"private parent prompt"}',
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+    });
+
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: {
+          type: "turn_start",
+          turn: 1,
+          prompt: userMessage("private child prompt"),
+          history: [userMessage("private child history")],
+        },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: {
+          type: "tool_call",
+          turn: 1,
+          toolCall: AssistantContent.toolCall("call-secret", "lookup", {
+            query: "private tool args",
+          }),
+        },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: {
+          type: "tool_result",
+          turn: 1,
+          toolName: "lookup",
+          toolCallId: "call-secret",
+          internalCallId: "internal-secret",
+          args: '{"query":"private tool args"}',
+          result: "private tool result",
+        },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: {
+          type: "turn_end",
+          turn: 1,
+          response: {
+            messageId: "msg-child",
+            choice: [AssistantContent.text("private child response")],
+            usage: usage(2, 1),
+            rawResponse: {},
+          },
+        },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: "{}",
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: {
+          type: "final",
+          runId: "child-run",
+          output: "private child output",
+          usage: usage(2, 1),
+          messages: [Message.assistant("private child message")],
+        },
+      },
+    });
+
+    const childAgent = tracer.spans.find((span) => span.name === "Child_Agent.run");
+    const childGeneration = tracer.spans.find((span) => span.name === "Child_Agent.model.turn.1");
+    const childTool = tracer.spans.find((span) => span.name === "Child_Agent.lookup");
+
+    expect(childGeneration?.attributes).not.toHaveProperty("anvia.generation.input");
+    expect(childGeneration?.attributes).not.toHaveProperty("anvia.generation.output");
+    expect(childTool?.attributes).not.toHaveProperty("anvia.tool.args");
+    expect(childTool?.attributes).not.toHaveProperty("anvia.tool.result");
+    expect(childAgent?.attributes).not.toHaveProperty("anvia.child_agent.output");
+    expect(childAgent?.attributes).not.toHaveProperty("anvia.child_agent.messages");
   });
 
   it("records streamed child agent errors", async () => {

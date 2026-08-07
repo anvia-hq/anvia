@@ -19,9 +19,13 @@ Set `ANVIA_LENS_BASE_URL`, `ANVIA_LENS_PUBLIC_KEY`, `ANVIA_LENS_SECRET_KEY`, and
 
 ## Connect an agent
 
+Use your application's configured `CompletionModel` as `model`:
+
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { AgentBuilder, type CompletionModel } from "@anvia/core";
 import { lens } from "@anvia/lens";
+
+declare const model: CompletionModel; // Supplied by your provider adapter.
 
 const tracing = lens.create();
 const agent = new AgentBuilder("support", model).observe(tracing).build();

@@ -88,7 +88,7 @@ await waitFor(async () => {
 const evaluation = JSON.parse(
   clickhouse(
     `SELECT run_id, trace_id, observation_id, suite_name, case_id, metric_name, outcome,
-      service_name, environment, release
+      service_name, environment, release, payload, payload_status
       FROM evaluation_results FINAL
       WHERE project_id='${projectId}' AND trace_id='${traceId}'
       ORDER BY timestamp DESC LIMIT 1
@@ -101,6 +101,17 @@ if (evaluation.observation_id !== observationId) {
 if (evaluation.run_id !== runId) throw new Error("The evaluation was not grouped into its run");
 if (evaluation.metric_name !== "refund-policy-correctness" || evaluation.outcome !== "pass") {
   throw new Error("The stored evaluation metric or outcome is incorrect");
+}
+if (evaluation.payload_status !== "captured" || typeof evaluation.payload !== "string") {
+  throw new Error("The opt-in evaluation payload was not captured");
+}
+const evaluationPayload = JSON.parse(evaluation.payload);
+if (
+  evaluationPayload.input !== "How long are refunds available?" ||
+  evaluationPayload.expected !== "30 days" ||
+  evaluationPayload.output === undefined
+) {
+  throw new Error("The stored evaluation payload is incomplete or incorrect");
 }
 
 const capturedPayloads = Number(
@@ -139,6 +150,7 @@ console.log(
         caseId: evaluation.case_id,
         metric: evaluation.metric_name,
         outcome: evaluation.outcome,
+        payloadStatus: evaluation.payload_status,
       },
       safeCapture: true,
       durability: options.has("--durability") ? "verified" : "not requested",

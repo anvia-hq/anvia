@@ -27,13 +27,17 @@ function deepRedact(
   if (value === null || typeof value !== "object") return value;
   if (seen.has(value)) return "<circular>";
   seen.add(value);
-  if (Array.isArray(value)) {
-    return value.map((entry) => deepRedact(entry, patterns, replacement, seen));
+  try {
+    if (Array.isArray(value)) {
+      return value.map((entry) => deepRedact(entry, patterns, replacement, seen));
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        deepRedact(entry, patterns, replacement, seen),
+      ]),
+    );
+  } finally {
+    seen.delete(value);
   }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      deepRedact(entry, patterns, replacement, seen),
-    ]),
-  );
 }

@@ -28,7 +28,8 @@ if (options.has("--rebuild")) {
 } else {
   run("docker", ["compose", "up", "-d"], { cwd: lensRoot });
 }
-assertReady();
+await waitForReady();
+const localApiBaseUrl = composeServiceUrl("api", 3001);
 
 const projectId = compose([
   "exec",
@@ -48,7 +49,10 @@ if (!/^[0-9a-f-]{36}$/.test(projectId)) {
 
 const smoke = run("pnpm", ["--filter", "cookbook", "integrations:08"], {
   cwd: root,
-  env: environment,
+  env: {
+    ...environment,
+    ANVIA_LENS_BASE_URL: localApiBaseUrl,
+  },
   capture: true,
 });
 const payload = parseSmokeOutput(smoke);
@@ -91,7 +95,9 @@ if (capturedPayloads !== 0) throw new Error("Safe capture exported an input or o
 
 if (options.has("--durability")) {
   compose(["restart", "clickhouse"]);
+  await waitForReady();
   compose(["up", "-d", "clickhouse", "api", "worker"]);
+  await waitForReady();
   await waitFor(
     async () =>
       Number(
@@ -101,7 +107,6 @@ if (options.has("--durability")) {
       ) === 1,
     "evaluation durability after ClickHouse restart",
   );
-  assertReady();
 }
 
 console.log(
@@ -129,6 +134,15 @@ function compose(args) {
   return run("docker", ["compose", ...args], { cwd: lensRoot, capture: true });
 }
 
+function composeServiceUrl(service, port) {
+  const address = compose(["port", service, String(port)])
+    .trim()
+    .split(/\r?\n/, 1)[0];
+  const hostPort = address?.match(/:(\d+)$/)?.[1];
+  if (hostPort === undefined) throw new Error(`Could not resolve the ${service} Compose port`);
+  return `http://127.0.0.1:${hostPort}`;
+}
+
 function clickhouse(query) {
   return compose([
     "exec",
@@ -152,6 +166,13 @@ function assertReady() {
     "http://127.0.0.1:3001/health/ready",
   ]);
   if (JSON.parse(result).status !== "ready") throw new Error("Lens API is not ready");
+}
+
+async function waitForReady() {
+  await waitFor(() => {
+    assertReady();
+    return true;
+  }, "Lens API readiness");
 }
 
 function run(command, args, settings = {}) {

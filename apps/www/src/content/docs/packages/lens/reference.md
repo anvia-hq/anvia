@@ -3,7 +3,7 @@ title: "Anvia Lens"
 description: "Public exports from @anvia/lens."
 section: packages
 sidebar:
-  group: "lens"
+  group: "@anvia/lens"
   order: 6
   label: "Anvia Lens"
 ---

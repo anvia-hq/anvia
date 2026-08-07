@@ -7,11 +7,12 @@ import type {
   EvalTraceSelectorArgs,
 } from "./types";
 
-export function projectEvalOutcome(
-  outcome: EvalOutcome,
+export function projectEvalOutcome<Score>(
+  outcome: EvalOutcome<Score>,
   dataType: EvalMetric<unknown, unknown>["dataType"],
+  projectScore?: ((score: Score) => number | string | boolean) | undefined,
 ): EvalScoreProjection {
-  const value = projectScoreValue(outcome, dataType);
+  const value = projectScoreValue(outcome, dataType, projectScore);
   const projection: EvalScoreProjection = {
     outcome: outcome.outcome,
     value,
@@ -47,11 +48,17 @@ export function defaultEvalTraceSelector<Input, Output, Expected>(
   });
 }
 
-function projectScoreValue(
-  outcome: EvalOutcome,
+function projectScoreValue<Score>(
+  outcome: EvalOutcome<Score>,
   dataType: EvalMetric<unknown, unknown>["dataType"],
+  projectScore: ((score: Score) => number | string | boolean) | undefined,
 ): number | string {
   const score = outcome.score;
+  if (score !== undefined && projectScore !== undefined) {
+    const projected = projectScore(score);
+    if (typeof projected === "boolean") return projected ? 1 : 0;
+    return projected;
+  }
   if (dataType === "CATEGORICAL") {
     if (typeof score === "string") return score;
     if (typeof score === "number") return String(score);

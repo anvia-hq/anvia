@@ -1,4 +1,4 @@
-import { contains, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
+import { contains, defineEvalSuite, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
 
 const cases = [
   {
@@ -17,28 +17,36 @@ const cases = [
   },
 ];
 
-const result = await runEvalSuite({
+const supportEvals = defineEvalSuite<string, string, string | undefined>();
+
+const suite = defineEvalSuite({
   name: "support-custom-metrics",
   cases,
   target: async (input) => answerSupportQuestion(input),
   metrics: [
-    contains(),
-    {
+    contains({
+      expected: ({ case: testCase }) =>
+        typeof testCase.expected === "string" ? testCase.expected : "",
+    }),
+    supportEvals.defineMetric({
       name: "no_support_handoff",
+      dataType: "BOOLEAN",
       evaluate: ({ output }) =>
         output.includes("contact support")
           ? EvalOutcome.fail(false, { comment: "Answer fell back to support handoff." })
           : EvalOutcome.pass(true),
-    },
-    {
+    }),
+    supportEvals.defineMetric({
       name: "has_expectation",
+      dataType: "BOOLEAN",
       evaluate: ({ case: testCase }) =>
         testCase.expected === undefined
           ? EvalOutcome.invalid("Case has no expected value.")
           : EvalOutcome.pass(true),
-    },
+    }),
   ],
 });
+const result = await runEvalSuite(suite);
 
 console.table(
   result.results.flatMap((caseResult) =>

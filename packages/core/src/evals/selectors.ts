@@ -1,6 +1,18 @@
 import { defaultOutputValue, formatValue } from "./format";
 import type { EvalMetricArgs, SelectorOrValue, ValueSelector } from "./types";
 
+export function selectPromptOutput(args: EvalMetricArgs<unknown, unknown, unknown>): string {
+  if (
+    typeof args.output !== "object" ||
+    args.output === null ||
+    !("output" in args.output) ||
+    typeof args.output.output !== "string"
+  ) {
+    throw new TypeError("selectPromptOutput requires an output object with a string output field.");
+  }
+  return args.output.output;
+}
+
 export async function resolveActual<Input, Output, Expected>(
   selector: ValueSelector<Input, Output, Expected, unknown> | undefined,
   args: EvalMetricArgs<Input, Output, Expected>,

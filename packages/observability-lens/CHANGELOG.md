@@ -1,5 +1,12 @@
 # @anvia/lens
 
+## 0.4.0
+
+### Minor Changes
+
+- 3a4186a: Add an authenticated managed-dataset client that fetches immutable published versions with
+  automatic pagination and returns cases ready for `@anvia/core/evals`.
+
 ## 0.3.0
 
 ### Minor Changes

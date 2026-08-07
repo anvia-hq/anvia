@@ -1,5 +1,12 @@
 # @anvia/otel
 
+## 0.5.0
+
+### Minor Changes
+
+- e55a792: Add first-class evaluation run identity and lifecycle reporting so Anvia Lens can group completed
+  suites, compare releases, and apply quality gates.
+
 ## 0.4.0
 
 ### Minor Changes

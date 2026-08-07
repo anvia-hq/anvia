@@ -1,5 +1,12 @@
 # @anvia/core
 
+## 0.24.0
+
+### Minor Changes
+
+- e55a792: Add first-class evaluation run identity and lifecycle reporting so Anvia Lens can group completed
+  suites, compare releases, and apply quality gates.
+
 ## 0.23.0
 
 ### Minor Changes

@@ -176,6 +176,8 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "test": "pnpm -r test",
+    "test:lens-integration": "node scripts/test-lens-integration.mjs",
+    "test:lens-integration:full": "node scripts/test-lens-integration.mjs --rebuild --durability",
     "typecheck": "pnpm -r typecheck",
     "prepare": "husky"
   },

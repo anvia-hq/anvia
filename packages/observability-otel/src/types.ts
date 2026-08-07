@@ -7,6 +7,10 @@ export type OtelTracingOptions = {
   tracerName?: string | undefined;
   tracerVersion?: string | undefined;
   serviceName?: string | undefined;
+  captureMode?: "safe" | "full" | undefined;
+  captureMaxBytes?: number | undefined;
+  transformInput?: ((value: unknown) => unknown) | undefined;
+  transformOutput?: ((value: unknown) => unknown) | undefined;
 };
 
 export type OtelTracing = AgentObserver;

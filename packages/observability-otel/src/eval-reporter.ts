@@ -63,6 +63,7 @@ function emitEvaluation<Input, Output, Score, Expected>(
 ): void {
   const projection = projectEvalOutcome(args.outcome, args.metric.dataType);
   const attributes: LogAttributes = {
+    "anvia.eval.id": globalThis.crypto.randomUUID(),
     "gen_ai.evaluation.name": args.metric.name,
     "gen_ai.evaluation.score.label": projection.label,
     "anvia.eval.suite.name": args.suiteName,

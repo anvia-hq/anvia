@@ -564,6 +564,13 @@ const packageDefinitions: PackageFamilyDefinition[] = [
     description: "Tracing, run visibility, and production monitoring packages.",
     packages: [
       definePackage(
+        "@anvia/lens",
+        "lens",
+        "packages/observability-lens",
+        "Native Anvia Lens tracing and evaluation reporting.",
+        true,
+      ),
+      definePackage(
         "@anvia/langfuse",
         "langfuse",
         "packages/observability-langfuse",

@@ -17,6 +17,10 @@ type OtelTracingOptions = {
   tracerName?: string;
   tracerVersion?: string;
   serviceName?: string;
+  captureMode?: "safe" | "full";
+  captureMaxBytes?: number;
+  transformInput?: (value: unknown) => unknown;
+  transformOutput?: (value: unknown) => unknown;
 };
 ```
 
@@ -24,7 +28,7 @@ Purpose: configure the OpenTelemetry tracer used by the adapter.
 
 Return behavior: consumed by `otel.create(...)`.
 
-Notable behavior: when `tracer` is omitted, the adapter calls `trace.getTracer(tracerName ?? "@anvia/otel", tracerVersion)`.
+Notable behavior: when `tracer` is omitted, the adapter calls `trace.getTracer(tracerName ?? "@anvia/otel", tracerVersion)`. Set safe capture to omit payload attributes. When capture mode is omitted, existing full-capture behavior is retained; payloads are bounded after applying optional transforms when a size is configured.
 
 ## OtelTracing
 

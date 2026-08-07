@@ -58,6 +58,7 @@ describe("OpenTelemetry eval reporter", () => {
         "gen_ai.evaluation.explanation": "The answer is grounded.",
         "gen_ai.response.id": "response-1",
         "anvia.eval.suite.name": "rag-quality",
+        "anvia.eval.id": expect.any(String),
         "anvia.eval.case.id": "case-1",
         "anvia.eval.outcome": "pass",
         "anvia.eval.data_type": "NUMERIC",
@@ -191,6 +192,7 @@ describe("otel", () => {
         tags: ["cookbook"],
         version: "v1",
         metadata: { ticketId: "TICKET-1" },
+        promptRef: { name: "support-system", version: 3 },
       },
     });
 
@@ -208,6 +210,8 @@ describe("otel", () => {
       "anvia.trace.session_id": "session-1",
       "anvia.trace.version": "v1",
       "anvia.trace.metadata.ticketId": "TICKET-1",
+      "anvia.prompt.name": "support-system",
+      "anvia.prompt.version": 3,
     });
     expect(root?.attributes["anvia.trace.tags"]).toEqual(["cookbook"]);
     expect(run?.trace).toEqual({
@@ -290,6 +294,82 @@ describe("otel", () => {
     });
     expect(root?.status).toEqual({ code: SpanStatusCode.OK });
     expect(root?.ended).toBe(true);
+  });
+
+  it("omits prompt, response, and tool payloads in safe capture mode", async () => {
+    const tracer = new FakeTracer();
+    const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
+    const run = await tracing.startRun({
+      instructions: "private instructions",
+      prompt: userMessage("private prompt"),
+      history: [userMessage("private history")],
+      maxTurns: 1,
+    });
+    const generation = await run?.startGeneration?.(generationStartArgs());
+    await generation?.end({
+      turn: 1,
+      response: {
+        messageId: "msg-1",
+        choice: [AssistantContent.text("private response")],
+        usage: usage(2, 3),
+        rawResponse: {},
+      },
+    });
+    const tool = await run?.startTool?.({
+      turn: 1,
+      toolName: "private_tool",
+      args: '{"secret":true}',
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+    await tool?.end({
+      turn: 1,
+      toolName: "private_tool",
+      args: '{"secret":true}',
+      toolCall: toolCall(),
+      result: "private result",
+      skipped: false,
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+    await run?.end({ output: "private output", usage: usage(2, 3), messages: [] });
+
+    expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.agent.instructions");
+    expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.run.prompt");
+    expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.run.history");
+    expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.run.output");
+    expect(tracer.spans[1]?.attributes).not.toHaveProperty("anvia.generation.input");
+    expect(tracer.spans[1]?.attributes).not.toHaveProperty("anvia.generation.output");
+    expect(tracer.spans[2]?.attributes).not.toHaveProperty("anvia.tool.args");
+    expect(tracer.spans[2]?.attributes).not.toHaveProperty("anvia.tool.result");
+  });
+
+  it("records ad-hoc run events", async () => {
+    const tracer = new FakeTracer();
+    const tracing = otel.create({ tracer: tracer.tracer });
+    const run = await tracing.startRun({
+      prompt: userMessage("hello"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    await run?.event?.({
+      name: "retrieval.done",
+      level: "WARNING",
+      attributes: { documents: 4 },
+      timestamp: "2026-08-07T01:02:03.000Z",
+    });
+
+    expect(tracer.spans[0]?.events).toEqual([
+      expect.objectContaining({
+        name: "retrieval.done",
+        attributes: {
+          "anvia.event.level": "WARNING",
+          "anvia.event.attributes.documents": "4",
+        },
+      }),
+    ]);
   });
 
   it("keeps message metadata on run transcripts but omits it from model inputs", async () => {
@@ -766,6 +846,7 @@ class FakeTracer {
 
 class FakeSpan {
   attributes: Attributes = {};
+  events: Array<{ name: string; attributes?: unknown; timestamp?: unknown }> = [];
   exceptions: unknown[] = [];
   status: { code: SpanStatusCode; message?: string } | undefined;
   ended = false;
@@ -789,7 +870,10 @@ class FakeSpan {
       this.attributes = { ...this.attributes, ...attributes };
       return this.span;
     },
-    addEvent: () => this.span,
+    addEvent: (name, attributes, timestamp) => {
+      this.events.push({ name, attributes, timestamp });
+      return this.span;
+    },
     addLink: () => this.span,
     addLinks: () => this.span,
     setStatus: (status) => {

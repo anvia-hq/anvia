@@ -80,4 +80,7 @@ and observation ids correlate the event with the evaluated span. Without trace c
 still emitted by default; `onMissingTrace` can ignore, warn, or throw instead.
 
 Notable behavior: numeric scores use `gen_ai.evaluation.score.value`; all outcomes include a score
-label and Anvia suite/case attributes. Invalid outcomes are emitted unless `publishInvalid` is false.
+label and Anvia suite/case attributes. Metric events promote required status, direction, threshold,
+and evaluator usage. Run-finished events expose separate `anvia.eval.run.metrics.*` and
+`anvia.eval.run.cases.*` totals plus aggregate usage and optional cost. Invalid outcomes are emitted
+unless `publishInvalid` is false.

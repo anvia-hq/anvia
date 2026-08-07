@@ -1,3 +1,4 @@
+import type { Usage } from "../completion";
 import type { EvalMetadata } from "./types";
 
 export type EvalOutcome<Score = unknown> =
@@ -6,12 +7,14 @@ export type EvalOutcome<Score = unknown> =
       score?: Score | undefined;
       comment?: string | undefined;
       metadata?: EvalMetadata | undefined;
+      usage?: Usage | undefined;
     }
   | {
       outcome: "fail";
       score?: Score | undefined;
       comment?: string | undefined;
       metadata?: EvalMetadata | undefined;
+      usage?: Usage | undefined;
     }
   | {
       outcome: "invalid";
@@ -19,12 +22,17 @@ export type EvalOutcome<Score = unknown> =
       score?: Score | undefined;
       comment?: string | undefined;
       metadata?: EvalMetadata | undefined;
+      usage?: Usage | undefined;
     };
 
 export const EvalOutcome = {
   pass<Score>(
     score?: Score,
-    options: { comment?: string | undefined; metadata?: EvalMetadata | undefined } = {},
+    options: {
+      comment?: string | undefined;
+      metadata?: EvalMetadata | undefined;
+      usage?: Usage | undefined;
+    } = {},
   ): EvalOutcome<Score> {
     const outcome: EvalOutcome<Score> = {
       outcome: "pass" as const,
@@ -38,12 +46,19 @@ export const EvalOutcome = {
     if (options.metadata !== undefined) {
       outcome.metadata = options.metadata;
     }
+    if (options.usage !== undefined) {
+      outcome.usage = options.usage;
+    }
     return outcome;
   },
 
   fail<Score>(
     score?: Score,
-    options: { comment?: string | undefined; metadata?: EvalMetadata | undefined } = {},
+    options: {
+      comment?: string | undefined;
+      metadata?: EvalMetadata | undefined;
+      usage?: Usage | undefined;
+    } = {},
   ): EvalOutcome<Score> {
     const outcome: EvalOutcome<Score> = {
       outcome: "fail" as const,
@@ -57,6 +72,9 @@ export const EvalOutcome = {
     if (options.metadata !== undefined) {
       outcome.metadata = options.metadata;
     }
+    if (options.usage !== undefined) {
+      outcome.usage = options.usage;
+    }
     return outcome;
   },
 
@@ -66,6 +84,7 @@ export const EvalOutcome = {
       score?: Score | undefined;
       comment?: string | undefined;
       metadata?: EvalMetadata | undefined;
+      usage?: Usage | undefined;
     } = {},
   ): EvalOutcome<Score> {
     const outcome: EvalOutcome<Score> = {
@@ -80,6 +99,9 @@ export const EvalOutcome = {
     }
     if (options.metadata !== undefined) {
       outcome.metadata = options.metadata;
+    }
+    if (options.usage !== undefined) {
+      outcome.usage = options.usage;
     }
     return outcome;
   },

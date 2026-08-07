@@ -60,6 +60,11 @@ function metricSummary(metric: unknown, index: number): StudioEvalMetricSummary 
   };
   const dataType = metricDataType(metric.dataType);
   if (dataType !== undefined) summary.dataType = dataType;
+  if (typeof metric.required === "boolean") summary.required = metric.required;
+  if (metric.direction === "higher_is_better" || metric.direction === "lower_is_better") {
+    summary.direction = metric.direction;
+  }
+  if (typeof metric.threshold === "number") summary.threshold = metric.threshold;
   if (typeof metric.configId === "string") summary.configId = metric.configId;
   if (typeof metric.scoreConfigId === "string") summary.scoreConfigId = metric.scoreConfigId;
   const keys = metadataKeys(metric.metadata);

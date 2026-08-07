@@ -107,6 +107,18 @@ function emitEvaluation<Input, Output, Score, Expected>(
   if (args.metric.dataType !== undefined) {
     attributes["anvia.eval.data_type"] = args.metric.dataType;
   }
+  attributes["anvia.eval.required"] = args.metric.required ?? true;
+  if (args.metric.direction !== undefined) {
+    attributes["anvia.eval.score.direction"] = args.metric.direction;
+  }
+  if (args.metric.threshold !== undefined) {
+    attributes["anvia.eval.score.threshold"] = args.metric.threshold;
+  }
+  if (args.outcome.usage !== undefined) {
+    attributes["anvia.eval.usage.input_tokens"] = args.outcome.usage.inputTokens;
+    attributes["anvia.eval.usage.output_tokens"] = args.outcome.usage.outputTokens;
+    attributes["anvia.eval.usage.total_tokens"] = args.outcome.usage.totalTokens;
+  }
   const configId = args.metric.configId ?? args.metric.scoreConfigId;
   if (configId !== undefined) attributes["anvia.eval.config_id"] = configId;
   if (args.outcome.outcome === "invalid") {
@@ -202,9 +214,23 @@ function emitRunFinished(logger: Logger, args: EvalRunEndArgs, includeMetadata: 
     "anvia.eval.run.case_count": args.caseCount,
     "anvia.eval.run.metric_names": args.metricNames,
   };
-  if (args.passed !== undefined) attributes["anvia.eval.run.passed"] = args.passed;
-  if (args.failed !== undefined) attributes["anvia.eval.run.failed"] = args.failed;
-  if (args.invalid !== undefined) attributes["anvia.eval.run.invalid"] = args.invalid;
+  if (args.metrics !== undefined) {
+    addTotals(attributes, "anvia.eval.run.metrics", args.metrics);
+  }
+  if (args.cases !== undefined) {
+    addTotals(attributes, "anvia.eval.run.cases", args.cases);
+  }
+  if (args.usage !== undefined) {
+    attributes["anvia.eval.run.usage.target_tokens"] = args.usage.target.totalTokens;
+    attributes["anvia.eval.run.usage.evaluation_tokens"] = args.usage.evaluation.totalTokens;
+    attributes["anvia.eval.run.usage.total_tokens"] = args.usage.total.totalTokens;
+  }
+  if (args.cost !== undefined) {
+    attributes["anvia.eval.run.cost.currency"] = args.cost.currency;
+    attributes["anvia.eval.run.cost.target"] = args.cost.target;
+    attributes["anvia.eval.run.cost.evaluation"] = args.cost.evaluation;
+    attributes["anvia.eval.run.cost.total"] = args.cost.total;
+  }
   if (args.status === "failed") attributes["error.type"] = errorType(args.error);
   addRunAttributes(attributes, args.run, includeMetadata);
   logger.emit({
@@ -213,6 +239,17 @@ function emitRunFinished(logger: Logger, args: EvalRunEndArgs, includeMetadata: 
     severityText: args.status === "failed" ? "ERROR" : "INFO",
     attributes,
   });
+}
+
+function addTotals(
+  attributes: LogAttributes,
+  prefix: string,
+  totals: { total: number; passed: number; failed: number; invalid: number },
+): void {
+  attributes[`${prefix}.total`] = totals.total;
+  attributes[`${prefix}.passed`] = totals.passed;
+  attributes[`${prefix}.failed`] = totals.failed;
+  attributes[`${prefix}.invalid`] = totals.invalid;
 }
 
 function addRunAttributes(

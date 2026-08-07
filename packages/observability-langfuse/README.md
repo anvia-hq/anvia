@@ -338,7 +338,7 @@ const { suite, datasetRun } = await runEvalAsExperiment(
   },
 );
 
-console.log(suite.passed, datasetRun.posted);
+console.log(suite.metrics.passed, datasetRun.posted);
 ```
 
 `publishScores` adds a Langfuse eval reporter without replacing reporters

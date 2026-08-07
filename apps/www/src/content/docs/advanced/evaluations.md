@@ -59,11 +59,25 @@ const result = await runEvalSuite({
 });
 
 runtimeLog.info({
-  passed: result.passed,
-  failed: result.failed,
-  invalid: result.invalid,
+  passed: result.metrics.passed,
+  failed: result.metrics.failed,
+  invalid: result.metrics.invalid,
 });
 ```
+
+For a script or CI gate, use the first-party CLI wrapper instead of maintaining a custom table and
+exit-code layer:
+
+```ts
+await runEvalCli({
+  ...suiteOptions,
+  format: process.env.CI ? "json" : "pretty",
+  exitCode: true,
+});
+```
+
+Use `expectations.outcomes` for intentional red cases. A matched negative control exits `0`, but
+the underlying metric remains a real `fail` in the returned result and observability data.
 
 Cases should be small, named, and tied to one behavior. Put broad scenarios into multiple cases so failures are useful.
 

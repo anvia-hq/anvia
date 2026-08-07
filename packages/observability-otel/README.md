@@ -72,6 +72,9 @@ your trace exporter, or inject a `Logger` with the `logger` option.
 
 Set `includeMetadata: false` to omit case, metric, and outcome metadata. Invalid outcomes are
 reported by default and can be disabled with `publishInvalid: false`.
+Metric events include required status, score direction, threshold, and evaluator token usage when
+available. Run-finished events publish separate metric and case totals plus aggregate usage and
+optional caller-calculated cost.
 
 ## Exports
 

@@ -228,6 +228,9 @@ export type StudioEvalCasePreview = {
 
 export type StudioEvalMetricSummary = {
   name: string;
+  required?: boolean;
+  direction?: "higher_is_better" | "lower_is_better";
+  threshold?: number;
   dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
   configId?: string;
   scoreConfigId?: string;

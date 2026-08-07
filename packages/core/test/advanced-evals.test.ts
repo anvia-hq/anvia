@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   AssistantContent,
+  abstention,
   answerRelevancy,
   type CompletionModel,
   type CompletionRequest,
@@ -195,9 +196,9 @@ describe("advanced eval metrics", () => {
       metrics: [jsonCorrectness({ schema })],
     });
 
-    expect(result.passed).toBe(1);
-    expect(result.failed).toBe(2);
-    expect(result.invalid).toBe(0);
+    expect(result.metrics.passed).toBe(1);
+    expect(result.metrics.failed).toBe(2);
+    expect(result.metrics.invalid).toBe(0);
     expect(result.results[1]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0 });
   });
 
@@ -533,7 +534,7 @@ describe("advanced eval metrics", () => {
         faithfulness({ model: new QueueJudgeModel([]), includeReason: false }),
       ],
     });
-    expect(missingContext.invalid).toBe(2);
+    expect(missingContext.metrics.invalid).toBe(2);
     expect(missingContext.results[0]?.metrics[0]?.outcome).toMatchObject({
       outcome: "invalid",
       reason: expect.stringContaining("context must be a non-empty array of strings"),
@@ -555,6 +556,47 @@ describe("advanced eval metrics", () => {
         ],
       }),
     ).toThrow("must not overlap");
+  });
+
+  it("classifies the four abstention outcomes and aggregates judge usage", async () => {
+    const model = new QueueJudgeModel([
+      judgeResponse({ behavior: "abstention", grounded: false, reason: "No policy exists." }),
+      judgeResponse({
+        behavior: "abstention",
+        grounded: false,
+        reason: "The answer was available.",
+      }),
+      judgeResponse({
+        behavior: "confident_answer",
+        grounded: false,
+        reason: "Unsupported claim.",
+      }),
+      judgeResponse({ behavior: "confident_answer", grounded: true, reason: "Supported claim." }),
+    ]);
+    const result = await runEvalSuite({
+      name: "abstention",
+      cases: [
+        { id: "correct-abstention", input: "unknown" },
+        { id: "unnecessary-abstention", input: "known", retrievalContext: ["Known fact"] },
+        { id: "unsupported", input: "known", retrievalContext: ["Known fact"] },
+        { id: "grounded", input: "known", retrievalContext: ["Known fact"] },
+      ],
+      target: (input) => input,
+      metrics: [
+        abstention({
+          model,
+          shouldAbstain: ({ case: testCase }) => testCase.id === "correct-abstention",
+        }),
+      ],
+    });
+
+    expect(result.results.map((caseResult) => caseResult.metrics[0]?.outcome)).toEqual([
+      expect.objectContaining({ outcome: "pass", score: "correct_abstention" }),
+      expect.objectContaining({ outcome: "fail", score: "unnecessary_abstention" }),
+      expect.objectContaining({ outcome: "fail", score: "unsupported_confident_answer" }),
+      expect.objectContaining({ outcome: "pass", score: "correct_grounded_answer" }),
+    ]);
+    expect(result.usage.evaluation.totalTokens).toBe(8);
   });
 });
 

@@ -8,7 +8,7 @@ pnpm add @anvia/lens @anvia/core
 
 ```ts
 import { AgentBuilder, type CompletionModel } from "@anvia/core";
-import { contains, runEvalSuite } from "@anvia/core/evals";
+import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createLensEvalReporter, lens } from "@anvia/lens";
 
 declare const model: CompletionModel; // Supplied by your provider adapter.
@@ -44,6 +44,29 @@ console.log(suite.run.id);
 `lens.create()` owns isolated OpenTelemetry trace and log providers. It does not register global
 providers or capture unrelated application telemetry. Call `flush()` in short-lived processes and
 `shutdown()` before exit.
+
+For short-lived eval scripts, bundle optional environment setup, the observer, reporter, and
+flushing:
+
+```ts
+const evals = lens.evals({
+  optional: true,
+  serviceName: "support-evals",
+  includePayloads: true,
+});
+
+const agent = new AgentBuilder("support", model).observe(evals.observer).build();
+await runEvalSuite({
+  ...suiteOptions,
+  target: agentEvalTarget(agent),
+  reporters: [evals.reporter],
+});
+```
+
+When all Lens connection environment variables are absent, `optional: true` returns no-op tracing
+that is safe to register directly. Partial configuration remains an error. `lens.evals()` flushes
+on run end by default; the lower-level `createLensEvalReporter` enables the same behavior with
+`flushOnRunEnd: true`.
 
 Safe capture omits traced prompt and response bodies. The Lens eval reporter also omits evaluation
 case payloads and metadata by default. Enable them independently when approved for export:

@@ -91,7 +91,11 @@ function buildScoreMetadata<Input, Output, Score, Expected>({
     suiteName: args.suiteName,
     caseId: args.case.id,
     outcome: args.outcome.outcome,
+    required: args.metric.required ?? true,
   };
+  if (args.metric.direction !== undefined) merged.scoreDirection = args.metric.direction;
+  if (args.metric.threshold !== undefined) merged.threshold = args.metric.threshold;
+  if (args.outcome.usage !== undefined) merged.evaluationUsage = { ...args.outcome.usage };
   mergeMetadata(merged, args.outcome.metadata);
   mergeMetadata(merged, args.metric.metadata);
   if (args.case.metadata !== undefined) {

@@ -1,4 +1,4 @@
-import { contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
+import { contains, exactMatch, runEvalCli } from "@anvia/core/evals";
 
 const cases = [
   {
@@ -11,9 +11,14 @@ const cases = [
     input: "Who can change billing settings?",
     expected: "Workspace owners can change billing settings.",
   },
+  {
+    id: "wrong-refund-window",
+    input: "Negative control: when can I request a refund?",
+    expected: "Refunds are available for 30 days.",
+  },
 ];
 
-const result = await runEvalSuite({
+await runEvalCli({
   name: "support-basic-metrics",
   cases,
   target: async (input) => answerSupportQuestion(input),
@@ -21,30 +26,24 @@ const result = await runEvalSuite({
     exactMatch(),
     contains({
       expected: ({ case: testCase }) =>
-        testCase.id === "refund-window" ? "30 days" : "Workspace owners",
+        testCase.id === "billing-owner" ? "Workspace owners" : "30 days",
     }),
   ],
-});
-
-console.table(
-  result.results.flatMap((caseResult) =>
-    caseResult.metrics.map((metric) => ({
-      case: caseResult.case.id,
-      metric: metric.metricName,
-      outcome: metric.outcome.outcome,
-      score: metric.outcome.score ?? "",
-      comment: metric.outcome.comment ?? "",
-    })),
-  ),
-);
-
-console.log({
-  passed: result.passed,
-  failed: result.failed,
-  invalid: result.invalid,
+  expectations: {
+    outcomes: {
+      "wrong-refund-window": {
+        exact_match: "fail",
+        contains: "fail",
+      },
+    },
+  },
+  exitCode: true,
 });
 
 function answerSupportQuestion(question: string): string {
+  if (question.includes("Negative control")) {
+    return "Refunds are available for 90 days.";
+  }
   if (question.includes("refund")) {
     return "Refunds are available for 30 days.";
   }

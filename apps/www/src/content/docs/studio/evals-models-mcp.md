@@ -28,6 +28,9 @@ http://localhost:4021/ui/evals
 
 `11-eval-runner.ts` registers a deterministic support policy suite with `exactMatch()` and `contains(...)` metrics. Studio can run the suite from the browser and the raw API is available at:
 
+Run summaries separate case totals from metric totals. Each metric row shows whether it is
+required, its score direction, and its threshold when configured.
+
 ```txt
 http://localhost:4021/evals/studio-support-policy/runs
 ```

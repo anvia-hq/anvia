@@ -6,7 +6,7 @@ import type { ZodSchema } from "../schema";
 import { errorMessage, formatValue } from "./format";
 import { addUsage, evaluationMetadata, type JudgeResult, runJudge } from "./judge";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "./outcome";
-import { resolveActualText } from "./selectors";
+import { resolveActualText, resolveExpected } from "./selectors";
 import type { EvalMetric, EvalMetricArgs, EvalTurn, SelectorOrValue, ValueSelector } from "./types";
 
 type Verdict = {
@@ -39,9 +39,15 @@ const binaryVerdictSchema = z.object({
   reason: z.string(),
 });
 const reasonSchema = z.object({ reason: z.string() });
+const abstentionJudgmentSchema = z.object({
+  behavior: z.enum(["abstention", "confident_answer"]),
+  grounded: z.boolean(),
+  reason: z.string(),
+});
 
 type LlmEvalOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
+  required?: boolean | undefined;
   model: CompletionModel;
   threshold?: number | undefined;
   strictMode?: boolean | undefined;
@@ -61,7 +67,7 @@ export function answerRelevancy<Input, Output, Expected = unknown>(
   options: AnswerRelevancyOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
   const config = metricConfig(options, "answer_relevancy");
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const input = await resolveInput(options.input, args);
       const actual = await resolveActualText(options.actual, args);
@@ -131,7 +137,7 @@ export function promptAlignment<Input, Output, Expected = unknown>(
     throw new TypeError("promptAlignment requires at least one prompt instruction.");
   }
   const config = metricConfig(options, "prompt_alignment");
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const input = await resolveInput(options.input, args);
       const actual = await resolveActualText(options.actual, args);
@@ -172,6 +178,7 @@ export function promptAlignment<Input, Output, Expected = unknown>(
 
 export type JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected = unknown> = {
   name?: string | undefined;
+  required?: boolean | undefined;
   schema: ZodSchema<SchemaOutput>;
   model?: CompletionModel | undefined;
   threshold?: number | undefined;
@@ -187,53 +194,62 @@ export function jsonCorrectness<Input, Output, SchemaOutput, Expected = unknown>
   const threshold = validateThreshold(options.threshold ?? 0.5);
   const retries = validateRetries(options.retries ?? 0);
   const includeReason = options.includeReason ?? true;
-  return numericMetric(options.name ?? "json_correctness", async (args) => {
-    try {
-      const actual = await resolveActualText(options.actual, args);
-      let parsed: unknown;
-      let validationError: string | undefined;
+  const strictMode = options.strictMode ?? true;
+  return numericMetric(
+    options.name ?? "json_correctness",
+    {
+      threshold: strictMode ? 1 : threshold,
+      required: options.required ?? true,
+    },
+    "higher_is_better",
+    async (args) => {
       try {
-        parsed = JSON.parse(actual);
-        const result = options.schema.safeParse(parsed);
-        if (!result.success) {
-          validationError = z.prettifyError(result.error);
+        const actual = await resolveActualText(options.actual, args);
+        let parsed: unknown;
+        let validationError: string | undefined;
+        try {
+          parsed = JSON.parse(actual);
+          const result = options.schema.safeParse(parsed);
+          if (!result.success) {
+            validationError = z.prettifyError(result.error);
+          }
+        } catch (error) {
+          validationError = errorMessage(error);
         }
+        const score = validationError === undefined ? 1 : 0;
+        let comment: string | undefined;
+        let usage = UsageValue.empty();
+        if (includeReason) {
+          if (score === 1) {
+            comment = "The generated JSON is syntactically valid and matches the expected schema.";
+          } else if (options.model === undefined) {
+            comment = validationError;
+          } else {
+            const reasonResult = await runJudge({
+              model: options.model,
+              schema: reasonSchema,
+              instructions:
+                "Briefly explain why the generated JSON does not match the expected schema. Focus on actionable syntax, field, and type problems.",
+              prompt: jsonPrompt({ actual, validationError }),
+              retries,
+            });
+            comment = reasonResult.data.reason;
+            usage = reasonResult.usage;
+          }
+        }
+        return higherOutcome({
+          score,
+          threshold,
+          strictMode,
+          comment,
+          details: validationError === undefined ? {} : { validationError },
+          usage,
+        });
       } catch (error) {
-        validationError = errorMessage(error);
+        return EvalOutcome.invalid(errorMessage(error));
       }
-      const score = validationError === undefined ? 1 : 0;
-      let comment: string | undefined;
-      let usage = UsageValue.empty();
-      if (includeReason) {
-        if (score === 1) {
-          comment = "The generated JSON is syntactically valid and matches the expected schema.";
-        } else if (options.model === undefined) {
-          comment = validationError;
-        } else {
-          const reasonResult = await runJudge({
-            model: options.model,
-            schema: reasonSchema,
-            instructions:
-              "Briefly explain why the generated JSON does not match the expected schema. Focus on actionable syntax, field, and type problems.",
-            prompt: jsonPrompt({ actual, validationError }),
-            retries,
-          });
-          comment = reasonResult.data.reason;
-          usage = reasonResult.usage;
-        }
-      }
-      return higherOutcome({
-        score,
-        threshold,
-        strictMode: options.strictMode ?? true,
-        comment,
-        details: validationError === undefined ? {} : { validationError },
-        usage,
-      });
-    } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
-    }
-  });
+    },
+  );
 }
 
 export type HallucinationOptions<Input, Output, Expected = unknown> = LlmEvalOptions<
@@ -248,7 +264,7 @@ export function hallucination<Input, Output, Expected = unknown>(
   options: HallucinationOptions<Input, Output, Expected>,
 ): EvalMetric<Input, Output, number, Expected> {
   const config = metricConfig(options, "hallucination");
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "lower_is_better", async (args) => {
     try {
       const actual = await resolveActualText(options.actual, args);
       const context = await resolveStringList(options.context, args.case.context, args, "context");
@@ -304,7 +320,7 @@ export function faithfulness<Input, Output, Expected = unknown>(
     options.truthsExtractionLimit,
     "truthsExtractionLimit",
   );
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const actual = await resolveActualText(options.actual, args);
       const retrievalContext = await resolveStringList(
@@ -376,6 +392,107 @@ export function faithfulness<Input, Output, Expected = unknown>(
   });
 }
 
+export type AbstentionCategory =
+  | "correct_abstention"
+  | "unnecessary_abstention"
+  | "unsupported_confident_answer"
+  | "correct_grounded_answer";
+
+export type AbstentionOptions<Input, Output, Expected = unknown> = {
+  name?: string | undefined;
+  required?: boolean | undefined;
+  model: CompletionModel;
+  shouldAbstain: SelectorOrValue<Input, Output, Expected, boolean>;
+  context?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
+  actual?: ValueSelector<Input, Output, Expected, string> | undefined;
+  includeReason?: boolean | undefined;
+  retries?: number | undefined;
+};
+
+export function abstention<Input, Output, Expected = unknown>(
+  options: AbstentionOptions<Input, Output, Expected>,
+): EvalMetric<Input, Output, AbstentionCategory, Expected> {
+  const retries = validateRetries(options.retries ?? 0);
+  return {
+    name: options.name ?? "abstention",
+    required: options.required ?? true,
+    dataType: "CATEGORICAL",
+    async evaluate(args) {
+      try {
+        const actual = await resolveActualText(options.actual, args);
+        const shouldAbstain = await resolveExpected(options.shouldAbstain, args);
+        if (typeof shouldAbstain !== "boolean") {
+          return EvalOutcome.invalid("abstention shouldAbstain must resolve to a boolean.");
+        }
+        const context = await resolveAbstentionContext(options.context, args);
+        if (!shouldAbstain && context.length === 0) {
+          return EvalOutcome.invalid(
+            "abstention context must be non-empty when shouldAbstain is false.",
+          );
+        }
+        const judgment = await runJudge({
+          model: options.model,
+          schema: abstentionJudgmentSchema,
+          instructions:
+            "Classify whether the answer abstains or gives a confident answer. For a confident answer, grounded is true only when every substantive factual claim is supported by the supplied context. For an abstention, set grounded to false. Return a concise evidence-based reason.",
+          prompt: jsonPrompt({ actual, context }),
+          retries,
+        });
+        const category = abstentionCategory(
+          shouldAbstain,
+          judgment.data.behavior,
+          judgment.data.grounded,
+        );
+        const outcomeOptions = {
+          comment: options.includeReason === false ? undefined : judgment.data.reason,
+          metadata: evaluationMetadata(
+            {
+              behavior: judgment.data.behavior,
+              grounded: judgment.data.grounded,
+              shouldAbstain,
+            },
+            judgment.usage,
+          ),
+          usage: judgment.usage,
+        };
+        return category === "correct_abstention" || category === "correct_grounded_answer"
+          ? EvalOutcome.pass(category, outcomeOptions)
+          : EvalOutcome.fail(category, outcomeOptions);
+      } catch (error) {
+        return EvalOutcome.invalid(errorMessage(error));
+      }
+    },
+  };
+}
+
+async function resolveAbstentionContext<Input, Output, Expected>(
+  selectorOrValue: SelectorOrValue<Input, Output, Expected, string[]> | undefined,
+  args: EvalMetricArgs<Input, Output, Expected>,
+): Promise<string[]> {
+  const context =
+    selectorOrValue === undefined
+      ? (args.case.retrievalContext ?? [])
+      : typeof selectorOrValue === "function"
+        ? await (selectorOrValue as ValueSelector<Input, Output, Expected, string[]>)(args)
+        : selectorOrValue;
+  if (!Array.isArray(context) || context.some((value) => typeof value !== "string")) {
+    throw new TypeError("abstention context must be an array of strings.");
+  }
+  return context;
+}
+
+function abstentionCategory(
+  shouldAbstain: boolean,
+  behavior: "abstention" | "confident_answer",
+  grounded: boolean,
+): AbstentionCategory {
+  if (behavior === "abstention") {
+    return shouldAbstain ? "correct_abstention" : "unnecessary_abstention";
+  }
+  if (shouldAbstain || !grounded) return "unsupported_confident_answer";
+  return "correct_grounded_answer";
+}
+
 export type SummarizationOptions<Input, Output, Expected = unknown> = LlmEvalOptions<
   Input,
   Output,
@@ -399,7 +516,7 @@ export function summarization<Input, Output, Expected = unknown>(
     options.assessmentQuestions !== undefined && options.assessmentQuestions.length > 0
       ? [...options.assessmentQuestions]
       : undefined;
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const input = await resolveInput(options.input, args);
       const actual = await resolveActualText(options.actual, args);
@@ -608,7 +725,7 @@ export function gEval<Input, Output, Expected = unknown>(
     return { steps: result.data.steps, usage };
   }
 
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const parameters = await resolveGEvalParameters(options, args);
       const stepsResult = await resolveSteps();
@@ -662,6 +779,7 @@ export function gEval<Input, Output, Expected = unknown>(
 
 type ConversationEvalOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
+  required?: boolean | undefined;
   model: CompletionModel;
   threshold?: number | undefined;
   strictMode?: boolean | undefined;
@@ -685,7 +803,7 @@ export function turnRelevancy<Input, Output, Expected = unknown>(
   const config = metricConfig(options, "turn_relevancy");
   const windowSize = validatePositiveInteger(options.windowSize ?? 10, "windowSize");
   const concurrency = validatePositiveInteger(options.concurrency ?? 4, "concurrency");
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const turns = await resolveTurns(options.turns, args);
       const interactions = unitInteractions(turns);
@@ -744,7 +862,7 @@ export function knowledgeRetention<Input, Output, Expected = unknown>(
 ): EvalMetric<Input, Output, number, Expected> {
   const config = metricConfig(options, "knowledge_retention");
   const concurrency = validatePositiveInteger(options.concurrency ?? 4, "concurrency");
-  return numericMetric(config.name, async (args) => {
+  return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const turns = await resolveTurns(options.turns, args);
       const userTurns = turns
@@ -825,9 +943,19 @@ export function knowledgeRetention<Input, Output, Expected = unknown>(
 
 function numericMetric<Input, Output, Expected>(
   name: string,
+  config: { threshold: number; required: boolean; strictMode?: boolean | undefined },
+  direction: "higher_is_better" | "lower_is_better",
   evaluate: (args: EvalMetricArgs<Input, Output, Expected>) => Promise<EvalOutcomeType<number>>,
 ): EvalMetric<Input, Output, number, Expected> {
-  return { name, dataType: "NUMERIC", evaluate };
+  return {
+    name,
+    required: config.required,
+    direction,
+    threshold:
+      config.strictMode === true ? (direction === "higher_is_better" ? 1 : 0) : config.threshold,
+    dataType: "NUMERIC",
+    evaluate,
+  };
 }
 
 type MetricConfig = {
@@ -836,6 +964,7 @@ type MetricConfig = {
   strictMode: boolean;
   includeReason: boolean;
   retries: number;
+  required: boolean;
 };
 
 function metricConfig(
@@ -845,6 +974,7 @@ function metricConfig(
     strictMode?: boolean | undefined;
     includeReason?: boolean | undefined;
     retries?: number | undefined;
+    required?: boolean | undefined;
   },
   defaultName: string,
 ): MetricConfig {
@@ -854,6 +984,7 @@ function metricConfig(
     strictMode: options.strictMode ?? false,
     includeReason: options.includeReason ?? true,
     retries: validateRetries(options.retries ?? 0),
+    required: options.required ?? true,
   };
 }
 
@@ -869,6 +1000,7 @@ function higherOutcome(args: {
   const threshold = args.strictMode ? 1 : args.threshold;
   const options = {
     comment: args.comment,
+    usage: args.usage,
     metadata: evaluationMetadata(
       {
         ...args.details,
@@ -894,6 +1026,7 @@ function lowerOutcome(args: {
   const threshold = args.strictMode ? 0 : args.threshold;
   const options = {
     comment: args.comment,
+    usage: args.usage,
     metadata: evaluationMetadata(
       {
         ...args.details,

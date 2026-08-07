@@ -7,7 +7,7 @@ import {
   Usage,
 } from "@anvia/core";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
-import { createLensEvalReporter, lens } from "@anvia/lens";
+import { lens } from "@anvia/lens";
 
 class StaticSupportModel implements CompletionModel {
   readonly provider = "smoke";
@@ -31,12 +31,11 @@ class StaticSupportModel implements CompletionModel {
   }
 }
 
-const tracing = lens.create();
-const reporter = createLensEvalReporter(tracing, { includePayloads: true });
+const evals = lens.evals({ includePayloads: true, serviceName: "lens-native-smoke" });
 const agent = new AgentBuilder("lens-native-smoke", new StaticSupportModel())
   .name("Lens Native Smoke")
   .instructions("Answer support questions from the supplied policy.")
-  .observe(tracing)
+  .observe(evals.observer)
   .build();
 
 try {
@@ -52,11 +51,9 @@ try {
     ],
     target: agentEvalTarget(agent),
     metrics: [contains({ name: "refund-policy-correctness" })],
-    reporters: [reporter],
+    reporters: [evals.reporter],
     failOnReporterError: true,
   });
-  await tracing.flush();
-
   const result = suite.results[0];
   console.log(
     JSON.stringify(
@@ -72,5 +69,5 @@ try {
     ),
   );
 } finally {
-  await tracing.shutdown();
+  await evals.shutdown();
 }

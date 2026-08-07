@@ -38,9 +38,9 @@ returned by a retriever for faithfulness checks.
 type EvalOutcomeStatus = "pass" | "fail" | "invalid";
 
 type EvalOutcome<Score = unknown> =
-  | { outcome: "pass"; score?: Score; comment?: string; metadata?: EvalMetadata }
-  | { outcome: "fail"; score?: Score; comment?: string; metadata?: EvalMetadata }
-  | { outcome: "invalid"; reason: string; score?: Score; comment?: string; metadata?: EvalMetadata };
+  | { outcome: "pass"; score?: Score; comment?: string; metadata?: EvalMetadata; usage?: Usage }
+  | { outcome: "fail"; score?: Score; comment?: string; metadata?: EvalMetadata; usage?: Usage }
+  | { outcome: "invalid"; reason: string; score?: Score; comment?: string; metadata?: EvalMetadata; usage?: Usage };
 ```
 
 Purpose: normalized metric result. Use `EvalOutcome.pass(...)`, `EvalOutcome.fail(...)`, and `EvalOutcome.invalid(...)` to construct outcomes.
@@ -50,6 +50,9 @@ Purpose: normalized metric result. Use `EvalOutcome.pass(...)`, `EvalOutcome.fai
 ```ts
 type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
   name: string;
+  required?: boolean;
+  direction?: "higher_is_better" | "lower_is_better";
+  threshold?: number;
   dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN";
   configId?: string;
   scoreConfigId?: string;
@@ -65,12 +68,16 @@ type EvalMetricArgs<Input, Output, Expected = unknown> = {
 
 type EvalMetricResult<Score = unknown> = {
   metricName: string;
+  required: boolean;
+  direction?: "higher_is_better" | "lower_is_better";
+  threshold?: number;
   outcome: EvalOutcome<Score>;
   reporterErrors: unknown[];
 };
 
 type EvalCaseResult<Input, Output, Expected = unknown> = {
   case: EvalCase<Input, Expected>;
+  outcome: EvalOutcomeStatus;
   output?: Output;
   targetError?: unknown;
   metrics: EvalMetricResult[];
@@ -81,7 +88,10 @@ function defineMetric<Input, Output, Score, Expected>(
 ): EvalMetric<Input, Output, Score, Expected>;
 ```
 
-Purpose: evaluates one case output and records normalized metric results. `defineMetric` is an identity helper that preserves type inference and signals intent when adding optional annotations.
+Purpose: evaluates one case output and records normalized metric results. Metrics are required by
+default. A target error or required invalid metric makes the case invalid; otherwise a required
+failure makes it fail. Optional metrics remain visible but do not gate the case or CLI exit code.
+`defineMetric` is an identity helper that preserves type inference.
 
 ## EvalReporter
 
@@ -169,9 +179,10 @@ type EvalRunEndArgs = EvalRunStartArgs & {
   status: "completed" | "failed";
   completedAt: string;
   durationMs: number;
-  passed?: number;
-  failed?: number;
-  invalid?: number;
+  metrics?: EvalTotals;
+  cases?: EvalTotals;
+  usage?: EvalUsageSummary;
+  cost?: EvalCostSummary;
   error?: unknown;
 };
 
@@ -185,15 +196,25 @@ type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
   trace?: EvalTraceSelector<Input, Output, Expected>;
   reporters?: Array<EvalReporter<Input, Output, Expected>>;
   failOnReporterError?: boolean;
+  targetUsage?: EvalTargetUsageSelector<Input, Output, Expected>;
+  cost?: EvalCostOptions<Input, Output, Expected>;
+};
+
+type EvalTotals = {
+  total: number;
+  passed: number;
+  failed: number;
+  invalid: number;
 };
 
 type EvalSuiteResult<Input, Output, Expected = unknown> = {
   name: string;
   run: EvalRunContext & { completedAt: string };
   results: Array<EvalCaseResult<Input, Output, Expected>>;
-  passed: number;
-  failed: number;
-  invalid: number;
+  metrics: EvalTotals;
+  cases: EvalTotals;
+  usage: { target: Usage; evaluation: Usage; total: Usage };
+  cost?: { currency: string; target: number; evaluation: number; total: number };
   durationMs: number;
   reporterErrors: unknown[];
 };
@@ -208,7 +229,41 @@ Purpose: runs cases through a target, evaluates each metric, calls optional repo
 Return behavior: `runEvalSuite(...)` generates a stable run ID unless one is supplied. Target errors
 become invalid metric outcomes. Reporter errors are collected unless `failOnReporterError` is true.
 `EvalRunStartArgs` and `EvalRunEndArgs` let reporters persist the run lifecycle around individual
-metric events.
+metric events. Case ids and metric names must be unique. Target usage is read from `output.usage`
+by default; use `targetUsage` for custom output shapes. Cost is only present when a caller supplies
+a currency and calculator.
+
+## CLI result handling and negative controls
+
+```ts
+const result = await runEvalCli({
+  ...suiteOptions,
+  format: "pretty", // "json" | "quiet"
+  exitCode: true,
+  expectations: {
+    outcomes: {
+      "wrong-billing-role": {
+        answer_relevancy: "pass",
+        contains: "fail",
+      },
+    },
+  },
+});
+
+printEvalResult(result, { format: "json" });
+process.exitCode = evalExitCode(result);
+assertEvalTotals(result, { passed: 1, failed: 1, invalid: 0 });
+assertEvalOutcomes(result, { "wrong-billing-role": { contains: "fail" } });
+```
+
+`evalExitCode` returns `0` for success or matched controls, `1` for unexpected failures, and `2`
+for unexpected invalid outcomes. Expectations are a CLI/assertion concern and do not change the
+raw outcomes returned by `runEvalSuite`.
+
+CLI supporting exports are `EvalAssertionError`, `EvalExpectations`, `EvalExpectedOutcomes`,
+`EvalExpectedTotals`, `EvalOutputFormat`, `EvalOutputWriters`, `PrintEvalResultOptions`, and
+`RunEvalCliOptions`. Result-model supporting types include `EvalCostCalculatorArgs` and
+`EvalScoreDirection`.
 
 ## Built-in Metrics
 
@@ -223,12 +278,14 @@ type SelectorOrValue<Input, Output, Expected, Value> =
 
 type ExactMatchOptions<Input, Output, Expected = unknown> = {
   name?: string;
+  required?: boolean;
   actual?: ValueSelector<Input, Output, Expected, unknown>;
   expected?: SelectorOrValue<Input, Output, Expected, unknown>;
 };
 
 type ContainsOptions<Input, Output, Expected = unknown> = {
   name?: string;
+  required?: boolean;
   actual?: ValueSelector<Input, Output, Expected, string>;
   expected?: SelectorOrValue<Input, Output, Expected, string | RegExp>;
 };
@@ -268,12 +325,25 @@ type LlmScoreOptions<Input, Output, Expected = unknown> = {
 
 exactMatch(options?: ExactMatchOptions);
 contains(options?: ContainsOptions);
+notContains(options?: NotContainsOptions);
+containsAll(options: { expected: Array<string | RegExp>; ... });
+containsAny(options: { expected: Array<string | RegExp>; ... });
+matches(options: { expected: RegExp; ... });
+doesNotMatch(options: { expected: RegExp; ... });
+maxLength(options: { max: number; ... });
+requiredFields(options: { expected: string[]; ... });
 semanticSimilarity(options: SemanticSimilarityOptions);
 llmJudge(options: LlmJudgeOptions);
 llmScore(options: LlmScoreOptions);
 ```
 
-Purpose: common deterministic, embedding, and LLM-as-judge eval checks.
+Purpose: common deterministic, embedding, and LLM-as-judge eval checks. `requiredFields` checks
+own top-level object keys; use `jsonCorrectness` for nested schema validation. `maxLength` counts
+Unicode code points. Empty lists and invalid input types return invalid outcomes.
+
+Deterministic metric option exports are `ContainsAllOptions`, `ContainsAnyOptions`,
+`ContainsListOptions`, `DoesNotMatchOptions`, `MatchesOptions`, `MaxLengthOptions`, and
+`RequiredFieldsOptions`.
 
 ## Research-style metrics
 
@@ -335,6 +405,12 @@ type FaithfulnessOptions<Input, Output, Expected = unknown> =
 
 faithfulness(options: FaithfulnessOptions): EvalMetric;
 
+abstention({
+  model,
+  shouldAbstain: true,
+  context: ({ case: testCase }) => testCase.retrievalContext ?? [],
+}): EvalMetric;
+
 type SummarizationOptions<Input, Output, Expected = unknown> =
   AnswerRelevancyOptions<Input, Output, Expected> & {
     assessmentQuestions?: string[];
@@ -349,6 +425,11 @@ summarization(options: SummarizationOptions): EvalMetric;
 instructions followed. `jsonCorrectness` parses and validates output against Zod without using an
 LLM for scoring. `summarization` returns the minimum of factual alignment and source coverage.
 `faithfulness` measures output claims grounded in retrieved material.
+
+`abstention` returns one of `correct_abstention`, `unnecessary_abstention`,
+`unsupported_confident_answer`, or `correct_grounded_answer`. It uses one structured judge call;
+the two correct categories pass and the other categories fail.
+Its supporting exports are `AbstentionCategory` and `AbstentionOptions`.
 
 `hallucination` is lower-is-better: it scores the fraction of trusted contexts contradicted by the
 output and passes at or below its threshold. In strict mode it passes only at `0`.

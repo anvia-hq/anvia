@@ -19,6 +19,11 @@ can vary in ways that deterministic code cannot describe.
 | --- | --- | --- |
 | Exact labels, ids, booleans, or objects | `exactMatch(...)` | Fast and deterministic |
 | Required text or a regular expression | `contains(...)` | Easy to interpret when it fails |
+| Forbidden text or secret leakage | `notContains(...)` | Fast negative policy check |
+| Several required facts | `containsAll(...)` | Reports exactly which facts are missing |
+| One acceptable phrase from a set | `containsAny(...)` | Handles deterministic alternatives |
+| Output shape without parsing JSON | `matches(...)`, `maxLength(...)` | Cheap format and size checks |
+| Required top-level object keys | `requiredFields(...)` | Avoids a judge for simple object contracts |
 | Valid JSON with a known shape | `jsonCorrectness(...)` | Parses and validates against Zod without a judge |
 | Equivalent answers with different wording | `semanticSimilarity(...)` | Compares embeddings instead of exact text |
 | Answer stays on topic | `answerRelevancy(...)` | Judges each substantive answer statement |
@@ -71,6 +76,26 @@ await runEvalSuite({
 Selectors let the target return a useful product-level object instead of flattening everything to
 text for the eval runner.
 
+Use negative controls to prove that the metric fails for the intended reason:
+
+```ts
+const result = await runEvalCli({
+  name: "policy-leakage",
+  cases: [
+    { id: "safe", input: "public" },
+    { id: "leak", input: "internal" },
+  ],
+  target: (input) =>
+    input === "internal" ? "Use internal-code-4821" : "Contact your workspace owner.",
+  metrics: [notContains({ expected: "internal-code-4821" })],
+  expectations: { outcomes: { leak: { not_contains: "fail" } } },
+  exitCode: true,
+});
+```
+
+This proves only that the selected output does not contain that exact string. It does not detect
+paraphrased secrets or other sensitive values; use redaction and broader security tests too.
+
 ## Add Specialized Judges
 
 Use specialized metrics when the failure has a stable meaning:
@@ -103,6 +128,11 @@ await runEvalSuite({
 `answerRelevancy` decomposes the answer into statements and scores how many are relevant.
 `promptAlignment` returns one verdict per supplied instruction. Keep those instructions atomic: one
 requirement per array item produces more useful failures.
+
+A relevant answer can still be factually wrong. Include a red correctness case such as “Refunds
+last 90 days” for a 30-day policy: `answerRelevancy` may correctly pass it because it addresses the
+question, while `containsAll`, `faithfulness`, or a correctness rubric should fail it. Relevancy
+does not prove truth.
 
 ## Evaluate JSON Without A Judge
 
@@ -151,6 +181,10 @@ failures can hide broken eval infrastructure.
 
 Judge explanations live in `outcome.comment`. Intermediate statements, verdicts, score breakdowns,
 and aggregate token usage live under `outcome.metadata.evaluation`.
+
+Metric results also expose `direction` and `threshold` directly. Suite results separate metric
+outcomes from case outcomes through `result.metrics` and `result.cases`; an invalid required metric
+takes precedence over a required failure when calculating the case outcome.
 
 ## Control Cost And Variance
 

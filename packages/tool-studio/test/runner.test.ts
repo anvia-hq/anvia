@@ -4621,16 +4621,27 @@ describe("Anvia studio", () => {
       suiteId: "uppercase-suite",
       result: {
         name: "Uppercase Suite",
-        passed: 1,
-        failed: 0,
-        invalid: 0,
+        metrics: {
+          total: 1,
+          passed: 1,
+          failed: 0,
+          invalid: 0,
+        },
+        cases: {
+          total: 1,
+          passed: 1,
+          failed: 0,
+          invalid: 0,
+        },
         results: [
           {
             case: { id: "basic", input: "hello", expected: "HELLO" },
             output: "HELLO",
+            outcome: "pass",
             metrics: [
               {
                 metricName: "uppercase_match",
+                required: true,
                 outcome: { outcome: "pass", score: true },
               },
             ],

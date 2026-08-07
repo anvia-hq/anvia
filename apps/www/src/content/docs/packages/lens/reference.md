@@ -14,10 +14,15 @@ Import from `@anvia/lens`.
 ```ts
 const lens: {
   create(options?: LensTracingOptions): LensTracing;
+  createFromEnv(options?: LensFromEnvOptions): LensTracing;
+  evals(options?: LensEvalsOptions): LensEvalIntegration;
 };
 ```
 
-Creates an isolated Node.js trace and log pipeline that exports to the configured Lens project.
+`create` creates an isolated Node.js trace and log pipeline. `createFromEnv({ optional: true })`
+returns disabled no-op tracing when all Lens connection variables are absent, while partial
+configuration still throws. `evals` bundles one observer, reporter, `flush`, and `shutdown`, and
+enables run-end flushing by default.
 
 ## LensTracingOptions
 
@@ -27,7 +32,7 @@ matching `ANVIA_LENS_*` environment variables.
 
 ## LensTracing
 
-An Anvia `AgentObserver` with asynchronous `flush()` and idempotent `shutdown()` methods.
+An Anvia `AgentObserver` with `enabled`, asynchronous `flush()`, and idempotent `shutdown()`.
 
 ## createLensEvalReporter
 
@@ -42,6 +47,7 @@ Emits evaluation-run lifecycle events and standard `gen_ai.evaluation.result` lo
 the isolated Lens log provider. Evaluation metadata and case payloads are omitted by default.
 Enable them independently with `includeMetadata: true` and `includePayloads: true`. Captured
 evaluation payloads inherit the tracing instance's redaction transforms and capture-size limit.
+Set `flushOnRunEnd: true` for short-lived processes.
 
 ## createLensDatasetClient
 
@@ -62,5 +68,6 @@ response failures.
 `resolveLensConfig` resolves and validates configuration. `createLensRedactor` returns a deep,
 non-mutating redactor. `DEFAULT_PATTERNS` contains the built-in patterns. Public supporting types
 are `LensCaptureMode`, `LensDataset`, `LensDatasetClient`, `LensDatasetClientOptions`,
-`LensDatasetGetOptions`, `LensDatasetItem`, `LensEvalReporter`, `LensEvalReporterOptions`,
-`LensRedactionOptions`, `LensRedactorPattern`, `LensTracing`, and `LensTracingOptions`.
+`LensDatasetGetOptions`, `LensDatasetItem`, `LensEvalIntegration`, `LensEvalsOptions`,
+`LensEvalReporter`, `LensEvalReporterOptions`, `LensFromEnvOptions`, `LensRedactionOptions`,
+`LensRedactorPattern`, `LensTracing`, and `LensTracingOptions`.

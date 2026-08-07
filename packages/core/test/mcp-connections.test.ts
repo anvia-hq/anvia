@@ -159,7 +159,7 @@ describe("MCP connection factories", () => {
 
     const connection = mcp.http({
       name: "http-server",
-      url: "http://localhost:3000/mcp",
+      url: "https://api.example.com/mcp",
       transport: transportOptions,
     });
 
@@ -175,7 +175,7 @@ describe("MCP connection factories", () => {
     });
     expect(sdk.httpTransports).toHaveLength(1);
     expect(sdk.httpTransports[0]).toBeInstanceOf(sdk.StreamableHTTPClientTransport);
-    expect(sdk.httpTransports[0]?.url.href).toBe("http://localhost:3000/mcp");
+    expect(sdk.httpTransports[0]?.url.href).toBe("https://api.example.com/mcp");
     expect(sdk.httpTransports[0]?.options).toBe(transportOptions);
     expect(sdk.clients[0]?.connectCalls).toEqual([sdk.httpTransports[0]]);
   });
@@ -191,7 +191,7 @@ describe("MCP connection factories", () => {
 
     const connection = mcp.sse({
       name: "legacy-server",
-      url: "http://localhost:3000/sse",
+      url: "https://api.example.com/sse",
       transport: transportOptions,
     });
 
@@ -207,7 +207,7 @@ describe("MCP connection factories", () => {
     });
     expect(sdk.sseTransports).toHaveLength(1);
     expect(sdk.sseTransports[0]).toBeInstanceOf(sdk.SSEClientTransport);
-    expect(sdk.sseTransports[0]?.url.href).toBe("http://localhost:3000/sse");
+    expect(sdk.sseTransports[0]?.url.href).toBe("https://api.example.com/sse");
     expect(sdk.sseTransports[0]?.options).toBe(transportOptions);
     expect(sdk.clients[0]?.connectCalls).toEqual([sdk.sseTransports[0]]);
   });

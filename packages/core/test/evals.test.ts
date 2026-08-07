@@ -8,7 +8,10 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   contains,
+  containsAll,
+  containsAny,
   defineMetric,
+  doesNotMatch,
   type Embedding,
   type EmbeddingModel,
   type EvalMetricArgs,
@@ -16,7 +19,11 @@ import {
   exactMatch,
   llmJudge,
   llmScore,
+  matches,
+  maxLength,
+  notContains,
   projectEvalOutcome,
+  requiredFields,
   resolveEvalTraceRef,
   runEvalSuite,
   semanticSimilarity,
@@ -67,9 +74,9 @@ describe("evals", () => {
       metrics: [exactMatch()],
     });
 
-    expect(result.passed).toBe(1);
-    expect(result.failed).toBe(1);
-    expect(result.invalid).toBe(0);
+    expect(result.metrics.passed).toBe(1);
+    expect(result.metrics.failed).toBe(1);
+    expect(result.metrics.invalid).toBe(0);
     expect(result.results.map((caseResult) => caseResult.case.id)).toEqual(["pass", "fail"]);
     expect(result.results[0]?.metrics[0]?.outcome.outcome).toBe("pass");
     expect(result.results[1]?.metrics[0]?.outcome.outcome).toBe("fail");
@@ -103,7 +110,7 @@ describe("evals", () => {
       metrics: [exactMatch(), contains()],
     });
 
-    expect(result.invalid).toBe(2);
+    expect(result.metrics.invalid).toBe(2);
     expect(result.results[0]?.targetError).toBeInstanceOf(Error);
     expect(result.results[0]?.metrics.map((metric) => metric.outcome.outcome)).toEqual([
       "invalid",
@@ -148,7 +155,7 @@ describe("evals", () => {
       ],
     });
 
-    expect(result.passed).toBe(2);
+    expect(result.metrics.passed).toBe(2);
   });
 
   it("keeps contains regex expectations deterministic across cases", async () => {
@@ -167,8 +174,8 @@ describe("evals", () => {
       ],
     });
 
-    expect(result.passed).toBe(4);
-    expect(result.failed).toBe(0);
+    expect(result.metrics.passed).toBe(4);
+    expect(result.metrics.failed).toBe(0);
     expect(globalPattern.lastIndex).toBe(0);
     expect(stickyPattern.lastIndex).toBe(0);
   });
@@ -210,7 +217,7 @@ describe("evals", () => {
       ],
     });
 
-    expect(result.passed).toBe(2);
+    expect(result.metrics.passed).toBe(2);
     expect(model.requests).toHaveLength(2);
   });
 
@@ -242,7 +249,7 @@ describe("evals", () => {
       ],
     });
 
-    expect(result.passed).toBe(1);
+    expect(result.metrics.passed).toBe(1);
     expect(result.results[0]?.metrics[0]?.reporterErrors).toHaveLength(1);
   });
 
@@ -441,7 +448,112 @@ describe("evals", () => {
       ],
     });
 
-    expect(result.invalid).toBe(1);
+    expect(result.metrics.invalid).toBe(1);
+  });
+
+  it("exposes separate metric and case totals with required metric precedence", async () => {
+    const result = await runEvalSuite({
+      name: "totals",
+      cases: [
+        { id: "invalid", input: "invalid" },
+        { id: "optional", input: "optional" },
+      ],
+      target: (input) => input,
+      metrics: [
+        {
+          name: "quality",
+          evaluate: ({ case: testCase }) =>
+            testCase.id === "invalid" ? EvalOutcome.fail(false) : EvalOutcome.pass(true),
+        },
+        {
+          name: "infrastructure",
+          evaluate: ({ case: testCase }) =>
+            testCase.id === "invalid"
+              ? EvalOutcome.invalid("judge unavailable")
+              : EvalOutcome.pass(true),
+        },
+        {
+          name: "diagnostic",
+          required: false,
+          evaluate: () => EvalOutcome.fail(false),
+        },
+      ],
+    });
+
+    expect(result.metrics).toEqual({ total: 6, passed: 2, failed: 3, invalid: 1 });
+    expect(result.cases).toEqual({ total: 2, passed: 1, failed: 0, invalid: 1 });
+    expect(result.results.map((caseResult) => caseResult.outcome)).toEqual(["invalid", "pass"]);
+  });
+
+  it("runs the deterministic text, length, regex, and object metrics", async () => {
+    const result = await runEvalSuite({
+      name: "deterministic-builtins",
+      cases: [{ id: "policy", input: "Refunds: 30 days with proof of purchase." }],
+      target: (input) => input,
+      metrics: [
+        notContains({ expected: "internal-code-4821" }),
+        containsAll({ expected: ["30 days", "proof of purchase"] }),
+        containsAny({ expected: ["receipt", /proof/i] }),
+        matches({ expected: /refunds?/i }),
+        doesNotMatch({ expected: /workspace owners?/i }),
+        maxLength({ max: 100 }),
+        requiredFields({ actual: () => ({ answer: "ok", sources: [] }), expected: ["answer"] }),
+      ],
+    });
+
+    expect(result.metrics).toEqual({ total: 7, passed: 7, failed: 0, invalid: 0 });
+    expect(result.results[0]?.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          required: true,
+          direction: "higher_is_better",
+          threshold: 1,
+        }),
+      ]),
+    );
+  });
+
+  it("aggregates target and evaluation usage and calculates caller-priced cost", async () => {
+    const result = await runEvalSuite({
+      name: "usage",
+      cases: [{ id: "case", input: "hello" }],
+      target: (input) => ({ output: input, usage: usage(3, 2) }),
+      metrics: [
+        {
+          name: "judge",
+          evaluate: () => EvalOutcome.pass(0.9, { usage: usage(4, 1) }),
+        },
+      ],
+      cost: {
+        currency: "USD",
+        calculate: ({ kind, usage: measured }) =>
+          measured.totalTokens * (kind === "target" ? 0.001 : 0.002),
+      },
+    });
+
+    expect(result.usage.target.totalTokens).toBe(5);
+    expect(result.usage.evaluation.totalTokens).toBe(5);
+    expect(result.usage.total.totalTokens).toBe(10);
+    expect(result.cost).toEqual({
+      currency: "USD",
+      target: 0.005,
+      evaluation: 0.01,
+      total: 0.015,
+    });
+  });
+
+  it("rejects duplicate case ids and metric names before running targets", async () => {
+    await expect(
+      runEvalSuite({
+        name: "duplicates",
+        cases: [
+          { id: "same", input: "a" },
+          { id: "same", input: "b" },
+        ],
+        target: (input) => input,
+        metrics: [exactMatch({ expected: "a" })],
+      }),
+    ).rejects.toThrow("Evaluation case id must be unique");
   });
 });
 
@@ -503,6 +615,16 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
     choice,
     usage: Usage.empty(),
     rawResponse: {},
+  };
+}
+
+function usage(inputTokens: number, outputTokens: number) {
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    cachedInputTokens: 0,
+    cacheCreationInputTokens: 0,
   };
 }
 

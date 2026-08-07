@@ -275,6 +275,9 @@ function MetricsPanel(props: {
 function MetricSummaryRow(props: { metric: StudioEvalMetricSummary }) {
   const details = [
     props.metric.dataType,
+    props.metric.required === false ? "optional" : undefined,
+    props.metric.direction,
+    props.metric.threshold === undefined ? undefined : `threshold ${props.metric.threshold}`,
     props.metric.configId === undefined ? undefined : `config ${props.metric.configId}`,
     props.metric.scoreConfigId === undefined ? undefined : `score ${props.metric.scoreConfigId}`,
     props.metric.metadataKeys === undefined
@@ -333,9 +336,9 @@ function EvalResult(props: { result: StudioEvalRunResponse; suite: StudioEvalSui
           </span>
         </div>
         <div className="grid gap-2 sm:grid-cols-4">
-          <StudioMetric label="Passed" value={String(result.passed ?? 0)} />
-          <StudioMetric label="Failed" value={String(result.failed ?? 0)} />
-          <StudioMetric label="Invalid" value={String(result.invalid ?? 0)} />
+          <StudioMetric label="Passed" value={String(result.cases?.passed ?? 0)} />
+          <StudioMetric label="Failed" value={String(result.cases?.failed ?? 0)} />
+          <StudioMetric label="Invalid" value={String(result.cases?.invalid ?? 0)} />
           <StudioMetric
             label="Duration"
             value={`${result.durationMs ?? props.result.durationMs}ms`}
@@ -380,7 +383,12 @@ function CaseResultCard(props: { index: number; result: EvalCaseRunResult }) {
   const metrics = Array.isArray(props.result.metrics) ? props.result.metrics : [];
   const caseId = typeof testCase.id === "string" ? testCase.id : `case-${props.index + 1}`;
   const counts = metricOutcomeCounts(metrics);
-  const primaryStatus = casePrimaryStatus(counts);
+  const primaryStatus =
+    props.result.outcome === "pass" ||
+    props.result.outcome === "fail" ||
+    props.result.outcome === "invalid"
+      ? props.result.outcome
+      : casePrimaryStatus(counts);
 
   return (
     <article className="overflow-hidden rounded-xl border border-border/70 bg-card/35">
@@ -467,6 +475,17 @@ function MetricOutcomeRow(props: { index: number; metric: EvalMetricRunResult })
             : typeof outcome.reason === "string"
               ? outcome.reason
               : "No comment"}
+        </div>
+        <div className="mt-1 text-xs leading-5 text-muted-foreground">
+          {[
+            props.metric.required === false ? "optional" : "required",
+            props.metric.direction,
+            props.metric.threshold === undefined
+              ? undefined
+              : `threshold ${props.metric.threshold}`,
+          ]
+            .filter(Boolean)
+            .join(" / ")}
         </div>
         {reporterErrors.length > 0 ? (
           <pre className="m-0 mt-2 whitespace-pre-wrap break-words rounded-md border border-border/70 bg-card/45 p-2 text-xs leading-5 text-muted-foreground">
@@ -566,15 +585,22 @@ function RawDetails(props: { title: string; value: unknown }) {
 }
 
 type EvalSuiteRunResult = {
-  passed?: number;
-  failed?: number;
-  invalid?: number;
+  metrics?: EvalRunTotals;
+  cases?: EvalRunTotals;
   durationMs?: number;
   results?: EvalCaseRunResult[];
 };
 
+type EvalRunTotals = {
+  total?: number;
+  passed?: number;
+  failed?: number;
+  invalid?: number;
+};
+
 type EvalCaseRunResult = {
   case?: unknown;
+  outcome?: string;
   output?: unknown;
   targetError?: unknown;
   metrics?: EvalMetricRunResult[];
@@ -582,6 +608,9 @@ type EvalCaseRunResult = {
 
 type EvalMetricRunResult = {
   metricName?: string;
+  required?: boolean;
+  direction?: "higher_is_better" | "lower_is_better";
+  threshold?: number;
   outcome?: unknown;
   reporterErrors?: unknown[];
 };

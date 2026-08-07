@@ -1,4 +1,4 @@
-import type { JsonValue } from "../completion";
+import type { JsonValue, Usage } from "../completion";
 import type { EvalOutcome } from "./outcome";
 
 export type EvalMetadata = Record<string, JsonValue | undefined>;
@@ -46,6 +46,28 @@ export type EvalTarget<Input, Output, Expected = unknown> = (
 
 export type EvalOutcomeStatus = "pass" | "fail" | "invalid";
 
+export type EvalScoreDirection = "higher_is_better" | "lower_is_better";
+
+export type EvalTotals = {
+  total: number;
+  passed: number;
+  failed: number;
+  invalid: number;
+};
+
+export type EvalUsageSummary = {
+  target: Usage;
+  evaluation: Usage;
+  total: Usage;
+};
+
+export type EvalCostSummary = {
+  currency: string;
+  target: number;
+  evaluation: number;
+  total: number;
+};
+
 export type EvalScoreProjection = {
   outcome: EvalOutcomeStatus;
   value: number | string;
@@ -63,6 +85,9 @@ export type EvalMetricArgs<Input, Output, Expected = unknown> = {
 
 export type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
   name: string;
+  required?: boolean | undefined;
+  direction?: EvalScoreDirection | undefined;
+  threshold?: number | undefined;
   dataType?: "NUMERIC" | "CATEGORICAL" | "BOOLEAN" | undefined;
   scoreConfigId?: string | undefined;
   configId?: string | undefined;
@@ -74,12 +99,16 @@ export type EvalMetric<Input, Output, Score = unknown, Expected = unknown> = {
 
 export type EvalMetricResult<Score = unknown> = {
   metricName: string;
+  required: boolean;
+  direction?: EvalScoreDirection | undefined;
+  threshold?: number | undefined;
   outcome: EvalOutcome<Score>;
   reporterErrors: unknown[];
 };
 
 export type EvalCaseResult<Input, Output, Expected = unknown> = {
   case: EvalCase<Input, Expected>;
+  outcome: EvalOutcomeStatus;
   output?: Output | undefined;
   targetError?: unknown;
   metrics: EvalMetricResult[];
@@ -89,9 +118,10 @@ export type EvalSuiteResult<Input, Output, Expected = unknown> = {
   name: string;
   run: EvalRunContext & { completedAt: string };
   results: Array<EvalCaseResult<Input, Output, Expected>>;
-  passed: number;
-  failed: number;
-  invalid: number;
+  metrics: EvalTotals;
+  cases: EvalTotals;
+  usage: EvalUsageSummary;
+  cost?: EvalCostSummary | undefined;
   durationMs: number;
   reporterErrors: unknown[];
 };
@@ -118,9 +148,10 @@ export type EvalRunEndArgs = EvalRunStartArgs & {
   status: "completed" | "failed";
   completedAt: string;
   durationMs: number;
-  passed?: number | undefined;
-  failed?: number | undefined;
-  invalid?: number | undefined;
+  metrics?: EvalTotals | undefined;
+  cases?: EvalTotals | undefined;
+  usage?: EvalUsageSummary | undefined;
+  cost?: EvalCostSummary | undefined;
   error?: unknown;
 };
 
@@ -141,6 +172,32 @@ export type EvalReporter<Input = unknown, Output = unknown, Expected = unknown> 
   onRunEnd?(args: EvalRunEndArgs): void | Promise<void>;
 };
 
+export type EvalTargetUsageSelector<Input, Output, Expected = unknown> = (
+  args: EvalMetricArgs<Input, Output, Expected>,
+) => Usage | undefined | Promise<Usage | undefined>;
+
+export type EvalCostCalculatorArgs<Input, Output, Expected = unknown> =
+  | {
+      kind: "target";
+      suiteName: string;
+      case: EvalCase<Input, Expected>;
+      output: Output;
+      usage: Usage;
+    }
+  | {
+      kind: "evaluation";
+      suiteName: string;
+      case: EvalCase<Input, Expected>;
+      output: Output;
+      metric: EvalMetric<Input, Output, unknown, Expected>;
+      usage: Usage;
+    };
+
+export type EvalCostOptions<Input, Output, Expected = unknown> = {
+  currency: string;
+  calculate(args: EvalCostCalculatorArgs<Input, Output, Expected>): number | Promise<number>;
+};
+
 export type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
   name: string;
   run?: EvalRunOptions | undefined;
@@ -151,6 +208,10 @@ export type RunEvalSuiteOptions<Input, Output, Expected = unknown> = {
   trace?: EvalTraceSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>> | undefined;
   reporters?: Array<EvalReporter<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>> | undefined;
   failOnReporterError?: boolean | undefined;
+  targetUsage?:
+    | EvalTargetUsageSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>
+    | undefined;
+  cost?: EvalCostOptions<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>> | undefined;
 };
 
 export type ValueSelector<Input, Output, Expected, Value> = (

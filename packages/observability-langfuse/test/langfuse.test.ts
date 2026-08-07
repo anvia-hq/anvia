@@ -1577,6 +1577,7 @@ describe("langfuse", () => {
         suiteName: "suite",
         caseId: "case-1",
         outcome: "pass",
+        required: true,
         caseInputSummary: "input",
       },
     });
@@ -1622,7 +1623,7 @@ describe("langfuse", () => {
       reporters: [createReporter({ score })],
     });
 
-    expect(result.passed).toBe(1);
+    expect(result.metrics.passed).toBe(1);
     expect(result.results[0]?.metrics[0]?.reporterErrors).toEqual([]);
     expect(score).not.toHaveBeenCalled();
 
@@ -1728,13 +1729,16 @@ describe("langfuse", () => {
       output: { trace: { traceId: "trace-1" } },
       metric: {
         name: "quality",
+        required: false,
+        direction: "higher_is_better",
+        threshold: 0.8,
         dataType: "CATEGORICAL",
         configId: "sc-1",
         scoreConfigId: "sc-1-alt",
         metadata: { suite: "qa", tags: ["smoke"] },
         evaluate: () => EvalOutcome.pass("good"),
       },
-      outcome: EvalOutcome.pass("good"),
+      outcome: EvalOutcome.pass("good", { usage: usage(3, 1) }),
     });
 
     expect(score).toHaveBeenCalledWith(
@@ -1748,6 +1752,10 @@ describe("langfuse", () => {
           suite: "qa",
           tags: ["smoke"],
           caseInputSummary: "input",
+          required: false,
+          scoreDirection: "higher_is_better",
+          threshold: 0.8,
+          evaluationUsage: expect.objectContaining({ totalTokens: 4 }),
         }),
       }),
     );
@@ -3344,7 +3352,7 @@ describe("runEvalAsExperiment", () => {
       },
     );
 
-    expect(suite.passed).toBe(2);
+    expect(suite.metrics.passed).toBe(2);
     expect(datasetRun.posted).toBe(2);
     expect(datasetRun.errors).toEqual([]);
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
@@ -3393,7 +3401,7 @@ describe("runEvalAsExperiment", () => {
       },
     );
 
-    expect(suite.passed).toBe(1);
+    expect(suite.metrics.passed).toBe(1);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
     const scoreBody = JSON.parse(
       (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body as string,

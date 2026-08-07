@@ -61,9 +61,9 @@ console.table(
 );
 
 console.log({
-  passed: result.passed,
-  failed: result.failed,
-  invalid: result.invalid,
+  passed: result.metrics.passed,
+  failed: result.metrics.failed,
+  invalid: result.metrics.invalid,
 });
 
 function answerSupportQuestion(question: string): string {

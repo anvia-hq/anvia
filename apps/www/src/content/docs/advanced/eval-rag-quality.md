@@ -159,6 +159,25 @@ const retrievedExpectedDocument = defineMetric<
 });
 ```
 
+## Evaluate abstention separately
+
+Faithfulness is not an abstention detector: “I do not know from the available policies” can be
+misread as a claim to ground. Use the dedicated categorical metric when the desired behavior is to
+answer only when retrieval provides support:
+
+```ts
+import { abstention } from "@anvia/core/evals";
+
+const metric = abstention({
+  model: judgeModel,
+  shouldAbstain: ({ case: testCase }) => testCase.retrievalContext?.length === 0,
+});
+```
+
+Include one case for each category: correct abstention, unnecessary abstention, unsupported
+confident answer, and correct grounded answer. The metric distinguishes these behaviors with a
+judge; it does not replace deterministic authorization or data-access checks.
+
 This check is intentionally independent of the judge. If document identity is not stable, compare
 expected facts or metadata instead.
 

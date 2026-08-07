@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     );
     console.log(
       "[experiments:06] suite.passed:",
-      result.suite.passed,
+      result.suite.metrics.passed,
       "datasetRun.posted:",
       result.datasetRun.posted,
     );

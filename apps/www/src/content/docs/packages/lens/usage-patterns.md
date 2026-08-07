@@ -25,6 +25,27 @@ The built-in redactor masks common email, credential, bearer token, and payment-
 
 ## Report evaluations
 
+For a short-lived eval process, create the observer and reporter together. Missing configuration
+is a safe no-op, and the reporter flushes after the run:
+
+```ts
+const evals = lens.evals({
+  serviceName: "support-evals",
+  includePayloads: true,
+  optional: true,
+});
+
+const agent = new AgentBuilder("support", model).observe(evals.observer).build();
+
+await runEvalSuite({
+  ...suite,
+  target: agentEvalTarget(agent),
+  reporters: [evals.reporter],
+});
+```
+
+Use the lower-level reporter when tracing is already configured:
+
 ```ts
 import { runEvalSuite } from "@anvia/core/evals";
 import { createLensEvalReporter } from "@anvia/lens";
@@ -43,6 +64,7 @@ await runEvalSuite({
     createLensEvalReporter(tracing, {
       includePayloads: true,
       includeMetadata: true,
+      flushOnRunEnd: true,
     }),
   ],
 });

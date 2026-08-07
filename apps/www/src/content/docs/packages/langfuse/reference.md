@@ -158,6 +158,9 @@ Purpose: bridge core eval metric results to Langfuse scores.
 
 Return behavior: returns an `EvalReporter` for `runEvalSuite(...)`. Invalid outcomes are skipped unless `publishInvalid` is true.
 
+Notable behavior: score metadata includes required status, score direction, threshold, and
+evaluator usage when the metric supplies them.
+
 Notable errors: with `strict: true` (or `onMissingTrace: "throw"`), missing trace ids reject the reporter call; scoring errors reject through the supplied tracing object.
 
 ## Datasets and Experiments

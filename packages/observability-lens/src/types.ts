@@ -34,9 +34,25 @@ export type LensEvalReporterOptions = {
   includeMetadata?: boolean | undefined;
   includePayloads?: boolean | undefined;
   onMissingTrace?: "emit" | "ignore" | "warn" | "throw" | undefined;
+  flushOnRunEnd?: boolean | undefined;
 };
 
 export type LensTracing = AgentObserver & {
+  readonly enabled: boolean;
+  flush(): Promise<void>;
+  shutdown(): Promise<void>;
+};
+
+export type LensFromEnvOptions = Omit<LensTracingOptions, "baseUrl" | "publicKey" | "secretKey"> & {
+  optional?: boolean | undefined;
+};
+
+export type LensEvalsOptions = LensFromEnvOptions & LensEvalReporterOptions;
+
+export type LensEvalIntegration<Input = unknown, Output = unknown, Expected = unknown> = {
+  readonly enabled: boolean;
+  observer: LensTracing;
+  reporter: LensEvalReporter<Input, Output, Expected>;
   flush(): Promise<void>;
   shutdown(): Promise<void>;
 };

@@ -113,6 +113,9 @@ describe("OpenTelemetry eval reporter", () => {
       trace: { traceId, observationId, responseId: "response-1" },
       metric: {
         name: "faithfulness",
+        required: true,
+        direction: "higher_is_better",
+        threshold: 0.8,
         dataType: "NUMERIC",
         configId: "score-config-1",
         metadata: { threshold: 0.8 },
@@ -121,6 +124,13 @@ describe("OpenTelemetry eval reporter", () => {
       outcome: EvalOutcome.pass(0.9, {
         comment: "The answer is grounded.",
         metadata: { evaluation: { usage: { totalTokens: 12 } } },
+        usage: {
+          inputTokens: 8,
+          outputTokens: 4,
+          totalTokens: 12,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
       }),
     });
 
@@ -146,6 +156,12 @@ describe("OpenTelemetry eval reporter", () => {
         "anvia.eval.case.id": "case-1",
         "anvia.eval.outcome": "pass",
         "anvia.eval.data_type": "NUMERIC",
+        "anvia.eval.required": true,
+        "anvia.eval.score.direction": "higher_is_better",
+        "anvia.eval.score.threshold": 0.8,
+        "anvia.eval.usage.input_tokens": 8,
+        "anvia.eval.usage.output_tokens": 4,
+        "anvia.eval.usage.total_tokens": 12,
         "anvia.eval.config_id": "score-config-1",
         "anvia.eval.case.metadata": { scenario: "refund" },
         "anvia.eval.metric.metadata": { threshold: 0.8 },
@@ -183,9 +199,8 @@ describe("OpenTelemetry eval reporter", () => {
       status: "completed",
       completedAt: "2026-08-07T00:00:02.000Z",
       durationMs: 2_000,
-      passed: 3,
-      failed: 1,
-      invalid: 0,
+      metrics: { total: 4, passed: 3, failed: 1, invalid: 0 },
+      cases: { total: 2, passed: 1, failed: 1, invalid: 0 },
     });
 
     expect(emit.mock.calls.map(([record]) => record.eventName)).toEqual([
@@ -197,9 +212,14 @@ describe("OpenTelemetry eval reporter", () => {
       attributes: {
         "anvia.eval.run.id": "run-1",
         "anvia.eval.run.status": "completed",
-        "anvia.eval.run.passed": 3,
-        "anvia.eval.run.failed": 1,
-        "anvia.eval.run.invalid": 0,
+        "anvia.eval.run.metrics.total": 4,
+        "anvia.eval.run.metrics.passed": 3,
+        "anvia.eval.run.metrics.failed": 1,
+        "anvia.eval.run.metrics.invalid": 0,
+        "anvia.eval.run.cases.total": 2,
+        "anvia.eval.run.cases.passed": 1,
+        "anvia.eval.run.cases.failed": 1,
+        "anvia.eval.run.cases.invalid": 0,
       },
     });
   });

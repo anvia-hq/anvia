@@ -10,6 +10,7 @@ import type {
   McpSseOptions,
   McpStdioOptions,
 } from "./types";
+import { createSafeMcpFetch, parseAndValidateMcpUrl } from "./url-safety";
 
 const CORE_CLIENT_VERSION = readCorePackageVersion();
 
@@ -30,10 +31,15 @@ export const mcp = {
     return {
       name: options.name,
       async connect(): Promise<McpClient> {
+        assertNoCustomMcpFetch(options.transport?.fetch);
+        const url = parseAndValidateMcpUrl(options.url);
         const client = createSdkClient();
         await client.connect(
           asSdkTransport(
-            new StreamableHTTPClientTransport(new URL(options.url), options.transport),
+            new StreamableHTTPClientTransport(url, {
+              ...options.transport,
+              fetch: createSafeMcpFetch(),
+            }),
           ),
         );
         return client as McpClient;
@@ -45,15 +51,30 @@ export const mcp = {
     return {
       name: options.name,
       async connect(): Promise<McpClient> {
+        assertNoCustomMcpFetch(options.transport?.fetch);
+        const url = parseAndValidateMcpUrl(options.url);
         const client = createSdkClient();
         await client.connect(
-          asSdkTransport(new SSEClientTransport(new URL(options.url), options.transport)),
+          asSdkTransport(
+            new SSEClientTransport(url, {
+              ...options.transport,
+              fetch: createSafeMcpFetch(),
+            }),
+          ),
         );
         return client as McpClient;
       },
     };
   },
 };
+
+function assertNoCustomMcpFetch(fetch: unknown): void {
+  if (fetch !== undefined) {
+    throw new Error(
+      "Custom MCP transport fetch implementations are not allowed because they can bypass SSRF protection",
+    );
+  }
+}
 
 function createSdkClient(): Client {
   return new Client({

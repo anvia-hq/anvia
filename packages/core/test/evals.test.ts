@@ -314,6 +314,52 @@ describe("evals", () => {
     expect(statuses).toEqual(["failed"]);
   });
 
+  it("waits for active reporters before ending a failed concurrent run", async () => {
+    const events: string[] = [];
+    let markActiveStarted: () => void = () => {};
+    const activeStarted = new Promise<void>((resolve) => {
+      markActiveStarted = resolve;
+    });
+    const suite = runEvalSuite({
+      name: "strict-concurrent-run",
+      cases: [
+        { id: "failure", input: "failure", expected: "failure" },
+        { id: "active", input: "active", expected: "active" },
+        { id: "not-started", input: "not-started", expected: "not-started" },
+      ],
+      target: async (input) => input,
+      metrics: [exactMatch()],
+      reporters: [
+        {
+          report: async ({ case: testCase }) => {
+            if (testCase.id === "failure") {
+              await activeStarted;
+              events.push("failure");
+              throw new Error("publish failed");
+            }
+            if (testCase.id === "active") {
+              events.push("active-start");
+              markActiveStarted();
+              await new Promise((resolve) => setTimeout(resolve, 20));
+              events.push("active-end");
+              return;
+            }
+            events.push("late-result");
+          },
+          onRunEnd: () => {
+            events.push("run-end");
+          },
+        },
+      ],
+      concurrency: 2,
+      failOnReporterError: true,
+    });
+
+    await expect(suite).rejects.toThrow("publish failed");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(events).toEqual(["active-start", "failure", "active-end", "run-end"]);
+  });
+
   it("resolves default and selected trace references for reporters", async () => {
     expect(
       resolveEvalTraceRef({

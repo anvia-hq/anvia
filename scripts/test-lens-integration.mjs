@@ -70,7 +70,14 @@ if (payload.outcome !== "pass")
 
 await waitFor(async () => {
   const [traces, evaluations, runs] = clickhouse(
-    `SELECT (SELECT count() FROM trace_summaries FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}'), (SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' AND run_id='${runId}'), (SELECT count() FROM evaluation_runs FINAL WHERE project_id='${projectId}' AND id='${runId}' AND status='completed') FORMAT TabSeparatedRaw`,
+    `SELECT
+      (SELECT count() FROM trace_summaries FINAL
+        WHERE project_id='${projectId}' AND trace_id='${traceId}'),
+      (SELECT count() FROM evaluation_results FINAL
+        WHERE project_id='${projectId}' AND trace_id='${traceId}' AND run_id='${runId}'),
+      (SELECT count() FROM evaluation_runs FINAL
+        WHERE project_id='${projectId}' AND id='${runId}' AND status='completed')
+      FORMAT TabSeparatedRaw`,
   )
     .trim()
     .split("\t")
@@ -80,7 +87,12 @@ await waitFor(async () => {
 
 const evaluation = JSON.parse(
   clickhouse(
-    `SELECT run_id, trace_id, observation_id, suite_name, case_id, metric_name, outcome, service_name, environment, release FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' ORDER BY timestamp DESC LIMIT 1 FORMAT JSONEachRow`,
+    `SELECT run_id, trace_id, observation_id, suite_name, case_id, metric_name, outcome,
+      service_name, environment, release
+      FROM evaluation_results FINAL
+      WHERE project_id='${projectId}' AND trace_id='${traceId}'
+      ORDER BY timestamp DESC LIMIT 1
+      FORMAT JSONEachRow`,
   ).trim(),
 );
 if (evaluation.observation_id !== observationId) {

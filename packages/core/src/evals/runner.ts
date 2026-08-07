@@ -1,4 +1,3 @@
-import { mapWithConcurrency } from "../internal/concurrency";
 import { errorMessage } from "./format";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "./outcome";
 import { defaultEvalTraceSelector } from "./reporting";
@@ -47,11 +46,7 @@ export async function runEvalSuite<Input, Output, Expected = unknown>(
   }
   let results: Array<EvalCaseResult<Input, Output, Expected>>;
   try {
-    results = await mapWithConcurrency(
-      options.cases,
-      Math.max(1, Math.trunc(options.concurrency ?? 1)),
-      (testCase) => runEvalCase(options, testCase, run),
-    );
+    results = await runEvalCases(options, run);
   } catch (error) {
     await notifyRunEnd(reporters, {
       ...lifecycle,
@@ -86,6 +81,38 @@ export async function runEvalSuite<Input, Output, Expected = unknown>(
     )),
   );
   return result;
+}
+
+async function runEvalCases<Input, Output, Expected>(
+  options: RunEvalSuiteOptions<Input, Output, Expected>,
+  run: EvalRunContext,
+): Promise<Array<EvalCaseResult<Input, Output, Expected>>> {
+  const concurrency = Math.max(1, Math.trunc(options.concurrency ?? 1));
+  const results = new Array<EvalCaseResult<Input, Output, Expected>>(options.cases.length);
+  let nextIndex = 0;
+  let failure: { error: unknown } | undefined;
+
+  async function worker(): Promise<void> {
+    while (failure === undefined && nextIndex < options.cases.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        results[index] = await runEvalCase(
+          options,
+          options.cases[index] as EvalCase<Input, Expected>,
+          run,
+        );
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, options.cases.length) }, () => worker()),
+  );
+  if (failure !== undefined) throw failure.error;
+  return results;
 }
 
 async function runEvalCase<Input, Output, Expected>(

@@ -6,6 +6,7 @@ import type {
   AgentGenerationStartArgs,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,
@@ -41,6 +42,7 @@ import {
   rootSpanName,
   runEndAttributes,
   runErrorAttributes,
+  runEventAttributes,
   runStartAttributes,
   toolEndAttributes,
   toolErrorAttributes,
@@ -58,8 +60,10 @@ export const otel = {
 class OtelAgentObserver implements OtelTracing {
   private readonly tracer: Tracer;
   private readonly serviceName: string | undefined;
+  private readonly options: OtelTracingOptions;
 
   constructor(options: OtelTracingOptions) {
+    this.options = options;
     this.tracer =
       options.tracer ??
       trace.getTracer(
@@ -75,12 +79,12 @@ class OtelAgentObserver implements OtelTracing {
       rootSpanName(args),
       {
         kind: SpanKind.INTERNAL,
-        attributes: runStartAttributes(args, this.serviceName),
+        attributes: runStartAttributes(args, this.serviceName, this.options),
       },
       parentContext,
     );
 
-    return new OtelRunObserver(this.tracer, root);
+    return new OtelRunObserver(this.tracer, root, this.options);
   }
 }
 
@@ -91,6 +95,7 @@ class OtelRunObserver implements AgentRunObserver {
   constructor(
     private readonly tracer: Tracer,
     private readonly root: Span,
+    private readonly options: OtelTracingOptions,
   ) {
     const spanContext = root.spanContext();
     this.trace = {
@@ -105,11 +110,11 @@ class OtelRunObserver implements AgentRunObserver {
       `model.turn.${args.turn}`,
       {
         kind: SpanKind.CLIENT,
-        attributes: generationStartAttributes(args),
+        attributes: generationStartAttributes(args, this.options),
       },
       this.rootContext,
     );
-    return new OtelGenerationObserver(generation);
+    return new OtelGenerationObserver(generation, this.options);
   }
 
   startTool(args: AgentToolStartArgs): AgentToolObserver {
@@ -117,31 +122,45 @@ class OtelRunObserver implements AgentRunObserver {
       `tool.${args.toolName}`,
       {
         kind: SpanKind.INTERNAL,
-        attributes: toolStartAttributes(args),
+        attributes: toolStartAttributes(args, this.options),
       },
       this.rootContext,
     );
-    return new OtelToolObserver(this.tracer, tool);
+    return new OtelToolObserver(this.tracer, tool, this.options);
   }
 
   end(args: AgentRunEndArgs): void {
-    this.root.setAttributes(runEndAttributes(args));
+    this.root.setAttributes(runEndAttributes(args, this.options));
     this.root.setStatus({ code: SpanStatusCode.OK });
     this.root.end();
   }
 
   error(args: AgentRunErrorArgs): void {
     recordSpanError(this.root, args.error);
-    this.root.setAttributes(runErrorAttributes(args));
+    this.root.setAttributes(runErrorAttributes(args, this.options));
     this.root.end();
+  }
+
+  event(args: AgentRunEventArgs): void {
+    this.root.addEvent(args.name, runEventAttributes(args), eventTimestamp(args.timestamp));
   }
 }
 
+function eventTimestamp(value: Date | string | undefined): Date | undefined {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
+  if (value === undefined) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 class OtelGenerationObserver implements AgentGenerationObserver {
-  constructor(private readonly generation: Span) {}
+  constructor(
+    private readonly generation: Span,
+    private readonly options: OtelTracingOptions,
+  ) {}
 
   end(args: AgentGenerationEndArgs): void {
-    this.generation.setAttributes(generationEndAttributes(args));
+    this.generation.setAttributes(generationEndAttributes(args, this.options));
     this.generation.setStatus({ code: SpanStatusCode.OK });
     this.generation.end();
   }
@@ -170,6 +189,7 @@ class OtelToolObserver implements AgentToolObserver {
   constructor(
     private readonly tracer: Tracer,
     private readonly tool: Span,
+    private readonly options: OtelTracingOptions,
   ) {
     this.toolContext = trace.setSpan(ROOT_CONTEXT, tool);
   }
@@ -321,7 +341,7 @@ class OtelToolObserver implements AgentToolObserver {
 
   end(args: AgentToolEndArgs): void {
     this.endOpenChildren();
-    this.tool.setAttributes(toolEndAttributes(args));
+    this.tool.setAttributes(toolEndAttributes(args, this.options));
     this.tool.setStatus({ code: SpanStatusCode.OK });
     this.tool.end();
   }

@@ -1,0 +1,57 @@
+{
+  "name": "@anvia/lens",
+  "version": "0.1.0",
+  "description": "Native Anvia Lens tracing and evaluation adapter for Anvia.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/observability-lens"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "pnpm --filter @anvia/otel build",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "test": "vitest run",
+    "pretypecheck": "pnpm --filter @anvia/otel build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/otel": "workspace:*",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.220.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+    "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-logs": "^0.220.0",
+    "@opentelemetry/sdk-trace-base": "^2.9.0",
+    "@opentelemetry/sdk-trace-node": "^2.9.0"
+  },
+  "devDependencies": {
+    "@anvia/core": "workspace:*",
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": ">=0.23.0 <1.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

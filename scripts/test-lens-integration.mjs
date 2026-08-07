@@ -1,0 +1,211 @@
+import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const lensRoot = resolve(process.env.ANVIA_LENS_REPO ?? resolve(root, "../lens"));
+const options = new Set(process.argv.slice(2));
+const environment = {
+  ...loadEnvironment(await readFile(resolve(root, ".env"), "utf8")),
+  ...process.env,
+};
+
+for (const name of [
+  "ANVIA_LENS_BASE_URL",
+  "ANVIA_LENS_PUBLIC_KEY",
+  "ANVIA_LENS_SECRET_KEY",
+  "ANVIA_LENS_SERVICE_NAME",
+]) {
+  if (!environment[name]) throw new Error(`${name} is required in .env or the process environment`);
+}
+if (!/^[A-Za-z0-9_-]+$/.test(environment.ANVIA_LENS_PUBLIC_KEY)) {
+  throw new Error("ANVIA_LENS_PUBLIC_KEY contains unsupported characters");
+}
+
+if (options.has("--rebuild")) {
+  run("docker", ["compose", "up", "-d", "--build"], { cwd: lensRoot });
+} else {
+  run("docker", ["compose", "up", "-d"], { cwd: lensRoot });
+}
+assertReady();
+
+const projectId = compose([
+  "exec",
+  "-T",
+  "postgres",
+  "psql",
+  "-U",
+  "lens",
+  "-d",
+  "lens",
+  "-Atc",
+  `SELECT project_id FROM project_api_keys WHERE public_key = '${environment.ANVIA_LENS_PUBLIC_KEY}' AND revoked_at IS NULL LIMIT 1`,
+]).trim();
+if (!/^[0-9a-f-]{36}$/.test(projectId)) {
+  throw new Error("The configured public key does not resolve to an active Lens project");
+}
+
+const smoke = run("pnpm", ["--filter", "cookbook", "integrations:08"], {
+  cwd: root,
+  env: environment,
+  capture: true,
+});
+const payload = parseSmokeOutput(smoke);
+const traceId = payload.trace?.traceId;
+const observationId = payload.trace?.observationId;
+if (!/^[0-9a-f]{32}$/.test(traceId ?? "") || !/^[0-9a-f]{16}$/.test(observationId ?? "")) {
+  throw new Error("The native smoke example did not return valid trace correlation identifiers");
+}
+if (payload.outcome !== "pass")
+  throw new Error(`Expected a passing evaluation, got ${payload.outcome}`);
+
+await waitFor(async () => {
+  const [traces, evaluations] = clickhouse(
+    `SELECT (SELECT count() FROM trace_summaries FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}'), (SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}') FORMAT TabSeparatedRaw`,
+  )
+    .trim()
+    .split("\t")
+    .map(Number);
+  return traces === 1 && evaluations === 1;
+}, "trace and evaluation ingestion");
+
+const evaluation = JSON.parse(
+  clickhouse(
+    `SELECT trace_id, observation_id, suite_name, case_id, metric_name, outcome, service_name, environment, release FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' ORDER BY timestamp DESC LIMIT 1 FORMAT JSONEachRow`,
+  ).trim(),
+);
+if (evaluation.observation_id !== observationId) {
+  throw new Error("The evaluation was not correlated with the expected observation");
+}
+if (evaluation.metric_name !== "refund-policy-correctness" || evaluation.outcome !== "pass") {
+  throw new Error("The stored evaluation metric or outcome is incorrect");
+}
+
+const capturedPayloads = Number(
+  clickhouse(
+    `SELECT countIf(input IS NOT NULL OR output IS NOT NULL) FROM spans FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' FORMAT TabSeparatedRaw`,
+  ).trim(),
+);
+if (capturedPayloads !== 0) throw new Error("Safe capture exported an input or output payload");
+
+if (options.has("--durability")) {
+  compose(["restart", "clickhouse"]);
+  compose(["up", "-d", "clickhouse", "api", "worker"]);
+  await waitFor(
+    async () =>
+      Number(
+        clickhouse(
+          `SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' FORMAT TabSeparatedRaw`,
+        ).trim(),
+      ) === 1,
+    "evaluation durability after ClickHouse restart",
+  );
+  assertReady();
+}
+
+console.log(
+  JSON.stringify(
+    {
+      status: "passed",
+      projectId,
+      traceId,
+      observationId,
+      evaluation: {
+        suite: evaluation.suite_name,
+        caseId: evaluation.case_id,
+        metric: evaluation.metric_name,
+        outcome: evaluation.outcome,
+      },
+      safeCapture: true,
+      durability: options.has("--durability") ? "verified" : "not requested",
+    },
+    null,
+    2,
+  ),
+);
+
+function compose(args) {
+  return run("docker", ["compose", ...args], { cwd: lensRoot, capture: true });
+}
+
+function clickhouse(query) {
+  return compose([
+    "exec",
+    "-T",
+    "clickhouse",
+    "clickhouse-client",
+    "--database",
+    "lens",
+    "--query",
+    query,
+  ]);
+}
+
+function assertReady() {
+  const result = compose([
+    "exec",
+    "-T",
+    "api",
+    "wget",
+    "-qO-",
+    "http://127.0.0.1:3001/health/ready",
+  ]);
+  if (JSON.parse(result).status !== "ready") throw new Error("Lens API is not ready");
+}
+
+function run(command, args, settings = {}) {
+  const result = spawnSync(command, args, {
+    cwd: settings.cwd,
+    env: settings.env,
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+    stdio: settings.capture ? "pipe" : "inherit",
+  });
+  if (result.status !== 0) {
+    const details = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
+    throw new Error(
+      `${command} failed with exit code ${result.status}${details ? `:\n${details}` : ""}`,
+    );
+  }
+  return result.stdout ?? "";
+}
+
+function parseSmokeOutput(output) {
+  const start = output.indexOf("{");
+  if (start < 0) throw new Error("The native smoke example did not print a JSON result");
+  return JSON.parse(output.slice(start));
+}
+
+async function waitFor(check, label) {
+  let lastError;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      if (await check()) return;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+  }
+  throw new Error(`Timed out waiting for ${label}`, { cause: lastError });
+}
+
+function loadEnvironment(source) {
+  return Object.fromEntries(
+    source
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"))
+      .map((line) => {
+        const separator = line.indexOf("=");
+        if (separator < 1) return [line, ""];
+        const key = line.slice(0, separator).trim();
+        const raw = line.slice(separator + 1).trim();
+        const value =
+          (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))
+            ? raw.slice(1, -1)
+            : raw;
+        return [key, value];
+      }),
+  );
+}

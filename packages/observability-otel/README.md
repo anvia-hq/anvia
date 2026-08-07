@@ -25,6 +25,7 @@ import { otel } from "@anvia/otel";
 
 const tracing = otel.create({
   serviceName: "support-agent",
+  captureMode: "safe",
 });
 
 const client = new OpenAIClient({
@@ -43,6 +44,11 @@ console.log(response.trace?.traceId);
 ```
 
 Initialize OpenTelemetry in your application before creating spans. For OTLP HTTP, configure `@opentelemetry/sdk-node` and `@opentelemetry/exporter-trace-otlp-http` in your app process.
+
+Set `captureMode: "safe"` to record operational attributes without prompt or response bodies.
+Existing `@anvia/otel` integrations retain full capture when the option is omitted. Use
+`captureMaxBytes` to set a per-value limit and `transformInput` / `transformOutput` to redact or
+reshape payloads before export. Runtime observer events are emitted as OpenTelemetry span events.
 
 ## Eval reporting
 

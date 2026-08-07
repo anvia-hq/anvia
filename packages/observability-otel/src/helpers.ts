@@ -4,6 +4,7 @@ import type {
   AgentGenerationStartArgs,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunStartArgs,
   AgentToolEndArgs,
   AgentToolErrorArgs,
@@ -19,6 +20,7 @@ import {
   TraceFlags,
   trace,
 } from "@opentelemetry/api";
+import type { OtelTracingOptions } from "./types.js";
 
 export function rootSpanName(args: AgentRunStartArgs): string {
   return args.agentName === undefined || args.agentName.length === 0
@@ -29,48 +31,83 @@ export function rootSpanName(args: AgentRunStartArgs): string {
 export function runStartAttributes(
   args: AgentRunStartArgs,
   serviceName: string | undefined,
+  options: OtelTracingOptions = {},
 ): Attributes {
   return compactAttributes({
     "service.name": serviceName,
     "anvia.agent.name": args.agentName,
     "anvia.agent.description": args.agentDescription,
-    "anvia.agent.instructions": args.instructions,
+    "anvia.agent.instructions": capturedString(args.instructions, "input", options),
     "anvia.run.max_turns": args.maxTurns,
-    "anvia.run.prompt": jsonString(args.prompt),
-    "anvia.run.history": jsonString(args.history),
+    "anvia.run.prompt": capturedJson(args.prompt, "input", options),
+    "anvia.run.history": capturedJson(args.history, "input", options),
     "anvia.trace.name": args.trace?.name ?? args.agentName,
     "anvia.trace.user_id": args.trace?.userId,
     "anvia.trace.session_id": args.trace?.sessionId,
     "anvia.trace.tags": args.trace?.tags,
     "anvia.trace.version": args.trace?.version,
+    "anvia.prompt.name": args.promptRef?.name ?? args.trace?.promptRef?.name,
+    "anvia.prompt.version": args.promptRef?.version ?? args.trace?.promptRef?.version,
     ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata),
   });
 }
 
-export function runEndAttributes(args: AgentRunEndArgs): Attributes {
+export function runEventAttributes(args: AgentRunEventArgs): Attributes {
   return compactAttributes({
-    "anvia.run.output": args.output,
-    "anvia.run.messages": jsonString(args.messages),
+    "anvia.event.level": args.level,
+    ...metadataAttributes("anvia.event.attributes", args.attributes),
+  });
+}
+
+export function runEndAttributes(
+  args: AgentRunEndArgs,
+  options: OtelTracingOptions = {},
+): Attributes {
+  return compactAttributes({
+    "anvia.run.output": capturedString(args.output, "output", options),
+    "anvia.run.messages": capturedJson(args.messages, "output", options),
     ...usageAttributes(args.usage),
   });
 }
 
-export function runErrorAttributes(args: AgentRunErrorArgs): Attributes {
+export function runErrorAttributes(
+  args: AgentRunErrorArgs,
+  options: OtelTracingOptions = {},
+): Attributes {
   return compactAttributes({
     "anvia.run.error": errorMessage(args.error),
-    "anvia.run.messages": jsonString(args.messages),
+    "anvia.run.messages": capturedJson(args.messages, "output", options),
     ...usageAttributes(args.usage),
   });
 }
 
-export function generationStartAttributes(args: AgentGenerationStartArgs): Attributes {
+export function generationStartAttributes(
+  args: AgentGenerationStartArgs,
+  options: OtelTracingOptions = {},
+): Attributes {
   const params = modelParameters(args.request);
   return compactAttributes({
     "anvia.generation.turn": args.turn,
-    "anvia.generation.input": jsonString(modelInputMessages(args.request.chatHistory)),
+    "anvia.generation.input": capturedJson(
+      modelInputMessages(args.request.chatHistory),
+      "input",
+      options,
+    ),
     "anvia.generation.model": args.request.model ?? "default",
     "anvia.generation.tool_count": args.request.tools.length,
     "anvia.generation.has_output_schema": args.request.outputSchema !== undefined,
+    "anvia.generation.provider": args.modelInfo?.provider,
+    "anvia.generation.default_model": args.modelInfo?.defaultModel,
+    "anvia.generation.documents": fullCapture(args.request.documents, "input", options),
+    "anvia.generation.tool_definitions": fullCapture(args.request.tools, "input", options),
+    "anvia.generation.provider_tools": fullCapture(args.request.providerTools, "input", options),
+    "anvia.generation.output_schema": fullCapture(args.request.outputSchema, "input", options),
+    "anvia.generation.additional_params": fullCapture(
+      args.request.additionalParams,
+      "input",
+      options,
+    ),
+    "anvia.generation.provider_request": fullCapture(args.providerRequest, "input", options),
     ...params,
   });
 }
@@ -88,33 +125,48 @@ export function modelInputMessages(messages: Message[]): Message[] {
   return messages.map(modelInputMessage);
 }
 
-export function generationEndAttributes(args: AgentGenerationEndArgs): Attributes {
+export function generationEndAttributes(
+  args: AgentGenerationEndArgs,
+  options: OtelTracingOptions = {},
+): Attributes {
   return compactAttributes({
     "anvia.generation.turn": args.turn,
     "anvia.generation.message_id": args.response.messageId,
-    "anvia.generation.output": jsonString(args.response.choice),
-    "anvia.generation.output_text": textFromAssistantContent(args.response.choice),
+    "anvia.generation.output": capturedJson(args.response.choice, "output", options),
+    "anvia.generation.output_text": capturedString(
+      textFromAssistantContent(args.response.choice),
+      "output",
+      options,
+    ),
     "anvia.generation.first_delta_ms": args.firstDeltaMs,
     ...usageAttributes(args.response.usage),
   });
 }
 
-export function toolStartAttributes(args: AgentToolStartArgs): Attributes {
+export function toolStartAttributes(
+  args: AgentToolStartArgs,
+  options: OtelTracingOptions = {},
+): Attributes {
   return compactAttributes({
     "anvia.tool.name": args.toolName,
     "anvia.tool.turn": args.turn,
-    "anvia.tool.args": args.args,
-    "anvia.tool.call": jsonString(args.toolCall),
+    "anvia.tool.args": capturedString(args.args, "input", options),
+    "anvia.tool.call": capturedJson(args.toolCall, "input", options),
+    "anvia.tool.definition": fullCapture(args.toolDefinition, "input", options),
+    "anvia.tool.metadata": fullCapture(args.toolMetadata, "input", options),
     "anvia.tool.internal_call_id": args.internalCallId,
     "anvia.tool.call_id": args.toolCallId,
   });
 }
 
-export function toolEndAttributes(args: AgentToolEndArgs): Attributes {
+export function toolEndAttributes(
+  args: AgentToolEndArgs,
+  options: OtelTracingOptions = {},
+): Attributes {
   return compactAttributes({
     "anvia.tool.name": args.toolName,
     "anvia.tool.turn": args.turn,
-    "anvia.tool.result": args.result,
+    "anvia.tool.result": capturedString(args.result, "output", options),
     "anvia.tool.skipped": args.skipped,
     "anvia.tool.internal_call_id": args.internalCallId,
     "anvia.tool.call_id": args.toolCallId,
@@ -239,6 +291,47 @@ export function jsonString(value: unknown): string {
   } catch {
     return "<failed to serialize>";
   }
+}
+
+function fullCapture(
+  value: unknown,
+  direction: "input" | "output",
+  options: OtelTracingOptions,
+): string | undefined {
+  return options.captureMode === "full" && value !== undefined
+    ? capturedJson(value, direction, options)
+    : undefined;
+}
+
+function capturedJson(
+  value: unknown,
+  direction: "input" | "output",
+  options: OtelTracingOptions,
+): string | undefined {
+  if (options.captureMode === "safe") return undefined;
+  const transform = direction === "input" ? options.transformInput : options.transformOutput;
+  return boundString(jsonString(transform?.(value) ?? value), options.captureMaxBytes);
+}
+
+function capturedString(
+  value: string | undefined,
+  direction: "input" | "output",
+  options: OtelTracingOptions,
+): string | undefined {
+  if (value === undefined || options.captureMode === "safe") return undefined;
+  const transform = direction === "input" ? options.transformInput : options.transformOutput;
+  const transformed = transform?.(value) ?? value;
+  return boundString(
+    typeof transformed === "string" ? transformed : jsonString(transformed),
+    options.captureMaxBytes,
+  );
+}
+
+function boundString(value: string, maxBytes: number | undefined): string {
+  if (maxBytes === undefined || !Number.isFinite(maxBytes) || maxBytes <= 0) return value;
+  const bytes = new TextEncoder().encode(value);
+  if (bytes.byteLength <= maxBytes) return value;
+  return `${new TextDecoder().decode(bytes.slice(0, Math.max(0, maxBytes - 14)))}<truncated>`;
 }
 
 function serializeMetadataValue(value: unknown): string | undefined {

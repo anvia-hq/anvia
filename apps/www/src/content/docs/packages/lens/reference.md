@@ -43,9 +43,24 @@ the isolated Lens log provider. Evaluation metadata and case payloads are omitte
 Enable them independently with `includeMetadata: true` and `includePayloads: true`. Captured
 evaluation payloads inherit the tracing instance's redaction transforms and capture-size limit.
 
+## createLensDatasetClient
+
+```ts
+function createLensDatasetClient(
+  tracing: LensTracing,
+  options?: LensDatasetClientOptions,
+): LensDatasetClient;
+```
+
+Creates an authenticated client for published managed datasets. `getDataset(name, { version? })`
+returns a `LensDataset` with paginated `LensDatasetItem` values. It selects the latest published
+version when no version is supplied and throws `LensDatasetError` for API, network, and invalid
+response failures.
+
 ## Configuration and redaction helpers
 
 `resolveLensConfig` resolves and validates configuration. `createLensRedactor` returns a deep,
 non-mutating redactor. `DEFAULT_PATTERNS` contains the built-in patterns. Public supporting types
-are `LensCaptureMode`, `LensEvalReporter`, `LensEvalReporterOptions`, `LensRedactionOptions`,
-`LensRedactorPattern`, `LensTracing`, and `LensTracingOptions`.
+are `LensCaptureMode`, `LensDataset`, `LensDatasetClient`, `LensDatasetClientOptions`,
+`LensDatasetGetOptions`, `LensDatasetItem`, `LensEvalReporter`, `LensEvalReporterOptions`,
+`LensRedactionOptions`, `LensRedactorPattern`, `LensTracing`, and `LensTracingOptions`.

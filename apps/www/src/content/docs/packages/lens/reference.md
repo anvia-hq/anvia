@@ -38,8 +38,9 @@ function createLensEvalReporter<Input, Output, Expected>(
 ): LensEvalReporter<Input, Output, Expected>;
 ```
 
-Emits standard `gen_ai.evaluation.result` log events through the isolated Lens log provider.
-Evaluation metadata is omitted by default and can be enabled with `includeMetadata: true`.
+Emits evaluation-run lifecycle events and standard `gen_ai.evaluation.result` log events through
+the isolated Lens log provider. Evaluation metadata is omitted by default and can be enabled with
+`includeMetadata: true`.
 
 ## Configuration and redaction helpers
 

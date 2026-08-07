@@ -8,6 +8,7 @@ pnpm add @anvia/lens @anvia/core
 
 ```ts
 import { AgentBuilder, type CompletionModel } from "@anvia/core";
+import { contains, runEvalSuite } from "@anvia/core/evals";
 import { createLensEvalReporter, lens } from "@anvia/lens";
 
 declare const model: CompletionModel; // Supplied by your provider adapter.
@@ -24,14 +25,25 @@ const tracing = lens.create({
 const agent = new AgentBuilder("support", model).observe(tracing).build();
 
 const reporter = createLensEvalReporter(tracing);
+
+const suite = await runEvalSuite({
+  name: "support-regression",
+  run: { datasetName: "support-cases", datasetVersion: "v2" },
+  cases: [{ id: "refund", input: "Request a refund", expected: "refund" }],
+  target: async (input) => input,
+  metrics: [contains()],
+  reporters: [reporter],
+});
+
+console.log(suite.run.id);
 ```
 
 `lens.create()` owns isolated OpenTelemetry trace and log providers. It does not register global
 providers or capture unrelated application telemetry. Call `flush()` in short-lived processes and
 `shutdown()` before exit.
 
-Safe capture omits prompt and response bodies, and the Lens eval reporter omits case, metric, and
-outcome metadata by default. Opt into payload capture with `captureMode: "full"` and eval metadata
+Safe capture omits prompt and response bodies, and the Lens eval reporter omits case, metric,
+outcome, and run metadata by default. Opt into payload capture with `captureMode: "full"` and eval metadata
 with `createLensEvalReporter(tracing, { includeMetadata: true })`.
 
 Configuration can also be provided through `ANVIA_LENS_BASE_URL`, `ANVIA_LENS_PUBLIC_KEY`,

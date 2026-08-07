@@ -28,6 +28,13 @@ describe("OpenTelemetry eval reporter", () => {
     const observationId = "1234567890abcdef";
 
     await reporter.report({
+      run: {
+        id: "run-1",
+        startedAt: "2026-08-07T00:00:00.000Z",
+        datasetName: "support-cases",
+        datasetVersion: "v2",
+        metadata: { commitSha: "abc123" },
+      },
       suiteName: "rag-quality",
       case: { id: "case-1", input: "question", metadata: { scenario: "refund" } },
       output: "answer",
@@ -59,6 +66,11 @@ describe("OpenTelemetry eval reporter", () => {
         "gen_ai.response.id": "response-1",
         "anvia.eval.suite.name": "rag-quality",
         "anvia.eval.id": expect.any(String),
+        "anvia.eval.run.id": "run-1",
+        "anvia.eval.run.started_at": "2026-08-07T00:00:00.000Z",
+        "anvia.eval.run.dataset.name": "support-cases",
+        "anvia.eval.run.dataset.version": "v2",
+        "anvia.eval.run.metadata": { commitSha: "abc123" },
         "anvia.eval.case.id": "case-1",
         "anvia.eval.outcome": "pass",
         "anvia.eval.data_type": "NUMERIC",
@@ -71,6 +83,52 @@ describe("OpenTelemetry eval reporter", () => {
     expect(trace.getSpanContext(record.context as Context)).toMatchObject({
       traceId,
       spanId: observationId,
+    });
+  });
+
+  it("emits evaluation run lifecycle events", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const reporter = createOtelEvalReporter({ logger: fakeLogger(emit) });
+    const run = {
+      id: "run-1",
+      startedAt: "2026-08-07T00:00:00.000Z",
+      datasetName: "support-cases",
+      datasetVersion: "v2",
+      metadata: { commitSha: "abc123" },
+    };
+
+    await reporter.onRunStart?.({
+      run,
+      suiteName: "release-gate",
+      caseCount: 2,
+      metricNames: ["quality", "safety"],
+    });
+    await reporter.onRunEnd?.({
+      run,
+      suiteName: "release-gate",
+      caseCount: 2,
+      metricNames: ["quality", "safety"],
+      status: "completed",
+      completedAt: "2026-08-07T00:00:02.000Z",
+      durationMs: 2_000,
+      passed: 3,
+      failed: 1,
+      invalid: 0,
+    });
+
+    expect(emit.mock.calls.map(([record]) => record.eventName)).toEqual([
+      "anvia.eval.run.started",
+      "anvia.eval.run.finished",
+    ]);
+    expect(emit.mock.calls[1]?.[0]).toMatchObject({
+      severityNumber: SeverityNumber.INFO,
+      attributes: {
+        "anvia.eval.run.id": "run-1",
+        "anvia.eval.run.status": "completed",
+        "anvia.eval.run.passed": 3,
+        "anvia.eval.run.failed": 1,
+        "anvia.eval.run.invalid": 0,
+      },
     });
   });
 

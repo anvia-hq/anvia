@@ -1,5 +1,16 @@
 # @anvia/core
 
+## 0.25.0
+
+### Minor Changes
+
+- 36f8324: Add first-party eval CLI result handling, deterministic and abstention metrics, explicit case and
+  metric totals, score direction, usage and optional cost aggregation, and negative-control
+  assertions. Add optional Lens environment configuration, bundled eval setup, and run-end flushing,
+  and migrate observability and Studio consumers to the richer eval result contract. Improve eval
+  type safety with readonly suite definitions, metric-aware case requirements, literal-name score
+  maps, contravariant reporters, suite-bound custom metrics, and explicit prompt output selectors.
+
 ## 0.24.0
 
 ### Minor Changes

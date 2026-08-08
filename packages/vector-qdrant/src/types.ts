@@ -15,7 +15,7 @@ export type QdrantClientLike = {
   getCollection(collectionName: string): Promise<unknown>;
   createCollection(collectionName: string, options: Record<string, unknown>): Promise<unknown>;
   upsert(collectionName: string, options: Record<string, unknown>): Promise<unknown>;
-  search(collectionName: string, options: Record<string, unknown>): Promise<unknown>;
+  search?(collectionName: string, options: Record<string, unknown>): Promise<unknown>;
   query?(collectionName: string, options: Record<string, unknown>): Promise<unknown>;
 };
 

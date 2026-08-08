@@ -146,8 +146,12 @@ class LensAgentObserver implements InternalLensTracing {
     });
     const loggerProvider = new LoggerProvider({
       resource,
-      processors: [new BatchLogRecordProcessor({ exporter: logExporter })],
-      forceFlushTimeoutMillis: config.timeoutMs,
+      processors: [
+        new BatchLogRecordProcessor({
+          exporter: logExporter,
+          exportTimeoutMillis: config.timeoutMs,
+        }),
+      ],
     });
     const logger = loggerProvider.getLogger("@anvia/lens", "0.1.0");
     const redactor = createLensRedactor(options.redaction);

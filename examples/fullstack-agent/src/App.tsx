@@ -139,7 +139,7 @@ export function App() {
 
             <Composer.Root className="mx-auto mb-[18px] w-[min(760px,calc(100vw_-_32px))] rounded-[26px] border border-[#d9d9d9] bg-white p-2.5 shadow-[0_10px_30px_rgb(0_0_0_/_8%)] max-sm:w-[calc(100vw_-_20px)]">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-                <Composer.Input
+                <Composer.TextareaInput
                   className="min-h-10 w-full min-w-0 resize-none border-0 bg-transparent px-2.5 py-[9px] text-neutral-900 leading-[1.4] outline-none placeholder:text-[#8a8a8a] disabled:cursor-not-allowed disabled:opacity-50"
                   maxRows={6}
                   placeholder="Message Fullstack Completion"

@@ -85,6 +85,11 @@ class MockQdrantClient {
 
   async query(collectionName: string, options: unknown): Promise<unknown> {
     this.queries.push({ collectionName, options });
+    if (!(options && typeof options === "object" && "prefetch" in options)) {
+      return {
+        points: await this.search(collectionName, options),
+      };
+    }
     return {
       points: [
         {
@@ -310,10 +315,10 @@ describe("QdrantVectorStore", () => {
         ],
       },
     });
-    expect(client.searches[0]).toMatchObject({
+    expect(client.queries[0]).toMatchObject({
       collectionName: "docs",
       options: {
-        vector: [1, 0],
+        query: [1, 0],
         limit: 2,
         filter: { must: [{ key: "kind", match: { value: "animal" } }] },
         with_payload: true,
@@ -327,6 +332,32 @@ describe("QdrantVectorStore", () => {
         metadata: { kind: "animal" },
       },
     ]);
+  });
+
+  it("falls back to the legacy search API for custom clients", async () => {
+    const backend = new MockQdrantClient();
+    const client = {
+      getCollection: backend.getCollection.bind(backend),
+      createCollection: backend.createCollection.bind(backend),
+      upsert: backend.upsert.bind(backend),
+      search: backend.search.bind(backend),
+    };
+    const store = await QdrantVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    await store.index(new MockEmbeddingModel()).search({ query: "cat", topK: 1 });
+
+    expect(backend.searches[0]).toMatchObject({
+      collectionName: "docs",
+      options: {
+        vector: [1, 0],
+        limit: 1,
+        with_payload: true,
+      },
+    });
   });
 
   it("handles multiple embeddings with stable logical ids", async () => {
@@ -421,7 +452,9 @@ describe("QdrantVectorStore", () => {
 
   it("handles search results without payloads", async () => {
     const client = new MockQdrantClient();
-    client.search = async () => [{ id: "point-without-payload", score: 0.7 }];
+    client.query = async () => ({
+      points: [{ id: "point-without-payload", score: 0.7 }],
+    });
     const model = new MockEmbeddingModel();
     const store = await QdrantVectorStore.connect<string>({
       client,

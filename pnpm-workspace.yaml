@@ -12,3 +12,4 @@ allowBuilds:
 overrides:
   '@anvia/core': "workspace:*"
   apache-arrow: 18.1.0
+  prosemirror-model: 1.25.11

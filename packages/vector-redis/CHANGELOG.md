@@ -1,5 +1,11 @@
 # @anvia/redis
 
+## 0.2.7
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+
 ## 0.2.6
 
 ### Patch Changes

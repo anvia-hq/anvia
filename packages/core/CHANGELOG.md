@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 0.25.1
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+
 ## 0.25.0
 
 ### Minor Changes

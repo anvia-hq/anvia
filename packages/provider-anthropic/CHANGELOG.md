@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 0.5.1
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+
 ## 0.5.0
 
 ### Minor Changes

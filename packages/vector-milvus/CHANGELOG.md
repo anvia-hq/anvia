@@ -1,5 +1,11 @@
 # @anvia/milvus
 
+## 0.3.8
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+
 ## 0.3.7
 
 ### Patch Changes

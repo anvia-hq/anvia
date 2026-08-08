@@ -1,5 +1,11 @@
 # @anvia/memory-prisma
 
+## 0.3.1
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -1,5 +1,13 @@
 # @anvia/lens
 
+## 0.5.1
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+- Updated dependencies [615b767]
+  - @anvia/otel@0.7.1
+
 ## 0.5.0
 
 ### Minor Changes

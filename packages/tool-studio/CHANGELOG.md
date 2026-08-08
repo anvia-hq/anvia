@@ -1,5 +1,15 @@
 # @anvia/studio
 
+## 0.7.53
+
+### Patch Changes
+
+- 615b767: Publish the updated upstream runtime dependencies.
+- Updated dependencies [615b767]
+  - @anvia/react-ui@0.7.1
+  - @anvia/react@0.11.4
+  - @anvia/server@0.7.4
+
 ## 0.7.52
 
 ### Patch Changes

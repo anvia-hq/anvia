@@ -30,6 +30,7 @@ export const mcp = {
     return {
       name: options.name,
       async connect(): Promise<McpClient> {
+        validateMcpUrl(options.url);
         const client = createSdkClient();
         await client.connect(
           asSdkTransport(
@@ -45,6 +46,7 @@ export const mcp = {
     return {
       name: options.name,
       async connect(): Promise<McpClient> {
+        validateMcpUrl(options.url);
         const client = createSdkClient();
         await client.connect(
           asSdkTransport(new SSEClientTransport(new URL(options.url), options.transport)),
@@ -75,4 +77,57 @@ function readCorePackageVersion(): string {
 
 function asSdkTransport(transport: unknown): Parameters<Client["connect"]>[0] {
   return transport as Parameters<Client["connect"]>[0];
+}
+
+function validateMcpUrl(url: string | URL): void {
+  let parsed: URL;
+  try {
+    parsed = typeof url === "string" ? new URL(url) : url;
+  } catch {
+    throw new Error(`Invalid MCP URL: ${url}`);
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block localhost and loopback addresses
+  if (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    hostname.startsWith("127.")
+  ) {
+    throw new Error(`MCP URL blocked: localhost not allowed (${hostname})`);
+  }
+
+  // Block cloud metadata endpoints first (more specific)
+  if (
+    hostname === "169.254.169.254" ||
+    hostname === "fd00:ec2::254" ||
+    hostname === "[fd00:ec2::254]"
+  ) {
+    throw new Error(`MCP URL blocked: cloud metadata endpoint not allowed (${hostname})`);
+  }
+
+  const privateIPv4Patterns = [
+    /^10\./,
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+    /^192\.168\./,
+    /^169\.254\./,
+  ];
+
+  if (privateIPv4Patterns.some((pattern) => pattern.test(hostname))) {
+    throw new Error(`MCP URL blocked: private IP range not allowed (${hostname})`);
+  }
+
+  // Block link-local IPv6 ranges
+  const privateIPv6Patterns = [
+    /^\[?fe80:/i, // Link-local (with or without brackets)
+    /^\[?fc00:/i, // Unique local
+    /^\[?fd00:/i, // Unique local
+  ];
+
+  if (privateIPv6Patterns.some((pattern) => pattern.test(hostname))) {
+    throw new Error(`MCP URL blocked: private IPv6 range not allowed (${hostname})`);
+  }
 }

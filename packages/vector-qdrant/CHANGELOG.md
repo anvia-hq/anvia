@@ -1,5 +1,12 @@
 # @anvia/qdrant
 
+## 0.3.1
+
+### Patch Changes
+
+- 940e071: Update the Qdrant client dependency and use its universal query API for dense searches while
+  retaining compatibility with custom clients that implement the legacy search API.
+
 ## 0.3.0
 
 ### Minor Changes

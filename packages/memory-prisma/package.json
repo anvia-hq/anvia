@@ -42,6 +42,6 @@
   },
   "peerDependencies": {
     "@anvia/core": ">=0.13.0 <1.0.0",
-    "@prisma/client": ">=6.2.0 <8.0.0"
+    "@prisma/client": ">=7.9.1 <8.0.0"
   }
 }

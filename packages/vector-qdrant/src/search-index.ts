@@ -38,12 +38,27 @@ export class QdrantVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     if (this.hybrid === undefined) {
       const queryEmbedding = await embedText(this.model, request.query);
-      const response = await this.client.search(this.collectionName, {
-        vector: queryEmbedding.vector,
-        limit: request.topK,
-        filter: filterToQdrantFilter(request.filter),
-        with_payload: true,
-      });
+      const filter = filterToQdrantFilter(request.filter);
+      const response =
+        typeof this.client.query === "function"
+          ? await this.client.query(this.collectionName, {
+              query: queryEmbedding.vector,
+              limit: request.topK,
+              filter,
+              with_payload: true,
+            })
+          : typeof this.client.search === "function"
+            ? await this.client.search(this.collectionName, {
+                vector: queryEmbedding.vector,
+                limit: request.topK,
+                filter,
+                with_payload: true,
+              })
+            : (() => {
+                throw new TypeError(
+                  "Qdrant search requires a client that implements query(...) or search(...).",
+                );
+              })();
       return parseQueryResults<T, Metadata>(response, request.threshold);
     }
 

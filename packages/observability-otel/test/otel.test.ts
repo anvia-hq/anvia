@@ -420,6 +420,10 @@ describe("otel", () => {
       "anvia.usage.output_tokens": 3,
       "anvia.usage.total_tokens": 5,
     });
+    expect(JSON.parse(String(generationSpan?.attributes["anvia.generation.input"]))).toEqual({
+      instructions: "Answer clearly.",
+      messages: [userMessage("hello")],
+    });
     expect(generationSpan?.status).toEqual({ code: SpanStatusCode.OK });
     expect(generationSpan?.ended).toBe(true);
 
@@ -571,13 +575,18 @@ describe("otel", () => {
     await run?.startGeneration?.({
       ...generationStartArgs(),
       request: {
-        ...generationStartArgs().request,
+        model: "test-model",
         chatHistory: [Message.user("hello", { metadata })],
+        documents: [],
+        tools: [],
+        additionalParams: {},
       },
     });
-    expect(
-      JSON.parse(String(tracer.spans[1]?.attributes["anvia.generation.input"]))[0],
-    ).not.toHaveProperty("metadata");
+    const generationInput = JSON.parse(
+      String(tracer.spans[1]?.attributes["anvia.generation.input"]),
+    );
+    expect(generationInput).not.toHaveProperty("instructions");
+    expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run?.end({
       output: "done",
@@ -588,6 +597,34 @@ describe("otel", () => {
       "metadata",
       metadata,
     );
+  });
+
+  it("transforms structured generation instructions and messages before capture", async () => {
+    const tracer = new FakeTracer();
+    const tracing = otel.create({
+      tracer: tracer.tracer,
+      transformInput: (value) =>
+        JSON.parse(JSON.stringify(value).replaceAll("private", "<redacted>")),
+    });
+    const run = await tracing.startRun({
+      prompt: userMessage("private prompt"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    await run?.startGeneration?.({
+      ...generationStartArgs(),
+      request: {
+        ...generationStartArgs().request,
+        instructions: "private instructions",
+        chatHistory: [userMessage("private message")],
+      },
+    });
+
+    expect(JSON.parse(String(tracer.spans[1]?.attributes["anvia.generation.input"]))).toEqual({
+      instructions: "<redacted> instructions",
+      messages: [userMessage("<redacted> message")],
+    });
   });
 
   it("records generation request options and output schema metadata", async () => {
@@ -757,6 +794,28 @@ describe("otel", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
+          type: "generation_start",
+          turn: 1,
+          request: {
+            ...generationStartArgs().request,
+            instructions: "Use the child policy.",
+            chatHistory: [userMessage("inspect")],
+          },
+          modelInfo: { provider: "test", defaultModel: "test-model" },
+        },
+      },
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "ask_child",
+      args: '{"prompt":"inspect"}',
+      toolCall: parentToolCall,
+      internalCallId: "internal-child",
+      toolCallId: "call-child",
+      event: {
+        agentId: "child",
+        agentName: "Child Agent",
+        event: {
           type: "tool_call",
           turn: 1,
           toolCall: AssistantContent.toolCall("call-add", "add", { x: 2, y: 5 }),
@@ -843,6 +902,10 @@ describe("otel", () => {
 
     expect(childAgent?.parentSpanId).toBe(parentTool?.spanContextValue.spanId);
     expect(childGeneration?.parentSpanId).toBe(childAgent?.spanContextValue.spanId);
+    expect(JSON.parse(String(childGeneration?.attributes["anvia.generation.input"]))).toEqual({
+      instructions: "Use the child policy.",
+      messages: [userMessage("inspect")],
+    });
     expect(childTool?.parentSpanId).toBe(childAgent?.spanContextValue.spanId);
     expect(childTool?.attributes).toMatchObject({
       "anvia.parent_tool.name": "ask_child",
@@ -883,10 +946,14 @@ describe("otel", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "turn_start",
+          type: "generation_start",
           turn: 1,
-          prompt: userMessage("private child prompt"),
-          history: [userMessage("private child history")],
+          request: {
+            ...generationStartArgs().request,
+            instructions: "private child instructions",
+            chatHistory: [userMessage("private child prompt")],
+          },
+          modelInfo: { provider: "test", defaultModel: "test-model" },
         },
       },
     });
@@ -1205,6 +1272,7 @@ function generationStartArgs(): AgentGenerationStartArgs {
     turn: 1,
     request: {
       model: "test-model",
+      instructions: "Answer clearly.",
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],

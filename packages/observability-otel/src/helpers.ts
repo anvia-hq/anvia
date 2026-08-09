@@ -89,7 +89,10 @@ export function generationStartAttributes(
   return compactAttributes({
     "anvia.generation.turn": args.turn,
     "anvia.generation.input": capturedJson(
-      modelInputMessages(args.request.chatHistory),
+      {
+        instructions: args.request.instructions,
+        messages: modelInputMessages(args.request.chatHistory),
+      },
       "input",
       options,
     ),

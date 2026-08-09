@@ -208,30 +208,32 @@ class OtelToolObserver implements AgentToolObserver {
     const agent = this.childAgent(agentId, agentName, args);
 
     if (child.type === "turn_start") {
-      const generation = this.tracer.startSpan(
-        `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
-        {
-          kind: SpanKind.CLIENT,
-          attributes: compactAttributes({
-            "anvia.child_agent.id": agentId,
-            "anvia.child_agent.name": agentName,
-            "anvia.child_agent.turn": childTurn,
-            "anvia.parent_tool.name": args.toolName,
-            "anvia.parent_tool.internal_call_id": args.internalCallId,
-            "anvia.parent_tool.call_id": args.toolCallId,
-            "anvia.generation.input": capturedJson(
-              {
-                prompt: modelInputMessage(child.prompt as Message),
-                history: modelInputMessages(child.history as Message[]),
-              },
-              "input",
-              this.options,
-            ),
-          }),
-        },
-        trace.setSpan(ROOT_CONTEXT, agent),
+      this.childGeneration(agentId, agentName, childTurn, args, agent).setAttributes(
+        compactAttributes({
+          "anvia.generation.input": capturedJson(
+            {
+              prompt: modelInputMessage(child.prompt as Message),
+              history: modelInputMessages(child.history as Message[]),
+            },
+            "input",
+            this.options,
+          ),
+        }),
       );
-      this.childGenerations.set(generationKey(agentId, childTurn), generation);
+      return;
+    }
+
+    if (child.type === "generation_start" && isRecord(child.request)) {
+      const generationArgs: AgentGenerationStartArgs = {
+        turn: childTurn,
+        request: child.request as AgentGenerationStartArgs["request"],
+      };
+      if (isRecord(child.modelInfo)) {
+        generationArgs.modelInfo = child.modelInfo as AgentGenerationStartArgs["modelInfo"];
+      }
+      this.childGeneration(agentId, agentName, childTurn, args, agent).setAttributes(
+        generationStartAttributes(generationArgs, this.options),
+      );
       return;
     }
 
@@ -399,6 +401,35 @@ class OtelToolObserver implements AgentToolObserver {
     );
     this.childAgents.set(agentId, span);
     return span;
+  }
+
+  private childGeneration(
+    agentId: string,
+    agentName: string | undefined,
+    turn: number,
+    args: AgentToolStartArgs,
+    agent: Span,
+  ): Span {
+    const key = generationKey(agentId, turn);
+    const existing = this.childGenerations.get(key);
+    if (existing !== undefined) return existing;
+    const generation = this.tracer.startSpan(
+      `${agentLabel(agentId, agentName)}.model.turn.${turn}`,
+      {
+        kind: SpanKind.CLIENT,
+        attributes: compactAttributes({
+          "anvia.child_agent.id": agentId,
+          "anvia.child_agent.name": agentName,
+          "anvia.child_agent.turn": turn,
+          "anvia.parent_tool.name": args.toolName,
+          "anvia.parent_tool.internal_call_id": args.internalCallId,
+          "anvia.parent_tool.call_id": args.toolCallId,
+        }),
+      },
+      trace.setSpan(ROOT_CONTEXT, agent),
+    );
+    this.childGenerations.set(key, generation);
+    return generation;
   }
 
   private findChildTool(

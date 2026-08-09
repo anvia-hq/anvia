@@ -1,5 +1,13 @@
 # @anvia/otel
 
+## 0.8.0
+
+### Minor Changes
+
+- 4b9f9cc: Include request instructions in top-level and streamed child-agent generation inputs. Full-capture
+  `anvia.generation.input` payloads now use `{ instructions, messages }`; input transforms receive the
+  same structured object. Safe capture continues to omit the payload.
+
 ## 0.7.1
 
 ### Patch Changes

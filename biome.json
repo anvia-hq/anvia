@@ -13,10 +13,6 @@
       "!**/coverage",
       "!.turbo",
       "!**/.wrangler",
-      "!docs/src/**/*.astro",
-      "!apps/www/.astro",
-      "!apps/www/src/**/*.astro",
-      "!apps/www/src/lib/models-dev-snapshot.json",
       "!pnpm-lock.yaml"
     ]
   },

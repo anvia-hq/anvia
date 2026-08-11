@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/www/public/assets/logo.png" alt="Anvia logo" width="180" />
+  <img src="https://docs.anvia.dev/logo.svg" alt="Anvia logo" width="180" />
 </p>
 
 <p align="center">
@@ -103,11 +103,11 @@ pnpm cookbook:studio:01
 
 ## Learn More
 
-- [Docs Overview](apps/www/src/content/docs/basics/overview.md)
-- [Install Packages](apps/www/src/content/docs/basics/install-packages.md)
-- [Build your first agent](apps/www/src/content/docs/basics/build-your-first-agent.md)
-- [Examples](apps/www/src/content/docs/examples/overview.md)
-- [Packages](apps/www/src/content/docs/packages/core/overview.md)
+- [Documentation](https://docs.anvia.dev/)
+- [Getting started](https://docs.anvia.dev/guide/getting-started)
+- [Core concepts](https://docs.anvia.dev/guide/core-concepts)
+- [Package catalog](https://docs.anvia.dev/packages/catalog)
+- [Core package](https://docs.anvia.dev/packages/core)
 - [Contributing](CONTRIBUTING.md)
 
 ## Project Activity

@@ -1,5 +1,12 @@
 # @anvia/memory-drizzle
 
+## 0.4.0
+
+### Minor Changes
+
+- dd685cc: Add a safe `init` CLI that can dry-run, generate, or append the canonical Drizzle memory schema
+  exports with conflict and overwrite protection.
+
 ## 0.3.1
 
 ### Patch Changes

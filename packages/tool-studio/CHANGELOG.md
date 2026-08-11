@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 0.7.54
+
+### Patch Changes
+
+- @anvia/react@0.11.5
+- @anvia/server@0.7.5
+- @anvia/react-ui@0.7.1
+
 ## 0.7.53
 
 ### Patch Changes

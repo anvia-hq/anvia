@@ -5,13 +5,11 @@ Guidance for coding agents working in this repository.
 ## Project Shape
 
 Anvia is a TypeScript pnpm workspace for provider-agnostic AI runtime primitives,
-provider adapters, vector stores, observability integrations, Studio, docs, and
-examples.
+provider adapters, vector stores, observability integrations, Studio, and examples.
 
 Workspace packages are declared in `pnpm-workspace.yaml`:
 
 - `packages/*`
-- `apps/*`
 - `examples/*`
 
 Use `pnpm` from the repository root. The repo declares `pnpm@11.0.4`.
@@ -19,10 +17,9 @@ Use `pnpm` from the repository root. The repo declares `pnpm@11.0.4`.
 ## Before Editing
 
 - Check `git status --short --branch` before making changes.
-- Read the package or app files you are about to change; follow local patterns.
-- Do not edit `dist/`, coverage output, `.astro/`, `.wrangler/`, `node_modules/`,
-  generated Pagefind output, or other build artifacts by hand.
-- Keep changes scoped. Avoid mixing dependency updates, generated docs churn,
+- Read the package or example files you are about to change; follow local patterns.
+- Do not edit `dist/`, coverage output, `node_modules/`, or other build artifacts by hand.
+- Keep changes scoped. Avoid mixing dependency updates, generated artifact churn,
   formatting-only changes, and feature work unless they are required for the same
   change.
 - Never commit secrets, API keys, private prompts, customer data, credentials,
@@ -55,10 +52,6 @@ pnpm --filter @anvia/openai test
 pnpm --filter @anvia/studio typecheck
 pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
-
-pnpm --filter www reference-check
-pnpm --filter www build
-pnpm --filter www dev
 ```
 
 CI builds `@anvia/core` first, then the remaining packages:
@@ -95,7 +88,8 @@ Most publishable packages expose `./dist/index.js` and `./dist/index.d.ts`.
 3. Update `exports` in the package `package.json`.
 4. Update public re-exports from the relevant `src/index.ts` or subpath index.
 5. Add or update tests.
-6. Update docs/reference coverage when public symbols change.
+6. Update package documentation and note any external documentation impact when public symbols
+   change.
 
 Keep provider-specific SDKs out of `@anvia/core`. Provider behavior belongs in
 `packages/provider-*`; vector-store behavior belongs in `packages/vector-*`;
@@ -138,27 +132,6 @@ behavior belongs in `packages/tool-studio`.
 - Docker sandbox integration tests are skipped unless
   `ANVIA_SANDBOX_DOCKER_TESTS=1` is set.
 
-## Docs App
-
-The docs site is `apps/www`, built with Astro, MDX, Tailwind, and Pagefind.
-
-Useful commands:
-
-```sh
-pnpm www:dev
-pnpm www:reference-check
-pnpm www:build
-pnpm www:generate-package-changelogs
-pnpm --filter www generate:models-dev
-```
-
-Docs content lives under `apps/www/src/content/docs`. Package docs are driven by
-`apps/www/src/lib/packages.ts` and package reference pages. If package metadata,
-public exports, or package changelogs change, check the docs impact.
-
-Do not hand-edit generated docs unless the generator is also updated or the
-change is intentionally replacing generated output.
-
 ## Scripts
 
 Root scripts in `scripts/` are release automation:
@@ -177,20 +150,6 @@ Root scripts in `scripts/` are release automation:
 Do not run publish, preview release, GitHub release, deploy, or Discord
 notification commands unless explicitly requested.
 
-Docs scripts in `apps/www/scripts/` are maintenance/generation tools:
-
-- `check-reference-coverage.mjs`: discovers `@anvia/*` packages, reads package
-  exports, maps `dist` exports back to `src`, checks package reference docs for
-  public entrypoints and symbols, and fails on missing coverage or placeholder
-  generated text.
-- `generate-package-changelogs.ts`: mirrors each package `CHANGELOG.md` into the
-  matching docs package changelog page using `apps/www/src/lib/packages.ts`.
-- `generate-models-dev-snapshot.mjs`: fetches `https://models.dev/api.json`,
-  writes `apps/www/src/lib/models-dev-snapshot.json`, and regenerates gateway
-  provider docs under `apps/www/src/content/docs/providers/gateway/`. This script
-  uses the network and rewrites many generated files. Set
-  `MODELS_DEV_SNAPSHOT_DATE` for reproducible generated dates.
-
 Other maintenance:
 
 - `bin/check-upstream-deps.sh`: reports npm updates for external runtime
@@ -205,11 +164,6 @@ Generated files include, but are not limited to:
 
 - `dist/`
 - `coverage/`
-- `apps/www/.astro/`
-- `apps/www/dist/`
-- `apps/www/src/lib/models-dev-snapshot.json`
-- `apps/www/src/content/docs/providers/gateway/*.md`
-- docs package changelog pages generated from package `CHANGELOG.md`
 
 If a generator rewrites files unexpectedly, inspect the diff before continuing.
 
@@ -230,8 +184,8 @@ pnpm test
 
 ## Changesets And Releases
 
-Changesets are configured in `.changeset/config.json`. The ignored workspaces
-are `www`, `cookbook`, and `anvia-cli-agent`.
+Changesets are configured in `.changeset/config.json`. The ignored workspaces are `cookbook` and
+`anvia-cli-agent`.
 
 For public package behavior changes, add or update a changeset unless the user
 or maintainer explicitly says not to. Avoid versioning, publishing, creating
@@ -246,5 +200,4 @@ Before handing work back, report:
 - Any validation that was skipped and why.
 - Any generated files intentionally changed.
 
-For visible Studio or docs UI changes, include screenshots or note that no visual
-verification was run.
+For visible Studio UI changes, include screenshots or note that no visual verification was run.

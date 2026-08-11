@@ -1,6 +1,6 @@
 # Contributing to Anvia
 
-Thanks for taking the time to improve Anvia. This project is a TypeScript pnpm workspace for provider-agnostic AI runtime primitives, provider adapters, vector stores, observability integrations, Studio, docs, and runnable examples.
+Thanks for taking the time to improve Anvia. This project is a TypeScript pnpm workspace for provider-agnostic AI runtime primitives, provider adapters, vector stores, observability integrations, Studio, and runnable examples.
 
 ## Before You Start
 
@@ -17,7 +17,8 @@ Good contributions usually fall into one of these areas:
 - Vector store or embedding adapter fixes in `packages/vector-*` and `packages/embedding-*`.
 - Studio runtime or UI fixes in `packages/tool-studio`.
 - Cookbook examples that clarify an existing workflow or introduce a missing one.
-- Documentation updates in `apps/www` or package READMEs.
+- Documentation updates in package READMEs. Website documentation contributions belong in the
+  separate [`anvia-hq/documentation`](https://github.com/anvia-hq/documentation) repository.
 - Tests that capture bugs, edge cases, or public behavior.
 
 Keep changes scoped. Avoid mixing dependency updates, formatting churn, generated output, and feature work unless they are needed for the same change.
@@ -54,7 +55,7 @@ Pull requests should include:
 - A clear summary of what changed and why.
 - The validation commands you ran.
 - Any known limitations or follow-up work.
-- Screenshots or short recordings for visible Studio or docs UI changes.
+- Screenshots or short recordings for visible Studio UI changes.
 - Notes for breaking changes, migration needs, or dependency updates.
 
 Before requesting review, make sure:

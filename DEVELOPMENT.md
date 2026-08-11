@@ -18,8 +18,6 @@ pnpm install
 
 ```txt
 .
-├── apps/
-│   └── www/                      # Website and docs app
 ├── examples/
 │   ├── cli-agent/                # Example CLI agent
 │   └── cookbook/                 # Runnable learning path
@@ -39,7 +37,6 @@ pnpm install
 The workspace is declared in `pnpm-workspace.yaml` and includes:
 
 - `packages/*`
-- `apps/*`
 - `examples/*`
 
 ## Common Commands
@@ -68,9 +65,6 @@ pnpm --filter @anvia/openai test
 pnpm --filter @anvia/studio typecheck
 pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
-
-pnpm --filter www dev
-pnpm --filter www build
 
 pnpm --filter cookbook typecheck
 ```
@@ -118,23 +112,6 @@ Some retrieval examples need local services. Start ChromaDB before running Chrom
 ```sh
 docker compose -f examples/cookbook/compose.cookbook.yml up -d
 ```
-
-## WWW App
-
-Run the website and docs app locally:
-
-```sh
-pnpm www:dev
-```
-
-Validate the website docs:
-
-```sh
-pnpm www:reference-check
-pnpm www:build
-```
-
-The reference check verifies package API documentation coverage before the Astro build.
 
 ## Package Development
 

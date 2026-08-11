@@ -49,13 +49,6 @@ pnpm --filter './packages/*' test
 pnpm --filter './packages/*' build
 ```
 
-If docs changed, also run:
-
-```sh
-pnpm --filter www reference-check
-pnpm --filter www build
-```
-
 ## Release Flow
 
 After a PR with one or more changesets is merged into `main`, the GitHub Actions release workflow runs Changesets.

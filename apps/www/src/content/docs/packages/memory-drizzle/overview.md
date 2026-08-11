@@ -11,7 +11,10 @@ sidebar:
 
 `@anvia/memory-drizzle` stores Anvia agent session memory through a Drizzle database instance.
 
-The package exports the required Postgres Drizzle table definitions, so users can add Anvia memory tables to their Drizzle schema instead of copying table shapes by hand.
+The package exports the required Postgres Drizzle table definitions, so users can add Anvia memory
+tables to their Drizzle schema instead of copying table shapes by hand. It also ships
+`npx @anvia/memory-drizzle init` to add those exports with dry-run, ownership, conflict, and
+overwrite safeguards.
 
 ## Where it fits
 
@@ -19,7 +22,9 @@ The package implements core's `MemoryStore` interface. Core controls the save po
 
 ## Public surface
 
-The main exports are `drizzleMemorySchema`, `agentMemorySessions`, `agentMemoryMessages`, `agentMemoryErrors`, `createDrizzleMemoryStore`, `DrizzleMemoryStore`, and `createDrizzleMemoryScopeKey`.
+The main exports are `drizzleMemorySchema`, `agentMemorySessions`, `agentMemoryMessages`,
+`agentMemoryErrors`, `createDrizzleMemoryStore`, `DrizzleMemoryStore`, and
+`createDrizzleMemoryScopeKey`. The package also includes the `anvia-memory-drizzle` CLI binary.
 
 ## Next pages
 

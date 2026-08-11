@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 0.26.0
+
+### Minor Changes
+
+- 461a04d: Harden MCP HTTP and SSE connections against SSRF by validating and pinning DNS results for every
+  outbound origin, including redirects and OAuth metadata endpoints. Custom transport fetch
+  implementations are rejected so they cannot bypass these protections.
+
 ## 0.25.1
 
 ### Patch Changes

@@ -376,7 +376,7 @@ function ToolEntry(props: {
         ? "Cancelled"
         : props.entry.result === undefined
           ? "Running"
-          : "Completed";
+          : undefined;
 
   return (
     <article
@@ -398,17 +398,19 @@ function ToolEntry(props: {
           <strong className="min-w-0 truncate font-mono text-base font-medium text-foreground">
             {props.entry.toolName}
           </strong>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm font-normal text-muted-foreground">
-            <span
-              className={cn(
-                "size-1.5 rounded-full bg-muted-foreground/60",
-                status === "Running" && "animate-pulse bg-foreground motion-reduce:animate-none",
-                cancelledInteraction && "bg-destructive",
-              )}
-              aria-hidden="true"
-            />
-            {status}
-          </span>
+          {status === undefined ? null : (
+            <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm font-normal text-muted-foreground">
+              <span
+                className={cn(
+                  "size-1.5 rounded-full bg-muted-foreground/60",
+                  status === "Running" && "animate-pulse bg-foreground motion-reduce:animate-none",
+                  cancelledInteraction && "bg-destructive",
+                )}
+                aria-hidden="true"
+              />
+              {status}
+            </span>
+          )}
           {hasPayload ? (
             <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">
               <StudioIcon

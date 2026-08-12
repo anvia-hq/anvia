@@ -93,7 +93,7 @@ describe("TranscriptItem response actions", () => {
     expect(html).not.toContain("Working");
   });
 
-  it("renders a non-framed tool call disclosure with status", () => {
+  it("renders a non-framed tool call disclosure without a completed indicator", () => {
     const html = renderToStaticMarkup(
       <TranscriptItem
         entry={{
@@ -113,7 +113,8 @@ describe("TranscriptItem response actions", () => {
 
     expect(html).toContain('aria-label="Expand search_docs tool call"');
     expect(html).toContain("search_docs");
-    expect(html).toContain("Completed");
+    expect(html).not.toContain("Completed");
+    expect(html).not.toContain("size-1.5 rounded-full");
     expect(html).not.toContain("Show");
     expect(html).not.toContain("Hide");
     expect(html).not.toContain("shadow-black/20");

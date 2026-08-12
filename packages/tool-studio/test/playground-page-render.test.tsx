@@ -8,10 +8,12 @@ const agent: StudioConfig["agents"][number] = { id: "support", quickPrompts: [] 
 
 describe("PlaygroundPage run action", () => {
   it("renders send, preparing, and stop states", () => {
-    const idleButton = runAction(render());
+    const idleHtml = render();
+    expect(idleHtml).not.toContain("bg-gradient-to-t");
+    const idleButton = runAction(idleHtml);
     expect(idleButton).toContain('aria-label="Send message"');
     expect(idleButton).toContain('type="submit"');
-    expect(idleButton).toContain("w-11");
+    expect(idleButton).toContain("size-9");
     expect(idleButton).toContain("rounded-lg");
     expect(idleButton).not.toContain("rounded-full");
     expect(idleButton).not.toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
@@ -26,6 +28,12 @@ describe("PlaygroundPage run action", () => {
     expect(stopButton).toContain('type="button"');
     expect(stopButton).toContain('fill="currentColor"');
     expect(stopButton).not.toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
+
+    const attachmentButton = buttonWithLabel(idleHtml, "Attach image or document");
+    expect(attachmentButton).toContain("size-9");
+    expect(attachmentButton).toContain("rounded-lg");
+    expect(attachmentButton).toContain("border-border");
+    expect(attachmentButton).not.toContain("border-0");
   });
 
   it("does not render the removed working indicator", () => {
@@ -92,6 +100,16 @@ function runAction(html: string): string {
   );
   if (matched === null) {
     throw new Error("Run action button not found");
+  }
+  return matched[0];
+}
+
+function buttonWithLabel(html: string, label: string): string {
+  const matched = html.match(
+    new RegExp(`<button[^>]+aria-label="${label}"[^>]*>[\\s\\S]*?</button>`),
+  );
+  if (matched === null) {
+    throw new Error(`${label} button not found`);
   }
   return matched[0];
 }

@@ -110,7 +110,7 @@ export function PlaygroundPage(props: {
             </div>
           </section>
           <form
-            className="grid gap-3 bg-gradient-to-t from-card via-card/95 to-card/0 px-4 pb-4 pt-2"
+            className="grid gap-3 bg-background px-4 pb-4 pt-2"
             onSubmit={(event) => {
               event.preventDefault();
               props.onRunPrompt(props.prompt);
@@ -180,7 +180,7 @@ export function PlaygroundPage(props: {
                   />
                   <Button
                     aria-label="Attach image or document"
-                    className="h-8 min-h-8 w-8 border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                    className="size-9 min-h-9 rounded-lg border-border bg-background p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
                     size="icon"
                     type="button"
                     variant="ghost"
@@ -241,7 +241,7 @@ export function PlaygroundPage(props: {
                           ? "Running"
                           : "Send message"
                     }
-                    className="h-9 min-h-9 w-11 rounded-lg"
+                    className="size-9 min-h-9 rounded-lg"
                     size="icon"
                     type={props.isStreaming ? "button" : "submit"}
                     disabled={

@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import type { StudioKnowledgeItemsPage, StudioKnowledgeSummary } from "../../../../types";
 import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
+import { StudioPageContent, StudioPageHeader, StudioPageShell } from "../../components/ui/studio";
 import type { KnowledgeTab } from "../shared/types";
 import {
   flattenSources,
@@ -134,17 +135,14 @@ export function KnowledgePage(props: {
   }, [loadItems, props.enabled, selectedSource]);
 
   return (
-    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55">
-      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
-          <div className="grid min-w-0 gap-2">
-            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
-              {tabLabel(props.activeTab)}
-            </h1>
-            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              {knowledgePageDescription(props.activeTab)}
-            </p>
-          </div>
+    <StudioPageShell
+      className="grid-rows-[auto_minmax(0,1fr)]"
+      aria-label={tabLabel(props.activeTab)}
+    >
+      <StudioPageHeader
+        title={tabLabel(props.activeTab)}
+        description={knowledgePageDescription(props.activeTab)}
+        action={
           <Button
             className="h-8 min-h-8 gap-2"
             type="button"
@@ -155,9 +153,9 @@ export function KnowledgePage(props: {
             <StudioIcon icon={ArrowClockwise} aria-hidden="true" />
             Refresh
           </Button>
-        </div>
-      </header>
-      <div className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden pb-6 pl-4 pr-6 pt-0">
+        }
+      />
+      <StudioPageContent className="grid grid-rows-[minmax(0,1fr)] overflow-hidden">
         {props.activeTab === "retrieval-log" ? (
           <RetrievalLogPanel evidence={evidence} onOpenTrace={props.onOpenTrace} />
         ) : (
@@ -185,8 +183,8 @@ export function KnowledgePage(props: {
             />
           </SourceWorkspace>
         )}
-      </div>
-    </section>
+      </StudioPageContent>
+    </StudioPageShell>
   );
 }
 

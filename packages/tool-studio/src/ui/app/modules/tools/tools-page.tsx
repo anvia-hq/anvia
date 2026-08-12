@@ -15,6 +15,13 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import {
+  StudioEmptyState,
+  StudioHeaderMetric,
+  StudioPageContent,
+  StudioPageHeader,
+  StudioPageShell,
+} from "../../components/ui/studio";
+import {
   approvalBadgeClass,
   formatJson,
   originBadgeClass,
@@ -134,30 +141,20 @@ export function ToolsPage(props: {
   }
 
   return (
-    <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
-      aria-label="Tools"
-    >
-      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
-          <div className="grid min-w-0 gap-2">
-            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
-              Tools
-            </h1>
-            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              Tool definitions registered on Studio agents, including approval policy and input
-              schema.
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
-            <HeaderMetric label="tools" value={toolTotals.total} />
-            <HeaderMetric label="mcp" value={toolTotals.mcp} />
-            <HeaderMetric label="static" value={toolTotals.static} />
-            <HeaderMetric label="dynamic" value={toolTotals.dynamic} />
-            <HeaderMetric label="approvals" value={toolTotals.approvals} />
+    <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Tools">
+      <StudioPageHeader
+        title="Tools"
+        description="Tool definitions registered on Studio agents, including approval policy and input schema."
+        action={
+          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-sm:justify-start">
+            <StudioHeaderMetric label="tools" value={toolTotals.total} />
+            <StudioHeaderMetric label="mcp" value={toolTotals.mcp} />
+            <StudioHeaderMetric label="static" value={toolTotals.static} />
+            <StudioHeaderMetric label="dynamic" value={toolTotals.dynamic} />
+            <StudioHeaderMetric label="approvals" value={toolTotals.approvals} />
             {props.agents.length > 1 ? (
               <Select value={selectedAgent?.id ?? ""} onValueChange={props.onSelectAgent}>
-                <SelectTrigger className="h-8 min-h-8 w-64 rounded-md border-border bg-background/45 text-xs max-md:w-full">
+                <SelectTrigger className="h-8 min-h-8 w-64 rounded-md border-border text-xs max-sm:w-full">
                   <SelectValue placeholder="Agent" />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -170,20 +167,20 @@ export function ToolsPage(props: {
               </Select>
             ) : null}
           </div>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="min-h-0 overflow-auto pb-6 pl-4 pr-6">
+      <StudioPageContent className="overflow-auto">
         <div className="grid w-full gap-5">
           {!props.enabled ? (
-            <EmptyState
+            <StudioEmptyState
               title="Tools unavailable"
-              message="No registered Studio agent exposes static or dynamic tools."
+              text="No registered Studio agent exposes static or dynamic tools."
             />
           ) : props.loading ? (
-            <EmptyState title="Loading tools" message="Reading registered tool metadata." />
+            <StudioEmptyState title="Loading tools" text="Reading registered tool metadata." />
           ) : tools.length === 0 ? (
-            <EmptyState title="No tools" message="The selected agent has no registered tools." />
+            <StudioEmptyState title="No tools" text="The selected agent has no registered tools." />
           ) : (
             <>
               <ToolRegistryTable
@@ -203,8 +200,8 @@ export function ToolsPage(props: {
             </>
           )}
         </div>
-      </div>
-    </section>
+      </StudioPageContent>
+    </StudioPageShell>
   );
 }
 
@@ -318,15 +315,6 @@ function ToolTableCell(props: { children: ReactNode }) {
   );
 }
 
-function HeaderMetric(props: { label: string; value: number }) {
-  return (
-    <span className="inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background/45 px-2.5 text-xs font-medium text-muted-foreground">
-      <span className="font-semibold tabular-nums text-foreground">{props.value}</span>
-      {props.label}
-    </span>
-  );
-}
-
 function summarizeTools(tools: StudioAgentToolMetadata[]) {
   return tools.reduce(
     (totals, tool) => {
@@ -349,14 +337,3 @@ function summarizeTools(tools: StudioAgentToolMetadata[]) {
 }
 
 const selectedBadge = "border-border/80 bg-muted/45 text-foreground";
-
-function EmptyState(props: { title: string; message: string }) {
-  return (
-    <div className="grid min-h-80 place-items-center px-6 text-center">
-      <div className="grid max-w-md gap-2">
-        <h2 className="m-0 text-base font-semibold text-foreground">{props.title}</h2>
-        <p className="m-0 text-sm leading-6 text-muted-foreground">{props.message}</p>
-      </div>
-    </div>
-  );
-}

@@ -17,6 +17,13 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import {
+  StudioEmptyState,
+  StudioHeaderMetric,
+  StudioPageContent,
+  StudioPageHeader,
+  StudioPageShell,
+} from "../../components/ui/studio";
+import {
   formatJson,
   parseStudioToolRunResponse,
   SchemaBlock,
@@ -132,30 +139,17 @@ export function McpsPage(props: {
   }
 
   return (
-    <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
-      aria-label="MCPs"
-    >
-      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
-          <div className="grid min-w-0 gap-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              External context
-            </div>
-            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
-              MCPs
-            </h1>
-            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              MCP servers and remote tools registered on Studio agents, grouped by server.
-            </p>
-          </div>
-          <div className="flex min-w-0 items-center gap-3 max-md:grid max-md:grid-cols-1">
-            <Badge className="h-9 justify-center border-border/80 bg-card/70 text-muted-foreground">
-              {servers.length} servers / {toolCount} tools
-            </Badge>
+    <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="MCPs">
+      <StudioPageHeader
+        title="MCPs"
+        description="MCP servers and remote tools registered on Studio agents, grouped by server."
+        action={
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 max-sm:justify-start">
+            <StudioHeaderMetric label="servers" value={servers.length} />
+            <StudioHeaderMetric label="tools" value={toolCount} />
             {props.agents.length > 1 ? (
               <Select value={selectedAgent?.id ?? ""} onValueChange={props.onSelectAgent}>
-                <SelectTrigger className="h-9 min-h-9 w-64 rounded-lg border-border bg-card/80 text-xs max-md:w-full">
+                <SelectTrigger className="h-8 min-h-8 w-64 rounded-md border-border text-xs max-sm:w-full">
                   <SelectValue placeholder="Agent" />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -168,20 +162,23 @@ export function McpsPage(props: {
               </Select>
             ) : null}
           </div>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="min-h-0 overflow-auto pb-6 pl-4 pr-6">
+      <StudioPageContent className="overflow-auto">
         <div className="grid w-full gap-5">
           {!props.enabled ? (
-            <EmptyState
+            <StudioEmptyState
               title="MCPs unavailable"
-              message="No registered Studio agent exposes MCP tools."
+              text="No registered Studio agent exposes MCP tools."
             />
           ) : props.loading ? (
-            <EmptyState title="Loading MCPs" message="Reading registered MCP metadata." />
+            <StudioEmptyState title="Loading MCPs" text="Reading registered MCP metadata." />
           ) : servers.length === 0 ? (
-            <EmptyState title="No MCPs" message="The selected agent has no registered MCP tools." />
+            <StudioEmptyState
+              title="No MCPs"
+              text="The selected agent has no registered MCP tools."
+            />
           ) : (
             servers.map((server) => (
               <McpServerSection
@@ -204,8 +201,8 @@ export function McpsPage(props: {
             />
           )}
         </div>
-      </div>
-    </section>
+      </StudioPageContent>
+    </StudioPageShell>
   );
 }
 
@@ -278,17 +275,6 @@ function McpToolRow(props: {
       </div>
       <SchemaBlock value={props.tool.parameters} title="Parameter schema" />
     </article>
-  );
-}
-
-function EmptyState(props: { title: string; message: string }) {
-  return (
-    <div className="grid min-h-80 place-items-center px-6 text-center">
-      <div className="grid max-w-md gap-2">
-        <h2 className="m-0 text-base font-semibold text-foreground">{props.title}</h2>
-        <p className="m-0 text-sm leading-6 text-muted-foreground">{props.message}</p>
-      </div>
-    </div>
   );
 }
 

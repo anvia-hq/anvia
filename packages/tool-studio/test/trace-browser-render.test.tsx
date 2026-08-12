@@ -10,7 +10,9 @@ describe("TraceBrowser rendering", () => {
   it("renders the disabled and empty table states", () => {
     expect(render({ tracesEnabled: false })).toContain("Tracing is disabled");
     expect(render({ traceLoadState: "loading" })).toContain("Loading traces");
-    expect(render()).toContain("No traces found");
+    const emptyHtml = render();
+    expect(emptyHtml).toContain("No traces found");
+    expect(emptyHtml).not.toContain("pb-6");
   });
 
   it("renders the trace table with status, agent, and timing summaries", () => {

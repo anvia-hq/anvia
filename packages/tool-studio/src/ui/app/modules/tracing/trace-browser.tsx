@@ -91,10 +91,7 @@ export function TraceBrowser(props: {
       : props.traces.filter((trace) => trace.sessionId === selectedTrace.sessionId);
 
   return (
-    <section
-      className="grid h-full min-h-0 w-full content-stretch pb-6 pl-0 pr-6"
-      aria-label="Tracing"
-    >
+    <section className="grid h-full min-h-0 w-full content-stretch pl-0 pr-6" aria-label="Tracing">
       {props.selectedTraceId.length === 0 ? (
         <TraceTable
           agents={props.agents}

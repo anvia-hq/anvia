@@ -241,7 +241,7 @@ export function PlaygroundPage(props: {
                           ? "Running"
                           : "Send message"
                     }
-                    className="size-9 min-h-9 rounded-full"
+                    className="h-9 min-h-9 w-11 rounded-lg"
                     size="icon"
                     type={props.isStreaming ? "button" : "submit"}
                     disabled={
@@ -251,8 +251,8 @@ export function PlaygroundPage(props: {
                     onClick={props.isStreaming ? props.onStopPrompt : undefined}
                   >
                     <StudioIcon
-                      fill={props.isStreaming ? "currentColor" : undefined}
                       icon={props.isStreaming ? Stop : ArrowUp}
+                      weight={props.isStreaming ? "fill" : "regular"}
                     />
                   </Button>
                 </div>

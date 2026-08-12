@@ -11,6 +11,9 @@ describe("PlaygroundPage run action", () => {
     const idleButton = runAction(render());
     expect(idleButton).toContain('aria-label="Send message"');
     expect(idleButton).toContain('type="submit"');
+    expect(idleButton).toContain("w-11");
+    expect(idleButton).toContain("rounded-lg");
+    expect(idleButton).not.toContain("rounded-full");
     expect(idleButton).not.toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
 
     const preparingButton = runAction(render({ runState: "running" }));

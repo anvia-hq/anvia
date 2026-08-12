@@ -166,11 +166,8 @@ export function StudioSidebar(props: StudioNavigationProps) {
 
   return (
     <aside className="hidden h-[100dvh] w-64 min-h-0 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
-      <div className="flex h-14 shrink-0 items-center px-4 text-sm font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/45">
-        {section === "workspace" ? "Workspace" : "Inspect"}
-      </div>
       <nav
-        className="grid gap-1 px-2"
+        className="grid gap-1 px-2 pt-2"
         aria-label={section === "workspace" ? "Workspace" : "Inspect"}
       >
         {items.map((item) => (
@@ -185,7 +182,7 @@ export function StudioSidebar(props: StudioNavigationProps) {
         ))}
       </nav>
       <div className="mt-auto p-2">
-        <SidebarLink href="https://anvia.dev/docs" label="Anvia Docs" />
+        <SidebarLink href="https://docs.anvia.dev" label="Anvia Docs" />
       </div>
     </aside>
   );

@@ -35,6 +35,8 @@ describe("Studio Lens shell", () => {
     expect(sidebar).toContain('aria-label="Inspect"');
     expect(sidebar).toContain("Tools");
     expect(sidebar).toContain("Static Context");
+    expect(sidebar).toContain('href="https://docs.anvia.dev"');
+    expect(sidebar).not.toContain(">Inspect</div>");
     expect(sidebar).not.toContain(">Chat<");
   });
 

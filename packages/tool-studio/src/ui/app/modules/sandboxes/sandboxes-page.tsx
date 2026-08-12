@@ -22,6 +22,8 @@ import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
 import {
   StudioEmptyState,
+  StudioPageContent,
+  StudioPageHeader,
   StudioPageShell,
   StudioStatusBadge,
   StudioSurface,
@@ -318,91 +320,94 @@ export function SandboxesPage(props: {
 
   if (!props.enabled) {
     return (
-      <StudioPageShell className="p-4" aria-label="Sandboxes">
-        <StudioEmptyState
-          title="No sandbox workspaces"
-          text="Add tools created by createSandboxTools(session) to an agent to inspect its live workspace here."
+      <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Sandboxes">
+        <StudioPageHeader
+          title="Sandboxes"
+          description="Read-only files, published ports, and managed processes discovered from agent tools."
         />
+        <StudioPageContent className="overflow-auto">
+          <StudioEmptyState
+            title="No sandbox workspaces"
+            text="Add tools created by createSandboxTools(session) to an agent to inspect its live workspace here."
+          />
+        </StudioPageContent>
       </StudioPageShell>
     );
   }
 
   return (
-    <StudioPageShell
-      className="grid grid-rows-[auto_minmax(0,1fr)] gap-3 p-3"
-      aria-label="Sandboxes"
-    >
-      <StudioSurface className="flex items-center justify-between gap-4 border-b px-5 py-3.5">
-        <div className="min-w-0">
-          <h1 className="m-0 text-base font-semibold text-foreground">Live sandbox workspaces</h1>
-          <p className="m-0 mt-0.5 text-xs leading-5 text-muted-foreground">
-            Read-only files, published ports, and managed processes discovered from agent tools.
-          </p>
-        </div>
-        <Button
-          disabled={summaryLoadState === "loading"}
-          size="sm"
-          type="button"
-          variant="secondary"
-          onClick={() => setRefreshSequence((current) => current + 1)}
-        >
-          <StudioIcon icon={ArrowClockwise} aria-hidden="true" />
-          Refresh
-        </Button>
-      </StudioSurface>
+    <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Sandboxes">
+      <StudioPageHeader
+        title="Sandboxes"
+        description="Read-only files, published ports, and managed processes discovered from agent tools."
+        action={
+          <Button
+            disabled={summaryLoadState === "loading"}
+            size="sm"
+            type="button"
+            variant="secondary"
+            onClick={() => setRefreshSequence((current) => current + 1)}
+          >
+            <StudioIcon icon={ArrowClockwise} aria-hidden="true" />
+            Refresh
+          </Button>
+        }
+      />
 
-      {sandboxes.length === 0 && summaryLoadState === "idle" ? (
-        <StudioEmptyState
-          className="h-full"
-          title="No live sandboxes detected"
-          text="Studio discovers sessions automatically from tools returned by createSandboxTools(session)."
-        />
-      ) : (
-        <div className="grid min-h-0 min-w-0 grid-cols-[250px_minmax(300px,0.8fr)_minmax(400px,1.2fr)] gap-3 overflow-hidden">
-          <SandboxRail
-            sandboxes={sandboxes}
-            selectedRef={selectedRef}
-            onSelect={props.onSelectSandbox}
+      <StudioPageContent className="grid grid-rows-[minmax(0,1fr)] overflow-hidden">
+        {sandboxes.length === 0 && summaryLoadState === "idle" ? (
+          <StudioEmptyState
+            className="h-full"
+            title="No live sandboxes detected"
+            text="Studio discovers sessions automatically from tools returned by createSandboxTools(session)."
           />
-          <FileBrowser
-            currentPath={currentPath}
-            files={files}
-            loading={fileLoadState === "loading"}
-            onOpenDirectory={(filePath) => {
-              clearPreview();
-              setCurrentPath(filePath);
-            }}
-            onOpenFile={(file) => void openFile(file)}
-            onSelectPath={(filePath) => {
-              clearPreview();
-              setCurrentPath(filePath);
-            }}
-          />
-          <div className="grid min-h-0 gap-3 overflow-y-auto pr-1">
-            {selectedSandbox === undefined ? (
-              <StudioEmptyState
-                title="Sandbox unavailable"
-                text="The requested live sandbox is not registered by this Studio runtime."
-              />
-            ) : (
-              <>
-                <SandboxOverview sandbox={selectedSandbox} error={localError} />
-                <FilePreviewPanel preview={preview} sandboxRef={selectedSandbox.ref} />
-                <RuntimePanel
-                  loading={runtimeLoadState === "loading"}
-                  logs={processLogs}
-                  ports={ports}
-                  processes={processes}
-                  selectedProcessId={selectedProcessId}
-                  supportsPorts={selectedSandbox.capabilities.ports}
-                  supportsProcesses={selectedSandbox.capabilities.processes}
-                  onSelectProcess={setSelectedProcessId}
+        ) : (
+          <div className="grid min-h-0 min-w-0 grid-cols-[250px_minmax(300px,0.8fr)_minmax(400px,1.2fr)] gap-3 overflow-hidden">
+            <SandboxRail
+              sandboxes={sandboxes}
+              selectedRef={selectedRef}
+              onSelect={props.onSelectSandbox}
+            />
+            <FileBrowser
+              currentPath={currentPath}
+              files={files}
+              loading={fileLoadState === "loading"}
+              onOpenDirectory={(filePath) => {
+                clearPreview();
+                setCurrentPath(filePath);
+              }}
+              onOpenFile={(file) => void openFile(file)}
+              onSelectPath={(filePath) => {
+                clearPreview();
+                setCurrentPath(filePath);
+              }}
+            />
+            <div className="grid min-h-0 gap-3 overflow-y-auto pr-1">
+              {selectedSandbox === undefined ? (
+                <StudioEmptyState
+                  title="Sandbox unavailable"
+                  text="The requested live sandbox is not registered by this Studio runtime."
                 />
-              </>
-            )}
+              ) : (
+                <>
+                  <SandboxOverview sandbox={selectedSandbox} error={localError} />
+                  <FilePreviewPanel preview={preview} sandboxRef={selectedSandbox.ref} />
+                  <RuntimePanel
+                    loading={runtimeLoadState === "loading"}
+                    logs={processLogs}
+                    ports={ports}
+                    processes={processes}
+                    selectedProcessId={selectedProcessId}
+                    supportsPorts={selectedSandbox.capabilities.ports}
+                    supportsProcesses={selectedSandbox.capabilities.processes}
+                    onSelectProcess={setSelectedProcessId}
+                  />
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </StudioPageContent>
     </StudioPageShell>
   );
 }

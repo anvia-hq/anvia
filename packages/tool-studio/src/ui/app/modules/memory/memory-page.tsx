@@ -18,6 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
+import {
+  StudioEmptyState,
+  StudioHeaderMetric,
+  StudioPageContent,
+  StudioPageHeader,
+  StudioPageShell,
+} from "../../components/ui/studio";
 import { formatRelativeTime } from "../shared/format";
 import { JsonSyntax } from "../shared/renderers";
 import { MemoryGenerationLedger } from "./memory-generation-ledger";
@@ -200,28 +207,15 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
   }, [selectedConversationRef, visibleConversations]);
 
   return (
-    <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
-      aria-label="Memory"
-    >
-      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
-          <div className="grid min-w-0 gap-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Agent memory inspector
-            </div>
-            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
-              Memory
-            </h1>
-            <p className="m-0 max-w-[68ch] text-sm leading-6 text-muted-foreground">
-              Inspect persisted agent conversations directly. Studio sessions appear only as a
-              fallback for agents without configured memory.
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
+    <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Memory">
+      <StudioPageHeader
+        title="Memory"
+        description="Inspect persisted agent conversations directly. Studio sessions appear only as a fallback for agents without configured memory."
+        action={
+          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-sm:justify-start">
             {sources.length === 0 ? null : (
               <Select value={selectedSourceRef} onValueChange={setSelectedSourceRef}>
-                <SelectTrigger className="h-8 min-h-8 w-60 rounded-md border-border bg-background/45 text-xs max-md:w-full">
+                <SelectTrigger className="h-8 min-h-8 w-60 rounded-md border-border text-xs max-sm:w-full">
                   <SelectValue placeholder="Memory source" />
                 </SelectTrigger>
                 <SelectContent align="end">
@@ -234,9 +228,9 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
                 </SelectContent>
               </Select>
             )}
-            <MemoryMetric label="users" value={totals.userCount} />
-            <MemoryMetric label="conversations" value={totals.conversationCount} />
-            <MemoryMetric label="messages" value={totals.messageCount} />
+            <StudioHeaderMetric label="users" value={totals.userCount} />
+            <StudioHeaderMetric label="conversations" value={totals.conversationCount} />
+            <StudioHeaderMetric label="messages" value={totals.messageCount} />
             <Button
               className="h-8 min-h-8 rounded-md px-3 text-xs"
               type="button"
@@ -247,27 +241,27 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
               Refresh
             </Button>
           </div>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="min-h-0 overflow-hidden pb-6 pl-4 pr-6">
+      <StudioPageContent className="overflow-hidden">
         {!props.enabled ? (
-          <EmptyState
+          <StudioEmptyState
             title="Memory unavailable"
             text="No agent memory or Studio session store is configured."
           />
         ) : sourcesLoading && sources.length === 0 ? (
-          <EmptyState title="Loading memory" text="Discovering configured memory sources." />
+          <StudioEmptyState title="Loading memory" text="Discovering configured memory sources." />
         ) : error.length > 0 && sources.length === 0 ? (
-          <EmptyState title="Memory error" text={error} />
+          <StudioEmptyState title="Memory error" text={error} />
         ) : selectedSource === undefined ? (
-          <EmptyState title="No memory sources" text="No registered agent exposes memory." />
+          <StudioEmptyState title="No memory sources" text="No registered agent exposes memory." />
         ) : !selectedSource.available ? (
           <UnavailableSource source={selectedSource} />
         ) : loading && conversations.length === 0 ? (
-          <EmptyState title="Loading memory" text={`Reading ${selectedSource.label}.`} />
+          <StudioEmptyState title="Loading memory" text={`Reading ${selectedSource.label}.`} />
         ) : error.length > 0 && conversations.length === 0 ? (
-          <EmptyState title="Memory error" text={error} />
+          <StudioEmptyState title="Memory error" text={error} />
         ) : conversations.length === 0 ? (
           <MemoryEmptyDashboard
             source={selectedSource}
@@ -307,8 +301,8 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
             </div>
           </div>
         )}
-      </div>
-    </section>
+      </StudioPageContent>
+    </StudioPageShell>
   );
 }
 
@@ -632,15 +626,6 @@ function InlineError(props: { message: string }) {
     <div className="mb-3 border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
       {props.message}
     </div>
-  );
-}
-
-function MemoryMetric(props: { label: string; value: number }) {
-  return (
-    <span className="inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background/45 px-2.5 text-xs font-medium text-muted-foreground">
-      <span className="font-semibold tabular-nums text-foreground">{props.value}</span>
-      {props.label}
-    </span>
   );
 }
 

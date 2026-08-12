@@ -1,6 +1,13 @@
 import { type ReactNode, useEffect, useState } from "react";
 import type { StudioAgentRuntimeSummary, StudioConfig } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
+import {
+  StudioEmptyState,
+  StudioHeaderMetric,
+  StudioPageContent,
+  StudioPageHeader,
+  StudioPageShell,
+} from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 
 export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgentId: string }) {
@@ -37,42 +44,27 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
   const totals = registryTotals(props.agents, runtimeByAgentId);
 
   return (
-    <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
-      aria-label="Agents"
-    >
-      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
-          <div className="grid min-w-0 gap-2">
-            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
-              Studio
-            </h1>
-            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              Registered agents and the runtime capabilities exposed to Studio.
-            </p>
+    <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Agents">
+      <StudioPageHeader
+        title="Studio"
+        description="Registered agents and the runtime capabilities exposed to Studio."
+        action={
+          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-sm:justify-start">
+            <StudioHeaderMetric label="agents" value={props.agents.length} />
+            <StudioHeaderMetric label="tools" value={totals.tools} />
+            <StudioHeaderMetric label="context" value={totals.context} />
+            <StudioHeaderMetric label="prompts" value={totals.prompts} />
           </div>
-          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
-            <HeaderMetric label="agents" value={props.agents.length} />
-            <HeaderMetric label="tools" value={totals.tools} />
-            <HeaderMetric label="context" value={totals.context} />
-            <HeaderMetric label="prompts" value={totals.prompts} />
-          </div>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="min-h-0 overflow-auto pb-6 pl-4 pr-6">
+      <StudioPageContent className="overflow-auto">
         <div className="grid w-full">
           {props.agents.length === 0 ? (
-            <div className="grid min-h-80 place-items-center px-6 text-center">
-              <div className="grid max-w-md gap-2">
-                <h2 className="m-0 font-heading text-base font-medium text-foreground">
-                  No agents
-                </h2>
-                <p className="m-0 text-sm leading-6 text-muted-foreground">
-                  Studio has no registered agents to inspect.
-                </p>
-              </div>
-            </div>
+            <StudioEmptyState
+              title="No agents"
+              text="Studio has no registered agents to inspect."
+            />
           ) : (
             <AgentRegistryTable
               agents={props.agents}
@@ -81,8 +73,8 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
             />
           )}
         </div>
-      </div>
-    </section>
+      </StudioPageContent>
+    </StudioPageShell>
   );
 }
 
@@ -220,15 +212,6 @@ function MetricPill(props: { label: string; value: number }) {
 
 function CapabilityBadge(props: { enabled: boolean; children: string }) {
   return <Badge className={props.enabled ? enabledBadge : disabledBadge}>{props.children}</Badge>;
-}
-
-function HeaderMetric(props: { label: string; value: number }) {
-  return (
-    <span className="inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background/45 px-2.5 text-xs font-medium text-muted-foreground">
-      <span className="font-semibold tabular-nums text-foreground">{props.value}</span>
-      {props.label}
-    </span>
-  );
 }
 
 const selectedBadge = "border-border/80 bg-muted/45 text-foreground";

@@ -2,6 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import type { StudioStatusSummary } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import {
+  StudioEmptyState,
+  StudioHeaderMetric,
+  StudioPageContent,
+  StudioPageHeader,
+  StudioPageShell,
+} from "../../components/ui/studio";
 import { formatRelativeTime } from "../shared/format";
 import { JsonSyntax } from "../shared/renderers";
 
@@ -36,27 +43,15 @@ export function StatusPage(props: { enabled: boolean }) {
   }, [loadStatus]);
 
   return (
-    <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/55"
-      aria-label="Status"
-    >
-      <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
-          <div className="grid min-w-0 gap-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Operations
-            </div>
-            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
-              Status
-            </h1>
-            <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-              Runtime health, storage adapters, feature capabilities, and current record counts.
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-md:justify-start">
-            <StatusMetric label="agents" value={summary?.counts.agents ?? 0} />
-            <StatusMetric label="sessions" value={summary?.counts.sessions ?? "-"} />
-            <StatusMetric label="traces" value={summary?.counts.traces ?? "-"} />
+    <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Status">
+      <StudioPageHeader
+        title="Status"
+        description="Runtime health, storage adapters, feature capabilities, and current record counts."
+        action={
+          <div className="flex min-w-0 flex-wrap justify-end gap-2 max-sm:justify-start">
+            <StudioHeaderMetric label="agents" value={summary?.counts.agents ?? 0} />
+            <StudioHeaderMetric label="sessions" value={summary?.counts.sessions ?? "-"} />
+            <StudioHeaderMetric label="traces" value={summary?.counts.traces ?? "-"} />
             <Button
               className="h-8 min-h-8 rounded-md px-3 text-xs"
               type="button"
@@ -67,24 +62,24 @@ export function StatusPage(props: { enabled: boolean }) {
               Refresh
             </Button>
           </div>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="min-h-0 overflow-auto pb-6 pl-4 pr-6">
+      <StudioPageContent className="overflow-auto">
         {!props.enabled ? (
-          <EmptyState
+          <StudioEmptyState
             title="Status unavailable"
             text="This Studio runtime did not expose status."
           />
         ) : loading && summary === undefined ? (
-          <EmptyState title="Loading status" text="Reading runtime status." />
+          <StudioEmptyState title="Loading status" text="Reading runtime status." />
         ) : error.length > 0 ? (
-          <EmptyState title="Status error" text={error} />
+          <StudioEmptyState title="Status error" text={error} />
         ) : summary === undefined ? null : (
           <StatusDashboard summary={summary} />
         )}
-      </div>
-    </section>
+      </StudioPageContent>
+    </StudioPageShell>
   );
 }
 
@@ -241,15 +236,6 @@ function RawSummary(props: { summary: StudioStatusSummary }) {
   );
 }
 
-function StatusMetric(props: { label: string; value: string | number }) {
-  return (
-    <span className="inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-background/45 px-2.5 text-xs font-medium text-muted-foreground">
-      <span className="font-semibold tabular-nums text-foreground">{props.value}</span>
-      {props.label}
-    </span>
-  );
-}
-
 function SectionHeader(props: { title: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
@@ -303,17 +289,6 @@ function DashedNote(props: { text: string }) {
   return (
     <div className="border-y border-dashed border-border/80 px-3 py-8 text-center text-sm text-muted-foreground">
       {props.text}
-    </div>
-  );
-}
-
-function EmptyState(props: { title: string; text: string }) {
-  return (
-    <div className="grid min-h-80 place-items-center px-6 text-center">
-      <div className="grid max-w-md gap-2">
-        <h2 className="m-0 text-base font-semibold text-foreground">{props.title}</h2>
-        <p className="m-0 text-sm leading-6 text-muted-foreground">{props.text}</p>
-      </div>
     </div>
   );
 }

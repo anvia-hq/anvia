@@ -40,6 +40,9 @@ describe("Studio Lens shell", () => {
     expect(sidebar).toContain("Tools");
     expect(sidebar).toContain("Static Context");
     expect(sidebar).toContain("<hr");
+    expect(sidebar).toContain('href="https://github.com/anvia-hq/anvia"');
+    expect(sidebar).toContain("Enjoying Anvia Studio?");
+    expect(sidebar).toContain("Star us on GitHub");
     expect(sidebar).toContain('href="https://docs.anvia.dev"');
     expect(sidebar).not.toContain(">Inspect</div>");
     expect(sidebar).not.toContain(">Workspace</div>");

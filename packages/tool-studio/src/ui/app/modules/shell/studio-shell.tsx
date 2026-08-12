@@ -1,4 +1,4 @@
-import { ArrowSquareOut, Laptop, Moon, Sun } from "@phosphor-icons/react";
+import { ArrowSquareOut, GithubLogo, Laptop, Moon, Sun } from "@phosphor-icons/react";
 import type { StudioTheme } from "../../app-theme";
 import { AnviaLensLogo } from "../../components/anvia-lens-logo";
 import { Button } from "../../components/ui/button";
@@ -155,6 +155,18 @@ export function StudioSidebar(props: StudioNavigationProps) {
         </nav>
       </div>
       <div className="shrink-0 p-2">
+        <a
+          className="mb-2 flex items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-3 transition-colors hover:bg-sidebar-accent"
+          href="https://github.com/anvia-hq/anvia"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <StudioIcon icon={GithubLogo} aria-hidden="true" className="size-5 shrink-0" />
+          <span className="grid min-w-0">
+            <span className="truncate text-xs font-medium">Enjoying Anvia Studio?</span>
+            <span className="truncate text-xs text-muted-foreground">Star us on GitHub</span>
+          </span>
+        </a>
         <SidebarLink href="https://docs.anvia.dev" label="Anvia Docs" />
       </div>
     </aside>

@@ -48,6 +48,37 @@ describe("Studio Lens shell", () => {
     expect(sidebar).not.toContain(">Workspace</div>");
   });
 
+  it("keeps every menu accessible when runtime capabilities are unavailable", () => {
+    const sidebar = renderToStaticMarkup(
+      <StudioSidebar
+        {...navigation}
+        hasAgents={false}
+        knowledgeEnabled={false}
+        mcpsEnabled={false}
+        memoryEnabled={false}
+        pipelinesEnabled={false}
+        sandboxesEnabled={false}
+        sessionsEnabled={false}
+        statusEnabled={false}
+        toolsEnabled={false}
+        tracesEnabled={false}
+      />,
+    );
+
+    expect(sidebar).not.toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
+    expect(sidebar).toContain("Chat");
+    expect(sidebar).toContain("Pipelines");
+    expect(sidebar).toContain("Sessions");
+    expect(sidebar).toContain("Traces");
+    expect(sidebar).toContain("Studio");
+    expect(sidebar).toContain("Tools");
+    expect(sidebar).toContain("Sandboxes");
+    expect(sidebar).toContain("MCPs");
+    expect(sidebar).toContain("Static Context");
+    expect(sidebar).toContain("Memory");
+    expect(sidebar).toContain("Status");
+  });
+
   it("renders Lens breadcrumbs and the tri-state theme control", () => {
     const html = renderToStaticMarkup(
       <StudioHeader

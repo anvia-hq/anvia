@@ -23,8 +23,6 @@ export function NavButton(props: {
   icon: IconName;
   label: string;
   onClick: () => void;
-  compact?: boolean;
-  disabled?: boolean;
 }) {
   const Icon = navIcon(props.icon);
   return (
@@ -32,18 +30,14 @@ export function NavButton(props: {
       className={cn(
         "h-8 min-h-8 w-full justify-start gap-2 rounded-lg bg-transparent px-2 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         props.active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground",
-        props.compact && "size-10 min-h-10 w-10 justify-center p-0 [&_svg]:size-5",
       )}
       aria-current={props.active ? "page" : undefined}
-      aria-label={props.compact ? props.label : undefined}
-      title={props.compact ? props.label : undefined}
       variant="ghost"
       type="button"
-      disabled={props.disabled}
       onClick={props.onClick}
     >
       <StudioIcon icon={Icon} />
-      {props.compact ? null : <span>{props.label}</span>}
+      <span>{props.label}</span>
     </Button>
   );
 }

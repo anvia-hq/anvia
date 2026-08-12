@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
 import type { EmbeddedDocument, VectorMetadata } from "@anvia/core/embeddings";
-import type { VectorSearchResult } from "@anvia/core/vector-store";
+import type {
+  VectorInspectItem,
+  VectorInspectPage,
+  VectorSearchResult,
+} from "@anvia/core/vector-store";
+import type { QdrantClientParams } from "@qdrant/js-client-rest";
 import {
   defaultDenseVectorName,
   defaultSparseVectorName,
   documentIdPayloadKey,
   documentPayloadKey,
   type QdrantClientLike,
+  type QdrantDistance,
+  type QdrantMutationOptions,
   reservedPayloadPrefix,
 } from "./types.js";
 
@@ -142,9 +149,275 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   return [...byId.values()];
 }
 
-export async function defaultQdrantClient(): Promise<QdrantClientLike> {
+export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
+  client: QdrantClientLike,
+  collectionName: string,
+  options: {
+    limit: number;
+    cursor?: string | undefined;
+    filter?: unknown;
+  },
+): Promise<VectorInspectPage<T, Metadata>> {
+  if (typeof client.scroll !== "function") {
+    throw new TypeError(
+      "Qdrant document inspection requires a client that implements scroll(...).",
+    );
+  }
+
+  const limit = Math.max(0, Math.trunc(options.limit));
+  const start = parseInspectCursor(options.cursor);
+  if (limit === 0) {
+    return { items: [] };
+  }
+
+  const seenDocumentIds = new Set<string>();
+  const seenOffsets = new Set<string | number>();
+  const items: Array<VectorInspectItem<T, Metadata>> = [];
+  let offset: unknown;
+  let hasMore = false;
+
+  while (true) {
+    const response = await client.scroll(collectionName, {
+      filter: options.filter,
+      limit: Math.max(100, limit * 2),
+      offset,
+      with_payload: true,
+      with_vector: false,
+    });
+    const page = rawScrollPage(response);
+
+    for (const point of page.points) {
+      const item = inspectItemFromPoint<T, Metadata>(point);
+      if (seenDocumentIds.has(item.id)) {
+        continue;
+      }
+      seenDocumentIds.add(item.id);
+      if (seenDocumentIds.size <= start) {
+        continue;
+      }
+      if (items.length === limit) {
+        hasMore = true;
+        break;
+      }
+      items.push(item);
+    }
+
+    if (
+      hasMore ||
+      page.nextOffset === undefined ||
+      page.points.length === 0 ||
+      seenOffsets.has(page.nextOffset)
+    ) {
+      break;
+    }
+    seenOffsets.add(page.nextOffset);
+    offset = page.nextOffset;
+  }
+
+  const result: VectorInspectPage<T, Metadata> = { items };
+  if (hasMore) {
+    result.nextCursor = String(start + items.length);
+  }
+  return result;
+}
+
+export function qdrantMutationRequest(
+  options: QdrantMutationOptions = {},
+): Record<string, unknown> {
+  const request: Record<string, unknown> = { wait: options.wait ?? true };
+  if (options.ordering !== undefined) {
+    request.ordering = options.ordering;
+  }
+  if (options.timeout !== undefined) {
+    request.timeout = options.timeout;
+  }
+  return request;
+}
+
+export function qdrantDocumentFilter(documentIds: string[]): Record<string, unknown> {
+  return {
+    must: [
+      {
+        key: documentIdPayloadKey,
+        match: { any: documentIds },
+      },
+    ],
+  };
+}
+
+export function validateQdrantCollection(
+  response: unknown,
+  options: {
+    vectorSize: number;
+    distance: QdrantDistance;
+    hybrid: boolean;
+    denseVectorName: string;
+    sparseVectorName: string;
+  },
+): void {
+  const info = unwrapResult(response);
+  const config = recordValue(info, "config");
+  const params = recordValue(config, "params");
+  const vectors = recordValue(params, "vectors");
+  if (vectors === undefined) {
+    // Keep lightweight custom clients compatible when they do not return collection configuration.
+    return;
+  }
+
+  const denseVector = options.hybrid
+    ? recordValue(vectors, options.denseVectorName)
+    : typeof vectors.size === "number"
+      ? vectors
+      : undefined;
+  if (denseVector === undefined) {
+    throw new Error(
+      options.hybrid
+        ? `Qdrant collection is missing dense vector ${options.denseVectorName}`
+        : "Qdrant collection uses named vectors but a dense-only collection was requested",
+    );
+  }
+
+  const actualSize = denseVector.size;
+  if (typeof actualSize === "number" && actualSize !== options.vectorSize) {
+    throw new Error(
+      `Qdrant collection vector size ${actualSize} does not match requested size ${options.vectorSize}`,
+    );
+  }
+  const actualDistance = denseVector.distance;
+  if (typeof actualDistance === "string" && actualDistance !== options.distance) {
+    throw new Error(
+      `Qdrant collection distance ${actualDistance} does not match requested distance ${options.distance}`,
+    );
+  }
+
+  const sparseVectors = recordValue(params, "sparse_vectors");
+  if (options.hybrid && recordValue(sparseVectors, options.sparseVectorName) === undefined) {
+    throw new Error(`Qdrant collection is missing sparse vector ${options.sparseVectorName}`);
+  }
+  if (!options.hybrid && sparseVectors !== undefined && Object.keys(sparseVectors).length > 0) {
+    throw new Error("Qdrant collection is hybrid but a dense-only collection was requested");
+  }
+}
+
+export function qdrantCollectionExists(response: unknown): boolean | undefined {
+  if (typeof response === "boolean") {
+    return response;
+  }
+  const result = unwrapResult(response);
+  return typeof result?.exists === "boolean" ? result.exists : undefined;
+}
+
+export function isQdrantNotFoundError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { status?: unknown } | undefined;
+    message?: unknown;
+  };
+  return (
+    candidate.status === 404 ||
+    candidate.statusCode === 404 ||
+    candidate.response?.status === 404 ||
+    (typeof candidate.message === "string" &&
+      /(?:\b404\b|not found|missing collection)/i.test(candidate.message))
+  );
+}
+
+export async function defaultQdrantClient(
+  options: QdrantClientParams = {},
+): Promise<QdrantClientLike> {
   const qdrant = await import("@qdrant/js-client-rest");
-  return new qdrant.QdrantClient({}) as QdrantClientLike;
+  return new qdrant.QdrantClient(options) as QdrantClientLike;
+}
+
+function parseInspectCursor(cursor: string | undefined): number {
+  if (cursor === undefined) {
+    return 0;
+  }
+  const value = Number(cursor);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`Invalid Qdrant inspect cursor: ${cursor}`);
+  }
+  return value;
+}
+
+function rawScrollPage(response: unknown): {
+  points: Array<{
+    id: string | number;
+    payload?: Record<string, unknown> | null;
+  }>;
+  nextOffset?: string | number;
+} {
+  const result = unwrapResult(response);
+  const rawPoints = Array.isArray(result?.points) ? result.points : [];
+  const page: {
+    points: Array<{
+      id: string | number;
+      payload?: Record<string, unknown> | null;
+    }>;
+    nextOffset?: string | number;
+  } = {
+    points: rawPoints.flatMap((point) => {
+      if (typeof point !== "object" || point === null || !("id" in point)) {
+        return [];
+      }
+      const id = point.id;
+      if (typeof id !== "string" && typeof id !== "number") {
+        return [];
+      }
+      const parsed: { id: string | number; payload?: Record<string, unknown> | null } = { id };
+      if ("payload" in point && (point.payload === null || typeof point.payload === "object")) {
+        parsed.payload = point.payload as Record<string, unknown> | null;
+      }
+      return [parsed];
+    }),
+  };
+  if (
+    typeof result?.next_page_offset === "string" ||
+    typeof result?.next_page_offset === "number"
+  ) {
+    page.nextOffset = result.next_page_offset;
+  }
+  return page;
+}
+
+function inspectItemFromPoint<T, Metadata extends VectorMetadata>(point: {
+  id: string | number;
+  payload?: Record<string, unknown> | null;
+}): VectorInspectItem<T, Metadata> {
+  const item: VectorInspectItem<T, Metadata> = {
+    id: String(point.payload?.[documentIdPayloadKey] ?? point.id),
+    document: parseDocument<T>(point.payload?.[documentPayloadKey]),
+  };
+  const metadata = metadataFromPayload<Metadata>(point.payload);
+  if (metadata !== undefined) {
+    item.metadata = metadata;
+  }
+  return item;
+}
+
+function unwrapResult(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const result = record.result;
+  return typeof result === "object" && result !== null
+    ? (result as Record<string, unknown>)
+    : record;
+}
+
+function recordValue(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  const nested = value?.[key];
+  return typeof nested === "object" && nested !== null
+    ? (nested as Record<string, unknown>)
+    : undefined;
 }
 
 function rawPoints(response: unknown): Array<{

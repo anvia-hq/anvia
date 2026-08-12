@@ -8,13 +8,15 @@ import {
 import type { Tool } from "@anvia/core/tool";
 import {
   createVectorSearchTool,
+  type VectorInspectPage,
+  type VectorInspectRequest,
   type VectorSearchIndex,
   type VectorSearchRequest,
   type VectorSearchResult,
   type VectorSearchToolOptions,
 } from "@anvia/core/vector-store";
 import { filterToQdrantFilter } from "./filters.js";
-import { parseQueryResults } from "./helpers.js";
+import { parseQueryResults, qdrantDocumentPage } from "./helpers.js";
 import type { QdrantClientLike, QdrantFusion } from "./types.js";
 
 export type QdrantVectorIndexHybridOptions = {
@@ -45,6 +47,7 @@ export class QdrantVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
               query: queryEmbedding.vector,
               limit: request.topK,
               filter,
+              score_threshold: request.threshold,
               with_payload: true,
             })
           : typeof this.client.search === "function"
@@ -52,6 +55,7 @@ export class QdrantVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
                 vector: queryEmbedding.vector,
                 limit: request.topK,
                 filter,
+                score_threshold: request.threshold,
                 with_payload: true,
               })
             : (() => {
@@ -95,6 +99,7 @@ export class QdrantVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
       ],
       query: { fusion: this.hybrid.fusion },
       limit: request.topK,
+      score_threshold: request.threshold,
       with_payload: true,
     });
     return parseQueryResults<T, Metadata>(response, request.threshold);
@@ -102,6 +107,13 @@ export class QdrantVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
 
   async searchIds(request: VectorSearchRequest): Promise<Array<{ score: number; id: string }>> {
     return (await this.search(request)).map(({ score, id }) => ({ score, id }));
+  }
+
+  async inspect(request: VectorInspectRequest): Promise<VectorInspectPage<T, Metadata>> {
+    return qdrantDocumentPage<T, Metadata>(this.client, this.collectionName, {
+      ...request,
+      filter: filterToQdrantFilter(request.filter),
+    });
   }
 
   asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown> {

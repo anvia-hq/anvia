@@ -140,7 +140,7 @@ export function StudioSidebar(props: StudioNavigationProps) {
             />
           ))}
         </nav>
-        <hr className="mx-2 my-2 border-sidebar-border" />
+        <hr className="my-2 border-sidebar-border" />
         <nav className="grid gap-1 px-2" aria-label="Inspect">
           {inspectItems.map((item) => (
             <NavButton

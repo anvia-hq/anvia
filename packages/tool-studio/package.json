@@ -37,6 +37,7 @@
     "@anvia/react-ui": "workspace:*",
     "@anvia/server": "workspace:*",
     "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@hono/node-server": "^2.1.0",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-alert-dialog": "^1.1.23",

@@ -57,6 +57,25 @@ describe("PlaygroundPage run action", () => {
     expect(html).not.toContain("Working");
     expect(html).not.toContain("animate-spin");
   });
+
+  it("renders session rows without chat icons", () => {
+    const html = render({
+      allSessions: [
+        {
+          id: "session-1",
+          agentId: "support",
+          title: "Font review",
+          createdAt: "2026-08-12T00:00:00.000Z",
+          updatedAt: "2026-08-12T00:00:00.000Z",
+          messageCount: 1,
+        },
+      ],
+    });
+    const sessionButton = buttons(html).find((button) => button.includes(">Font review</span>"));
+
+    expect(sessionButton).toBeDefined();
+    expect(sessionButton).not.toContain("<svg");
+  });
 });
 
 function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): string {
@@ -121,4 +140,8 @@ function buttonWithLabel(html: string, label: string): string {
     throw new Error(`${label} button not found`);
   }
   return matched[0];
+}
+
+function buttons(html: string): string[] {
+  return html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
 }

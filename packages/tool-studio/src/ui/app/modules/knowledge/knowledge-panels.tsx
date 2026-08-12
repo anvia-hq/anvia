@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { StudioKnowledgeItem, StudioKnowledgeSummary } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { StudioEmptyState } from "../../components/ui/studio";
 import { isRecord } from "../shared/object";
 import { JsonSyntax, JsonValueView } from "../shared/renderers";
 import { type ItemState, type KnowledgeSourceRef, sourceId, sourceLabel } from "./knowledge-model";
@@ -17,31 +18,25 @@ export function ItemBrowser(props: {
       <DynamicToolsBrowser source={props.source} state={state} onLoadMore={props.onLoadMore} />
     );
   }
+  const placeholder = knowledgeItemsPlaceholder(props.source, state);
 
   return (
     <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <div className="min-h-0 overflow-auto">
         <div className="pb-4 pt-0">
-          {props.source === undefined ? <MutedRow text="No knowledge source selected" /> : null}
-          {state?.loading === true && state.items.length === 0 ? (
-            <MutedRow text="Loading items" />
-          ) : null}
-          {state?.error === undefined ? null : <MutedRow text={state.error} />}
-          {state?.inspectable === false ? (
-            <MutedRow text={state.message ?? "This source does not expose browseable chunks."} />
-          ) : null}
-          {state?.inspectable !== false && state?.loading === false && state.items.length === 0 ? (
-            <MutedRow text="No items in this source" />
-          ) : null}
-          <div className="grid gap-3">
-            {state?.items.map((item) => (
-              <KnowledgeItemCard
-                item={item}
-                key={`${item.kind}:${item.id}`}
-                source={props.source}
-              />
-            ))}
-          </div>
+          {placeholder === undefined ? (
+            <div className="grid gap-3">
+              {state?.items.map((item) => (
+                <KnowledgeItemCard
+                  item={item}
+                  key={`${item.kind}:${item.id}`}
+                  source={props.source}
+                />
+              ))}
+            </div>
+          ) : (
+            <StudioEmptyState title={placeholder.title} text={placeholder.text} />
+          )}
         </div>
       </div>
       <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border/80 bg-muted/10 py-2">
@@ -60,6 +55,34 @@ export function ItemBrowser(props: {
       </div>
     </section>
   );
+}
+
+function knowledgeItemsPlaceholder(
+  source: KnowledgeSourceRef | undefined,
+  state: ItemState | undefined,
+): { title: string; text: string } | undefined {
+  if (source === undefined) {
+    return {
+      title: "No knowledge source selected",
+      text: "Choose a knowledge source to inspect its stored items.",
+    };
+  }
+  if (state === undefined || (state.loading && state.items.length === 0)) {
+    return { title: "Loading items", text: "Reading items from the selected knowledge source." };
+  }
+  if (state.error !== undefined) {
+    return { title: "Knowledge source error", text: state.error };
+  }
+  if (state.inspectable === false) {
+    return {
+      title: "Source unavailable",
+      text: state.message ?? "This source does not expose browseable items.",
+    };
+  }
+  if (state.items.length === 0) {
+    return { title: "No items", text: "The selected knowledge source is empty." };
+  }
+  return undefined;
 }
 
 function KnowledgeItemCard(props: {
@@ -397,14 +420,11 @@ function DynamicToolSourceDetails(props: {
 
 function DynamicToolEmptyPanel() {
   return (
-    <section className="grid h-full min-h-80 place-items-center border-y border-dashed border-border/80 px-6 text-center">
-      <div className="grid max-w-sm gap-2">
-        <h2 className="m-0 text-base font-semibold text-foreground">No dynamic tool selected</h2>
-        <p className="m-0 text-sm leading-6 text-muted-foreground">
-          Select a tool from the index to inspect its definition and parameters.
-        </p>
-      </div>
-    </section>
+    <StudioEmptyState
+      className="h-full"
+      title="No dynamic tool selected"
+      text="Select a tool from the index to inspect its definition and parameters."
+    />
   );
 }
 
@@ -563,7 +583,11 @@ export function RetrievalLogPanel(props: {
       </div>
       <div className="min-h-0 overflow-auto p-4">
         {props.evidence.length === 0 ? (
-          <MutedRow text="No retrieval evidence captured yet" />
+          <StudioEmptyState
+            className="h-full"
+            title="No retrieval evidence"
+            text="Retrieval activity will appear here after an agent queries a knowledge source."
+          />
         ) : null}
         <div className="grid gap-3">
           {props.evidence.map((item) => (
@@ -629,17 +653,6 @@ function JsonBlock(props: { title: string; value: unknown }) {
       </div>
       <JsonValueView value={props.value} />
     </div>
-  );
-}
-
-export function EmptyState(props: { title: string; text: string }) {
-  return (
-    <section className="grid h-full place-items-center p-8">
-      <div className="grid max-w-sm gap-2 text-center">
-        <h1 className="m-0 text-base font-semibold text-foreground">{props.title}</h1>
-        <p className="m-0 text-sm font-medium leading-6 text-muted-foreground">{props.text}</p>
-      </div>
-    </section>
   );
 }
 

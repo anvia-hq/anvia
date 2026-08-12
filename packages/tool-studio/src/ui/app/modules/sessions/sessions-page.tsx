@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { StudioIcon } from "../../components/ui/icon";
-import { StudioPageShell, StudioSurface } from "../../components/ui/studio";
+import { StudioEmptyState, StudioPageShell, StudioSurface } from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 import { agentLabel, formatRelativeTime } from "../shared/format";
 import type { SessionLoadState } from "../shared/types";
@@ -27,15 +27,19 @@ export function SessionsPage(props: {
 }) {
   if (!props.sessionsEnabled) {
     return (
-      <div className="w-full p-8 text-sm font-medium text-muted-foreground">
-        Sessions are disabled
-      </div>
+      <StudioPageShell aria-label="Sessions">
+        <StudioEmptyState
+          className="h-full"
+          title="Sessions unavailable"
+          text="This Studio runtime does not expose saved sessions."
+        />
+      </StudioPageShell>
     );
   }
 
   return (
     <StudioPageShell className="overflow-auto pb-6 pr-6" aria-label="Sessions">
-      <StudioSurface className="min-w-225">
+      <StudioSurface className="h-full min-w-225">
         <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b bg-background/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
           <span>Session</span>
           <span>Agent</span>
@@ -44,12 +48,10 @@ export function SessionsPage(props: {
           <span className="sr-only">Actions</span>
         </div>
         {props.sessionLoadState === "loading" && props.sessions.length === 0 ? (
-          <div className="px-5 py-4 text-sm font-medium text-muted-foreground">
-            Loading sessions
-          </div>
+          <StudioEmptyState title="Loading sessions" text="Reading saved Studio sessions." />
         ) : null}
         {props.sessionLoadState === "idle" && props.sessions.length === 0 ? (
-          <div className="px-5 py-4 text-sm font-medium text-muted-foreground">No sessions</div>
+          <StudioEmptyState title="No sessions" text="Start a chat to create a Studio session." />
         ) : null}
         {props.sessions.map((session) => (
           <div

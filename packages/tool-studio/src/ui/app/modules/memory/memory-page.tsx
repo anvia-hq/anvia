@@ -443,7 +443,10 @@ function ConversationDetail(props: {
   if (props.conversation === undefined) {
     return (
       <section className="min-h-0 overflow-auto py-4 pl-5 max-xl:col-span-2 max-xl:pl-0 max-md:col-span-1">
-        <EmptyState title="No conversation selected" text="Choose a conversation to inspect." />
+        <StudioEmptyState
+          title="No conversation selected"
+          text="Choose a conversation to inspect."
+        />
       </section>
     );
   }
@@ -482,7 +485,7 @@ function ConversationDetail(props: {
         </header>
 
         {props.detailLoading ? (
-          <EmptyState title="Loading detail" text="Reading persisted messages." />
+          <StudioEmptyState title="Loading detail" text="Reading persisted messages." />
         ) : (
           <div className="grid gap-4">
             {props.conversation.metadata === undefined ? null : (
@@ -501,23 +504,11 @@ function ConversationDetail(props: {
 
 function UnavailableSource(props: { source: StudioMemorySourceSummary }) {
   return (
-    <div className="grid h-full min-h-0 place-items-center border-t border-border/80 px-6">
-      <div className="grid w-full max-w-2xl gap-5">
-        <div className="grid gap-2">
-          <Badge className="w-fit border-border/80 bg-muted/45 text-foreground">agent memory</Badge>
-          <h2 className="m-0 text-2xl font-semibold leading-tight text-foreground">
-            {props.source.label} is not inspectable
-          </h2>
-          <p className="m-0 text-sm leading-6 text-muted-foreground">
-            {props.source.reason ?? "This memory store does not expose read-only discovery."}
-          </p>
-        </div>
-        <div className="grid border-y border-border/80 sm:grid-cols-2 sm:divide-x sm:divide-border/80">
-          <Fact label="store" value={props.source.storeKind ?? "custom"} />
-          <Fact label="agents" value={props.source.agentIds.join(", ")} />
-        </div>
-      </div>
-    </div>
+    <StudioEmptyState
+      className="h-full"
+      title={`${props.source.label} is not inspectable`}
+      text={props.source.reason ?? "This memory store does not expose read-only discovery."}
+    />
   );
 }
 
@@ -568,42 +559,18 @@ function Fact(props: { label: string; value: string | number }) {
   );
 }
 
-function EmptyState(props: { title: string; text: string }) {
-  return (
-    <div className="grid min-h-80 place-items-center px-6 text-center">
-      <div className="grid max-w-md gap-2">
-        <h2 className="m-0 text-base font-semibold text-foreground">{props.title}</h2>
-        <p className="m-0 text-sm leading-6 text-muted-foreground">{props.text}</p>
-      </div>
-    </div>
-  );
-}
-
 function MemoryEmptyDashboard(props: {
   source: StudioMemorySourceSummary;
   userCount: number;
   onRefresh: () => void;
 }) {
   return (
-    <section className="grid h-full min-h-0 place-items-center border-t border-border/80 px-6">
-      <div className="grid w-full max-w-3xl gap-6">
-        <div className="grid gap-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            {props.source.label}
-          </div>
-          <h2 className="m-0 text-2xl font-semibold leading-tight text-foreground">
-            No saved conversations yet
-          </h2>
-          <p className="m-0 max-w-[64ch] text-sm leading-6 text-muted-foreground">
-            Conversations will appear here after the connected agent writes to this memory source.
-          </p>
-        </div>
-        <div className="grid border-y border-border/80 sm:grid-cols-3 sm:divide-x sm:divide-border/80">
-          <Fact label="users" value={props.userCount} />
-          <Fact label="agents" value={props.source.agentIds.length} />
-          <Fact label="conversations" value={0} />
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
+    <StudioEmptyState
+      className="h-full"
+      title="No saved conversations yet"
+      text={`Conversations will appear here after the connected agent writes to ${props.source.label}. ${props.userCount} users are currently available.`}
+      action={
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-3">
           <Button
             className="h-8 min-h-8 rounded-md px-3 text-xs"
             type="button"
@@ -616,8 +583,8 @@ function MemoryEmptyDashboard(props: {
             Existing database conversations are discovered automatically.
           </span>
         </div>
-      </div>
-    </section>
+      }
+    />
   );
 }
 

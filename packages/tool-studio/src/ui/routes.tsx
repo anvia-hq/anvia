@@ -212,7 +212,7 @@ function renderLegacyStudioUiShell(props: {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${title}</title>`,
     '<script>(()=>{try{const t=localStorage.getItem("anvia-studio-theme");const d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light"}catch{}})();</script>',
-    `<link rel="icon" type="image/png" href="${escapeHtml(props.compatUiPath)}/assets/anvia.png">`,
+    `<link rel="icon" type="image/svg+xml" href="${escapeHtml(props.compatUiPath)}/assets/favicon.svg">`,
     `<link rel="stylesheet" href="${escapeHtml(props.stylesheet)}">`,
     "</head>",
     "<body>",

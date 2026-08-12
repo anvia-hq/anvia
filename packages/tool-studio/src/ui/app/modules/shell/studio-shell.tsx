@@ -38,44 +38,39 @@ type NavigationItem = {
   label: string;
   icon: IconName;
   page: ActivePage;
-  enabled: boolean;
   knowledgeTab?: KnowledgeTab;
 };
 
-function navigationItems(props: StudioNavigationProps): NavigationItem[] {
+function navigationItems(): NavigationItem[] {
   return [
     {
       page: "playground",
       label: "Chat",
       icon: "message",
-      enabled: props.hasAgents,
     },
     {
       page: "pipelines",
       label: "Pipelines",
       icon: "workflow",
-      enabled: props.pipelinesEnabled,
     },
-    { page: "sessions", label: "Sessions", icon: "list", enabled: props.sessionsEnabled },
-    { page: "tracing", label: "Traces", icon: "activity", enabled: props.tracesEnabled },
-    { page: "agents", label: "Studio", icon: "bot", enabled: true },
-    { page: "tools", label: "Tools", icon: "wrench", enabled: props.toolsEnabled },
+    { page: "sessions", label: "Sessions", icon: "list" },
+    { page: "tracing", label: "Traces", icon: "activity" },
+    { page: "agents", label: "Studio", icon: "bot" },
+    { page: "tools", label: "Tools", icon: "wrench" },
     {
       page: "sandboxes",
       label: "Sandboxes",
       icon: "container",
-      enabled: props.sandboxesEnabled,
     },
-    { page: "mcps", label: "MCPs", icon: "plug", enabled: props.mcpsEnabled },
+    { page: "mcps", label: "MCPs", icon: "plug" },
     ...knowledgeTabs.map((tab) => ({
       page: "knowledge" as const,
       label: tab.label,
       icon: knowledgeNavIcons[tab.id],
-      enabled: props.knowledgeEnabled,
       knowledgeTab: tab.id,
     })),
-    { page: "memory", label: "Memory", icon: "database", enabled: props.memoryEnabled },
-    { page: "status", label: "Status", icon: "gauge", enabled: props.statusEnabled },
+    { page: "memory", label: "Memory", icon: "database" },
+    { page: "status", label: "Status", icon: "gauge" },
   ];
 }
 
@@ -121,7 +116,7 @@ export function StudioRail(props: StudioNavigationProps) {
 }
 
 export function StudioSidebar(props: StudioNavigationProps) {
-  const items = navigationItems(props);
+  const items = navigationItems();
   const workspaceItems = items.filter((item) => navigationSection(item.page) === "workspace");
   const inspectItems = items.filter((item) => navigationSection(item.page) === "inspect");
 
@@ -132,7 +127,6 @@ export function StudioSidebar(props: StudioNavigationProps) {
           {workspaceItems.map((item) => (
             <NavButton
               active={itemIsActive(item, props)}
-              disabled={!item.enabled}
               icon={item.icon}
               key={`${item.page}-${item.knowledgeTab ?? "page"}`}
               label={item.label}
@@ -145,7 +139,6 @@ export function StudioSidebar(props: StudioNavigationProps) {
           {inspectItems.map((item) => (
             <NavButton
               active={itemIsActive(item, props)}
-              disabled={!item.enabled}
               icon={item.icon}
               key={`${item.page}-${item.knowledgeTab ?? "page"}`}
               label={item.label}

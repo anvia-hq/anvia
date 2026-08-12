@@ -795,17 +795,6 @@ function firstDeltaMsFromMetadata(metadata: unknown): number | undefined {
   return metadata.firstDeltaMs;
 }
 
-export function statusDotClass(status: StudioTrace["status"]): string {
-  switch (status) {
-    case "success":
-      return "bg-foreground";
-    case "error":
-      return "bg-destructive";
-    case "running":
-      return "bg-muted-foreground";
-  }
-}
-
 export function TraceToneIcon(props: {
   tone: "trace" | "agent" | "turn" | StudioTrace["observations"][number]["kind"];
 }) {

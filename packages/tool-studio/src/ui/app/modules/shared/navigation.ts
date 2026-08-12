@@ -13,10 +13,6 @@ export function navigationSection(page: ActivePage): StudioNavigationSection {
   return workspacePages.has(page) ? "workspace" : "inspect";
 }
 
-export function defaultPageForSection(section: StudioNavigationSection): ActivePage {
-  return section === "workspace" ? "playground" : "agents";
-}
-
 export type StudioPageAvailability = {
   hasAgents: boolean;
   sessionsEnabled: boolean;

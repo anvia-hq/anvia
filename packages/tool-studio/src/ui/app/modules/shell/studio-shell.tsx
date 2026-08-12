@@ -5,7 +5,7 @@ import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
 import { knowledgeTabs } from "../knowledge/knowledge-model";
 import { pageTitle } from "../shared/format";
-import { defaultPageForSection, navigationSection } from "../shared/navigation";
+import { navigationSection } from "../shared/navigation";
 import type { ActivePage, KnowledgeTab } from "../shared/types";
 import { type IconName, NavButton } from "./nav-button";
 
@@ -95,12 +95,9 @@ function navigateToItem(item: NavigationItem, props: StudioNavigationProps): voi
 }
 
 export function StudioRail(props: StudioNavigationProps) {
-  const section = navigationSection(props.activePage);
-  const items = navigationItems(props);
-
   return (
     <aside
-      aria-label="Studio sections"
+      aria-label="Anvia Studio"
       className="flex h-[100dvh] w-14 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
     >
       <div className="flex shrink-0 justify-center p-2">
@@ -116,43 +113,6 @@ export function StudioRail(props: StudioNavigationProps) {
           </span>
         </button>
       </div>
-
-      <nav
-        className="hidden min-h-0 flex-1 flex-col items-center gap-2 p-2 pt-0 lg:flex"
-        aria-label="Sections"
-      >
-        <NavButton
-          compact
-          active={section === "workspace"}
-          icon="play"
-          label="Workspace"
-          onClick={() => props.onNavigate(defaultPageForSection("workspace"))}
-        />
-        <NavButton
-          compact
-          active={section === "inspect"}
-          icon="inspect"
-          label="Inspect"
-          onClick={() => props.onNavigate(defaultPageForSection("inspect"))}
-        />
-      </nav>
-
-      <nav
-        className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto p-2 pt-0 lg:hidden"
-        aria-label="Main"
-      >
-        {items.map((item) => (
-          <NavButton
-            compact
-            active={itemIsActive(item, props)}
-            disabled={!item.enabled}
-            icon={item.icon}
-            key={`${item.page}-${item.knowledgeTab ?? "page"}`}
-            label={item.label}
-            onClick={() => navigateToItem(item, props)}
-          />
-        ))}
-      </nav>
       <span className="sr-only" aria-live="polite">
         {props.status}
       </span>
@@ -161,27 +121,40 @@ export function StudioRail(props: StudioNavigationProps) {
 }
 
 export function StudioSidebar(props: StudioNavigationProps) {
-  const section = navigationSection(props.activePage);
-  const items = navigationItems(props).filter((item) => navigationSection(item.page) === section);
+  const items = navigationItems(props);
+  const workspaceItems = items.filter((item) => navigationSection(item.page) === "workspace");
+  const inspectItems = items.filter((item) => navigationSection(item.page) === "inspect");
 
   return (
     <aside className="hidden h-[100dvh] w-64 min-h-0 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
-      <nav
-        className="grid gap-1 px-2 pt-2"
-        aria-label={section === "workspace" ? "Workspace" : "Inspect"}
-      >
-        {items.map((item) => (
-          <NavButton
-            active={itemIsActive(item, props)}
-            disabled={!item.enabled}
-            icon={item.icon}
-            key={`${item.page}-${item.knowledgeTab ?? "page"}`}
-            label={item.label}
-            onClick={() => navigateToItem(item, props)}
-          />
-        ))}
-      </nav>
-      <div className="mt-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        <nav className="grid gap-1 px-2" aria-label="Workspace">
+          {workspaceItems.map((item) => (
+            <NavButton
+              active={itemIsActive(item, props)}
+              disabled={!item.enabled}
+              icon={item.icon}
+              key={`${item.page}-${item.knowledgeTab ?? "page"}`}
+              label={item.label}
+              onClick={() => navigateToItem(item, props)}
+            />
+          ))}
+        </nav>
+        <hr className="mx-2 my-2 border-sidebar-border" />
+        <nav className="grid gap-1 px-2" aria-label="Inspect">
+          {inspectItems.map((item) => (
+            <NavButton
+              active={itemIsActive(item, props)}
+              disabled={!item.enabled}
+              icon={item.icon}
+              key={`${item.page}-${item.knowledgeTab ?? "page"}`}
+              label={item.label}
+              onClick={() => navigateToItem(item, props)}
+            />
+          ))}
+        </nav>
+      </div>
+      <div className="shrink-0 p-2">
         <SidebarLink href="https://docs.anvia.dev" label="Anvia Docs" />
       </div>
     </aside>

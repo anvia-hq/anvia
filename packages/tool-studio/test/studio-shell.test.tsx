@@ -1,5 +1,7 @@
+import { MagnifyingGlass, Play } from "@phosphor-icons/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { navIcon } from "../src/ui/app/modules/shell/nav-button";
 import {
   StudioHeader,
   type StudioNavigationProps,
@@ -26,6 +28,11 @@ const navigation: StudioNavigationProps = {
 };
 
 describe("Studio Lens shell", () => {
+  it("uses play and inspection icons for the compact section rail", () => {
+    expect(navIcon("play")).toBe(Play);
+    expect(navIcon("inspect")).toBe(MagnifyingGlass);
+  });
+
   it("renders active section controls and section-specific sidebar routes", () => {
     const rail = renderToStaticMarkup(<StudioRail {...navigation} />);
     const sidebar = renderToStaticMarkup(<StudioSidebar {...navigation} />);

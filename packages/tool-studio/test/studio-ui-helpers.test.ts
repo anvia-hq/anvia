@@ -2,7 +2,6 @@ import { Message, uiMessagesToCoreMessages } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import { userUIMessageWithAttachments } from "../src/ui/app/app-helpers";
 import {
-  defaultPageForSection,
   fallbackActivePage,
   isActivePageEnabled,
   navigationSection,
@@ -39,8 +38,6 @@ describe("Studio UI helpers", () => {
         navigationSection(page as Parameters<typeof navigationSection>[0]),
       ),
     ).toEqual(Array(7).fill("inspect"));
-    expect(defaultPageForSection("workspace")).toBe("playground");
-    expect(defaultPageForSection("inspect")).toBe("agents");
   });
 
   it("keeps pages enabled when their runtime capability is missing", () => {

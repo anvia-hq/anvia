@@ -1,7 +1,5 @@
-import { MagnifyingGlass, Play } from "@phosphor-icons/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { navIcon } from "../src/ui/app/modules/shell/nav-button";
 import {
   StudioHeader,
   type StudioNavigationProps,
@@ -28,23 +26,23 @@ const navigation: StudioNavigationProps = {
 };
 
 describe("Studio Lens shell", () => {
-  it("uses play and inspection icons for the compact section rail", () => {
-    expect(navIcon("play")).toBe(Play);
-    expect(navIcon("inspect")).toBe(MagnifyingGlass);
-  });
-
-  it("renders active section controls and section-specific sidebar routes", () => {
+  it("keeps the compact rail logo-only and renders both menu groups in the sidebar", () => {
     const rail = renderToStaticMarkup(<StudioRail {...navigation} />);
     const sidebar = renderToStaticMarkup(<StudioSidebar {...navigation} />);
 
-    expect(rail).toContain('aria-label="Inspect"');
-    expect(rail).toMatch(/aria-current="page"[^>]+aria-label="Inspect"/);
+    expect(rail).toContain('aria-label="Open Chat"');
+    expect(rail).not.toContain('aria-label="Sections"');
+    expect(rail).not.toContain('aria-label="Workspace"');
+    expect(rail).not.toContain('aria-label="Inspect"');
+    expect(sidebar).toContain('aria-label="Workspace"');
     expect(sidebar).toContain('aria-label="Inspect"');
+    expect(sidebar).toContain("Chat");
     expect(sidebar).toContain("Tools");
     expect(sidebar).toContain("Static Context");
+    expect(sidebar).toContain("<hr");
     expect(sidebar).toContain('href="https://docs.anvia.dev"');
     expect(sidebar).not.toContain(">Inspect</div>");
-    expect(sidebar).not.toContain(">Chat<");
+    expect(sidebar).not.toContain(">Workspace</div>");
   });
 
   it("renders Lens breadcrumbs and the tri-state theme control", () => {

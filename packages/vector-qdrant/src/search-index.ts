@@ -99,9 +99,9 @@ export class QdrantVectorIndex<T, Metadata extends VectorMetadata = VectorMetada
       ],
       query: { fusion: this.hybrid.fusion },
       limit: request.topK,
-      score_threshold: request.threshold,
       with_payload: true,
     });
+    // Hybrid thresholds apply to the final fused score, not either retriever's similarity scale.
     return parseQueryResults<T, Metadata>(response, request.threshold);
   }
 

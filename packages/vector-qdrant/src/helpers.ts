@@ -165,16 +165,19 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
   }
 
   const limit = Math.max(0, Math.trunc(options.limit));
-  const start = parseInspectCursor(options.cursor);
+  const cursor = parseInspectCursor(options.cursor);
   if (limit === 0) {
     return { items: [] };
   }
 
-  const seenDocumentIds = new Set<string>();
+  const seenDocumentIds = new Set(cursor.documentIds);
   const seenOffsets = new Set<string | number>();
+  if (cursor.offset !== undefined) {
+    seenOffsets.add(cursor.offset);
+  }
   const items: Array<VectorInspectItem<T, Metadata>> = [];
-  let offset: unknown;
-  let hasMore = false;
+  let offset = cursor.offset;
+  let skip = cursor.skip;
 
   while (true) {
     const response = await client.scroll(collectionName, {
@@ -186,24 +189,30 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
     });
     const page = rawScrollPage(response);
 
-    for (const point of page.points) {
+    for (let index = skip; index < page.points.length; index += 1) {
+      const point = page.points[index];
+      if (point === undefined) {
+        continue;
+      }
       const item = inspectItemFromPoint<T, Metadata>(point);
       if (seenDocumentIds.has(item.id)) {
         continue;
       }
-      seenDocumentIds.add(item.id);
-      if (seenDocumentIds.size <= start) {
-        continue;
-      }
       if (items.length === limit) {
-        hasMore = true;
-        break;
+        return {
+          items,
+          nextCursor: serializeInspectCursor({
+            offset,
+            skip: index,
+            documentIds: [...seenDocumentIds],
+          }),
+        };
       }
+      seenDocumentIds.add(item.id);
       items.push(item);
     }
 
     if (
-      hasMore ||
       page.nextOffset === undefined ||
       page.points.length === 0 ||
       seenOffsets.has(page.nextOffset)
@@ -212,13 +221,10 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
     }
     seenOffsets.add(page.nextOffset);
     offset = page.nextOffset;
+    skip = 0;
   }
 
-  const result: VectorInspectPage<T, Metadata> = { items };
-  if (hasMore) {
-    result.nextCursor = String(start + items.length);
-  }
-  return result;
+  return { items };
 }
 
 export function qdrantMutationRequest(
@@ -333,15 +339,42 @@ export async function defaultQdrantClient(
   return new qdrant.QdrantClient(options) as QdrantClientLike;
 }
 
-function parseInspectCursor(cursor: string | undefined): number {
+type QdrantInspectCursor = {
+  offset?: string | number | undefined;
+  skip: number;
+  documentIds: string[];
+};
+
+function parseInspectCursor(cursor: string | undefined): QdrantInspectCursor {
   if (cursor === undefined) {
-    return 0;
+    return { skip: 0, documentIds: [] };
   }
-  const value = Number(cursor);
-  if (!Number.isSafeInteger(value) || value < 0) {
+  try {
+    const value = JSON.parse(decodeURIComponent(cursor)) as Record<string, unknown>;
+    const offset = value.offset;
+    const skip = value.skip;
+    const documentIds = value.documentIds;
+    if (
+      (offset !== undefined && typeof offset !== "string" && typeof offset !== "number") ||
+      !Number.isSafeInteger(skip) ||
+      (skip as number) < 0 ||
+      !Array.isArray(documentIds) ||
+      !documentIds.every((id) => typeof id === "string")
+    ) {
+      throw new TypeError("invalid cursor state");
+    }
+    return {
+      offset: offset as string | number | undefined,
+      skip: skip as number,
+      documentIds: documentIds as string[],
+    };
+  } catch {
     throw new TypeError(`Invalid Qdrant inspect cursor: ${cursor}`);
   }
-  return value;
+}
+
+function serializeInspectCursor(cursor: QdrantInspectCursor): string {
+  return encodeURIComponent(JSON.stringify(cursor));
 }
 
 function rawScrollPage(response: unknown): {

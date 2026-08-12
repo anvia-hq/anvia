@@ -113,7 +113,8 @@ export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetada
 
     // Older custom clients may not implement batchUpdate. Delete first so replacing a document with
     // fewer embeddings does not leave stale points behind. The delete must finish before the upsert
-    // when the operations cannot be submitted as one ordered batch.
+    // when the operations cannot be submitted as one ordered batch. This path is not atomic: if the
+    // upsert fails, the previous points have already been deleted.
     if (typeof this.client.delete !== "function") {
       throw new TypeError(
         "Qdrant document replacement requires a client that implements batchUpdate(...) or delete(...).",

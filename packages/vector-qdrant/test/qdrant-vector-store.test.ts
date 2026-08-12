@@ -217,6 +217,7 @@ describe("QdrantVectorStore", () => {
     const results = await store.index({ dense, sparse }).search({
       query: "cat",
       topK: 2,
+      threshold: 1,
     });
 
     expect(client.upserts[0]).toMatchObject({
@@ -244,6 +245,9 @@ describe("QdrantVectorStore", () => {
         with_payload: true,
       },
     });
+    expect((client.queries[0] as { options: Record<string, unknown> }).options).not.toHaveProperty(
+      "score_threshold",
+    );
     expect(results).toEqual([
       {
         id: "doc1",
@@ -605,25 +609,39 @@ describe("QdrantVectorStore", () => {
 
   it("inspects logical documents with deduplicated cursor pagination", async () => {
     const client = new MockQdrantClient();
-    client.scrollResponse = {
-      points: [
-        {
-          id: "point-doc1-a",
-          payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
-        },
-        {
-          id: "point-doc1-b",
-          payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
-        },
-        {
-          id: "point-doc2",
-          payload: { __anvia_document_id: "doc2", __anvia_document: "two", rank: 2 },
-        },
-        {
-          id: "point-doc3",
-          payload: { __anvia_document_id: "doc3", __anvia_document: "three" },
-        },
-      ],
+    client.scroll = async (collectionName: string, options: unknown) => {
+      client.scrolls.push({ collectionName, options });
+      const offset = (options as { offset?: unknown }).offset;
+      return offset === "page-2"
+        ? {
+            points: [
+              {
+                id: "point-doc2",
+                payload: { __anvia_document_id: "doc2", __anvia_document: "two", rank: 2 },
+              },
+              {
+                id: "point-doc1-c",
+                payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
+              },
+              {
+                id: "point-doc3",
+                payload: { __anvia_document_id: "doc3", __anvia_document: "three" },
+              },
+            ],
+          }
+        : {
+            points: [
+              {
+                id: "point-doc1-a",
+                payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
+              },
+              {
+                id: "point-doc1-b",
+                payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
+              },
+            ],
+            next_page_offset: "page-2",
+          };
     };
     const store = await QdrantVectorStore.connect<string>({
       client,
@@ -643,12 +661,26 @@ describe("QdrantVectorStore", () => {
         { id: "doc1", document: "one" },
         { id: "doc2", document: "two", metadata: { rank: 2 } },
       ],
-      nextCursor: "2",
+      nextCursor: expect.any(String),
     });
     expect(second).toEqual({ items: [{ id: "doc3", document: "three" }] });
     expect(client.scrolls[0]).toMatchObject({
       options: { filter: { must: [{ key: "rank", range: { gt: 1 } }] } },
     });
+    expect(client.scrolls[2]).toMatchObject({ options: { offset: "page-2" } });
+  });
+
+  it("rejects invalid inspect cursors", async () => {
+    const client = new MockQdrantClient();
+    const store = await QdrantVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    await expect(
+      store.index(new MockEmbeddingModel()).inspect({ limit: 2, cursor: "invalid" }),
+    ).rejects.toThrow("Invalid Qdrant inspect cursor");
   });
 
   it("validates existing collection dimensions", async () => {

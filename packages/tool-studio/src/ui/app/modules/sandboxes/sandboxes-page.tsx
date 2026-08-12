@@ -492,10 +492,18 @@ function FileBrowser(props: {
       </div>
       <div className="min-h-0 overflow-y-auto p-2">
         {props.loading ? (
-          <p className="m-0 px-3 py-4 text-xs text-muted-foreground">Loading workspace</p>
+          <StudioEmptyState
+            size="compact"
+            title="Loading workspace"
+            text="Reading files from the selected sandbox."
+          />
         ) : null}
         {!props.loading && props.files.length === 0 ? (
-          <p className="m-0 px-3 py-4 text-xs text-muted-foreground">This directory is empty.</p>
+          <StudioEmptyState
+            size="compact"
+            title="Empty directory"
+            text="This directory does not contain any files."
+          />
         ) : null}
         {props.files.map((file) => (
           <Button
@@ -588,14 +596,22 @@ function FilePreviewPanel(props: { preview: FilePreview | undefined; sandboxRef:
           </Button>
         ) : null}
       </div>
-      <div className="grid min-h-0 place-items-center overflow-auto bg-background/35 p-4">
+      <div className="grid min-h-0 place-items-center overflow-auto">
         {props.preview === undefined ? (
-          <p className="m-0 text-center text-xs leading-5 text-muted-foreground">
-            Choose a regular file to inspect its contents.
-          </p>
+          <StudioEmptyState
+            className="h-full rounded-none"
+            size="compact"
+            title="No file selected"
+            text="Choose a regular file to inspect its contents."
+          />
         ) : null}
         {props.preview?.kind === "loading" ? (
-          <p className="m-0 text-xs text-muted-foreground">Loading preview</p>
+          <StudioEmptyState
+            className="h-full rounded-none"
+            size="compact"
+            title="Loading preview"
+            text="Reading the selected file."
+          />
         ) : null}
         {props.preview?.kind === "text" ? (
           <pre className="m-0 h-full min-h-48 w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/70 bg-card/60 p-4 font-mono text-xs leading-5 text-foreground">

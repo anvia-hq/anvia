@@ -17,7 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { StudioPageShell, StudioSurface, StudioTabs } from "../../components/ui/studio";
+import {
+  StudioEmptyState,
+  StudioPageShell,
+  StudioSurface,
+  StudioTabs,
+} from "../../components/ui/studio";
 import { Textarea } from "../../components/ui/textarea";
 import { formatLogMetadataText, LogMetadata } from "../shared/log-metadata";
 import { JsonSyntax } from "../shared/renderers";
@@ -82,18 +87,15 @@ export function PipelinesPage(props: {
               </div>
             ) : null}
             {!props.detailLoading && graph === undefined ? (
-              <div className="grid h-full min-h-96 place-items-center p-8 text-center">
-                <div className="max-w-sm">
-                  <p className="m-0 text-sm font-semibold text-foreground">
-                    {props.pipelines.length === 0 ? "No pipelines" : "No pipeline selected"}
-                  </p>
-                  <p className="m-0 mt-2 text-sm leading-6 text-muted-foreground">
-                    {props.pipelines.length === 0
-                      ? "0 pipeline records are available in this Studio runtime."
-                      : "Choose a registered pipeline to inspect its graph and runtime logs."}
-                  </p>
-                </div>
-              </div>
+              <StudioEmptyState
+                className="h-full"
+                title={props.pipelines.length === 0 ? "No pipelines" : "No pipeline selected"}
+                text={
+                  props.pipelines.length === 0
+                    ? "No pipeline records are available in this Studio runtime."
+                    : "Choose a registered pipeline to inspect its graph and runtime logs."
+                }
+              />
             ) : null}
             {graph !== undefined ? (
               <ReactFlow
@@ -450,9 +452,11 @@ function PipelineRunsPanel(props: {
           </div>
         ) : null}
         {!props.loading && props.runs.length === 0 ? (
-          <div className="py-3 text-sm font-medium text-muted-foreground">
-            No saved pipeline runs yet.
-          </div>
+          <StudioEmptyState
+            size="compact"
+            title="No saved pipeline runs"
+            text="Run this pipeline to create its first persisted execution."
+          />
         ) : null}
         {props.runs.map((run) => (
           <PipelineRunRow
@@ -672,9 +676,11 @@ function PipelineLogsSection(props: {
         onScroll={updateStickiness}
       >
         {props.selectedPipelineId.length === 0 ? (
-          <div className="px-0 py-4 text-sm font-medium text-muted-foreground">
-            No pipeline selected.
-          </div>
+          <StudioEmptyState
+            size="compact"
+            title="No pipeline selected"
+            text="Choose a pipeline to view its runtime logs."
+          />
         ) : null}
         {props.selectedPipelineId.length > 0 && props.loading && props.logs.length === 0 ? (
           <div className="grid gap-2 py-4">
@@ -684,9 +690,11 @@ function PipelineLogsSection(props: {
           </div>
         ) : null}
         {props.selectedPipelineId.length > 0 && !props.loading && props.logs.length === 0 ? (
-          <div className="py-4 text-sm font-medium text-muted-foreground">
-            No logs yet. Run the pipeline to populate this console.
-          </div>
+          <StudioEmptyState
+            size="compact"
+            title="No logs yet"
+            text="Run the pipeline to populate this console."
+          />
         ) : null}
         {props.logs.map((log) => (
           <PipelineLogRow log={log} key={log.id} />

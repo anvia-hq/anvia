@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { StudioSessionLogEntry } from "../../../../types";
+import { StudioEmptyState } from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 import { formatLogMetadataText, LogMetadata } from "../shared/log-metadata";
 
@@ -46,19 +47,26 @@ export function SessionLogsPanel(props: {
         onScroll={updateStickiness}
       >
         {props.selectedSessionId.length === 0 ? (
-          <div className="grid h-full min-h-80 place-items-center text-center text-sm font-medium text-muted-foreground">
-            Start or open a session to view runtime logs.
-          </div>
+          <StudioEmptyState
+            className="h-full rounded-none"
+            size="compact"
+            title="No session selected"
+            text="Start or open a session to view runtime logs."
+          />
         ) : null}
         {props.selectedSessionId.length > 0 && props.loading && props.logs.length === 0 ? (
-          <div className="py-3 pl-0 pr-2 text-sm font-medium text-muted-foreground">
-            Loading logs
-          </div>
+          <StudioEmptyState
+            size="compact"
+            title="Loading logs"
+            text="Reading session runtime logs."
+          />
         ) : null}
         {props.selectedSessionId.length > 0 && !props.loading && props.logs.length === 0 ? (
-          <div className="py-3 pl-0 pr-2 text-sm font-medium text-muted-foreground">
-            No logs yet
-          </div>
+          <StudioEmptyState
+            size="compact"
+            title="No logs yet"
+            text="Runtime logs will appear here as the session runs."
+          />
         ) : null}
         <div className="grid min-w-0 gap-1 py-2 pl-0 pr-2 ">
           {props.logs.map((log) => (

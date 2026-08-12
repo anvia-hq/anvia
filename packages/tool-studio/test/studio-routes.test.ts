@@ -65,6 +65,9 @@ describe("Studio UI routes", () => {
     expect(shellHtml).toContain('data-ui-path=""');
     expect(shellHtml).toContain('data-ui-compat-path="/studio"');
     expect(shellHtml).toContain('src="/studio/assets/client.js"');
+    expect(shellHtml).toContain(
+      'rel="icon" type="image/svg+xml" href="/studio/assets/favicon.svg"',
+    );
 
     const rootShell = await app.request("http://studio.test/tracing/sessions/session_1");
     expect(rootShell.status).toBe(200);
@@ -104,6 +107,11 @@ describe("Studio UI routes", () => {
     expect(image.status).toBe(200);
     expect(image.headers.get("content-type")).toBe("image/png");
     expect((await image.arrayBuffer()).byteLength).toBeGreaterThan(0);
+
+    const favicon = await app.request("http://studio.test/studio/assets/favicon.svg");
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(await favicon.text()).toContain('fill="#2BF563"');
 
     const missing = await app.request("http://studio.test/studio/assets/missing.bin");
     expect(missing.status).toBe(404);

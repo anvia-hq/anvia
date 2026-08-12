@@ -50,6 +50,7 @@ import { Card } from "../../components/ui/card";
 import { StudioIcon } from "../../components/ui/icon";
 import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { StudioEmptyState } from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 import {
   emptyFallback,
@@ -74,9 +75,11 @@ export function TraceBrowser(props: {
 }) {
   if (!props.tracesEnabled) {
     return (
-      <div className="w-full rounded-lg border border-dashed border-border p-8 text-sm font-medium text-muted-foreground">
-        Tracing is disabled
-      </div>
+      <StudioEmptyState
+        className="h-full"
+        title="Tracing unavailable"
+        text="This Studio runtime does not expose traces."
+      />
     );
   }
 
@@ -136,14 +139,13 @@ function TraceTable(props: {
             <span>Events</span>
           </div>
           {props.traceLoadState === "loading" && props.traces.length === 0 ? (
-            <div className="px-5 py-4 text-sm font-medium text-muted-foreground">
-              Loading traces
-            </div>
+            <StudioEmptyState title="Loading traces" text="Reading runtime trace records." />
           ) : null}
           {props.traceLoadState === "idle" && props.traces.length === 0 ? (
-            <div className="px-5 py-4 text-sm font-medium text-muted-foreground">
-              No traces found
-            </div>
+            <StudioEmptyState
+              title="No traces found"
+              text="Run an agent to populate the tracing timeline."
+            />
           ) : null}
           {props.traces.map((trace) => (
             <Button
@@ -254,9 +256,15 @@ function TraceDetailRoute(props: {
       </header>
       <div className="min-h-0 min-w-0 overflow-hidden">
         {props.selectedTrace === undefined ? (
-          <Card className="grid h-full place-items-center rounded-none border-0 bg-background p-6 text-sm font-medium text-muted-foreground">
-            {props.traceLoadState === "loading" ? "Loading trace" : "Trace not found"}
-          </Card>
+          <StudioEmptyState
+            className="h-full rounded-none"
+            title={props.traceLoadState === "loading" ? "Loading trace" : "Trace not found"}
+            text={
+              props.traceLoadState === "loading"
+                ? "Reading the selected trace."
+                : "The selected trace is not available in this Studio runtime."
+            }
+          />
         ) : (
           <TracePanel
             traces={
@@ -364,12 +372,11 @@ function TracePanel(props: {
 
   if (activeTrace === undefined) {
     return (
-      <section
-        className="grid h-full min-h-0 w-full place-items-center text-sm font-medium text-muted-foreground"
-        aria-label="Traces"
-      >
-        No trace selected
-      </section>
+      <StudioEmptyState
+        className="h-full rounded-none"
+        title="No trace selected"
+        text="Choose a trace to inspect its spans and metadata."
+      />
     );
   }
 

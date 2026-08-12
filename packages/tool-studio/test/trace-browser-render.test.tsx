@@ -8,7 +8,9 @@ const agents: StudioConfig["agents"] = [{ id: "support", name: "Support", quickP
 
 describe("TraceBrowser rendering", () => {
   it("renders the disabled and empty table states", () => {
-    expect(render({ tracesEnabled: false })).toContain("Tracing is disabled");
+    const unavailableHtml = render({ tracesEnabled: false });
+    expect(unavailableHtml).toContain("Tracing unavailable");
+    expect(unavailableHtml).toContain("This Studio runtime does not expose traces.");
     expect(render({ traceLoadState: "loading" })).toContain("Loading traces");
     const emptyHtml = render();
     expect(emptyHtml).toContain("No traces found");

@@ -86,11 +86,18 @@ export function StudioMetric(props: { label: string; value: React.ReactNode; cla
   );
 }
 
-export function StudioEmptyState(props: { title: string; text: string; className?: string }) {
+export function StudioEmptyState(props: {
+  title: string;
+  text: string;
+  action?: React.ReactNode;
+  size?: "default" | "compact";
+  className?: string;
+}) {
   return (
     <div
       className={cn(
-        "flex min-h-64 w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border-dashed p-6 text-center text-balance",
+        "flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border-dashed p-6 text-center text-balance",
+        props.size === "compact" ? "min-h-32" : "min-h-64",
         props.className,
       )}
     >
@@ -100,6 +107,11 @@ export function StudioEmptyState(props: { title: string; text: string; className
         </h2>
         <p className="m-0 text-sm/relaxed text-muted-foreground">{props.text}</p>
       </div>
+      {props.action ? (
+        <div className="flex w-full max-w-sm min-w-0 flex-col items-center gap-2.5 text-sm text-balance">
+          {props.action}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { StudioPipelineLogEntry } from "../../../../types";
+import { StudioEmptyState } from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 import { formatLogMetadataText, LogMetadata } from "../shared/log-metadata";
 
@@ -46,14 +47,12 @@ export function PipelineLogsPanel(props: {
         onScroll={updateStickiness}
       >
         {props.selectedPipelineId.length === 0 ? (
-          <div className="grid h-full min-h-80 place-items-center p-8 text-center">
-            <div className="max-w-xs">
-              <p className="m-0 text-sm font-semibold text-foreground">No pipeline selected</p>
-              <p className="m-0 mt-2 text-sm leading-6 text-muted-foreground">
-                Register a pipeline to view runtime logs.
-              </p>
-            </div>
-          </div>
+          <StudioEmptyState
+            className="h-full rounded-none"
+            size="compact"
+            title="No pipeline selected"
+            text="Register or choose a pipeline to view runtime logs."
+          />
         ) : null}
         {props.selectedPipelineId.length > 0 && props.loading && props.logs.length === 0 ? (
           <div className="grid gap-2 px-4 py-4">
@@ -63,9 +62,11 @@ export function PipelineLogsPanel(props: {
           </div>
         ) : null}
         {props.selectedPipelineId.length > 0 && !props.loading && props.logs.length === 0 ? (
-          <div className="px-5 py-5 text-sm font-medium text-muted-foreground">
-            No logs yet. Run the pipeline to populate this console.
-          </div>
+          <StudioEmptyState
+            size="compact"
+            title="No logs yet"
+            text="Run the pipeline to populate this console."
+          />
         ) : null}
         <div className="grid min-w-full gap-1 p-2 ">
           {props.logs.map((log) => (

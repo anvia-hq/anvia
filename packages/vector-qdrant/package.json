@@ -1,6 +1,6 @@
 {
   "name": "@anvia/qdrant",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Qdrant vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

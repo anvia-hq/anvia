@@ -16,7 +16,6 @@ import {
   observationUsageText,
   plainTraceValue,
   selectedTraceDetail,
-  statusDotClass,
   TraceJsonTree,
   type TraceObservationNode,
   TraceRowIcon,
@@ -91,7 +90,7 @@ export function TraceBrowser(props: {
       : props.traces.filter((trace) => trace.sessionId === selectedTrace.sessionId);
 
   return (
-    <section className="grid h-full min-h-0 w-full content-stretch pl-0 pr-6" aria-label="Tracing">
+    <section className="grid h-full min-h-0 w-full content-stretch" aria-label="Tracing">
       {props.selectedTraceId.length === 0 ? (
         <TraceTable
           agents={props.agents}
@@ -161,12 +160,7 @@ function TraceTable(props: {
               <span className="min-w-0 truncate text-xs font-medium">
                 {traceAgentLabel(props.agents, trace)}
               </span>
-              <span className="flex min-w-0 items-center gap-2 text-xs font-medium capitalize">
-                <span
-                  className={cn("h-2.5 w-2.5 shrink-0 rounded-lg", statusDotClass(trace.status))}
-                />
-                <span className="min-w-0 truncate">{trace.status}</span>
-              </span>
+              <TraceStatusBadge status={trace.status} />
               <span className="min-w-0 truncate text-xs font-medium">
                 {formatTraceDate(trace.startedAt)}
               </span>

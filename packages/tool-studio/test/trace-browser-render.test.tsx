@@ -13,6 +13,7 @@ describe("TraceBrowser rendering", () => {
     const emptyHtml = render();
     expect(emptyHtml).toContain("No traces found");
     expect(emptyHtml).not.toContain("pb-6");
+    expect(emptyHtml).not.toContain("pr-6");
   });
 
   it("renders the trace table with status, agent, and timing summaries", () => {
@@ -22,6 +23,9 @@ describe("TraceBrowser rendering", () => {
     expect(html).toContain("session_1");
     expect(html).toContain("Support");
     expect(html).toContain("success");
+    expect(html).toContain("border-0 capitalize");
+    expect(html).toContain("bg-emerald-200");
+    expect(html).not.toContain("h-2.5 w-2.5 shrink-0 rounded-lg");
     expect(html).toContain("1.2s");
     expect(html).toContain("36");
     expect(html).toContain("2");

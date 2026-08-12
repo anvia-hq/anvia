@@ -427,7 +427,7 @@ function ToolEntry(props: {
         ) : null}
       </div>
       {collapsed || !hasPayload ? null : (
-        <div className="ml-3 grid gap-3 border-l border-border/70 py-2 pl-5">
+        <div className="ml-8 grid gap-3 py-2">
           {approval === undefined ? null : <ToolApprovalPanel approval={approval} />}
           {question === undefined ? null : (
             <ToolQuestionPanel

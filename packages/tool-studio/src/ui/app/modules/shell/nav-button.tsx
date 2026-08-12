@@ -8,6 +8,8 @@ import {
   Gauge,
   ListBullets,
   ListMagnifyingGlass,
+  MagnifyingGlass,
+  Play,
   Plug,
   Pulse,
   Robot,
@@ -56,8 +58,10 @@ export type IconName =
   | "database"
   | "database-lightning"
   | "gauge"
+  | "inspect"
   | "list"
   | "message"
+  | "play"
   | "plug"
   | "search-list"
   | "tools"
@@ -80,10 +84,14 @@ export function navIcon(name: IconName): Icon {
       return Database;
     case "gauge":
       return Gauge;
+    case "inspect":
+      return MagnifyingGlass;
     case "list":
       return ListBullets;
     case "message":
       return Chat;
+    case "play":
+      return Play;
     case "plug":
       return Plug;
     case "search-list":

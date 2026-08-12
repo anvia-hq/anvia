@@ -124,14 +124,14 @@ export function StudioRail(props: StudioNavigationProps) {
         <NavButton
           compact
           active={section === "workspace"}
-          icon="message"
+          icon="play"
           label="Workspace"
           onClick={() => props.onNavigate(defaultPageForSection("workspace"))}
         />
         <NavButton
           compact
           active={section === "inspect"}
-          icon="tools"
+          icon="inspect"
           label="Inspect"
           onClick={() => props.onNavigate(defaultPageForSection("inspect"))}
         />

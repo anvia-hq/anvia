@@ -15,7 +15,8 @@ describe("PlaygroundPage run action", () => {
     expect(idleHtml).toContain("gap-1.5");
     expect(idleHtml).toContain("p-1.5");
     expect(idleHtml).toContain("min-h-9");
-    expect(idleHtml).toContain("bg-muted/50");
+    expect(idleHtml).toContain("border-0 bg-muted px-2.5");
+    expect(idleHtml).not.toContain("border-0 bg-muted/50 px-2.5");
     expect(idleHtml).not.toContain("min-h-16 min-w-0 resize-none");
     const idleButton = runAction(idleHtml);
     expect(idleButton).toContain('aria-label="Send message"');

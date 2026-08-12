@@ -136,7 +136,7 @@ export function PlaygroundPage(props: {
             )}
             <div className="mx-auto grid w-full max-w-200 gap-1.5 rounded-xl border border-border/80 bg-card/95 p-1.5 backdrop-blur">
               <Textarea
-                className="min-h-9 min-w-0 resize-none rounded-lg border-0 bg-muted/50 px-2.5 py-1.5 text-base leading-6 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none dark:bg-muted/50"
+                className="min-h-9 min-w-0 resize-none rounded-lg border-0 bg-muted px-2.5 py-1.5 text-base leading-6 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none dark:bg-muted"
                 ref={props.promptRef}
                 rows={1}
                 value={props.prompt}

@@ -1,6 +1,6 @@
 import type { ActivePage, KnowledgeTab, PageLocation } from "./types";
 
-const root = document.getElementById("anvia-ui");
+const root = typeof document === "undefined" ? null : document.getElementById("anvia-ui");
 const uiPath = root?.dataset.uiPath ?? "/ui";
 const compatUiPath = root?.dataset.uiCompatPath ?? "/ui";
 const assetPath = normalizePathPrefix(uiPath) || normalizePathPrefix(compatUiPath) || "/ui";
@@ -82,9 +82,6 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
   }
   if (first === "pipelines") {
     return { page: "pipelines" };
-  }
-  if (first === "evals") {
-    return { page: "evals" };
   }
   if (first === "memory") {
     return { page: "memory" };

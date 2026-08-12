@@ -6,12 +6,6 @@ export const AgentsPage = lazy(() =>
   })),
 );
 
-export const EvalsPage = lazy(() =>
-  import("./modules/evals/evals-page").then((module) => ({
-    default: module.EvalsPage,
-  })),
-);
-
 export const KnowledgePage = lazy(() =>
   import("./modules/knowledge/knowledge-page").then((module) => ({
     default: module.KnowledgePage,
@@ -74,7 +68,7 @@ export const TraceBrowser = lazy(() =>
 
 export function PageLoading() {
   return (
-    <section className="grid h-full min-h-0 place-items-center bg-background/45 text-sm font-medium text-muted-foreground">
+    <section className="grid h-full min-h-0 place-items-center bg-background/45 text-base font-medium text-muted-foreground">
       Loading
     </section>
   );

@@ -1,4 +1,4 @@
-import { ArrowDown01Icon, CheckIcon } from "@hugeicons/core-free-icons";
+import { CaretDown, Check } from "@phosphor-icons/react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
@@ -15,14 +15,14 @@ export function SelectTrigger({
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        "flex h-9 w-full items-center justify-between rounded-lg border border-input bg-card/90 px-3 text-sm text-foreground outline-none transition duration-200 hover:border-muted-foreground/45 focus:border-muted-foreground/60 focus:ring-2 focus:ring-muted-foreground/20 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-base text-foreground outline-none transition-colors select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50",
         className,
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <StudioIcon icon={ArrowDown01Icon} className="h-4 w-4 opacity-60" />
+        <StudioIcon icon={CaretDown} className="h-4 w-4 opacity-60" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -39,7 +39,7 @@ export function SelectContent({
       <SelectPrimitive.Content
         position={position}
         className={cn(
-          "z-50 max-h-80 min-w-[8rem] overflow-hidden rounded-xl border border-border/90 bg-popover/98 text-popover-foreground shadow-xl shadow-black/45 backdrop-blur",
+          "z-50 max-h-80 min-w-36 overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10",
           className,
         )}
         {...props}
@@ -58,14 +58,14 @@ export function SelectItem({
   return (
     <SelectPrimitive.Item
       className={cn(
-        "relative flex min-h-8 cursor-default select-none items-center rounded-lg py-1.5 pl-8 pr-2 text-sm outline-none transition data-[disabled]:pointer-events-none data-[highlighted]:bg-muted/65 data-[highlighted]:text-foreground data-[disabled]:opacity-50",
+        "relative flex min-h-8 cursor-default select-none items-center rounded-md py-1 pr-8 pl-1.5 text-base outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
         className,
       )}
       {...props}
     >
-      <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <span className="absolute right-2 flex size-4 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <StudioIcon icon={CheckIcon} className="h-4 w-4" />
+          <StudioIcon icon={Check} className="h-4 w-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

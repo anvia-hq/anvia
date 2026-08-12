@@ -5,7 +5,7 @@ import {
   type ToolQuestionAnswer,
   useChat,
 } from "@anvia/react";
-import { type RefObject, useRef, useState } from "react";
+import { type RefObject, useRef } from "react";
 import type { AgentRunStreamEvent, StudioConfig, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
@@ -84,7 +84,6 @@ export function usePlaygroundRun(props: {
   const playgroundRunTerminalRef = useRef(false);
   const playgroundRunStartedAtRef = useRef<number | undefined>(undefined);
   const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
-  const [workingStartedAt, setWorkingStartedAt] = useState<number | undefined>(undefined);
 
   const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
     transport: createChatTransport<StudioAgentRunRequest, AgentRunStreamEvent>({
@@ -246,7 +245,6 @@ export function usePlaygroundRun(props: {
       playgroundRunRequestRef.current = runContext;
       const startedAt = Date.now();
       playgroundRunStartedAtRef.current = startedAt;
-      setWorkingStartedAt(startedAt);
 
       await playgroundChat.sendMessage(promptMessage);
       await playgroundVisibleEventRef.current;
@@ -398,7 +396,6 @@ export function usePlaygroundRun(props: {
       return undefined;
     }
     playgroundRunStartedAtRef.current = undefined;
-    setWorkingStartedAt(undefined);
     return Date.now() - startedAt;
   }
 
@@ -406,7 +403,6 @@ export function usePlaygroundRun(props: {
     answeringQuestions: new Set(playgroundChat.answeringQuestions),
     decidingApprovals: new Set(playgroundChat.decidingApprovals),
     isStreaming: playgroundChat.status === "streaming",
-    workingStartedAt,
     answerToolQuestion,
     decideToolApproval,
     runPrompt,

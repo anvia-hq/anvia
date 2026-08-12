@@ -30,7 +30,7 @@ const getRunbook = createTool({
   }),
 });
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-custom-ui", model)
   .name("Studio Custom UI")
   .description("Demonstrates Studio UI title and root-route behavior.")

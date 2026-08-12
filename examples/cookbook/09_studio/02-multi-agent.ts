@@ -53,7 +53,7 @@ const getRunbook = createTool({
   }),
 });
 
-const supportAgentModel = client.completionModel("gpt-5.5");
+const supportAgentModel = client.completionModel("gpt-5.6-luna");
 const supportAgent = new AgentBuilder("support-triage", supportAgentModel)
   .name("Support Triage")
   .description("Summarizes customer-facing support tickets.")
@@ -62,7 +62,7 @@ const supportAgent = new AgentBuilder("support-triage", supportAgentModel)
   .defaultMaxTurns(2)
   .build();
 
-const engineeringAgentModel = client.completionModel("gpt-5.5");
+const engineeringAgentModel = client.completionModel("gpt-5.6-luna");
 const engineeringAgent = new AgentBuilder("engineering-triage", engineeringAgentModel)
   .name("Engineering Triage")
   .description("Turns incidents and runbooks into engineering next steps.")
@@ -71,7 +71,7 @@ const engineeringAgent = new AgentBuilder("engineering-triage", engineeringAgent
   .defaultMaxTurns(2)
   .build();
 
-const commsAgentModel = client.completionModel("gpt-5.5");
+const commsAgentModel = client.completionModel("gpt-5.6-luna");
 const commsAgent = new AgentBuilder("customer-comms", commsAgentModel)
   .name("Customer Comms")
   .description("Drafts concise customer updates for incidents.")

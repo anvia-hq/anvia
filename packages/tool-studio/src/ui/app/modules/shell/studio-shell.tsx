@@ -1,10 +1,13 @@
-import { ExternalLinkIcon, Moon02Icon, Sun02Icon } from "@hugeicons/core-free-icons";
+import { ArrowSquareOut, Laptop, Moon, Sun } from "@phosphor-icons/react";
+import type { StudioTheme } from "../../app-theme";
+import { AnviaLensLogo } from "../../components/anvia-lens-logo";
 import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
 import { knowledgeTabs } from "../knowledge/knowledge-model";
-import { logoSrc } from "../shared/path";
+import { pageTitle } from "../shared/format";
+import { defaultPageForSection, navigationSection } from "../shared/navigation";
 import type { ActivePage, KnowledgeTab } from "../shared/types";
-import { NavButton } from "./nav-button";
+import { type IconName, NavButton } from "./nav-button";
 
 const knowledgeNavIcons = {
   "static-context": "book-open-text",
@@ -13,9 +16,8 @@ const knowledgeNavIcons = {
   "retrieval-log": "search-list",
 } as const;
 
-export function StudioSidebar(props: {
+export type StudioNavigationProps = {
   activePage: ActivePage;
-  evalsEnabled: boolean;
   hasAgents: boolean;
   knowledgeEnabled: boolean;
   mcpsEnabled: boolean;
@@ -30,118 +32,160 @@ export function StudioSidebar(props: {
   knowledgeTab: KnowledgeTab;
   onNavigate: (page: ActivePage) => void;
   onNavigateKnowledgeTab: (tab: KnowledgeTab) => void;
-}) {
+};
+
+type NavigationItem = {
+  label: string;
+  icon: IconName;
+  page: ActivePage;
+  enabled: boolean;
+  knowledgeTab?: KnowledgeTab;
+};
+
+function navigationItems(props: StudioNavigationProps): NavigationItem[] {
+  return [
+    {
+      page: "playground",
+      label: "Chat",
+      icon: "message",
+      enabled: props.hasAgents,
+    },
+    {
+      page: "pipelines",
+      label: "Pipelines",
+      icon: "workflow",
+      enabled: props.pipelinesEnabled,
+    },
+    { page: "sessions", label: "Sessions", icon: "list", enabled: props.sessionsEnabled },
+    { page: "tracing", label: "Traces", icon: "activity", enabled: props.tracesEnabled },
+    { page: "agents", label: "Studio", icon: "bot", enabled: true },
+    { page: "tools", label: "Tools", icon: "wrench", enabled: props.toolsEnabled },
+    {
+      page: "sandboxes",
+      label: "Sandboxes",
+      icon: "container",
+      enabled: props.sandboxesEnabled,
+    },
+    { page: "mcps", label: "MCPs", icon: "plug", enabled: props.mcpsEnabled },
+    ...knowledgeTabs.map((tab) => ({
+      page: "knowledge" as const,
+      label: tab.label,
+      icon: knowledgeNavIcons[tab.id],
+      enabled: props.knowledgeEnabled,
+      knowledgeTab: tab.id,
+    })),
+    { page: "memory", label: "Memory", icon: "database", enabled: props.memoryEnabled },
+    { page: "status", label: "Status", icon: "gauge", enabled: props.statusEnabled },
+  ];
+}
+
+function itemIsActive(item: NavigationItem, props: StudioNavigationProps): boolean {
   return (
-    <aside className="flex h-[100dvh] min-h-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="flex h-15 items-center px-4">
-        <div className="studio-logo-lockup min-w-0">
-          <img className="h-auto w-[92px] shrink-0 object-contain" src={logoSrc} alt="Anvia" />
-          <span className="studio-logo-badge">Studio</span>
-        </div>
-      </div>
-      <nav className="grid gap-0.5 px-3 py-3" aria-label="Main">
-        <div className="px-2.5 pb-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground opacity-50">
-          Workspace
-        </div>
-        <NavButton
-          active={props.activePage === "playground"}
-          disabled={!props.hasAgents}
-          icon="message"
-          label="Chat"
+    item.page === props.activePage &&
+    (item.knowledgeTab === undefined || item.knowledgeTab === props.knowledgeTab)
+  );
+}
+
+function navigateToItem(item: NavigationItem, props: StudioNavigationProps): void {
+  if (item.knowledgeTab === undefined) {
+    props.onNavigate(item.page);
+  } else {
+    props.onNavigateKnowledgeTab(item.knowledgeTab);
+  }
+}
+
+export function StudioRail(props: StudioNavigationProps) {
+  const section = navigationSection(props.activePage);
+  const items = navigationItems(props);
+
+  return (
+    <aside
+      aria-label="Studio sections"
+      className="flex h-[100dvh] w-14 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+    >
+      <div className="flex shrink-0 justify-center p-2">
+        <button
+          className="flex size-10 items-center justify-center rounded-lg outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent"
+          type="button"
+          aria-label="Open Chat"
+          title="Anvia Studio"
           onClick={() => props.onNavigate("playground")}
+        >
+          <span className="grid size-8 place-items-center rounded-md border border-[#2BF563] bg-[#2BF563]">
+            <AnviaLensLogo markClassName="text-black" />
+          </span>
+        </button>
+      </div>
+
+      <nav
+        className="hidden min-h-0 flex-1 flex-col items-center gap-2 p-2 pt-0 lg:flex"
+        aria-label="Sections"
+      >
+        <NavButton
+          compact
+          active={section === "workspace"}
+          icon="message"
+          label="Workspace"
+          onClick={() => props.onNavigate(defaultPageForSection("workspace"))}
         />
         <NavButton
-          active={props.activePage === "pipelines"}
-          disabled={!props.pipelinesEnabled}
-          icon="workflow"
-          label="Pipelines"
-          onClick={() => props.onNavigate("pipelines")}
-        />
-        <NavButton
-          active={props.activePage === "evals"}
-          disabled={!props.evalsEnabled}
-          icon="gauge"
-          label="Evals"
-          onClick={() => props.onNavigate("evals")}
-        />
-        <NavButton
-          active={props.activePage === "sessions"}
-          disabled={!props.sessionsEnabled}
-          icon="list"
-          label="Sessions"
-          onClick={() => props.onNavigate("sessions")}
-        />
-        <NavButton
-          active={props.activePage === "tracing"}
-          disabled={!props.tracesEnabled}
-          icon="activity"
-          label="Traces"
-          onClick={() => props.onNavigate("tracing")}
+          compact
+          active={section === "inspect"}
+          icon="tools"
+          label="Inspect"
+          onClick={() => props.onNavigate(defaultPageForSection("inspect"))}
         />
       </nav>
-      <nav className="grid gap-0.5 px-3 py-3" aria-label="Studio">
-        <div className="px-2.5 pb-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground opacity-50">
-          Inspect
-        </div>
-        <NavButton
-          active={props.activePage === "agents"}
-          icon="bot"
-          label="Studio"
-          onClick={() => props.onNavigate("agents")}
-        />
-        <NavButton
-          active={props.activePage === "tools"}
-          disabled={!props.toolsEnabled}
-          icon="wrench"
-          label="Tools"
-          onClick={() => props.onNavigate("tools")}
-        />
-        <NavButton
-          active={props.activePage === "sandboxes"}
-          disabled={!props.sandboxesEnabled}
-          icon="container"
-          label="Sandboxes"
-          onClick={() => props.onNavigate("sandboxes")}
-        />
-        <NavButton
-          active={props.activePage === "mcps"}
-          disabled={!props.mcpsEnabled}
-          icon="plug"
-          label="MCPs"
-          onClick={() => props.onNavigate("mcps")}
-        />
-        {knowledgeTabs.map((tab) => (
+
+      <nav
+        className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto p-2 pt-0 lg:hidden"
+        aria-label="Main"
+      >
+        {items.map((item) => (
           <NavButton
-            active={props.activePage === "knowledge" && props.knowledgeTab === tab.id}
-            disabled={!props.knowledgeEnabled}
-            icon={knowledgeNavIcons[tab.id]}
-            key={tab.id}
-            label={tab.label}
-            onClick={() => props.onNavigateKnowledgeTab(tab.id)}
+            compact
+            active={itemIsActive(item, props)}
+            disabled={!item.enabled}
+            icon={item.icon}
+            key={`${item.page}-${item.knowledgeTab ?? "page"}`}
+            label={item.label}
+            onClick={() => navigateToItem(item, props)}
           />
         ))}
-        <NavButton
-          active={props.activePage === "memory"}
-          disabled={!props.memoryEnabled}
-          icon="database"
-          label="Memory"
-          onClick={() => props.onNavigate("memory")}
-        />
-        <NavButton
-          active={props.activePage === "status"}
-          disabled={!props.statusEnabled}
-          icon="gauge"
-          label="Status"
-          onClick={() => props.onNavigate("status")}
-        />
       </nav>
-      <div className="mt-auto px-3 py-3">
-        <nav className="grid gap-1" aria-label="Anvia links">
-          <SidebarLink href="https://anvia.dev/docs" label="Anvia Docs" />
-        </nav>
-        <span className="sr-only" aria-live="polite">
-          {props.status}
-        </span>
+      <span className="sr-only" aria-live="polite">
+        {props.status}
+      </span>
+    </aside>
+  );
+}
+
+export function StudioSidebar(props: StudioNavigationProps) {
+  const section = navigationSection(props.activePage);
+  const items = navigationItems(props).filter((item) => navigationSection(item.page) === section);
+
+  return (
+    <aside className="hidden h-[100dvh] w-64 min-h-0 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
+      <div className="flex h-14 shrink-0 items-center px-4 text-sm font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/45">
+        {section === "workspace" ? "Workspace" : "Inspect"}
+      </div>
+      <nav
+        className="grid gap-1 px-2"
+        aria-label={section === "workspace" ? "Workspace" : "Inspect"}
+      >
+        {items.map((item) => (
+          <NavButton
+            active={itemIsActive(item, props)}
+            disabled={!item.enabled}
+            icon={item.icon}
+            key={`${item.page}-${item.knowledgeTab ?? "page"}`}
+            label={item.label}
+            onClick={() => navigateToItem(item, props)}
+          />
+        ))}
+      </nav>
+      <div className="mt-auto p-2">
+        <SidebarLink href="https://anvia.dev/docs" label="Anvia Docs" />
       </div>
     </aside>
   );
@@ -149,50 +193,55 @@ export function StudioSidebar(props: {
 
 export function StudioHeader(props: {
   activePage: ActivePage;
+  knowledgeTab: KnowledgeTab;
   selectedAgentLabel: string;
   sessionsEnabled: boolean;
-  theme: "light" | "dark";
-  onNavigate: (page: ActivePage) => void;
+  theme: StudioTheme;
   onNewSession: () => void;
   onToggleTheme: () => void;
 }) {
+  const section = navigationSection(props.activePage);
+  const pageLabel =
+    props.activePage === "playground"
+      ? "Chat"
+      : props.activePage === "knowledge"
+        ? (knowledgeTabs.find((tab) => tab.id === props.knowledgeTab)?.label ?? "Knowledge")
+        : pageTitle(props.activePage, undefined);
+  const nextTheme =
+    props.theme === "system" ? "light" : props.theme === "light" ? "dark" : "system";
+  const themeLabel = `Theme: ${props.theme}. Switch to ${nextTheme} theme`;
+  const themeIcon = props.theme === "system" ? Laptop : props.theme === "light" ? Sun : Moon;
+
   return (
-    <header className="grid min-h-13 border-b border-border bg-background/88 backdrop-blur">
-      <div className="grid min-h-13 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-0 pl-4 pr-6">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
-          <span className="text-foreground">
-            {props.activePage === "playground" ? "Agents" : "Studio"}
-          </span>
-          <span className="text-muted-foreground">/</span>
-          <span className="truncate">{props.selectedAgentLabel}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            aria-label={props.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            className="h-8 min-h-8 w-8 border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-muted/45 hover:text-foreground"
-            title={props.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={props.onToggleTheme}
-          >
-            {props.theme === "dark" ? (
-              <StudioIcon icon={Sun02Icon} aria-hidden="true" />
-            ) : (
-              <StudioIcon icon={Moon02Icon} aria-hidden="true" />
-            )}
-          </Button>
-          <Button
-            className="h-8 min-h-8 rounded-lg border border-white bg-white px-3 text-xs text-black shadow-none [box-shadow:none] hover:border-white hover:bg-white/90 hover:text-black focus-visible:ring-0 active:bg-white/85 disabled:bg-muted disabled:text-muted-foreground"
-            type="button"
-            variant="ghost"
-            disabled={!props.sessionsEnabled}
-            onClick={props.onNewSession}
-          >
-            New session
-          </Button>
-        </div>
-      </div>
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4">
+      <nav className="flex min-w-0 flex-1 items-center gap-2 text-base" aria-label="Breadcrumb">
+        <span className="font-medium">{section === "workspace" ? "Workspace" : "Inspect"}</span>
+        <span className="text-muted-foreground" aria-hidden="true">
+          /
+        </span>
+        <span className="truncate text-muted-foreground">{pageLabel}</span>
+        {props.activePage === "playground" ? (
+          <>
+            <span className="text-muted-foreground" aria-hidden="true">
+              /
+            </span>
+            <span className="truncate text-muted-foreground">{props.selectedAgentLabel}</span>
+          </>
+        ) : null}
+      </nav>
+      <Button
+        aria-label={themeLabel}
+        title={themeLabel}
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={props.onToggleTheme}
+      >
+        <StudioIcon icon={themeIcon} aria-hidden="true" />
+      </Button>
+      <Button type="button" disabled={!props.sessionsEnabled} onClick={props.onNewSession}>
+        New session
+      </Button>
     </header>
   );
 }
@@ -200,17 +249,13 @@ export function StudioHeader(props: {
 function SidebarLink(props: { href: string; label: string }) {
   return (
     <a
-      className="flex h-8 min-h-8 items-center justify-between rounded-lg px-2 text-xs font-semibold text-sidebar-foreground/62 transition duration-200 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+      className="flex h-8 items-center justify-between rounded-lg px-2 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       href={props.href}
       target="_blank"
       rel="noreferrer"
     >
       <span>{props.label}</span>
-      <StudioIcon
-        icon={ExternalLinkIcon}
-        aria-hidden="true"
-        className="h-3 w-3 text-muted-foreground"
-      />
+      <StudioIcon icon={ArrowSquareOut} aria-hidden="true" className="size-3.5" />
     </a>
   );
 }

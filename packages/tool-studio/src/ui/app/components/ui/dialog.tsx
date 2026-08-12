@@ -13,10 +13,10 @@ export function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/10 backdrop-blur-xs" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 grid w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl shadow-black/40",
+          "fixed top-1/2 left-1/2 z-50 grid w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-base text-popover-foreground ring-1 ring-foreground/10 outline-none",
           className,
         )}
         {...props}
@@ -32,14 +32,27 @@ export function DialogHeader({ className, ...props }: React.ComponentProps<"div"
 }
 
 export function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex justify-end gap-2", className)} {...props} />;
+  return (
+    <div
+      className={cn(
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export function DialogTitle({
   className,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn("text-base font-bold", className)} {...props} />;
+  return (
+    <DialogPrimitive.Title
+      className={cn("font-heading text-lg leading-none font-medium", className)}
+      {...props}
+    />
+  );
 }
 
 export function DialogDescription({
@@ -48,7 +61,7 @@ export function DialogDescription({
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
-      className={cn("text-sm leading-6 text-muted-foreground", className)}
+      className={cn("text-base leading-6 text-muted-foreground", className)}
       {...props}
     />
   );

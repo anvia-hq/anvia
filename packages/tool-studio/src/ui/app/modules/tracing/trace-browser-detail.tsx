@@ -1,15 +1,14 @@
 import {
-  ArrowDown01Icon,
-  ArrowRight01Icon,
-  ArrowTurnBackwardIcon,
-  ChatIcon,
-  CpuIcon,
-  GitBranchIcon,
-  PathIcon,
-  Robot01Icon,
-  Settings02Icon,
-  Wrench01Icon,
-} from "@hugeicons/core-free-icons";
+  ArrowUUpLeft,
+  CaretDown,
+  CaretRight,
+  Chat,
+  DotOutline,
+  Gear,
+  Robot,
+  Sparkle,
+  Wrench,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 import type { StudioTrace } from "../../../../types";
 import { StudioIcon } from "../../components/ui/icon";
@@ -28,7 +27,7 @@ export function rawTraceJson(value: unknown): string {
 
 export function TraceJsonTree(props: { value: unknown }) {
   return (
-    <div className="overflow-x-auto rounded-lg bg-card/85 px-4 py-4 text-sm leading-6 text-foreground">
+    <div className="overflow-x-auto rounded-lg border bg-muted/20 p-4 font-mono text-xs leading-5 text-foreground">
       <JsonNode depth={0} path="$" value={props.value} />
     </div>
   );
@@ -115,9 +114,9 @@ function JsonBranch(props: {
       >
         <span className="grid h-4 w-4 place-items-center text-muted-foreground [&_svg]:h-3 [&_svg]:w-3">
           {open ? (
-            <StudioIcon icon={ArrowDown01Icon} aria-hidden="true" />
+            <StudioIcon icon={CaretDown} aria-hidden="true" />
           ) : (
-            <StudioIcon icon={ArrowRight01Icon} aria-hidden="true" />
+            <StudioIcon icon={CaretRight} aria-hidden="true" />
           )}
         </span>
         <span className="whitespace-pre">
@@ -167,7 +166,9 @@ function JsonNodeLabel(props: {
   if (props.propertyKey !== undefined) {
     return (
       <>
-        <span className="text-muted-foreground">{JSON.stringify(props.propertyKey)}</span>
+        <span className="text-blue-600 dark:text-blue-400">
+          {JSON.stringify(props.propertyKey)}
+        </span>
         <span className="text-foreground">: </span>
       </>
     );
@@ -185,13 +186,15 @@ function JsonNodeLabel(props: {
 
 function JsonPrimitive(props: { value: unknown }) {
   if (typeof props.value === "string") {
-    return <span className="text-foreground">{JSON.stringify(props.value)}</span>;
+    return (
+      <span className="text-emerald-700 dark:text-emerald-400">{JSON.stringify(props.value)}</span>
+    );
   }
   if (typeof props.value === "number") {
-    return <span className="text-foreground">{String(props.value)}</span>;
+    return <span className="text-amber-700 dark:text-amber-400">{String(props.value)}</span>;
   }
   if (typeof props.value === "boolean") {
-    return <span className="text-chart-4">{String(props.value)}</span>;
+    return <span className="text-violet-700 dark:text-violet-400">{String(props.value)}</span>;
   }
   if (props.value === null) {
     return <span className="text-muted-foreground">null</span>;
@@ -255,12 +258,12 @@ export function TraceRowIcon(props: { label: string }) {
   const className = "h-3.5 w-3.5 shrink-0";
   switch (props.label) {
     case "System prompt":
-      return <StudioIcon icon={Settings02Icon} aria-hidden="true" className={className} />;
+      return <StudioIcon icon={Gear} aria-hidden="true" className={className} />;
     case "Prompt":
-      return <StudioIcon icon={ChatIcon} aria-hidden="true" className={className} />;
+      return <StudioIcon icon={Chat} aria-hidden="true" className={className} />;
     case "Output":
     case "Assistant output":
-      return <StudioIcon icon={ArrowTurnBackwardIcon} aria-hidden="true" className={className} />;
+      return <StudioIcon icon={ArrowUUpLeft} aria-hidden="true" className={className} />;
     default:
       return null;
   }
@@ -523,6 +526,7 @@ export function selectedTraceDetail(
 ): {
   title: string;
   tone: "trace" | "agent" | "turn" | StudioTrace["observations"][number]["kind"];
+  status: string;
   startedAt: string;
   durationMs: number | undefined;
   firstDeltaMs: number | undefined;
@@ -536,6 +540,7 @@ export function selectedTraceDetail(
     return {
       title: "agent.run",
       tone: "agent",
+      status: trace.status,
       startedAt: formatTraceTime(trace.startedAt),
       durationMs: trace.durationMs,
       firstDeltaMs: firstDeltaMsFromObservations(trace.observations),
@@ -552,6 +557,7 @@ export function selectedTraceDetail(
     return {
       title: `turn.${Number.isFinite(turnNumber) ? turnNumber : 1}`,
       tone: "turn",
+      status: observationStatusSummary(turn?.observations ?? []),
       startedAt: formatTraceTime(turn?.observations[0]?.startedAt ?? trace.startedAt),
       durationMs: turn?.durationMs,
       firstDeltaMs: firstDeltaMsFromObservations(turn?.observations ?? []),
@@ -568,6 +574,7 @@ export function selectedTraceDetail(
       return {
         title: traceObservationLabel(observation),
         tone: observation.kind,
+        status: observation.status,
         startedAt: formatTraceTime(observation.startedAt),
         durationMs: observation.durationMs,
         firstDeltaMs: firstDeltaMsFromMetadata(observation.metadata),
@@ -582,6 +589,7 @@ export function selectedTraceDetail(
   return {
     title: trace.name ?? "Agent",
     tone: "trace",
+    status: trace.status,
     startedAt: formatTraceTime(trace.startedAt),
     durationMs: trace.durationMs,
     firstDeltaMs: firstDeltaMsFromObservations(trace.observations),
@@ -803,15 +811,15 @@ export function TraceToneIcon(props: {
 }) {
   switch (props.tone) {
     case "trace":
-      return <StudioIcon icon={PathIcon} aria-hidden="true" />;
+      return <StudioIcon icon={DotOutline} aria-hidden="true" />;
     case "agent":
-      return <StudioIcon icon={Robot01Icon} aria-hidden="true" />;
+      return <StudioIcon icon={Robot} aria-hidden="true" />;
     case "turn":
-      return <StudioIcon icon={GitBranchIcon} aria-hidden="true" />;
+      return <StudioIcon icon={Robot} aria-hidden="true" />;
     case "generation":
-      return <StudioIcon icon={CpuIcon} aria-hidden="true" />;
+      return <StudioIcon icon={Sparkle} aria-hidden="true" />;
     case "tool":
-      return <StudioIcon icon={Wrench01Icon} aria-hidden="true" />;
+      return <StudioIcon icon={Wrench} aria-hidden="true" />;
   }
 }
 
@@ -822,13 +830,13 @@ export function traceToneIconClass(
     case "trace":
       return "bg-foreground text-background";
     case "agent":
-      return "bg-muted-foreground text-background";
+      return "bg-violet-600 text-white";
     case "turn":
-      return "bg-chart-4 text-background";
+      return "bg-violet-600 text-white";
     case "generation":
-      return "bg-foreground text-background";
+      return "bg-blue-600 text-white";
     case "tool":
-      return "bg-destructive text-background";
+      return "bg-amber-600 text-white";
   }
 }
 

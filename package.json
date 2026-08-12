@@ -90,7 +90,6 @@
     "cookbook:studio:08": "pnpm --filter cookbook studio:08",
     "cookbook:studio:09": "pnpm --filter cookbook studio:09",
     "cookbook:studio:10": "pnpm --filter cookbook studio:10",
-    "cookbook:studio:11": "pnpm --filter cookbook studio:11",
     "cookbook:studio:12": "pnpm --filter cookbook studio:12",
     "cookbook:studio:13": "pnpm --filter cookbook studio:13",
     "cookbook:studio:14": "pnpm --filter cookbook studio:14",

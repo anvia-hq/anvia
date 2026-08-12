@@ -29,7 +29,7 @@ const getOrder = createTool({
   }),
 });
 
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("support-operations", agentModel)
   .name("Support Operations")
   .description("Answers operational questions with short, concrete summaries.")

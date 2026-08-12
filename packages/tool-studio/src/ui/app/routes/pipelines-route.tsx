@@ -34,7 +34,7 @@ export function PipelinesRoute() {
         activeTab={activeTab}
         pipelines={studio.pipelines}
         enabled={studio.pipelinesEnabled}
-        theme={studio.theme}
+        theme={studio.resolvedTheme}
         onError={studio.setError}
         onStatus={studio.setStatus}
         onTabChange={updateTab}

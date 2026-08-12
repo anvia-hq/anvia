@@ -9,7 +9,7 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const replyModel = client.completionModel("gpt-5.5");
+const replyModel = client.completionModel("gpt-5.6-luna");
 const replyAgent = new AgentBuilder("studio-reply-drafter", replyModel)
   .name("Studio Reply Drafter")
   .description("Drafts short support replies from normalized ticket context.")

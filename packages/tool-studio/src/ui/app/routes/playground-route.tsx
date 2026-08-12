@@ -43,7 +43,6 @@ export function PlaygroundRoute() {
       decidingApprovals={studio.decidingApprovals}
       hasMessages={studio.hasMessages}
       isStreaming={studio.isStreaming}
-      workingStartedAt={studio.workingStartedAt}
       messages={studio.messages}
       prompt={studio.prompt}
       runState={studio.runState}

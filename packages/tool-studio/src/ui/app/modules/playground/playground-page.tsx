@@ -1,11 +1,4 @@
-import {
-  ArchiveIcon,
-  ArrowUp02Icon,
-  AttachmentIcon,
-  Cancel01Icon,
-  ChatIcon,
-  StopIcon,
-} from "@hugeicons/core-free-icons";
+import { Archive, ArrowUp, Chat, Paperclip, Stop, X } from "@phosphor-icons/react";
 import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import type {
   StudioConfig,
@@ -43,7 +36,6 @@ export function PlaygroundPage(props: {
   hasMessages: boolean;
   isStreaming: boolean;
   transcriptResetKey: string | number;
-  workingStartedAt?: number | undefined;
   messages: TranscriptEntry[];
   prompt: string;
   runState: RunState;
@@ -93,10 +85,10 @@ export function PlaygroundPage(props: {
                 <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
                   <div className="grid max-w-xl gap-4 text-center">
                     <div className="mx-auto h-px w-28 bg-muted/55" />
-                    <h1 className="m-0 text-4xl font-semibold leading-tight text-foreground text-balance">
+                    <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground text-balance">
                       What should this agent work on?
                     </h1>
-                    <p className="m-0 text-base leading-7 text-muted-foreground text-pretty">
+                    <p className="m-0 text-sm leading-6 text-muted-foreground text-pretty">
                       Choose a prompt below or write a task. Studio will stream the response, tool
                       calls, approvals, and trace data here.
                     </p>
@@ -111,7 +103,6 @@ export function PlaygroundPage(props: {
                 resetKey={props.transcriptResetKey}
                 sessionLogs={props.sessionLogs}
                 sessionTraceSummaries={props.sessionTraceSummaries}
-                workingStartedAt={props.workingStartedAt}
                 onApprovalDecision={props.onApprovalDecision}
                 onOpenTrace={props.onOpenTrace}
                 onQuestionAnswer={props.onQuestionAnswer}
@@ -145,7 +136,7 @@ export function PlaygroundPage(props: {
             )}
             <div className="mx-auto grid w-full max-w-235 gap-2 rounded-xl border border-border/80 bg-card/95 p-2.5 backdrop-blur">
               <Textarea
-                className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-base leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-transparent focus:ring-0"
+                className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-base leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
                 ref={props.promptRef}
                 rows={1}
                 value={props.prompt}
@@ -171,7 +162,7 @@ export function PlaygroundPage(props: {
                         variant="ghost"
                         onClick={() => props.onRemovePromptAttachment(attachment.id)}
                       >
-                        <StudioIcon icon={Cancel01Icon} aria-hidden="true" />
+                        <StudioIcon icon={X} aria-hidden="true" />
                       </Button>
                     </span>
                   ))}
@@ -196,7 +187,7 @@ export function PlaygroundPage(props: {
                     disabled={props.runState === "running"}
                     onClick={() => props.attachmentInputRef.current?.click()}
                   >
-                    <StudioIcon icon={AttachmentIcon} aria-hidden="true" />
+                    <StudioIcon icon={Paperclip} aria-hidden="true" />
                   </Button>
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
@@ -250,7 +241,7 @@ export function PlaygroundPage(props: {
                           ? "Running"
                           : "Send message"
                     }
-                    className="h-9 min-h-9 w-9 rounded-full border-white bg-white text-black hover:bg-white/90"
+                    className="size-9 min-h-9 rounded-full"
                     size="icon"
                     type={props.isStreaming ? "button" : "submit"}
                     disabled={
@@ -261,7 +252,7 @@ export function PlaygroundPage(props: {
                   >
                     <StudioIcon
                       fill={props.isStreaming ? "currentColor" : undefined}
-                      icon={props.isStreaming ? StopIcon : ArrowUp02Icon}
+                      icon={props.isStreaming ? Stop : ArrowUp}
                     />
                   </Button>
                 </div>
@@ -324,15 +315,15 @@ function PlaygroundSessionRow(props: {
     <div className="group relative min-w-0">
       <Button
         className={cn(
-          "studio-sidebar-nav-button h-9 min-h-9 w-full justify-start gap-3 rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-medium text-sidebar-foreground/62 shadow-none transition duration-200 hover:text-sidebar-foreground active:translate-y-px [&_svg]:h-[17px] [&_svg]:w-[17px]",
-          props.active && "studio-sidebar-nav-button-active text-sidebar-accent-foreground",
+          "h-9 min-h-9 w-full justify-start gap-3 rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 shadow-none transition duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:translate-y-px [&_svg]:h-[17px] [&_svg]:w-[17px]",
+          props.active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground",
         )}
         type="button"
         variant="ghost"
         disabled={props.disabled}
         onClick={() => props.onLoadSession(props.session.id)}
       >
-        <StudioIcon icon={ChatIcon} aria-hidden="true" />
+        <StudioIcon icon={Chat} aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">{title}</span>
       </Button>
       <Button
@@ -344,7 +335,7 @@ function PlaygroundSessionRow(props: {
         disabled={props.disabled}
         onClick={() => props.onDeleteSession(props.session)}
       >
-        <StudioIcon icon={ArchiveIcon} aria-hidden="true" />
+        <StudioIcon icon={Archive} aria-hidden="true" />
       </Button>
     </div>
   );

@@ -7,7 +7,7 @@ import type {
   StudioTraceSummary,
 } from "../../types";
 import type { PromptAttachment } from "./app-helpers";
-import type { StudioTheme } from "./app-theme";
+import type { ResolvedStudioTheme, StudioTheme } from "./app-theme";
 import type { useStudioSessions } from "./modules/sessions/use-studio-sessions";
 import type { ActivePage, KnowledgeTab, RunState, TranscriptEntry } from "./modules/shared/types";
 import type { useTraces } from "./modules/tracing/use-traces";
@@ -22,12 +22,9 @@ export type StudioConsoleContextValue = {
   attachments: PromptAttachment[];
   decidingApprovals: Set<string>;
   deleteCandidate: StudioSessionSummary | undefined;
-  evals: StudioConfig["evals"];
-  evalsEnabled: boolean;
   hasAgents: boolean;
   hasMessages: boolean;
   isStreaming: boolean;
-  workingStartedAt: number | undefined;
   knowledgeEnabled: boolean;
   knowledgeTab: KnowledgeTab;
   mcpsEnabled: boolean;
@@ -38,6 +35,7 @@ export type StudioConsoleContextValue = {
   pipelinesEnabled: boolean;
   prompt: string;
   runState: RunState;
+  resolvedTheme: ResolvedStudioTheme;
   sandboxesEnabled: boolean;
   selectedAgent: StudioConfig["agents"][number] | undefined;
   selectedAgentId: string;

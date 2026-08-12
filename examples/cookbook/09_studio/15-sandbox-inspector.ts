@@ -87,7 +87,7 @@ try {
     process: { maxLogBytes: 64_000 },
   });
 
-  const model = client.completionModel("gpt-5.5");
+  const model = client.completionModel("gpt-5.6-luna");
   const agent = new AgentBuilder("studio-sandbox-builder", model)
     .name("Sandbox Builder")
     .description("Inspects and edits a live Docker sandbox workspace from Studio.")

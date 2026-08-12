@@ -36,7 +36,7 @@ export function LogMetadata(props: {
         </div>
       )}
       {hasStructuredDetails ? (
-        <details className="group min-w-0 rounded-lg border border-black/[0.06] bg-black/[0.03] px-2 py-1 dark:border-white/[0.06] dark:bg-white/[0.03]">
+        <details className="group min-w-0 rounded-lg border border-border bg-muted/30 px-2 py-1">
           <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground transition group-open:text-foreground">
             Details
           </summary>

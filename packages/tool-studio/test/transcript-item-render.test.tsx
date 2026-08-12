@@ -68,17 +68,16 @@ describe("TranscriptItem response actions", () => {
     expect(html).not.toContain('aria-label="Response metrics"');
   });
 
-  it("renders a spinning live timer after the response actions", () => {
+  it("renders a single pending thinking status", () => {
     const html = renderToStaticMarkup(
       <TranscriptItem
         entry={{
           entryId: 1,
           kind: "message",
           role: "assistant",
-          text: "Streaming answer",
-          traceId: "trace_live",
+          text: "",
+          tone: "pending",
         }}
-        workingStartedAt={Date.now()}
         decidingApprovals={new Set()}
         answeringQuestions={new Set()}
         onApprovalDecision={vi.fn()}
@@ -87,8 +86,36 @@ describe("TranscriptItem response actions", () => {
       />,
     );
 
-    expect(html).toContain("animate-spin");
-    expect(html).toContain("Working - 0s");
-    expect(html.indexOf("Open trace trace_live")).toBeLessThan(html.indexOf("Working - 0s"));
+    expect(html).toContain('aria-label="Assistant is thinking"');
+    expect(html).toContain("Thinking");
+    expect(html).toContain("animate-pulse");
+    expect(html).not.toContain("animate-spin");
+    expect(html).not.toContain("Working");
+  });
+
+  it("renders a non-framed tool call disclosure with status", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptItem
+        entry={{
+          entryId: 4,
+          kind: "tool",
+          toolName: "search_docs",
+          args: '{"query":"typography"}',
+          result: "Found 3 results",
+        }}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Expand search_docs tool call"');
+    expect(html).toContain("search_docs");
+    expect(html).toContain("Completed");
+    expect(html).not.toContain("Show");
+    expect(html).not.toContain("Hide");
+    expect(html).not.toContain("shadow-black/20");
   });
 });

@@ -85,8 +85,6 @@ export function pageTitle(page: ActivePage, agentName: string | undefined): stri
       return "MCPs";
     case "pipelines":
       return "Pipelines";
-    case "evals":
-      return "Evals";
     case "knowledge":
       return "Knowledge";
     case "memory":

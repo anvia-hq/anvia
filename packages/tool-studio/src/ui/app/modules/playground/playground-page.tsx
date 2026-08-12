@@ -78,7 +78,7 @@ export function PlaygroundPage(props: {
             onScroll={props.onTranscriptScroll}
           >
             <div
-              className="mx-auto grid min-h-full w-full max-w-235 content-start items-start gap-6 pb-8"
+              className="mx-auto grid min-h-full w-full max-w-200 content-start items-start gap-6 pb-8"
               data-studio-transcript-content=""
             >
               {!props.hasMessages ? (
@@ -117,7 +117,7 @@ export function PlaygroundPage(props: {
             }}
           >
             {props.hasMessages || props.selectedAgentQuickPrompts.length === 0 ? null : (
-              <div className="mx-auto grid w-full max-w-235 grid-cols-3 gap-2 max-md:grid-cols-1">
+              <div className="mx-auto grid w-full max-w-200 grid-cols-3 gap-2 max-md:grid-cols-1">
                 {props.selectedAgentQuickPrompts.map((quickPrompt) => (
                   <Button
                     className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-border/80 hover:bg-muted/45 hover:text-foreground"
@@ -134,7 +134,7 @@ export function PlaygroundPage(props: {
                 ))}
               </div>
             )}
-            <div className="mx-auto grid w-full max-w-235 gap-2 rounded-xl border border-border/80 bg-card/95 p-2.5 backdrop-blur">
+            <div className="mx-auto grid w-full max-w-200 gap-2 rounded-xl border border-border/80 bg-card/95 p-2.5 backdrop-blur">
               <Textarea
                 className="min-h-16 min-w-0 resize-none rounded-lg border-0 bg-transparent px-3 py-3 text-base leading-7 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
                 ref={props.promptRef}

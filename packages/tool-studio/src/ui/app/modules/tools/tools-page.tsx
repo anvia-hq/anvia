@@ -171,35 +171,33 @@ export function ToolsPage(props: {
       />
 
       <StudioPageContent className="overflow-auto">
-        <div className="grid w-full gap-5">
-          {!props.enabled ? (
-            <StudioEmptyState
-              title="Tools unavailable"
-              text="No registered Studio agent exposes static or dynamic tools."
+        {!props.enabled ? (
+          <StudioEmptyState
+            title="Tools unavailable"
+            text="No registered Studio agent exposes static or dynamic tools."
+          />
+        ) : props.loading ? (
+          <StudioEmptyState title="Loading tools" text="Reading registered tool metadata." />
+        ) : tools.length === 0 ? (
+          <StudioEmptyState title="No tools" text="The selected agent has no registered tools." />
+        ) : (
+          <div className="grid w-full gap-5">
+            <ToolRegistryTable
+              selectedToolName={selectedTool?.name ?? ""}
+              tools={tools}
+              onSelectTool={setSelectedToolName}
             />
-          ) : props.loading ? (
-            <StudioEmptyState title="Loading tools" text="Reading registered tool metadata." />
-          ) : tools.length === 0 ? (
-            <StudioEmptyState title="No tools" text="The selected agent has no registered tools." />
-          ) : (
-            <>
-              <ToolRegistryTable
-                selectedToolName={selectedTool?.name ?? ""}
-                tools={tools}
-                onSelectTool={setSelectedToolName}
-              />
-              <ToolRunner
-                argsText={argsText}
-                runError={runError}
-                runResponse={runResponse}
-                runState={runState}
-                selectedTool={selectedTool}
-                onArgsTextChange={setArgsText}
-                onRun={() => void runSelectedTool()}
-              />
-            </>
-          )}
-        </div>
+            <ToolRunner
+              argsText={argsText}
+              runError={runError}
+              runResponse={runResponse}
+              runState={runState}
+              selectedTool={selectedTool}
+              onArgsTextChange={setArgsText}
+              onRun={() => void runSelectedTool()}
+            />
+          </div>
+        )}
       </StudioPageContent>
     </StudioPageShell>
   );

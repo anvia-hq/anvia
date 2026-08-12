@@ -166,41 +166,41 @@ export function McpsPage(props: {
       />
 
       <StudioPageContent className="overflow-auto">
-        <div className="grid w-full gap-5">
-          {!props.enabled ? (
-            <StudioEmptyState
-              title="MCPs unavailable"
-              text="No registered Studio agent exposes MCP tools."
-            />
-          ) : props.loading ? (
-            <StudioEmptyState title="Loading MCPs" text="Reading registered MCP metadata." />
-          ) : servers.length === 0 ? (
-            <StudioEmptyState
-              title="No MCPs"
-              text="The selected agent has no registered MCP tools."
-            />
-          ) : (
-            servers.map((server) => (
+        {!props.enabled ? (
+          <StudioEmptyState
+            title="MCPs unavailable"
+            text="No registered Studio agent exposes MCP tools."
+          />
+        ) : props.loading ? (
+          <StudioEmptyState title="Loading MCPs" text="Reading registered MCP metadata." />
+        ) : servers.length === 0 ? (
+          <StudioEmptyState
+            title="No MCPs"
+            text="The selected agent has no registered MCP tools."
+          />
+        ) : (
+          <div className="grid w-full gap-5">
+            {servers.map((server) => (
               <McpServerSection
                 selectedToolKey={selectedTool?.key ?? ""}
                 server={server}
                 key={server.name}
                 onSelectTool={setSelectedToolKey}
               />
-            ))
-          )}
-          {runnableTools.length === 0 ? null : (
-            <ToolRunner
-              argsText={argsText}
-              runError={runError}
-              runResponse={runResponse}
-              runState={runState}
-              selectedTool={selectedTool}
-              onArgsTextChange={setArgsText}
-              onRun={() => void runSelectedTool()}
-            />
-          )}
-        </div>
+            ))}
+            {runnableTools.length === 0 ? null : (
+              <ToolRunner
+                argsText={argsText}
+                runError={runError}
+                runResponse={runResponse}
+                runState={runState}
+                selectedTool={selectedTool}
+                onArgsTextChange={setArgsText}
+                onRun={() => void runSelectedTool()}
+              />
+            )}
+          </div>
+        )}
       </StudioPageContent>
     </StudioPageShell>
   );

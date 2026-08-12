@@ -36,6 +36,20 @@ export function SessionsPage(props: {
       </StudioPageShell>
     );
   }
+  if (props.sessions.length === 0) {
+    return (
+      <StudioPageShell aria-label="Sessions">
+        <StudioEmptyState
+          title={props.sessionLoadState === "loading" ? "Loading sessions" : "No sessions"}
+          text={
+            props.sessionLoadState === "loading"
+              ? "Reading saved Studio sessions."
+              : "Start a chat to create a Studio session."
+          }
+        />
+      </StudioPageShell>
+    );
+  }
 
   return (
     <StudioPageShell className="overflow-auto pb-6 pr-6" aria-label="Sessions">
@@ -47,12 +61,6 @@ export function SessionsPage(props: {
           <span>Updated</span>
           <span className="sr-only">Actions</span>
         </div>
-        {props.sessionLoadState === "loading" && props.sessions.length === 0 ? (
-          <StudioEmptyState title="Loading sessions" text="Reading saved Studio sessions." />
-        ) : null}
-        {props.sessionLoadState === "idle" && props.sessions.length === 0 ? (
-          <StudioEmptyState title="No sessions" text="Start a chat to create a Studio session." />
-        ) : null}
         {props.sessions.map((session) => (
           <div
             className={cn(

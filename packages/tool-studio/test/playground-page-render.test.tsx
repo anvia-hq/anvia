@@ -12,6 +12,10 @@ describe("PlaygroundPage run action", () => {
     expect(idleHtml).not.toContain("bg-gradient-to-t");
     expect(idleHtml).toContain("max-w-200");
     expect(idleHtml).not.toContain("max-w-235");
+    expect(idleHtml).toContain("gap-1.5");
+    expect(idleHtml).toContain("p-1.5");
+    expect(idleHtml).toContain("min-h-9");
+    expect(idleHtml).not.toContain("min-h-16 min-w-0 resize-none");
     const idleButton = runAction(idleHtml);
     expect(idleButton).toContain('aria-label="Send message"');
     expect(idleButton).toContain('type="submit"');

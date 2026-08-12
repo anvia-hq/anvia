@@ -88,14 +88,14 @@ export function ToolPayload(props: { title: string; value: string }) {
   const display = toolPayloadDisplay(props.value);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/80 bg-background/70">
-      <div className="flex min-h-9 items-center gap-3 border-b border-border/80 bg-muted/20 px-3">
+    <section className="min-w-0 overflow-hidden">
+      <div className="flex min-h-7 items-center gap-3">
         <div className=" text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           {props.title}
         </div>
       </div>
       <div className="min-w-0 overflow-x-auto">
-        <pre className="m-0 min-w-max p-3 text-sm leading-6 text-foreground">
+        <pre className="m-0 min-w-max py-1 text-sm leading-6 text-foreground">
           <code>
             <JsonSyntax text={display} />
           </code>

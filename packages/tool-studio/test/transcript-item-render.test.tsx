@@ -118,4 +118,32 @@ describe("TranscriptItem response actions", () => {
     expect(html).not.toContain("Hide");
     expect(html).not.toContain("shadow-black/20");
   });
+
+  it("renders expanded tool call payloads without frames", () => {
+    const html = renderToStaticMarkup(
+      <TranscriptItem
+        entry={{
+          entryId: 5,
+          kind: "tool",
+          toolName: "write_file",
+          args: '{"path":"notes.md"}',
+          approval: {
+            id: "approval-1",
+            status: "pending",
+            requestedAt: "2026-08-12T00:00:00.000Z",
+          },
+        }}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Collapse write_file tool call"');
+    expect(html).toContain("Input");
+    expect(html).not.toContain("border-l border-border/70");
+    expect(html).not.toContain("rounded-lg border border-border/80 bg-background/70");
+  });
 });

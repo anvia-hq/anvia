@@ -7,5 +7,6 @@ export type {
   QdrantFusion,
   QdrantHybridIndexOptions,
   QdrantIndexOptions,
+  QdrantMutationOptions,
   QdrantVectorStoreConnectOptions,
 } from "./types.js";

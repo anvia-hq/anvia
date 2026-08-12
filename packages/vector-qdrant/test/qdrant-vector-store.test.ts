@@ -1,8 +1,9 @@
 import type { SparseEmbedding, SparseEmbeddingModel } from "@anvia/core/embeddings";
 import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
 import { vectorFilter } from "@anvia/core/vector-store";
-import { describe, expect, it } from "vitest";
-import { filterToQdrantFilter, QdrantVectorStore } from "../src/index";
+import type { QdrantClient } from "@qdrant/js-client-rest";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { filterToQdrantFilter, type QdrantClientLike, QdrantVectorStore } from "../src/index";
 
 class MockEmbeddingModel implements EmbeddingModel {
   async embedTexts(texts: string[]): Promise<Embedding[]> {
@@ -29,9 +30,12 @@ class MockSparseEmbeddingModel implements SparseEmbeddingModel {
 class MockQdrantClient {
   readonly collections = new Set<string>();
   readonly creates: unknown[] = [];
+  readonly deletes: unknown[] = [];
   readonly upserts: unknown[] = [];
   readonly searches: unknown[] = [];
   readonly queries: unknown[] = [];
+  readonly scrolls: unknown[] = [];
+  scrollResponse: unknown = { points: [] };
 
   async getCollection(collectionName: string): Promise<unknown> {
     if (!this.collections.has(collectionName)) {
@@ -49,6 +53,16 @@ class MockQdrantClient {
   async upsert(collectionName: string, options: unknown): Promise<unknown> {
     this.upserts.push({ collectionName, options });
     return {};
+  }
+
+  async delete(collectionName: string, options: unknown): Promise<unknown> {
+    this.deletes.push({ collectionName, options });
+    return {};
+  }
+
+  async scroll(collectionName: string, options: unknown): Promise<unknown> {
+    this.scrolls.push({ collectionName, options });
+    return this.scrollResponse;
   }
 
   async search(collectionName: string, options: unknown): Promise<unknown> {
@@ -107,6 +121,10 @@ class MockQdrantClient {
 }
 
 describe("QdrantVectorStore", () => {
+  it("accepts the official Qdrant client type", () => {
+    expectTypeOf<QdrantClient>().toMatchTypeOf<QdrantClientLike>();
+  });
+
   it("creates a missing collection with vector size and default cosine distance", async () => {
     const client = new MockQdrantClient();
 
@@ -148,6 +166,26 @@ describe("QdrantVectorStore", () => {
         },
         sparse_vectors: {
           sparse: {},
+        },
+      },
+    });
+  });
+
+  it("supports Manhattan distance", async () => {
+    const client = new MockQdrantClient();
+
+    await QdrantVectorStore.connect({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+      distance: "Manhattan",
+    });
+
+    expect(client.creates[0]).toMatchObject({
+      options: {
+        vectors: {
+          size: 2,
+          distance: "Manhattan",
         },
       },
     });
@@ -320,6 +358,7 @@ describe("QdrantVectorStore", () => {
       options: {
         query: [1, 0],
         limit: 2,
+        score_threshold: 0.5,
         filter: { must: [{ key: "kind", match: { value: "animal" } }] },
         with_payload: true,
       },
@@ -389,6 +428,265 @@ describe("QdrantVectorStore", () => {
     expect(points[1]?.id).toMatch(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/);
     expect(points[0]?.id).not.toBe(points[1]?.id);
     expect(points.map((point) => point.payload.__anvia_document_id)).toEqual(["doc1", "doc1"]);
+  });
+
+  it("replaces existing document points and waits for mutations by default", async () => {
+    const client = new MockQdrantClient();
+    const store = await QdrantVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    await store.upsertDocuments(
+      [
+        {
+          id: "doc1",
+          document: "replacement",
+          embeddings: [{ document: "replacement", vector: [1, 0] }],
+        },
+      ],
+      { ordering: "strong", timeout: 10 },
+    );
+
+    expect(client.deletes[0]).toEqual({
+      collectionName: "docs",
+      options: {
+        wait: true,
+        ordering: "strong",
+        timeout: 10,
+        filter: {
+          must: [
+            {
+              key: "__anvia_document_id",
+              match: { any: ["doc1"] },
+            },
+          ],
+        },
+      },
+    });
+    expect(client.upserts[0]).toMatchObject({
+      collectionName: "docs",
+      options: { wait: true, ordering: "strong", timeout: 10 },
+    });
+  });
+
+  it("uses a single batch update when the client supports it", async () => {
+    const backend = new MockQdrantClient();
+    const batches: unknown[] = [];
+    const client = {
+      getCollection: backend.getCollection.bind(backend),
+      createCollection: backend.createCollection.bind(backend),
+      upsert: backend.upsert.bind(backend),
+      batchUpdate: async (collectionName: string, options: unknown) => {
+        batches.push({ collectionName, options });
+        return {};
+      },
+    };
+    const store = await QdrantVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    await store.upsertDocuments([
+      {
+        id: "doc1",
+        document: "replacement",
+        embeddings: [{ document: "replacement", vector: [1, 0] }],
+      },
+    ]);
+
+    expect(batches[0]).toMatchObject({
+      collectionName: "docs",
+      options: {
+        wait: true,
+        operations: [
+          {
+            delete: {
+              filter: {
+                must: [{ key: "__anvia_document_id", match: { any: ["doc1"] } }],
+              },
+            },
+          },
+          { upsert: { points: [{ payload: { __anvia_document_id: "doc1" } }] } },
+        ],
+      },
+    });
+    expect(backend.upserts).toEqual([]);
+  });
+
+  it("deletes every point belonging to logical document ids", async () => {
+    const client = new MockQdrantClient();
+    const store = await QdrantVectorStore.connect({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    await store.deleteDocuments(["doc1", "doc1", "doc2"], { wait: false });
+    await store.deleteDocuments([]);
+
+    expect(client.deletes).toEqual([
+      {
+        collectionName: "docs",
+        options: {
+          wait: false,
+          filter: {
+            must: [
+              {
+                key: "__anvia_document_id",
+                match: { any: ["doc1", "doc2"] },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("gets logical documents in requested order and deduplicates their points", async () => {
+    const client = new MockQdrantClient();
+    client.scrollResponse = {
+      points: [
+        {
+          id: "point-doc1-a",
+          payload: {
+            __anvia_document_id: "doc1",
+            __anvia_document: JSON.stringify({ title: "Cat guide" }),
+            kind: "animal",
+          },
+        },
+        {
+          id: "point-doc1-b",
+          payload: {
+            __anvia_document_id: "doc1",
+            __anvia_document: JSON.stringify({ title: "Cat guide" }),
+            kind: "animal",
+          },
+        },
+        {
+          id: "point-doc2",
+          payload: {
+            __anvia_document_id: "doc2",
+            __anvia_document: "Dog note",
+          },
+        },
+      ],
+    };
+    const store = await QdrantVectorStore.connect<{ title: string } | string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+
+    const documents = await store.getDocuments(["doc2", "missing", "doc1"]);
+
+    expect(documents).toEqual([
+      { id: "doc2", document: "Dog note" },
+      { id: "doc1", document: { title: "Cat guide" }, metadata: { kind: "animal" } },
+    ]);
+    expect(client.scrolls[0]).toMatchObject({
+      collectionName: "docs",
+      options: {
+        filter: {
+          must: [
+            {
+              key: "__anvia_document_id",
+              match: { any: ["doc2", "missing", "doc1"] },
+            },
+          ],
+        },
+        with_payload: true,
+        with_vector: false,
+      },
+    });
+  });
+
+  it("inspects logical documents with deduplicated cursor pagination", async () => {
+    const client = new MockQdrantClient();
+    client.scrollResponse = {
+      points: [
+        {
+          id: "point-doc1-a",
+          payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
+        },
+        {
+          id: "point-doc1-b",
+          payload: { __anvia_document_id: "doc1", __anvia_document: "one" },
+        },
+        {
+          id: "point-doc2",
+          payload: { __anvia_document_id: "doc2", __anvia_document: "two", rank: 2 },
+        },
+        {
+          id: "point-doc3",
+          payload: { __anvia_document_id: "doc3", __anvia_document: "three" },
+        },
+      ],
+    };
+    const store = await QdrantVectorStore.connect<string>({
+      client,
+      collectionName: "docs",
+      vectorSize: 2,
+    });
+    const index = store.index(new MockEmbeddingModel());
+
+    const first = await index.inspect({
+      limit: 2,
+      filter: vectorFilter.gt("rank", 1),
+    });
+    const second = await index.inspect({ limit: 2, cursor: first.nextCursor });
+
+    expect(first).toEqual({
+      items: [
+        { id: "doc1", document: "one" },
+        { id: "doc2", document: "two", metadata: { rank: 2 } },
+      ],
+      nextCursor: "2",
+    });
+    expect(second).toEqual({ items: [{ id: "doc3", document: "three" }] });
+    expect(client.scrolls[0]).toMatchObject({
+      options: { filter: { must: [{ key: "rank", range: { gt: 1 } }] } },
+    });
+  });
+
+  it("validates existing collection dimensions", async () => {
+    const client = new MockQdrantClient();
+    client.collections.add("docs");
+    client.getCollection = async () => ({
+      config: {
+        params: {
+          vectors: { size: 3, distance: "Cosine" },
+        },
+      },
+    });
+
+    await expect(
+      QdrantVectorStore.connect({
+        client,
+        collectionName: "docs",
+        vectorSize: 2,
+      }),
+    ).rejects.toThrow("vector size 3 does not match requested size 2");
+  });
+
+  it("does not treat unrelated collection lookup failures as missing collections", async () => {
+    const client = {
+      getCollection: async () => {
+        throw new Error("permission denied");
+      },
+      createCollection: async () => ({}),
+      upsert: async () => ({}),
+    };
+
+    await expect(
+      QdrantVectorStore.connect({
+        client,
+        collectionName: "docs",
+        vectorSize: 2,
+      }),
+    ).rejects.toThrow("permission denied");
   });
 
   it("translates compound filters", () => {

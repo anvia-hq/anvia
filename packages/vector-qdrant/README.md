@@ -30,6 +30,10 @@ const documents = await embedDocuments(
 const store = await QdrantVectorStore.connect({
   collectionName: "docs",
   vectorSize: 1536,
+  clientOptions: {
+    url: process.env.QDRANT_URL!,
+    apiKey: process.env.QDRANT_API_KEY!,
+  },
 });
 
 await store.upsertDocuments(documents);
@@ -37,6 +41,59 @@ await store.upsertDocuments(documents);
 const results = await store.index(embeddings).search({
   query: "What is Anvia?",
   topK: 5,
+});
+```
+
+`upsertDocuments(...)` replaces every point previously stored for the same logical document IDs,
+including stale points left when a document changes from multiple embeddings to fewer embeddings.
+Mutations wait for Qdrant to apply them by default. You can override Qdrant's mutation controls when
+needed:
+
+```ts
+await store.upsertDocuments(documents, {
+  wait: false,
+  ordering: "strong",
+  timeout: 30,
+});
+```
+
+## Document management
+
+Document operations use Anvia's logical document IDs. A deletion therefore removes every Qdrant
+point created for a multi-embedding document.
+
+```ts
+await store.deleteDocuments(["1", "2"]);
+
+const documents = await store.getDocuments(["1", "2"]);
+
+const index = store.index(embeddings);
+const firstPage = await index.inspect({ limit: 50 });
+const nextPage = firstPage.nextCursor
+  ? await index.inspect({ limit: 50, cursor: firstPage.nextCursor })
+  : undefined;
+```
+
+For advanced Qdrant operations, construct and retain the native client instead of routing collection
+administration through the Anvia adapter:
+
+```ts
+import { QdrantClient } from "@qdrant/js-client-rest";
+
+const client = new QdrantClient({
+  url: process.env.QDRANT_URL!,
+  apiKey: process.env.QDRANT_API_KEY!,
+});
+const store = await QdrantVectorStore.connect({
+  client,
+  collectionName: "docs",
+  vectorSize: 1536,
+});
+
+await client.createPayloadIndex("docs", {
+  field_name: "category",
+  field_schema: "keyword",
+  wait: true,
 });
 ```
 

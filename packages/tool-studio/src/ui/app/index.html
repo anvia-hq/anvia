@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,6 +8,18 @@
       name="description"
       content="Professional Studio interface for Anvia agents, sessions, tools, knowledge, and traces."
     />
+    <script>
+      (() => {
+        try {
+          const theme = localStorage.getItem("anvia-studio-theme");
+          const dark =
+            theme === "dark" ||
+            (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch {}
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/ui/assets/anvia.png" />
   </head>
   <body>

@@ -2,8 +2,10 @@ import { Message, uiMessagesToCoreMessages } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import { userUIMessageWithAttachments } from "../src/ui/app/app-helpers";
 import {
+  defaultPageForSection,
   fallbackActivePage,
   isActivePageEnabled,
+  navigationSection,
   type StudioPageAvailability,
 } from "../src/ui/app/modules/shared/navigation";
 import {
@@ -20,13 +22,27 @@ const baseAvailability: StudioPageAvailability = {
   sandboxesEnabled: true,
   mcpsEnabled: true,
   pipelinesEnabled: true,
-  evalsEnabled: true,
   memoryEnabled: true,
   statusEnabled: true,
   knowledgeEnabled: true,
 };
 
 describe("Studio UI helpers", () => {
+  it("groups every Studio page into the Lens shell sections", () => {
+    expect(
+      ["playground", "pipelines", "sessions", "tracing"].map((page) =>
+        navigationSection(page as Parameters<typeof navigationSection>[0]),
+      ),
+    ).toEqual(Array(4).fill("workspace"));
+    expect(
+      ["agents", "tools", "sandboxes", "mcps", "knowledge", "memory", "status"].map((page) =>
+        navigationSection(page as Parameters<typeof navigationSection>[0]),
+      ),
+    ).toEqual(Array(7).fill("inspect"));
+    expect(defaultPageForSection("workspace")).toBe("playground");
+    expect(defaultPageForSection("inspect")).toBe("agents");
+  });
+
   it("keeps pages enabled when their runtime capability is missing", () => {
     const availability = {
       ...baseAvailability,
@@ -59,7 +75,6 @@ describe("Studio UI helpers", () => {
         ...baseAvailability,
         hasAgents: false,
         pipelinesEnabled: false,
-        evalsEnabled: false,
         sessionsEnabled: false,
         tracesEnabled: false,
       }),

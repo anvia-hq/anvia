@@ -9,7 +9,7 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel("gpt-5.6-luna");
 
 const getTicket = createTool({
   name: "get_ticket",

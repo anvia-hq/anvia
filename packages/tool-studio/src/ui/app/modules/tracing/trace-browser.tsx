@@ -1,5 +1,15 @@
-import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowSquareOut,
+  ArrowsOutLineVertical,
+  BracketsCurly,
+  CaretRight,
+  Clock,
+  MagnifyingGlass,
+  Timer,
+  TreeStructure,
+} from "@phosphor-icons/react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   firstDeltaMsFromObservations,
   isNeutralTraceRow,
@@ -39,9 +49,17 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { StudioIcon } from "../../components/ui/icon";
+import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { cn } from "../../lib/utils";
-import { emptyFallback, formatDuration, formatTraceDate, traceAgentLabel } from "../shared/format";
+import {
+  emptyFallback,
+  formatDuration,
+  formatTraceDate,
+  formatUsage,
+  traceAgentLabel,
+} from "../shared/format";
+import { isRecord } from "../shared/object";
 import type { TraceInspectorKey, TraceLoadState, TraceObservationItem } from "../shared/types";
 
 export function TraceBrowser(props: {
@@ -106,12 +124,12 @@ function TraceTable(props: {
 }) {
   return (
     <Card
-      className="min-h-0 overflow-hidden rounded-xl border-border/80 bg-card/80"
+      className="min-h-0 overflow-hidden rounded-none border-0 bg-background p-0"
       aria-label="Traces"
     >
       <ScrollArea className="h-full min-h-0">
-        <div className="grid min-w-280 gap-1 p-2">
-          <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center gap-4 rounded-lg border border-border/60 bg-card/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+        <div className="grid min-w-280">
+          <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center gap-4 border-b bg-background/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
             <span>Trace</span>
             <span>Session</span>
             <span>Agent</span>
@@ -133,7 +151,7 @@ function TraceTable(props: {
           ) : null}
           {props.traces.map((trace) => (
             <Button
-              className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-lg border border-transparent bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:border-border/70 hover:bg-accent/70 hover:text-accent-foreground"
+              className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-none border-0 border-b bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:bg-accent/70 hover:text-accent-foreground"
               type="button"
               variant="ghost"
               key={trace.id}
@@ -180,56 +198,72 @@ function TraceDetailRoute(props: {
   onBack: () => void;
   onShowSessionTraces: (sessionId: string) => void;
 }) {
+  const summaryTone = props.selectedTrace?.observations[0]?.kind ?? "trace";
   return (
-    <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden rounded-xl border border-border/80 bg-card/70 p-2 shadow-sm">
-      <header className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-lg border border-border/60 bg-card/95 px-4 py-3">
-        <Button
-          aria-label="Back to traces"
-          className="h-8 min-h-8 w-8 text-muted-foreground hover:text-foreground"
-          size="icon"
-          type="button"
-          variant="ghost"
-          onClick={props.onBack}
-        >
-          <StudioIcon icon={ArrowLeft02Icon} aria-hidden="true" />
-        </Button>
-        <div className="grid min-w-0 gap-1">
-          <strong className="min-w-0 truncate text-sm font-semibold text-foreground">
-            {props.selectedTrace?.name ?? "Trace detail"}
-          </strong>
-          <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs font-medium text-muted-foreground">
-            {props.selectedTrace === undefined ? (
-              props.traceLoadState === "loading" ? (
-                "Loading trace"
-              ) : (
-                "Trace not found"
-              )
-            ) : (
-              <>
-                <span
-                  className={cn(
-                    "h-2 w-2 shrink-0 rounded-lg",
-                    statusDotClass(props.selectedTrace.status),
-                  )}
-                />
-                <span className="shrink-0 capitalize">{props.selectedTrace.status}</span>
-                <span className="shrink-0" aria-hidden="true">
-                  /
-                </span>
-                <span className="min-w-0 flex-1 truncate">
-                  Session <span className=" font-semibold">{props.selectedTrace.sessionId}</span>
-                </span>
-              </>
+    <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background">
+      <header className="shrink-0 border-b bg-background px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <Button
+            aria-label="Back to traces"
+            className="mt-0.5 text-muted-foreground hover:text-foreground"
+            size="icon"
+            type="button"
+            variant="ghost"
+            onClick={props.onBack}
+          >
+            <StudioIcon icon={ArrowLeft} aria-hidden="true" />
+          </Button>
+          <span
+            className={cn(
+              "grid size-9 shrink-0 place-items-center rounded-lg [&_svg]:size-4",
+              traceToneIconClass(summaryTone),
             )}
+          >
+            <TraceToneIcon tone={summaryTone} />
           </span>
+          <div className="grid min-w-0 gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="truncate text-lg font-semibold tracking-tight">
+                {traceDisplayName(props.selectedTrace)}
+              </h1>
+              {props.selectedTrace ? (
+                <TraceStatusBadge status={props.selectedTrace.status} />
+              ) : null}
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              {props.selectedTrace === undefined ? (
+                props.traceLoadState === "loading" ? (
+                  "Loading trace"
+                ) : (
+                  "Trace not found"
+                )
+              ) : (
+                <>
+                  <span>{formatTraceDate(props.selectedTrace.startedAt)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono" title={props.selectedTraceId}>
+                    {props.selectedTraceId}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
-        <span className="hidden max-w-[42vw] truncate rounded-lg bg-muted px-2 py-1 text-xs font-medium text-muted-foreground md:block">
-          {props.selectedTraceId}
-        </span>
+        {props.selectedTrace ? (
+          <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 border-t pt-3 sm:grid-cols-4">
+            <HeaderMetric label="Duration" value={formatDuration(props.selectedTrace.durationMs)} />
+            <HeaderMetric label="Spans" value={String(props.selectedTrace.observationCount)} />
+            <HeaderMetric
+              label="Tokens"
+              value={emptyFallback(formatUsage(props.selectedTrace.usage))}
+            />
+            <HeaderMetric label="Session" value={props.selectedTrace.sessionId} mono />
+          </dl>
+        ) : null}
       </header>
       <div className="min-h-0 min-w-0 overflow-hidden">
         {props.selectedTrace === undefined ? (
-          <Card className="grid h-full place-items-center rounded-lg border-border bg-card p-6 text-sm font-medium text-muted-foreground">
+          <Card className="grid h-full place-items-center rounded-none border-0 bg-background p-6 text-sm font-medium text-muted-foreground">
             {props.traceLoadState === "loading" ? "Loading trace" : "Trace not found"}
           </Card>
         ) : (
@@ -247,6 +281,45 @@ function TraceDetailRoute(props: {
   );
 }
 
+function traceDisplayName(trace: StudioTrace | undefined): string {
+  if (trace?.name) return trace.name;
+  if (isRecord(trace?.metadata) && typeof trace.metadata.agentName === "string") {
+    return trace.metadata.agentName;
+  }
+  return "Trace detail";
+}
+
+function HeaderMetric(props: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <dt className="text-xs text-muted-foreground">{props.label}</dt>
+      <dd className={cn("truncate text-sm font-medium tabular-nums", props.mono && "font-mono")}>
+        {props.value}
+      </dd>
+    </div>
+  );
+}
+
+function TraceStatusBadge({ status }: { status: string }) {
+  return (
+    <Badge
+      className={cn(
+        "border-0 capitalize",
+        status === "success" &&
+          "bg-emerald-200 text-emerald-950 dark:bg-emerald-300 dark:text-emerald-950",
+        status === "error" && "bg-rose-200 text-rose-950 dark:bg-rose-300 dark:text-rose-950",
+        status === "running" && "bg-amber-200 text-amber-950 dark:bg-amber-300 dark:text-amber-950",
+        status !== "success" &&
+          status !== "error" &&
+          status !== "running" &&
+          "bg-slate-200 text-slate-900 dark:bg-slate-300 dark:text-slate-950",
+      )}
+    >
+      {status}
+    </Badge>
+  );
+}
+
 function TracePanel(props: {
   traces: StudioTrace[];
   onShowSessionTraces: (sessionId: string) => void;
@@ -260,10 +333,12 @@ function TracePanel(props: {
   );
   const firstTraceId = orderedTraces[0]?.id ?? "";
   const [activeTraceId, setActiveTraceId] = useState(firstTraceId);
-  const [activeKey, setActiveKey] = useState<TraceInspectorKey>("trace");
+  const [activeKey, setActiveKey] = useState<TraceInspectorKey>("agent");
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [search, setSearch] = useState("");
   useEffect(() => {
     setActiveTraceId(firstTraceId);
-    setActiveKey("trace");
+    setActiveKey("agent");
   }, [firstTraceId]);
 
   const activeTrace = orderedTraces.find((trace) => trace.id === activeTraceId) ?? orderedTraces[0];
@@ -271,6 +346,29 @@ function TracePanel(props: {
   const selectTimelineItem = (traceId: string, key: TraceInspectorKey) => {
     setActiveTraceId(traceId);
     setActiveKey(key);
+  };
+  const query = search.trim().toLowerCase();
+  const searchResults =
+    query.length === 0
+      ? []
+      : orderedTraces.flatMap((trace) =>
+          trace.observations
+            .filter((observation) =>
+              [observation.name, observation.kind, observation.id].some((value) =>
+                value.toLowerCase().includes(query),
+              ),
+            )
+            .map((observation) => ({ trace, observation })),
+        );
+  const agentKeys = orderedTraces.map((trace) => `${trace.id}:agent`);
+  const everythingCollapsed = agentKeys.length > 0 && agentKeys.every((key) => collapsed.has(key));
+  const toggleCollapsed = (key: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   if (activeTrace === undefined) {
@@ -286,72 +384,136 @@ function TracePanel(props: {
 
   return (
     <section
-      className="grid h-full min-h-0 w-full content-stretch overflow-hidden"
+      className="grid h-full min-h-0 w-full content-stretch overflow-hidden bg-background"
       aria-label="Traces"
     >
-      <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] overflow-hidden max-md:grid-cols-1">
+      <div className="grid h-full min-h-0 grid-cols-[minmax(280px,36%)_minmax(420px,64%)] overflow-hidden max-md:grid-cols-1">
         <nav
-          className="grid min-h-0 auto-rows-min content-start overflow-auto border-r border-border/80 bg-card/35 pr-2 max-md:max-h-80 max-md:border-b max-md:border-r-0"
+          className="flex h-full min-h-0 flex-col border-r bg-background max-md:max-h-80 max-md:border-b max-md:border-r-0"
           aria-label="Trace timeline"
         >
-          <div className="sticky top-0 z-30 flex min-h-11 items-center justify-between bg-card/90 py-0 pl-0 pr-5 text-xs font-medium text-muted-foreground backdrop-blur">
-            <span>Search</span>
-            <strong className="text-foreground">Timeline</strong>
+          <div className="flex shrink-0 items-center gap-1 border-b p-1.5">
+            <div className="relative min-w-0 flex-1">
+              <StudioIcon
+                icon={MagnifyingGlass}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                aria-label="Search spans"
+                className="h-8 border-0 bg-transparent pl-7 shadow-none focus-visible:ring-1"
+                placeholder="Search spans"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+            <Button
+              aria-label={everythingCollapsed ? "Expand all spans" : "Collapse all spans"}
+              className="size-8"
+              size="icon"
+              title={everythingCollapsed ? "Expand all" : "Collapse all"}
+              variant="ghost"
+              onClick={() => setCollapsed(everythingCollapsed ? new Set() : new Set(agentKeys))}
+            >
+              <StudioIcon
+                icon={everythingCollapsed ? ArrowsOutLineVertical : TreeStructure}
+                aria-hidden="true"
+              />
+            </Button>
           </div>
-          {orderedTraces.map((trace) => {
-            const traceActive = activeTrace.id === trace.id;
-            const traceTurnItems = traceTurns(trace);
-            return (
-              <div className="contents" key={trace.id}>
-                <TraceTreeRow
-                  active={traceActive && activeKey === "trace"}
-                  ancestorLevels={[]}
-                  hasChildren={true}
-                  isLastSibling={true}
-                  level={0}
-                  tone="trace"
-                  title={trace.name ?? "Agent"}
-                  subtitle={formatDuration(trace.durationMs)}
-                  onSelect={() => selectTimelineItem(trace.id, "trace")}
-                />
-                <TraceTreeRow
-                  active={traceActive && activeKey === "agent"}
-                  ancestorLevels={[]}
-                  hasChildren={traceTurnItems.length > 0}
-                  isLastSibling={true}
-                  level={1}
-                  tone="agent"
-                  title="agent.run"
-                  subtitle={formatDuration(trace.durationMs)}
-                  onSelect={() => selectTimelineItem(trace.id, "agent")}
-                />
-                {traceTurnItems.map((turn) => (
-                  <div className="contents" key={`${trace.id}:turn:${turn.turn}`}>
+          <div
+            className="min-h-0 flex-1 overflow-auto overscroll-contain px-2 py-1"
+            role="tree"
+            aria-label="Span tree"
+          >
+            {query.length > 0 ? (
+              searchResults.length > 0 ? (
+                searchResults.map(({ trace, observation }) => (
+                  <TraceTreeRow
+                    active={
+                      activeTrace.id === trace.id && activeKey === `observation:${observation.id}`
+                    }
+                    ancestorLevels={[]}
+                    hasChildren={false}
+                    isLastSibling={true}
+                    key={`${trace.id}:${observation.id}`}
+                    level={0}
+                    tone={observation.kind}
+                    title={traceObservationLabel(observation)}
+                    subtitle={formatDuration(observation.durationMs)}
+                    onSelect={() => selectTimelineItem(trace.id, `observation:${observation.id}`)}
+                  />
+                ))
+              ) : (
+                <div className="grid place-items-center gap-1 p-6 text-center">
+                  <span className="text-sm font-medium">No matching spans</span>
+                  <span className="text-xs text-muted-foreground">
+                    Search by name, kind, or ID.
+                  </span>
+                </div>
+              )
+            ) : (
+              orderedTraces.map((trace) => {
+                const traceActive = activeTrace.id === trace.id;
+                const traceTurnItems = traceTurns(trace);
+                const agentKey = `${trace.id}:agent`;
+                const agentCollapsed = collapsed.has(agentKey);
+                return (
+                  <div className="contents" key={trace.id}>
                     <TraceTreeRow
-                      active={traceActive && activeKey === `turn:${turn.turn}`}
+                      active={traceActive && activeKey === "agent"}
                       ancestorLevels={[]}
-                      hasChildren={turn.observations.length > 0}
-                      isLastSibling={turn.turn === traceTurnItems.at(-1)?.turn}
-                      level={2}
-                      tone="turn"
-                      title={`turn.${turn.turn}`}
-                      subtitle={formatDuration(turn.durationMs)}
-                      onSelect={() => selectTimelineItem(trace.id, `turn:${turn.turn}`)}
+                      hasChildren={traceTurnItems.length > 0}
+                      isLastSibling={true}
+                      level={0}
+                      tone="agent"
+                      title={orderedTraces.length > 1 ? (trace.name ?? "agent.run") : "agent.run"}
+                      subtitle={formatDuration(trace.durationMs)}
+                      collapsed={agentCollapsed}
+                      onSelect={() => selectTimelineItem(trace.id, "agent")}
+                      onToggle={() => toggleCollapsed(agentKey)}
                     />
-                    <TraceObservationRows
-                      activeKey={activeKey}
-                      isLastTurn={turn.turn === traceTurnItems.at(-1)?.turn}
-                      observations={turn.observations}
-                      onSelect={(observationId) =>
-                        selectTimelineItem(trace.id, `observation:${observationId}`)
-                      }
-                      traceActive={traceActive}
-                    />
+                    {agentCollapsed
+                      ? null
+                      : traceTurnItems.map((turn) => {
+                          const turnKey = `${trace.id}:turn:${turn.turn}`;
+                          const turnCollapsed = collapsed.has(turnKey);
+                          return (
+                            <div className="contents" key={turnKey}>
+                              <TraceTreeRow
+                                active={traceActive && activeKey === `turn:${turn.turn}`}
+                                ancestorLevels={[]}
+                                hasChildren={turn.observations.length > 0}
+                                isLastSibling={turn.turn === traceTurnItems.at(-1)?.turn}
+                                level={1}
+                                tone="turn"
+                                title={`turn.${turn.turn}`}
+                                subtitle={formatDuration(turn.durationMs)}
+                                collapsed={turnCollapsed}
+                                onSelect={() => selectTimelineItem(trace.id, `turn:${turn.turn}`)}
+                                onToggle={() => toggleCollapsed(turnKey)}
+                              />
+                              {turnCollapsed ? null : (
+                                <TraceObservationRows
+                                  activeKey={activeKey}
+                                  collapsed={collapsed}
+                                  isLastTurn={turn.turn === traceTurnItems.at(-1)?.turn}
+                                  observations={turn.observations}
+                                  onSelect={(observationId) =>
+                                    selectTimelineItem(trace.id, `observation:${observationId}`)
+                                  }
+                                  onToggle={toggleCollapsed}
+                                  traceActive={traceActive}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                   </div>
-                ))}
-              </div>
-            );
-          })}
+                );
+              })
+            )}
+          </div>
         </nav>
         <TraceDetailPane
           trace={activeTrace}
@@ -373,101 +535,134 @@ function TraceTreeRow(props: {
   tone: "trace" | "agent" | "turn" | StudioTrace["observations"][number]["kind"];
   title: string;
   subtitle: string;
+  collapsed?: boolean;
   onSelect: () => void;
+  onToggle?: () => void;
 }) {
-  const levelOffset = 22;
-  const baseLeft = 12;
-  const iconSize = 20;
-  const iconCenter = baseLeft + iconSize / 2;
-  const lineTop = 18;
-  const xForLevel = (level: number) => iconCenter + level * levelOffset;
-
   return (
-    <Button
+    <div
+      aria-level={props.level + 1}
+      aria-selected={props.active}
       className={cn(
-        "relative grid h-auto min-h-0 w-full min-w-0 grid-cols-[20px_minmax(0,1fr)] items-start justify-start gap-2 whitespace-normal rounded-lg border-0 bg-transparent px-3 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:bg-accent/70 hover:text-accent-foreground",
-        props.active && "bg-muted/45 text-foreground hover:bg-muted/45 hover:text-foreground",
+        "group flex min-w-0 items-stretch text-muted-foreground hover:bg-muted/60",
+        props.active && "bg-muted text-foreground",
       )}
-      type="button"
-      variant="ghost"
-      onClick={props.onSelect}
-      style={{ paddingLeft: `${baseLeft + props.level * levelOffset}px` }}
+      role="treeitem"
+      tabIndex={-1}
+    >
+      <button
+        className="flex min-w-0 flex-1 items-stretch text-left"
+        type="button"
+        onClick={props.onSelect}
+      >
+        <TraceTreeIndent
+          ancestorLevels={props.ancestorLevels}
+          hasChildren={props.hasChildren}
+          isLastSibling={props.isLastSibling}
+          level={props.level}
+          tone={props.tone}
+        />
+        <span className="grid min-w-0 flex-1 content-center py-1.5 pr-2">
+          <span className="truncate text-xs font-medium text-current" title={props.title}>
+            {props.title}
+          </span>
+          <span className="flex flex-wrap gap-x-2 text-[10px] text-muted-foreground">
+            {props.subtitle}
+          </span>
+        </span>
+      </button>
+      {props.hasChildren && props.onToggle ? (
+        <button
+          aria-expanded={!props.collapsed}
+          aria-label={props.collapsed ? `Expand ${props.title}` : `Collapse ${props.title}`}
+          className="m-1 grid size-7 shrink-0 place-items-center rounded-md hover:bg-background"
+          type="button"
+          onClick={props.onToggle}
+        >
+          <StudioIcon
+            icon={CaretRight}
+            aria-hidden="true"
+            className={cn("size-3.5 transition-transform", !props.collapsed && "rotate-90")}
+          />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function TraceTreeIndent(props: {
+  ancestorLevels: number[];
+  hasChildren: boolean;
+  isLastSibling: boolean;
+  level: number;
+  tone: "trace" | "agent" | "turn" | StudioTrace["observations"][number]["kind"];
+}) {
+  const slot = 20;
+  const iconX = props.level * slot;
+  return (
+    <span
+      className="relative shrink-0"
+      data-tree-depth={props.level}
+      style={{ width: `${(props.level + 1) * slot + 4}px` }}
     >
       {props.ancestorLevels.map((level) => (
         <span
-          className="pointer-events-none absolute inset-y-0 w-px bg-muted-foreground/35"
-          style={{ left: `${xForLevel(level)}px` }}
-          aria-hidden="true"
+          className="absolute inset-y-0 w-px bg-border"
+          data-tree-line="ancestor"
           key={`ancestor-line-${level}`}
+          style={{ left: `${level * slot + 10}px` }}
         />
       ))}
       {props.level > 0 ? (
-        <>
+        props.isLastSibling ? (
           <span
-            className="pointer-events-none absolute top-0 w-px bg-muted-foreground/35"
-            style={{
-              left: `${xForLevel(props.level - 1)}px`,
-              height: `${lineTop}px`,
-            }}
-            aria-hidden="true"
+            className="absolute top-0 h-1/2 rounded-bl-sm border-b border-l border-border"
+            data-tree-line="elbow"
+            style={{ left: `${(props.level - 1) * slot + 10}px`, width: `${slot}px` }}
           />
-          {props.isLastSibling ? null : (
+        ) : (
+          <>
             <span
-              className="pointer-events-none absolute bottom-0 w-px bg-muted-foreground/35"
-              style={{
-                left: `${xForLevel(props.level - 1)}px`,
-                top: `${lineTop}px`,
-              }}
-              aria-hidden="true"
+              className="absolute inset-y-0 w-px bg-border"
+              data-tree-line="sibling-continuation"
+              style={{ left: `${(props.level - 1) * slot + 10}px` }}
             />
-          )}
-          <span
-            className="pointer-events-none absolute h-px bg-muted-foreground/35"
-            style={{
-              left: `${xForLevel(props.level - 1)}px`,
-              top: `${lineTop}px`,
-              width: `${levelOffset}px`,
-            }}
-            aria-hidden="true"
-          />
-        </>
+            <span
+              className="absolute top-1/2 h-px bg-border"
+              data-tree-line="elbow"
+              style={{ left: `${(props.level - 1) * slot + 10}px`, width: `${slot}px` }}
+            />
+          </>
+        )
       ) : null}
       {props.hasChildren ? (
         <span
-          className="pointer-events-none absolute bottom-0 w-px bg-muted-foreground/35"
-          style={{
-            left: `${xForLevel(props.level)}px`,
-            top: `${lineTop}px`,
-          }}
-          aria-hidden="true"
+          className="absolute bottom-0 w-px bg-border"
+          data-tree-line="children"
+          style={{ left: `${iconX + 10}px`, top: "calc(50% + 0.5rem)" }}
         />
       ) : null}
       <span
         className={cn(
-          "relative z-10 grid h-5 w-5 place-items-center rounded-lg bg-transparent [&_svg]:h-3 [&_svg]:w-3 [&_svg]:opacity-100",
+          "absolute top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm [&_svg]:size-2.5",
           traceToneIconClass(props.tone),
         )}
+        style={{ left: `${iconX + 2}px` }}
       >
         <TraceToneIcon tone={props.tone} />
       </span>
-      <span className="grid min-w-0 gap-0.5">
-        <strong className="min-w-0 truncate text-sm font-medium leading-5 text-current">
-          {props.title}
-        </strong>
-        <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
-          {props.subtitle}
-        </span>
-      </span>
-    </Button>
+    </span>
   );
 }
 
 function TraceObservationRows(props: {
   activeKey: TraceInspectorKey;
+  collapsed: Set<string>;
   isLastTurn: boolean;
   observations: TraceObservationItem[];
   traceActive: boolean;
   onSelect: (observationId: string) => void;
+  onToggle: (key: string) => void;
 }) {
   const roots = traceObservationTree(props.observations);
   return (
@@ -475,12 +670,14 @@ function TraceObservationRows(props: {
       {roots.map((node, index) => (
         <TraceObservationNodeRow
           activeKey={props.activeKey}
-          ancestorLevels={props.isLastTurn ? [] : [1]}
+          ancestorLevels={props.isLastTurn ? [] : [0]}
+          collapsed={props.collapsed}
           isLastSibling={index === roots.length - 1}
           key={node.observation.id}
-          level={3}
+          level={2}
           node={node}
           onSelect={props.onSelect}
+          onToggle={props.onToggle}
           traceActive={props.traceActive}
         />
       ))}
@@ -491,13 +688,17 @@ function TraceObservationRows(props: {
 function TraceObservationNodeRow(props: {
   activeKey: TraceInspectorKey;
   ancestorLevels: number[];
+  collapsed: Set<string>;
   isLastSibling: boolean;
   level: number;
   node: TraceObservationNode;
   traceActive: boolean;
   onSelect: (observationId: string) => void;
+  onToggle: (key: string) => void;
 }) {
   const usageText = observationUsageText(props.node.observation);
+  const collapseKey = `observation:${props.node.observation.id}`;
+  const isCollapsed = props.collapsed.has(collapseKey);
   const childAncestorLevels = props.isLastSibling
     ? props.ancestorLevels
     : [...props.ancestorLevels, props.level];
@@ -516,20 +717,26 @@ function TraceObservationNodeRow(props: {
             ? `${formatDuration(props.node.observation.durationMs)} · ${usageText}`
             : formatDuration(props.node.observation.durationMs)
         }
+        collapsed={isCollapsed}
         onSelect={() => props.onSelect(props.node.observation.id)}
+        onToggle={() => props.onToggle(collapseKey)}
       />
-      {props.node.children.map((child, index) => (
-        <TraceObservationNodeRow
-          activeKey={props.activeKey}
-          ancestorLevels={childAncestorLevels}
-          isLastSibling={index === props.node.children.length - 1}
-          key={child.observation.id}
-          level={props.level + 1}
-          node={child}
-          onSelect={props.onSelect}
-          traceActive={props.traceActive}
-        />
-      ))}
+      {isCollapsed
+        ? null
+        : props.node.children.map((child, index) => (
+            <TraceObservationNodeRow
+              activeKey={props.activeKey}
+              ancestorLevels={childAncestorLevels}
+              collapsed={props.collapsed}
+              isLastSibling={index === props.node.children.length - 1}
+              key={child.observation.id}
+              level={props.level + 1}
+              node={child}
+              onSelect={props.onSelect}
+              onToggle={props.onToggle}
+              traceActive={props.traceActive}
+            />
+          ))}
     </>
   );
 }
@@ -541,51 +748,68 @@ function TraceDetailPane(props: {
   onShowSessionTraces: (sessionId: string) => void;
 }) {
   const selected = selectedTraceDetail(props.trace, props.turns, props.activeKey);
+  const [payloadView, setPayloadView] = useState<"formatted" | "json">("formatted");
   return (
     <section
-      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-card/70"
+      className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background"
       aria-label="Trace detail"
     >
-      <header className="border-b border-border/60 bg-card/70 px-6 py-5">
-        <div className="grid min-w-0 gap-5">
-          <div className="flex min-w-0 items-start justify-between gap-4">
+      <header className="shrink-0 border-b px-4 py-4 md:px-6">
+        <div className="grid min-w-0 gap-4">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span
                 className={cn(
-                  "grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-foreground text-background [&_svg]:h-4 [&_svg]:w-4 [&_svg]:opacity-100",
-                  selected.tone !== "trace" && "bg-muted text-foreground",
+                  "grid size-9 shrink-0 place-items-center rounded-lg [&_svg]:size-4",
                   traceToneIconClass(selected.tone),
                 )}
               >
                 <TraceToneIcon tone={selected.tone} />
               </span>
               <div className="grid min-w-0 gap-1">
-                <h2 className="m-0 min-w-0 truncate text-2xl font-semibold leading-none tracking-[-0.01em] text-foreground">
-                  {selected.title}
-                </h2>
-                <div className=" text-xs font-medium text-muted-foreground">
-                  {selected.startedAt}
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h2 className="m-0 min-w-0 truncate text-xl font-semibold tracking-tight">
+                    {selected.title}
+                  </h2>
+                  <TraceStatusBadge status={selected.status} />
                 </div>
+                <div className="text-xs text-muted-foreground">{selected.startedAt}</div>
               </div>
             </div>
+            <PayloadViewSwitch value={payloadView} onChange={setPayloadView} />
           </div>
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
-            <TraceMetric label="Duration" value={formatDuration(selected.durationMs)} />
+          <div className="flex flex-wrap gap-2">
+            <TraceMetric
+              icon={<StudioIcon icon={Clock} aria-hidden="true" />}
+              label="Duration"
+              value={formatDuration(selected.durationMs)}
+            />
             {selected.firstDeltaMs === undefined ? null : (
-              <TraceMetric label="First delta" value={formatDuration(selected.firstDeltaMs)} />
+              <TraceMetric
+                icon={<StudioIcon icon={Timer} aria-hidden="true" />}
+                label="First delta"
+                value={formatDuration(selected.firstDeltaMs)}
+              />
             )}
             {selected.usage.length === 0 ? null : (
-              <TraceMetric label="Usage" value={selected.usage} />
+              <TraceMetric
+                icon={<StudioIcon icon={BracketsCurly} aria-hidden="true" />}
+                label="Usage"
+                value={selected.usage}
+              />
             )}
             <button
-              className="grid min-w-0 gap-1 rounded-lg bg-card/85 px-4 py-3 text-left transition duration-200 hover:bg-accent hover:text-accent-foreground"
+              className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-2.5 py-1.5 text-xs hover:bg-muted/60"
               type="button"
               onClick={() => props.onShowSessionTraces(props.trace.sessionId)}
             >
-              <span className=" text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Session
-              </span>
-              <span className="min-w-0 truncate text-sm font-semibold text-current">
+              <StudioIcon
+                icon={ArrowSquareOut}
+                aria-hidden="true"
+                className="size-3.5 text-muted-foreground"
+              />
+              <span className="text-muted-foreground">Session</span>
+              <span className="max-w-44 truncate font-mono font-medium">
                 {props.trace.sessionId}
               </span>
             </button>
@@ -595,29 +819,65 @@ function TraceDetailPane(props: {
       <div className="min-w-0 overflow-auto">
         <div className="grid min-w-0 content-start gap-6 p-6">
           {selected.input === undefined ? null : (
-            <TraceDataSection title="Input" value={selected.input} />
+            <TraceDataSection title="Input" value={selected.input} view={payloadView} />
           )}
           {selected.output === undefined ? null : (
-            <TraceDataSection title="Output" value={selected.output} tone="success" />
+            <TraceDataSection
+              title="Output"
+              value={selected.output}
+              tone="success"
+              view={payloadView}
+            />
           )}
           {selected.error === undefined ? null : (
-            <TraceDataSection title="Error" value={selected.error} tone="error" />
+            <TraceDataSection
+              title="Error"
+              value={selected.error}
+              tone="error"
+              view={payloadView}
+            />
           )}
-          <TraceDataSection title="Metadata" value={selected.metadata} rawJson />
+          <TraceDataSection title="Metadata" value={selected.metadata} view={payloadView} />
         </div>
       </div>
     </section>
   );
 }
 
-function TraceMetric(props: { label: string; value: string }) {
+function TraceMetric(props: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="grid min-w-0 gap-1 rounded-lg bg-card/85 px-4 py-3">
-      <span className=" text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {props.label}
-      </span>
-      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{props.value}</span>
+    <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-2.5 py-1.5 text-xs">
+      <span className="text-muted-foreground [&_svg]:size-3.5">{props.icon}</span>
+      <span className="text-muted-foreground">{props.label}</span>
+      <span className="max-w-44 truncate font-mono font-medium">{props.value}</span>
     </div>
+  );
+}
+
+function PayloadViewSwitch(props: {
+  value: "formatted" | "json";
+  onChange: (value: "formatted" | "json") => void;
+}) {
+  return (
+    <fieldset
+      className="flex h-8 items-center rounded-md border bg-muted/50 p-0.5"
+      aria-label="Payload view"
+    >
+      {(["formatted", "json"] as const).map((view) => (
+        <button
+          aria-pressed={props.value === view}
+          className={cn(
+            "h-6 rounded px-2 text-xs font-medium text-muted-foreground",
+            props.value === view && "bg-background text-foreground shadow-sm",
+          )}
+          key={view}
+          type="button"
+          onClick={() => props.onChange(view)}
+        >
+          {view === "formatted" ? "Formatted" : "JSON"}
+        </button>
+      ))}
+    </fieldset>
   );
 }
 
@@ -626,29 +886,29 @@ function TraceDataSection(props: {
   value: unknown;
   tone?: "success" | "error";
   compact?: boolean;
-  rawJson?: boolean;
+  view: "formatted" | "json";
 }) {
   const rows = plainTraceValue(props.title, props.value);
   return (
     <section className="grid min-w-0 gap-3">
       <div className="flex items-center gap-3">
-        <h3 className="m-0 text-lg font-semibold leading-tight text-foreground">{props.title}</h3>
-        <span className="h-px flex-1 bg-border/80" aria-hidden="true" />
+        <h3 className="m-0 text-sm font-semibold">{props.title}</h3>
+        <span className="h-px flex-1 bg-border" aria-hidden="true" />
       </div>
-      {props.rawJson ? (
+      {props.view === "json" ? (
         <TraceJsonTree value={props.value} />
       ) : (
-        <div className="grid min-w-0 gap-3">
+        <div className="grid min-w-0 gap-2">
           {rows.map((item) => (
             <article
               className={cn(
-                "grid min-w-0 gap-3 rounded-lg bg-card/85 px-4 py-4",
+                "grid min-w-0 gap-2 rounded-lg border bg-muted/10 px-4 py-3",
                 props.compact &&
                   "grid-cols-[150px_minmax(0,1fr)] items-start gap-4 max-lg:grid-cols-1",
               )}
               key={`${item.label}-${item.text}`}
             >
-              <span className="flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <TraceRowIcon label={item.label} />
                 {item.label}
               </span>
@@ -689,7 +949,7 @@ function TraceRowContent(props: {
                 {item.role}
               </Badge>
             </div>
-            <p className="m-0 whitespace-pre-wrap text-sm leading-7 text-foreground [overflow-wrap:anywhere]">
+            <p className="m-0 whitespace-pre-wrap text-sm leading-6 text-foreground [overflow-wrap:anywhere]">
               {item.text}
             </p>
           </div>
@@ -701,8 +961,7 @@ function TraceRowContent(props: {
   return (
     <p
       className={cn(
-        "m-0 whitespace-pre-wrap text-sm leading-7 text-foreground [overflow-wrap:anywhere]",
-        props.compact && " text-sm leading-6",
+        "m-0 whitespace-pre-wrap text-sm leading-6 text-foreground [overflow-wrap:anywhere]",
         props.tone === "success" && !isNeutralTraceRow(props.item) && "text-foreground",
         props.tone === "error" && "text-destructive",
       )}

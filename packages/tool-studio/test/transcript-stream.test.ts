@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  currentTurnAssistantEntryId,
   hasTerminalTranscriptError,
   transcriptStreamAdapter,
 } from "../src/ui/app/modules/playground/transcript-stream";
@@ -48,23 +47,6 @@ describe("Studio transcript stream smoothing", () => {
     };
 
     expect(transcriptStreamAdapter.withText(pending, "")).toBe(pending);
-  });
-
-  it("finds the current turn assistant without crossing the preceding user entry", () => {
-    expect(
-      currentTurnAssistantEntryId([
-        { entryId: 1, kind: "message", role: "assistant", text: "Old" },
-        { entryId: 2, kind: "message", role: "user", text: "New question" },
-        { entryId: 3, kind: "reasoning", text: "Thinking" },
-      ]),
-    ).toBeUndefined();
-    expect(
-      currentTurnAssistantEntryId([
-        { entryId: 1, kind: "message", role: "user", text: "Question" },
-        { entryId: 2, kind: "message", role: "assistant", text: "Answer" },
-        { entryId: 3, kind: "tool", toolName: "search" },
-      ]),
-    ).toBe(2);
   });
 
   it("requests an immediate flush only for a terminal assistant error", () => {

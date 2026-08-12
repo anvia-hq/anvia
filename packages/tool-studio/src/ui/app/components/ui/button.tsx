@@ -4,22 +4,21 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold shadow-none transition duration-200 ease-out active:translate-y-px disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-lg border border-transparent bg-clip-padding text-base font-medium outline-none transition-all select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "border border-foreground/45 bg-foreground text-background hover:bg-foreground/90",
-        ghost:
-          "border border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        ghost: "text-muted-foreground hover:bg-muted hover:text-foreground dark:hover:bg-muted/50",
         destructive:
-          "border border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "bg-destructive/10 text-destructive hover:bg-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30",
         secondary:
-          "border border-border/80 bg-secondary text-secondary-foreground hover:border-muted-foreground/45 hover:bg-accent hover:text-accent-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]",
       },
       size: {
-        default: "h-9 px-3",
-        icon: "h-8 w-8 p-0",
-        sm: "h-8 px-2.5",
+        default: "h-8 gap-1.5 px-2.5",
+        icon: "size-8 p-0",
+        sm: "h-7 gap-1 px-2.5 text-sm",
       },
     },
     defaultVariants: {

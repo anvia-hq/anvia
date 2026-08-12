@@ -17,7 +17,7 @@ const counterMcp = await connectMcp(
   }),
 );
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-mcp-counter", model)
   .name("Studio MCP Counter")
   .description("Demonstrates MCP tools surfaced through Studio.")

@@ -89,7 +89,7 @@ const approvalHook = createHook({
   },
 });
 
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-support-operations", agentModel)
   .name("Studio Support Operations")
   .description("Handles operational order lookups and guarded refund actions.")

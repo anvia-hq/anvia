@@ -72,7 +72,6 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
   app.get(`${options.path}/sandboxes/:sandboxRef`, (c) =>
     redirectWithQuery(c, `/sandboxes/${encodeURIComponent(c.req.param("sandboxRef"))}`),
   );
-  app.get(`${options.path}/evals`, (c) => redirectWithQuery(c, "/evals"));
   app.get(`${options.path}/memory`, (c) => redirectWithQuery(c, "/memory"));
   app.get(`${options.path}/status`, (c) => redirectWithQuery(c, "/status"));
   app.get(`${options.path}/knowledge`, (c) => redirectWithQuery(c, "/knowledge"));
@@ -94,7 +93,6 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
     app.get("/pipelines", shellWhenHtml(renderShell));
     app.get("/sandboxes", shellWhenHtml(renderShell));
     app.get("/sandboxes/:sandboxRef", shellWhenHtml(renderShell));
-    app.get("/evals", shellWhenHtml(renderShell));
     app.get("/memory", async (c) => c.html(await renderShell()));
     app.get("/status", shellWhenHtml(renderShell));
     app.get("/knowledge", shellWhenHtml(renderShell));
@@ -208,12 +206,12 @@ function renderLegacyStudioUiShell(props: {
   const title = escapeHtml(props.title);
   return [
     "<!doctype html>",
-    '<html lang="en" class="dark">',
+    '<html lang="en">',
     "<head>",
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${title}</title>`,
-    '<script>(()=>{try{if(localStorage.getItem("anvia-studio-theme")==="light"){document.documentElement.classList.remove("dark")}}catch{}})();</script>',
+    '<script>(()=>{try{const t=localStorage.getItem("anvia-studio-theme");const d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light"}catch{}})();</script>',
     `<link rel="icon" type="image/png" href="${escapeHtml(props.compatUiPath)}/assets/anvia.png">`,
     `<link rel="stylesheet" href="${escapeHtml(props.stylesheet)}">`,
     "</head>",

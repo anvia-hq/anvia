@@ -91,7 +91,7 @@ const embeddedNotes = await embedDocuments(embeddings, notes, {
 const knowledgeIndex = InMemoryVectorStore.fromDocuments(embeddedNotes).index(embeddings);
 const toolIndex = await createToolIndex(embeddings, [getTicket, lookupCustomer]);
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-knowledge-ops", model)
   .name("Studio Knowledge Ops")
   .description("Demonstrates the Studio Knowledge inspector.")

@@ -51,7 +51,7 @@ const getEscalation = createTool({
   },
 });
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-persistent-ops", model)
   .name("Studio Persistent Ops")
   .description("Demonstrates persisted Studio sessions, traces, pipeline logs, and run history.")

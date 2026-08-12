@@ -43,10 +43,10 @@ export function StatusPage(props: { enabled: boolean }) {
       <header className="bg-background/70 pb-3 pl-4 pr-6 pt-4 backdrop-blur">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-end gap-4 max-md:grid-cols-1">
           <div className="grid min-w-0 gap-2">
-            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Operations
             </div>
-            <h1 className="m-0 text-2xl font-semibold leading-none tracking-tight text-foreground">
+            <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground">
               Status
             </h1>
             <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">
@@ -309,7 +309,7 @@ function DashedNote(props: { text: string }) {
 
 function EmptyState(props: { title: string; text: string }) {
   return (
-    <div className="grid min-h-80 place-items-center rounded-xl border border-dashed border-border/80 bg-card/35 px-6 text-center">
+    <div className="grid min-h-80 place-items-center px-6 text-center">
       <div className="grid max-w-md gap-2">
         <h2 className="m-0 text-base font-semibold text-foreground">{props.title}</h2>
         <p className="m-0 text-sm leading-6 text-muted-foreground">{props.text}</p>

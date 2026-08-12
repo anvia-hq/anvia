@@ -1,22 +1,35 @@
 import { useEffect, useState } from "react";
 
-export type StudioTheme = "light" | "dark";
+export type StudioTheme = "system" | "light" | "dark";
+export type ResolvedStudioTheme = "light" | "dark";
 
 const studioThemeStorageKey = "anvia-studio-theme";
+const darkModeQuery = "(prefers-color-scheme: dark)";
 
 export function readInitialStudioTheme(): StudioTheme {
   if (typeof window === "undefined") {
-    return "dark";
+    return "system";
   }
   try {
     const stored = window.localStorage.getItem(studioThemeStorageKey);
-    return stored === "light" || stored === "dark" ? stored : "dark";
+    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
   } catch {
-    return "dark";
+    return "system";
   }
 }
 
-export function applyStudioTheme(theme: StudioTheme): void {
+export function resolveStudioTheme(
+  theme: StudioTheme,
+  prefersDark = systemPrefersDark(),
+): ResolvedStudioTheme {
+  return theme === "system" ? (prefersDark ? "dark" : "light") : theme;
+}
+
+export function nextStudioTheme(theme: StudioTheme): StudioTheme {
+  return theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+}
+
+export function applyStudioTheme(theme: ResolvedStudioTheme): void {
   if (typeof document === "undefined") {
     return;
   }
@@ -25,6 +38,9 @@ export function applyStudioTheme(theme: StudioTheme): void {
 }
 
 export function storeStudioTheme(theme: StudioTheme): void {
+  if (typeof window === "undefined") {
+    return;
+  }
   try {
     window.localStorage.setItem(studioThemeStorageKey, theme);
   } catch {
@@ -32,22 +48,45 @@ export function storeStudioTheme(theme: StudioTheme): void {
   }
 }
 
+function systemPrefersDark(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(darkModeQuery).matches
+  );
+}
+
 export const initialStudioTheme = readInitialStudioTheme();
-applyStudioTheme(initialStudioTheme);
+applyStudioTheme(resolveStudioTheme(initialStudioTheme));
 
 export function useStudioTheme(): {
   theme: StudioTheme;
+  resolvedTheme: ResolvedStudioTheme;
   toggleTheme: () => void;
 } {
   const [theme, setTheme] = useState<StudioTheme>(() => initialStudioTheme);
+  const [prefersDark, setPrefersDark] = useState(systemPrefersDark);
+  const resolvedTheme = resolveStudioTheme(theme, prefersDark);
 
   useEffect(() => {
-    applyStudioTheme(theme);
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+    const media = window.matchMedia(darkModeQuery);
+    const update = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
+    setPrefersDark(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    applyStudioTheme(resolvedTheme);
     storeStudioTheme(theme);
-  }, [theme]);
+  }, [resolvedTheme, theme]);
 
   return {
     theme,
-    toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
+    resolvedTheme,
+    toggleTheme: () => setTheme((current) => nextStudioTheme(current)),
   };
 }

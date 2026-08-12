@@ -1,7 +1,6 @@
 import { createRootRoute, createRoute, createRouter, Navigate } from "@tanstack/react-router";
 import { StudioConsoleLayout } from "./modules/shell/studio-console-layout";
 import { AgentsRoute } from "./routes/agents-route";
-import { EvalsRoute } from "./routes/evals-route";
 import { KnowledgeRoute } from "./routes/knowledge-route";
 import { McpsRoute } from "./routes/mcps-route";
 import { MemoryRoute } from "./routes/memory-route";
@@ -95,12 +94,6 @@ const pipelinesRoute = createRoute({
   component: PipelinesRoute,
 });
 
-const evalsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "evals",
-  component: EvalsRoute,
-});
-
 const knowledgeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "knowledge",
@@ -139,7 +132,6 @@ const routeTree = rootRoute.addChildren([
   sandboxDetailRoute,
   mcpsRoute,
   pipelinesRoute,
-  evalsRoute,
   knowledgeRoute,
   knowledgeTabRoute,
   memoryRoute,

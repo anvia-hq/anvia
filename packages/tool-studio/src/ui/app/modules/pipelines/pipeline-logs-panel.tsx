@@ -92,7 +92,7 @@ function LogRow(props: { log: StudioPipelineLogEntry }) {
   return (
     <article
       className={cn(
-        "min-w-full rounded-lg px-4 py-1.5 text-xs leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]",
+        "min-w-full rounded-lg px-4 py-1.5 text-xs leading-5 transition duration-200 hover:bg-muted/50",
       )}
       title={line}
     >

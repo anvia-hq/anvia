@@ -83,7 +83,7 @@ function LogRow(props: { log: StudioSessionLogEntry }) {
     .join("  ");
   return (
     <article
-      className="grid min-w-0 gap-1 rounded-lg px-3 py-2 text-xs leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]"
+      className="grid min-w-0 gap-1 rounded-lg px-3 py-2 text-xs leading-5 transition duration-200 hover:bg-muted/50"
       title={line}
     >
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">

@@ -25,18 +25,17 @@ describe("PlaygroundPage run action", () => {
     expect(stopButton).not.toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
   });
 
-  it("renders a live working timer when the active turn has no assistant response", () => {
+  it("does not render the removed working indicator", () => {
     const html = render({
       hasMessages: true,
       messages: [
         { entryId: 1, kind: "message", role: "user", text: "Investigate" },
         { entryId: 2, kind: "reasoning", text: "Checking" },
       ],
-      workingStartedAt: Date.now() - 65_000,
     });
 
-    expect(html).toContain("Working - 1m 5s");
-    expect(html).toContain("animate-spin");
+    expect(html).not.toContain("Working");
+    expect(html).not.toContain("animate-spin");
   });
 });
 

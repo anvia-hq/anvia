@@ -1,4 +1,4 @@
-import { Activity01Icon, Delete02Icon } from "@hugeicons/core-free-icons";
+import { Pulse, Trash } from "@phosphor-icons/react";
 import type { StudioConfig, StudioSessionSummary } from "../../../../types";
 import { Button } from "../../components/ui/button";
 import {
@@ -27,7 +27,7 @@ export function SessionsPage(props: {
 }) {
   if (!props.sessionsEnabled) {
     return (
-      <div className="w-full rounded-lg border border-dashed border-border p-8 text-sm font-medium text-muted-foreground">
+      <div className="w-full p-8 text-sm font-medium text-muted-foreground">
         Sessions are disabled
       </div>
     );
@@ -35,8 +35,8 @@ export function SessionsPage(props: {
 
   return (
     <StudioPageShell className="overflow-auto pb-6 pr-6" aria-label="Sessions">
-      <StudioSurface className="min-w-225 rounded-xl p-2">
-        <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 rounded-lg border border-border/60 bg-card/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+      <StudioSurface className="min-w-225">
+        <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b bg-background/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
           <span>Session</span>
           <span>Agent</span>
           <span>Messages</span>
@@ -54,9 +54,8 @@ export function SessionsPage(props: {
         {props.sessions.map((session) => (
           <div
             className={cn(
-              "mt-1 grid min-h-14 w-full min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 rounded-lg border border-transparent px-4 text-left text-muted-foreground transition duration-200 hover:border-border/70 hover:bg-accent/80 hover:text-accent-foreground",
-              session.id === props.selectedSessionId &&
-                "border-border/80 bg-muted/45 text-foreground",
+              "grid min-h-14 w-full min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b px-4 text-left text-muted-foreground transition duration-200 hover:bg-accent/80 hover:text-accent-foreground",
+              session.id === props.selectedSessionId && "bg-muted/45 text-foreground",
             )}
             key={session.id}
           >
@@ -96,7 +95,7 @@ export function SessionsPage(props: {
                   props.onViewSessionTracing(session.id);
                 }}
               >
-                <StudioIcon icon={Activity01Icon} aria-hidden="true" />
+                <StudioIcon icon={Pulse} aria-hidden="true" />
               </Button>
               <Button
                 aria-label={`Delete ${session.title ?? "Untitled chat"}`}
@@ -109,7 +108,7 @@ export function SessionsPage(props: {
                   props.onDeleteSession(session);
                 }}
               >
-                <StudioIcon icon={Delete02Icon} aria-hidden="true" />
+                <StudioIcon icon={Trash} aria-hidden="true" />
               </Button>
             </span>
           </div>

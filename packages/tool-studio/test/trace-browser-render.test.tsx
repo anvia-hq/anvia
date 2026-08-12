@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StudioConfig, StudioTrace, StudioTraceObservation } from "../src/types";
 import { TraceBrowser } from "../src/ui/app/modules/tracing/trace-browser";
+import { TraceJsonTree } from "../src/ui/app/modules/tracing/trace-browser-detail";
 
 const agents: StudioConfig["agents"] = [{ id: "support", name: "Support", quickPrompts: [] }];
 
@@ -24,6 +25,17 @@ describe("TraceBrowser rendering", () => {
     expect(html).toContain("2");
   });
 
+  it("uses the Lens syntax palette for JSON tokens", () => {
+    const html = renderToStaticMarkup(
+      <TraceJsonTree value={{ label: "ready", count: 2, enabled: true, empty: null }} />,
+    );
+
+    expect(html).toContain("text-blue-600 dark:text-blue-400");
+    expect(html).toContain("text-emerald-700 dark:text-emerald-400");
+    expect(html).toContain("text-amber-700 dark:text-amber-400");
+    expect(html).toContain("text-violet-700 dark:text-violet-400");
+  });
+
   it("renders selected trace detail and session timeline views", () => {
     const selected = trace();
     const sibling = trace({ id: "trace_2", name: "follow-up", startedAt: "2026-06-20T12:01:00Z" });
@@ -40,6 +52,10 @@ describe("TraceBrowser rendering", () => {
     expect(detailHtml).toContain("Input");
     expect(detailHtml).toContain("Output");
     expect(detailHtml).toContain("Metadata");
+    expect(detailHtml).toContain("Search spans");
+    expect(detailHtml).toContain("Collapse all spans");
+    expect(detailHtml).toContain("Formatted");
+    expect(detailHtml).toContain("JSON");
 
     const sessionHtml = render({
       traces: [selected, sibling],

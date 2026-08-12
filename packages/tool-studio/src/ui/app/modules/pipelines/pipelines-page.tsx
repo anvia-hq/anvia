@@ -1,6 +1,6 @@
 import { Background, BackgroundVariant, Controls, ReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { PlayIcon, RefreshIcon } from "@hugeicons/core-free-icons";
+import { ArrowClockwise, Play } from "@phosphor-icons/react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioConfig,
@@ -370,7 +370,7 @@ function PipelineInputPanel(props: {
           onClick={props.onRun}
           variant="ghost"
         >
-          <StudioIcon icon={PlayIcon} aria-hidden="true" />
+          <StudioIcon icon={Play} aria-hidden="true" />
           {props.runState === "running" ? "Running" : "Run"}
         </Button>
       </div>
@@ -504,7 +504,7 @@ function PipelineRunRow(props: {
           title="Rerun this pipeline with its saved input"
           variant="ghost"
         >
-          <StudioIcon icon={RefreshIcon} aria-hidden="true" />
+          <StudioIcon icon={ArrowClockwise} aria-hidden="true" />
           Rerun
         </Button>
       </div>
@@ -667,7 +667,7 @@ function PipelineLogsSection(props: {
         </span>
       </div>
       <div
-        className="min-h-0 overflow-auto rounded-xl border border-border/65 bg-background/45 p-2 "
+        className="min-h-0 overflow-auto border-t bg-background p-2"
         ref={scrollerRef}
         onScroll={updateStickiness}
       >
@@ -710,7 +710,7 @@ function PipelineLogRow(props: { log: StudioPipelineLogEntry }) {
   return (
     <article
       className={[
-        "min-w-full rounded-lg px-3 py-1.5 text-xs leading-5 transition duration-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.04]",
+        "min-w-full rounded-lg px-3 py-1.5 text-xs leading-5 transition duration-200 hover:bg-muted/50",
       ].join(" ")}
       title={line}
     >

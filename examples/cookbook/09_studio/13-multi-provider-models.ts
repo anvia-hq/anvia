@@ -13,7 +13,7 @@ const anthropic = new AnthropicClient({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const agent = new AgentBuilder("studio-model-router", openai.completionModel("gpt-5.5"))
+const agent = new AgentBuilder("studio-model-router", openai.completionModel("gpt-5.6-luna"))
   .name("Studio Model Router")
   .description("Demonstrates Studio model selection across multiple providers.")
   .instructions(
@@ -26,18 +26,18 @@ const agent = new AgentBuilder("studio-model-router", openai.completionModel("gp
 
 new Studio([agent], {
   models: {
-    default: "openai:gpt-5.5",
+    default: "openai:gpt-5.6-luna",
     providers: [
       {
         id: "openai",
         name: "OpenAI",
-        defaultModel: "gpt-5.5",
+        defaultModel: "gpt-5.6-luna",
         createCompletionModel: (model) => openai.completionModel(model),
         listModels: () => openai.listModels(),
         models: [
           {
-            id: "gpt-5.5",
-            name: "GPT-5.5",
+            id: "gpt-5.6-luna",
+            name: "GPT-5.6 Luna",
             modalities: {
               input: ["text", "image", "document"],
               output: ["text"],
@@ -80,8 +80,8 @@ new Studio([agent], {
     ],
     agents: {
       "studio-model-router": {
-        default: "openai:gpt-5.5",
-        allowed: ["openai:gpt-5.5", "anthropic:claude-opus-4-8"],
+        default: "openai:gpt-5.6-luna",
+        allowed: ["openai:gpt-5.6-luna", "anthropic:claude-opus-4-8"],
       },
     },
   },

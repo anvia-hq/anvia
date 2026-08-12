@@ -549,7 +549,7 @@ export function RetrievalLogPanel(props: {
   onOpenTrace: (traceId: string) => void;
 }) {
   return (
-    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border/80 bg-card/55">
+    <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background">
       <div className="border-b border-border/80 px-4 py-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">

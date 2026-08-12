@@ -1,10 +1,4 @@
-import {
-  ChartBarLineIcon,
-  Copy01Icon,
-  CopyCheckIcon,
-  PathIcon,
-  Wrench01Icon,
-} from "@hugeicons/core-free-icons";
+import { CaretDown, ChartBar, Check, Copy, Path, Wrench } from "@phosphor-icons/react";
 import { memo, useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -22,7 +16,6 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
   displayText?: string | undefined;
   live?: boolean | undefined;
   metrics?: AssistantResponseMetrics | undefined;
-  workingStartedAt?: number | undefined;
   decidingApprovals: Set<string>;
   answeringQuestions: Set<string>;
   onApprovalDecision: (approvalId: string, approved: boolean) => void;
@@ -66,10 +59,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
   const showAssistantActions =
     props.entry.role === "assistant" && !isPending && props.entry.text.trim().length > 0;
   const persistedDurationMs = props.entry.durationMs ?? props.metrics?.durationMs;
-  const showAssistantFooter =
-    showAssistantActions ||
-    props.workingStartedAt !== undefined ||
-    persistedDurationMs !== undefined;
+  const showAssistantFooter = showAssistantActions || persistedDurationMs !== undefined;
 
   if (props.entry.role === "user") {
     return (
@@ -78,7 +68,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
         data-entry-id={String(props.entry.entryId)}
       >
         {props.entry.text.trim().length === 0 ? null : (
-          <div className="rounded-2xl bg-muted/55 px-4 py-2.5 shadow-sm shadow-black/[0.04] dark:bg-white/[0.08] dark:shadow-black/20">
+          <div className="rounded-2xl bg-muted px-4 py-2.5">
             <MarkdownText size="base" text={props.entry.text} />
           </div>
         )}
@@ -109,8 +99,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
           showActions={showAssistantActions}
           text={props.entry.text}
           traceId={traceId}
-          durationMs={props.workingStartedAt === undefined ? persistedDurationMs : undefined}
-          startedAt={props.workingStartedAt}
+          durationMs={persistedDurationMs}
           onOpenTrace={props.onOpenTrace}
         />
       ) : null}
@@ -122,7 +111,6 @@ function AssistantResponseFooter(props: {
   durationMs?: number | undefined;
   metrics?: AssistantResponseMetrics | undefined;
   showActions: boolean;
-  startedAt?: number | undefined;
   text: string;
   traceId?: string | undefined;
   onOpenTrace: (traceId: string) => void;
@@ -154,7 +142,7 @@ function AssistantResponseFooter(props: {
           variant="ghost"
           onClick={() => void copyResponse()}
         >
-          <StudioIcon icon={copied ? CopyCheckIcon : Copy01Icon} aria-hidden="true" />
+          <StudioIcon icon={copied ? Check : Copy} aria-hidden="true" />
         </Button>
       ) : null}
       {props.showActions ? (
@@ -166,7 +154,7 @@ function AssistantResponseFooter(props: {
             type="button"
             variant="ghost"
           >
-            <StudioIcon icon={ChartBarLineIcon} aria-hidden="true" />
+            <StudioIcon icon={ChartBar} aria-hidden="true" />
           </Button>
           <div
             className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-border/90 bg-popover p-3 text-popover-foreground shadow-xl shadow-black/25 group-focus-within:grid group-hover:grid"
@@ -185,13 +173,12 @@ function AssistantResponseFooter(props: {
           variant="ghost"
           onClick={() => props.onOpenTrace(traceId)}
         >
-          <StudioIcon icon={PathIcon} aria-hidden="true" />
+          <StudioIcon icon={Path} aria-hidden="true" />
         </Button>
       )}
       <WorkingDuration
         className={props.showActions ? "ml-1.5" : undefined}
         durationMs={props.durationMs}
-        startedAt={props.startedAt}
       />
     </div>
   );
@@ -280,16 +267,17 @@ function formatResponseDuration(value: number): string {
 function AssistantLoadingIndicator() {
   return (
     <div
-      aria-label="Assistant is responding"
-      className="inline-flex h-9 min-h-9 items-center gap-2 rounded-xl border border-border/70 bg-muted/35 px-3 text-muted-foreground shadow-sm"
+      aria-label="Assistant is thinking"
+      aria-live="polite"
+      className="inline-flex min-h-8 items-center gap-2 py-1 text-muted-foreground"
       role="status"
     >
+      <span className="text-base font-medium">Thinking</span>
       <span className="flex items-center gap-1" aria-hidden="true">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground [animation-delay:300ms]" />
+        <span className="size-1 animate-pulse rounded-full bg-current motion-reduce:animate-none" />
+        <span className="size-1 animate-pulse rounded-full bg-current [animation-delay:150ms] motion-reduce:animate-none" />
+        <span className="size-1 animate-pulse rounded-full bg-current [animation-delay:300ms] motion-reduce:animate-none" />
       </span>
-      <span className=" text-xs font-semibold uppercase text-muted-foreground">Thinking</span>
     </div>
   );
 }
@@ -380,38 +368,56 @@ function ToolEntry(props: {
   const cancelledInteraction = approval?.status === "cancelled" || question?.status === "cancelled";
   const deciding = approval !== undefined && props.decidingApprovals.has(approval.id);
   const answering = question !== undefined && props.answeringQuestions.has(question.id);
+  const status = pendingApproval
+    ? "Approval required"
+    : pendingQuestion
+      ? "Input required"
+      : cancelledInteraction
+        ? "Cancelled"
+        : props.entry.result === undefined
+          ? "Running"
+          : "Completed";
 
   return (
     <article
-      className="w-full justify-self-start overflow-hidden rounded-xl border border-border/80 bg-card/90 text-foreground shadow-sm shadow-black/20"
+      className="w-full justify-self-start text-foreground"
       data-entry-id={String(props.entry.entryId)}
     >
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-2 px-3 py-2.5",
-          !collapsed && hasPayload && "bg-muted/20",
-        )}
-      >
+      <div className="flex min-w-0 items-center gap-2 py-1.5">
         <Button
           aria-expanded={!collapsed}
-          className="h-auto min-h-0 min-w-0 flex-1 justify-between border-0 bg-transparent p-0 text-left text-inherit shadow-none hover:bg-transparent hover:text-inherit"
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${props.entry.toolName} tool call`}
+          className="h-auto min-h-8 min-w-0 flex-1 justify-start gap-2 border-0 bg-transparent p-0 text-left text-inherit shadow-none hover:bg-transparent hover:text-inherit"
           type="button"
           variant="ghost"
           onClick={() => setCollapsed((current) => !current)}
         >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="grid h-6 w-4 shrink-0 place-items-center text-foreground">
-              <StudioIcon icon={Wrench01Icon} className="h-3.5 w-3.5" aria-hidden="true" />
-            </span>
-            <strong className="min-w-0 truncate text-sm font-semibold text-foreground">
-              {props.entry.toolName}
-            </strong>
+          <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">
+            <StudioIcon icon={Wrench} className="size-4" aria-hidden="true" />
           </span>
-          {pendingApproval ? null : (
-            <span className="ml-auto shrink-0 text-xs font-medium text-muted-foreground">
-              {collapsed ? "Show" : "Hide"}
+          <strong className="min-w-0 truncate font-mono text-base font-medium text-foreground">
+            {props.entry.toolName}
+          </strong>
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm font-normal text-muted-foreground">
+            <span
+              className={cn(
+                "size-1.5 rounded-full bg-muted-foreground/60",
+                status === "Running" && "animate-pulse bg-foreground motion-reduce:animate-none",
+                cancelledInteraction && "bg-destructive",
+              )}
+              aria-hidden="true"
+            />
+            {status}
+          </span>
+          {hasPayload ? (
+            <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">
+              <StudioIcon
+                icon={CaretDown}
+                className={cn("size-4 transition-transform", collapsed && "-rotate-90")}
+                aria-hidden="true"
+              />
             </span>
-          )}
+          ) : null}
         </Button>
         {pendingApproval && approval !== undefined ? (
           <ToolApprovalActions
@@ -419,31 +425,9 @@ function ToolEntry(props: {
             onDecision={(approved) => props.onApprovalDecision(approval.id, approved)}
           />
         ) : null}
-        {pendingQuestion ? (
-          <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-foreground">
-            Waiting for input
-          </Badge>
-        ) : null}
-        {cancelledInteraction ? (
-          <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-muted-foreground">
-            Cancelled
-          </Badge>
-        ) : null}
-        {pendingApproval || pendingQuestion ? (
-          <Button
-            aria-expanded={!collapsed}
-            className="h-7 min-h-7 px-2 text-xs font-medium"
-            size="sm"
-            type="button"
-            variant="ghost"
-            onClick={() => setCollapsed((current) => !current)}
-          >
-            {collapsed ? "Show" : "Hide"}
-          </Button>
-        ) : null}
       </div>
       {collapsed || !hasPayload ? null : (
-        <div className="grid gap-3 p-3">
+        <div className="ml-3 grid gap-3 border-l border-border/70 py-2 pl-5">
           {approval === undefined ? null : <ToolApprovalPanel approval={approval} />}
           {question === undefined ? null : (
             <ToolQuestionPanel
@@ -766,9 +750,9 @@ function ToolApprovalActions(props: {
   onDecision: (approved: boolean) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border/80 bg-background/55 p-0.5">
+    <div className="flex shrink-0 items-center gap-1">
       <Button
-        className="h-7 min-h-7 rounded-md border-0 bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
+        className="h-8 min-h-8 border-0 bg-transparent px-3 text-sm text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
         disabled={props.disabled}
         size="sm"
         type="button"
@@ -778,7 +762,7 @@ function ToolApprovalActions(props: {
         Reject
       </Button>
       <Button
-        className="h-7 min-h-7 rounded-md px-2.5 text-xs"
+        className="h-8 min-h-8 px-3 text-sm"
         disabled={props.disabled}
         size="sm"
         type="button"

@@ -1,5 +1,22 @@
 import type { ActivePage } from "./types";
 
+export type StudioNavigationSection = "workspace" | "inspect";
+
+const workspacePages: ReadonlySet<ActivePage> = new Set([
+  "playground",
+  "pipelines",
+  "sessions",
+  "tracing",
+]);
+
+export function navigationSection(page: ActivePage): StudioNavigationSection {
+  return workspacePages.has(page) ? "workspace" : "inspect";
+}
+
+export function defaultPageForSection(section: StudioNavigationSection): ActivePage {
+  return section === "workspace" ? "playground" : "agents";
+}
+
 export type StudioPageAvailability = {
   hasAgents: boolean;
   sessionsEnabled: boolean;
@@ -8,7 +25,6 @@ export type StudioPageAvailability = {
   sandboxesEnabled: boolean;
   mcpsEnabled: boolean;
   pipelinesEnabled: boolean;
-  evalsEnabled: boolean;
   memoryEnabled: boolean;
   statusEnabled: boolean;
   knowledgeEnabled: boolean;

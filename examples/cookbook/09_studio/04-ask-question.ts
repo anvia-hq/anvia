@@ -68,7 +68,7 @@ const prepareEscalation = createTool({
   }),
 });
 
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-human-feedback", agentModel)
   .name("Studio Human Feedback")
   .description("Collects missing operator input through Studio before acting.")

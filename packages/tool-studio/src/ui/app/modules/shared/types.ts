@@ -35,7 +35,6 @@ export type ActivePage =
   | "sandboxes"
   | "mcps"
   | "pipelines"
-  | "evals"
   | "memory"
   | "status"
   | "knowledge";

@@ -1,6 +1,6 @@
 import type { StudioConfig } from "../../../../types";
 import { PipelinesPage } from "../../app-pages";
-import type { StudioTheme } from "../../app-theme";
+import type { ResolvedStudioTheme } from "../../app-theme";
 import type { PipelineSidebarTab } from "./pipelines-page";
 import { usePipelines } from "./use-pipelines";
 
@@ -8,7 +8,7 @@ export function PipelinesContainer(props: {
   active: boolean;
   enabled: boolean;
   pipelines: StudioConfig["pipelines"];
-  theme: StudioTheme;
+  theme: ResolvedStudioTheme;
   activeTab: PipelineSidebarTab;
   onError: (message: string) => void;
   onStatus: (status: string) => void;

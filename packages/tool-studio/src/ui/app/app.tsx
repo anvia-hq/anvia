@@ -53,7 +53,7 @@ export function StudioConsole() {
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [activePage, setActivePage] = useState<ActivePage>("playground");
-  const { theme, toggleTheme } = useStudioTheme();
+  const { theme, resolvedTheme, toggleTheme } = useStudioTheme();
   const [knowledgeTab, setKnowledgeTab] = useState<KnowledgeTab>(defaultKnowledgeTab);
   const [deleteCandidate, setDeleteCandidate] = useState<StudioSessionSummary | undefined>();
   const [status, setStatus] = useState("Loading");
@@ -147,12 +147,10 @@ export function StudioConsole() {
   const toolsEnabled = config?.capabilities.tools?.enabled === true;
   const sandboxesEnabled = config?.capabilities.sandboxes?.enabled === true;
   const pipelinesEnabled = config?.capabilities.pipelines?.enabled === true;
-  const evalsEnabled = config?.capabilities.evals?.enabled === true;
   const memoryEnabled = config?.capabilities.memory?.enabled === true;
   const statusEnabled = config?.capabilities.status?.enabled === true;
   const agents = config?.agents ?? [];
   const pipelines = config?.pipelines ?? [];
-  const evals = config?.evals ?? [];
   const hasAgents = agents.length > 0;
   const navigateToTracing = useCallback(() => {
     setActivePage("tracing");
@@ -202,7 +200,6 @@ export function StudioConsole() {
       sandboxesEnabled,
       mcpsEnabled,
       pipelinesEnabled,
-      evalsEnabled,
       memoryEnabled,
       statusEnabled,
       knowledgeEnabled,
@@ -215,7 +212,6 @@ export function StudioConsole() {
       sandboxesEnabled,
       mcpsEnabled,
       pipelinesEnabled,
-      evalsEnabled,
       memoryEnabled,
       statusEnabled,
       knowledgeEnabled,
@@ -287,7 +283,6 @@ export function StudioConsole() {
     answeringQuestions,
     decidingApprovals,
     isStreaming,
-    workingStartedAt,
     answerToolQuestion,
     decideToolApproval,
     runPrompt,
@@ -468,12 +463,9 @@ export function StudioConsole() {
     attachments,
     decidingApprovals,
     deleteCandidate,
-    evals,
-    evalsEnabled,
     hasAgents,
     hasMessages,
     isStreaming,
-    workingStartedAt,
     knowledgeEnabled,
     knowledgeTab,
     mcpsEnabled,
@@ -484,6 +476,7 @@ export function StudioConsole() {
     pipelinesEnabled,
     prompt,
     runState,
+    resolvedTheme,
     sandboxesEnabled,
     selectedAgent,
     selectedAgentId,

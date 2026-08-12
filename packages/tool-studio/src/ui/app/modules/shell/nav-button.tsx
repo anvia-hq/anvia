@@ -1,21 +1,19 @@
+import type { Icon } from "@phosphor-icons/react";
 import {
-  Activity01Icon,
-  BookOpenTextIcon,
-  ChatIcon,
-  ContainerIcon,
-  DatabaseIcon,
-  DatabaseLightningIcon,
-  GaugeIcon,
-  ListViewIcon,
-  Plug01Icon,
-  Robot01Icon,
-  SearchList01Icon,
-  Shield01Icon,
-  ToolsIcon,
-  WorkflowSquare01Icon,
-  Wrench01Icon,
-} from "@hugeicons/core-free-icons";
-import type { IconSvgElement } from "@hugeicons/react";
+  BookOpenText,
+  Chat,
+  Cube,
+  Database,
+  FlowArrow,
+  Gauge,
+  ListBullets,
+  ListMagnifyingGlass,
+  Plug,
+  Pulse,
+  Robot,
+  Toolbox,
+  Wrench,
+} from "@phosphor-icons/react";
 import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
 import { cn } from "../../lib/utils";
@@ -25,27 +23,32 @@ export function NavButton(props: {
   icon: IconName;
   label: string;
   onClick: () => void;
+  compact?: boolean;
   disabled?: boolean;
 }) {
   const Icon = navIcon(props.icon);
   return (
     <Button
       className={cn(
-        "studio-sidebar-nav-button h-9 min-h-9 w-full justify-start gap-3 rounded-lg bg-transparent px-2.5 py-0.5 text-base font-medium text-sidebar-foreground/62 shadow-none transition duration-200 hover:text-sidebar-foreground active:translate-y-px [&_svg]:h-[17px] [&_svg]:w-[17px]",
-        props.active && "studio-sidebar-nav-button-active text-sidebar-accent-foreground",
+        "h-8 min-h-8 w-full justify-start gap-2 rounded-lg bg-transparent px-2 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        props.active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground",
+        props.compact && "size-10 min-h-10 w-10 justify-center p-0 [&_svg]:size-5",
       )}
+      aria-current={props.active ? "page" : undefined}
+      aria-label={props.compact ? props.label : undefined}
+      title={props.compact ? props.label : undefined}
       variant="ghost"
       type="button"
       disabled={props.disabled}
       onClick={props.onClick}
     >
       <StudioIcon icon={Icon} />
-      <span>{props.label}</span>
+      {props.compact ? null : <span>{props.label}</span>}
     </Button>
   );
 }
 
-type IconName =
+export type IconName =
   | "activity"
   | "bot"
   | "book-open-text"
@@ -57,42 +60,39 @@ type IconName =
   | "message"
   | "plug"
   | "search-list"
-  | "shield"
   | "tools"
   | "wrench"
   | "workflow";
 
-function navIcon(name: IconName): IconSvgElement {
+export function navIcon(name: IconName): Icon {
   switch (name) {
     case "activity":
-      return Activity01Icon;
+      return Pulse;
     case "bot":
-      return Robot01Icon;
+      return Robot;
     case "book-open-text":
-      return BookOpenTextIcon;
+      return BookOpenText;
     case "container":
-      return ContainerIcon;
+      return Cube;
     case "database":
-      return DatabaseIcon;
+      return Database;
     case "database-lightning":
-      return DatabaseLightningIcon;
+      return Database;
     case "gauge":
-      return GaugeIcon;
+      return Gauge;
     case "list":
-      return ListViewIcon;
+      return ListBullets;
     case "message":
-      return ChatIcon;
+      return Chat;
     case "plug":
-      return Plug01Icon;
+      return Plug;
     case "search-list":
-      return SearchList01Icon;
-    case "shield":
-      return Shield01Icon;
+      return ListMagnifyingGlass;
     case "tools":
-      return ToolsIcon;
+      return Toolbox;
     case "wrench":
-      return Wrench01Icon;
+      return Wrench;
     case "workflow":
-      return WorkflowSquare01Icon;
+      return FlowArrow;
   }
 }

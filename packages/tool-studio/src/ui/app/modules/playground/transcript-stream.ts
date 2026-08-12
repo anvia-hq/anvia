@@ -28,19 +28,6 @@ export const transcriptStreamAdapter: SmoothStreamItemAdapter<TranscriptEntry> =
   },
 };
 
-export function currentTurnAssistantEntryId(entries: TranscriptEntry[]): number | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.kind === "message" && entry.role === "assistant") {
-      return entry.entryId;
-    }
-    if (entry?.kind === "message" && entry.role === "user") {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
 export function hasTerminalTranscriptError(entries: TranscriptEntry[]): boolean {
   const entry = entries.at(-1);
   return (

@@ -1,10 +1,10 @@
 import {
-  ComputerTerminal01Icon,
-  Download01Icon,
-  File01Icon,
-  FolderOpenIcon,
-  RefreshIcon,
-} from "@hugeicons/core-free-icons";
+  ArrowClockwise,
+  DownloadSimple,
+  File,
+  FolderOpen,
+  TerminalWindow,
+} from "@phosphor-icons/react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   StudioSandboxesSummary,
@@ -332,7 +332,7 @@ export function SandboxesPage(props: {
       className="grid grid-rows-[auto_minmax(0,1fr)] gap-3 p-3"
       aria-label="Sandboxes"
     >
-      <StudioSurface className="flex items-center justify-between gap-4 rounded-xl px-5 py-3.5">
+      <StudioSurface className="flex items-center justify-between gap-4 border-b px-5 py-3.5">
         <div className="min-w-0">
           <h1 className="m-0 text-base font-semibold text-foreground">Live sandbox workspaces</h1>
           <p className="m-0 mt-0.5 text-xs leading-5 text-muted-foreground">
@@ -346,7 +346,7 @@ export function SandboxesPage(props: {
           variant="secondary"
           onClick={() => setRefreshSequence((current) => current + 1)}
         >
-          <StudioIcon icon={RefreshIcon} aria-hidden="true" />
+          <StudioIcon icon={ArrowClockwise} aria-hidden="true" />
           Refresh
         </Button>
       </StudioSurface>
@@ -413,7 +413,7 @@ function SandboxRail(props: {
   onSelect: (sandboxRef: string) => void;
 }) {
   return (
-    <StudioSurface className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] rounded-xl">
+    <StudioSurface className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
       <div className="border-b border-border/70 px-4 py-3">
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Workspaces
@@ -462,7 +462,7 @@ function FileBrowser(props: {
 }) {
   const breadcrumbs = useMemo(() => sandboxBreadcrumbs(props.currentPath), [props.currentPath]);
   return (
-    <StudioSurface className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] rounded-xl">
+    <StudioSurface className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
       <div className="border-b border-border/70 px-4 py-3">
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Files
@@ -504,7 +504,7 @@ function FileBrowser(props: {
           >
             <StudioIcon
               className="text-muted-foreground"
-              icon={file.type === "directory" ? FolderOpenIcon : File01Icon}
+              icon={file.type === "directory" ? FolderOpen : File}
               aria-hidden="true"
             />
             <span className="truncate text-foreground">{basename(file.path)}</span>
@@ -520,7 +520,7 @@ function FileBrowser(props: {
 
 function SandboxOverview(props: { sandbox: StudioSandboxSummary; error: string }) {
   return (
-    <StudioSurface className="rounded-xl p-4">
+    <StudioSurface className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -564,7 +564,7 @@ function MetadataList(props: { label: string; values: string[] }) {
 function FilePreviewPanel(props: { preview: FilePreview | undefined; sandboxRef: string }) {
   const file = props.preview?.file;
   return (
-    <StudioSurface className="grid min-h-64 grid-rows-[auto_minmax(0,1fr)] rounded-xl">
+    <StudioSurface className="grid min-h-64 grid-rows-[auto_minmax(0,1fr)]">
       <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
         <div className="min-w-0">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -577,7 +577,7 @@ function FilePreviewPanel(props: { preview: FilePreview | undefined; sandboxRef:
         {file !== undefined ? (
           <Button asChild size="sm" variant="secondary">
             <a href={fileContentUrl(props.sandboxRef, file.path, true)}>
-              <StudioIcon icon={Download01Icon} aria-hidden="true" />
+              <StudioIcon icon={DownloadSimple} aria-hidden="true" />
               Download
             </a>
           </Button>
@@ -618,7 +618,7 @@ function FilePreviewPanel(props: { preview: FilePreview | undefined; sandboxRef:
 function PreviewNotice(props: { text: string }) {
   return (
     <div className="grid max-w-sm justify-items-center gap-2 text-center">
-      <StudioIcon className="h-6 w-6 text-muted-foreground" icon={File01Icon} aria-hidden="true" />
+      <StudioIcon className="h-6 w-6 text-muted-foreground" icon={File} aria-hidden="true" />
       <p className="m-0 text-xs leading-5 text-muted-foreground">{props.text}</p>
     </div>
   );
@@ -635,7 +635,7 @@ function RuntimePanel(props: {
   onSelectProcess: (processId: string) => void;
 }) {
   return (
-    <StudioSurface className="rounded-xl p-4">
+    <StudioSurface className="p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -695,7 +695,7 @@ function RuntimePanel(props: {
                   <span className="flex min-w-0 items-center gap-2">
                     <StudioIcon
                       className="text-muted-foreground"
-                      icon={ComputerTerminal01Icon}
+                      icon={TerminalWindow}
                       aria-hidden="true"
                     />
                     <span className="truncate font-mono text-xs text-foreground">

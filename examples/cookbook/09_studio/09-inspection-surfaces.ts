@@ -54,7 +54,7 @@ const getTicket = createTool({
   },
 });
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel("gpt-5.6-luna");
 const agent = new AgentBuilder("studio-inspection-surfaces", model)
   .name("Studio Inspection Surfaces")
   .description("Demonstrates Memory, Status, tool runner, and richer agent inspection.")

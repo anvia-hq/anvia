@@ -1,13 +1,9 @@
-import { HugeiconsIcon, type HugeiconsIconProps, type IconSvgElement } from "@hugeicons/react";
+import type { Icon, IconProps } from "@phosphor-icons/react";
 
-export type StudioIconProps = Omit<HugeiconsIconProps, "icon"> & {
-  icon: IconSvgElement;
+export type StudioIconProps = IconProps & {
+  icon: Icon;
 };
 
-export function StudioIcon({
-  color = "currentColor",
-  strokeWidth = 1.5,
-  ...props
-}: StudioIconProps) {
-  return <HugeiconsIcon color={color} strokeWidth={strokeWidth} {...props} />;
+export function StudioIcon({ icon: IconComponent, weight = "regular", ...props }: StudioIconProps) {
+  return <IconComponent weight={weight} {...props} />;
 }

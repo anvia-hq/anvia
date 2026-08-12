@@ -28,6 +28,26 @@ describe("Studio page primitives", () => {
     expect(html).toContain("font-heading text-2xl font-medium tracking-tight");
     expect(html).toContain("Registered tools.");
     expect(html).toContain("No tools are registered.");
-    expect(html).toContain("h-full min-h-64");
+    expect(html).toContain('data-slot="studio-empty-state"');
+    expect(html).toContain('data-size="default"');
+    expect(emptyStateClasses(html)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
+  });
+
+  it("keeps compact panel states local instead of forcing full-height layout", () => {
+    const html = renderToStaticMarkup(
+      <StudioEmptyState size="compact" title="No logs" text="Run the pipeline first." />,
+    );
+
+    expect(html).toContain('data-size="compact"');
+    expect(emptyStateClasses(html)).toContain("min-h-32");
+    expect(emptyStateClasses(html)).not.toContain("h-full");
   });
 });
+
+function emptyStateClasses(html: string): string[] {
+  const match = html.match(/data-slot="studio-empty-state" class="([^"]+)"/);
+  if (match?.[1] === undefined) {
+    throw new Error("Studio empty state class list not found");
+  }
+  return match[1].split(" ");
+}

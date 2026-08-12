@@ -14,7 +14,7 @@ describe("TraceBrowser rendering", () => {
     expect(render({ traceLoadState: "loading" })).toContain("Loading traces");
     const emptyHtml = render();
     expect(emptyHtml).toContain("No traces found");
-    expect(emptyHtml).toContain("h-full min-h-64");
+    expect(emptyStateClasses(emptyHtml)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
     expect(emptyHtml).not.toContain("First delta");
     expect(emptyHtml).not.toContain("pb-6");
     expect(emptyHtml).not.toContain("pr-6");
@@ -91,6 +91,14 @@ function render(overrides: Partial<Parameters<typeof TraceBrowser>[0]> = {}): st
       {...overrides}
     />,
   );
+}
+
+function emptyStateClasses(html: string): string[] {
+  const match = html.match(/data-slot="studio-empty-state" class="([^"]+)"/);
+  if (match?.[1] === undefined) {
+    throw new Error("Studio empty state class list not found");
+  }
+  return match[1].split(" ");
 }
 
 function trace(overrides: Partial<StudioTrace> = {}): StudioTrace {

@@ -3,7 +3,12 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import type { StudioKnowledgeItemsPage, StudioKnowledgeSummary } from "../../../../types";
 import { Button } from "../../components/ui/button";
 import { StudioIcon } from "../../components/ui/icon";
-import { StudioPageContent, StudioPageHeader, StudioPageShell } from "../../components/ui/studio";
+import {
+  StudioEmptyState,
+  StudioPageContent,
+  StudioPageHeader,
+  StudioPageShell,
+} from "../../components/ui/studio";
 import type { KnowledgeTab } from "../shared/types";
 import {
   flattenSources,
@@ -41,6 +46,13 @@ export function KnowledgePage(props: {
   );
   const selectedSource =
     visibleSources.find((source) => source.key === selectedKey) ?? visibleSources[0];
+  const emptyState = knowledgeEmptyState({
+    activeTab: props.activeTab,
+    enabled: props.enabled,
+    evidenceCount: evidence.length,
+    loading: props.loading,
+    sourceCount: visibleSources.length,
+  });
 
   useEffect(() => {
     if (visibleSources.length === 0) {
@@ -156,13 +168,14 @@ export function KnowledgePage(props: {
         }
       />
       <StudioPageContent className="grid grid-rows-[minmax(0,1fr)] overflow-hidden">
-        {props.activeTab === "retrieval-log" ? (
+        {emptyState !== undefined ? (
+          <StudioEmptyState className="h-full" title={emptyState.title} text={emptyState.text} />
+        ) : props.activeTab === "retrieval-log" ? (
           <RetrievalLogPanel evidence={evidence} onOpenTrace={props.onOpenTrace} />
         ) : (
           <SourceWorkspace
             sources={visibleSources}
             selectedKey={selectedSource?.key ?? ""}
-            loading={props.loading}
             activeTab={props.activeTab}
             onSelect={setSelectedKey}
           >
@@ -191,12 +204,11 @@ export function KnowledgePage(props: {
 function SourceWorkspace(props: {
   sources: KnowledgeSourceRef[];
   selectedKey: string;
-  loading: boolean;
   activeTab: KnowledgeTab;
   onSelect: (key: string) => void;
   children: ReactNode;
 }) {
-  const showSources = props.sources.length !== 1 || props.loading;
+  const showSources = props.sources.length > 1;
   return (
     <div
       className={[
@@ -210,12 +222,6 @@ function SourceWorkspace(props: {
             <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {tabLabel(props.activeTab)}
             </span>
-            {props.loading && props.sources.length === 0 ? (
-              <span className=" text-xs text-muted-foreground">Loading sources</span>
-            ) : null}
-            {!props.loading && props.sources.length === 0 ? (
-              <span className=" text-xs text-muted-foreground">No knowledge sources</span>
-            ) : null}
             {props.sources.map((source) => (
               <button
                 className={[
@@ -240,6 +246,51 @@ function SourceWorkspace(props: {
       {props.children}
     </div>
   );
+}
+
+function knowledgeEmptyState(props: {
+  activeTab: KnowledgeTab;
+  enabled: boolean;
+  evidenceCount: number;
+  loading: boolean;
+  sourceCount: number;
+}): { title: string; text: string } | undefined {
+  const label = tabLabel(props.activeTab);
+  if (!props.enabled) {
+    return {
+      title: `${label} unavailable`,
+      text: "This Studio runtime does not expose knowledge inspection.",
+    };
+  }
+  const itemCount = props.activeTab === "retrieval-log" ? props.evidenceCount : props.sourceCount;
+  if (props.loading && itemCount === 0) {
+    return { title: `Loading ${label.toLowerCase()}`, text: "Reading knowledge metadata." };
+  }
+  if (itemCount > 0) {
+    return undefined;
+  }
+  switch (props.activeTab) {
+    case "retrieval-log":
+      return {
+        title: "No retrieval evidence",
+        text: "Retrieval activity will appear here after an agent queries a knowledge source.",
+      };
+    case "static-context":
+      return {
+        title: "No static context",
+        text: "No static context sources are registered in this Studio runtime.",
+      };
+    case "dynamic-context":
+      return {
+        title: "No dynamic context",
+        text: "No dynamic context sources are registered in this Studio runtime.",
+      };
+    case "dynamic-tools":
+      return {
+        title: "No dynamic tools",
+        text: "No dynamic tool sources are registered in this Studio runtime.",
+      };
+  }
 }
 
 function knowledgePageDescription(tab: KnowledgeTab): string {

@@ -1,4 +1,4 @@
-import { Archive, ArrowUp, Chat, Paperclip, Stop, X } from "@phosphor-icons/react";
+import { Archive, ArrowUp, Paperclip, Stop, X } from "@phosphor-icons/react";
 import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
 import type {
   StudioConfig,
@@ -315,7 +315,7 @@ function PlaygroundSessionRow(props: {
     <div className="group relative min-w-0">
       <Button
         className={cn(
-          "h-9 min-h-9 w-full justify-start gap-3 rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 shadow-none transition duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:translate-y-px [&_svg]:h-[17px] [&_svg]:w-[17px]",
+          "h-9 min-h-9 w-full justify-start rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 shadow-none transition duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:translate-y-px",
           props.active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground",
         )}
         type="button"
@@ -323,7 +323,6 @@ function PlaygroundSessionRow(props: {
         disabled={props.disabled}
         onClick={() => props.onLoadSession(props.session.id)}
       >
-        <StudioIcon icon={Chat} aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">{title}</span>
       </Button>
       <Button

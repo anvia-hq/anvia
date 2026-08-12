@@ -47,7 +47,10 @@ const results = await store.index(embeddings).search({
 `upsertDocuments(...)` replaces every point previously stored for the same logical document IDs,
 including stale points left when a document changes from multiple embeddings to fewer embeddings.
 Mutations wait for Qdrant to apply them by default. You can override Qdrant's mutation controls when
-needed:
+needed. The official Qdrant client performs replacement as one ordered batch. Custom clients without
+`batchUpdate(...)` fall back to sequential deletion and insertion; that fallback is not atomic, so a
+failed insertion can leave the previous document removed. Require a `batchUpdate(...)`-capable
+client to avoid this two-request failure window.
 
 ```ts
 await store.upsertDocuments(documents, {
@@ -65,7 +68,7 @@ point created for a multi-embedding document.
 ```ts
 await store.deleteDocuments(["1", "2"]);
 
-const documents = await store.getDocuments(["1", "2"]);
+const storedDocuments = await store.getDocuments(["1", "2"]);
 
 const index = store.index(embeddings);
 const firstPage = await index.inspect({ limit: 50 });

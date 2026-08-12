@@ -28,6 +28,6 @@ describe("Studio page primitives", () => {
     expect(html).toContain("font-heading text-2xl font-medium tracking-tight");
     expect(html).toContain("Registered tools.");
     expect(html).toContain("No tools are registered.");
-    expect(html).toContain("min-h-64");
+    expect(html).toContain("h-full min-h-64");
   });
 });

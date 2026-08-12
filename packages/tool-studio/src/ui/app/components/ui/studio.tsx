@@ -97,7 +97,7 @@ export function StudioEmptyState(props: {
     <div
       className={cn(
         "flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border-dashed p-6 text-center text-balance",
-        props.size === "compact" ? "min-h-32" : "min-h-64",
+        props.size === "compact" ? "min-h-32" : "h-full min-h-64",
         props.className,
       )}
     >

@@ -14,6 +14,8 @@ describe("TraceBrowser rendering", () => {
     expect(render({ traceLoadState: "loading" })).toContain("Loading traces");
     const emptyHtml = render();
     expect(emptyHtml).toContain("No traces found");
+    expect(emptyHtml).toContain("h-full min-h-64");
+    expect(emptyHtml).not.toContain("First delta");
     expect(emptyHtml).not.toContain("pb-6");
     expect(emptyHtml).not.toContain("pr-6");
   });

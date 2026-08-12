@@ -72,6 +72,21 @@ export function PipelinesPage(props: {
     return toFlow(graph, nodeStatuses);
   }, [graph, nodeStatuses]);
 
+  if (!props.enabled || (!props.detailLoading && props.pipelines.length === 0)) {
+    return (
+      <StudioPageShell aria-label="Pipelines">
+        <StudioEmptyState
+          title={props.enabled ? "No pipelines" : "Pipelines unavailable"}
+          text={
+            props.enabled
+              ? "No pipeline records are available in this Studio runtime."
+              : "This Studio runtime does not expose pipelines."
+          }
+        />
+      </StudioPageShell>
+    );
+  }
+
   return (
     <StudioPageShell>
       <div className="grid min-h-0 min-w-0 pb-6 pr-6">

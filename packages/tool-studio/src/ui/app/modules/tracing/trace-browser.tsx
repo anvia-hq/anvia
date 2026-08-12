@@ -121,6 +121,19 @@ function TraceTable(props: {
   traceLoadState: TraceLoadState;
   onSelectTrace: (traceId: string) => void;
 }) {
+  if (props.traces.length === 0) {
+    return (
+      <StudioEmptyState
+        title={props.traceLoadState === "loading" ? "Loading traces" : "No traces found"}
+        text={
+          props.traceLoadState === "loading"
+            ? "Reading runtime trace records."
+            : "Run an agent to populate the tracing timeline."
+        }
+      />
+    );
+  }
+
   return (
     <Card
       className="min-h-0 overflow-hidden rounded-none border-0 bg-background p-0"
@@ -138,15 +151,6 @@ function TraceTable(props: {
             <span>First delta</span>
             <span>Events</span>
           </div>
-          {props.traceLoadState === "loading" && props.traces.length === 0 ? (
-            <StudioEmptyState title="Loading traces" text="Reading runtime trace records." />
-          ) : null}
-          {props.traceLoadState === "idle" && props.traces.length === 0 ? (
-            <StudioEmptyState
-              title="No traces found"
-              text="Run an agent to populate the tracing timeline."
-            />
-          ) : null}
           {props.traces.map((trace) => (
             <Button
               className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-none border-0 border-b bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:bg-accent/70 hover:text-accent-foreground"

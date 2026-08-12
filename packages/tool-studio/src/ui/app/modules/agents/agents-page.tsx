@@ -59,20 +59,15 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
       />
 
       <StudioPageContent className="overflow-auto">
-        <div className="grid w-full">
-          {props.agents.length === 0 ? (
-            <StudioEmptyState
-              title="No agents"
-              text="Studio has no registered agents to inspect."
-            />
-          ) : (
-            <AgentRegistryTable
-              agents={props.agents}
-              runtimeByAgentId={runtimeByAgentId}
-              selectedAgentId={props.selectedAgentId}
-            />
-          )}
-        </div>
+        {props.agents.length === 0 ? (
+          <StudioEmptyState title="No agents" text="Studio has no registered agents to inspect." />
+        ) : (
+          <AgentRegistryTable
+            agents={props.agents}
+            runtimeByAgentId={runtimeByAgentId}
+            selectedAgentId={props.selectedAgentId}
+          />
+        )}
       </StudioPageContent>
     </StudioPageShell>
   );

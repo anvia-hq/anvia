@@ -180,7 +180,7 @@ export function PlaygroundPage(props: {
                   />
                   <Button
                     aria-label="Attach image or document"
-                    className="size-9 min-h-9 rounded-lg border-border bg-background p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                    className="size-9 min-h-9 rounded-lg border-border bg-transparent p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
                     size="icon"
                     type="button"
                     variant="ghost"

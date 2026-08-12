@@ -33,6 +33,7 @@ describe("PlaygroundPage run action", () => {
     expect(attachmentButton).toContain("size-9");
     expect(attachmentButton).toContain("rounded-lg");
     expect(attachmentButton).toContain("border-border");
+    expect(attachmentButton).toContain("bg-transparent");
     expect(attachmentButton).not.toContain("border-0");
   });
 

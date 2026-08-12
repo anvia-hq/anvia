@@ -10,6 +10,8 @@ describe("PlaygroundPage run action", () => {
   it("renders send, preparing, and stop states", () => {
     const idleHtml = render();
     expect(idleHtml).not.toContain("bg-gradient-to-t");
+    expect(idleHtml).toContain("max-w-200");
+    expect(idleHtml).not.toContain("max-w-235");
     const idleButton = runAction(idleHtml);
     expect(idleButton).toContain('aria-label="Send message"');
     expect(idleButton).toContain('type="submit"');

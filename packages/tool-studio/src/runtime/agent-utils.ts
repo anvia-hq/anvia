@@ -7,31 +7,13 @@ import {
 import {
   type Agent,
   createResolvedAgent,
+  getResolvedAgentOptions,
   type ResolvedAgentOptions,
 } from "@anvia/core/internal/agent";
 
 export function cloneAgent(agent: Agent, overrides: Partial<ResolvedAgentOptions> = {}): Agent {
   return createResolvedAgent({
-    id: agent.id,
-    name: agent.name,
-    description: agent.description,
-    model: agent.model,
-    instructions: agent.instructions,
-    staticContext: agent.staticContext,
-    temperature: agent.temperature,
-    maxTokens: agent.maxTokens,
-    additionalParams: agent.additionalParams,
-    toolSet: agent.toolSet,
-    toolChoice: agent.toolChoice,
-    defaultMaxTurns: agent.defaultMaxTurns,
-    hook: agent.hook,
-    outputSchema: agent.outputSchema,
-    observers: agent.observers,
-    approvals: agent.approvals,
-    dynamicContexts: agent.dynamicContexts,
-    dynamicTools: agent.dynamicTools,
-    middlewares: agent.middlewares,
-    memory: agent.memory,
+    ...getResolvedAgentOptions(agent),
     ...overrides,
   });
 }

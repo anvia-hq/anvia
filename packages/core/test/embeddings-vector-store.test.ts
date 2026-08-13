@@ -516,7 +516,9 @@ describe("agent dynamic tools", () => {
 
   it("passes dynamic tool inspection through to the wrapped index", async () => {
     const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
+    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool], {
+      topK: 1,
+    });
 
     await expect(index.inspect?.({ limit: 1 })).resolves.toMatchObject({
       items: [
@@ -535,11 +537,12 @@ describe("agent dynamic tools", () => {
 
   it("injects selected dynamic tools into send requests and executes them", async () => {
     const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
+    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool], {
+      topK: 1,
+      threshold: 0.9,
+    });
     const completionModel = new ToolCallingModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
-      .build();
+    const agent = new AgentBuilder("test-agent", completionModel).tools([index]).build();
 
     const response = await agent.generate("refund order A-100");
 
@@ -561,11 +564,12 @@ describe("agent dynamic tools", () => {
 
   it("injects selected dynamic tools into stream requests", async () => {
     const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
+    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool], {
+      topK: 1,
+      threshold: 0.9,
+    });
     const completionModel = new StreamingQueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
-      .build();
+    const agent = new AgentBuilder("test-agent", completionModel).tools([index]).build();
 
     for await (const _event of agent.stream("dog")) {
       // exhaust stream
@@ -592,11 +596,14 @@ describe("agent dynamic tools", () => {
       outputSchema: z.string(),
       execute: () => "static",
     });
-    const index = await createToolIndex(embeddingModel, [dynamicRefundTool]);
+    const index = await createToolIndex(embeddingModel, [dynamicRefundTool], {
+      topK: 1,
+      threshold: 0.9,
+    });
     const completionModel = new QueueModel();
     const agent = new AgentBuilder("test-agent", completionModel)
       .tools([staticRefundTool])
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
+      .tools([index])
       .build();
 
     await agent.generate("refund order A-100");
@@ -608,11 +615,12 @@ describe("agent dynamic tools", () => {
 
   it("sends no dynamic tools when retrieval has no matches", async () => {
     const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool]);
+    const index = await createToolIndex(embeddingModel, [issueRefundTool], {
+      topK: 1,
+      threshold: 0.95,
+    });
     const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicTools(index, { topK: 1, threshold: 0.95 })
-      .build();
+    const agent = new AgentBuilder("test-agent", completionModel).tools([index]).build();
 
     await agent.generate("start");
 
@@ -621,7 +629,10 @@ describe("agent dynamic tools", () => {
 
   it("uses the latest tool-result text for later turn dynamic selection", async () => {
     const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
+    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool], {
+      topK: 1,
+      threshold: 0.9,
+    });
     const seedTopicTool = createTool({
       name: "seed_topic",
       description: "Seed the next turn topic.",
@@ -632,7 +643,7 @@ describe("agent dynamic tools", () => {
     const completionModel = new TwoTurnModel();
     const agent = new AgentBuilder("test-agent", completionModel)
       .tools([seedTopicTool])
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
+      .tools([index])
       .build();
 
     await agent.generate("start");

@@ -1,4 +1,4 @@
-import type { Agent } from "../../agent/agent";
+import { type Agent, getAgentToolState } from "../../agent/agent";
 import type { Document, ToolDefinition } from "../../completion/index";
 
 export async function fetchDynamicContext(
@@ -44,19 +44,22 @@ export async function fetchToolDefinitions(
   agent: Agent,
   ragText: string | undefined,
 ): Promise<ToolDefinition[]> {
-  const staticDefinitions = await agent.toolSet.getToolDefinitions(ragText);
-  if (ragText === undefined || ragText.length === 0 || agent.dynamicTools.length === 0) {
+  const state = getAgentToolState(agent);
+  const staticDefinitions = await Promise.all(
+    state.staticTools.map((tool) => tool.definition(ragText ?? "")),
+  );
+  if (ragText === undefined || ragText.length === 0 || state.toolIndexes.length === 0) {
     return staticDefinitions;
   }
 
   const definitions = [...staticDefinitions];
   const names = new Set(staticDefinitions.map((definition) => definition.name));
-  for (const registration of agent.dynamicTools) {
-    const results = await registration.index.search({
+  for (const index of state.toolIndexes) {
+    const results = await index.search({
       query: ragText,
-      topK: registration.options.topK,
-      threshold: registration.options.threshold,
-      filter: registration.options.filter,
+      topK: index.topK,
+      threshold: index.threshold,
+      filter: index.filter,
     });
     for (const result of results) {
       if (names.has(result.document.toolName)) {

@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import { evalConfig } from "./eval-config";
 import { serializeUnknown } from "./json";
+import { agentHasKnowledge } from "./knowledge";
 import { createStudioModelRegistry, studioModelsConfig } from "./models";
 import type { ResolvedStores, StudioRuntimeOptions } from "./options";
 import { agentHasMcpTools, agentToolItems, mcpServerName } from "./tool-metadata";
@@ -136,11 +137,7 @@ export function capabilityConfig(
   if (_options.evals.length > 0) {
     capabilities.evals = { enabled: true };
   }
-  if (
-    agents.some(
-      (agent) => agent.agent.toolSet.values().length > 0 || agent.agent.dynamicTools.length > 0,
-    )
-  ) {
+  if (agents.some((agent) => agent.agent.tools.length > 0)) {
     capabilities.tools = { enabled: true };
   }
   if (agents.some(agentHasMcpTools)) {
@@ -152,21 +149,12 @@ export function capabilityConfig(
 
   if (
     agents.some(
-      (agent) =>
-        agent.agent.hook !== undefined ||
-        agent.agent.toolSet.values().some((tool) => tool.approval),
+      (agent) => agent.agent.hook !== undefined || agent.agent.tools.some((tool) => tool.approval),
     )
   ) {
     capabilities.approvals = { enabled: true };
   }
-  if (
-    agents.some(
-      (agent) =>
-        agent.agent.staticContext.length > 0 ||
-        agent.agent.dynamicContexts.length > 0 ||
-        agent.agent.dynamicTools.length > 0,
-    )
-  ) {
+  if (agents.some(agentHasKnowledge)) {
     capabilities.knowledge = { enabled: true };
   }
   return capabilities;

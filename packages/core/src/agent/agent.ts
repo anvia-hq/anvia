@@ -19,19 +19,20 @@ import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memor
 import type { AgentObserverRegistration } from "../observability";
 import { toProviderJsonSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/create-tool";
-import type { ToolSearchDocument } from "../tool/dynamic-tools";
+import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
+import { ToolCallError, ToolJsonError, ToolNotFoundError } from "../tool/errors";
 import type { AgentMiddleware } from "../tool/middleware";
 import { isSkillTool } from "../tool/skill-tool-marker";
-import type {
-  AnyTool,
-  NormalizedToolOutput,
-  Tool,
-  ToolApprovalsOptions,
-  ToolCallContext,
-  ToolCallStreamEvent,
+import {
+  type AnyTool,
+  type NormalizedToolOutput,
+  normalizeToolResultOutput,
+  parseToolArgs,
+  type Tool,
+  type ToolApprovalsOptions,
+  type ToolCallContext,
+  type ToolCallStreamEvent,
 } from "../tool/tool";
-import { ToolSet } from "../tool/tool-set";
-import type { VectorSearchIndex } from "../vector-store";
 import { normalizeAgentId } from "./ids";
 import type {
   AgentInput,
@@ -47,11 +48,19 @@ import type {
   AgentOptions,
   AgentToolOptions,
   DynamicContextRegistration,
-  DynamicToolRegistration,
   ResolvedAgentOptions,
 } from "./types";
 
 export const DEFAULT_MAX_TURNS = 20;
+
+export type AgentToolState = {
+  staticTools: readonly AnyTool[];
+  providerTools: readonly ProviderTool[];
+  toolIndexes: readonly ToolIndex[];
+  toolsByName: ReadonlyMap<string, AnyTool>;
+};
+
+const agentToolStates = new WeakMap<object, AgentToolState>();
 
 export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
   readonly id: string;
@@ -63,8 +72,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly temperature: number | undefined;
   readonly maxTokens: number | undefined;
   readonly additionalParams: JsonValue | undefined;
-  readonly toolSet: ToolSet;
-  readonly providerTools: ProviderTool[];
+  readonly tools: readonly AnyTool[];
   readonly toolChoice: ToolChoice | undefined;
   readonly defaultMaxTurns: number | undefined;
   readonly hook: AgentHook | undefined;
@@ -73,7 +81,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly approvals: ToolApprovalsOptions | undefined;
   readonly guardrails: GuardrailPolicy[];
   readonly dynamicContexts: DynamicContextRegistration[];
-  readonly dynamicTools: DynamicToolRegistration[];
   readonly middlewares: AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
 
@@ -88,8 +95,23 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
     this.additionalParams = resolved.additionalParams;
-    this.toolSet = resolved.toolSet ?? new ToolSet();
-    this.providerTools = [...(resolved.providerTools ?? [])];
+    const staticTools = dedupeTools(resolved.tools ?? []);
+    const toolIndexes = [...(resolved.toolIndexes ?? [])];
+    const toolsByName = new Map(staticTools.map((tool) => [tool.name, tool]));
+    for (const index of toolIndexes) {
+      for (const tool of index.tools) {
+        if (!toolsByName.has(tool.name)) {
+          toolsByName.set(tool.name, tool);
+        }
+      }
+    }
+    this.tools = Object.freeze([...toolsByName.values()]);
+    agentToolStates.set(this, {
+      staticTools: Object.freeze(staticTools),
+      providerTools: Object.freeze([...(resolved.providerTools ?? [])]),
+      toolIndexes: Object.freeze(toolIndexes),
+      toolsByName,
+    });
     this.toolChoice = resolved.toolChoice;
     this.defaultMaxTurns = resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS;
     this.hook = resolved.hook;
@@ -98,7 +120,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.approvals = resolved.approvals;
     this.guardrails = [...(resolved.guardrails ?? [])];
     this.dynamicContexts = [...(resolved.dynamicContexts ?? [])];
-    this.dynamicTools = [...(resolved.dynamicTools ?? [])];
     this.middlewares = [...(resolved.middlewares ?? [])];
     this.memory = resolved.memory;
   }
@@ -188,19 +209,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   }
 
   getTool(toolName: string): AnyTool | undefined {
-    const staticTool = this.toolSet.get(toolName);
-    if (staticTool !== undefined) {
-      return staticTool;
-    }
-
-    for (const registration of this.dynamicTools) {
-      const dynamicTool = dynamicToolSetFromIndex(registration.index)?.get(toolName);
-      if (dynamicTool !== undefined) {
-        return dynamicTool;
-      }
-    }
-
-    return undefined;
+    return getAgentToolState(this).toolsByName.get(toolName);
   }
 
   async callTool(
@@ -208,18 +217,26 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     args: string,
     context?: ToolCallContext,
   ): Promise<NormalizedToolOutput> {
-    if (this.toolSet.contains(toolName)) {
-      return this.toolSet.call(toolName, args, context);
+    const tool = this.getTool(toolName);
+    if (tool === undefined) {
+      throw new ToolNotFoundError(toolName);
     }
 
-    for (const registration of this.dynamicTools) {
-      const toolSet = dynamicToolSetFromIndex(registration.index);
-      if (toolSet?.contains(toolName)) {
-        return toolSet.call(toolName, args, context);
+    let parsedArgs: unknown;
+    try {
+      parsedArgs = parseToolArgs(args);
+    } catch (error) {
+      throw new ToolJsonError(`Invalid JSON arguments for tool ${toolName}`, error);
+    }
+
+    try {
+      return normalizeToolResultOutput(await tool.call(parsedArgs, context));
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new ToolCallError(error.message, error);
       }
+      throw new ToolCallError(`Tool ${toolName} failed`, error);
     }
-
-    return this.toolSet.call(toolName, args, context);
   }
 
   shouldApplyToolMiddleware(toolName: string): boolean {
@@ -242,6 +259,44 @@ export function createResolvedAgent<M extends CompletionModel>(
   } as unknown as AgentOptions<M>);
 }
 
+export function getResolvedAgentOptions<M extends CompletionModel>(
+  agent: Agent<M>,
+): ResolvedAgentOptions<M> {
+  const toolState = getAgentToolState(agent);
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    model: agent.model,
+    instructions: agent.instructions,
+    staticContext: [...agent.staticContext],
+    temperature: agent.temperature,
+    maxTokens: agent.maxTokens,
+    additionalParams: agent.additionalParams,
+    tools: [...toolState.staticTools],
+    providerTools: [...toolState.providerTools],
+    toolIndexes: [...toolState.toolIndexes],
+    toolChoice: agent.toolChoice,
+    defaultMaxTurns: agent.defaultMaxTurns,
+    hook: agent.hook,
+    outputSchema: agent.outputSchema,
+    observers: [...agent.observers],
+    approvals: agent.approvals,
+    guardrails: [...agent.guardrails],
+    dynamicContexts: [...agent.dynamicContexts],
+    middlewares: [...agent.middlewares],
+    memory: agent.memory,
+  };
+}
+
+export function getAgentToolState(agent: Agent): AgentToolState {
+  const state = agentToolStates.get(agent);
+  if (state === undefined) {
+    throw new TypeError("Agent tool state is unavailable.");
+  }
+  return state;
+}
+
 function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
   options: AgentOptions<M, ContextDocument>,
 ): ResolvedAgentOptions<M> {
@@ -249,20 +304,27 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     return options as unknown as ResolvedAgentOptions<M>;
   }
 
-  const toolSet = new ToolSet();
+  const toolsByName = new Map<string, AnyTool>();
   const providerTools: ProviderTool[] = [];
+  const toolIndexes: ToolIndex[] = [];
   for (const tool of options.tools ?? []) {
     if (isProviderTool(tool)) {
       providerTools.push(tool);
+    } else if (isToolIndex(tool)) {
+      toolIndexes.push(tool);
     } else {
-      toolSet.addTool(tool);
+      toolsByName.set(tool.name, tool);
     }
   }
   for (const server of options.mcpServers ?? []) {
-    toolSet.addTools(server.tools);
+    for (const tool of server.tools) {
+      toolsByName.set(tool.name, tool);
+    }
   }
   if (options.skills !== undefined) {
-    toolSet.addTools(options.skills.tools);
+    for (const tool of options.skills.tools) {
+      toolsByName.set(tool.name, tool);
+    }
   }
 
   const memory = resolveAgentMemory(options);
@@ -280,8 +342,9 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     additionalParams: options.additionalParams,
-    toolSet,
+    tools: [...toolsByName.values()],
     providerTools,
+    toolIndexes,
     toolChoice: options.toolChoice,
     defaultMaxTurns: options.maxTurns,
     hook: options.hook,
@@ -298,10 +361,6 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     dynamicContexts: (options.dynamicContexts ?? []).map(
       resolveDynamicContext,
     ) as unknown as DynamicContextRegistration[],
-    dynamicTools: (options.dynamicTools ?? []).map(({ index, ...dynamicOptions }) => ({
-      index,
-      options: dynamicOptions,
-    })),
     middlewares: [...(options.middlewares ?? [])],
     memory,
   };
@@ -432,9 +491,10 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
   }
 }
 
-function dynamicToolSetFromIndex(
-  index: VectorSearchIndex<ToolSearchDocument>,
-): ToolSet | undefined {
-  const maybeIndex = index as { toolSet?: unknown };
-  return maybeIndex.toolSet instanceof ToolSet ? maybeIndex.toolSet : undefined;
+function dedupeTools(tools: readonly AnyTool[]): AnyTool[] {
+  const byName = new Map<string, AnyTool>();
+  for (const tool of tools) {
+    byName.set(tool.name, tool);
+  }
+  return [...byName.values()];
 }

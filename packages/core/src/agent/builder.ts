@@ -16,19 +16,13 @@ import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/t
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { SkillSet } from "../skills";
-import type { ToolSearchDocument } from "../tool/dynamic-tools";
+import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
-import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
 import { type Agent, createResolvedAgent } from "./agent";
 import { normalizeAgentId } from "./ids";
-import type {
-  DynamicContextOptions,
-  DynamicContextRegistration,
-  DynamicToolOptions,
-  DynamicToolRegistration,
-} from "./types";
+import type { AgentToolInput, DynamicContextOptions, DynamicContextRegistration } from "./types";
 
 export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private readonly agentId: string;
@@ -48,11 +42,11 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private skillInstructionBlocks: string[] = [];
   private observerRegistrations: AgentObserverRegistration[] = [];
   private dynamicContextRegistrations: DynamicContextRegistration[] = [];
-  private dynamicToolRegistrations: DynamicToolRegistration[] = [];
   private middlewareRegistrations: AgentMiddleware[] = [];
   private memoryRegistration: MemoryRegistration | undefined;
-  private activeToolSet = new ToolSet();
+  private activeTools = new Map<string, AnyTool>();
   private providerToolDefs: ProviderTool[] = [];
+  private toolIndexes: ToolIndex[] = [];
 
   constructor(
     agentId: string,
@@ -88,17 +82,14 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  dynamicTools(index: VectorSearchIndex<ToolSearchDocument>, options: DynamicToolOptions): this {
-    this.dynamicToolRegistrations.push({ index, options });
-    return this;
-  }
-
-  tools(tools: Array<AnyTool | ProviderTool>): this {
+  tools(tools: readonly AgentToolInput[]): this {
     for (const tool of tools) {
       if (isProviderTool(tool)) {
         this.providerToolDefs.push(tool);
+      } else if (isToolIndex(tool)) {
+        this.toolIndexes.push(tool);
       } else {
-        this.activeToolSet.addTool(tool);
+        this.activeTools.set(tool.name, tool);
       }
     }
     return this;
@@ -106,7 +97,9 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
 
   mcp(servers: McpServer[]): this {
     for (const server of servers) {
-      this.activeToolSet.addTools(server.tools);
+      for (const tool of server.tools) {
+        this.activeTools.set(tool.name, tool);
+      }
     }
     return this;
   }
@@ -115,13 +108,9 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     if (skillSet.instructions.length > 0) {
       this.skillInstructionBlocks.push(skillSet.instructions);
     }
-    this.activeToolSet.addTools(skillSet.tools);
-    return this;
-  }
-
-  useToolSet(toolSet: ToolSet): this {
-    toolSet.addTools(this.activeToolSet);
-    this.activeToolSet = toolSet;
+    for (const tool of skillSet.tools) {
+      this.activeTools.set(tool.name, tool);
+    }
     return this;
   }
 
@@ -208,8 +197,9 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       temperature: this.temp,
       maxTokens: this.maxTokenCount,
       additionalParams: this.params,
-      toolSet: this.activeToolSet,
+      tools: [...this.activeTools.values()],
       providerTools: this.providerToolDefs,
+      toolIndexes: this.toolIndexes,
       toolChoice: this.choice,
       defaultMaxTurns: this.turns,
       hook: this.agentHook,
@@ -218,7 +208,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       approvals: this.approvalOptions,
       guardrails: this.guardrailPolicies,
       dynamicContexts: this.dynamicContextRegistrations,
-      dynamicTools: this.dynamicToolRegistrations,
       middlewares: this.middlewareRegistrations,
       memory: this.memoryRegistration,
     });

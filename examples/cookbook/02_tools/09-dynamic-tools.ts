@@ -75,13 +75,16 @@ const lookupRunbook = createTool({
 });
 
 const embeddings = new KeywordEmbeddingModel();
-const toolIndex = await createToolIndex(embeddings, [issueRefund, updateAddress, lookupRunbook]);
+const toolIndex = await createToolIndex(embeddings, [issueRefund, updateAddress, lookupRunbook], {
+  topK: 1,
+  threshold: 0.9,
+});
 const model = new InspectingModel();
 
 const agent = new Agent({
   id: "support",
   model: model,
-  dynamicTools: [{ index: toolIndex, topK: 1, threshold: 0.9 }],
+  tools: [toolIndex],
 });
 
 await agent.generate("Refund order A-100.");

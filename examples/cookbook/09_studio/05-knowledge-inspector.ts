@@ -89,7 +89,10 @@ const embeddedNotes = await embedDocuments(embeddings, notes, {
   metadata: (note) => ({ area: note.area }),
 });
 const knowledgeIndex = InMemoryVectorStore.fromDocuments(embeddedNotes).index(embeddings);
-const toolIndex = await createToolIndex(embeddings, [getTicket, lookupCustomer]);
+const toolIndex = await createToolIndex(embeddings, [getTicket, lookupCustomer], {
+  topK: 1,
+  threshold: 0.75,
+});
 
 const model = client.completionModel("gpt-5.6-luna");
 const agent = new Agent({
@@ -117,7 +120,7 @@ const agent = new Agent({
       }),
     },
   ],
-  dynamicTools: [{ index: toolIndex, topK: 1, threshold: 0.75 }],
+  tools: [toolIndex],
   maxTurns: 4,
   context: [
     {

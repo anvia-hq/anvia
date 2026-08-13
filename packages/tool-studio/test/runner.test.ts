@@ -12,6 +12,7 @@ import {
   type Message as CoreMessage,
   type JsonObject,
   Message,
+  type ProviderTool,
   type StreamingCompletionModel,
   ToolContent,
   Usage,
@@ -64,6 +65,7 @@ class QueueModel {
     documentInput: true,
     outputSchema: true,
     reasoning: true,
+    providerTools: true,
   };
   readonly requests: CompletionRequest[] = [];
 
@@ -1220,9 +1222,9 @@ describe("Anvia studio", () => {
 
   it("preserves dynamic tools when Studio wraps agents for traces", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddings, [lookupPolicyTool]);
+    const index = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new AgentBuilder("support", model).dynamicTools(index, { topK: 1 }).build();
+    const agent = new AgentBuilder("support", model).tools([index]).build();
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -1250,14 +1252,45 @@ describe("Anvia studio", () => {
     ]);
   });
 
+  it("preserves provider tools when Studio wraps agents for traces", async () => {
+    const providerTool: ProviderTool = {
+      kind: "provider",
+      provider: "test",
+      name: "web_search",
+    };
+    const model = new QueueModel([response([AssistantContent.text("ok")])]);
+    const agent = new AgentBuilder("support", model).tools([providerTool]).build();
+    const runner = new Studio([agent]);
+
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId: "support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "research", sessionId: session.id }),
+      }),
+    );
+
+    expect(run.status).toBe(200);
+    expect(model.requests[0]?.providerTools).toEqual([providerTool]);
+  });
+
   it("exposes tool metadata for registered agents", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddings, [lookupPolicyTool]);
+    const index = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
     const refundTool = createRefundTool(() => "ok");
     const agent = new AgentBuilder("support", new QueueModel([]))
       .tools([addTool])
       .tools([refundTool])
-      .dynamicTools(index, { topK: 1 })
+      .tools([index])
       .build();
     const runner = new Studio([agent]);
 
@@ -1568,11 +1601,11 @@ describe("Anvia studio", () => {
       searchIds: async (_request: VectorSearchRequest) => [],
       asTool: (_options: VectorSearchToolOptions) => lookupPolicyTool,
     };
-    const toolIndex = await createToolIndex(embeddings, [lookupPolicyTool]);
+    const toolIndex = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
     const agent = new AgentBuilder("support", new QueueModel([]))
       .dynamicContext(inspectableIndex, { topK: 1 })
       .dynamicContext(unsupportedIndex, { topK: 1 })
-      .dynamicTools(toolIndex, { topK: 1 })
+      .tools([toolIndex])
       .build();
     const runner = new Studio([agent]);
 

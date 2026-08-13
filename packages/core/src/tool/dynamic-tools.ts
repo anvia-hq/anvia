@@ -2,6 +2,7 @@ import type { ToolDefinition } from "../completion";
 import type { EmbeddedDocument, EmbeddingModel, VectorMetadata } from "../embeddings";
 import { embedDocuments } from "../embeddings";
 import type {
+  VectorFilter,
   VectorInspectPage,
   VectorInspectRequest,
   VectorSearchResult,
@@ -13,7 +14,6 @@ import {
   type VectorSearchRequest,
 } from "../vector-store";
 import type { AnyTool, Tool } from "./tool";
-import { ToolSet } from "./tool-set";
 
 export type ToolSearchDocument<Metadata extends VectorMetadata = VectorMetadata> = {
   toolName: string;
@@ -28,17 +28,28 @@ export type EmbedToolsOptions<Metadata extends VectorMetadata = VectorMetadata> 
   concurrency?: number | undefined;
 };
 
-export interface DynamicToolIndex<Metadata extends VectorMetadata = VectorMetadata>
+export type CreateToolIndexOptions<Metadata extends VectorMetadata = VectorMetadata> =
+  EmbedToolsOptions<Metadata> & {
+    topK: number;
+    threshold?: number | undefined;
+    filter?: VectorFilter | undefined;
+  };
+
+export interface ToolIndex<Metadata extends VectorMetadata = VectorMetadata>
   extends VectorSearchIndex<ToolSearchDocument<Metadata>, Metadata> {
-  readonly toolSet: ToolSet;
+  readonly kind: "tool-index";
+  readonly tools: readonly AnyTool[];
+  readonly topK: number;
+  readonly threshold?: number | undefined;
+  readonly filter?: VectorFilter | undefined;
 }
 
 export async function embedTools<Metadata extends VectorMetadata = VectorMetadata>(
   model: EmbeddingModel,
-  tools: AnyTool[] | ToolSet,
+  tools: readonly AnyTool[],
   options: EmbedToolsOptions<Metadata> = {},
 ): Promise<Array<EmbeddedDocument<ToolSearchDocument<Metadata>, Metadata>>> {
-  const toolList = Array.isArray(tools) ? tools : tools.values();
+  const toolList = dedupeTools(tools);
   const definitions = await Promise.all(
     toolList.map(async (tool) => ({ tool, definition: await tool.definition("") })),
   );
@@ -72,35 +83,43 @@ export async function embedTools<Metadata extends VectorMetadata = VectorMetadat
 
 export async function createToolIndex<Metadata extends VectorMetadata = VectorMetadata>(
   model: EmbeddingModel,
-  tools: AnyTool[] | ToolSet,
-  options: EmbedToolsOptions<Metadata> = {},
-): Promise<DynamicToolIndex<Metadata>> {
-  const toolSet = Array.isArray(tools) ? ToolSet.fromTools(tools) : tools;
-  const embedded = await embedTools(model, toolSet, options);
+  tools: readonly AnyTool[],
+  options: CreateToolIndexOptions<Metadata>,
+): Promise<ToolIndex<Metadata>> {
+  const toolList = dedupeTools(tools);
+  const embedded = await embedTools(model, toolList, options);
   const index = InMemoryVectorStore.fromDocuments(embedded).index(model);
-  return new DynamicToolSearchIndex(index, toolSet);
+  return new ToolSearchIndex(index, toolList, options);
 }
 
-export function isDynamicToolIndex(value: unknown): value is DynamicToolIndex {
+export function isToolIndex(value: unknown): value is ToolIndex {
   return (
     typeof value === "object" &&
     value !== null &&
-    "toolSet" in value &&
-    (value as { toolSet?: unknown }).toolSet instanceof ToolSet
+    (value as { kind?: unknown }).kind === "tool-index" &&
+    Array.isArray((value as { tools?: unknown }).tools)
   );
 }
 
-class DynamicToolSearchIndex<Metadata extends VectorMetadata>
-  implements DynamicToolIndex<Metadata>
-{
+class ToolSearchIndex<Metadata extends VectorMetadata> implements ToolIndex<Metadata> {
+  readonly kind = "tool-index" as const;
+  readonly tools: readonly AnyTool[];
+  readonly topK: number;
+  readonly threshold: number | undefined;
+  readonly filter: VectorFilter | undefined;
   readonly inspect?: (
     request: VectorInspectRequest,
   ) => Promise<VectorInspectPage<ToolSearchDocument<Metadata>, Metadata>>;
 
   constructor(
     private readonly index: VectorSearchIndex<ToolSearchDocument<Metadata>, Metadata>,
-    readonly toolSet: ToolSet,
+    tools: readonly AnyTool[],
+    options: CreateToolIndexOptions<Metadata>,
   ) {
+    this.tools = Object.freeze([...tools]);
+    this.topK = options.topK;
+    this.threshold = options.threshold;
+    this.filter = options.filter;
     if (index.inspect !== undefined) {
       this.inspect = (request) =>
         index.inspect?.(request) as Promise<
@@ -122,6 +141,14 @@ class DynamicToolSearchIndex<Metadata extends VectorMetadata>
   asTool(options: VectorSearchToolOptions): Tool<{ query: string; topK?: number }, unknown> {
     return this.index.asTool(options);
   }
+}
+
+function dedupeTools(tools: readonly AnyTool[]): AnyTool[] {
+  const byName = new Map<string, AnyTool>();
+  for (const tool of tools) {
+    byName.set(tool.name, tool);
+  }
+  return [...byName.values()];
 }
 
 function defaultToolEmbeddingText(definition: ToolDefinition): string[] {

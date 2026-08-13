@@ -16,7 +16,6 @@ import {
   SkillValidationError,
   type StreamingCompletionModel,
   skill,
-  ToolSet,
   Usage,
 } from "./helpers/imports";
 
@@ -155,19 +154,19 @@ describe("skills", () => {
       scriptFiles: { "helper.sh": "#!/bin/sh\necho helper\n" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const toolSet = new ToolSet().addTools(skillSet.tools);
+    const agent = new AgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
 
     await expect(
-      toolSet.call("get_skill_instructions", JSON.stringify({ skillName: "review" })),
+      agent.callTool("get_skill_instructions", JSON.stringify({ skillName: "review" })),
     ).resolves.toBe("# Review\nUse direct feedback.");
     await expect(
-      toolSet.call(
+      agent.callTool(
         "get_skill_reference",
         JSON.stringify({ skillName: "review", referencePath: "guide.md" }),
       ),
     ).resolves.toBe("Reference text");
     await expect(
-      toolSet.call(
+      agent.callTool(
         "get_skill_script",
         JSON.stringify({ skillName: "review", scriptPath: "helper.sh" }),
       ),
@@ -185,10 +184,10 @@ describe("skills", () => {
       },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const toolSet = new ToolSet().addTools(skillSet.tools);
+    const agent = new AgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
 
     await expect(
-      toolSet.call(
+      agent.callTool(
         "run_skill_script",
         JSON.stringify({
           skillName: "scripts",
@@ -198,13 +197,13 @@ describe("skills", () => {
       ),
     ).resolves.toBe("stdout:\nstdout:one\n\n\nstderr:\nstderr:two\n");
     await expect(
-      toolSet.call(
+      agent.callTool(
         "run_skill_script",
         JSON.stringify({ skillName: "scripts", scriptPath: "fail.sh" }),
       ),
     ).rejects.toThrow("Skill script exited with code 2");
     await expect(
-      toolSet.call(
+      agent.callTool(
         "run_skill_script",
         JSON.stringify({ skillName: "scripts", scriptPath: "slow.sh", timeoutMs: 50 }),
       ),
@@ -218,10 +217,10 @@ describe("skills", () => {
       referenceFiles: { "guide.md": "Reference text" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const toolSet = new ToolSet().addTools(skillSet.tools);
+    const agent = new AgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
 
     await expect(
-      toolSet.call(
+      agent.callTool(
         "get_skill_reference",
         JSON.stringify({ skillName: "review", referencePath: "../SKILL.md" }),
       ),

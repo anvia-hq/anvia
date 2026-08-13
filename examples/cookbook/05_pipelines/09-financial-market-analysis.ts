@@ -1,11 +1,6 @@
 import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
-import {
-  createTool,
-  type NormalizedToolOutput,
-  ToolSet,
-  toolResultContentToText,
-} from "@anvia/core/tool";
+import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -14,64 +9,62 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const marketTools = ToolSet.fromTools([
-  createTool({
-    name: "quote_snapshot",
-    description: "Return a mock quote snapshot for a ticker.",
-    inputSchema: z.object({
-      ticker: z.string(),
-    }),
-    outputSchema: z.object({
-      ticker: z.string(),
-      price: z.number(),
-      changePercent: z.number(),
-      volume: z.number(),
-    }),
-    execute: ({ ticker }) => ({
-      ticker: ticker.toUpperCase(),
-      price: 184.32,
-      changePercent: 1.4,
-      volume: 42_100_000,
-    }),
+const quoteSnapshotTool = createTool({
+  name: "quote_snapshot",
+  description: "Return a mock quote snapshot for a ticker.",
+  inputSchema: z.object({
+    ticker: z.string(),
   }),
-  createTool({
-    name: "market_news",
-    description: "Return mock market news for a ticker.",
-    inputSchema: z.object({
-      ticker: z.string(),
-    }),
-    outputSchema: z.array(z.string()),
-    execute: ({ ticker }) => [
-      `${ticker.toUpperCase()} raised full-year margin guidance.`,
-      "Sector peers traded higher after stronger cloud infrastructure demand.",
-      "Analysts remain focused on capex discipline and cash flow conversion.",
-    ],
+  outputSchema: z.object({
+    ticker: z.string(),
+    price: z.number(),
+    changePercent: z.number(),
+    volume: z.number(),
   }),
-  createTool({
-    name: "risk_flags",
-    description: "Return mock risk flags for a ticker.",
-    inputSchema: z.object({
-      ticker: z.string(),
-    }),
-    outputSchema: z.array(z.string()),
-    execute: () => [
-      "Mock data; do not treat this as investment advice.",
-      "Single-day price movement can be noise.",
-      "News set is incomplete and should be verified.",
-    ],
+  execute: ({ ticker }) => ({
+    ticker: ticker.toUpperCase(),
+    price: 184.32,
+    changePercent: 1.4,
+    volume: 42_100_000,
   }),
-]);
+});
+const marketNewsTool = createTool({
+  name: "market_news",
+  description: "Return mock market news for a ticker.",
+  inputSchema: z.object({
+    ticker: z.string(),
+  }),
+  outputSchema: z.array(z.string()),
+  execute: ({ ticker }) => [
+    `${ticker.toUpperCase()} raised full-year margin guidance.`,
+    "Sector peers traded higher after stronger cloud infrastructure demand.",
+    "Analysts remain focused on capex discipline and cash flow conversion.",
+  ],
+});
+const riskFlagsTool = createTool({
+  name: "risk_flags",
+  description: "Return mock risk flags for a ticker.",
+  inputSchema: z.object({
+    ticker: z.string(),
+  }),
+  outputSchema: z.array(z.string()),
+  execute: () => [
+    "Mock data; do not treat this as investment advice.",
+    "Single-day price movement can be noise.",
+    "News set is incomplete and should be verified.",
+  ],
+});
 
 const quoteSnapshot = new PipelineBuilder(z.string())
-  .step((ticker) => marketTools.call("quote_snapshot", JSON.stringify({ ticker })))
+  .step((ticker) => quoteSnapshotTool.call({ ticker }))
   .build();
 
 const marketNews = new PipelineBuilder(z.string())
-  .step((ticker) => marketTools.call("market_news", JSON.stringify({ ticker })))
+  .step((ticker) => marketNewsTool.call({ ticker }))
   .build();
 
 const riskFlags = new PipelineBuilder(z.string())
-  .step((ticker) => marketTools.call("risk_flags", JSON.stringify({ ticker })))
+  .step((ticker) => riskFlagsTool.call({ ticker }))
   .build();
 
 const marketAnalystModel = client.completionModel("gpt-5.5");
@@ -93,16 +86,7 @@ const marketPipeline = new PipelineBuilder(z.string())
     newsJson: marketNews,
     risksJson: riskFlags,
   })
-  .step(({ quoteJson, newsJson, risksJson }) => {
-    const quote = JSON.parse(toolOutputText(quoteJson)) as {
-      ticker: string;
-      price: number;
-      changePercent: number;
-      volume: number;
-    };
-    const news = JSON.parse(toolOutputText(newsJson)) as string[];
-    const risks = JSON.parse(toolOutputText(risksJson)) as string[];
-
+  .step(({ quoteJson: quote, newsJson: news, risksJson: risks }) => {
     return [
       `Analyze this mock market packet for ${quote.ticker}.`,
       "",
@@ -123,7 +107,3 @@ const marketPipeline = new PipelineBuilder(z.string())
 const analysis = await marketPipeline.run("ACME");
 
 console.log(analysis);
-
-function toolOutputText(output: NormalizedToolOutput): string {
-  return typeof output === "string" ? output : toolResultContentToText(output);
-}

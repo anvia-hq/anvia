@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import { getAgentToolState } from "@anvia/core/internal/agent";
 import type { Hono } from "hono";
 import type {
   StudioAgent,
@@ -76,10 +77,11 @@ export function registerKnowledgeRoutes(
 }
 
 export function agentHasKnowledge(agent: StudioAgent): boolean {
+  const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
   return (
     agent.agent.staticContext.length > 0 ||
     agent.agent.dynamicContexts.length > 0 ||
-    agent.agent.dynamicTools.length > 0
+    toolIndexes.length > 0
   );
 }
 
@@ -101,6 +103,7 @@ async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnow
 }
 
 async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSourceSummary[]> {
+  const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
   const sources: StudioKnowledgeSourceSummary[] = [
     {
       sourceId: staticSourceId(),
@@ -134,20 +137,20 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
   );
 
   const dynamicToolSources = await Promise.all(
-    agent.agent.dynamicTools.map(async (registration, index) => {
-      const inspect = inspectFn(registration.index);
-      const count = await inspectableCount(inspect, registration.options.filter);
+    toolIndexes.map(async (toolIndex, index) => {
+      const inspect = inspectFn(toolIndex);
+      const count = await inspectableCount(inspect, toolIndex.filter);
       const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicToolsSourceId(index),
         kind: "dynamic_tools",
         label: `Dynamic tools ${index + 1}`,
         count: 1,
         registrationIndex: index,
-        topK: registration.options.topK,
+        topK: toolIndex.topK,
         inspectable: inspect !== undefined,
       };
-      if (registration.options.threshold !== undefined) {
-        source.threshold = registration.options.threshold;
+      if (toolIndex.threshold !== undefined) {
+        source.threshold = toolIndex.threshold;
       }
       if (count !== undefined) source.itemCount = count;
       return source;
@@ -206,18 +209,18 @@ async function knowledgeItemsPage(
 
   const dynamicToolsIndex = dynamicSourceIndex(sourceId, "dynamic_tools");
   if (dynamicToolsIndex !== undefined) {
-    const registration = agent.agent.dynamicTools[dynamicToolsIndex];
-    if (registration === undefined) {
+    const toolIndex = getAgentToolState(agent.agent).toolIndexes[dynamicToolsIndex];
+    if (toolIndex === undefined) {
       return undefined;
     }
-    const inspect = inspectFn(registration.index);
+    const inspect = inspectFn(toolIndex);
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_tools");
     }
     const page = await inspect({
       limit: request.limit,
       cursor: request.cursor,
-      filter: registration.options.filter,
+      filter: toolIndex.filter,
     });
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,

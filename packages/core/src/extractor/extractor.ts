@@ -1,4 +1,4 @@
-import type { Agent } from "../agent/agent";
+import { type Agent, getAgentToolState } from "../agent/agent";
 import { AgentBuilder } from "../agent/builder";
 import {
   CompletionCapabilityError,
@@ -68,12 +68,16 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
 
     for (let attempt = 0; attempt <= this.retryCount; attempt += 1) {
       try {
-        const toolDefs = await this.agent.toolSet.getToolDefinitions(extractRagText(prompt));
+        const toolState = getAgentToolState(this.agent);
+        const ragText = extractRagText(prompt);
+        const toolDefs = await Promise.all(
+          toolState.staticTools.map((tool) => tool.definition(ragText ?? "")),
+        );
         const result = await createCompletion([...(history ?? []), prompt], {
           model: this.agent.model,
           instructions: this.agent.instructions,
           documents: this.agent.staticContext,
-          tools: [...toolDefs, ...this.agent.providerTools],
+          tools: [...toolDefs, ...toolState.providerTools],
           temperature: this.agent.temperature,
           maxTokens: this.agent.maxTokens,
           additionalParams: this.agent.additionalParams,

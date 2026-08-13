@@ -1,4 +1,5 @@
-import { type AnyTool, ToolSet } from "@anvia/core/tool";
+import { getAgentToolState } from "@anvia/core/internal/agent";
+import type { AnyTool } from "@anvia/core/tool";
 import type { StudioAgent, StudioAgentToolApprovalMetadata, StudioAgentToolSource } from "../types";
 
 export type AgentToolItem = {
@@ -9,16 +10,20 @@ export type AgentToolItem = {
 const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
 
 export function agentToolItems(agent: StudioAgent): AgentToolItem[] {
-  return [
-    ...agent.agent.toolSet.values().map((tool) => ({ tool, source: "static" as const })),
-    ...agent.agent.dynamicTools.flatMap((registration) => {
-      const maybeToolSet = (registration.index as { toolSet?: unknown }).toolSet;
-      if (!(maybeToolSet instanceof ToolSet)) {
-        return [];
+  const state = getAgentToolState(agent.agent);
+  const items: AgentToolItem[] = state.staticTools.map((tool) => ({ tool, source: "static" }));
+  const names = new Set(items.map(({ tool }) => tool.name));
+
+  for (const index of state.toolIndexes) {
+    for (const tool of index.tools) {
+      if (!names.has(tool.name)) {
+        names.add(tool.name);
+        items.push({ tool, source: "dynamic" });
       }
-      return maybeToolSet.values().map((tool) => ({ tool, source: "dynamic" as const }));
-    }),
-  ];
+    }
+  }
+
+  return items;
 }
 
 export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata {

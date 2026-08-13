@@ -1,4 +1,4 @@
-import type { Agent } from "../../agent/agent";
+import { type Agent, getAgentToolState } from "../../agent/agent";
 import { AgentRunCancelledError, MaxTurnsError } from "../../agent/errors";
 import type {
   AgentInput,
@@ -190,7 +190,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           .instructions(this.agent.instructions)
           .messages(historyForRequest)
           .documents([...this.agent.staticContext, ...dynamicContext])
-          .tools([...toolDefs, ...this.agent.providerTools])
+          .tools([...toolDefs, ...getAgentToolState(this.agent).providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)
           .additionalParams(this.agent.additionalParams)
@@ -396,7 +396,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           .instructions(this.agent.instructions)
           .messages(historyForRequest)
           .documents([...this.agent.staticContext, ...dynamicContext])
-          .tools([...toolDefs, ...this.agent.providerTools])
+          .tools([...toolDefs, ...getAgentToolState(this.agent).providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)
           .additionalParams(this.agent.additionalParams)

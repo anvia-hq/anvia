@@ -21,11 +21,10 @@ export type {
 } from "./run-types";
 export type {
   AgentDynamicContext,
-  AgentDynamicTool,
   AgentMemoryOptions,
   AgentObserverInput,
   AgentOptions,
+  AgentToolInput,
   AgentToolOptions,
   DynamicContextOptions,
-  DynamicToolOptions,
 } from "./types";

@@ -19,10 +19,10 @@ export type {
 } from "./agent/run-types";
 export type {
   AgentDynamicContext,
-  AgentDynamicTool,
   AgentMemoryOptions,
   AgentObserverInput,
   AgentOptions,
+  AgentToolInput,
 } from "./agent/types";
 export type {
   AudioGenerationModel,

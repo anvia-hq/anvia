@@ -1,8 +1,8 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   AgentOptions,
+  AgentToolInput,
   DynamicContextOptions,
-  DynamicToolOptions,
   AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
   AgentSession as PublicAgentSessionType,
   AgentStreamEvent as PublicAgentStreamEvent,
@@ -56,7 +56,7 @@ describe("public exports", () => {
     expectTypeOf<PublicAgentType>().not.toBeNever();
     expectTypeOf<PublicAgentSessionType>().not.toBeNever();
     expectTypeOf<DynamicContextOptions>().not.toBeNever();
-    expectTypeOf<DynamicToolOptions>().not.toBeNever();
+    expectTypeOf<AgentToolInput>().not.toBeNever();
   });
 
   it("exposes AgentBuilder from the public entrypoints", () => {

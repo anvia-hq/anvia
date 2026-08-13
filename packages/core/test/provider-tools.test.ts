@@ -114,7 +114,7 @@ describe("provider-executed tools", () => {
     expect(result.response.sources).toEqual([{ type: "url", url: "https://example.com" }]);
   });
 
-  it("keeps provider tools out of the local Agent ToolSet", async () => {
+  it("keeps provider tools out of the local Agent tools", async () => {
     const model = new ProviderToolModel();
     const localTool = createTool({
       name: "local",
@@ -126,8 +126,8 @@ describe("provider-executed tools", () => {
 
     const result = await agent.generate("research");
 
-    expect(agent.toolSet.get("local")).toBe(localTool);
-    expect(agent.toolSet.get("web_search")).toBeUndefined();
+    expect(agent.getTool("local")).toBe(localTool);
+    expect(agent.getTool("web_search")).toBeUndefined();
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toEqual(["local"]);
     expect(model.requests[0]?.providerTools).toEqual([searchTool]);
     expect(result.sources).toEqual([{ type: "url", url: "https://example.com" }]);
@@ -148,8 +148,7 @@ describe("provider-executed tools", () => {
 
     await agent.generate("research");
 
-    expect(agent.toolSet.values()).toEqual([localTool]);
-    expect(agent.providerTools).toEqual([searchTool]);
+    expect(agent.tools).toEqual([localTool]);
     expect(model.requests[0]?.providerTools).toEqual([searchTool]);
   });
 

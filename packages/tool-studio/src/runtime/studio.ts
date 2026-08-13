@@ -1,5 +1,5 @@
 import type { JsonObject } from "@anvia/core/completion";
-import { Agent } from "@anvia/core/internal/agent";
+import { Agent, getAgentToolState } from "@anvia/core/internal/agent";
 import { Pipeline } from "@anvia/core/pipeline";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -289,11 +289,11 @@ function agentMetadata(agent: Agent): JsonObject {
   const metadata: JsonObject = {
     staticContextCount: agent.staticContext.length,
     dynamicContextCount: agent.dynamicContexts.length,
-    dynamicToolCount: agent.dynamicTools.length,
+    dynamicToolCount: getAgentToolState(agent).toolIndexes.length,
     hasOutputSchema: agent.outputSchema !== undefined,
     hasHook: agent.hook !== undefined,
     observerCount: agent.observers.length,
-    approvalToolCount: agent.toolSet.values().filter((tool) => tool.approval !== undefined).length,
+    approvalToolCount: agent.tools.filter((tool) => tool.approval !== undefined).length,
   };
   if (agent.defaultMaxTurns !== undefined) metadata.defaultMaxTurns = agent.defaultMaxTurns;
   return metadata;

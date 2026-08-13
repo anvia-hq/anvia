@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   Agent,
   AgentBuilder,
+  type AnyTool,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -14,8 +15,8 @@ import {
   defineInputGuardrail,
   MaxTurnsError,
   type Tool,
+  type ToolIndex,
   type ToolSearchDocument,
-  ToolSet,
   Usage,
   type VectorSearchIndex,
 } from "./helpers/imports";
@@ -101,6 +102,15 @@ function emptyIndex<T>(): VectorSearchIndex<T> {
   };
 }
 
+function emptyToolIndex(tools: AnyTool[] = [], topK = 1): ToolIndex {
+  return {
+    ...emptyIndex<ToolSearchDocument>(),
+    kind: "tool-index",
+    tools,
+    topK,
+  };
+}
+
 describe("Agent construction", () => {
   it("normalizes the public options into ready-to-run agent state", () => {
     const model = new QueueModel([]);
@@ -111,7 +121,8 @@ describe("Agent construction", () => {
       },
     });
     const dynamicContextIndex = emptyIndex<unknown>();
-    const dynamicToolIndex = emptyIndex<ToolSearchDocument>();
+    const indexedTool = { ...addTool, name: "indexed_add" };
+    const toolIndex = emptyToolIndex([indexedTool], 3);
     const skillTool = { ...addTool, name: "skill_add" };
     const mcpTool = { ...addTool, name: "mcp_add" };
     const tools = [addTool];
@@ -123,7 +134,7 @@ describe("Agent construction", () => {
       name: "Support",
       instructions: "Help customers.",
       context,
-      tools,
+      tools: [...tools, toolIndex],
       mcpServers: [{ name: "math", tools: [mcpTool], async close() {} }],
       skills: {
         skills: [],
@@ -136,7 +147,6 @@ describe("Agent construction", () => {
       middlewares: [middleware],
       observers: [observer, { observer, failOnObserverError: true }],
       dynamicContexts: [{ index: dynamicContextIndex, topK: 2, threshold: 0.5 }],
-      dynamicTools: [{ index: dynamicToolIndex, topK: 3 }],
       outputSchema: z.object({ answer: z.string() }),
     });
 
@@ -146,10 +156,11 @@ describe("Agent construction", () => {
     expect(agent.id).toBe("support");
     expect(agent.instructions).toBe("Help customers.\n\nUse the loaded skills.");
     expect(agent.staticContext).toEqual([{ id: "policy", text: "Keep answers short." }]);
-    expect(agent.toolSet.values().map((tool) => tool.name)).toEqual([
+    expect(agent.tools.map((tool) => tool.name)).toEqual([
       "add",
       "mcp_add",
       "skill_add",
+      "indexed_add",
     ]);
     expect(agent.defaultMaxTurns).toBe(4);
     expect(agent.middlewares).toEqual([middleware]);
@@ -157,7 +168,6 @@ describe("Agent construction", () => {
     expect(agent.dynamicContexts).toEqual([
       { index: dynamicContextIndex, options: { topK: 2, threshold: 0.5 } },
     ]);
-    expect(agent.dynamicTools).toEqual([{ index: dynamicToolIndex, options: { topK: 3 } }]);
     expect(agent.outputSchema).toMatchObject({
       type: "object",
       properties: { answer: { type: "string" } },
@@ -240,34 +250,17 @@ describe("Agent.asTool", () => {
     await expect(tool.call({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
   });
 
-  it("uses shared tool set updates made after agent creation", async () => {
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-      response([AssistantContent.text("done")]),
-    ]);
-    const toolSet = new ToolSet();
-    const agent = new AgentBuilder("test-agent", model)
-      .useToolSet(toolSet)
-      .defaultMaxTurns(1)
-      .build();
-
-    toolSet.addTool(addTool);
-
-    await expect(agent.generate("add numbers")).resolves.toMatchObject({ output: "done" });
-    expect(model.requests[0]?.tools).toEqual([expect.objectContaining({ name: "add" })]);
-  });
-
   it("isolates built agents from later builder collection changes", () => {
     const model = new QueueModel([]);
     const builder = new AgentBuilder("test-agent", model).context("initial context");
     const agent = builder.build();
     const dynamicContextIndex = emptyIndex<unknown>();
-    const dynamicToolIndex = emptyIndex<ToolSearchDocument>();
+    const toolIndex = emptyToolIndex([{ ...addTool, name: "late_tool" }]);
 
     builder
       .context("late context")
       .dynamicContext(dynamicContextIndex, { topK: 1 })
-      .dynamicTools(dynamicToolIndex, { topK: 1 })
+      .tools([toolIndex])
       .middlewares([createMiddleware({})])
       .observe(
         createObserver({
@@ -297,23 +290,7 @@ describe("Agent.asTool", () => {
     expect(agent.observers).toHaveLength(0);
     expect(agent.guardrails).toHaveLength(0);
     expect(agent.dynamicContexts).toHaveLength(0);
-    expect(agent.dynamicTools).toHaveLength(0);
-  });
-
-  it("copies existing builder tools into a shared tool set", async () => {
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-      response([AssistantContent.text("done")]),
-    ]);
-    const toolSet = new ToolSet();
-    const agent = new AgentBuilder("test-agent", model)
-      .tools([addTool])
-      .useToolSet(toolSet)
-      .defaultMaxTurns(1)
-      .build();
-
-    expect(toolSet.get("add")).toBe(addTool);
-    await expect(agent.generate("add numbers")).resolves.toMatchObject({ output: "done" });
+    expect(agent.tools).toHaveLength(0);
   });
 
   it("registers multiple wrapped agents as distinct tools", async () => {
@@ -329,9 +306,7 @@ describe("Agent.asTool", () => {
     )
       .build()
       .asTool({ name: "ask_two" });
-    const toolSet = ToolSet.fromTools([first, second]);
-
-    await expect(toolSet.call("ask_one", JSON.stringify({ prompt: "run" }))).resolves.toBe("one");
-    await expect(toolSet.call("ask_two", JSON.stringify({ prompt: "run" }))).resolves.toBe("two");
+    await expect(first.call({ prompt: "run" })).resolves.toBe("one");
+    await expect(second.call({ prompt: "run" })).resolves.toBe("two");
   });
 });

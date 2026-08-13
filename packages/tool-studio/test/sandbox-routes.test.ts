@@ -1,4 +1,6 @@
-import { type AnyTool, ToolSet } from "@anvia/core/tool";
+import { Agent } from "@anvia/core/agent";
+import type { CompletionModel } from "@anvia/core/completion";
+import type { AnyTool } from "@anvia/core/tool";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { createStudioSandboxRegistry, registerSandboxRoutes } from "../src/runtime/sandboxes";
@@ -160,12 +162,26 @@ function sandboxApp(session: object): Hono {
 function createStudioAgent(id: string, tools: AnyTool[]): StudioAgent {
   return {
     id,
-    agent: {
-      toolSet: ToolSet.fromTools(tools),
-      dynamicTools: [],
-    },
-  } as unknown as StudioAgent;
+    agent: new Agent({ id, model: sandboxModel, tools }),
+  };
 }
+
+const sandboxModel: CompletionModel = {
+  provider: "test",
+  defaultModel: "test",
+  capabilities: {
+    streaming: false,
+    tools: true,
+    toolChoice: true,
+    imageInput: false,
+    documentInput: false,
+    outputSchema: false,
+    reasoning: false,
+  },
+  async completion() {
+    throw new Error("Sandbox route tests do not run agent completions.");
+  },
+};
 
 function sandboxTool(name: string, session: object): AnyTool {
   const tool: AnyTool = {

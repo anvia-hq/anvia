@@ -1,4 +1,3 @@
-import { ToolSet } from "@anvia/core/tool";
 import { createSandboxTools, DockerSandbox } from "@anvia/sandbox";
 
 const sandbox = new DockerSandbox({
@@ -22,28 +21,27 @@ const session = await sandbox.createSession({
 });
 
 try {
-  const tools = ToolSet.fromTools(createSandboxTools(session));
+  const tools = createSandboxTools(session);
+  const callTool = (name: string, args: unknown) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (tool === undefined) throw new Error(`Missing sandbox tool: ${name}`);
+    return tool.call(args);
+  };
 
   console.log(
-    await tools.call(
-      "exec_command",
-      JSON.stringify({
-        command: "node",
-        args: ["index.js", "21"],
-      }),
-    ),
-  );
-
-  await tools.call(
-    "write_file",
-    JSON.stringify({
-      path: "notes/result.txt",
-      content: "The sandbox wrote this file.",
+    await callTool("exec_command", {
+      command: "node",
+      args: ["index.js", "21"],
     }),
   );
 
-  console.log(await tools.call("read_file", JSON.stringify({ path: "notes/result.txt" })));
-  console.log(await tools.call("list_files", JSON.stringify({ path: "notes" })));
+  await callTool("write_file", {
+    path: "notes/result.txt",
+    content: "The sandbox wrote this file.",
+  });
+
+  console.log(await callTool("read_file", { path: "notes/result.txt" }));
+  console.log(await callTool("list_files", { path: "notes" }));
 } finally {
   await session.destroy();
 }

@@ -1,11 +1,6 @@
 import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
-import {
-  createTool,
-  type NormalizedToolOutput,
-  ToolSet,
-  toolResultContentToText,
-} from "@anvia/core/tool";
+import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -14,43 +9,41 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const researchTools = ToolSet.fromTools([
-  createTool({
-    name: "search_notes",
-    description: "Return mock search notes for a research topic.",
-    inputSchema: z.object({
-      topic: z.string(),
-    }),
-    outputSchema: z.array(z.string()),
-    execute: ({ topic }) => [
-      `${topic}: customer teams ask for clearer implementation guidance.`,
-      `${topic}: support volume increased after the latest product launch.`,
-      `${topic}: engineering notes mention missing examples in docs.`,
-    ],
+const searchNotesTool = createTool({
+  name: "search_notes",
+  description: "Return mock search notes for a research topic.",
+  inputSchema: z.object({
+    topic: z.string(),
   }),
-  createTool({
-    name: "source_quality",
-    description: "Return mock source quality signals for a research topic.",
-    inputSchema: z.object({
-      topic: z.string(),
-    }),
-    outputSchema: z.object({
-      confidence: z.enum(["low", "medium", "high"]),
-      caveat: z.string(),
-    }),
-    execute: () => ({
-      confidence: "medium" as const,
-      caveat: "Mock data only; verify against real telemetry before making roadmap decisions.",
-    }),
+  outputSchema: z.array(z.string()),
+  execute: ({ topic }) => [
+    `${topic}: customer teams ask for clearer implementation guidance.`,
+    `${topic}: support volume increased after the latest product launch.`,
+    `${topic}: engineering notes mention missing examples in docs.`,
+  ],
+});
+const sourceQualityTool = createTool({
+  name: "source_quality",
+  description: "Return mock source quality signals for a research topic.",
+  inputSchema: z.object({
+    topic: z.string(),
   }),
-]);
+  outputSchema: z.object({
+    confidence: z.enum(["low", "medium", "high"]),
+    caveat: z.string(),
+  }),
+  execute: () => ({
+    confidence: "medium" as const,
+    caveat: "Mock data only; verify against real telemetry before making roadmap decisions.",
+  }),
+});
 
 const searchNotes = new PipelineBuilder(z.string())
-  .step((topic) => researchTools.call("search_notes", JSON.stringify({ topic })))
+  .step((topic) => searchNotesTool.call({ topic }))
   .build();
 
 const sourceQuality = new PipelineBuilder(z.string())
-  .step((topic) => researchTools.call("source_quality", JSON.stringify({ topic })))
+  .step((topic) => sourceQualityTool.call({ topic }))
   .build();
 
 const synthesizerModel = client.completionModel("gpt-5.5");
@@ -70,13 +63,7 @@ const researchPipeline = new PipelineBuilder(z.string())
     notesJson: searchNotes,
     qualityJson: sourceQuality,
   })
-  .step(({ notesJson, qualityJson }) => {
-    const notes = JSON.parse(toolOutputText(notesJson)) as string[];
-    const quality = JSON.parse(toolOutputText(qualityJson)) as {
-      confidence: string;
-      caveat: string;
-    };
-
+  .step(({ notesJson: notes, qualityJson: quality }) => {
     return [
       "Synthesize this research packet.",
       "",
@@ -93,7 +80,3 @@ const researchPipeline = new PipelineBuilder(z.string())
 const report = await researchPipeline.run("Anvia pipeline cookbook examples");
 
 console.log(report);
-
-function toolOutputText(output: NormalizedToolOutput): string {
-  return typeof output === "string" ? output : toolResultContentToText(output);
-}

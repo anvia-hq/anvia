@@ -12,11 +12,12 @@ import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/t
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
 import type { ZodSchema } from "../schema";
 import type { SkillSet } from "../skills";
-import type { ToolSearchDocument } from "../tool/dynamic-tools";
+import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
-import type { ToolSet } from "../tool/tool-set";
 import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
+
+export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
 
 export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDocument = unknown> = {
   id: string;
@@ -25,7 +26,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   model: M;
   instructions?: string | undefined;
   context?: Document[] | undefined;
-  tools?: Array<AnyTool | ProviderTool> | undefined;
+  tools?: readonly AgentToolInput[] | undefined;
   mcpServers?: McpServer[] | undefined;
   skills?: SkillSet | undefined;
   temperature?: number | undefined;
@@ -39,7 +40,6 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   dynamicContexts?: AgentDynamicContext<ContextDocument>[] | undefined;
-  dynamicTools?: AgentDynamicTool[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
   memory?: AgentMemoryOptions | undefined;
 };
@@ -54,10 +54,6 @@ export type AgentDynamicContext<T = unknown> = DynamicContextOptions<T> & {
   index: VectorSearchIndex<T>;
 };
 
-export type AgentDynamicTool = DynamicToolOptions & {
-  index: VectorSearchIndex<ToolSearchDocument>;
-};
-
 export type ResolvedAgentOptions<M extends CompletionModel = CompletionModel> = {
   id: string;
   name?: string | undefined;
@@ -68,8 +64,9 @@ export type ResolvedAgentOptions<M extends CompletionModel = CompletionModel> = 
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   additionalParams?: JsonValue | undefined;
-  toolSet?: ToolSet | undefined;
+  tools?: AnyTool[] | undefined;
   providerTools?: ProviderTool[] | undefined;
+  toolIndexes?: ToolIndex[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
   hook?: AgentHook | undefined;
@@ -78,7 +75,6 @@ export type ResolvedAgentOptions<M extends CompletionModel = CompletionModel> = 
   approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicy[] | undefined;
   dynamicContexts?: DynamicContextRegistration[] | undefined;
-  dynamicTools?: DynamicToolRegistration[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;
 };
@@ -100,15 +96,4 @@ export type DynamicContextOptions<T = unknown> = {
 export type DynamicContextRegistration<T = unknown> = {
   index: VectorSearchIndex<T>;
   options: DynamicContextOptions<T>;
-};
-
-export type DynamicToolOptions = {
-  topK: number;
-  threshold?: number | undefined;
-  filter?: VectorFilter | undefined;
-};
-
-export type DynamicToolRegistration = {
-  index: VectorSearchIndex<ToolSearchDocument>;
-  options: DynamicToolOptions;
 };

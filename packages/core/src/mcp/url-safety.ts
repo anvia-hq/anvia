@@ -145,7 +145,7 @@ export function createSafeMcpFetch(): FetchLike {
     return undiciFetch(url as Parameters<typeof undiciFetch>[0], {
       ...(init as Parameters<typeof undiciFetch>[1]),
       dispatcher: safeMcpDispatcher,
-    }) as ReturnType<FetchLike>;
+    }) as unknown as ReturnType<FetchLike>;
   };
 }
 

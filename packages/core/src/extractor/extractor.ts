@@ -1,16 +1,19 @@
 import { type Agent, getAgentToolState } from "../agent/agent";
 import { AgentBuilder } from "../agent/builder";
+import type { ContextIndex } from "../agent/context-index";
 import {
   CompletionCapabilityError,
   type CompletionModel,
   type CompletionResponse,
   createCompletion,
+  type Document,
   type JsonValue,
   type Message,
   Message as MessageFactory,
   type ToolChoice,
   Usage,
 } from "../completion/index";
+import { fetchContextDocuments } from "../internal/agent-runtime/retrieval";
 import { extractRagText } from "../internal/rag-text";
 import type { ZodSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/index";
@@ -70,13 +73,14 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
       try {
         const toolState = getAgentToolState(this.agent);
         const ragText = extractRagText(prompt);
+        const documents = await fetchContextDocuments(this.agent, ragText);
         const toolDefs = await Promise.all(
           toolState.staticTools.map((tool) => tool.definition(ragText ?? "")),
         );
         const result = await createCompletion([...(history ?? []), prompt], {
           model: this.agent.model,
           instructions: this.agent.instructions,
-          documents: this.agent.staticContext,
+          documents,
           tools: [...toolDefs, ...toolState.providerTools],
           temperature: this.agent.temperature,
           maxTokens: this.agent.maxTokens,
@@ -134,8 +138,14 @@ export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  context(text: string, id?: string): this {
-    this.agentBuilder.context(text, id);
+  context(text: string, id?: string): this;
+  context(input: Document | ContextIndex): this;
+  context(input: string | Document | ContextIndex, id?: string): this {
+    if (typeof input === "string") {
+      this.agentBuilder.context(input, id);
+    } else {
+      this.agentBuilder.context(input);
+    }
     return this;
   }
 

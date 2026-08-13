@@ -3,7 +3,6 @@ import { isStreamingCompletionModel } from "../completion/create-completion";
 import type {
   CompletionModel,
   ContextUsage,
-  Document,
   JsonObject,
   JsonValue,
   Message as MessageType,
@@ -44,10 +43,9 @@ import type {
   AgentStreamOptions,
 } from "./run-types";
 import type {
-  AgentDynamicContext,
+  AgentContextInput,
   AgentOptions,
   AgentToolOptions,
-  DynamicContextRegistration,
   ResolvedAgentOptions,
 } from "./types";
 
@@ -68,7 +66,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly description: string | undefined;
   readonly model: M;
   readonly instructions: string | undefined;
-  readonly staticContext: Document[];
+  readonly context: readonly AgentContextInput<ContextDocument>[];
   readonly temperature: number | undefined;
   readonly maxTokens: number | undefined;
   readonly additionalParams: JsonValue | undefined;
@@ -80,7 +78,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly observers: AgentObserverRegistration[];
   readonly approvals: ToolApprovalsOptions | undefined;
   readonly guardrails: GuardrailPolicy[];
-  readonly dynamicContexts: DynamicContextRegistration[];
   readonly middlewares: AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
 
@@ -91,7 +88,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.description = resolved.description;
     this.model = resolved.model;
     this.instructions = resolved.instructions;
-    this.staticContext = [...(resolved.staticContext ?? [])];
+    this.context = Object.freeze([...(resolved.context ?? [])]);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
     this.additionalParams = resolved.additionalParams;
@@ -119,7 +116,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.observers = [...(resolved.observers ?? [])];
     this.approvals = resolved.approvals;
     this.guardrails = [...(resolved.guardrails ?? [])];
-    this.dynamicContexts = [...(resolved.dynamicContexts ?? [])];
     this.middlewares = [...(resolved.middlewares ?? [])];
     this.memory = resolved.memory;
   }
@@ -246,22 +242,25 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
 
 const resolvedAgentOptions = Symbol("resolvedAgentOptions");
 
-type InternalAgentOptions<M extends CompletionModel> = ResolvedAgentOptions<M> & {
+type InternalAgentOptions<M extends CompletionModel, ContextDocument> = ResolvedAgentOptions<
+  M,
+  ContextDocument
+> & {
   [resolvedAgentOptions]: true;
 };
 
-export function createResolvedAgent<M extends CompletionModel>(
-  options: ResolvedAgentOptions<M>,
-): Agent<M> {
+export function createResolvedAgent<M extends CompletionModel, ContextDocument = unknown>(
+  options: ResolvedAgentOptions<M, ContextDocument>,
+): Agent<M, ContextDocument> {
   return new Agent({
     ...options,
     [resolvedAgentOptions]: true,
-  } as unknown as AgentOptions<M>);
+  } as unknown as AgentOptions<M, ContextDocument>);
 }
 
-export function getResolvedAgentOptions<M extends CompletionModel>(
-  agent: Agent<M>,
-): ResolvedAgentOptions<M> {
+export function getResolvedAgentOptions<M extends CompletionModel, ContextDocument>(
+  agent: Agent<M, ContextDocument>,
+): ResolvedAgentOptions<M, ContextDocument> {
   const toolState = getAgentToolState(agent);
   return {
     id: agent.id,
@@ -269,7 +268,7 @@ export function getResolvedAgentOptions<M extends CompletionModel>(
     description: agent.description,
     model: agent.model,
     instructions: agent.instructions,
-    staticContext: [...agent.staticContext],
+    context: [...agent.context],
     temperature: agent.temperature,
     maxTokens: agent.maxTokens,
     additionalParams: agent.additionalParams,
@@ -283,7 +282,6 @@ export function getResolvedAgentOptions<M extends CompletionModel>(
     observers: [...agent.observers],
     approvals: agent.approvals,
     guardrails: [...agent.guardrails],
-    dynamicContexts: [...agent.dynamicContexts],
     middlewares: [...agent.middlewares],
     memory: agent.memory,
   };
@@ -299,9 +297,9 @@ export function getAgentToolState(agent: Agent): AgentToolState {
 
 function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
   options: AgentOptions<M, ContextDocument>,
-): ResolvedAgentOptions<M> {
+): ResolvedAgentOptions<M, ContextDocument> {
   if (isInternalAgentOptions(options)) {
-    return options as unknown as ResolvedAgentOptions<M>;
+    return options as unknown as ResolvedAgentOptions<M, ContextDocument>;
   }
 
   const toolsByName = new Map<string, AnyTool>();
@@ -338,7 +336,7 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     description: options.description,
     model: options.model,
     instructions: instructions.length === 0 ? undefined : instructions,
-    staticContext: [...(options.context ?? [])],
+    context: [...(options.context ?? [])],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     additionalParams: options.additionalParams,
@@ -358,9 +356,6 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     approvals: options.approvals,
     guardrails:
       options.guardrails === undefined ? [] : appendGuardrailPolicies([], options.guardrails),
-    dynamicContexts: (options.dynamicContexts ?? []).map(
-      resolveDynamicContext,
-    ) as unknown as DynamicContextRegistration[],
     middlewares: [...(options.middlewares ?? [])],
     memory,
   };
@@ -369,14 +364,11 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
 function isInternalAgentOptions<M extends CompletionModel, ContextDocument>(
   options: AgentOptions<M, ContextDocument>,
 ): boolean {
-  return (options as unknown as Partial<InternalAgentOptions<M>>)[resolvedAgentOptions] === true;
-}
-
-function resolveDynamicContext<T>({
-  index,
-  ...options
-}: AgentDynamicContext<T>): DynamicContextRegistration<T> {
-  return { index, options };
+  return (
+    (options as unknown as Partial<InternalAgentOptions<M, ContextDocument>>)[
+      resolvedAgentOptions
+    ] === true
+  );
 }
 
 function resolveAgentMemory<M extends CompletionModel, ContextDocument>(

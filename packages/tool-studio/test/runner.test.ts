@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentBuilder } from "@anvia/core/agent";
+import { AgentBuilder, createContextIndex } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionRequest,
@@ -1187,10 +1187,12 @@ describe("Anvia studio", () => {
     const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddings);
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
     const agent = new AgentBuilder("support", model)
-      .dynamicContext(index, {
-        topK: 1,
-        format: (result) => ({ id: result.id, text: result.document.text }),
-      })
+      .context(
+        createContextIndex(index, {
+          topK: 1,
+          format: (result) => ({ id: result.id, text: result.document.text }),
+        }),
+      )
       .build();
     const runner = new Studio([agent]);
 
@@ -1603,8 +1605,8 @@ describe("Anvia studio", () => {
     };
     const toolIndex = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
     const agent = new AgentBuilder("support", new QueueModel([]))
-      .dynamicContext(inspectableIndex, { topK: 1 })
-      .dynamicContext(unsupportedIndex, { topK: 1 })
+      .context(createContextIndex(inspectableIndex, { topK: 1 }))
+      .context(createContextIndex(unsupportedIndex, { topK: 1 }))
       .tools([toolIndex])
       .build();
     const runner = new Studio([agent]);

@@ -1,8 +1,10 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
+  AgentContextInput,
   AgentOptions,
   AgentToolInput,
-  DynamicContextOptions,
+  ContextIndex,
+  CreateContextIndexOptions,
   AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
   AgentSession as PublicAgentSessionType,
   AgentStreamEvent as PublicAgentStreamEvent,
@@ -55,13 +57,22 @@ describe("public exports", () => {
     expectTypeOf<AgentOptions>().not.toBeNever();
     expectTypeOf<PublicAgentType>().not.toBeNever();
     expectTypeOf<PublicAgentSessionType>().not.toBeNever();
-    expectTypeOf<DynamicContextOptions>().not.toBeNever();
+    expectTypeOf<AgentContextInput>().not.toBeNever();
+    expectTypeOf<ContextIndex>().not.toBeNever();
+    expectTypeOf<CreateContextIndexOptions>().not.toBeNever();
     expectTypeOf<AgentToolInput>().not.toBeNever();
   });
 
   it("exposes AgentBuilder from the public entrypoints", () => {
     expect("AgentBuilder" in publicCore).toBe(true);
     expect("AgentBuilder" in publicAgent).toBe(true);
+  });
+
+  it("exposes context index helpers from the public entrypoints", () => {
+    expect("createContextIndex" in publicCore).toBe(true);
+    expect("createContextIndex" in publicAgent).toBe(true);
+    expect("isContextIndex" in publicCore).toBe(true);
+    expect("isContextIndex" in publicAgent).toBe(true);
   });
 
   it("exposes middleware helpers from public entrypoints", () => {

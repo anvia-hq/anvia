@@ -1,4 +1,4 @@
-import { Agent } from "@anvia/core/agent";
+import { Agent, createContextIndex } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { InMemoryVectorStore } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
@@ -36,7 +36,7 @@ const agent = new Agent({
   id: "agent",
   model: agentModel,
   instructions: "Answer using the retrieved policy context. If context is thin, say so.",
-  dynamicContexts: [{ index: index, topK: 1 }],
+  context: [createContextIndex(index, { topK: 1 })],
 });
 
 const response = await agent.generate("What should I do for a security incident?");

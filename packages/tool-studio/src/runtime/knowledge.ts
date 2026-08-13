@@ -15,6 +15,7 @@ import type {
   StudioTrace,
   StudioTraceStore,
 } from "../types";
+import { contextIndexes, staticContextDocuments } from "./agent-context";
 import { errorResponse } from "./http";
 import { compactJsonObject, toJsonValue } from "./json";
 import { optionalQueryString, parseLimit } from "./query";
@@ -78,19 +79,16 @@ export function registerKnowledgeRoutes(
 
 export function agentHasKnowledge(agent: StudioAgent): boolean {
   const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
-  return (
-    agent.agent.staticContext.length > 0 ||
-    agent.agent.dynamicContexts.length > 0 ||
-    toolIndexes.length > 0
-  );
+  return agent.agent.context.length > 0 || toolIndexes.length > 0;
 }
 
 async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnowledgeConfig> {
   const agentName = agent.name ?? agent.agent.name;
+  const staticContext = staticContextDocuments(agent.agent);
   const config: StudioAgentKnowledgeConfig = {
     agentId: agent.id,
     sources: await knowledgeSources(agent),
-    staticContext: agent.agent.staticContext.map((document) => {
+    staticContext: staticContext.map((document) => {
       const item: StudioStaticKnowledgeDocument = { id: document.id, text: document.text };
       if (document.additionalProps !== undefined) {
         item.additionalProps = jsonObjectFromRecord(document.additionalProps);
@@ -104,32 +102,34 @@ async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnow
 
 async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSourceSummary[]> {
   const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
+  const staticContext = staticContextDocuments(agent.agent);
+  const indexedContext = contextIndexes(agent.agent);
   const sources: StudioKnowledgeSourceSummary[] = [
     {
       sourceId: staticSourceId(),
       kind: "static_context",
       label: "Static context",
-      count: agent.agent.staticContext.length,
+      count: staticContext.length,
       inspectable: true,
-      itemCount: agent.agent.staticContext.length,
+      itemCount: staticContext.length,
     },
   ];
 
   const dynamicContextSources = await Promise.all(
-    agent.agent.dynamicContexts.map(async (registration, index) => {
-      const inspect = inspectFn(registration.index);
-      const count = await inspectableCount(inspect, registration.options.filter);
+    indexedContext.map(async (contextIndex, index) => {
+      const inspect = inspectFn(contextIndex.index);
+      const count = await inspectableCount(inspect, contextIndex.filter);
       const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicContextSourceId(index),
         kind: "dynamic_context",
         label: `Dynamic context ${index + 1}`,
         count: 1,
         registrationIndex: index,
-        topK: registration.options.topK,
+        topK: contextIndex.topK,
         inspectable: inspect !== undefined,
       };
-      if (registration.options.threshold !== undefined) {
-        source.threshold = registration.options.threshold;
+      if (contextIndex.threshold !== undefined) {
+        source.threshold = contextIndex.threshold;
       }
       if (count !== undefined) source.itemCount = count;
       return source;
@@ -182,18 +182,18 @@ async function knowledgeItemsPage(
 
   const dynamicContextIndex = dynamicSourceIndex(sourceId, "dynamic_context");
   if (dynamicContextIndex !== undefined) {
-    const registration = agent.agent.dynamicContexts[dynamicContextIndex];
-    if (registration === undefined) {
+    const contextIndex = contextIndexes(agent.agent)[dynamicContextIndex];
+    if (contextIndex === undefined) {
       return undefined;
     }
-    const inspect = inspectFn(registration.index);
+    const inspect = inspectFn(contextIndex.index);
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_context");
     }
     const page = await inspect({
       limit: request.limit,
       cursor: request.cursor,
-      filter: registration.options.filter,
+      filter: contextIndex.filter,
     });
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
@@ -250,8 +250,9 @@ function staticKnowledgeItemsPage(
   agent: StudioAgent,
   request: { limit: number; cursor?: string | undefined },
 ): StudioKnowledgeItemsPage {
+  const staticContext = staticContextDocuments(agent.agent);
   const start = Math.max(0, Math.trunc(Number(request.cursor ?? "0")));
-  const page = agent.agent.staticContext.slice(start, start + request.limit);
+  const page = staticContext.slice(start, start + request.limit);
   const nextOffset = start + page.length;
   const result: StudioKnowledgeItemsPage = {
     agentId: agent.id,
@@ -269,9 +270,9 @@ function staticKnowledgeItemsPage(
       }
       return item;
     }),
-    totalCount: agent.agent.staticContext.length,
+    totalCount: staticContext.length,
   };
-  if (nextOffset < agent.agent.staticContext.length) result.nextCursor = String(nextOffset);
+  if (nextOffset < staticContext.length) result.nextCursor = String(nextOffset);
   return result;
 }
 

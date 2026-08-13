@@ -8,6 +8,7 @@ import {
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
+  createContextIndex,
   createMiddleware,
   createObserver,
   createTool,
@@ -133,7 +134,7 @@ describe("Agent construction", () => {
       model,
       name: "Support",
       instructions: "Help customers.",
-      context,
+      context: [...context, createContextIndex(dynamicContextIndex, { topK: 2, threshold: 0.5 })],
       tools: [...tools, toolIndex],
       mcpServers: [{ name: "math", tools: [mcpTool], async close() {} }],
       skills: {
@@ -146,7 +147,6 @@ describe("Agent construction", () => {
       maxTurns: 4,
       middlewares: [middleware],
       observers: [observer, { observer, failOnObserverError: true }],
-      dynamicContexts: [{ index: dynamicContextIndex, topK: 2, threshold: 0.5 }],
       outputSchema: z.object({ answer: z.string() }),
     });
 
@@ -155,7 +155,10 @@ describe("Agent construction", () => {
 
     expect(agent.id).toBe("support");
     expect(agent.instructions).toBe("Help customers.\n\nUse the loaded skills.");
-    expect(agent.staticContext).toEqual([{ id: "policy", text: "Keep answers short." }]);
+    expect(agent.context).toEqual([
+      { id: "policy", text: "Keep answers short." },
+      createContextIndex(dynamicContextIndex, { topK: 2, threshold: 0.5 }),
+    ]);
     expect(agent.tools.map((tool) => tool.name)).toEqual([
       "add",
       "mcp_add",
@@ -165,9 +168,6 @@ describe("Agent construction", () => {
     expect(agent.defaultMaxTurns).toBe(4);
     expect(agent.middlewares).toEqual([middleware]);
     expect(agent.observers).toEqual([{ observer }, { observer, failOnObserverError: true }]);
-    expect(agent.dynamicContexts).toEqual([
-      { index: dynamicContextIndex, options: { topK: 2, threshold: 0.5 } },
-    ]);
     expect(agent.outputSchema).toMatchObject({
       type: "object",
       properties: { answer: { type: "string" } },
@@ -180,6 +180,23 @@ describe("Agent construction", () => {
 
     expect(agent.defaultMaxTurns).toBe(20);
     expect(agent).not.toHaveProperty("build");
+  });
+
+  it("registers documents and context indexes through AgentBuilder.context", () => {
+    const index = createContextIndex(emptyIndex<string>(), { topK: 2 });
+    const agent = new AgentBuilder("agent", new QueueModel([]))
+      .context({ id: "policy", text: "Keep answers short." })
+      .context(index)
+      .context("Generated id")
+      .build();
+
+    expect(agent.context).toEqual([
+      { id: "policy", text: "Keep answers short." },
+      index,
+      { id: "static_doc_1", text: "Generated id" },
+    ]);
+    expect(Object.isFrozen(agent.context)).toBe(true);
+    expect(Object.isFrozen(index)).toBe(true);
   });
 });
 
@@ -259,7 +276,7 @@ describe("Agent.asTool", () => {
 
     builder
       .context("late context")
-      .dynamicContext(dynamicContextIndex, { topK: 1 })
+      .context(createContextIndex(dynamicContextIndex, { topK: 1 }))
       .tools([toolIndex])
       .middlewares([createMiddleware({})])
       .observe(
@@ -285,11 +302,10 @@ describe("Agent.asTool", () => {
         }),
       );
 
-    expect(agent.staticContext).toEqual([{ id: "static_doc_0", text: "initial context" }]);
+    expect(agent.context).toEqual([{ id: "static_doc_0", text: "initial context" }]);
     expect(agent.middlewares).toHaveLength(0);
     expect(agent.observers).toHaveLength(0);
     expect(agent.guardrails).toHaveLength(0);
-    expect(agent.dynamicContexts).toHaveLength(0);
     expect(agent.tools).toHaveLength(0);
   });
 

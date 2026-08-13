@@ -57,7 +57,7 @@ import { createAsyncQueue } from "../async-queue";
 import { CompletionRequestBuilder } from "../completion-request-builder";
 import { extractRagText } from "../rag-text";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
-import { fetchDynamicContext, fetchToolDefinitions } from "./retrieval";
+import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
 import {
@@ -184,12 +184,12 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
         const ragText = extractRagText(prompt);
-        const dynamicContext = await fetchDynamicContext(this.agent, ragText);
+        const context = await fetchContextDocuments(this.agent, ragText);
         const toolDefs = await fetchToolDefinitions(this.agent, ragText);
         let request = new CompletionRequestBuilder(this.agent.model, prompt)
           .instructions(this.agent.instructions)
           .messages(historyForRequest)
-          .documents([...this.agent.staticContext, ...dynamicContext])
+          .documents(context)
           .tools([...toolDefs, ...getAgentToolState(this.agent).providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)
@@ -390,12 +390,12 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
         const ragText = extractRagText(prompt);
-        const dynamicContext = await fetchDynamicContext(this.agent, ragText);
+        const context = await fetchContextDocuments(this.agent, ragText);
         const toolDefs = await fetchToolDefinitions(this.agent, ragText);
         let request = new CompletionRequestBuilder(this.agent.model, prompt)
           .instructions(this.agent.instructions)
           .messages(historyForRequest)
-          .documents([...this.agent.staticContext, ...dynamicContext])
+          .documents(context)
           .tools([...toolDefs, ...getAgentToolState(this.agent).providerTools])
           .temperature(this.agent.temperature)
           .maxTokens(this.agent.maxTokens)

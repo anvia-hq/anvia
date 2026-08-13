@@ -11,6 +11,7 @@ import {
   type CompletionStreamEvent,
   chebyshevDistance,
   cosineSimilarity,
+  createContextIndex,
   createTool,
   createToolIndex,
   dotProduct,
@@ -25,11 +26,14 @@ import {
   embedTools,
   euclideanDistance,
   InMemoryVectorStore,
+  Message,
   manhattanDistance,
   type SparseEmbedding,
   type SparseEmbeddingModel,
   type StreamingCompletionModel,
   Usage,
+  UserContent,
+  type VectorSearchIndex,
   vectorFilter,
 } from "./helpers/imports";
 
@@ -459,14 +463,20 @@ describe("agent dynamic context", () => {
     const completionModel = new QueueModel();
     const agent = new AgentBuilder("test-agent", completionModel)
       .context("static context", "static")
-      .dynamicContext(index, { topK: 1 })
+      .context(createContextIndex(index, { topK: 1 }))
+      .context("closing context", "closing")
       .build();
 
     await agent.generate("cat");
 
     expect(completionModel.requests[0]?.documents).toMatchObject([
       { id: "static", text: "static context" },
-      { id: "cat", text: expect.stringContaining("Cat guide") },
+      {
+        id: "cat",
+        text: expect.stringContaining("Cat guide"),
+        additionalProps: { category: "animal", rank: "3" },
+      },
+      { id: "closing", text: "closing context" },
     ]);
   });
 
@@ -477,15 +487,97 @@ describe("agent dynamic context", () => {
     );
     const completionModel = new StreamingQueueModel();
     const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicContext(index, { topK: 1 })
+      .context(
+        createContextIndex(index, {
+          topK: 1,
+          format: (result) => ({ id: result.id, text: result.document.title }),
+        }),
+      )
       .build();
 
     for await (const _event of agent.stream("dog")) {
       // exhaust stream
     }
 
-    expect(completionModel.requests[0]?.documents).toMatchObject([
-      { id: "dog", text: expect.stringContaining("Dog guide") },
+    expect(completionModel.requests[0]?.documents).toEqual([{ id: "dog", text: "Dog guide" }]);
+  });
+
+  it("skips context indexes when the input has no retrieval text", async () => {
+    const searches: unknown[] = [];
+    const index: VectorSearchIndex<string> = {
+      async search(request) {
+        searches.push(request);
+        return [];
+      },
+      async searchIds() {
+        return [];
+      },
+      asTool() {
+        throw new Error("Not used by this test");
+      },
+    };
+    const completionModel = new QueueModel();
+    const agent = new AgentBuilder("test-agent", completionModel)
+      .context("static context", "static")
+      .context(createContextIndex(index, { topK: 1 }))
+      .build();
+
+    await agent.generate(Message.user([UserContent.imageUrl("https://example.com/cat.png")]));
+
+    expect(searches).toEqual([]);
+    expect(completionModel.requests[0]?.documents).toEqual([
+      { id: "static", text: "static context" },
+    ]);
+  });
+
+  it("propagates context index search failures", async () => {
+    const index: VectorSearchIndex<string> = {
+      async search() {
+        throw new Error("context unavailable");
+      },
+      async searchIds() {
+        return [];
+      },
+      asTool() {
+        throw new Error("Not used by this test");
+      },
+    };
+    const agent = new AgentBuilder("test-agent", new QueueModel())
+      .context(createContextIndex(index, { topK: 1 }))
+      .build();
+
+    await expect(agent.generate("cat")).rejects.toThrow("context unavailable");
+  });
+
+  it("uses the latest tool-result text for later-turn context retrieval", async () => {
+    const embeddingModel = new KeywordEmbeddingModel();
+    const embedded = await embedDocuments(
+      embeddingModel,
+      [{ id: "refund-policy", text: "refund" }],
+      {
+        id: (document) => document.id,
+        content: (document) => document.text,
+      },
+    );
+    const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddingModel);
+    const seedTopicTool = createTool({
+      name: "seed_topic",
+      description: "Seed the next turn topic.",
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
+      execute: () => "refund",
+    });
+    const completionModel = new TwoTurnModel();
+    const agent = new AgentBuilder("test-agent", completionModel)
+      .context(createContextIndex(index, { topK: 1, threshold: 0.9 }))
+      .tools([seedTopicTool])
+      .build();
+
+    await agent.generate("start");
+
+    expect(completionModel.requests[0]?.documents).toEqual([]);
+    expect(completionModel.requests[1]?.documents).toEqual([
+      { id: "refund-policy", text: '{\n  "id": "refund-policy",\n  "text": "refund"\n}' },
     ]);
   });
 });

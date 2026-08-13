@@ -1,5 +1,7 @@
 export { Agent } from "./agent/agent";
 export { AgentBuilder } from "./agent/builder";
+export type { ContextIndex, CreateContextIndexOptions } from "./agent/context-index";
+export { createContextIndex, isContextIndex } from "./agent/context-index";
 export { AgentRunCancelledError, MaxTurnsError, ToolApprovalRequiredError } from "./agent/errors";
 export type {
   AgentChildStreamEvent,
@@ -18,7 +20,7 @@ export type {
   AgentToolCallDeltaEvent,
 } from "./agent/run-types";
 export type {
-  AgentDynamicContext,
+  AgentContextInput,
   AgentMemoryOptions,
   AgentObserverInput,
   AgentOptions,

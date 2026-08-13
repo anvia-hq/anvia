@@ -6,6 +6,7 @@ import {
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
+  createContextIndex,
   ExtractorBuilder,
   Message,
   Usage,
@@ -178,6 +179,37 @@ describe("Extractor", () => {
       expect.stringContaining("Prefer concise values."),
     );
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("previous"));
+  });
+
+  it("retrieves indexed context using the extraction prompt", async () => {
+    const searches: unknown[] = [];
+    const index = {
+      async search(request: unknown) {
+        searches.push(request);
+        return [{ id: "policy", score: 1, document: "Refunds are available for 30 days." }];
+      },
+      async searchIds() {
+        return [];
+      },
+      asTool() {
+        throw new Error("Not used by this test");
+      },
+    };
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("submit_1", "submit", { value: "30 days" })]),
+    ]);
+
+    await new ExtractorBuilder(model, z.object({ value: z.string() }))
+      .context(createContextIndex(index, { topK: 2, threshold: 0.8 }))
+      .build()
+      .extract("What is the refund window?");
+
+    expect(searches).toEqual([
+      { query: "What is the refund window?", topK: 2, threshold: 0.8, filter: undefined },
+    ]);
+    expect(model.requests[0]?.documents).toEqual([
+      { id: "policy", text: "Refunds are available for 30 days." },
+    ]);
   });
 
   it("does not export the removed custom schema helper", () => {

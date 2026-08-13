@@ -1,4 +1,4 @@
-import { Agent } from "@anvia/core/agent";
+import { Agent, createContextIndex } from "@anvia/core/agent";
 import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { createTool, createToolIndex } from "@anvia/core/tool";
@@ -105,9 +105,12 @@ const agent = new Agent({
     "Cite the operational policy or runbook facts you used in plain language.",
     "Keep the response concise and action-oriented.",
   ].join("\n"),
-  dynamicContexts: [
+  context: [
     {
-      index: knowledgeIndex,
+      id: "studio-knowledge-scope",
+      text: "Studio Knowledge is an inspector surface. It shows static context, dynamic context, dynamic tools, and trace evidence; it does not edit documents.",
+    },
+    createContextIndex(knowledgeIndex, {
       topK: 2,
       threshold: 0.55,
       format: (result) => ({
@@ -118,16 +121,10 @@ const agent = new Agent({
           score: result.score.toFixed(3),
         },
       }),
-    },
+    }),
   ],
   tools: [toolIndex],
   maxTurns: 4,
-  context: [
-    {
-      id: "studio-knowledge-scope",
-      text: "Studio Knowledge is an inspector surface. It shows static context, dynamic context, dynamic tools, and trace evidence; it does not edit documents.",
-    },
-  ],
 });
 
 new Studio([agent], {

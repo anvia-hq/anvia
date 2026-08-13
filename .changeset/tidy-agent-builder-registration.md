@@ -13,3 +13,6 @@ pipeline agent stage to `agent()`. Rename `createTool()` schema options from `in
 tool registration methods in favor of a single `tools` option that accepts executable tools,
 provider-native tools, and tool indexes. Move dynamic tool selection settings onto
 `createToolIndex()` and expose each agent's executable inventory through readonly `agent.tools`.
+Unify static documents and searchable context indexes under the `context` option, move retrieval
+settings onto `createContextIndex()`, and expose the declaration inventory through readonly
+`agent.context`.

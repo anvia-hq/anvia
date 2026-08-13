@@ -19,17 +19,18 @@ import type { SkillSet } from "../skills";
 import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
-import type { VectorSearchIndex } from "../vector-store";
 import { type Agent, createResolvedAgent } from "./agent";
+import { type ContextIndex, isContextIndex } from "./context-index";
 import { normalizeAgentId } from "./ids";
-import type { AgentToolInput, DynamicContextOptions, DynamicContextRegistration } from "./types";
+import type { AgentContextInput, AgentToolInput } from "./types";
 
 export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private readonly agentId: string;
   private agentName: string | undefined;
   private agentDescription: string | undefined;
   private instructionBlocks: string[] = [];
-  private contextDocs: Document[] = [];
+  private contextInputs: AgentContextInput[] = [];
+  private contextDocumentCount = 0;
   private temp: number | undefined;
   private maxTokenCount: number | undefined;
   private params: JsonValue | undefined;
@@ -41,7 +42,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private guardrailPolicies: GuardrailPolicy[] = [];
   private skillInstructionBlocks: string[] = [];
   private observerRegistrations: AgentObserverRegistration[] = [];
-  private dynamicContextRegistrations: DynamicContextRegistration[] = [];
   private middlewareRegistrations: AgentMiddleware[] = [];
   private memoryRegistration: MemoryRegistration | undefined;
   private activeTools = new Map<string, AnyTool>();
@@ -72,13 +72,20 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  context(text: string, id = `static_doc_${this.contextDocs.length}`): this {
-    this.contextDocs.push({ id, text });
-    return this;
-  }
-
-  dynamicContext<T>(index: VectorSearchIndex<T>, options: DynamicContextOptions<T>): this {
-    this.dynamicContextRegistrations.push({ index, options } as DynamicContextRegistration);
+  context(text: string, id?: string): this;
+  context(input: Document | ContextIndex): this;
+  context(input: string | Document | ContextIndex, id?: string): this {
+    if (typeof input === "string") {
+      this.contextInputs.push({
+        id: id ?? `static_doc_${this.contextDocumentCount}`,
+        text: input,
+      });
+    } else {
+      this.contextInputs.push(input);
+    }
+    if (typeof input === "string" || !isContextIndex(input)) {
+      this.contextDocumentCount += 1;
+    }
     return this;
   }
 
@@ -193,7 +200,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       description: this.agentDescription,
       model: this.completionModel,
       instructions: this.buildInstructions(),
-      staticContext: this.contextDocs,
+      context: this.contextInputs,
       temperature: this.temp,
       maxTokens: this.maxTokenCount,
       additionalParams: this.params,
@@ -207,7 +214,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       observers: this.observerRegistrations,
       approvals: this.approvalOptions,
       guardrails: this.guardrailPolicies,
-      dynamicContexts: this.dynamicContextRegistrations,
       middlewares: this.middlewareRegistrations,
       memory: this.memoryRegistration,
     });

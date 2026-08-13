@@ -9,6 +9,7 @@ import type {
   StudioPipeline,
   StudioPipelineConfig,
 } from "../types";
+import { contextIndexes, staticContextDocuments } from "./agent-context";
 import { evalConfig } from "./eval-config";
 import { serializeUnknown } from "./json";
 import { agentHasKnowledge } from "./knowledge";
@@ -37,6 +38,8 @@ export function agentConfig(agent: StudioAgent): StudioAgentConfig {
 
 export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSummary {
   const tools = agentToolItems(agent);
+  const staticContext = staticContextDocuments(agent.agent);
+  const indexedContext = contextIndexes(agent.agent);
   const name = agent.name ?? agent.agent.name;
   const description = agent.description ?? agent.agent.description;
   const summary: StudioAgentRuntimeSummary = {
@@ -47,8 +50,8 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     dynamicToolCount: tools.filter((item) => item.source === "dynamic").length,
     approvalToolCount: tools.filter((item) => item.tool.approval !== undefined).length,
     mcpToolCount: tools.filter((item) => mcpServerName(item.tool) !== undefined).length,
-    staticContextCount: agent.agent.staticContext.length,
-    dynamicContextCount: agent.agent.dynamicContexts.length,
+    staticContextCount: staticContext.length,
+    dynamicContextCount: indexedContext.length,
     observerCount: agent.agent.observers.length,
     hasMemory: agent.agent.memory !== undefined,
     hasHook: agent.agent.hook !== undefined,

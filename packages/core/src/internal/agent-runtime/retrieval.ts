@@ -1,24 +1,28 @@
 import { type Agent, getAgentToolState } from "../../agent/agent";
+import { isContextIndex } from "../../agent/context-index";
 import type { Document, ToolDefinition } from "../../completion/index";
 
-export async function fetchDynamicContext(
+export async function fetchContextDocuments(
   agent: Agent,
   ragText: string | undefined,
 ): Promise<Document[]> {
-  if (ragText === undefined || ragText.length === 0 || agent.dynamicContexts.length === 0) {
-    return [];
-  }
-
   const documents: Document[] = [];
-  for (const registration of agent.dynamicContexts) {
-    const results = await registration.index.search({
+  for (const input of agent.context) {
+    if (!isContextIndex(input)) {
+      documents.push(input);
+      continue;
+    }
+    if (ragText === undefined || ragText.length === 0) {
+      continue;
+    }
+    const results = await input.index.search({
       query: ragText,
-      topK: registration.options.topK,
-      threshold: registration.options.threshold,
-      filter: registration.options.filter,
+      topK: input.topK,
+      threshold: input.threshold,
+      filter: input.filter,
     });
     for (const result of results) {
-      const formatted = registration.options.format?.(result);
+      const formatted = input.format?.(result);
       if (formatted !== undefined) {
         documents.push(formatted);
       } else {

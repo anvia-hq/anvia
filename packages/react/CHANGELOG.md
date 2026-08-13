@@ -1,5 +1,12 @@
 # @anvia/react
 
+## 0.11.6
+
+### Patch Changes
+
+- 0b8c4bb: Use the consumer's `@anvia/core` installation from React and Server so Studio targets do not
+  resolve incompatible Agent and Pipeline class declarations from nested Core versions.
+
 ## 0.11.5
 
 ### Patch Changes

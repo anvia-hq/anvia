@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -30,7 +32,9 @@ describe("Studio page primitives", () => {
     expect(html).toContain("No tools are registered.");
     expect(html).toContain('data-slot="studio-empty-state"');
     expect(html).toContain('data-size="default"');
-    expect(emptyStateClasses(html)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
+    expect(emptyStateClasses(html)).toEqual(
+      expect.arrayContaining(["h-full", "min-h-64", "border", "border-dashed", "border-border"]),
+    );
   });
 
   it("keeps compact panel states local instead of forcing full-height layout", () => {

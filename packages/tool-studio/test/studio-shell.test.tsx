@@ -1,3 +1,7 @@
+// @vitest-environment happy-dom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -87,6 +91,7 @@ describe("Studio Lens shell", () => {
       <StudioHeader
         activePage="playground"
         knowledgeTab="static-context"
+        navigation={navigation}
         selectedAgentLabel="Support"
         sessionsEnabled
         theme="system"
@@ -100,5 +105,44 @@ describe("Studio Lens shell", () => {
     expect(html).toContain("Support");
     expect(html).toContain('aria-label="Theme: system. Switch to light theme"');
     expect(html).toContain("New session");
+  });
+
+  it("opens every navigation destination from the mobile header menu", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onNavigate = vi.fn();
+    act(() =>
+      root.render(
+        <StudioHeader
+          activePage="playground"
+          knowledgeTab="static-context"
+          navigation={{ ...navigation, onNavigate }}
+          selectedAgentLabel="Support"
+          sessionsEnabled
+          theme="system"
+          onNewSession={vi.fn()}
+          onToggleTheme={vi.fn()}
+        />,
+      ),
+    );
+
+    const menuButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open navigation"]',
+    );
+    act(() => menuButton?.click());
+
+    expect(document.body.textContent).toContain("Sessions");
+    expect(document.body.textContent).toContain("Traces");
+    expect(document.body.textContent).toContain("Static Context");
+    const toolsButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Tools",
+    );
+    act(() => toolsButton?.click());
+    expect(onNavigate).toHaveBeenCalledWith("tools");
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
   });
 });

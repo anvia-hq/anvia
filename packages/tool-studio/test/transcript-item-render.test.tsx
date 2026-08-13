@@ -1,10 +1,32 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptItem } from "../src/ui/app/modules/playground/transcript-item";
 
 describe("TranscriptItem response actions", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  function render(element: ReactNode): string {
+    act(() => root.render(element));
+    return container.innerHTML;
+  }
+
   it("renders assistant copy, metrics, and trace icon actions", () => {
-    const html = renderToStaticMarkup(
+    const html = render(
       <TranscriptItem
         entry={{
           entryId: 1,
@@ -46,7 +68,7 @@ describe("TranscriptItem response actions", () => {
   });
 
   it("renders a persisted timer without response text or actions", () => {
-    const html = renderToStaticMarkup(
+    const html = render(
       <TranscriptItem
         entry={{
           entryId: 1,
@@ -69,7 +91,7 @@ describe("TranscriptItem response actions", () => {
   });
 
   it("renders a single pending thinking status", () => {
-    const html = renderToStaticMarkup(
+    const html = render(
       <TranscriptItem
         entry={{
           entryId: 1,
@@ -94,7 +116,7 @@ describe("TranscriptItem response actions", () => {
   });
 
   it("renders a non-framed tool call disclosure without a completed indicator", () => {
-    const html = renderToStaticMarkup(
+    const html = render(
       <TranscriptItem
         entry={{
           entryId: 4,
@@ -118,10 +140,19 @@ describe("TranscriptItem response actions", () => {
     expect(html).not.toContain("Show");
     expect(html).not.toContain("Hide");
     expect(html).not.toContain("shadow-black/20");
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Expand search_docs tool call"]',
+    );
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    act(() => toggle?.click());
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Input");
+    expect(container.textContent).toContain("Output");
   });
 
   it("renders expanded tool call payloads without frames", () => {
-    const html = renderToStaticMarkup(
+    const html = render(
       <TranscriptItem
         entry={{
           entryId: 5,
@@ -146,5 +177,52 @@ describe("TranscriptItem response actions", () => {
     expect(html).toContain("Input");
     expect(html).not.toContain("border-l border-border/70");
     expect(html).not.toContain("rounded-lg border border-border/80 bg-background/70");
+  });
+
+  it.each([
+    ["rejected", "Rejected"],
+    ["timed_out", "Timed out"],
+  ] as const)("renders terminal %s approvals without a running status", (status, label) => {
+    const html = render(
+      <TranscriptItem
+        entry={{
+          entryId: 6,
+          kind: "tool",
+          toolName: "write_file",
+          approval: {
+            id: "approval-1",
+            status,
+            requestedAt: "2026-08-12T00:00:00.000Z",
+          },
+        }}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain(label);
+    expect(html).not.toContain("Running");
+  });
+
+  it("does not advertise disclosure for a payload-less tool call", () => {
+    render(
+      <TranscriptItem
+        entry={{ entryId: 7, kind: "tool", toolName: "lookup" }}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Expand lookup tool call"]',
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle?.hasAttribute("aria-expanded")).toBe(false);
   });
 });

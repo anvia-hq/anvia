@@ -355,11 +355,17 @@ export function SandboxesPage(props: {
       />
 
       <StudioPageContent className="grid grid-rows-[minmax(0,1fr)] overflow-hidden">
-        {sandboxes.length === 0 && summaryLoadState === "idle" ? (
+        {sandboxes.length === 0 ? (
           <StudioEmptyState
             className="h-full"
-            title="No live sandboxes detected"
-            text="Studio discovers sessions automatically from tools returned by createSandboxTools(session)."
+            title={
+              summaryLoadState === "loading" ? "Loading sandboxes" : "No live sandboxes detected"
+            }
+            text={
+              summaryLoadState === "loading"
+                ? "Reading live sandbox workspaces."
+                : "Studio discovers sessions automatically from tools returned by createSandboxTools(session)."
+            }
           />
         ) : (
           <div className="grid min-h-0 min-w-0 grid-cols-[250px_minmax(300px,0.8fr)_minmax(400px,1.2fr)] gap-3 overflow-hidden">

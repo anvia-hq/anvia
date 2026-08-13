@@ -1,7 +1,15 @@
-import { ArrowSquareOut, GithubLogo, Laptop, Moon, Sun } from "@phosphor-icons/react";
+import { ArrowSquareOut, GithubLogo, Laptop, List, Moon, Sun } from "@phosphor-icons/react";
+import { useState } from "react";
 import type { StudioTheme } from "../../app-theme";
 import { AnviaLensLogo } from "../../components/anvia-lens-logo";
 import { Button } from "../../components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "../../components/ui/dialog";
 import { StudioIcon } from "../../components/ui/icon";
 import { knowledgeTabs } from "../knowledge/knowledge-model";
 import { pageTitle } from "../shared/format";
@@ -169,6 +177,7 @@ export function StudioSidebar(props: StudioNavigationProps) {
 export function StudioHeader(props: {
   activePage: ActivePage;
   knowledgeTab: KnowledgeTab;
+  navigation: StudioNavigationProps;
   selectedAgentLabel: string;
   sessionsEnabled: boolean;
   theme: StudioTheme;
@@ -189,6 +198,7 @@ export function StudioHeader(props: {
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4">
+      <StudioMobileNavigation {...props.navigation} />
       <nav className="flex min-w-0 flex-1 items-center gap-2 text-base" aria-label="Breadcrumb">
         <span className="font-medium">{section === "workspace" ? "Workspace" : "Inspect"}</span>
         <span className="text-muted-foreground" aria-hidden="true">
@@ -218,6 +228,62 @@ export function StudioHeader(props: {
         New session
       </Button>
     </header>
+  );
+}
+
+function StudioMobileNavigation(props: StudioNavigationProps) {
+  const [open, setOpen] = useState(false);
+  const items = navigationItems();
+  const workspaceItems = items.filter((item) => navigationSection(item.page) === "workspace");
+  const inspectItems = items.filter((item) => navigationSection(item.page) === "inspect");
+  const navigate = (item: NavigationItem) => {
+    navigateToItem(item, props);
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          aria-label="Open navigation"
+          className="lg:hidden"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <StudioIcon icon={List} aria-hidden="true" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-32px)] gap-0 overflow-y-auto p-0 lg:hidden">
+        <DialogTitle className="sr-only">Studio navigation</DialogTitle>
+        <DialogDescription className="sr-only">
+          Navigate between Studio workspace and inspection pages.
+        </DialogDescription>
+        <nav className="grid gap-1 p-2" aria-label="Workspace">
+          {workspaceItems.map((item) => (
+            <NavButton
+              active={itemIsActive(item, props)}
+              icon={item.icon}
+              key={`${item.page}-${item.knowledgeTab ?? "page"}`}
+              label={item.label}
+              onClick={() => navigate(item)}
+            />
+          ))}
+        </nav>
+        <hr className="border-sidebar-border" />
+        <nav className="grid gap-1 p-2" aria-label="Inspect">
+          {inspectItems.map((item) => (
+            <NavButton
+              active={itemIsActive(item, props)}
+              icon={item.icon}
+              key={`${item.page}-${item.knowledgeTab ?? "page"}`}
+              label={item.label}
+              onClick={() => navigate(item)}
+            />
+          ))}
+        </nav>
+      </DialogContent>
+    </Dialog>
   );
 }
 

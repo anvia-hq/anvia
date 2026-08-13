@@ -809,6 +809,8 @@ export function TraceToneIcon(props: {
       return <StudioIcon icon={Sparkle} aria-hidden="true" />;
     case "tool":
       return <StudioIcon icon={Wrench} aria-hidden="true" />;
+    default:
+      return <StudioIcon icon={DotOutline} aria-hidden="true" />;
   }
 }
 
@@ -826,6 +828,8 @@ export function traceToneIconClass(
       return "bg-blue-600 text-white";
     case "tool":
       return "bg-amber-600 text-white";
+    default:
+      return "bg-muted text-muted-foreground";
   }
 }
 

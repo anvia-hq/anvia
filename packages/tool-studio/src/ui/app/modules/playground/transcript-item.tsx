@@ -366,6 +366,8 @@ function ToolEntry(props: {
   const pendingApproval = approval?.status === "pending";
   const pendingQuestion = question?.status === "pending";
   const cancelledInteraction = approval?.status === "cancelled" || question?.status === "cancelled";
+  const rejectedApproval = approval?.status === "rejected";
+  const timedOutApproval = approval?.status === "timed_out";
   const deciding = approval !== undefined && props.decidingApprovals.has(approval.id);
   const answering = question !== undefined && props.answeringQuestions.has(question.id);
   const status = pendingApproval
@@ -374,9 +376,13 @@ function ToolEntry(props: {
       ? "Input required"
       : cancelledInteraction
         ? "Cancelled"
-        : props.entry.result === undefined
-          ? "Running"
-          : undefined;
+        : rejectedApproval
+          ? "Rejected"
+          : timedOutApproval
+            ? "Timed out"
+            : props.entry.result === undefined
+              ? "Running"
+              : undefined;
 
   return (
     <article
@@ -385,7 +391,7 @@ function ToolEntry(props: {
     >
       <div className="flex min-w-0 items-center gap-2 py-1.5">
         <Button
-          aria-expanded={!collapsed}
+          aria-expanded={hasPayload ? !collapsed : undefined}
           aria-label={`${collapsed ? "Expand" : "Collapse"} ${props.entry.toolName} tool call`}
           className="h-auto min-h-8 min-w-0 flex-1 justify-start gap-2 border-0 bg-transparent p-0 text-left text-inherit shadow-none hover:bg-transparent hover:text-inherit"
           type="button"
@@ -404,7 +410,8 @@ function ToolEntry(props: {
                 className={cn(
                   "size-1.5 rounded-full bg-muted-foreground/60",
                   status === "Running" && "animate-pulse bg-foreground motion-reduce:animate-none",
-                  cancelledInteraction && "bg-destructive",
+                  (cancelledInteraction || rejectedApproval || timedOutApproval) &&
+                    "bg-destructive",
                 )}
                 aria-hidden="true"
               />

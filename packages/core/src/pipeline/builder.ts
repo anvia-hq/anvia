@@ -181,6 +181,9 @@ export class PipelineBuilder<Input, Output = Input> {
       const value = await this.runStep(input, context);
       return runNode(context, next.node, async () => {
         const response = await agent.generate(String(value));
+        if (response.status === "approval_required") {
+          throw new Error("Pipeline agent stages cannot suspend for tool approval.");
+        }
         return response.output;
       });
     }, next.state);

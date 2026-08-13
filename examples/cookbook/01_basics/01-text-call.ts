@@ -17,4 +17,5 @@ const agent = new Agent({
 
 const response = await agent.generate("Explain what an agent framework does.");
 
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

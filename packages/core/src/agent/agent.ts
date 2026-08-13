@@ -33,9 +33,13 @@ import {
   type ToolCallStreamEvent,
 } from "../tool/tool";
 import { normalizeAgentId } from "./ids";
+import type { AgentLifecycle } from "./lifecycle";
 import type {
+  AgentApprovalDecision,
+  AgentApprovalRequiredEvent,
+  AgentApprovalRequiredResult,
   AgentInput,
-  AgentResponse,
+  AgentResult,
   AgentRunOptions,
   AgentStream,
   AgentStreamEvent,
@@ -58,7 +62,14 @@ export type AgentToolState = {
   toolsByName: ReadonlyMap<string, AnyTool>;
 };
 
+type AgentLegacyRuntime = {
+  legacy: boolean;
+  hook?: AgentHook | undefined;
+  approvals?: ToolApprovalsOptions | undefined;
+};
+
 const agentToolStates = new WeakMap<object, AgentToolState>();
+const agentLegacyRuntimes = new WeakMap<object, AgentLegacyRuntime>();
 
 export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
   readonly id: string;
@@ -73,10 +84,9 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly tools: readonly AnyTool[];
   readonly toolChoice: ToolChoice | undefined;
   readonly defaultMaxTurns: number | undefined;
-  readonly hook: AgentHook | undefined;
+  readonly lifecycle: AgentLifecycle | undefined;
   readonly outputSchema: JsonObject | undefined;
   readonly observers: AgentObserverRegistration[];
-  readonly approvals: ToolApprovalsOptions | undefined;
   readonly guardrails: GuardrailPolicy[];
   readonly middlewares: AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
@@ -111,17 +121,21 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     });
     this.toolChoice = resolved.toolChoice;
     this.defaultMaxTurns = resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS;
-    this.hook = resolved.hook;
+    this.lifecycle = resolved.lifecycle;
     this.outputSchema = resolved.outputSchema;
     this.observers = [...(resolved.observers ?? [])];
-    this.approvals = resolved.approvals;
+    agentLegacyRuntimes.set(this, {
+      legacy: resolved.legacy === true,
+      hook: resolved.hook,
+      approvals: resolved.approvals,
+    });
     this.guardrails = [...(resolved.guardrails ?? [])];
     this.middlewares = [...(resolved.middlewares ?? [])];
     this.memory = resolved.memory;
   }
 
-  generate(input: AgentInput, options: AgentRunOptions = {}): Promise<AgentResponse> {
-    return AgentRun.fromAgent(this, input, options).generate();
+  generate(input: AgentInput, options: AgentRunOptions = {}): Promise<AgentResult> {
+    return createGenerateExecution(this, AgentRun.fromAgent(this, input, options)).next();
   }
 
   stream(
@@ -134,10 +148,35 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   ): AgentStream<AgentStreamEvent>;
   stream(input: AgentInput, options: AgentStreamOptions): AgentStream<AgentStreamEvent>;
   stream(input: AgentInput, options: AgentStreamOptions = {}): AgentStream<AgentStreamEvent> {
-    return new DefaultAgentStream(
+    return createStreamExecution(
+      this,
       AgentRun.fromAgent(this, input, options),
       options.includeToolCallDeltas !== false,
     );
+  }
+
+  resume(
+    pending: AgentApprovalRequiredResult,
+    decision: AgentApprovalDecision,
+  ): Promise<AgentResult>;
+  resume(
+    pending: AgentApprovalRequiredEvent,
+    decision: AgentApprovalDecision,
+  ): AgentStream<AgentStreamEvent>;
+  resume(
+    pending: AgentApprovalRequiredResult | AgentApprovalRequiredEvent,
+    decision: AgentApprovalDecision,
+  ): Promise<AgentResult> | AgentStream<AgentStreamEvent> {
+    assertAgentApprovalDecision(decision);
+    const continuation = approvalContinuations.get(pending);
+    if (continuation === undefined || continuation.agent !== this) {
+      throw new TypeError("Approval continuation does not belong to this agent.");
+    }
+    approvalContinuations.delete(pending);
+    continuation.run.resolveApproval(decision);
+    return continuation.mode === "generate"
+      ? continuation.execution.next()
+      : continuation.execution.segment();
   }
 
   session(sessionId: string, options: SessionOptions = {}): AgentSession<M> {
@@ -194,11 +233,20 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
             await context.emitStreamEvent(streamEvent);
             if (event.type === "final") {
               output = event.output;
+            } else if (event.type === "approval_required") {
+              throw new Error(
+                `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
+              );
             }
           }
           return output;
         }
         const response = await this.generate(prompt, { maxTurns: options.maxTurns });
+        if (response.status === "approval_required") {
+          throw new Error(
+            `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
+          );
+        }
         return response.output;
       },
     });
@@ -263,6 +311,7 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
 ): ResolvedAgentOptions<M, ContextDocument> {
   const toolState = getAgentToolState(agent);
   return {
+    legacy: getAgentLegacyRuntime(agent).legacy,
     id: agent.id,
     name: agent.name,
     description: agent.description,
@@ -277,10 +326,11 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
     toolIndexes: [...toolState.toolIndexes],
     toolChoice: agent.toolChoice,
     defaultMaxTurns: agent.defaultMaxTurns,
-    hook: agent.hook,
+    lifecycle: agent.lifecycle,
+    hook: getAgentLegacyRuntime(agent).hook,
     outputSchema: agent.outputSchema,
     observers: [...agent.observers],
-    approvals: agent.approvals,
+    approvals: getAgentLegacyRuntime(agent).approvals,
     guardrails: [...agent.guardrails],
     middlewares: [...agent.middlewares],
     memory: agent.memory,
@@ -293,6 +343,10 @@ export function getAgentToolState(agent: Agent): AgentToolState {
     throw new TypeError("Agent tool state is unavailable.");
   }
   return state;
+}
+
+export function getAgentLegacyRuntime(agent: Agent): AgentLegacyRuntime {
+  return agentLegacyRuntimes.get(agent) ?? { legacy: false };
 }
 
 function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
@@ -331,6 +385,7 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     .join("\n\n");
 
   return {
+    legacy: false,
     id: options.id,
     name: options.name,
     description: options.description,
@@ -345,7 +400,7 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     toolIndexes,
     toolChoice: options.toolChoice,
     defaultMaxTurns: options.maxTurns,
-    hook: options.hook,
+    lifecycle: options.lifecycle,
     outputSchema:
       options.outputSchema === undefined ? undefined : toProviderJsonSchema(options.outputSchema),
     observers: (options.observers ?? []).map((input) =>
@@ -353,7 +408,6 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
         ? { observer: input.observer, failOnObserverError: input.failOnObserverError }
         : { observer: input },
     ),
-    approvals: options.approvals,
     guardrails:
       options.guardrails === undefined ? [] : appendGuardrailPolicies([], options.guardrails),
     middlewares: [...(options.middlewares ?? [])],
@@ -387,22 +441,139 @@ function resolveAgentMemory<M extends CompletionModel, ContextDocument>(
   return { store, options: resolvedOptions };
 }
 
-class DefaultAgentStream<Event extends AgentStreamEvent = AgentStreamEvent>
-  implements AgentStream<Event>
-{
+type GenerateExecution = {
+  next(): Promise<AgentResult>;
+};
+
+type ApprovalContinuation =
+  | {
+      agent: Agent;
+      run: AgentRun;
+      mode: "generate";
+      execution: GenerateExecution;
+    }
+  | {
+      agent: Agent;
+      run: AgentRun;
+      mode: "stream";
+      execution: StreamExecution;
+    };
+
+const approvalContinuations = new WeakMap<object, ApprovalContinuation>();
+
+function assertAgentApprovalDecision(decision: AgentApprovalDecision): void {
+  if (typeof decision !== "object" || decision === null || typeof decision.approved !== "boolean") {
+    throw new TypeError("Approval decision must include an approved boolean.");
+  }
+  if (decision.reason !== undefined && typeof decision.reason !== "string") {
+    throw new TypeError("Approval decision reason must be a string.");
+  }
+}
+
+function createGenerateExecution(agent: Agent, run: AgentRun): GenerateExecution {
+  const completion = run.generate();
+  const execution: GenerateExecution = {
+    async next() {
+      const outcome = await Promise.race([
+        completion.then((result) => ({ type: "completed" as const, result })),
+        run.waitForApproval().then(() => ({ type: "approval" as const })),
+      ]);
+      if (outcome.type === "completed") {
+        return outcome.result;
+      }
+      const pending = run.approvalResult();
+      approvalContinuations.set(pending, { agent, run, mode: "generate", execution });
+      return pending;
+    },
+  };
+  return execution;
+}
+
+class StreamExecution {
+  private readonly iterator: AsyncIterator<AgentStreamEvent>;
+  private nextEvent: Promise<IteratorResult<AgentStreamEvent>> | undefined;
+
   constructor(
+    private readonly agent: Agent,
     private readonly run: AgentRun,
-    private readonly includeToolCallDeltas: boolean,
-  ) {}
+    includeToolCallDeltas: boolean,
+  ) {
+    this.iterator = run.events(includeToolCallDeltas)[Symbol.asyncIterator]();
+  }
+
+  segment(): AgentStream<AgentStreamEvent> {
+    return new DefaultAgentStream(this);
+  }
 
   steer(input: AgentInput): boolean {
     return this.run.steer(input);
   }
 
+  async *events(): AsyncIterable<AgentStreamEvent> {
+    while (true) {
+      this.nextEvent ??= this.iterator.next();
+      const outcome = await Promise.race([
+        this.nextEvent.then((event) => ({ type: "event" as const, event })),
+        this.run.waitForApproval().then(() => ({ type: "approval" as const })),
+      ]);
+      if (outcome.type === "approval") {
+        const pending = this.run.approvalEvent();
+        approvalContinuations.set(pending, {
+          agent: this.agent,
+          run: this.run,
+          mode: "stream",
+          execution: this,
+        });
+        yield pending;
+        return;
+      }
+      this.nextEvent = undefined;
+      if (outcome.event.done) return;
+      yield outcome.event.value;
+    }
+  }
+}
+
+function createStreamExecution(
+  agent: Agent,
+  run: AgentRun,
+  includeToolCallDeltas: boolean,
+): AgentStream<AgentStreamEvent> {
+  return new StreamExecution(agent, run, includeToolCallDeltas).segment();
+}
+
+class DefaultAgentStream<Event extends AgentStreamEvent = AgentStreamEvent>
+  implements AgentStream<Event>
+{
+  private consuming = false;
+  private completed = false;
+
+  constructor(private readonly execution: StreamExecution) {}
+
+  steer(input: AgentInput): boolean {
+    return this.execution.steer(input);
+  }
+
   [Symbol.asyncIterator](): AsyncIterator<Event> {
-    return this.run
-      .events(this.includeToolCallDeltas)
-      [Symbol.asyncIterator]() as AsyncIterator<Event>;
+    return this.consume()[Symbol.asyncIterator]();
+  }
+
+  private async *consume(): AsyncIterableIterator<Event> {
+    if (this.completed) {
+      throw new Error("Agent stream has already been consumed.");
+    }
+    if (this.consuming) {
+      throw new Error("Agent stream is already running.");
+    }
+    this.consuming = true;
+    try {
+      for await (const event of this.execution.events()) {
+        yield event as Event;
+      }
+    } finally {
+      this.consuming = false;
+      this.completed = true;
+    }
   }
 }
 
@@ -416,14 +587,15 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
     },
   ) {}
 
-  generate(input: string | MessageType, options: AgentRunOptions = {}): Promise<AgentResponse> {
+  generate(input: string | MessageType, options: AgentRunOptions = {}): Promise<AgentResult> {
     if (Array.isArray(input)) {
       throw new TypeError("AgentSession.generate does not accept Message[] transcripts.");
     }
-    return AgentRun.fromAgent(this.agent, input, {
+    const run = AgentRun.fromAgent(this.agent, input, {
       ...options,
       memoryContext: this.context,
-    }).generate();
+    });
+    return createGenerateExecution(this.agent, run).next();
   }
 
   stream(
@@ -442,11 +614,9 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
     if (Array.isArray(input)) {
       throw new TypeError("AgentSession.stream does not accept Message[] transcripts.");
     }
-    return new DefaultAgentStream(
-      AgentRun.fromAgent(this.agent, input, {
-        ...options,
-        memoryContext: this.context,
-      }),
+    return createStreamExecution(
+      this.agent,
+      AgentRun.fromAgent(this.agent, input, { ...options, memoryContext: this.context }),
       options.includeToolCallDeltas !== false,
     );
   }

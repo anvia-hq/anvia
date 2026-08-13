@@ -16,6 +16,7 @@ import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import type { ContextIndex } from "./context-index";
+import type { AgentLifecycle } from "./lifecycle";
 
 export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
 export type AgentContextInput<T = unknown> = Document | ContextIndex<T>;
@@ -35,10 +36,9 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   additionalParams?: JsonValue | undefined;
   toolChoice?: ToolChoice | undefined;
   maxTurns?: number | undefined;
-  hook?: AgentHook | undefined;
+  lifecycle?: AgentLifecycle | undefined;
   outputSchema?: ZodSchema | undefined;
   observers?: AgentObserverInput[] | undefined;
-  approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   middlewares?: AgentMiddleware[] | undefined;
   memory?: AgentMemoryOptions | undefined;
@@ -54,6 +54,8 @@ export type ResolvedAgentOptions<
   M extends CompletionModel = CompletionModel,
   ContextDocument = unknown,
 > = {
+  /** Legacy AgentBuilder compatibility. */
+  legacy?: boolean | undefined;
   id: string;
   name?: string | undefined;
   description?: string | undefined;
@@ -68,9 +70,12 @@ export type ResolvedAgentOptions<
   toolIndexes?: ToolIndex[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
+  lifecycle?: AgentLifecycle | undefined;
+  /** Legacy AgentBuilder compatibility. */
   hook?: AgentHook | undefined;
   outputSchema?: import("../completion/index").JsonObject | undefined;
   observers?: AgentObserverRegistration[] | undefined;
+  /** Legacy AgentBuilder compatibility. */
   approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicy[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;

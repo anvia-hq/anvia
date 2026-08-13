@@ -27,9 +27,14 @@ export function agentToolItems(agent: StudioAgent): AgentToolItem[] {
 }
 
 export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata {
-  const approval = tool.approval;
-  if (approval === undefined || typeof approval !== "object" || approval === null) {
+  const legacyApproval = (tool as { approval?: unknown }).approval;
+  const approval = tool.requiresApproval ?? legacyApproval;
+  if (approval === undefined || approval === false) {
     return { required: false };
+  }
+
+  if (typeof approval !== "object" || approval === null) {
+    return { required: true };
   }
 
   const policy = approval as {
@@ -40,6 +45,12 @@ export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata
   if (typeof policy.reason === "string") metadata.reason = policy.reason;
   if (typeof policy.rejectMessage === "string") metadata.rejectMessage = policy.rejectMessage;
   return metadata;
+}
+
+export function toolRequiresApproval(tool: AnyTool): boolean {
+  const legacyApproval = (tool as { approval?: unknown }).approval;
+  const approval = tool.requiresApproval ?? legacyApproval;
+  return approval !== undefined && approval !== false;
 }
 
 export function mcpServerName(tool: AnyTool): string | undefined {

@@ -195,6 +195,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
 
   build(): Agent<M> {
     return createResolvedAgent({
+      legacy: true,
       id: this.agentId,
       name: this.agentName,
       description: this.agentDescription,

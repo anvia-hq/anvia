@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentBuilder, createContextIndex } from "@anvia/core/agent";
+import { Agent, AgentBuilder, createContextIndex } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionRequest,
@@ -356,11 +356,8 @@ function createRefundTool(execute: (args: { orderId: string; amount: number }) =
         },
       };
     },
-    approval: {
-      when: ({ args }) => args.amount > 0,
-      reason: ({ args }) => `Approve refund of ${args.amount} for ${args.orderId}.`,
-      rejectMessage: "Rejected by test.",
-    },
+    requiresApproval: ({ amount, orderId }) =>
+      amount > 0 ? { reason: `Approve refund of ${amount} for ${orderId}.` } : false,
     call(args) {
       return execute(args);
     },
@@ -1315,7 +1312,7 @@ describe("Anvia studio", () => {
           agentId: "support",
           name: "issue_refund",
           source: "static",
-          approval: { required: true, rejectMessage: "Rejected by test." },
+          approval: { required: true },
         }),
         expect.objectContaining({
           agentId: "support",
@@ -1980,7 +1977,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new AgentBuilder("support", model).tools([refundTool]).defaultMaxTurns(2).build();
+    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2177,7 +2174,7 @@ describe("Anvia studio", () => {
     expect(remaining).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "Rejected by test.",
+        result: "Rejected in Anvia Studio.",
       }),
     );
 
@@ -2191,9 +2188,9 @@ describe("Anvia studio", () => {
           approval: {
             id: approvalId,
             status: "rejected",
-            reason: "Rejected by test.",
+            reason: "Rejected in Anvia Studio.",
           },
-          result: "Rejected by test.",
+          result: "Rejected in Anvia Studio.",
         },
         { kind: "message", role: "assistant", text: "Refund denied" },
       ],
@@ -2649,9 +2646,7 @@ describe("Anvia studio", () => {
         executed = true;
         return `Refunded ${amount} for ${orderId}`;
       }),
-      approval: {
-        when: () => false,
-      },
+      requiresApproval: false,
     } satisfies Tool<{ orderId: string; amount: number }, string>;
     const model = new StreamingQueueModel([
       [

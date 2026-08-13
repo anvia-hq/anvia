@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
-import type { Tool, ToolApprovalPolicy, ToolCallContext } from "./tool";
+import type { Tool, ToolCallContext, ToolRequiresApproval } from "./tool";
 
 export type CreateToolOptions<
   InputSchema extends ZodSchema,
@@ -11,7 +11,7 @@ export type CreateToolOptions<
   description: string;
   inputSchema: InputSchema;
   outputSchema?: OutputSchema;
-  approval?: ToolApprovalPolicy<z.output<InputSchema>>;
+  requiresApproval?: ToolRequiresApproval<z.output<InputSchema>>;
   execute(
     args: z.output<InputSchema>,
     context: ToolCallContext,
@@ -59,12 +59,12 @@ export function createTool<
   const parseApprovalArgs = (args: unknown): z.output<InputSchema> =>
     options.inputSchema.parse(args);
 
-  if (options.approval === undefined) {
+  if (options.requiresApproval === undefined) {
     return { name: options.name, definition, call, parseApprovalArgs };
   }
   return {
     name: options.name,
-    approval: options.approval,
+    requiresApproval: options.requiresApproval,
     definition,
     call,
     parseApprovalArgs,

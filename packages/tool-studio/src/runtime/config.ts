@@ -1,4 +1,5 @@
 import type { JsonValue } from "@anvia/core/completion";
+import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import type {
   StudioAgent,
   StudioAgentConfig,
@@ -15,7 +16,12 @@ import { serializeUnknown } from "./json";
 import { agentHasKnowledge } from "./knowledge";
 import { createStudioModelRegistry, studioModelsConfig } from "./models";
 import type { ResolvedStores, StudioRuntimeOptions } from "./options";
-import { agentHasMcpTools, agentToolItems, mcpServerName } from "./tool-metadata";
+import {
+  agentHasMcpTools,
+  agentToolItems,
+  mcpServerName,
+  toolRequiresApproval,
+} from "./tool-metadata";
 
 export type { ResolvedStores, StudioRuntimeOptions } from "./options";
 
@@ -48,13 +54,13 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     toolCount: tools.length,
     staticToolCount: tools.filter((item) => item.source === "static").length,
     dynamicToolCount: tools.filter((item) => item.source === "dynamic").length,
-    approvalToolCount: tools.filter((item) => item.tool.approval !== undefined).length,
+    approvalToolCount: tools.filter((item) => toolRequiresApproval(item.tool)).length,
     mcpToolCount: tools.filter((item) => mcpServerName(item.tool) !== undefined).length,
     staticContextCount: staticContext.length,
     dynamicContextCount: indexedContext.length,
     observerCount: agent.agent.observers.length,
     hasMemory: agent.agent.memory !== undefined,
-    hasHook: agent.agent.hook !== undefined,
+    hasHook: getResolvedAgentOptions(agent.agent).hook !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,
   };
   if (name !== undefined) summary.name = name;
@@ -152,7 +158,9 @@ export function capabilityConfig(
 
   if (
     agents.some(
-      (agent) => agent.agent.hook !== undefined || agent.agent.tools.some((tool) => tool.approval),
+      (agent) =>
+        getResolvedAgentOptions(agent.agent).hook !== undefined ||
+        agent.agent.tools.some(toolRequiresApproval),
     )
   ) {
     capabilities.approvals = { enabled: true };

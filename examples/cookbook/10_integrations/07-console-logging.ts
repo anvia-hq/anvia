@@ -60,4 +60,5 @@ const response = await agent.generate("Summarize ticket TICKET-2002 for the sear
   },
 });
 
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

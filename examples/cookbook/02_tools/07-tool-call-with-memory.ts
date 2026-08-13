@@ -95,4 +95,5 @@ for await (const event of session.stream(prompt)) {
 process.stdout.write("\n");
 
 const followUp = await session.generate("Who owns the ticket we just discussed?");
+if (followUp.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(followUp.output);

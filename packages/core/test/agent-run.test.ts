@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AgentBuilder,
   AgentRunCancelledError,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -112,6 +114,7 @@ describe("Agent execution", () => {
     const agent = new AgentBuilder("test-agent", model).instructions("system").build();
 
     const result = await agent.generate("hello");
+    assertCompleted(result);
 
     expect(result.output).toBe("done");
     expect(model.requests[0]?.instructions).toBe("system");
@@ -129,6 +132,7 @@ describe("Agent execution", () => {
 
     try {
       const result = await agent.generate("hello", { retries: {} });
+      assertCompleted(result);
 
       expect(result.output).toBe("recovered");
       expect(model.requests).toHaveLength(2);
@@ -233,6 +237,7 @@ describe("Agent execution", () => {
         },
       },
     });
+    assertCompleted(result);
 
     expect(result.output).toBe("ready");
     expect(contexts).toEqual([
@@ -310,6 +315,7 @@ describe("Agent execution", () => {
       .build();
 
     const result = await agent.generate("add", { retries: { initialDelayMs: 0, maxDelayMs: 0 } });
+    assertCompleted(result);
 
     expect(result.output).toBe("7");
     expect(model.requests).toHaveLength(3);
@@ -340,6 +346,7 @@ describe("Agent execution", () => {
     const agent = new AgentBuilder("test-agent", model).tools([addTool]).build();
 
     const result = await agent.generate("add");
+    assertCompleted(result);
 
     expect(result.output).toBe("7");
     expect(model.requests).toHaveLength(2);
@@ -1028,10 +1035,7 @@ describe("Agent execution", () => {
       description: "A guarded tool",
       inputSchema: z.object({ amount: z.number() }),
       outputSchema: z.string(),
-      approval: {
-        when: ({ args }) => args.amount > 100,
-        reason: ({ args }) => `Approve ${args.amount}`,
-      },
+      requiresApproval: ({ amount }) => (amount > 100 ? { reason: `Approve ${amount}` } : false),
       execute({ amount }) {
         executed = true;
         return `approved ${amount}`;
@@ -1081,10 +1085,7 @@ describe("Agent execution", () => {
       description: "A guarded tool",
       inputSchema: z.object({ amount: z.number() }),
       outputSchema: z.string(),
-      approval: {
-        when: ({ args }) => args.amount > 100,
-        reason: ({ args }) => `Approve ${args.amount}`,
-      },
+      requiresApproval: ({ amount }) => (amount > 100 ? { reason: `Approve ${amount}` } : false),
       execute({ amount }) {
         executedAmount = amount;
         return `approved ${amount}`;
@@ -1132,10 +1133,7 @@ describe("Agent execution", () => {
       description: "A guarded tool",
       inputSchema: z.object({ amount: z.number() }),
       outputSchema: z.string(),
-      approval: {
-        when: ({ args }) => args.amount > 100,
-        rejectMessage: "Rejected by policy.",
-      },
+      requiresApproval: ({ amount }) => amount > 100,
       execute() {
         executed = true;
         return "should not run";
@@ -1158,7 +1156,7 @@ describe("Agent execution", () => {
           type: "tool_result",
           id: "call_1",
           toolName: "guarded",
-          content: [{ type: "text", text: "Rejected by policy." }],
+          content: [{ type: "text", text: "Tool approval was rejected." }],
         },
       ]),
     );
@@ -1172,9 +1170,7 @@ describe("Agent execution", () => {
       description: "A guarded tool",
       inputSchema: z.object({ amount: z.number() }),
       outputSchema: z.string(),
-      approval: {
-        when: ({ args }) => args.amount > 100,
-      },
+      requiresApproval: ({ amount }) => amount > 100,
       execute() {
         executed = true;
         return "safe result";
@@ -1199,17 +1195,14 @@ describe("Agent execution", () => {
     expect(approvals).toBe(0);
   });
 
-  it("lets request-level approvals override agent-level approvals", async () => {
+  it("returns resumable approval state for new Agent instances", async () => {
     let executed = false;
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
       inputSchema: z.object({}),
       outputSchema: z.string(),
-      approval: {
-        when: () => true,
-        rejectMessage: "Rejected by request.",
-      },
+      requiresApproval: true,
       execute() {
         executed = true;
         return "request approved";
@@ -1219,15 +1212,54 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", {})]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .approvals({ handler: () => false })
-      .build();
-
-    await expect(
-      agent.generate("run guarded", { approvals: { handler: () => true } }),
-    ).resolves.toMatchObject({ output: "done" });
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+    const pending = await agent.generate("run guarded");
+    expect(pending).toMatchObject({
+      status: "approval_required",
+      approval: { toolName: "guarded", input: {} },
+    });
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      status: "completed",
+      output: "done",
+    });
     expect(executed).toBe(true);
+  });
+
+  it("rejects resumable approvals without executing the tool", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
+      requiresApproval: true,
+      execute() {
+        executed = true;
+        return "should not run";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("denied")]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+
+    const result = await agent.resume(pending, { approved: false, reason: "Not allowed." });
+    expect(result).toMatchObject({ status: "completed", output: "denied" });
+    expect(executed).toBe(false);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          toolName: "guarded",
+          content: [{ type: "text", text: "Not allowed." }],
+        },
+      ]),
+    );
   });
 
   it("can cancel prompts from a hook helper", async () => {
@@ -1312,37 +1344,94 @@ describe("Agent execution", () => {
     });
   });
 
-  it("uses withHook for one request instead of the agent hook", async () => {
+  it("composes agent and request lifecycle callbacks", async () => {
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const events: string[] = [];
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      lifecycle: {
+        onStart() {
+          events.push("agent:start");
+        },
+        onFinish() {
+          events.push("agent:finish");
+        },
+      },
+    });
+
+    await agent.generate("hello", {
+      lifecycle: {
+        onStart() {
+          events.push("run:start");
+        },
+        onFinish() {
+          events.push("run:finish");
+        },
+      },
+    });
+
+    expect(events).toEqual(["agent:start", "run:start", "agent:finish", "run:finish"]);
+  });
+
+  it("observes steps and successful tool execution through lifecycle callbacks", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-      response([AssistantContent.text("request hook used")]),
+      response([AssistantContent.text("7")]),
     ]);
-    const agentHook = createHook({
-      onToolCall({ tool }) {
-        return tool.skip("agent hook used");
-      },
-    });
-    const requestHook = createHook({
-      onToolCall({ tool }) {
-        return tool.run();
-      },
-    });
-    const agent = new AgentBuilder("test-agent", model).tools([addTool]).hook(agentHook).build();
-
-    await expect(agent.generate("add", { hook: requestHook })).resolves.toMatchObject({
-      output: "request hook used",
-    });
-
-    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
-      Message.tool([
-        {
-          type: "tool_result",
-          id: "call_1",
-          toolName: "add",
-          content: [{ type: "text", text: "7" }],
+    const events: string[] = [];
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      lifecycle: {
+        onStepFinish({ step }) {
+          events.push(`step:${step}`);
         },
-      ]),
-    );
+        onToolStart({ step, toolName, input }) {
+          events.push(`tool_start:${step}:${toolName}:${JSON.stringify(input)}`);
+        },
+        onToolFinish(event) {
+          events.push(
+            event.success
+              ? `tool_finish:${event.step}:${event.toolName}:${event.output}`
+              : `tool_error:${event.step}:${event.toolName}`,
+          );
+        },
+      },
+    });
+
+    await expect(agent.generate("add")).resolves.toMatchObject({
+      status: "completed",
+      output: "7",
+    });
+    expect(events).toEqual([
+      "step:1",
+      'tool_start:1:add:{"x":2,"y":5}',
+      "tool_finish:1:add:7",
+      "step:2",
+    ]);
+  });
+
+  it("fails the run when a lifecycle callback throws", async () => {
+    const failure = new Error("lifecycle failed");
+    const observedErrors: unknown[] = [];
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      lifecycle: {
+        onStepFinish() {
+          throw failure;
+        },
+        onError({ error }) {
+          observedErrors.push(error);
+        },
+      },
+    });
+
+    await expect(agent.generate("hello")).rejects.toBe(failure);
+    expect(observedErrors).toEqual([failure]);
   });
 
   it("fails when the model keeps calling tools past max turns", async () => {

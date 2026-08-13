@@ -1,6 +1,10 @@
-import { type Agent, getAgentToolState } from "../../agent/agent";
+import { type Agent, getAgentLegacyRuntime, getAgentToolState } from "../../agent/agent";
 import { AgentRunCancelledError, MaxTurnsError } from "../../agent/errors";
+import { type AgentLifecycle, composeAgentLifecycle } from "../../agent/lifecycle";
 import type {
+  AgentApprovalDecision,
+  AgentApprovalRequiredEvent,
+  AgentApprovalRequiredResult,
   AgentInput,
   AgentResponse,
   AgentRunOptions,
@@ -51,13 +55,15 @@ import {
   retryErrorAttributes,
   waitForRetry,
 } from "../../retry";
-import type { ToolApprovalsOptions } from "../../tool";
+import type { ToolApprovalDecision, ToolApprovalRequest, ToolApprovalsOptions } from "../../tool";
 import type { AgentMiddleware } from "../../tool/middleware";
 import { createAsyncQueue } from "../async-queue";
 import { CompletionRequestBuilder } from "../completion-request-builder";
 import { extractRagText } from "../rag-text";
+import { registerAgentApprovalRequestDetails } from "./approval-details";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
+import { getInternalAgentRunOptions } from "./run-options";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
 import {
@@ -72,10 +78,29 @@ type AgentRunCreateOptions = AgentRunOptions & {
   memoryContext?: MemoryContext | undefined;
 };
 
+type PendingApproval = {
+  request: ToolApprovalRequest;
+  resolve(decision: ToolApprovalDecision): void;
+};
+
+type DeferredSignal = {
+  promise: Promise<void>;
+  resolve(): void;
+};
+
+function deferredSignal(): DeferredSignal {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 export class AgentRun<M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
   private maxTurnCount: number;
   private activeHook: AgentHook | undefined;
+  private readonly activeLifecycle: AgentLifecycle | undefined;
   private approvalOptions: ToolApprovalsOptions | undefined;
   private guardrailPolicies: GuardrailPolicy[];
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
@@ -87,6 +112,11 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   private runState: "idle" | "running" | "completed" | "errored" | "cancelled" = "idle";
   private readonly memoryRecorder: AgentRunMemory;
   private readonly memoryContext: MemoryContext | undefined;
+  private pendingApproval: PendingApproval | undefined;
+  private approvalSignal = deferredSignal();
+  private activeRunId: string | undefined;
+  private currentUsage = Usage.empty();
+  private currentMessages: MessageType[] = [];
 
   private constructor(
     private readonly agent: Agent<M>,
@@ -96,13 +126,23 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   ) {
     this.chatHistory = initialHistory;
     this.maxTurnCount = options.maxTurns ?? agent.defaultMaxTurns ?? 0;
-    this.activeHook = options.hook ?? agent.hook;
-    this.approvalOptions = options.approvals ?? agent.approvals;
+    const legacyRuntime = getAgentLegacyRuntime(agent);
+    const internalOptions = getInternalAgentRunOptions(options);
+    this.activeHook = internalOptions?.hook ?? legacyRuntime.hook;
+    this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle);
+    this.approvalOptions =
+      internalOptions?.resumableApprovals === true || !legacyRuntime.legacy
+        ? {
+            handler: (request) => this.suspendForApproval(request),
+          }
+        : legacyRuntime.approvals;
     this.guardrailPolicies =
       options.guardrails === undefined
         ? [...agent.guardrails]
         : appendGuardrailPolicies([...agent.guardrails], options.guardrails);
-    this.concurrency = Math.max(1, options.toolConcurrency ?? 1);
+    this.concurrency = agent.tools.some((tool) => tool.requiresApproval !== undefined)
+      ? 1
+      : Math.max(1, options.toolConcurrency ?? 1);
     this.traceOptions = options.trace;
     this.completionRetryOptions =
       options.retries === undefined ? undefined : resolveRetryOptions(options.retries);
@@ -129,9 +169,34 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     return true;
   }
 
+  waitForApproval(): Promise<void> {
+    return this.pendingApproval === undefined ? this.approvalSignal.promise : Promise.resolve();
+  }
+
+  approvalResult(): AgentApprovalRequiredResult {
+    const snapshot = this.approvalSnapshot();
+    return { status: "approval_required", ...snapshot };
+  }
+
+  approvalEvent(): AgentApprovalRequiredEvent {
+    const snapshot = this.approvalSnapshot();
+    return { type: "approval_required", ...snapshot };
+  }
+
+  resolveApproval(decision: AgentApprovalDecision): void {
+    const pending = this.pendingApproval;
+    if (pending === undefined) {
+      throw new TypeError("Agent run has no pending tool approval.");
+    }
+    this.pendingApproval = undefined;
+    this.approvalSignal = deferredSignal();
+    pending.resolve(decision);
+  }
+
   async generate(): Promise<AgentResponse> {
     this.startRun();
     const runId = globalThis.crypto.randomUUID();
+    this.activeRunId = runId;
     let usage = Usage.empty();
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
@@ -139,6 +204,12 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     const runObservers = await this.startRunObservers(runId);
 
     try {
+      await this.activeLifecycle?.onStart?.({
+        runId,
+        input: this.promptMessage,
+        history: [...this.chatHistory],
+        maxTurns: this.maxTurnCount,
+      });
       const inputResult = await runInputGuardrails(this.guardrailPolicies, {
         prompt: this.promptMessage,
         history: this.chatHistory,
@@ -152,12 +223,14 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       if (inputResult.blocked) {
         const output = inputResult.message ?? "The request was blocked by a guardrail.";
         const result: AgentResponse = {
+          status: "completed",
           runId,
           output,
           usage: Usage.empty(),
           messages: [this.promptMessage, Message.assistant(output)],
           guardrails: [...this.guardrailDecisions],
         };
+        await this.runLifecycleFinish(result);
         await runObservers.end(result);
         this.runState = "completed";
         return result;
@@ -211,8 +284,15 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         }
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
         usage = Usage.add(usage, response.usage);
+        this.updateApprovalProgress(runId, usage, newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
         await this.runTurnEndHook(currentTurns, response, newMessages);
+        await this.activeLifecycle?.onStepFinish?.({
+          runId,
+          step: currentTurns,
+          response,
+          usage,
+        });
 
         const toolCalls = response.choice.filter(
           (item): item is ToolCall => item.type === "tool_call",
@@ -252,6 +332,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
             pendingTurnMessages,
           );
           const result: AgentResponse = {
+            status: "completed",
             runId,
             output: guardedOutput.output,
             usage,
@@ -261,6 +342,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
             ...generationArtifacts(newMessages),
           };
           await this.runRunEndHook(result, newMessages);
+          await this.runLifecycleFinish(result);
           await runObservers.end(result);
           await this.memoryRecorder.commitCompletedRun(
             runId,
@@ -278,6 +360,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           [assistantMessage],
           pendingTurnMessages,
         );
+        this.updateApprovalProgress(runId, usage, newMessages);
         const toolResults = await this.executeToolCalls(
           runId,
           toolCalls,
@@ -308,10 +391,12 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         usage = Usage.add(usage, error.usage);
       }
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
-      this.runState = finalError instanceof AgentRunCancelledError ? "cancelled" : "errored";
-      await runObservers.error({ error: finalError, usage, messages: [...newMessages] });
-      await this.memoryRecorder.recordError(runId, finalError, newMessages);
-      throw finalError;
+      const lifecycleError = await this.runLifecycleError(finalError, runId, usage, newMessages);
+      const reportedError = lifecycleError ?? finalError;
+      this.runState = reportedError instanceof AgentRunCancelledError ? "cancelled" : "errored";
+      await runObservers.error({ error: reportedError, usage, messages: [...newMessages] });
+      await this.memoryRecorder.recordError(runId, reportedError, newMessages);
+      throw reportedError;
     }
   }
 
@@ -322,6 +407,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
 
     this.startRun();
     const runId = globalThis.crypto.randomUUID();
+    this.activeRunId = runId;
     let usage = Usage.empty();
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
@@ -330,6 +416,12 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     const bufferOutputDeltas = hasEnforcedOutputGuardrails(this.guardrailPolicies);
 
     try {
+      await this.activeLifecycle?.onStart?.({
+        runId,
+        input: this.promptMessage,
+        history: [...this.chatHistory],
+        maxTurns: this.maxTurnCount,
+      });
       const inputResult = await runInputGuardrails(this.guardrailPolicies, {
         prompt: this.promptMessage,
         history: this.chatHistory,
@@ -344,12 +436,14 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       if (inputResult.blocked) {
         const output = inputResult.message ?? "The request was blocked by a guardrail.";
         const result: AgentResponse = {
+          status: "completed",
           runId,
           output,
           usage: Usage.empty(),
           messages: [this.promptMessage, Message.assistant(output)],
           guardrails: [...this.guardrailDecisions],
         };
+        await this.runLifecycleFinish(result);
         await runObservers.end(result);
         this.runState = "completed";
         yield {
@@ -496,8 +590,15 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         await generationObservers.end(generationEndArgs);
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
         usage = Usage.add(usage, response.usage);
+        this.updateApprovalProgress(runId, usage, newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
         await this.runTurnEndHook(currentTurns, response, newMessages);
+        await this.activeLifecycle?.onStepFinish?.({
+          runId,
+          step: currentTurns,
+          response,
+          usage,
+        });
 
         const toolCalls = response.choice.filter(
           (item): item is ToolCall => item.type === "tool_call",
@@ -574,6 +675,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           }
 
           const result: AgentResponse = {
+            status: "completed",
             runId,
             output: guardedOutput.output,
             usage,
@@ -583,6 +685,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
             ...generationArtifacts(newMessages),
           };
           await this.runRunEndHook(result, newMessages);
+          await this.runLifecycleFinish(result);
           await runObservers.end(result);
           await this.memoryRecorder.commitCompletedRun(
             runId,
@@ -623,6 +726,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           [assistantMessage],
           pendingTurnMessages,
         );
+        this.updateApprovalProgress(runId, usage, newMessages);
         yield {
           type: "turn_end",
           turn: currentTurns,
@@ -674,16 +778,18 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         usage = Usage.add(usage, error.usage);
       }
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
-      this.runState = finalError instanceof AgentRunCancelledError ? "cancelled" : "errored";
+      const lifecycleError = await this.runLifecycleError(finalError, runId, usage, newMessages);
+      const reportedError = lifecycleError ?? finalError;
+      this.runState = reportedError instanceof AgentRunCancelledError ? "cancelled" : "errored";
       const finalUsage = usage;
       await runObservers.error({
-        error: finalError,
+        error: reportedError,
         usage: finalUsage,
         messages: [...newMessages],
       });
-      await this.memoryRecorder.recordError(runId, finalError, newMessages);
-      yield { type: "error", error: finalError, usage: finalUsage };
-      throw finalError;
+      await this.memoryRecorder.recordError(runId, reportedError, newMessages);
+      yield { type: "error", error: reportedError, usage: finalUsage };
+      throw reportedError;
     }
   }
 
@@ -840,6 +946,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       this.agent,
       this.activeHook,
       this.approvalOptions,
+      this.activeLifecycle,
       {
         runId,
         sessionId: this.memoryContext?.sessionId,
@@ -851,6 +958,74 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       (reason) => this.cancelled(newMessages, reason),
     );
     return executor.execute(toolCalls, onResult, onStreamEvent, observation);
+  }
+
+  private suspendForApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
+    if (this.pendingApproval !== undefined) {
+      throw new Error("Agent run already has a pending tool approval.");
+    }
+    return new Promise<ToolApprovalDecision>((resolve) => {
+      this.pendingApproval = { request, resolve };
+      this.approvalSignal.resolve();
+    });
+  }
+
+  private approvalSnapshot(): Omit<AgentApprovalRequiredResult, "status"> {
+    const pending = this.pendingApproval;
+    const runId = this.activeRunId;
+    if (pending === undefined || runId === undefined) {
+      throw new TypeError("Agent run has no pending tool approval.");
+    }
+    const approval = {
+      id: pending.request.id,
+      toolName: pending.request.toolName,
+      input: pending.request.args,
+      ...(pending.request.toolCallId === undefined
+        ? {}
+        : { toolCallId: pending.request.toolCallId }),
+      ...(pending.request.reason === undefined ? {} : { reason: pending.request.reason }),
+    };
+    registerAgentApprovalRequestDetails(approval, pending.request);
+    return {
+      runId,
+      approval,
+      usage: this.currentUsage,
+      messages: [...this.currentMessages],
+    };
+  }
+
+  private updateApprovalProgress(runId: string, usage: Usage, messages: MessageType[]): void {
+    this.activeRunId = runId;
+    this.currentUsage = usage;
+    this.currentMessages = [...messages];
+  }
+
+  private async runLifecycleFinish(result: AgentResponse): Promise<void> {
+    await this.activeLifecycle?.onFinish?.({
+      runId: result.runId,
+      output: result.output,
+      usage: result.usage,
+      messages: result.messages,
+    });
+  }
+
+  private async runLifecycleError(
+    error: unknown,
+    runId: string,
+    usage: Usage,
+    messages: MessageType[],
+  ): Promise<unknown | undefined> {
+    try {
+      await this.activeLifecycle?.onError?.({
+        runId,
+        error,
+        usage,
+        messages: [...this.chatHistory, ...messages],
+      });
+      return undefined;
+    } catch (lifecycleError) {
+      return lifecycleError;
+    }
   }
 
   private async runOutputGuardrailsForResponse(

@@ -1,5 +1,4 @@
-import { Agent, AgentRunCancelledError } from "@anvia/core/agent";
-import { createHook } from "@anvia/core/hooks";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -29,6 +28,7 @@ const readPayrollTool = createTool({
     employeeId: z.string().describe("The employee id."),
   }),
   outputSchema: z.string(),
+  requiresApproval: { reason: "Payroll data requires explicit human approval." },
   execute({ employeeId }) {
     return `Payroll record for ${employeeId}`;
   },
@@ -41,29 +41,11 @@ const deleteAccountTool = createTool({
     accountId: z.string().describe("The account id."),
   }),
   outputSchema: z.string(),
+  requiresApproval: ({ accountId }) => ({
+    reason: `Permanently delete account ${accountId}?`,
+  }),
   execute({ accountId }) {
     return `Deleted account ${accountId}`;
-  },
-});
-
-const permissionHook = createHook({
-  onToolCall({ toolName, tool }) {
-    // Hooks can allow, skip, request approval, or terminate tool calls before execution.
-    if (toolName === "read_payroll") {
-      return tool.skip("Payroll data is restricted. Summarize that access was denied.");
-    }
-
-    if (toolName === "delete_account") {
-      return tool.requestApproval({
-        reason: "Account deletion requires explicit human approval.",
-        rejectMessage: "Account deletion was not approved.",
-      });
-    }
-
-    return tool.run();
-  },
-  onToolResult({ toolName, result }) {
-    console.log("tool result:", toolName, result);
   },
 });
 
@@ -76,22 +58,20 @@ const agent = new Agent({
   id: "agent",
   model: agentModel,
   instructions: "Use tools for service status and administrative requests.",
-  hook: permissionHook,
   maxTurns: 3,
   tools: [getServiceStatusTool, readPayrollTool, deleteAccountTool],
 });
 
-try {
-  const response = await agent.generate(
-    "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
-  );
+let result = await agent.generate(
+  "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
+);
 
-  console.log(response.output);
-} catch (error) {
-  if (error instanceof AgentRunCancelledError) {
-    // Without Studio or another approval handler, requestApproval cancels clearly.
-    console.log("prompt cancelled:", error.reason);
-  } else {
-    throw error;
-  }
+while (result.status === "approval_required") {
+  console.log("approval required:", result.approval.toolName, result.approval.reason);
+  result = await agent.resume(result, {
+    approved: false,
+    reason: "This example rejects sensitive operations.",
+  });
 }
+
+console.log(result.output);

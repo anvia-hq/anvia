@@ -71,15 +71,12 @@ describe("Agent tool execution", () => {
       description: "Needs conditional approval",
       inputSchema: z.object({ amount: z.number() }),
       outputSchema: z.string(),
-      approval: {
-        when: ({ args }) => args.amount > 100,
-        reason: ({ args }) => `Approve ${args.amount}`,
-      },
+      requiresApproval: ({ amount }) => (amount > 100 ? { reason: `Approve ${amount}` } : false),
       execute: () => "ok",
     });
     const agent = agentWithTools([approvedTool]);
 
-    expect(agent.getTool("approved")?.approval).toBe(approvedTool.approval);
+    expect(agent.getTool("approved")?.requiresApproval).toBe(approvedTool.requiresApproval);
     await expect(Promise.all(agent.tools.map((tool) => tool.definition("")))).resolves.toEqual([
       {
         name: "approved",
@@ -151,9 +148,7 @@ describe("Agent tool execution", () => {
       description: "Transform input and output",
       inputSchema: z.object({ amount: z.coerce.number() }),
       outputSchema: z.number().transform((total) => ({ total })),
-      approval: {
-        when: ({ args }) => args.amount > 100,
-      },
+      requiresApproval: ({ amount }) => amount > 100,
       execute: ({ amount }) => {
         executedAmount = amount;
         return amount * 2;

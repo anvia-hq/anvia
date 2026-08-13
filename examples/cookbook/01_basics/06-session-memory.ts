@@ -39,4 +39,5 @@ const session = agent.session("demo-session", { userId: "cookbook-user" });
 await session.generate("Remember that my project is named Anvia.");
 const response = await session.generate("What is my project named?");
 
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

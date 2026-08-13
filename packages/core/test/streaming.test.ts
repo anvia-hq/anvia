@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AgentBuilder,
   AgentRunCancelledError,
   type AgentRunErrorArgs,
@@ -840,6 +841,52 @@ describe("Agent streaming", () => {
     );
     expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("ends a stream segment for approval and resumes it exactly once", async () => {
+    let executed = false;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "Run a guarded operation",
+      inputSchema: z.object({ value: z.number() }),
+      outputSchema: z.string(),
+      requiresApproval: ({ value }) => ({ reason: `Approve ${value}` }),
+      execute({ value }) {
+        executed = true;
+        return `approved ${value}`;
+      },
+    });
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "guarded",
+          argumentsDelta: '{"value":7}',
+        },
+      ],
+      [{ type: "text_delta", delta: "done" }],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+
+    const firstSegment = await collect(agent.stream("run guarded"));
+    const pending = firstSegment.at(-1);
+    expect(pending).toMatchObject({
+      type: "approval_required",
+      approval: { toolName: "guarded", input: { value: 7 }, reason: "Approve 7" },
+    });
+    expect(executed).toBe(false);
+    if (pending?.type !== "approval_required") throw new Error("Expected approval event");
+
+    const resumed = await collect(agent.resume(pending, { approved: true }));
+    expect(executed).toBe(true);
+    expect(resumed).toContainEqual(
+      expect.objectContaining({ type: "tool_result", toolName: "guarded", result: "approved 7" }),
+    );
+    expect(resumed.at(-1)).toMatchObject({ type: "final", output: "done" });
+    expect(() => agent.resume(pending, { approved: true })).toThrow(
+      "Approval continuation does not belong to this agent.",
+    );
   });
 
   it("supports explicitly disabling tool call deltas", async () => {

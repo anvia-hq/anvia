@@ -26,7 +26,20 @@ export type ToolApprovalPolicy<Args = unknown> = {
   rejectMessage?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
 };
 
+export type ToolApprovalRequirement = {
+  reason?: string | undefined;
+};
+
+export type ToolRequiresApproval<Args = unknown> =
+  | boolean
+  | ToolApprovalRequirement
+  | ((
+      args: Args,
+      context: ToolApprovalContext<Args>,
+    ) => boolean | ToolApprovalRequirement | Promise<boolean | ToolApprovalRequirement>);
+
 export type ToolApprovalRequest<Args = unknown> = ToolApprovalContext<Args> & {
+  id: string;
   reason?: string;
   rejectMessage?: string;
 };
@@ -53,14 +66,14 @@ export type ToolCallContext = {
 
 export interface Tool<Args = unknown, Output = unknown> {
   readonly name: string;
-  readonly approval?: ToolApprovalPolicy<Args>;
+  readonly requiresApproval?: ToolRequiresApproval<Args>;
   definition(prompt: string): ToolDefinition | Promise<ToolDefinition>;
   call(args: Args, context?: ToolCallContext): Output | Promise<Output>;
   parseApprovalArgs?(args: unknown): Args;
 }
 
-export type AnyTool = Omit<Tool<unknown, unknown>, "approval"> & {
-  readonly approval?: unknown;
+export type AnyTool = Omit<Tool<unknown, unknown>, "requiresApproval"> & {
+  readonly requiresApproval?: unknown;
 };
 
 export type NormalizedToolOutput = string | ToolResultContent[];

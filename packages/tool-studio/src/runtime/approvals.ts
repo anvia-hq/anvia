@@ -1,5 +1,6 @@
+import type { AgentApprovalDecision, AgentToolApprovalRequest } from "@anvia/core/agent";
 import type { JsonObject } from "@anvia/core/completion";
-import type { ToolApprovalRequest, ToolApprovalsOptions } from "@anvia/core/tool";
+import { getAgentApprovalRequestDetails } from "@anvia/core/internal/agent";
 import type { Context, Hono } from "hono";
 import type {
   AgentRunStreamEvent,
@@ -18,7 +19,7 @@ type PendingApproval = StudioToolApproval & {
   resolve: (decision: StudioToolApprovalDecision) => void;
 };
 
-type ApprovalHookContext = {
+export type ApprovalContext = {
   runId: string;
   agentId: string;
   sessionId?: string;
@@ -26,18 +27,12 @@ type ApprovalHookContext = {
   emit?: (event: AgentRunStreamEvent) => void;
 };
 
-type ApprovalRequest = {
-  toolName: string;
-  toolCallId?: string;
-  internalCallId: string;
-  args: string;
-  reason?: string;
-  rejectMessage?: string;
-};
-
 export type ApprovalRuntime = {
   approvals: Map<string, PendingApproval | StudioToolApproval>;
-  createApprovals(context: ApprovalHookContext): ToolApprovalsOptions;
+  request(
+    context: ApprovalContext,
+    approval: AgentToolApprovalRequest,
+  ): Promise<AgentApprovalDecision>;
   list(options: ApprovalListOptions): StudioToolApproval[];
   cancelRun(runId: string): StudioToolApproval[];
   decide(
@@ -141,23 +136,14 @@ export function createApprovalRuntime(): ApprovalRuntime {
 
   return {
     approvals,
-    createApprovals(context) {
-      return {
-        async handler(request: ToolApprovalRequest) {
-          const approvalRequest: ApprovalRequest = {
-            toolName: request.toolName,
-            internalCallId: request.internalCallId,
-            args: request.rawArgs,
+    async request(context, approval) {
+      const decision = await requestApproval(approvals, context, approval);
+      return decision.approved
+        ? { approved: true, ...(decision.reason === undefined ? {} : { reason: decision.reason }) }
+        : {
+            approved: false,
+            ...(decision.reason === undefined ? {} : { reason: decision.reason }),
           };
-          if (request.toolCallId !== undefined) approvalRequest.toolCallId = request.toolCallId;
-          if (request.reason !== undefined) approvalRequest.reason = request.reason;
-          if (request.rejectMessage !== undefined) {
-            approvalRequest.rejectMessage = request.rejectMessage;
-          }
-          const decision = await requestApproval(approvals, context, approvalRequest);
-          return approvalDecision(decision.approved, decision.reason);
-        },
-      };
     },
     list(options) {
       return [...approvals.values()]
@@ -224,17 +210,18 @@ export function createApprovalRuntime(): ApprovalRuntime {
 
 async function requestApproval(
   approvals: Map<string, PendingApproval | StudioToolApproval>,
-  context: ApprovalHookContext,
-  request: ApprovalRequest,
+  context: ApprovalContext,
+  request: AgentToolApprovalRequest,
 ): Promise<StudioToolApprovalDecision> {
-  const id = globalThis.crypto.randomUUID();
+  const id = request.id;
+  const details = getAgentApprovalRequestDetails(request);
   const approval: PendingApproval = {
     id,
     runId: context.runId,
     agentId: context.agentId,
     toolName: request.toolName,
-    internalCallId: request.internalCallId,
-    args: request.args,
+    internalCallId: details?.internalCallId ?? request.id,
+    args: details?.rawArgs ?? JSON.stringify(request.input) ?? "null",
     status: "pending",
     requestedAt: new Date().toISOString(),
     resolve: () => {},
@@ -242,7 +229,7 @@ async function requestApproval(
   if (context.sessionId !== undefined) approval.sessionId = context.sessionId;
   if (request.toolCallId !== undefined) approval.callId = request.toolCallId;
   if (request.reason !== undefined) approval.reason = request.reason;
-  if (request.rejectMessage !== undefined) approval.rejectMessage = request.rejectMessage;
+  if (details?.rejectMessage !== undefined) approval.rejectMessage = details.rejectMessage;
   if (context.emit !== undefined) approval.emit = context.emit;
 
   const decision = new Promise<StudioToolApprovalDecision>((resolve) => {
@@ -256,7 +243,7 @@ async function requestApproval(
       }
       const reason = decision.approved
         ? decision.reason
-        : (decision.reason ?? request.rejectMessage ?? "Rejected in Anvia Studio.");
+        : (decision.reason ?? details?.rejectMessage ?? "Rejected in Anvia Studio.");
       const resolved = resolveApproval(
         current,
         decision.approved ? "approved" : "rejected",

@@ -35,4 +35,5 @@ const response = await agent.generate(
   "Who owns the checkout launch checklist, and what should the engineer include?",
 );
 
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

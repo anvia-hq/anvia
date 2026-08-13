@@ -1,5 +1,4 @@
 import { Agent } from "@anvia/core/agent";
-import { createHook } from "@anvia/core/hooks";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -25,18 +24,18 @@ const multiplyTool = createTool({
   execute: (args) => args.x * args.y,
 });
 
-// Hooks observe or control each completion/tool step.
-const hook = createHook({
-  onCompletionCall({ prompt }) {
-    console.log("completion call:", prompt.role);
+// Lifecycle callbacks observe each model step and tool execution.
+const lifecycle = {
+  onStepFinish({ step, response }) {
+    console.log("step finished:", step, response.choice.length);
   },
-  onToolCall({ toolName, args }) {
-    console.log("tool call:", toolName, args);
+  onToolStart({ toolName, input }) {
+    console.log("tool started:", toolName, input);
   },
-  onToolResult({ toolName, result }) {
-    console.log("tool result:", toolName, result);
+  onToolFinish(event) {
+    console.log("tool finished:", event.toolName, event.success ? event.output : event.error);
   },
-});
+} satisfies NonNullable<ConstructorParameters<typeof Agent>[0]["lifecycle"]>;
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
@@ -47,7 +46,7 @@ const agent = new Agent({
   id: "agent",
   model: agentModel,
   instructions: "Use tools for arithmetic and then explain the result briefly.",
-  hook: hook,
+  lifecycle,
   maxTurns: 2,
   tools: [addTool, multiplyTool],
 });
@@ -57,4 +56,6 @@ const response = await agent.generate(
   { toolConcurrency: 2 },
 );
 
-console.log(response.output);
+if (response.status === "completed") {
+  console.log(response.output);
+}

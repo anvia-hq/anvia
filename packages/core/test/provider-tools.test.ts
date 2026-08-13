@@ -5,6 +5,7 @@ import {
   Agent,
   AgentBuilder,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -125,6 +126,7 @@ describe("provider-executed tools", () => {
     const agent = new AgentBuilder("researcher", model).tools([localTool, searchTool]).build();
 
     const result = await agent.generate("research");
+    assertCompleted(result);
 
     expect(agent.getTool("local")).toBe(localTool);
     expect(agent.getTool("web_search")).toBeUndefined();

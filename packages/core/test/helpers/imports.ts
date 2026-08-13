@@ -19,3 +19,11 @@ export * from "../../src/tool";
 export * from "../../src/transcription";
 export * from "../../src/ui";
 export * from "../../src/vector-store";
+
+import type { AgentResponse, AgentResult } from "../../src/agent";
+
+export function assertCompleted(result: AgentResult): asserts result is AgentResponse {
+  if (result.status !== "completed") {
+    throw new Error(`Expected completed agent result, received ${result.status}`);
+  }
+}

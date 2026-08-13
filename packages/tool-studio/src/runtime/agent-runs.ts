@@ -1,11 +1,18 @@
 import type {
+  AgentApprovalRequiredEvent,
   AgentResponse,
+  AgentResult,
   AgentRunOptions,
   AgentStream,
+  AgentStreamEvent,
   AgentStreamOptions,
 } from "@anvia/core/agent";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
-import type { Agent } from "@anvia/core/internal/agent";
+import {
+  type Agent,
+  getResolvedAgentOptions,
+  withInternalAgentRunOptions,
+} from "@anvia/core/internal/agent";
 import type { Context, Hono } from "hono";
 import type {
   AgentRunRequest,
@@ -15,7 +22,7 @@ import type {
   StudioSessionStore,
 } from "../types";
 import { cloneAgent, composeHooks } from "./agent-utils";
-import type { createApprovalRuntime } from "./approvals";
+import type { ApprovalContext, createApprovalRuntime } from "./approvals";
 import { serializeError } from "./errors";
 import { errorResponse, unsupportedCapability } from "./http";
 import {
@@ -61,7 +68,7 @@ type AgentRunRouteProps = {
 
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
 type RunExecution = {
-  generate(options: AgentRunOptions): Promise<AgentResponse>;
+  generate(options: AgentRunOptions): Promise<AgentResult>;
   stream(options: AgentStreamOptions): AgentStream;
 };
 
@@ -354,14 +361,13 @@ function handleStreamingAgentRun(
   props: AgentRunRouteProps,
 ): Response {
   const runtimeEvents = new AsyncEventQueue<AgentRunStreamEvent>();
-  const approvalContext: Parameters<typeof props.approvalRuntime.createApprovals>[0] = {
+  const approvalContext: ApprovalContext = {
     runId: run.runId,
     agentId: run.agentId,
     emit: (event) => runtimeEvents.push(event),
   };
   if (run.session !== undefined) approvalContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
-  const approvals = props.approvalRuntime.createApprovals(approvalContext);
   const questionContext: Parameters<typeof props.questionRuntime.createHook>[0] = {
     runId: run.runId,
     agentId: run.agentId,
@@ -370,15 +376,20 @@ function handleStreamingAgentRun(
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = composeHooks(
-    run.runAgent.hook,
+    getResolvedAgentOptions(run.runAgent).hook,
     props.questionRuntime.createHook(questionContext),
   );
+  const streamOptions = withInternalAgentRunOptions(
+    { ...run.options },
+    { hook: effectiveHook, resumableApprovals: true },
+  );
   const runStream = mergeRunAndApprovalEvents(
-    run.execution.stream({
-      ...run.options,
-      approvals,
-      ...(effectiveHook === undefined ? {} : { hook: effectiveHook }),
-    }),
+    resumeStreamingApprovals(
+      run.runAgent,
+      run.execution.stream(streamOptions),
+      props.approvalRuntime,
+      approvalContext,
+    ),
     runtimeEvents,
   );
   let stream: AsyncIterable<AgentRunStreamEvent> = runStream;
@@ -430,7 +441,13 @@ async function handleBufferedAgentRun(
 ): Promise<Response> {
   try {
     const runtimeOptions = await startBufferedSessionRun(run, props);
-    const response = await run.execution.generate({ ...run.options, ...runtimeOptions });
+    let result = await run.execution.generate(runtimeOptions);
+    const approvalContext = createApprovalContext(run);
+    while (result.status === "approval_required") {
+      const decision = await props.approvalRuntime.request(approvalContext, result.approval);
+      result = await run.runAgent.resume(result, decision);
+    }
+    const response = result;
     await completeBufferedSessionRun(run, response);
     return c.json(response);
   } catch (error) {
@@ -454,19 +471,49 @@ async function startBufferedSessionRun(
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = composeHooks(
-    run.runAgent.hook,
+    getResolvedAgentOptions(run.runAgent).hook,
     props.questionRuntime.createHook(questionContext),
   );
-  const approvalContext: Parameters<typeof props.approvalRuntime.createApprovals>[0] = {
+  return withInternalAgentRunOptions(
+    { ...run.options },
+    { hook: effectiveHook, resumableApprovals: true },
+  );
+}
+
+function createApprovalContext(
+  run: PreparedAgentRun,
+  emit?: (event: AgentRunStreamEvent) => void,
+): ApprovalContext {
+  const context: ApprovalContext = {
     runId: run.runId,
     agentId: run.agentId,
   };
-  if (run.session !== undefined) approvalContext.sessionId = run.session.id;
-  if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
-  return {
-    approvals: props.approvalRuntime.createApprovals(approvalContext),
-    ...(effectiveHook === undefined ? {} : { hook: effectiveHook }),
-  };
+  if (run.session !== undefined) context.sessionId = run.session.id;
+  if (run.body.metadata !== undefined) context.metadata = run.body.metadata;
+  if (emit !== undefined) context.emit = emit;
+  return context;
+}
+
+async function* resumeStreamingApprovals(
+  agent: Agent,
+  initialStream: AgentStream,
+  approvalRuntime: ReturnType<typeof createApprovalRuntime>,
+  context: ApprovalContext,
+): AsyncIterable<AgentStreamEvent> {
+  let stream = initialStream;
+  while (true) {
+    let pending: AgentApprovalRequiredEvent | undefined;
+    for await (const event of stream) {
+      if (event.type === "approval_required") {
+        pending = event;
+        break;
+      }
+      yield event;
+    }
+    if (pending === undefined) return;
+    const decision = await approvalRuntime.request(context, pending.approval);
+    stream = agent.resume(pending, decision);
+  }
 }
 
 async function completeBufferedSessionRun(

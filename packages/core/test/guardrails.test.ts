@@ -3,6 +3,7 @@ import {
   AgentBuilder,
   type AgentStreamEvent,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -120,6 +121,7 @@ describe("guardrails", () => {
       .build();
 
     const result = await agent.generate("hello secret");
+    assertCompleted(result);
 
     expect(result.output).toBe("done");
     expect(model.requests[0]?.chatHistory).toEqual([Message.user("hello [redacted]")]);
@@ -144,6 +146,7 @@ describe("guardrails", () => {
       .build();
 
     const result = await agent.generate("blocked");
+    assertCompleted(result);
 
     expect(result.output).toBe("Input blocked.");
     expect(model.requests).toHaveLength(0);
@@ -177,6 +180,7 @@ describe("guardrails", () => {
       .build();
 
     const result = await agent.generate("blocked");
+    assertCompleted(result);
 
     expect(result.output).toBe("Input blocked.");
     expect(observedEvents).toMatchObject([
@@ -239,6 +243,7 @@ describe("guardrails", () => {
       .build();
 
     const result = await agent.generate("hello");
+    assertCompleted(result);
 
     expect(result.output).toBe("[redacted] token");
     const assistantMessage = result.messages.at(-1);

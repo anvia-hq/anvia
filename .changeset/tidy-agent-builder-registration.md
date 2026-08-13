@@ -1,6 +1,7 @@
 ---
 "@anvia/core": minor
 "@anvia/logger": patch
+"@anvia/studio": patch
 ---
 
 Expose `new Agent(options)` with direct `generate()` and steerable `stream()` execution, add run IDs
@@ -15,4 +16,8 @@ provider-native tools, and tool indexes. Move dynamic tool selection settings on
 `createToolIndex()` and expose each agent's executable inventory through readonly `agent.tools`.
 Unify static documents and searchable context indexes under the `context` option, move retrieval
 settings onto `createContextIndex()`, and expose the declaration inventory through readonly
-`agent.context`.
+`agent.context`. Replace controlling hooks on `new Agent()` with observational `lifecycle`
+callbacks, rename tool approval configuration to `requiresApproval`, and add resumable
+`approval_required` results and stream events through `agent.resume()`. Keep AgentBuilder hooks and
+approval handlers as a compatibility layer while Studio bridges resumable approvals to its existing
+approval routes and events.

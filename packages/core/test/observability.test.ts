@@ -23,6 +23,7 @@ import {
   type AgentToolStartArgs,
   type AgentToolStreamEventArgs,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -181,6 +182,7 @@ describe("agent observability", () => {
         promptRef: { name: "support.system", version: 3 },
       },
     });
+    assertCompleted(result);
 
     expect(result.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
     expect(result.runId).toEqual(expect.any(String));

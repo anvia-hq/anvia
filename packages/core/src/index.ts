@@ -4,6 +4,18 @@ export type { ContextIndex, CreateContextIndexOptions } from "./agent/context-in
 export { createContextIndex, isContextIndex } from "./agent/context-index";
 export { AgentRunCancelledError, MaxTurnsError, ToolApprovalRequiredError } from "./agent/errors";
 export type {
+  AgentErrorEvent,
+  AgentFinishEvent,
+  AgentLifecycle,
+  AgentStartEvent,
+  AgentStepFinishEvent,
+  AgentToolFinishEvent,
+  AgentToolStartEvent,
+} from "./agent/lifecycle";
+export type {
+  AgentApprovalDecision,
+  AgentApprovalRequiredEvent,
+  AgentApprovalRequiredResult,
   AgentChildStreamEvent,
   AgentChildStreamEventWithoutToolCallDeltas,
   AgentChildStreamEventWithToolCallDeltas,
@@ -11,12 +23,14 @@ export type {
   AgentErrorStreamEvent,
   AgentInput,
   AgentResponse,
+  AgentResult,
   AgentRunOptions,
   AgentStream,
   AgentStreamEvent,
   AgentStreamEventWithoutToolCallDeltas,
   AgentStreamEventWithToolCallDeltas,
   AgentStreamOptions,
+  AgentToolApprovalRequest,
   AgentToolCallDeltaEvent,
 } from "./agent/run-types";
 export type {
@@ -162,9 +176,11 @@ export type {
   ToolApprovalDecision,
   ToolApprovalPolicy,
   ToolApprovalRequest,
+  ToolApprovalRequirement,
   ToolApprovalsOptions,
   ToolCallContext,
   ToolCallStreamEvent,
+  ToolRequiresApproval,
 } from "./tool/index";
 export { createThinkTool, createTool } from "./tool/index";
 export type {

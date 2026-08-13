@@ -12,22 +12,21 @@ import type {
   Usage,
 } from "../completion/index";
 import type { GuardrailDecisionRecord, GuardrailPolicyInput } from "../guardrails";
-import type { AgentHook } from "../hooks";
 import type {
   AgentGenerationModelInfo,
   AgentTraceInfo,
   AgentTraceOptions,
 } from "../observability/types";
 import type { RetryOptions } from "../retry";
-import type { AgentMiddleware, ToolApprovalsOptions } from "../tool";
+import type { AgentMiddleware, ToolApprovalRequest } from "../tool";
+import type { AgentLifecycle } from "./lifecycle";
 
 export type AgentInput = string | MessageType | MessageType[];
 
 export type AgentRunOptions = {
   maxTurns?: number | undefined;
   retries?: RetryOptions | undefined;
-  hook?: AgentHook | undefined;
-  approvals?: ToolApprovalsOptions | undefined;
+  lifecycle?: AgentLifecycle | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   toolConcurrency?: number | undefined;
   middlewares?: AgentMiddleware[] | undefined;
@@ -35,6 +34,7 @@ export type AgentRunOptions = {
 };
 
 export type AgentResponse = {
+  status: "completed";
   runId: string;
   output: string;
   usage: Usage;
@@ -45,6 +45,31 @@ export type AgentResponse = {
   sources?: CompletionSource[] | undefined;
   providerToolCalls?: ProviderToolCall[] | undefined;
 };
+
+export type AgentApprovalRequiredResult = {
+  status: "approval_required";
+  runId: string;
+  approval: AgentToolApprovalRequest;
+  usage: Usage;
+  messages: MessageType[];
+};
+
+export type AgentResult = AgentResponse | AgentApprovalRequiredResult;
+
+export type AgentToolApprovalRequest = Pick<
+  ToolApprovalRequest,
+  "id" | "toolName" | "toolCallId" | "reason"
+> & {
+  input: unknown;
+};
+
+export type AgentApprovalRequiredEvent = Omit<AgentApprovalRequiredResult, "status"> & {
+  type: "approval_required";
+};
+
+export type AgentApprovalDecision =
+  | { approved: true; reason?: string }
+  | { approved: false; reason?: string };
 
 export type AgentDeltaEvent =
   | { type: "text_delta"; delta: string }
@@ -155,6 +180,7 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
       sources?: CompletionSource[] | undefined;
       providerToolCalls?: ProviderToolCall[] | undefined;
     }
+  | AgentApprovalRequiredEvent
   | AgentErrorStreamEvent;
 
 export type AgentChildStreamEventWithoutToolCallDeltas<RawResponse = unknown> =

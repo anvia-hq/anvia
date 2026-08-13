@@ -1,5 +1,4 @@
 import { Agent } from "@anvia/core/agent";
-import { createHook } from "@anvia/core/hooks";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -46,11 +45,8 @@ const issueRefund = createTool({
     amount: z.number(),
     status: z.enum(["issued"]),
   }),
-  approval: {
-    when: ({ args }) => args.amount > 0,
-    reason: ({ args }) => `Review refund of $${args.amount} for order ${args.orderId}.`,
-    rejectMessage: "Refund request rejected in Anvia Studio.",
-  },
+  requiresApproval: ({ amount, orderId }) =>
+    amount > 0 ? { reason: `Review refund of $${amount} for order ${orderId}.` } : false,
   execute: ({ orderId, amount }) => ({
     refundId: `rf_${orderId.toLowerCase()}`,
     orderId,
@@ -61,7 +57,7 @@ const issueRefund = createTool({
 
 const cancelOrder = createTool({
   name: "cancel_order",
-  description: "Cancel an order before fulfillment. This is guarded by a hook approval.",
+  description: "Cancel an order before fulfillment. This action requires approval.",
   inputSchema: z.object({
     orderId: z.string().describe("The order id to cancel."),
     reason: z.string().describe("The reason to record with the cancellation."),
@@ -70,23 +66,13 @@ const cancelOrder = createTool({
     orderId: z.string(),
     status: z.enum(["cancelled"]),
   }),
+  requiresApproval: ({ orderId }) => ({
+    reason: `Review cancellation for order ${orderId}.`,
+  }),
   execute: ({ orderId }) => ({
     orderId,
     status: "cancelled" as const,
   }),
-});
-
-const approvalHook = createHook({
-  onToolCall({ toolName, args, tool }) {
-    if (toolName === "cancel_order") {
-      return tool.requestApproval({
-        reason: `Review order cancellation request: ${args}`,
-        rejectMessage: "Order cancellation rejected in Anvia Studio.",
-      });
-    }
-
-    return tool.run();
-  },
 });
 
 const agentModel = client.completionModel("gpt-5.6-luna");
@@ -100,7 +86,6 @@ const agent = new Agent({
     "Look up an order before issuing a refund or cancellation.",
     "Keep responses short and mention whether the guarded action was issued, cancelled, or denied.",
   ].join("\n"),
-  hook: approvalHook,
   maxTurns: 5,
   tools: [getOrder, issueRefund, cancelOrder],
 });

@@ -4,6 +4,7 @@ import {
   AgentBuilder,
   AgentRunCancelledError,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -307,11 +308,13 @@ describe("agent memory", () => {
     const session = agent.session("context-usage");
 
     const result = await session.generate("hello");
+    assertCompleted(result);
 
     expect(result.contextUsage).toEqual(contextUsage);
     await expect(session.contextUsage()).resolves.toEqual(contextUsage);
 
     const unknownResult = await session.generate("switch model");
+    assertCompleted(unknownResult);
     expect(unknownResult.contextUsage).toBeUndefined();
     await expect(session.contextUsage()).resolves.toBeUndefined();
   });

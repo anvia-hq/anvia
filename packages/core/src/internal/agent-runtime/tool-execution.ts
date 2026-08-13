@@ -1,5 +1,6 @@
 import type { Agent } from "../../agent/agent";
 import { ToolApprovalRequiredError } from "../../agent/errors";
+import type { AgentLifecycle } from "../../agent/lifecycle";
 import type { AgentChildStreamEvent } from "../../agent/run-types";
 import type {
   JsonObject,
@@ -28,6 +29,7 @@ import type {
   ToolApprovalsOptions,
   ToolCallContext,
   ToolCallStreamEvent,
+  ToolRequiresApproval,
 } from "../../tool";
 import { parseToolArgs, toolResultContentToText } from "../../tool";
 import type {
@@ -79,6 +81,7 @@ export class ToolCallExecutor {
     private readonly agent: Agent,
     private readonly activeHook: AgentHook | undefined,
     private readonly approvals: ToolApprovalsOptions | undefined,
+    private readonly lifecycle: AgentLifecycle | undefined,
     private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,
     private readonly requestMiddlewares: AgentMiddleware[],
@@ -175,7 +178,18 @@ export class ToolCallExecutor {
             output = approvalDecision.result;
             skipped = true;
           } else {
-            output = await this.runApprovedToolCall(
+            const input = parseApprovalInput(tool, effectiveArgs);
+            const step = observation?.turn ?? 0;
+            const lifecycleEvent = {
+              runId: this.runContext.runId,
+              step,
+              toolName: toolCall.function.name,
+              input,
+              ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
+            };
+            await this.lifecycle?.onToolStart?.(lifecycleEvent);
+            const startedAt = Date.now();
+            const outcome = await this.runApprovedToolCall(
               toolCall,
               hookArgs,
               effectiveArgs,
@@ -184,6 +198,13 @@ export class ToolCallExecutor {
               observation,
               onStreamEvent,
               false,
+            );
+            output = outcome.output;
+            const durationMs = Date.now() - startedAt;
+            await this.lifecycle?.onToolFinish?.(
+              outcome.error === undefined
+                ? { ...lifecycleEvent, durationMs, success: true, output }
+                : { ...lifecycleEvent, durationMs, success: false, error: outcome.error },
             );
             effectiveArgs = hookArgs.args;
           }
@@ -269,7 +290,7 @@ export class ToolCallExecutor {
     observation: ToolExecutionObservation | undefined,
     onStreamEvent?: (event: AgentToolEventPayload) => void,
     applyInputMiddleware = true,
-  ): Promise<NormalizedToolOutput> {
+  ): Promise<{ output: NormalizedToolOutput; error?: unknown | undefined }> {
     const middlewareArgs = applyInputMiddleware
       ? await this.runToolInputMiddlewares({
           ...hookArgs,
@@ -301,7 +322,9 @@ export class ToolCallExecutor {
         },
       };
       toolContext.includeToolCallDeltas = this.includeToolCallDeltas;
-      return await this.agent.callTool(toolCall.function.name, middlewareArgs, toolContext);
+      return {
+        output: await this.agent.callTool(toolCall.function.name, middlewareArgs, toolContext),
+      };
     } catch (error) {
       const errorAction = await this.activeHook?.onToolError?.({
         ...hookArgs,
@@ -321,7 +344,10 @@ export class ToolCallExecutor {
       if (errorAction?.type === "terminate") {
         throw this.cancel(errorAction.reason);
       }
-      return error instanceof Error ? error.toString() : String(error);
+      return {
+        output: error instanceof Error ? error.toString() : String(error),
+        error,
+      };
     }
   }
 
@@ -380,18 +406,22 @@ export class ToolCallExecutor {
     tool: AnyTool | undefined,
     hookArgs: ToolHookArgs,
   ): Promise<{ approved: true } | { approved: false; result: string } | undefined> {
-    if (tool?.approval === undefined) {
-      return undefined;
-    }
-    const policy = tool.approval as ToolApprovalPolicy<unknown>;
+    const requirement = tool?.requiresApproval as ToolRequiresApproval<unknown> | undefined;
+    const legacyPolicy = (tool as { approval?: ToolApprovalPolicy<unknown> } | undefined)?.approval;
+    if (requirement === undefined && legacyPolicy === undefined) return undefined;
     const context = approvalContext(tool, hookArgs, this.agent, this.runContext);
-    const required = await policy.when(context);
-    if (!required) {
-      return { approved: true };
+    if (requirement !== undefined) {
+      const resolved =
+        typeof requirement === "function" ? await requirement(context.args, context) : requirement;
+      if (resolved === false) return { approved: true };
+      const reason = typeof resolved === "object" ? resolved.reason : undefined;
+      return this.requestApproval(tool, hookArgs, reason === undefined ? {} : { reason });
     }
 
-    const reason = await resolveApprovalText(policy.reason, context);
-    const rejectMessage = await resolveApprovalText(policy.rejectMessage, context);
+    const required = await legacyPolicy?.when(context);
+    if (!required || legacyPolicy === undefined) return { approved: true };
+    const reason = await resolveApprovalText(legacyPolicy.reason, context);
+    const rejectMessage = await resolveApprovalText(legacyPolicy.rejectMessage, context);
     const options: ToolApprovalRequestOptions = {};
     if (reason !== undefined) {
       options.reason = reason;
@@ -407,12 +437,10 @@ export class ToolCallExecutor {
     hookArgs: ToolHookArgs,
     options: ToolApprovalRequestOptions,
   ): Promise<{ approved: true } | { approved: false; result: string }> {
-    const request: ToolApprovalRequest = approvalContext(
-      tool,
-      hookArgs,
-      this.agent,
-      this.runContext,
-    );
+    const request: ToolApprovalRequest = {
+      ...approvalContext(tool, hookArgs, this.agent, this.runContext),
+      id: globalThis.crypto.randomUUID(),
+    };
     if (options.reason !== undefined) {
       request.reason = options.reason;
     }
@@ -469,6 +497,11 @@ function approvalContext(
   return context;
 }
 
+function parseApprovalInput(tool: AnyTool | undefined, args: string): unknown {
+  const parsed = parseToolArgs(args);
+  return tool?.parseApprovalArgs?.(parsed) ?? parsed;
+}
+
 function normalizeApprovalDecision(decision: ToolApprovalDecision): {
   approved: boolean;
   reason?: string;
@@ -507,7 +540,9 @@ function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
       ? (metadata as { serverName?: unknown })
       : undefined;
   const result: JsonObject = {
-    approvalRequired: tool.approval !== undefined,
+    approvalRequired:
+      tool.requiresApproval !== undefined ||
+      (tool as { approval?: unknown }).approval !== undefined,
   };
   if (typeof mcpMetadata?.serverName === "string" && mcpMetadata.serverName.length > 0) {
     result.mcpServerName = mcpMetadata.serverName;

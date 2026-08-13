@@ -25,4 +25,5 @@ const agent = new Agent({
 
 const response = await agent.generate("Summarize why tool calling is useful for agent frameworks.");
 
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

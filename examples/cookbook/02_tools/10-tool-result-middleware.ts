@@ -60,4 +60,5 @@ const response = await agent.generate(
   "Create a short update from the long report about onboarding.",
 );
 
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

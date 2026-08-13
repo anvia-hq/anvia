@@ -12,7 +12,8 @@ export function ItemBrowser(props: {
   state: ItemState | undefined;
   onLoadMore: () => void;
 }) {
-  const state = props.state;
+  const state =
+    props.source !== undefined && props.state?.key === props.source.key ? props.state : undefined;
   if (props.source?.source.kind === "dynamic_tools") {
     return (
       <DynamicToolsBrowser source={props.source} state={state} onLoadMore={props.onLoadMore} />
@@ -148,6 +149,7 @@ function DynamicToolsBrowser(props: {
   state: ItemState | undefined;
   onLoadMore: () => void;
 }) {
+  const loading = props.state === undefined || props.state.loading;
   const tools = useMemo(
     () => (props.state?.items ?? []).filter(isDynamicToolItem),
     [props.state?.items],
@@ -191,18 +193,14 @@ function DynamicToolsBrowser(props: {
         <aside className="min-h-0 overflow-auto border-r border-border/80 pr-3 max-lg:border-b max-lg:border-r-0 max-lg:pr-0">
           <div className="grid gap-1 py-3 pr-3 max-lg:pr-0">
             {props.source === undefined ? <MutedRow text="No knowledge source selected" /> : null}
-            {props.state?.loading === true && tools.length === 0 ? (
-              <MutedRow text="Loading dynamic tools" />
-            ) : null}
+            {loading && tools.length === 0 ? <MutedRow text="Loading dynamic tools" /> : null}
             {props.state?.error === undefined ? null : <MutedRow text={props.state.error} />}
             {props.state?.inspectable === false ? (
               <MutedRow
                 text={props.state.message ?? "This source does not expose browseable tools."}
               />
             ) : null}
-            {props.state?.inspectable !== false &&
-            props.state?.loading === false &&
-            tools.length === 0 ? (
+            {props.state?.inspectable !== false && !loading && tools.length === 0 ? (
               <MutedRow text="No dynamic tools in this source" />
             ) : null}
             {tools.map((item) => (
@@ -233,7 +231,7 @@ function DynamicToolsBrowser(props: {
           className="h-8 min-h-8"
           type="button"
           variant="secondary"
-          disabled={props.state?.loading === true || props.state?.nextCursor === undefined}
+          disabled={loading || props.state?.nextCursor === undefined}
           onClick={props.onLoadMore}
         >
           Load more

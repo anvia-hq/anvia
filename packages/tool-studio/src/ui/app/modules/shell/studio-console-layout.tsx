@@ -33,6 +33,7 @@ export function StudioConsoleLayout() {
         <StudioHeader
           activePage={studio.activePage}
           knowledgeTab={studio.knowledgeTab}
+          navigation={navigation}
           selectedAgentLabel={
             studio.activePage === "sandboxes"
               ? "Sandboxes"

@@ -1,4 +1,7 @@
-import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment happy-dom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 import {
   formatWorkingDuration,
@@ -15,9 +18,14 @@ describe("WorkingDuration", () => {
   });
 
   it("renders only a completed duration", () => {
-    const html = renderToStaticMarkup(<WorkingDuration durationMs={65_000} />);
-    expect(html).toContain("Finished - 1m 5s");
-    expect(html).not.toContain("Working");
-    expect(html).not.toContain("animate-spin");
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() => root.render(<WorkingDuration durationMs={65_000} />));
+
+    expect(container.textContent).toContain("Finished - 1m 5s");
+    expect(container.textContent).not.toContain("Working");
+    expect(container.querySelector(".animate-spin")).toBeNull();
+
+    act(() => root.unmount());
   });
 });

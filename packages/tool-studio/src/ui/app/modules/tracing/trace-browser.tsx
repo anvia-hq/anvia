@@ -423,11 +423,7 @@ function TracePanel(props: {
               />
             </Button>
           </div>
-          <div
-            className="min-h-0 flex-1 overflow-auto overscroll-contain px-2 py-1"
-            role="tree"
-            aria-label="Span tree"
-          >
+          <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-2 py-1">
             {query.length > 0 ? (
               searchResults.length > 0 ? (
                 searchResults.map(({ trace, observation }) => (
@@ -543,16 +539,13 @@ function TraceTreeRow(props: {
 }) {
   return (
     <div
-      aria-level={props.level + 1}
-      aria-selected={props.active}
       className={cn(
         "group flex min-w-0 items-stretch text-muted-foreground hover:bg-muted/60",
         props.active && "bg-muted text-foreground",
       )}
-      role="treeitem"
-      tabIndex={-1}
     >
       <button
+        aria-current={props.active ? "true" : undefined}
         className="flex min-w-0 flex-1 items-stretch text-left"
         type="button"
         onClick={props.onSelect}

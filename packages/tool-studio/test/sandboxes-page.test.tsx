@@ -128,6 +128,25 @@ describe("SandboxesPage", () => {
     );
   });
 
+  it("shows the initial loading state before an empty sandbox response arrives", async () => {
+    let resolveSummary: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveSummary = resolve;
+        }),
+    );
+
+    act(() => root.render(<SandboxesPage enabled onError={vi.fn()} onSelectSandbox={vi.fn()} />));
+
+    expect(container.textContent).toContain("Loading sandboxes");
+    expect(container.textContent).toContain("Reading live sandbox workspaces.");
+    expect(container.textContent).not.toContain("Sandbox unavailable");
+
+    await act(async () => resolveSummary?.(jsonResponse({ sandboxes: [] })));
+    await vi.waitFor(() => expect(container.textContent).toContain("No live sandboxes detected"));
+  });
+
   function findButton(text: string): HTMLButtonElement {
     const button = [...container.querySelectorAll("button")].find((item) =>
       item.textContent?.includes(text),

@@ -1,8 +1,16 @@
+// @vitest-environment happy-dom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StudioConfig, StudioTrace, StudioTraceObservation } from "../src/types";
 import { TraceBrowser } from "../src/ui/app/modules/tracing/trace-browser";
-import { TraceJsonTree } from "../src/ui/app/modules/tracing/trace-browser-detail";
+import {
+  TraceJsonTree,
+  TraceToneIcon,
+  traceToneIconClass,
+} from "../src/ui/app/modules/tracing/trace-browser-detail";
 
 const agents: StudioConfig["agents"] = [{ id: "support", name: "Support", quickPrompts: [] }];
 
@@ -36,14 +44,28 @@ describe("TraceBrowser rendering", () => {
   });
 
   it("uses the Lens syntax palette for JSON tokens", () => {
-    const html = renderToStaticMarkup(
-      <TraceJsonTree value={{ label: "ready", count: 2, enabled: true, empty: null }} />,
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() =>
+      root.render(
+        <TraceJsonTree value={{ label: "ready", count: 2, enabled: true, empty: null }} />,
+      ),
     );
+    const html = container.innerHTML;
 
     expect(html).toContain("text-blue-600 dark:text-blue-400");
     expect(html).toContain("text-emerald-700 dark:text-emerald-400");
     expect(html).toContain("text-amber-700 dark:text-amber-400");
     expect(html).toContain("text-violet-700 dark:text-violet-400");
+
+    act(() => root.unmount());
+  });
+
+  it("falls back safely for unknown runtime trace tones", () => {
+    const html = renderToStaticMarkup(<TraceToneIcon tone={"unknown" as never} />);
+
+    expect(html).toContain("svg");
+    expect(traceToneIconClass("unknown" as never)).toBe("bg-muted text-muted-foreground");
   });
 
   it("renders selected trace detail and session timeline views", () => {
@@ -66,6 +88,9 @@ describe("TraceBrowser rendering", () => {
     expect(detailHtml).toContain("Collapse all spans");
     expect(detailHtml).toContain("Formatted");
     expect(detailHtml).toContain("JSON");
+    expect(detailHtml).not.toContain('role="tree"');
+    expect(detailHtml).not.toContain('role="treeitem"');
+    expect(detailHtml).toContain('aria-current="true"');
 
     const sessionHtml = render({
       traces: [selected, sibling],

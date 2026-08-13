@@ -31,14 +31,15 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@anvia/core": "workspace:*"
-  },
   "devDependencies": {
+    "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "@vitest/coverage-v8": "4.1.5",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": ">=0.25.0 <1.0.0"
   }
 }

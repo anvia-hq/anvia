@@ -27,8 +27,8 @@ app.post("/api/completion", async (c) => {
   const body = (await c.req.json()) as UIStreamRequest;
 
   return createEventStream(
-    createCompletionStream(model, {
-      messages: body.messages,
+    createCompletionStream(body.messages, {
+      model,
       instructions,
     }),
     {

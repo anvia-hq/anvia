@@ -21,10 +21,10 @@ async function main(): Promise<void> {
       observers: [tracing],
     });
 
-    const response = await agent
-      .prompt("My email is alice@example.com. What is your refund policy?")
-      .withTrace({ name: "redaction-tracing-demo", tags: ["redaction:07"] })
-      .send();
+    const response = await agent.generate(
+      "My email is alice@example.com. What is your refund policy?",
+      { trace: { name: "redaction-tracing-demo", tags: ["redaction:07"] } },
+    );
 
     console.log("[redaction:07] output:", response.output);
     console.log(

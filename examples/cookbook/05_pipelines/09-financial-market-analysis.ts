@@ -117,7 +117,7 @@ const marketPipeline = new PipelineBuilder(z.string())
       ...risks.map((item) => `- ${item}`),
     ].join("\n");
   })
-  .prompt(marketAnalyst)
+  .agent(marketAnalyst)
   .build();
 
 const analysis = await marketPipeline.run("ACME");

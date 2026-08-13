@@ -61,17 +61,17 @@ const synthesizerAgent = new Agent({
 
 const supportNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Triage this incident for support:\n\n${input}`)
-  .prompt(supportAgent)
+  .agent(supportAgent)
   .build();
 
 const engineeringNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Triage this incident for engineering:\n\n${input}`)
-  .prompt(engineeringAgent)
+  .agent(engineeringAgent)
   .build();
 
 const commsNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Draft customer communication for this incident:\n\n${input}`)
-  .prompt(commsAgent)
+  .agent(commsAgent)
   .build();
 
 const incidentBrief = new PipelineBuilder(z.string())
@@ -110,7 +110,7 @@ const incidentBrief = new PipelineBuilder(z.string())
       `Customer comms notes:\n${commsNotes}`,
     ].join("\n");
   })
-  .prompt(synthesizerAgent)
+  .agent(synthesizerAgent)
   .build();
 
 const final = await incidentBrief.run(incident);

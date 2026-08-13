@@ -17,27 +17,25 @@ async function main(): Promise<void> {
     const anviaClient = buildOpenAIClient();
     const agent = buildSupportAgent(anviaClient.completionModel(defaultModel()), { tracing });
 
-    // withTrace exposes AgentTraceOptions, so prompt linkage is provided
+    // The trace option exposes AgentTraceOptions, so prompt linkage is provided
     // through metadata on this code path.
-    const response = await agent
-      .prompt("Summarize ticket TICKET-1001.")
-      .withTrace({
+    const response = await agent.generate("Summarize ticket TICKET-1001.", {
+      trace: {
         name: "prompt-link-demo",
         tags: ["prompts:05"],
         metadata: { promptName: prompt.name, promptVersion: prompt.version },
-      })
-      .send();
+      },
+    });
     console.log("[prompts:05] output (metadata):", response.output);
 
     // Repeat with a second trace to show the same prompt metadata on another run.
-    const response2 = await agent
-      .prompt("Summarize ticket TICKET-1001.")
-      .withTrace({
+    const response2 = await agent.generate("Summarize ticket TICKET-1001.", {
+      trace: {
         name: "prompt-link-repeat",
         tags: ["prompts:05", "repeat"],
         metadata: { promptName: prompt.name, promptVersion: prompt.version },
-      })
-      .send();
+      },
+    });
     console.log("[prompts:05] output (metadata repeat):", response2.output);
   } finally {
     await tracing.shutdown();

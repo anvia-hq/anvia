@@ -166,7 +166,7 @@ export class PipelineBuilder<Input, Output = Input> {
   }
 
   /** Send the current value to an agent as text and continue with the agent output. */
-  prompt(
+  agent(
     agent: Agent<CompletionModel>,
     metadata?: PipelineStageMetadata,
   ): PipelineBuilder<Input, string> {

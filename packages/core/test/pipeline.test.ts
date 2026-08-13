@@ -115,7 +115,7 @@ describe("PipelineBuilder", () => {
     const agent = new AgentBuilder("test-agent", model).build();
     const op = new PipelineBuilder(z.string())
       .step((value) => `Question: ${value}`)
-      .prompt(agent)
+      .agent(agent)
       .build();
 
     await expect(op.run("ping")).resolves.toBe("answer");
@@ -175,7 +175,7 @@ describe("PipelineBuilder", () => {
         upper: new PipelineBuilder(z.string()).step((value) => value.toUpperCase()).build(),
         length: new PipelineBuilder(z.string()).step((value) => value.length).build(),
       })
-      .prompt(agent)
+      .agent(agent)
       .build();
 
     expect(op.graph()).toMatchObject({

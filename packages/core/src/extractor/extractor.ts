@@ -3,8 +3,8 @@ import { AgentBuilder } from "../agent/builder";
 import {
   CompletionCapabilityError,
   type CompletionModel,
-  CompletionRequestBuilder,
   type CompletionResponse,
+  createCompletion,
   type JsonValue,
   type Message,
   Message as MessageFactory,
@@ -69,16 +69,17 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
     for (let attempt = 0; attempt <= this.retryCount; attempt += 1) {
       try {
         const toolDefs = await this.agent.toolSet.getToolDefinitions(extractRagText(prompt));
-        const response = await new CompletionRequestBuilder(this.agent.model, prompt)
-          .instructions(this.agent.instructions)
-          .messages(history ?? [])
-          .documents(this.agent.staticContext)
-          .tools([...toolDefs, ...this.agent.providerTools])
-          .temperature(this.agent.temperature)
-          .maxTokens(this.agent.maxTokens)
-          .additionalParams(this.agent.additionalParams)
-          .toolChoice(this.agent.toolChoice)
-          .send();
+        const result = await createCompletion([...(history ?? []), prompt], {
+          model: this.agent.model,
+          instructions: this.agent.instructions,
+          documents: this.agent.staticContext,
+          tools: [...toolDefs, ...this.agent.providerTools],
+          temperature: this.agent.temperature,
+          maxTokens: this.agent.maxTokens,
+          additionalParams: this.agent.additionalParams,
+          toolChoice: this.agent.toolChoice,
+        });
+        const response = result.response;
         usage = Usage.add(usage, response.usage);
         const data = extractSubmittedData(response, this.schema);
         return {

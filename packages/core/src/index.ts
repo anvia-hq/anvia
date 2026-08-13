@@ -1,7 +1,6 @@
 export { Agent } from "./agent/agent";
 export { AgentBuilder } from "./agent/builder";
 export { AgentRunCancelledError, MaxTurnsError, ToolApprovalRequiredError } from "./agent/errors";
-export type { CompletionRetryContext, CompletionRetryOptions } from "./agent/retry";
 export type {
   AgentChildStreamEvent,
   AgentChildStreamEventWithoutToolCallDeltas,
@@ -25,6 +24,13 @@ export type {
   AgentObserverInput,
   AgentOptions,
 } from "./agent/types";
+export type {
+  AudioGenerationModel,
+  AudioGenerationRequest,
+  AudioGenerationResponse,
+  GenerateSpeechOptions,
+} from "./audio-generation";
+export { generateSpeech } from "./audio-generation";
 export type {
   AssistantGenerationMetadata,
   AssistantMessage,
@@ -112,6 +118,14 @@ export {
   toolCallControl,
 } from "./hooks";
 export type {
+  GeneratedImage,
+  GenerateImageOptions,
+  ImageGenerationModel,
+  ImageGenerationRequest,
+  ImageGenerationResponse,
+} from "./image-generation";
+export { generateImage } from "./image-generation";
+export type {
   MemoryCompactionCommitInput,
   MemoryCompactionCommitResult,
   MemoryCompactionOptions,
@@ -135,6 +149,7 @@ export {
   MemoryCompactionConflictError,
   MemoryCompactionError,
 } from "./memory";
+export type { RetryContext, RetryOptions } from "./retry";
 export type { ZodSchema } from "./schema";
 export { loadSkills, SkillValidationError, skill } from "./skills";
 export type {
@@ -163,6 +178,13 @@ export type {
   ToolResultMiddlewareArgs,
 } from "./tool/middleware";
 export { createMiddleware } from "./tool/middleware";
+export type {
+  TranscribeOptions,
+  TranscriptionModel,
+  TranscriptionRequest,
+  TranscriptionResponse,
+} from "./transcription";
+export { transcribe } from "./transcription";
 export type {
   CreateUIAttachment,
   UIAttachment,

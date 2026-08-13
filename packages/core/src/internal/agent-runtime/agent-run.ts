@@ -1,12 +1,5 @@
 import type { Agent } from "../../agent/agent";
 import { AgentRunCancelledError, MaxTurnsError } from "../../agent/errors";
-import {
-  completionRetryDelayMs,
-  completionRetryErrorAttributes,
-  type ResolvedCompletionRetryOptions,
-  resolveCompletionRetryOptions,
-  waitForCompletionRetry,
-} from "../../agent/retry";
 import type {
   AgentInput,
   AgentResponse,
@@ -18,7 +11,6 @@ import {
   AssistantContent,
   assertCompletionRequestSupported,
   type CompletionModel,
-  CompletionRequestBuilder,
   type CompletionResponse,
   type CompletionSource,
   getAssistantGenerationMetadata,
@@ -52,9 +44,17 @@ import type {
   AgentGenerationStartArgs,
   AgentTraceOptions,
 } from "../../observability/types";
+import {
+  type ResolvedRetryOptions,
+  resolveRetryOptions,
+  retryDelayMs,
+  retryErrorAttributes,
+  waitForRetry,
+} from "../../retry";
 import type { ToolApprovalsOptions } from "../../tool";
 import type { AgentMiddleware } from "../../tool/middleware";
 import { createAsyncQueue } from "../async-queue";
+import { CompletionRequestBuilder } from "../completion-request-builder";
 import { extractRagText } from "../rag-text";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { fetchDynamicContext, fetchToolDefinitions } from "./retrieval";
@@ -81,7 +81,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
   private readonly concurrency: number;
   private traceOptions: AgentTraceOptions | undefined;
-  private completionRetryOptions: ResolvedCompletionRetryOptions | undefined;
+  private completionRetryOptions: ResolvedRetryOptions | undefined;
   private readonly requestMiddlewares: AgentMiddleware[];
   private readonly steeringMessages: MessageType[] = [];
   private runState: "idle" | "running" | "completed" | "errored" | "cancelled" = "idle";
@@ -105,7 +105,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     this.concurrency = Math.max(1, options.toolConcurrency ?? 1);
     this.traceOptions = options.trace;
     this.completionRetryOptions =
-      options.retries === undefined ? undefined : resolveCompletionRetryOptions(options.retries);
+      options.retries === undefined ? undefined : resolveRetryOptions(options.retries);
     this.requestMiddlewares = [...(options.middlewares ?? [])];
     this.memoryContext = options.memoryContext;
     this.memoryRecorder = new AgentRunMemory(agent, options.memoryContext, initialHistory);
@@ -788,7 +788,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     attempt: number,
     turn: number,
     streaming: boolean,
-  ): ResolvedCompletionRetryOptions | undefined {
+  ): ResolvedRetryOptions | undefined {
     const options = this.completionRetryOptions;
     if (options === undefined || attempt >= options.maxAttempts) {
       return undefined;
@@ -808,10 +808,10 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     attempt: number,
     turn: number,
     streaming: boolean,
-    options: ResolvedCompletionRetryOptions,
+    options: ResolvedRetryOptions,
     runObservers: ActiveAgentRunObservers,
   ): Promise<void> {
-    const delayMs = completionRetryDelayMs(options, attempt);
+    const delayMs = retryDelayMs(options, attempt);
     await runObservers.event({
       name: "completion.retry",
       level: "WARNING",
@@ -822,10 +822,10 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         maxAttempts: options.maxAttempts,
         delayMs,
         streaming,
-        ...completionRetryErrorAttributes(error),
+        ...retryErrorAttributes(error),
       },
     });
-    await waitForCompletionRetry(delayMs);
+    await waitForRetry(delayMs);
   }
 
   private async executeToolCalls(

@@ -23,7 +23,7 @@ const analyst = new Agent({
 const executiveUpdate = new PipelineBuilder(z.array(z.string()))
   .step((notes) => notes.map((note) => `- ${note}`).join("\n"))
   .step((notes) => `Prepare an executive update from these notes:\n\n${notes}`)
-  .prompt(analyst)
+  .agent(analyst)
   .build();
 
 const output = await executiveUpdate.run([

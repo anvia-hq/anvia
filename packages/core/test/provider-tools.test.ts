@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { CompletionRequestBuilder } from "../src/internal/completion-request-builder";
 import {
   Agent,
   AgentBuilder,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
-  CompletionRequestBuilder,
   type CompletionResponse,
   type CompletionStreamEvent,
   createCompletion,
@@ -102,8 +102,8 @@ describe("provider-executed tools", () => {
   it("accepts provider tools in createCompletion", async () => {
     const model = new ProviderToolModel();
 
-    const result = await createCompletion(model, {
-      input: "research",
+    const result = await createCompletion("research", {
+      model,
       tools: [searchTool],
     });
 
@@ -158,8 +158,8 @@ describe("provider-executed tools", () => {
     model.capabilities.providerTools = false;
 
     await expect(
-      createCompletion(model, {
-        input: "research",
+      createCompletion("research", {
+        model,
         tools: [searchTool],
       }),
     ).rejects.toThrow("does not support provider-executed tools");

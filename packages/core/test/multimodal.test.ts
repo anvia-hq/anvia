@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type AudioGenerationModel, audioGenerationRequest } from "../src/audio-generation";
-import { type ImageGenerationModel, imageGenerationRequest } from "../src/image-generation";
-import { type TranscriptionModel, transcriptionRequest } from "../src/transcription";
+import { type AudioGenerationModel, generateSpeech } from "../src/audio-generation";
+import { generateImage, type ImageGenerationModel } from "../src/image-generation";
+import { type TranscriptionModel, transcribe } from "../src/transcription";
 
-describe("multimodal request builders", () => {
-  it("builds image generation requests and calls the model", async () => {
+describe("direct multimodal model APIs", () => {
+  it("generates images with explicit options", async () => {
     const calls: unknown[] = [];
     const model: ImageGenerationModel = {
       async imageGeneration(request) {
@@ -19,12 +19,12 @@ describe("multimodal request builders", () => {
       },
     };
 
-    const response = await imageGenerationRequest(model)
-      .prompt("draw a map")
-      .width(1024)
-      .height(768)
-      .additionalParams({ quality: "high" })
-      .send();
+    const response = await generateImage("draw a map", {
+      model,
+      width: 1024,
+      height: 768,
+      additionalParams: { quality: "high" },
+    });
 
     expect(calls).toEqual([
       {
@@ -37,33 +37,30 @@ describe("multimodal request builders", () => {
     expect(response.image).toEqual(new Uint8Array([1, 2, 3]));
   });
 
-  it("uses stable image generation defaults", () => {
-    expect(imageGenerationRequest(fakeImageModel()).build()).toEqual({
-      prompt: "",
-      width: 1024,
-      height: 1024,
-    });
+  it("uses stable image defaults", async () => {
+    const calls: unknown[] = [];
+    const model = fakeImageModel(calls);
+
+    await generateImage("draw", { model });
+
+    expect(calls).toEqual([{ prompt: "draw", width: 1024, height: 1024 }]);
   });
 
-  it("builds audio generation requests and calls the model", async () => {
+  it("generates speech with explicit options", async () => {
     const calls: unknown[] = [];
     const model: AudioGenerationModel = {
       async audioGeneration(request) {
         calls.push(request);
-        return {
-          audio: new Uint8Array([4, 5]),
-          mediaType: "audio/mpeg",
-          rawResponse: "raw",
-        };
+        return { audio: new Uint8Array([4, 5]), mediaType: "audio/mpeg", rawResponse: "raw" };
       },
     };
 
-    const response = await audioGenerationRequest(model)
-      .text("hello")
-      .voice("alloy")
-      .speed(1.25)
-      .additionalParams({ format: "mp3" })
-      .send();
+    const response = await generateSpeech("hello", {
+      model,
+      voice: "alloy",
+      speed: 1.25,
+      additionalParams: { format: "mp3" },
+    });
 
     expect(calls).toEqual([
       {
@@ -76,34 +73,32 @@ describe("multimodal request builders", () => {
     expect(response.audio).toEqual(new Uint8Array([4, 5]));
   });
 
-  it("uses stable audio generation defaults", () => {
-    expect(audioGenerationRequest(fakeAudioModel()).build()).toEqual({
-      text: "",
-      voice: "",
-      speed: 1,
-    });
+  it("uses the stable speech speed default", async () => {
+    const calls: unknown[] = [];
+    const model = fakeAudioModel(calls);
+
+    await generateSpeech("hello", { model, voice: "alloy" });
+
+    expect(calls).toEqual([{ text: "hello", voice: "alloy", speed: 1 }]);
   });
 
-  it("builds transcription requests and calls the model", async () => {
+  it("transcribes audio with explicit options", async () => {
     const calls: unknown[] = [];
     const model: TranscriptionModel = {
       async transcription(request) {
         calls.push(request);
-        return {
-          text: "hello world",
-          rawResponse: { text: "hello world" },
-        };
+        return { text: "hello world", rawResponse: { text: "hello world" } };
       },
     };
 
-    const response = await transcriptionRequest(model)
-      .data(new Uint8Array([1, 2, 3]))
-      .filename("hello.mp3")
-      .language("en")
-      .prompt("transcribe exactly")
-      .temperature(0.2)
-      .additionalParams({ response_format: "json" })
-      .send();
+    const response = await transcribe(new Uint8Array([1, 2, 3]), {
+      model,
+      filename: "hello.mp3",
+      language: "en",
+      prompt: "transcribe exactly",
+      temperature: 0.2,
+      additionalParams: { response_format: "json" },
+    });
 
     expect(calls).toEqual([
       {
@@ -118,25 +113,74 @@ describe("multimodal request builders", () => {
     expect(response.text).toBe("hello world");
   });
 
-  it("rejects empty transcription data", () => {
-    expect(() => transcriptionRequest(fakeTranscriptionModel()).build()).toThrow(
-      "Transcription data cannot be empty.",
+  it("validates media inputs before calling models", () => {
+    const imageModel = fakeImageModel();
+    const audioModel = fakeAudioModel();
+    const transcriptionModel = fakeTranscriptionModel();
+
+    expect(() => generateImage("", { model: imageModel })).toThrow("non-empty string");
+    expect(() => generateImage("draw", { model: imageModel, width: 0 })).toThrow(
+      "positive integer",
     );
+    expect(() => generateSpeech("", { model: audioModel, voice: "alloy" })).toThrow(
+      "non-empty string",
+    );
+    expect(() => generateSpeech("hello", { model: audioModel, voice: "" })).toThrow(
+      "non-empty string",
+    );
+    expect(() => generateSpeech("hello", { model: audioModel, voice: "alloy", speed: 0 })).toThrow(
+      "positive finite number",
+    );
+    expect(() =>
+      transcribe(new Uint8Array(), { model: transcriptionModel, filename: "audio.mp3" }),
+    ).toThrow("cannot be empty");
+    expect(() =>
+      transcribe(new Uint8Array([1]), { model: transcriptionModel, filename: "" }),
+    ).toThrow("non-empty string");
+  });
+
+  it.each([
+    ["image", () => generateImage("draw", { model: flakyImageModel(), retries: noDelayRetries })],
+    [
+      "speech",
+      () =>
+        generateSpeech("hello", {
+          model: flakyAudioModel(),
+          voice: "alloy",
+          retries: noDelayRetries,
+        }),
+    ],
+    [
+      "transcription",
+      () =>
+        transcribe(new Uint8Array([1]), {
+          model: flakyTranscriptionModel(),
+          filename: "audio.mp3",
+          retries: noDelayRetries,
+        }),
+    ],
+  ])("retries transient %s provider failures", async (_name, run) => {
+    await expect(run()).resolves.toBeDefined();
   });
 });
 
-function fakeImageModel(): ImageGenerationModel {
+const noDelayRetries = { initialDelayMs: 0, maxDelayMs: 0 } as const;
+
+function fakeImageModel(calls: unknown[] = []): ImageGenerationModel {
   return {
-    async imageGeneration() {
-      throw new Error("not called");
+    async imageGeneration(request) {
+      calls.push(request);
+      const image = new Uint8Array([1]);
+      return { image, images: [{ data: image }], rawResponse: {} };
     },
   };
 }
 
-function fakeAudioModel(): AudioGenerationModel {
+function fakeAudioModel(calls: unknown[] = []): AudioGenerationModel {
   return {
-    async audioGeneration() {
-      throw new Error("not called");
+    async audioGeneration(request) {
+      calls.push(request);
+      return { audio: new Uint8Array([1]), rawResponse: {} };
     },
   };
 }
@@ -144,7 +188,41 @@ function fakeAudioModel(): AudioGenerationModel {
 function fakeTranscriptionModel(): TranscriptionModel {
   return {
     async transcription() {
-      throw new Error("not called");
+      return { text: "done", rawResponse: {} };
+    },
+  };
+}
+
+function flakyImageModel(): ImageGenerationModel {
+  let attempt = 0;
+  return {
+    async imageGeneration() {
+      attempt += 1;
+      if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
+      const image = new Uint8Array([1]);
+      return { image, images: [{ data: image }], rawResponse: {} };
+    },
+  };
+}
+
+function flakyAudioModel(): AudioGenerationModel {
+  let attempt = 0;
+  return {
+    async audioGeneration() {
+      attempt += 1;
+      if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
+      return { audio: new Uint8Array([1]), rawResponse: {} };
+    },
+  };
+}
+
+function flakyTranscriptionModel(): TranscriptionModel {
+  let attempt = 0;
+  return {
+    async transcription() {
+      attempt += 1;
+      if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
+      return { text: "done", rawResponse: {} };
     },
   };
 }

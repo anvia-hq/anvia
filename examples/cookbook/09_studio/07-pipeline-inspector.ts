@@ -66,7 +66,7 @@ const ticketPipeline = new PipelineBuilder(z.string(), {
       name: "Prepare Reply Prompt",
     },
   )
-  .prompt(replyAgent, {
+  .agent(replyAgent, {
     name: "Draft Reply",
     description: "Send the prepared context to the reply agent.",
   })

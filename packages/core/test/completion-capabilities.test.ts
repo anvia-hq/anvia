@@ -8,7 +8,6 @@ import {
   type CompletionModel,
   type CompletionModelCapabilities,
   type CompletionRequest,
-  CompletionRequestBuilder,
   type CompletionResponse,
   type CompletionStreamEvent,
   createCompletion,
@@ -148,18 +147,7 @@ describe("completion model capabilities", () => {
     ).not.toThrow();
   });
 
-  it("CompletionRequestBuilder.send enforces capabilities before model calls", async () => {
-    const model = new QueueModel({ tools: false });
-
-    await expect(
-      new CompletionRequestBuilder(model, Message.user("hello"))
-        .tools([{ name: "lookup", description: "Lookup", parameters: { type: "object" } }])
-        .send(),
-    ).rejects.toThrow("test:test-model does not support tool definitions.");
-    expect(model.requests).toHaveLength(0);
-  });
-
-  it("AgentRun.send enforces capabilities before model calls", async () => {
+  it("Agent.generate enforces capabilities before model calls", async () => {
     const model = new QueueModel({ imageInput: false });
     const agent = new AgentBuilder("agent", model).build();
 
@@ -169,7 +157,7 @@ describe("completion model capabilities", () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it("AgentRun.stream enforces streaming capabilities before model calls", async () => {
+  it("Agent.stream enforces streaming capabilities before model calls", async () => {
     const model = new StreamingQueueModel({ streaming: false });
     const agent = new AgentBuilder("agent", model).build();
 
@@ -183,8 +171,8 @@ describe("completion model capabilities", () => {
 describe("createCompletion", () => {
   it("creates a non-streaming completion with ergonomic result fields", async () => {
     const model = new QueueModel();
-    const response = await createCompletion(model, {
-      input: "hello",
+    const response = await createCompletion("hello", {
+      model,
       instructions: "system",
       documents: [{ id: "policy", text: "Policy text." }],
       tools: [{ name: "lookup", description: "Lookup", parameters: { type: "object" } }],
@@ -192,7 +180,7 @@ describe("createCompletion", () => {
       maxTokens: 128,
       toolChoice: "auto",
       outputSchema: { type: "object" },
-      params: { reasoning: { effort: "low" } },
+      additionalParams: { reasoning: { effort: "low" } },
     });
 
     expect(response).toMatchObject({
@@ -218,10 +206,14 @@ describe("createCompletion", () => {
 
   it("appends input after transcript messages", async () => {
     const model = new QueueModel();
-    await createCompletion(model, {
-      messages: [Message.user("My project is named Anvia."), Message.assistant("Noted.")],
-      input: "What is my project named?",
-    });
+    await createCompletion(
+      [
+        Message.user("My project is named Anvia."),
+        Message.assistant("Noted."),
+        Message.user("What is my project named?"),
+      ],
+      { model },
+    );
 
     expect(model.requests[0]?.chatHistory).toEqual([
       Message.user("My project is named Anvia."),
@@ -230,11 +222,11 @@ describe("createCompletion", () => {
     ]);
   });
 
-  it("requires input or messages", async () => {
+  it("requires a non-empty input transcript", async () => {
     const model = new QueueModel();
 
-    await expect(createCompletion(model, {})).rejects.toThrow(
-      "createCompletion requires input or messages.",
+    await expect(createCompletion([], { model })).rejects.toThrow(
+      "input must contain at least one Message.",
     );
     expect(model.requests).toHaveLength(0);
   });
@@ -243,8 +235,8 @@ describe("createCompletion", () => {
     const model = new StreamingQueueModel();
 
     const events = await collect(
-      createCompletionStream(model, {
-        input: "hello",
+      createCompletionStream("hello", {
+        model,
       }),
     );
 
@@ -271,8 +263,8 @@ describe("createCompletion", () => {
     const model = new StreamingQueueModel({ streaming: false });
 
     expect(() =>
-      createCompletionStream(model, {
-        input: "hello",
+      createCompletionStream("hello", {
+        model,
       }),
     ).toThrow("This completion model does not support streaming");
     expect(model.requests).toHaveLength(0);
@@ -282,8 +274,8 @@ describe("createCompletion", () => {
     const model = new QueueModel({ tools: false });
 
     await expect(
-      createCompletion(model, {
-        input: "hello",
+      createCompletion("hello", {
+        model,
         tools: [{ name: "lookup", description: "Lookup", parameters: { type: "object" } }],
       }),
     ).rejects.toThrow("test:test-model does not support tool definitions.");
@@ -299,13 +291,18 @@ describe("createCompletion", () => {
       AssistantContent.text(JSON.stringify({ title: "Checkout failure", priority: "high" })),
     ]);
 
-    const response = await createParsedCompletion(model, {
-      schema,
-      messages: [Message.system("Extract ticket fields.")],
-      input: "Acme has an urgent checkout failure.",
-      instructions: "Return only structured ticket data.",
-      params: { reasoning: { effort: "low" } },
-    });
+    const response = await createParsedCompletion(
+      [
+        Message.system("Extract ticket fields."),
+        Message.user("Acme has an urgent checkout failure."),
+      ],
+      {
+        model,
+        schema,
+        instructions: "Return only structured ticket data.",
+        additionalParams: { reasoning: { effort: "low" } },
+      },
+    );
 
     expect(response.data).toEqual({ title: "Checkout failure", priority: "high" });
     expect(response.text).toBe('{"title":"Checkout failure","priority":"high"}');
@@ -336,8 +333,8 @@ describe("createCompletion", () => {
     const model = new QueueModel({ outputSchema: false });
 
     await expect(
-      createParsedCompletion(model, {
-        input: "hello",
+      createParsedCompletion("hello", {
+        model,
         schema: z.object({ title: z.string() }),
       }),
     ).rejects.toThrow("test:test-model does not support output schemas.");
@@ -348,8 +345,8 @@ describe("createCompletion", () => {
     const model = new QueueModel({}, [AssistantContent.text("not json")]);
 
     await expect(
-      createParsedCompletion(model, {
-        input: "hello",
+      createParsedCompletion("hello", {
+        model,
         schema: z.object({ title: z.string() }),
       }),
     ).rejects.toThrow("createParsedCompletion expected the model response to be valid JSON.");

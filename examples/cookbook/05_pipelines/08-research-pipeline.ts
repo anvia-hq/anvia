@@ -87,7 +87,7 @@ const researchPipeline = new PipelineBuilder(z.string())
       `Caveat: ${quality.caveat}`,
     ].join("\n");
   })
-  .prompt(synthesizer)
+  .agent(synthesizer)
   .build();
 
 const report = await researchPipeline.run("Anvia pipeline cookbook examples");

@@ -18,14 +18,14 @@ import type {
   AgentTraceInfo,
   AgentTraceOptions,
 } from "../observability/types";
+import type { RetryOptions } from "../retry";
 import type { AgentMiddleware, ToolApprovalsOptions } from "../tool";
-import type { CompletionRetryOptions } from "./retry";
 
 export type AgentInput = string | MessageType | MessageType[];
 
 export type AgentRunOptions = {
   maxTurns?: number | undefined;
-  retries?: CompletionRetryOptions | undefined;
+  retries?: RetryOptions | undefined;
   hook?: AgentHook | undefined;
   approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicyInput | undefined;

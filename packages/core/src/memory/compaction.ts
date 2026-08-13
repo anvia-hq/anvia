@@ -39,9 +39,9 @@ export function createSummaryMemoryCompactor(
 
   return async ({ messages }) => {
     try {
-      const result = await createCompletion(model, {
+      const result = await createCompletion(Message.user(serializeMessagesForSummary(messages)), {
+        model,
         instructions: options.instructions ?? defaultSummaryInstructions,
-        input: Message.user(serializeMessagesForSummary(messages)),
         maxTokens,
         temperature,
       });

@@ -11,8 +11,8 @@ import type {
   AgentStreamOptions as PublicAgentStreamOptions,
   AgentToolCallDeltaEvent as PublicAgentToolCallDeltaEvent,
   Agent as PublicAgentType,
-  CompletionRetryContext as PublicCompletionRetryContext,
-  CompletionRetryOptions as PublicCompletionRetryOptions,
+  RetryContext as PublicRetryContext,
+  RetryOptions as PublicRetryOptions,
 } from "../src/agent";
 import * as publicAgent from "../src/agent";
 import * as audioGeneration from "../src/audio-generation";
@@ -30,8 +30,8 @@ import type {
   AgentStreamEventWithToolCallDeltas as RootAgentStreamEventWithToolCallDeltas,
   AgentStreamOptions as RootAgentStreamOptions,
   AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
-  CompletionRetryContext as RootCompletionRetryContext,
-  CompletionRetryOptions as RootCompletionRetryOptions,
+  RetryContext as RootRetryContext,
+  RetryOptions as RootRetryOptions,
   ToolContent as RootToolContentType,
 } from "../src/index";
 import * as publicCore from "../src/index";
@@ -99,8 +99,8 @@ describe("public exports", () => {
   });
 
   it("exposes agent run contracts from root and agent entrypoints", () => {
-    expectTypeOf<RootCompletionRetryContext>().toEqualTypeOf<PublicCompletionRetryContext>();
-    expectTypeOf<RootCompletionRetryOptions>().toEqualTypeOf<PublicCompletionRetryOptions>();
+    expectTypeOf<RootRetryContext>().toEqualTypeOf<PublicRetryContext>();
+    expectTypeOf<RootRetryOptions>().toEqualTypeOf<PublicRetryOptions>();
     expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<PublicAgentErrorStreamEvent>();
     expectTypeOf<RootAgentStreamOptions>().toEqualTypeOf<PublicAgentStreamOptions>();
     expectTypeOf<RootAgentToolCallDeltaEvent>().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
@@ -142,10 +142,11 @@ describe("public exports", () => {
   });
 
   it("keeps public subpath runtime exports available", () => {
-    expect(audioGeneration).toHaveProperty("AudioGenerationRequestBuilder");
     expect(hooks).toHaveProperty("createHook");
-    expect(audioGeneration).toHaveProperty("audioGenerationRequest");
-    expect(completion).toHaveProperty("CompletionRequestBuilder");
+    expect(audioGeneration).toHaveProperty("generateSpeech");
+    expect(audioGeneration).not.toHaveProperty("audioGenerationRequest");
+    expect(audioGeneration).not.toHaveProperty("AudioGenerationRequestBuilder");
+    expect(completion).not.toHaveProperty("CompletionRequestBuilder");
     expect(completion).toHaveProperty("createCompletion");
     expect(completion).toHaveProperty("createParsedCompletion");
     expect(completion).toHaveProperty("createCompletionStream");
@@ -176,7 +177,9 @@ describe("public exports", () => {
       blockText: expect.any(Function),
       redactText: expect.any(Function),
     });
-    expect(imageGeneration).toHaveProperty("ImageGenerationRequestBuilder");
+    expect(imageGeneration).toHaveProperty("generateImage");
+    expect(imageGeneration).not.toHaveProperty("imageGenerationRequest");
+    expect(imageGeneration).not.toHaveProperty("ImageGenerationRequestBuilder");
     expect(loaders).toHaveProperty("FileLoader");
     expect(mcp).toHaveProperty("connectMcp");
     expect(modelListing).toHaveProperty("ModelListingError");
@@ -185,14 +188,24 @@ describe("public exports", () => {
     expect(skills).toHaveProperty("loadSkills");
     expect(streaming).toHaveProperty("toReadableStream");
     expect(tool).toHaveProperty("createTool");
-    expect(transcription).toHaveProperty("TranscriptionRequestBuilder");
+    expect(transcription).toHaveProperty("transcribe");
+    expect(transcription).not.toHaveProperty("transcriptionRequest");
+    expect(transcription).not.toHaveProperty("TranscriptionRequestBuilder");
     expect(vectorStore).toHaveProperty("InMemoryVectorStore");
   });
 
-  it("exposes createCompletion from the root entrypoint", () => {
+  it("exposes pipeline agent stages without prompt aliases", () => {
+    expect(pipeline.PipelineBuilder.prototype).toHaveProperty("agent");
+    expect(pipeline.PipelineBuilder.prototype).not.toHaveProperty("prompt");
+  });
+
+  it("exposes direct model operations from the root entrypoint", () => {
     expect("createCompletion" in publicCore).toBe(true);
     expect("createParsedCompletion" in publicCore).toBe(true);
     expect("createCompletionStream" in publicCore).toBe(true);
+    expect("generateImage" in publicCore).toBe(true);
+    expect("generateSpeech" in publicCore).toBe(true);
+    expect("transcribe" in publicCore).toBe(true);
   });
 
   it("exposes memory compaction helpers from root and memory entrypoints", () => {

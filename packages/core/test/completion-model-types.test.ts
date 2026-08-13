@@ -1,9 +1,9 @@
 import { describe, expectTypeOf, it } from "vitest";
+import { CompletionRequestBuilder } from "../src/internal/completion-request-builder";
 import type { ModelId } from "../src/model-listing";
 import {
   type CompletionModel,
   type CompletionRequest,
-  CompletionRequestBuilder,
   Message,
   type Usage,
 } from "./helpers/imports";

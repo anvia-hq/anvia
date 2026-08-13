@@ -1,5 +1,5 @@
-import { imageGenerationRequest } from "@anvia/core/image-generation";
-import { transcriptionRequest } from "@anvia/core/transcription";
+import { generateImage } from "@anvia/core/image-generation";
+import { transcribe } from "@anvia/core/transcription";
 import { describe, expect, it } from "vitest";
 import { GeminiClient } from "../src/index";
 
@@ -8,11 +8,11 @@ describe("Gemini multimodal models", () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
 
-    const response = await imageGenerationRequest(model)
-      .prompt("draw a diagram")
-      .width(1024)
-      .height(768)
-      .send();
+    const response = await generateImage("draw a diagram", {
+      model,
+      width: 1024,
+      height: 768,
+    });
 
     expect(client.models.generateContentCalls[0]).toEqual({
       model: "gemini-test",
@@ -30,14 +30,14 @@ describe("Gemini multimodal models", () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).imageGenerationModel();
 
-    await imageGenerationRequest(model)
-      .prompt("draw")
-      .width(1024)
-      .height(768)
-      .additionalParams({
+    await generateImage("draw", {
+      model,
+      width: 1024,
+      height: 768,
+      additionalParams: {
         config: { imageConfig: { aspectRatio: "16:9", imageSize: "2K" } },
-      })
-      .send();
+      },
+    });
 
     expect(client.models.generateContentCalls[0]).toMatchObject({
       config: {
@@ -53,12 +53,12 @@ describe("Gemini multimodal models", () => {
       "imagen-test",
     );
 
-    const response = await imageGenerationRequest(model)
-      .prompt("draw a diagram")
-      .width(1024)
-      .height(768)
-      .additionalParams({ config: { aspectRatio: "16:9", numberOfImages: 2 } })
-      .send();
+    const response = await generateImage("draw a diagram", {
+      model,
+      width: 1024,
+      height: 768,
+      additionalParams: { config: { aspectRatio: "16:9", numberOfImages: 2 } },
+    });
 
     expect(client.models.generateImagesCalls[0]).toEqual({
       model: "imagen-test",
@@ -83,7 +83,7 @@ describe("Gemini multimodal models", () => {
     });
     const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
 
-    await expect(imageGenerationRequest(model).prompt("draw").send()).rejects.toThrow(
+    await expect(generateImage("draw", { model })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
     );
   });
@@ -105,7 +105,7 @@ describe("Gemini multimodal models", () => {
       "imagen-test",
     );
 
-    await expect(imageGenerationRequest(model).prompt("draw").send()).rejects.toThrow(
+    await expect(generateImage("draw", { model })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
     );
   });
@@ -114,13 +114,13 @@ describe("Gemini multimodal models", () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).transcriptionModel("gemini-test");
 
-    const response = await transcriptionRequest(model)
-      .data(new Uint8Array([7, 8, 9]))
-      .filename("voice.wav")
-      .prompt("Use support terminology.")
-      .temperature(0.2)
-      .additionalParams({ topP: 0.8 })
-      .send();
+    const response = await transcribe(new Uint8Array([7, 8, 9]), {
+      model,
+      filename: "voice.wav",
+      prompt: "Use support terminology.",
+      temperature: 0.2,
+      additionalParams: { topP: 0.8 },
+    });
 
     expect(client.models.generateContentCalls[0]).toEqual({
       model: "gemini-test",

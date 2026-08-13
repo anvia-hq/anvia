@@ -1,28 +1,24 @@
 import type {
   CompletionModel,
   CompletionRequest,
-  CompletionResponse,
   CompletionTool,
   Document,
   JsonObject,
   JsonValue,
-  Message as MessageType,
+  Message,
   ProviderTool,
   ToolChoice,
   ToolDefinition,
-} from "./types";
-import { assertCompletionRequestSupported, isProviderTool } from "./types";
+} from "../completion/types";
+import { isProviderTool } from "../completion/types";
 
 type ModelNameOf<M extends CompletionModel> =
   M extends CompletionModel<unknown, infer ModelName> ? ModelName : string;
 
-type RawResponseOf<M extends CompletionModel> =
-  M extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
-
 export class CompletionRequestBuilder<M extends CompletionModel = CompletionModel> {
   private requestModel: ModelNameOf<M> | undefined;
   private instructionBlocks: string[] = [];
-  private history: MessageType[] = [];
+  private history: Message[] = [];
   private docs: Document[] = [];
   private toolDefs: ToolDefinition[] = [];
   private providerToolDefs: ProviderTool[] = [];
@@ -33,8 +29,8 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
   private schema: JsonObject | undefined;
 
   constructor(
-    private readonly model: M,
-    private readonly promptMessage: MessageType,
+    _model: M,
+    private readonly promptMessage: Message,
   ) {}
 
   modelOverride(model: ModelNameOf<M> | undefined): this {
@@ -49,7 +45,7 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
     return this;
   }
 
-  messages(messages: MessageType[]): this {
+  messages(messages: Message[]): this {
     this.history.push(...messages);
     return this;
   }
@@ -61,11 +57,8 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
 
   tools(tools: CompletionTool[]): this {
     for (const tool of tools) {
-      if (isProviderTool(tool)) {
-        this.providerToolDefs.push(tool);
-      } else {
-        this.toolDefs.push(tool);
-      }
+      if (isProviderTool(tool)) this.providerToolDefs.push(tool);
+      else this.toolDefs.push(tool);
     }
     return this;
   }
@@ -96,7 +89,8 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
   }
 
   build(): CompletionRequest<ModelNameOf<M>> {
-    const instructions = this.buildInstructions();
+    const instructions =
+      this.instructionBlocks.length === 0 ? undefined : this.instructionBlocks.join("\n\n");
     const request: CompletionRequest<ModelNameOf<M>> = {
       chatHistory: [...this.history, this.promptMessage],
       documents: [...this.docs],
@@ -113,15 +107,5 @@ export class CompletionRequestBuilder<M extends CompletionModel = CompletionMode
     if (this.schema !== undefined) request.outputSchema = this.schema;
 
     return request;
-  }
-
-  async send(): Promise<CompletionResponse<RawResponseOf<M>>> {
-    const request = this.build();
-    assertCompletionRequestSupported(this.model, request);
-    return this.model.completion(request) as Promise<CompletionResponse<RawResponseOf<M>>>;
-  }
-
-  private buildInstructions(): string | undefined {
-    return this.instructionBlocks.length === 0 ? undefined : this.instructionBlocks.join("\n\n");
   }
 }

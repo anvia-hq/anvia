@@ -500,8 +500,8 @@ describe("UI message adapters", () => {
     ]);
 
     await collect(
-      createCompletionStream(model, {
-        messages: [Message.user("Hello")],
+      createCompletionStream([Message.user("Hello")], {
+        model,
       }),
     );
 
@@ -511,8 +511,8 @@ describe("UI message adapters", () => {
   it("accepts a core message as createCompletion input", async () => {
     const model = new StreamModel([]);
 
-    const result = await createCompletion(model, {
-      input: Message.user("Hello"),
+    const result = await createCompletion(Message.user("Hello"), {
+      model,
     });
 
     expect(result.text).toBe("ok");
@@ -528,18 +528,18 @@ describe("UI message adapters", () => {
     };
 
     expect(() =>
-      createCompletionStream(model, {
-        messages: [Message.user("Hi"), uiMessage] as never,
+      createCompletionStream([Message.user("Hi"), uiMessage] as never, {
+        model,
       }),
-    ).toThrow("messages must contain only Message values.");
+    ).toThrow("input must contain only Message values.");
   });
 
   it("rejects malformed single message input", () => {
     const model = new StreamModel([]);
 
     expect(() =>
-      createCompletionStream(model, {
-        input: { role: "user", content: "Hello" } as never,
+      createCompletionStream({ role: "user", content: "Hello" } as never, {
+        model,
       }),
     ).toThrow("input must be a string, Message, or Message[].");
   });

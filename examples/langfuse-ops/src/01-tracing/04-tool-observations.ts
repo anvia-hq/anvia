@@ -15,10 +15,9 @@ async function main(): Promise<void> {
       tools: [getTicket],
     });
 
-    const response = await agent
-      .prompt("Look up ticket TICKET-1001 and summarize the issue.")
-      .withTrace({ name: "tool-observations-demo", tags: ["tracing:04"] })
-      .send();
+    const response = await agent.generate("Look up ticket TICKET-1001 and summarize the issue.", {
+      trace: { name: "tool-observations-demo", tags: ["tracing:04"] },
+    });
 
     console.log("[tracing:04] output:", response.output);
     console.log(

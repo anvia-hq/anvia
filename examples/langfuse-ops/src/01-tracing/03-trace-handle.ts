@@ -17,27 +17,24 @@ async function main(): Promise<void> {
     // Before any run: handle is undefined.
     console.log("[tracing:03] pre-run handle:", tracing.getCurrentTrace());
 
-    const response = await agent
-      .prompt("Summarize ticket TICKET-1001.")
-      .withTrace({ name: "trace-handle-demo", tags: ["tracing:03"] })
-      .withHook(
-        createHook({
-          onRunStart() {
-            const handle = tracing.getCurrentTrace();
-            handle?.addEvent("checkpoint.started", { phase: "pre-inference" });
-            handle?.addAttributes({ quality: "high" });
-          },
-          onTurnStart() {
-            const handle = tracing.getCurrentTrace();
-            handle?.addEvent("checkpoint.inference", { phase: "llm" });
-          },
-          onRunEnd({ output }) {
-            const handle = tracing.getCurrentTrace();
-            handle?.addEvent("checkpoint.done", { outputLength: output.length });
-          },
-        }),
-      )
-      .send();
+    const response = await agent.generate("Summarize ticket TICKET-1001.", {
+      trace: { name: "trace-handle-demo", tags: ["tracing:03"] },
+      hook: createHook({
+        onRunStart() {
+          const handle = tracing.getCurrentTrace();
+          handle?.addEvent("checkpoint.started", { phase: "pre-inference" });
+          handle?.addAttributes({ quality: "high" });
+        },
+        onTurnStart() {
+          const handle = tracing.getCurrentTrace();
+          handle?.addEvent("checkpoint.inference", { phase: "llm" });
+        },
+        onRunEnd({ output }) {
+          const handle = tracing.getCurrentTrace();
+          handle?.addEvent("checkpoint.done", { outputLength: output.length });
+        },
+      }),
+    });
 
     // After the run: handle is cleared.
     console.log("[tracing:03] post-run handle:", tracing.getCurrentTrace());

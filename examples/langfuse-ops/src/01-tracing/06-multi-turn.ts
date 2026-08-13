@@ -40,16 +40,15 @@ async function main(): Promise<void> {
     });
     const session = agent.session("langfuse-ops-multi-turn", { userId: "langfuse-ops-user" });
 
-    const first = await session
-      .prompt("What ticket is TICKET-1001 about? Give a one-line summary.")
-      .withTrace({ name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] })
-      .send();
+    const first = await session.generate(
+      "What ticket is TICKET-1001 about? Give a one-line summary.",
+      { trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] } },
+    );
     console.log("[tracing:06] turn 1:", first.output);
 
-    const second = await session
-      .prompt("Now rewrite the summary in two sentences.")
-      .withTrace({ name: "multi-turn-demo", tags: ["tracing:06", "turn-2"] })
-      .send();
+    const second = await session.generate("Now rewrite the summary in two sentences.", {
+      trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-2"] },
+    });
     console.log("[tracing:06] turn 2:", second.output);
   } finally {
     await tracing.shutdown();

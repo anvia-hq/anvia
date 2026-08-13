@@ -1,25 +1,25 @@
-import type { JsonValue } from "../completion";
+import type { JsonValue } from "./completion/types";
 
-export type CompletionRetryContext = {
+export type RetryContext = {
   error: unknown;
   attempt: number;
   maxAttempts: number;
-  turn: number;
   streaming: boolean;
+  turn?: number | undefined;
 };
 
-export type CompletionRetryOptions = {
+export type RetryOptions = {
   maxAttempts?: number | undefined;
   initialDelayMs?: number | undefined;
   maxDelayMs?: number | undefined;
-  shouldRetry?: ((context: CompletionRetryContext) => boolean) | undefined;
+  shouldRetry?: ((context: RetryContext) => boolean) | undefined;
 };
 
-export type ResolvedCompletionRetryOptions = {
+export type ResolvedRetryOptions = {
   maxAttempts: number;
   initialDelayMs: number;
   maxDelayMs: number;
-  shouldRetry: (context: CompletionRetryContext) => boolean;
+  shouldRetry: (context: RetryContext) => boolean;
 };
 
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -51,25 +51,21 @@ const RETRYABLE_ERROR_CODES = new Set([
   "UND_ERR_SOCKET",
 ]);
 
-export function resolveCompletionRetryOptions(
-  options: CompletionRetryOptions,
-): ResolvedCompletionRetryOptions {
+export function resolveRetryOptions(options: RetryOptions): ResolvedRetryOptions {
   const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const initialDelayMs = options.initialDelayMs ?? DEFAULT_INITIAL_DELAY_MS;
   const maxDelayMs = options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
 
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
-    throw new RangeError("Completion retry maxAttempts must be a positive integer.");
+    throw new RangeError("Retry maxAttempts must be a positive integer.");
   }
   assertDelay(initialDelayMs, "initialDelayMs");
   assertDelay(maxDelayMs, "maxDelayMs");
   if (maxDelayMs < initialDelayMs) {
-    throw new RangeError(
-      "Completion retry maxDelayMs must be greater than or equal to initialDelayMs.",
-    );
+    throw new RangeError("Retry maxDelayMs must be greater than or equal to initialDelayMs.");
   }
   if (options.shouldRetry !== undefined && typeof options.shouldRetry !== "function") {
-    throw new TypeError("Completion retry shouldRetry must be a function.");
+    throw new TypeError("Retry shouldRetry must be a function.");
   }
 
   return {
@@ -80,18 +76,13 @@ export function resolveCompletionRetryOptions(
   };
 }
 
-export function completionRetryDelayMs(
-  options: ResolvedCompletionRetryOptions,
-  failedAttempt: number,
-): number {
+export function retryDelayMs(options: ResolvedRetryOptions, failedAttempt: number): number {
   const exponentialDelay = options.initialDelayMs * 2 ** (failedAttempt - 1);
   const cappedDelay = Math.min(options.maxDelayMs, exponentialDelay);
   return Math.random() * cappedDelay;
 }
 
-export function completionRetryErrorAttributes(
-  error: unknown,
-): Record<string, JsonValue | undefined> {
+export function retryErrorAttributes(error: unknown): Record<string, JsonValue | undefined> {
   const errors = errorChain(error);
   const errorName = errors
     .map((candidate) => stringProperty(candidate, "name"))
@@ -101,25 +92,45 @@ export function completionRetryErrorAttributes(
     .map((candidate) => errorCodeProperty(candidate))
     .find((value) => value !== undefined);
 
-  return {
-    errorName,
-    statusCode,
-    errorCode,
-  };
+  return { errorName, statusCode, errorCode };
 }
 
-export async function waitForCompletionRetry(delayMs: number): Promise<void> {
-  if (delayMs === 0) {
-    return;
-  }
+export async function waitForRetry(delayMs: number): Promise<void> {
+  if (delayMs === 0) return;
   await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 }
 
-function defaultShouldRetry(context: CompletionRetryContext): boolean {
-  const errors = errorChain(context.error);
-  if (errors.some((error) => stringProperty(error, "name") === "AbortError")) {
-    return false;
+export function retryOptionsForFailure(
+  options: ResolvedRetryOptions | undefined,
+  context: Omit<RetryContext, "maxAttempts">,
+): ResolvedRetryOptions | undefined {
+  if (options === undefined || context.attempt >= options.maxAttempts) return undefined;
+  return options.shouldRetry({ ...context, maxAttempts: options.maxAttempts })
+    ? options
+    : undefined;
+}
+
+export async function runWithRetries<T>(
+  operation: () => Promise<T>,
+  options: ResolvedRetryOptions | undefined,
+  context: { streaming: boolean; turn?: number | undefined },
+): Promise<T> {
+  let attempt = 1;
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      const retryOptions = retryOptionsForFailure(options, { error, attempt, ...context });
+      if (retryOptions === undefined) throw error;
+      await waitForRetry(retryDelayMs(retryOptions, attempt));
+      attempt += 1;
+    }
   }
+}
+
+function defaultShouldRetry(context: RetryContext): boolean {
+  const errors = errorChain(context.error);
+  if (errors.some((error) => stringProperty(error, "name") === "AbortError")) return false;
 
   const statusCode = firstStatusCode(errors);
   if (statusCode !== undefined) {
@@ -128,13 +139,9 @@ function defaultShouldRetry(context: CompletionRetryContext): boolean {
 
   return errors.some((error) => {
     const name = stringProperty(error, "name");
-    if (name !== undefined && RETRYABLE_ERROR_NAMES.has(name)) {
-      return true;
-    }
+    if (name !== undefined && RETRYABLE_ERROR_NAMES.has(name)) return true;
     const code = stringProperty(error, "code")?.toUpperCase();
-    if (code !== undefined && RETRYABLE_ERROR_CODES.has(code)) {
-      return true;
-    }
+    if (code !== undefined && RETRYABLE_ERROR_CODES.has(code)) return true;
     const numericCode = numberProperty(error, "code");
     return numericCode !== undefined && RETRYABLE_NUMERIC_ERROR_CODES.has(numericCode);
   });
@@ -143,13 +150,9 @@ function defaultShouldRetry(context: CompletionRetryContext): boolean {
 function firstStatusCode(errors: Record<string, unknown>[]): number | undefined {
   for (const error of errors) {
     const status = numberProperty(error, "status") ?? numberProperty(error, "statusCode");
-    if (status !== undefined) {
-      return status;
-    }
+    if (status !== undefined) return status;
     const code = numberProperty(error, "code");
-    if (code !== undefined && code >= 100 && code <= 599) {
-      return code;
-    }
+    if (code !== undefined && code >= 100 && code <= 599) return code;
   }
   return undefined;
 }
@@ -168,9 +171,7 @@ function errorChain(error: unknown): Record<string, unknown>[] {
 
 function assertDelay(value: number, name: string): void {
   if (!Number.isFinite(value) || value < 0 || value > MAX_TIMER_DELAY_MS) {
-    throw new RangeError(
-      `Completion retry ${name} must be between 0 and ${MAX_TIMER_DELAY_MS} milliseconds.`,
-    );
+    throw new RangeError(`Retry ${name} must be between 0 and ${MAX_TIMER_DELAY_MS} milliseconds.`);
   }
 }
 

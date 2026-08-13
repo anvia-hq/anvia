@@ -10,16 +10,15 @@ async function main(): Promise<void> {
     const client = buildOpenAIClient();
     const agent = buildSupportAgent(client.completionModel(defaultModel()), { tracing });
 
-    const response = await agent
-      .prompt("Summarize ticket TICKET-1001.")
-      .withTrace({
+    const response = await agent.generate("Summarize ticket TICKET-1001.", {
+      trace: {
         name: "support-ticket-summary",
         userId: "user-001",
         sessionId: "session-001",
         metadata: { ticketId: "TICKET-1001" },
         tags: ["tracing:01", "basic"],
-      })
-      .send();
+      },
+    });
 
     console.log("[tracing:01] output:", response.output);
     console.log("[tracing:01] traceId:", response.trace?.traceId);

@@ -1,3 +1,12 @@
+import {
+  type ResolvedRetryOptions,
+  type RetryOptions,
+  resolveRetryOptions,
+  retryDelayMs,
+  retryOptionsForFailure,
+  runWithRetries,
+  waitForRetry,
+} from "../retry";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type {
   AssistantContent,
@@ -13,20 +22,19 @@ import type {
   StreamingCompletionModel,
   ToolChoice,
   ToolDefinition,
-  Usage,
 } from "./types";
 import {
   assertCompletionRequestSupported,
   isProviderTool,
   Message,
   textFromAssistantContent,
+  Usage,
 } from "./types";
 
 export type CreateCompletionInput = string | MessageType | MessageType[];
 
-export type CreateCompletionBaseOptions = {
-  input?: CreateCompletionInput | undefined;
-  messages?: MessageType[] | undefined;
+export type CreateCompletionBaseOptions<Model extends CompletionModel = CompletionModel> = {
+  model: Model;
   instructions?: string | undefined;
   documents?: Document[] | undefined;
   tools?: CompletionTool[] | undefined;
@@ -34,16 +42,21 @@ export type CreateCompletionBaseOptions = {
   maxTokens?: number | undefined;
   toolChoice?: ToolChoice | undefined;
   outputSchema?: JsonObject | undefined;
-  params?: JsonValue | undefined;
+  additionalParams?: JsonValue | undefined;
+  retries?: RetryOptions | undefined;
 };
 
-export type CreateCompletionOptions = CreateCompletionBaseOptions;
+export type CreateCompletionOptions<Model extends CompletionModel = CompletionModel> =
+  CreateCompletionBaseOptions<Model>;
 
-export type CreateCompletionStreamOptions = CreateCompletionBaseOptions;
+export type CreateCompletionStreamOptions<
+  Model extends StreamingCompletionModel = StreamingCompletionModel,
+> = CreateCompletionBaseOptions<Model>;
 
-export type CreateParsedCompletionOptions<T> = Omit<CreateCompletionBaseOptions, "outputSchema"> & {
-  schema: ZodSchema<T>;
-};
+export type CreateParsedCompletionOptions<
+  T,
+  Model extends CompletionModel = CompletionModel,
+> = Omit<CreateCompletionBaseOptions<Model>, "outputSchema"> & { schema: ZodSchema<T> };
 
 export type CreateCompletionResult<RawResponse = unknown> = {
   text: string;
@@ -62,41 +75,44 @@ export type CreateParsedCompletionResult<
 type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
 
-export function createCompletion<Model extends CompletionModel>(
-  model: Model,
-  options: CreateCompletionOptions,
+export async function createCompletion<Model extends CompletionModel>(
+  input: CreateCompletionInput,
+  options: CreateCompletionOptions<Model>,
 ): Promise<CreateCompletionResult<RawResponseOf<Model>>> {
-  return sendCompletion(model, options);
+  const request = toCompletionRequest(input, options);
+  assertCompletionRequestSupported(options.model, request);
+  const retries = resolveOptionalRetries(options.retries);
+  return sendCompletion(options.model, request, retries);
 }
 
 export function createCompletionStream<Model extends StreamingCompletionModel>(
-  model: Model,
-  options: CreateCompletionStreamOptions,
+  input: CreateCompletionInput,
+  options: CreateCompletionStreamOptions<Model>,
 ): AsyncIterable<CompletionStreamEvent<RawResponseOf<Model>>> {
-  const request = toCompletionRequest(options);
-  if (!isStreamingCompletionModel(model) || !model.capabilities.streaming) {
+  const request = toCompletionRequest(input, options);
+  if (!isStreamingCompletionModel(options.model) || !options.model.capabilities.streaming) {
     throw new Error("This completion model does not support streaming");
   }
-  assertCompletionRequestSupported(model, request, { streaming: true });
-  return model.streamCompletion(request) as AsyncIterable<
-    CompletionStreamEvent<RawResponseOf<Model>>
-  >;
+  assertCompletionRequestSupported(options.model, request, { streaming: true });
+  const retries = resolveOptionalRetries(options.retries);
+  return streamCompletionWithRetries(options.model, request, retries);
 }
 
 export async function createParsedCompletion<T, Model extends CompletionModel>(
-  model: Model,
-  options: CreateParsedCompletionOptions<T>,
+  input: CreateCompletionInput,
+  options: CreateParsedCompletionOptions<T, Model>,
 ): Promise<CreateParsedCompletionResult<T, RawResponseOf<Model>>> {
-  const { schema, ...completionOptions } = options;
-  const request = toCompletionRequest(
-    {
-      ...completionOptions,
-      outputSchema: toProviderJsonSchema(schema),
-    },
-    "createParsedCompletion",
+  const { schema } = options;
+  const request = toCompletionRequest(input, {
+    ...options,
+    outputSchema: toProviderJsonSchema(schema),
+  });
+  assertCompletionRequestSupported(options.model, request);
+  const response = await runWithRetries(
+    () => options.model.completion(request) as Promise<CompletionResponse<RawResponseOf<Model>>>,
+    resolveOptionalRetries(options.retries),
+    { streaming: false },
   );
-  assertCompletionRequestSupported(model, request);
-  const response = (await model.completion(request)) as CompletionResponse<RawResponseOf<Model>>;
   const text = textFromAssistantContent(response.choice);
   return {
     data: parseCompletionData(text, schema),
@@ -109,11 +125,14 @@ export async function createParsedCompletion<T, Model extends CompletionModel>(
 
 async function sendCompletion<Model extends CompletionModel>(
   model: Model,
-  options: CreateCompletionOptions,
+  request: CompletionRequest,
+  retries: ResolvedRetryOptions | undefined,
 ): Promise<CreateCompletionResult<RawResponseOf<Model>>> {
-  const request = toCompletionRequest(options);
-  assertCompletionRequestSupported(model, request);
-  const response = (await model.completion(request)) as CompletionResponse<RawResponseOf<Model>>;
+  const response = await runWithRetries(
+    () => model.completion(request) as Promise<CompletionResponse<RawResponseOf<Model>>>,
+    retries,
+    { streaming: false },
+  );
   return {
     text: textFromAssistantContent(response.choice),
     content: response.choice,
@@ -123,17 +142,10 @@ async function sendCompletion<Model extends CompletionModel>(
 }
 
 function toCompletionRequest(
+  input: CreateCompletionInput,
   options: CreateCompletionBaseOptions,
-  helperName = "createCompletion",
 ): CompletionRequest {
-  const chatHistory = [
-    ...messagesFromMessages(options.messages),
-    ...messagesFromInput(options.input),
-  ];
-
-  if (chatHistory.length === 0) {
-    throw new Error(`${helperName} requires input or messages.`);
-  }
+  const chatHistory = messagesFromInput(input);
 
   const configuredTools = options.tools ?? [];
   const request: CompletionRequest = {
@@ -151,20 +163,17 @@ function toCompletionRequest(
   if (options.maxTokens !== undefined) request.maxTokens = options.maxTokens;
   if (options.toolChoice !== undefined) request.toolChoice = options.toolChoice;
   if (options.outputSchema !== undefined) request.outputSchema = options.outputSchema;
-  if (options.params !== undefined) request.additionalParams = options.params;
+  if (options.additionalParams !== undefined) request.additionalParams = options.additionalParams;
 
   return request;
 }
 
-function messagesFromInput(input: CreateCompletionInput | undefined): MessageType[] {
-  if (input === undefined) {
-    return [];
-  }
+function messagesFromInput(input: CreateCompletionInput): MessageType[] {
   if (typeof input === "string") {
     return [Message.user(input)];
   }
   if (Array.isArray(input)) {
-    return normalizeMessageArray(input, "input");
+    return normalizeMessageArray(input);
   }
   if (!isCoreMessage(input)) {
     throw new TypeError("input must be a string, Message, or Message[].");
@@ -172,19 +181,87 @@ function messagesFromInput(input: CreateCompletionInput | undefined): MessageTyp
   return [input];
 }
 
-function messagesFromMessages(messages: MessageType[] | undefined): MessageType[] {
-  return messages === undefined ? [] : normalizeMessageArray(messages, "messages");
-}
-
-function normalizeMessageArray(
-  messages: MessageType[],
-  fieldName: "input" | "messages",
-): MessageType[] {
+function normalizeMessageArray(messages: MessageType[]): MessageType[] {
+  if (messages.length === 0) {
+    throw new Error("input must contain at least one Message.");
+  }
   if (!messages.every(isCoreMessage)) {
-    throw new TypeError(`${fieldName} must contain only Message values.`);
+    throw new TypeError("input must contain only Message values.");
   }
 
   return [...messages];
+}
+
+function resolveOptionalRetries(
+  options: RetryOptions | undefined,
+): ResolvedRetryOptions | undefined {
+  return options === undefined ? undefined : resolveRetryOptions(options);
+}
+
+async function* streamCompletionWithRetries<Model extends StreamingCompletionModel>(
+  model: Model,
+  request: CompletionRequest,
+  retries: ResolvedRetryOptions | undefined,
+): AsyncIterable<CompletionStreamEvent<RawResponseOf<Model>>> {
+  let attempt = 1;
+  let swallowedUsage = Usage.empty();
+
+  while (true) {
+    let exposedEvent = false;
+    let retry = false;
+    try {
+      const events = model.streamCompletion(request) as AsyncIterable<
+        CompletionStreamEvent<RawResponseOf<Model>>
+      >;
+      for await (const event of events) {
+        if (event.type === "error" && !exposedEvent) {
+          const retryOptions = retryOptionsForFailure(retries, {
+            error: event.error,
+            attempt,
+            streaming: true,
+          });
+          if (retryOptions !== undefined) {
+            if (event.usage !== undefined) {
+              swallowedUsage = Usage.add(swallowedUsage, event.usage);
+            }
+            await waitForRetry(retryDelayMs(retryOptions, attempt));
+            attempt += 1;
+            retry = true;
+            break;
+          }
+        }
+
+        exposedEvent = true;
+        if (event.type === "final" && swallowedUsage.totalTokens > 0) {
+          yield {
+            ...event,
+            response: {
+              ...event.response,
+              usage: Usage.add(swallowedUsage, event.response.usage),
+            },
+          };
+        } else if (event.type === "error" && swallowedUsage.totalTokens > 0) {
+          yield {
+            ...event,
+            usage: Usage.add(swallowedUsage, event.usage ?? Usage.empty()),
+          };
+        } else {
+          yield event;
+        }
+      }
+      if (!retry) return;
+    } catch (error) {
+      if (exposedEvent) throw error;
+      const retryOptions = retryOptionsForFailure(retries, {
+        error,
+        attempt,
+        streaming: true,
+      });
+      if (retryOptions === undefined) throw error;
+      await waitForRetry(retryDelayMs(retryOptions, attempt));
+      attempt += 1;
+    }
+  }
 }
 
 function isCoreMessage(value: unknown): value is MessageType {

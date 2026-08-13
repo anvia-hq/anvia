@@ -1366,6 +1366,7 @@ function toTraceSummary(row: TraceRow): StudioTraceSummary {
   if (error !== undefined) summary.error = error;
   if (usage !== undefined) summary.usage = usage;
   if (metadata !== undefined) summary.metadata = metadata;
+  if (typeof metadata?.runId === "string") summary.runId = metadata.runId;
   return summary;
 }
 

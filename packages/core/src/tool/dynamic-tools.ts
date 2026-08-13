@@ -1,6 +1,10 @@
 import type { ToolDefinition } from "../completion";
 import type { EmbeddedDocument, EmbeddingModel, VectorMetadata } from "../embeddings";
 import { embedDocuments } from "../embeddings";
+import {
+  assertFiniteSearchThreshold,
+  assertPositiveSearchLimit,
+} from "../internal/vector-search-options";
 import type {
   VectorFilter,
   VectorInspectPage,
@@ -86,6 +90,8 @@ export async function createToolIndex<Metadata extends VectorMetadata = VectorMe
   tools: readonly AnyTool[],
   options: CreateToolIndexOptions<Metadata>,
 ): Promise<ToolIndex<Metadata>> {
+  assertPositiveSearchLimit(options.topK);
+  assertFiniteSearchThreshold(options.threshold);
   const toolList = dedupeTools(tools);
   const embedded = await embedTools(model, toolList, options);
   const index = InMemoryVectorStore.fromDocuments(embedded).index(model);
@@ -93,11 +99,24 @@ export async function createToolIndex<Metadata extends VectorMetadata = VectorMe
 }
 
 export function isToolIndex(value: unknown): value is ToolIndex {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as {
+    kind?: unknown;
+    tools?: unknown;
+    topK?: unknown;
+    search?: unknown;
+    searchIds?: unknown;
+    asTool?: unknown;
+  };
   return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { kind?: unknown }).kind === "tool-index" &&
-    Array.isArray((value as { tools?: unknown }).tools)
+    candidate.kind === "tool-index" &&
+    Array.isArray(candidate.tools) &&
+    typeof candidate.topK === "number" &&
+    typeof candidate.search === "function" &&
+    typeof candidate.searchIds === "function" &&
+    typeof candidate.asTool === "function"
   );
 }
 

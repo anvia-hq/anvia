@@ -66,11 +66,16 @@ export async function fetchToolDefinitions(
       filter: index.filter,
     });
     for (const result of results) {
-      if (names.has(result.document.toolName)) {
+      const toolName = result.document.toolName;
+      if (names.has(toolName)) {
         continue;
       }
-      names.add(result.document.toolName);
-      definitions.push(result.document.definition);
+      const tool = index.tools.find((candidate) => candidate.name === toolName);
+      if (tool === undefined) {
+        continue;
+      }
+      names.add(toolName);
+      definitions.push(await tool.definition(ragText));
     }
   }
   return definitions;

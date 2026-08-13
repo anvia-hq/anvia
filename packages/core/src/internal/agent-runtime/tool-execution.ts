@@ -1,8 +1,9 @@
 import type { Agent } from "../../agent/agent";
-import type { AgentLifecycle } from "../../agent/lifecycle";
+import { type AgentLifecycle, lifecycleSnapshot } from "../../agent/lifecycle";
 import type { AgentApprovalDecision, AgentChildStreamEvent } from "../../agent/run-types";
 import type {
   JsonObject,
+  JsonValue,
   ToolCall,
   ToolDefinition,
   ToolResult,
@@ -13,6 +14,7 @@ import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../
 import { runControl, toolCallControl } from "../../hooks";
 import type { ActiveAgentRunObservers, ActiveToolObservers } from "../../observability/group";
 import type {
+  AgentToolEndArgs,
   AgentToolErrorArgs,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
@@ -21,7 +23,6 @@ import type {
   AnyTool,
   NormalizedToolOutput,
   ToolApprovalContext,
-  ToolApprovalRequest,
   ToolApprovalRunContext,
   ToolCallContext,
   ToolCallStreamEvent,
@@ -33,7 +34,14 @@ import type {
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
 } from "../../tool/middleware";
+import { isSkillTool } from "../../tool/skill-tool-marker";
 import { mapWithConcurrency } from "../concurrency";
+import type { ToolApprovalRequest } from "./approval-request";
+import { assertToolApprovalRequirement, toolMayRequireApproval } from "./approval-requirement";
+import {
+  type PreparedToolCall,
+  prepareToolCall as prepareRegisteredToolCall,
+} from "./prepared-tool-call";
 
 const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
 
@@ -82,7 +90,7 @@ export class ToolCallExecutor {
     private readonly lifecycle: AgentLifecycle | undefined,
     private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,
-    private readonly requestMiddlewares: AgentMiddleware[],
+    private readonly requestMiddlewares: readonly AgentMiddleware[],
     private readonly includeToolCallDeltas: boolean,
     private readonly cancel: (reason: string) => Error,
   ) {}
@@ -124,180 +132,200 @@ export class ToolCallExecutor {
         toolName: toolCall.function.name,
         internalCallId,
         args,
+        ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
+        ...(toolDefinition === undefined ? {} : { toolDefinition }),
+        ...(toolMetadata === undefined ? {} : { toolMetadata }),
       };
-      if (toolCall.callId !== undefined) {
-        toolStartArgs.toolCallId = toolCall.callId;
-      }
-      if (toolDefinition !== undefined) {
-        toolStartArgs.toolDefinition = toolDefinition;
-      }
-      if (toolMetadata !== undefined) {
-        toolStartArgs.toolMetadata = toolMetadata;
-      }
       const toolObservers = await observation?.runObservers.startTool(toolStartArgs);
+      const toolObservation = new ToolObserverScope(toolObservers);
 
-      let output: NormalizedToolOutput;
+      let output: NormalizedToolOutput | undefined;
       let skipped = false;
+      let toolExecutionFailed = false;
       let effectiveArgs = args;
 
-      const callAction = await this.activeHook?.onToolCall?.({
-        ...hookArgs,
-        tool: toolCallControl,
-      });
-      if (callAction?.type === "terminate") {
-        await recordToolError(
-          toolObservers,
-          observation?.turn,
-          toolCall,
-          internalCallId,
-          effectiveArgs,
-          callAction.reason,
-        );
-        throw this.cancel(callAction.reason);
-      }
-      if (callAction?.type === "skip") {
-        output = callAction.reason;
-        skipped = true;
-      } else {
-        let approvalDecision: { approved: true } | { approved: false; result: string };
-        try {
-          effectiveArgs = await this.runToolInputMiddlewares({
-            ...hookArgs,
-            turn: observation?.turn ?? 0,
-            originalArgs: args,
-          });
-          hookArgs.args = effectiveArgs;
-
-          approvalDecision =
-            callAction?.type === "approval_request"
-              ? await this.requestApproval(tool, hookArgs, callAction)
-              : ((await this.evaluateToolApproval(tool, hookArgs)) ?? { approved: true });
-          if (!approvalDecision.approved) {
-            output = approvalDecision.result;
-            skipped = true;
-          } else {
-            const input = parseApprovalInput(tool, effectiveArgs);
-            const step = observation?.turn ?? 0;
-            const lifecycleEvent = {
-              runId: this.runContext.runId,
-              step,
-              toolName: toolCall.function.name,
-              input,
-              ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
-            };
-            await this.lifecycle?.onToolStart?.(lifecycleEvent);
-            const startedAt = Date.now();
-            const outcome = await this.runApprovedToolCall(
-              toolCall,
-              hookArgs,
-              effectiveArgs,
-              args,
-              toolObservers,
-              observation,
-              onStreamEvent,
-              false,
-            );
-            output = outcome.output;
-            const durationMs = Date.now() - startedAt;
-            await this.lifecycle?.onToolFinish?.(
-              outcome.error === undefined
-                ? { ...lifecycleEvent, durationMs, success: true, output }
-                : { ...lifecycleEvent, durationMs, success: false, error: outcome.error },
-            );
-            effectiveArgs = hookArgs.args;
-          }
-        } catch (error) {
-          await recordToolError(
-            toolObservers,
-            observation?.turn,
-            toolCall,
-            internalCallId,
-            effectiveArgs,
-            error,
-          );
-          throw error;
+      try {
+        const callAction = await this.activeHook?.onToolCall?.({
+          ...hookArgs,
+          tool: toolCallControl,
+        });
+        if (callAction?.type === "terminate") {
+          throw this.cancel(callAction.reason);
         }
-      }
+        if (callAction?.type === "skip") {
+          output = callAction.reason;
+          skipped = true;
+        } else {
+          try {
+            effectiveArgs = await this.runToolInputMiddlewares({
+              ...hookArgs,
+              turn: observation?.turn ?? 0,
+              originalArgs: args,
+            });
+            hookArgs.args = effectiveArgs;
 
-      let result = toolOutputToText(output);
-      let structuredResult = toolOutputToStructuredResult(output);
-      if (this.agent.shouldApplyToolMiddleware(toolCall.function.name)) {
-        const middlewareReplacement = await this.runToolResultMiddlewares({
+            let prepared: PreparedToolCall | undefined;
+            try {
+              prepared = this.prepareToolCall(tool, toolCall.function.name, effectiveArgs);
+            } catch (error) {
+              const outcome = await this.handleToolError(
+                toolCall,
+                hookArgs,
+                effectiveArgs,
+                error,
+                toolObservation,
+                observation,
+              );
+              output = outcome.output;
+              toolExecutionFailed = outcome.failed;
+            }
+            if (prepared !== undefined) {
+              const approvalContext = createApprovalContext(
+                prepared.input,
+                hookArgs,
+                this.agent,
+                this.runContext,
+              );
+              const approvalDecision =
+                callAction?.type === "approval_request"
+                  ? await this.requestApproval(approvalContext, callAction, observation)
+                  : ((await this.evaluateToolApproval(tool, approvalContext, observation)) ?? {
+                      approved: true as const,
+                    });
+              if (!approvalDecision.approved) {
+                output = approvalDecision.result;
+                skipped = true;
+              } else {
+                const step = observation?.turn ?? 0;
+                const lifecycleEvent = {
+                  runId: this.runContext.runId,
+                  step,
+                  toolName: toolCall.function.name,
+                  input: lifecycleSnapshot(prepared.input),
+                  ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
+                };
+                await this.lifecycle?.onToolStart?.(lifecycleEvent);
+                const startedAt = Date.now();
+                const outcome = await this.runApprovedToolCall(
+                  prepared,
+                  toolCall,
+                  hookArgs,
+                  effectiveArgs,
+                  toolObservation,
+                  observation,
+                  onStreamEvent,
+                );
+                output = outcome.output;
+                toolExecutionFailed = outcome.failed;
+                const durationMs = Date.now() - startedAt;
+                await this.lifecycle?.onToolFinish?.(
+                  outcome.failed
+                    ? {
+                        ...lifecycleEvent,
+                        durationMs,
+                        success: false,
+                        error: lifecycleSnapshot(outcome.error),
+                      }
+                    : {
+                        ...lifecycleEvent,
+                        durationMs,
+                        success: true,
+                        output: lifecycleSnapshot(output),
+                      },
+                );
+              }
+            }
+          } catch (error) {
+            await toolObservation.error(
+              toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
+            );
+            throw error;
+          }
+        }
+
+        if (output === undefined) {
+          throw new Error(`Tool "${toolCall.function.name}" did not produce an execution result.`);
+        }
+        let result = toolOutputToText(output);
+        let structuredResult = toolOutputToStructuredResult(output);
+        if (!isSkillTool(tool)) {
+          const middlewareReplacement = await this.runToolResultMiddlewares({
+            ...hookArgs,
+            args: effectiveArgs,
+            result,
+            originalResult: result,
+            structuredResult,
+            originalStructuredResult: structuredResult,
+            turn: observation?.turn ?? 0,
+          });
+          if (middlewareReplacement !== undefined) {
+            output = middlewareReplacement;
+            result = toolOutputToText(middlewareReplacement);
+            structuredResult = toolOutputToStructuredResult(middlewareReplacement);
+          }
+        }
+
+        const resultAction = await this.activeHook?.onToolResult?.({
           ...hookArgs,
           args: effectiveArgs,
           result,
-          originalResult: result,
           structuredResult,
-          originalStructuredResult: structuredResult,
-          turn: observation?.turn ?? 0,
+          run: runControl,
         });
-        if (middlewareReplacement !== undefined) {
-          output = middlewareReplacement;
-          result = toolOutputToText(middlewareReplacement);
-          structuredResult = toolOutputToStructuredResult(middlewareReplacement);
+        if (!toolExecutionFailed) {
+          await toolObservation.end({
+            turn: observation?.turn ?? 0,
+            toolCall,
+            toolName: toolCall.function.name,
+            internalCallId,
+            args: effectiveArgs,
+            result,
+            structuredResult,
+            skipped,
+            toolCallId: toolCall.callId,
+          });
         }
-      }
+        if (resultAction?.type === "terminate") {
+          throw this.cancel(resultAction.reason);
+        }
 
-      const resultAction = await this.activeHook?.onToolResult?.({
-        ...hookArgs,
-        args: effectiveArgs,
-        result,
-        structuredResult,
-        run: runControl,
-      });
-      await toolObservers?.end({
-        turn: observation?.turn ?? 0,
-        toolCall,
-        toolName: toolCall.function.name,
-        internalCallId,
-        args: effectiveArgs,
-        result,
-        structuredResult,
-        skipped,
-        toolCallId: toolCall.callId,
-      });
-      if (resultAction?.type === "terminate") {
-        throw this.cancel(resultAction.reason);
+        const resultPayload: ToolResultEventPayload = {
+          type: "tool_result",
+          toolName: toolCall.function.name,
+          internalCallId,
+          args: effectiveArgs,
+          result,
+          structuredResult,
+        };
+        if (toolCall.callId !== undefined) {
+          resultPayload.toolCallId = toolCall.callId;
+        }
+        onResult?.(resultPayload);
+        return ToolContent.toolResult(toolCall.id, output, {
+          callId: toolCall.callId,
+          toolName: toolCall.function.name,
+        });
+      } catch (error) {
+        await toolObservation.error(
+          toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
+        );
+        throw error;
       }
-
-      const resultPayload: ToolResultEventPayload = {
-        type: "tool_result",
-        toolName: toolCall.function.name,
-        internalCallId,
-        args: effectiveArgs,
-        result,
-        structuredResult,
-      };
-      if (toolCall.callId !== undefined) {
-        resultPayload.toolCallId = toolCall.callId;
-      }
-      onResult?.(resultPayload);
-      return ToolContent.toolResult(toolCall.id, output, {
-        callId: toolCall.callId,
-        toolName: toolCall.function.name,
-      });
     });
   }
 
   private async runApprovedToolCall(
+    prepared: PreparedToolCall,
     toolCall: ToolCall,
     hookArgs: ToolHookArgs,
     effectiveArgs: string,
-    originalArgs: string,
-    toolObservers: ActiveToolObservers | undefined,
+    toolObservation: ToolObserverScope,
     observation: ToolExecutionObservation | undefined,
     onStreamEvent?: (event: AgentToolEventPayload) => void,
-    applyInputMiddleware = true,
-  ): Promise<{ output: NormalizedToolOutput; error?: unknown | undefined }> {
-    const middlewareArgs = applyInputMiddleware
-      ? await this.runToolInputMiddlewares({
-          ...hookArgs,
-          args: effectiveArgs,
-          turn: observation?.turn ?? 0,
-          originalArgs,
-        })
-      : effectiveArgs;
-    hookArgs.args = middlewareArgs;
+  ): Promise<
+    | { output: NormalizedToolOutput; failed: false }
+    | { output: NormalizedToolOutput; failed: true; error: unknown }
+  > {
     try {
       const toolContext: ToolCallContext = {
         emitStreamEvent: async (event) => {
@@ -306,13 +334,11 @@ export class ToolCallExecutor {
             toolCall,
             toolName: toolCall.function.name,
             internalCallId: hookArgs.internalCallId,
-            args: middlewareArgs,
+            args: effectiveArgs,
             event,
+            ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
           };
-          if (toolCall.callId !== undefined) {
-            streamEventArgs.toolCallId = toolCall.callId;
-          }
-          await toolObservers?.streamEvent(streamEventArgs);
+          await toolObservation.streamEvent(streamEventArgs);
           const payload = agentToolEventPayload(toolCall, hookArgs.internalCallId, event);
           if (payload !== undefined) {
             onStreamEvent?.(payload);
@@ -321,32 +347,61 @@ export class ToolCallExecutor {
       };
       toolContext.includeToolCallDeltas = this.includeToolCallDeltas;
       return {
-        output: await this.agent.callTool(toolCall.function.name, middlewareArgs, toolContext),
+        output: await prepared.call(toolContext),
+        failed: false,
       };
     } catch (error) {
-      const errorAction = await this.activeHook?.onToolError?.({
-        ...hookArgs,
-        args: middlewareArgs,
+      return this.handleToolError(
+        toolCall,
+        hookArgs,
+        effectiveArgs,
         error,
-        run: runControl,
-      });
-      await toolObservers?.error(
-        toolErrorArgs(
-          observation?.turn ?? 0,
-          toolCall,
-          hookArgs.internalCallId,
-          middlewareArgs,
-          error,
-        ),
+        toolObservation,
+        observation,
       );
-      if (errorAction?.type === "terminate") {
-        throw this.cancel(errorAction.reason);
-      }
-      return {
-        output: error instanceof Error ? error.toString() : String(error),
-        error,
-      };
     }
+  }
+
+  private prepareToolCall(
+    tool: AnyTool | undefined,
+    toolName: string,
+    args: string,
+  ): PreparedToolCall {
+    if (tool !== undefined) {
+      return prepareRegisteredToolCall(tool, args);
+    }
+    const input = parseToolArgs(args);
+    return {
+      input,
+      call: (context) => this.agent.callTool(toolName, args, context),
+    };
+  }
+
+  private async handleToolError(
+    toolCall: ToolCall,
+    hookArgs: ToolHookArgs,
+    args: string,
+    error: unknown,
+    toolObservation: ToolObserverScope,
+    observation: ToolExecutionObservation | undefined,
+  ): Promise<{ output: NormalizedToolOutput; failed: true; error: unknown }> {
+    const errorAction = await this.activeHook?.onToolError?.({
+      ...hookArgs,
+      args,
+      error,
+      run: runControl,
+    });
+    await toolObservation.error(
+      toolErrorArgs(observation?.turn ?? 0, toolCall, hookArgs.internalCallId, args, error),
+    );
+    if (errorAction?.type === "terminate") {
+      throw this.cancel(errorAction.reason);
+    }
+    return {
+      output: error instanceof Error ? error.toString() : String(error),
+      failed: true,
+      error,
+    };
   }
 
   private async runToolResultMiddlewares(
@@ -402,25 +457,26 @@ export class ToolCallExecutor {
 
   private async evaluateToolApproval(
     tool: AnyTool | undefined,
-    hookArgs: ToolHookArgs,
+    context: ToolApprovalContext,
+    observation: ToolExecutionObservation | undefined,
   ): Promise<{ approved: true } | { approved: false; result: string } | undefined> {
     const requirement = tool?.requiresApproval as ToolRequiresApproval<unknown> | undefined;
     if (requirement === undefined) return undefined;
-    const context = approvalContext(tool, hookArgs, this.agent, this.runContext);
     const resolved =
       typeof requirement === "function" ? await requirement(context.args, context) : requirement;
+    assertToolApprovalRequirement(resolved, { allowFunction: false });
     if (resolved === false) return { approved: true };
-    const reason = typeof resolved === "object" ? resolved.reason : undefined;
-    return this.requestApproval(tool, hookArgs, reason === undefined ? {} : { reason });
+    const reason = resolved === true ? undefined : resolved.reason;
+    return this.requestApproval(context, reason === undefined ? {} : { reason }, observation);
   }
 
   private async requestApproval(
-    tool: AnyTool | undefined,
-    hookArgs: ToolHookArgs,
+    context: ToolApprovalContext,
     options: ToolApprovalRequestOptions,
+    observation: ToolExecutionObservation | undefined,
   ): Promise<{ approved: true } | { approved: false; result: string }> {
     const request: ToolApprovalRequest = {
-      ...approvalContext(tool, hookArgs, this.agent, this.runContext),
+      ...context,
       id: globalThis.crypto.randomUUID(),
     };
     if (options.reason !== undefined) {
@@ -429,7 +485,32 @@ export class ToolCallExecutor {
     if (options.rejectMessage !== undefined) {
       request.rejectMessage = options.rejectMessage;
     }
-    const decision = await this.approvalHandler(request);
+    await observation?.runObservers.event({
+      name: "tool.approval_requested",
+      attributes: approvalEventAttributes(request, observation.turn),
+    });
+    let decision: AgentApprovalDecision;
+    try {
+      decision = await this.approvalHandler(request);
+    } catch (error) {
+      await observation?.runObservers.event({
+        name: "tool.approval_failed",
+        level: "ERROR",
+        attributes: {
+          ...approvalEventAttributes(request, observation.turn),
+          errorName: error instanceof Error ? error.name : typeof error,
+        },
+      });
+      throw error;
+    }
+    await observation?.runObservers.event({
+      name: "tool.approval_resolved",
+      attributes: {
+        ...approvalEventAttributes(request, observation.turn),
+        approved: decision.approved,
+        ...(decision.reason === undefined ? {} : { decisionReason: decision.reason }),
+      },
+    });
     if (decision.approved) {
       return { approved: true };
     }
@@ -440,14 +521,12 @@ export class ToolCallExecutor {
   }
 }
 
-function approvalContext(
-  tool: AnyTool | undefined,
+function createApprovalContext(
+  input: unknown,
   hookArgs: ToolHookArgs,
   agent: Agent,
   run: ToolExecutionRunContext,
 ): ToolApprovalContext {
-  const rawParsedArgs = parseToolArgs(hookArgs.args);
-  const parsedArgs = tool?.parseApprovalArgs?.(rawParsedArgs) ?? rawParsedArgs;
   const approvalRun: ToolApprovalRunContext = {
     agentId: agent.id,
     runId: run.runId,
@@ -460,7 +539,7 @@ function approvalContext(
   }
   const context: ToolApprovalContext = {
     toolName: hookArgs.toolName,
-    args: parsedArgs,
+    args: lifecycleSnapshot(input),
     rawArgs: hookArgs.args,
     internalCallId: hookArgs.internalCallId,
     run: approvalRun,
@@ -471,9 +550,18 @@ function approvalContext(
   return context;
 }
 
-function parseApprovalInput(tool: AnyTool | undefined, args: string): unknown {
-  const parsed = parseToolArgs(args);
-  return tool?.parseApprovalArgs?.(parsed) ?? parsed;
+function approvalEventAttributes(
+  request: ToolApprovalRequest,
+  turn: number,
+): Record<string, JsonValue | undefined> {
+  return {
+    turn,
+    approvalId: request.id,
+    toolName: request.toolName,
+    toolCallId: request.toolCallId,
+    internalCallId: request.internalCallId,
+    reason: request.reason,
+  };
 }
 
 function normalizeToolOutputMiddlewareResult(result: ToolOutputMiddlewareResult): {
@@ -496,7 +584,7 @@ function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
       ? (metadata as { serverName?: unknown })
       : undefined;
   const result: JsonObject = {
-    approvalRequired: tool.requiresApproval !== undefined,
+    approvalRequired: toolMayRequireApproval(tool.requiresApproval),
   };
   if (typeof mcpMetadata?.serverName === "string" && mcpMetadata.serverName.length > 0) {
     result.mcpServerName = mcpMetadata.serverName;
@@ -518,30 +606,31 @@ function toolErrorArgs(
     internalCallId,
     args,
     error,
+    ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
   };
-  if (toolCall.callId !== undefined) {
-    observerArgs.toolCallId = toolCall.callId;
-  }
   return observerArgs;
 }
 
-async function recordToolError(
-  toolObservers: ActiveToolObservers | undefined,
-  turn: number | undefined,
-  toolCall: ToolCall,
-  internalCallId: string,
-  args: string,
-  error: unknown,
-): Promise<void> {
-  await toolObservers?.error({
-    turn: turn ?? 0,
-    toolCall,
-    toolName: toolCall.function.name,
-    internalCallId,
-    args,
-    error,
-    toolCallId: toolCall.callId,
-  });
+class ToolObserverScope {
+  private terminal = false;
+
+  constructor(private readonly observers: ActiveToolObservers | undefined) {}
+
+  streamEvent(args: AgentToolStreamEventArgs): Promise<void> | undefined {
+    return this.observers?.streamEvent(args);
+  }
+
+  async end(args: AgentToolEndArgs): Promise<void> {
+    if (this.terminal) return;
+    this.terminal = true;
+    await this.observers?.end(args);
+  }
+
+  async error(args: AgentToolErrorArgs): Promise<void> {
+    if (this.terminal) return;
+    this.terminal = true;
+    await this.observers?.error(args);
+  }
 }
 
 function toolOutputToText(output: NormalizedToolOutput): string {

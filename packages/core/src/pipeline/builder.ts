@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Agent } from "../agent/agent";
+import { type Agent, cancelAgentApproval } from "../agent/agent";
 import type { CompletionModel } from "../completion";
 import type { Extractor } from "../extractor";
 import {
@@ -182,6 +182,10 @@ export class PipelineBuilder<Input, Output = Input> {
       return runNode(context, next.node, async () => {
         const response = await agent.generate(String(value));
         if (response.status === "approval_required") {
+          await cancelAgentApproval(
+            response,
+            "Pipeline agent stages cannot suspend for tool approval.",
+          );
           throw new Error("Pipeline agent stages cannot suspend for tool approval.");
         }
         return response.output;

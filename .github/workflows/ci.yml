@@ -44,5 +44,8 @@ jobs:
       - name: Typecheck packages
         run: pnpm --filter './packages/**' typecheck
 
+      - name: Typecheck examples
+        run: pnpm --filter './examples/**' typecheck
+
       - name: Test packages
         run: pnpm --filter './packages/**' test

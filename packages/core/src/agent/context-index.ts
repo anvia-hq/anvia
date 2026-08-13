@@ -1,4 +1,8 @@
 import type { Document } from "../completion";
+import {
+  assertFiniteSearchThreshold,
+  assertPositiveSearchLimit,
+} from "../internal/vector-search-options";
 import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
 
 export type CreateContextIndexOptions<T = unknown> = {
@@ -17,8 +21,12 @@ export function createContextIndex<T>(
   index: VectorSearchIndex<T>,
   options: CreateContextIndexOptions<T>,
 ): ContextIndex<T> {
+  const topK = assertPositiveSearchLimit(options.topK);
+  const threshold = assertFiniteSearchThreshold(options.threshold);
   return Object.freeze({
     ...options,
+    topK,
+    ...(threshold === undefined ? {} : { threshold }),
     kind: "context-index" as const,
     index,
   });

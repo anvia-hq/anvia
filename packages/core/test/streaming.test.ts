@@ -122,6 +122,62 @@ describe("Agent streaming", () => {
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hi"));
   });
 
+  it("cancels the run and closes the provider iterator when a consumer abandons a stream", async () => {
+    let providerClosed = false;
+    let runEnded = false;
+    let runError: unknown;
+    let generationError: unknown;
+    const providerEvents = (async function* (): AsyncIterable<CompletionStreamEvent> {
+      try {
+        yield { type: "text_delta", delta: "partial" };
+        yield { type: "text_delta", delta: "unread" };
+      } finally {
+        providerClosed = true;
+      }
+    })();
+    const observer = createObserver({
+      startRun() {
+        return {
+          startGeneration() {
+            return {
+              end() {},
+              error({ error }) {
+                generationError = error;
+              },
+            };
+          },
+          end() {
+            runEnded = true;
+          },
+          error({ error }) {
+            runError = error;
+          },
+        };
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([providerEvents]),
+      observers: [observer],
+    });
+    const stream = agent.stream("hi");
+
+    for await (const event of stream) {
+      if (event.type === "text_delta") break;
+    }
+
+    expect(providerClosed).toBe(true);
+    expect(runEnded).toBe(false);
+    expect(runError).toBeInstanceOf(AgentRunCancelledError);
+    expect(generationError).toBeInstanceOf(AgentRunCancelledError);
+    expect(generationError).not.toBe(runError);
+    expect(generationError).toMatchObject({
+      message: (runError as Error).message,
+      reason: (runError as AgentRunCancelledError).reason,
+    });
+    expect(stream.steer("too late")).toBe(false);
+  });
+
   it("measures first-delta latency from before generation_start is emitted", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
@@ -327,7 +383,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent.usage).toEqual(turnUsage);
-    expect(observedError?.usage).toBe(errorEvent.usage);
+    expect(observedError?.usage).toEqual(errorEvent.usage);
     await expect(iterator.next()).rejects.toBe(errorEvent.error);
   });
 
@@ -1089,6 +1145,7 @@ describe("Agent streaming", () => {
       description: "Slow tool",
       inputSchema: z.object({}),
       outputSchema: z.string(),
+      requiresApproval: false,
       async execute() {
         slowStarted.resolve();
         await slowRelease.promise;
@@ -1100,6 +1157,7 @@ describe("Agent streaming", () => {
       description: "Fast tool",
       inputSchema: z.object({}),
       outputSchema: z.string(),
+      requiresApproval: false,
       async execute() {
         fastStarted.resolve();
         return "fast";

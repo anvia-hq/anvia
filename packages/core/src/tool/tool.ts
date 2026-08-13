@@ -32,12 +32,6 @@ export type ToolRequiresApproval<Args = unknown> =
       context: ToolApprovalContext<Args>,
     ) => boolean | ToolApprovalRequirement | Promise<boolean | ToolApprovalRequirement>);
 
-export type ToolApprovalRequest<Args = unknown> = ToolApprovalContext<Args> & {
-  id: string;
-  reason?: string;
-  rejectMessage?: string;
-};
-
 export type ToolCallStreamEvent = {
   agentId: string;
   agentName?: string | undefined;
@@ -54,7 +48,7 @@ export interface Tool<Args = unknown, Output = unknown> {
   readonly requiresApproval?: ToolRequiresApproval<Args>;
   definition(prompt: string): ToolDefinition | Promise<ToolDefinition>;
   call(args: Args, context?: ToolCallContext): Output | Promise<Output>;
-  parseApprovalArgs?(args: unknown): Args;
+  parseInput?(args: JsonValue): Args;
 }
 
 export type AnyTool = Omit<Tool<unknown, unknown>, "requiresApproval"> & {

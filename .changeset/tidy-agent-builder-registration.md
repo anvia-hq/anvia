@@ -1,7 +1,10 @@
 ---
 "@anvia/core": minor
+"@anvia/langfuse": patch
 "@anvia/logger": patch
-"@anvia/studio": patch
+"@anvia/otel": patch
+"@anvia/sandbox": patch
+"@anvia/studio": minor
 ---
 
 Expose `new Agent(options)` with direct `generate()` and steerable `stream()` execution, add run IDs

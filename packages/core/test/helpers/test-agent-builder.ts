@@ -4,19 +4,24 @@ import {
   type AgentOptions,
   type AgentResult,
   type AgentRunOptions,
+  type AgentSession,
+  type AgentStream,
+  type AgentStreamOptions,
 } from "../../src/agent";
 import { type ContextIndex, isContextIndex } from "../../src/agent/context-index";
 import type { AgentToolInput } from "../../src/agent/types";
 import type { CompletionModel, Document, JsonValue, ToolChoice } from "../../src/completion";
 import type { GuardrailPolicyInput } from "../../src/guardrails";
 import type { AgentHook } from "../../src/hooks";
-import { getAgentApprovalRequestDetails, setInternalAgentHook } from "../../src/internal/agent";
+import { getAgentApprovalRequestDetails } from "../../src/internal/agent-runtime/approval-details";
+import type { ToolApprovalRequest } from "../../src/internal/agent-runtime/approval-request";
+import { withInternalAgentRunOptions } from "../../src/internal/agent-runtime/run-options";
 import type { McpServer } from "../../src/mcp";
 import type { MemoryOptions, MemoryStore } from "../../src/memory";
 import type { AgentObserver, ObserveOptions } from "../../src/observability";
 import type { ZodSchema } from "../../src/schema";
 import type { SkillSet } from "../../src/skills";
-import type { AgentMiddleware, ToolApprovalRequest } from "../../src/tool";
+import type { AgentMiddleware } from "../../src/tool";
 
 type TestApprovalDecision = boolean | AgentApprovalDecision;
 type TestApprovalsOptions = {
@@ -145,13 +150,14 @@ export class TestAgentBuilder<M extends CompletionModel = CompletionModel> {
 
   build(): Agent<M> {
     const agent = new Agent(this.options);
-    if (this.hookValue !== undefined) setInternalAgentHook(agent, this.hookValue);
-    if (this.approvalsValue === undefined) return agent;
+    if (this.hookValue === undefined && this.approvalsValue === undefined) return agent;
 
     const generate = agent.generate.bind(agent);
+    const stream = agent.stream.bind(agent);
+    const session = agent.session.bind(agent);
     Object.defineProperty(agent, "generate", {
       value: async (input: Parameters<typeof agent.generate>[0], options: AgentRunOptions = {}) => {
-        let result = await generate(input, options);
+        let result = await generate(input, this.withHook(options));
         while (result.status === "approval_required" && this.approvalsValue !== undefined) {
           const request = getAgentApprovalRequestDetails(result.approval);
           if (request === undefined) throw new Error("Missing internal approval details.");
@@ -163,6 +169,50 @@ export class TestAgentBuilder<M extends CompletionModel = CompletionModel> {
         return result satisfies AgentResult;
       },
     });
+    Object.defineProperty(agent, "stream", {
+      value: (input: Parameters<typeof agent.stream>[0], options: AgentStreamOptions = {}) =>
+        stream(input, this.withHook(options)),
+    });
+    Object.defineProperty(agent, "session", {
+      value: (
+        sessionId: Parameters<typeof agent.session>[0],
+        options?: Parameters<typeof agent.session>[1],
+      ) => this.wrapSession(agent, session(sessionId, options)),
+    });
     return agent;
+  }
+
+  private withHook<T extends AgentRunOptions>(options: T): T {
+    return this.hookValue === undefined
+      ? options
+      : withInternalAgentRunOptions(options, { hook: this.hookValue });
+  }
+
+  private wrapSession(agent: Agent<M>, session: AgentSession<M>): AgentSession<M> {
+    if (this.hookValue === undefined && this.approvalsValue === undefined) return session;
+    const generate = session.generate.bind(session);
+    const stream = session.stream.bind(session);
+    Object.defineProperty(session, "generate", {
+      value: async (
+        input: Parameters<typeof session.generate>[0],
+        options: AgentRunOptions = {},
+      ) => {
+        let result = await generate(input, this.withHook(options));
+        while (result.status === "approval_required" && this.approvalsValue !== undefined) {
+          const request = getAgentApprovalRequestDetails(result.approval);
+          if (request === undefined) throw new Error("Missing internal approval details.");
+          const rawDecision = await this.approvalsValue.handler(request);
+          const decision: AgentApprovalDecision =
+            typeof rawDecision === "boolean" ? { approved: rawDecision } : rawDecision;
+          result = await agent.resume(result, decision);
+        }
+        return result satisfies AgentResult;
+      },
+    });
+    Object.defineProperty(session, "stream", {
+      value: (input: Parameters<typeof session.stream>[0], options: AgentStreamOptions = {}) =>
+        stream(input, this.withHook(options)) as AgentStream,
+    });
+    return session;
   }
 }

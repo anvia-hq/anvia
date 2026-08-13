@@ -5,6 +5,7 @@ import {
   type AnyTool,
   type CompletionModel,
   createTool,
+  type Tool,
   ToolCallError,
   ToolJsonError,
   ToolNotFoundError,
@@ -156,7 +157,7 @@ describe("Agent tool execution", () => {
     });
     const agent = agentWithTools([transformedTool]);
 
-    expect(transformedTool.parseApprovalArgs?.({ amount: "125" })).toEqual({ amount: 125 });
+    expect(transformedTool.parseInput?.({ amount: "125" })).toEqual({ amount: 125 });
     await expect(agent.callTool("transform", JSON.stringify({ amount: "21" }))).resolves.toBe(
       '{"total":42}',
     );
@@ -191,6 +192,108 @@ describe("Agent tool execution", () => {
     ]);
 
     await expect(agent.callTool("screenshot", "{}")).resolves.toEqual(content);
+  });
+
+  it("uses the prepared input contract for direct tool calls", async () => {
+    const received: unknown[] = [];
+    const tool: AnyTool = {
+      name: "coerce",
+      definition: () => ({
+        name: "coerce",
+        description: "Coerce a numeric string",
+        parameters: { type: "object", properties: {} },
+      }),
+      parseInput(args) {
+        return Number((args as { value: string }).value);
+      },
+      call(args) {
+        received.push(args);
+        return args;
+      },
+    };
+    const agent = agentWithTools([tool]);
+
+    await expect(agent.callTool("coerce", '{"value":"3"}')).resolves.toBe("3");
+    expect(received).toEqual([3]);
+  });
+
+  it("preserves nullish parsed inputs instead of falling back to raw input", async () => {
+    const received: unknown[] = [];
+    const nullTool: AnyTool = {
+      name: "null_input",
+      definition: () => ({
+        name: "null_input",
+        description: "Transform input to null",
+        parameters: { type: "object", properties: {} },
+      }),
+      parseInput: () => null,
+      call(input) {
+        received.push(input);
+        return "null";
+      },
+    };
+    const undefinedTool: AnyTool = {
+      name: "undefined_input",
+      definition: () => ({
+        name: "undefined_input",
+        description: "Transform input to undefined",
+        parameters: { type: "object", properties: {} },
+      }),
+      parseInput: () => undefined,
+      call(input) {
+        received.push(input);
+        return "undefined";
+      },
+    };
+    const agent = agentWithTools([nullTool, undefinedTool]);
+
+    await expect(agent.callTool("null_input", "{}")).resolves.toBe("null");
+    await expect(agent.callTool("undefined_input", "{}")).resolves.toBe("undefined");
+    expect(received).toEqual([null, undefined]);
+  });
+
+  it("consumes prepared-input state before a tool re-enters itself", async () => {
+    let recursiveTool: Tool<{ value: string }, string>;
+    recursiveTool = createTool({
+      name: "recursive",
+      description: "Call itself once",
+      inputSchema: z.object({ value: z.string() }),
+      outputSchema: z.string(),
+      execute({ value }, context) {
+        return value === "outer" ? recursiveTool.call({ value: "nested" }, context) : value;
+      },
+    });
+    const agent = agentWithTools([recursiveTool]);
+
+    await expect(agent.callTool("recursive", '{"value":"outer"}')).resolves.toBe("nested");
+  });
+
+  it("snapshots createTool options and returns independent definitions", async () => {
+    const options = {
+      name: "before",
+      description: "Before mutation",
+      inputSchema: z.object({ value: z.string() }),
+      outputSchema: z.string(),
+      execute: ({ value }: { value: string }) => `before:${value}`,
+    };
+    const tool = createTool(options);
+
+    options.name = "after";
+    options.description = "After mutation";
+    options.execute = ({ value }) => `after:${value}`;
+    const firstDefinition = await tool.definition("");
+    (firstDefinition.parameters as { type?: string }).type = "corrupted";
+    const secondDefinition = await tool.definition("");
+
+    expect(tool.name).toBe("before");
+    expect(secondDefinition).toMatchObject({
+      name: "before",
+      description: "Before mutation",
+      parameters: { type: "object" },
+    });
+    await expect(agentWithTools([tool]).callTool("before", '{"value":"ok"}')).resolves.toBe(
+      "before:ok",
+    );
   });
 
   it("deduplicates tool arrays by name", async () => {

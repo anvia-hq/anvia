@@ -1,20 +1,20 @@
-import type { Message } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationStartArgs,
+  AgentRunStartArgs,
   AgentToolStartArgs,
 } from "@anvia/core/observability";
 
-export function modelInputMessage(message: Message): Message {
-  if (message.metadata === undefined) {
-    return message;
-  }
-  const result: Message = { ...message };
-  delete result.metadata;
+type ObservedMessage = AgentRunStartArgs["prompt"];
+
+export function modelInputMessage(message: ObservedMessage): Omit<ObservedMessage, "metadata"> {
+  const { metadata: _metadata, ...result } = message;
   return result;
 }
 
-export function modelInputMessages(messages: Message[]): Message[] {
+export function modelInputMessages(
+  messages: readonly ObservedMessage[],
+): Array<Omit<ObservedMessage, "metadata">> {
   return messages.map(modelInputMessage);
 }
 

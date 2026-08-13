@@ -1,3 +1,4 @@
+import { observerSnapshot } from "./snapshot";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
@@ -19,14 +20,14 @@ import type {
 } from "./types";
 
 export async function startAgentRunObservers(
-  registrations: AgentObserverRegistration[],
+  registrations: readonly AgentObserverRegistration[],
   args: AgentRunStartArgs,
   failOnObserverError: boolean,
 ): Promise<ActiveAgentRunObservers> {
   const runObservers: AgentRunObserver[] = [];
   for (const registration of registrations) {
     try {
-      const runObserver = await registration.observer.startRun(args);
+      const runObserver = await registration.observer.startRun(observerSnapshot(args));
       if (runObserver !== undefined) {
         runObservers.push(runObserver);
       }
@@ -57,7 +58,7 @@ export class ActiveAgentRunObservers {
         continue;
       }
       try {
-        const generationObserver = await runObserver.startGeneration(args);
+        const generationObserver = await runObserver.startGeneration(observerSnapshot(args));
         if (generationObserver !== undefined) {
           generationObservers.push(generationObserver);
         }
@@ -75,7 +76,7 @@ export class ActiveAgentRunObservers {
         continue;
       }
       try {
-        const toolObserver = await runObserver.startTool(args);
+        const toolObserver = await runObserver.startTool(observerSnapshot(args));
         if (toolObserver !== undefined) {
           toolObservers.push(toolObserver);
         }
@@ -89,7 +90,7 @@ export class ActiveAgentRunObservers {
   async end(args: AgentRunEndArgs): Promise<void> {
     for (const runObserver of this.runObservers) {
       try {
-        await runObserver.end(args);
+        await runObserver.end(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -102,7 +103,7 @@ export class ActiveAgentRunObservers {
         continue;
       }
       try {
-        await runObserver.error(args);
+        await runObserver.error(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -115,7 +116,7 @@ export class ActiveAgentRunObservers {
         continue;
       }
       try {
-        await runObserver.event(args);
+        await runObserver.event(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -138,7 +139,7 @@ export class ActiveGenerationObservers {
   async end(args: AgentGenerationEndArgs): Promise<void> {
     for (const observer of this.generationObservers) {
       try {
-        await observer.end(args);
+        await observer.end(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -151,7 +152,7 @@ export class ActiveGenerationObservers {
         continue;
       }
       try {
-        await observer.error(args);
+        await observer.error(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -164,7 +165,7 @@ export class ActiveGenerationObservers {
         continue;
       }
       try {
-        await observer.update(args);
+        await observer.update(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -190,7 +191,7 @@ export class ActiveToolObservers {
         continue;
       }
       try {
-        await observer.streamEvent(args);
+        await observer.streamEvent(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -200,7 +201,7 @@ export class ActiveToolObservers {
   async end(args: AgentToolEndArgs): Promise<void> {
     for (const observer of this.toolObservers) {
       try {
-        await observer.end(args);
+        await observer.end(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }
@@ -213,7 +214,7 @@ export class ActiveToolObservers {
         continue;
       }
       try {
-        await observer.error(args);
+        await observer.error(observerSnapshot(args));
       } catch (error) {
         this.handleError(error);
       }

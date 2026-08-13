@@ -1,4 +1,4 @@
-import { type Message, textFromAssistantContent } from "@anvia/core/completion";
+import type { Message } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
@@ -329,7 +329,7 @@ function applyTraceAttributes(
     root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_SESSION_ID, args.trace.sessionId);
   }
   if (args.trace?.tags !== undefined) {
-    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, args.trace.tags);
+    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...args.trace.tags]);
   }
   for (const [key, value] of Object.entries(
     isRecord(capturedMetadata) ? capturedMetadata : { value: capturedMetadata },
@@ -691,7 +691,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     return this.captureMode === "full";
   }
 
-  redactTranscript(messages: Message[]): unknown {
+  redactTranscript(messages: AgentRunEndArgs["messages"]): unknown {
     const inputRedacted =
       this.redactor === undefined || this.redactInputs === undefined
         ? messages
@@ -718,7 +718,9 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
   }
 
   end(args: AgentGenerationEndArgs): void {
-    const redactedText = this.run.redactOutputValue(textFromAssistantContent(args.response.choice));
+    const redactedText = this.run.redactOutputValue(
+      textFromObservedAssistantContent(args.response.choice),
+    );
     const redactedChoice = this.run.redactOutputValue(args.response.choice);
     const metadata: Record<string, unknown> = { turn: args.turn };
     if (args.firstDeltaMs !== undefined) metadata.firstDeltaMs = args.firstDeltaMs;
@@ -755,6 +757,12 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
       })
       .end();
   }
+}
+
+function textFromObservedAssistantContent(
+  content: AgentGenerationEndArgs["response"]["choice"],
+): string {
+  return content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
 }
 
 class LangfuseToolObserver implements AgentToolObserver {

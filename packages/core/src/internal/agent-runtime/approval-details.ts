@@ -1,5 +1,5 @@
 import type { AgentToolApprovalRequest } from "../../agent/run-types";
-import type { ToolApprovalRequest } from "../../tool";
+import type { ToolApprovalRequest } from "./approval-request";
 
 const approvalDetails = new WeakMap<object, ToolApprovalRequest>();
 

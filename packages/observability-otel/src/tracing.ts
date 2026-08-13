@@ -227,10 +227,10 @@ class OtelToolObserver implements AgentToolObserver {
       const generationArgs: AgentGenerationStartArgs = {
         turn: childTurn,
         request: child.request as AgentGenerationStartArgs["request"],
+        ...(isRecord(child.modelInfo)
+          ? { modelInfo: child.modelInfo as AgentGenerationStartArgs["modelInfo"] }
+          : {}),
       };
-      if (isRecord(child.modelInfo)) {
-        generationArgs.modelInfo = child.modelInfo as AgentGenerationStartArgs["modelInfo"];
-      }
       this.childGeneration(agentId, agentName, childTurn, args, agent).setAttributes(
         generationStartAttributes(generationArgs, this.options),
       );

@@ -59,6 +59,7 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     dynamicContextCount: indexedContext.length,
     observerCount: agent.agent.observers.length,
     hasMemory: agent.agent.memory !== undefined,
+    hasLifecycle: agent.agent.lifecycle !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,
   };
   if (name !== undefined) summary.name = name;

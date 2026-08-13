@@ -1,4 +1,4 @@
-import type { AgentResponse, AgentStreamEvent } from "@anvia/core/agent";
+import type { Agent, AgentResponse, AgentStreamEvent } from "@anvia/core/agent";
 import type {
   CompletionModel,
   CompletionModelCapabilities,
@@ -9,7 +9,6 @@ import type {
   ToolResultContent,
   Usage,
 } from "@anvia/core/completion";
-import type { Agent } from "@anvia/core/internal/agent";
 import type { ModelList } from "@anvia/core/model-listing";
 import type { Pipeline, PipelineGraph } from "@anvia/core/pipeline";
 import type { Hono } from "hono";
@@ -152,6 +151,7 @@ export type StudioAgentRuntimeSummary = {
   dynamicContextCount: number;
   observerCount: number;
   hasMemory: boolean;
+  hasLifecycle: boolean;
   hasOutputSchema: boolean;
   defaultMaxTurns?: number;
   metadata?: JsonObject;
@@ -626,6 +626,7 @@ export type StudioTraceObservation = {
 
 export type StudioTraceSummary = {
   id: string;
+  runId?: string;
   sessionId: string;
   name?: string;
   status: StudioTraceStatus;
@@ -1184,7 +1185,7 @@ export type AgentRunUIRequest = {
 export type AgentRunResponse = AgentResponse;
 
 export type AgentRunStreamEvent =
-  | AgentStreamEvent
+  | Exclude<AgentStreamEvent, { type: "approval_required" }>
   | StudioToolApprovalRequestEvent
   | StudioToolApprovalResultEvent
   | StudioToolQuestionRequestEvent

@@ -1,3 +1,4 @@
+export type { AgentSession } from "./agent/agent";
 export { Agent } from "./agent/agent";
 export type { ContextIndex, CreateContextIndexOptions } from "./agent/context-index";
 export { createContextIndex, isContextIndex } from "./agent/context-index";
@@ -38,6 +39,7 @@ export type {
   AgentObserverInput,
   AgentOptions,
   AgentToolInput,
+  AgentToolOptions,
 } from "./agent/types";
 export type {
   AudioGenerationModel,
@@ -163,7 +165,6 @@ export type {
   CreateToolOptions,
   Tool,
   ToolApprovalContext,
-  ToolApprovalRequest,
   ToolApprovalRequirement,
   ToolCallContext,
   ToolCallStreamEvent,

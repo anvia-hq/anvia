@@ -113,6 +113,29 @@ describe("direct multimodal model APIs", () => {
     expect(response.text).toBe("hello world");
   });
 
+  it("copies ArrayBuffer transcription input before starting the provider request", async () => {
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const received: number[][] = [];
+    const model: TranscriptionModel = {
+      async transcription(request) {
+        await ready;
+        received.push([...request.data]);
+        return { text: "done", rawResponse: {} };
+      },
+    };
+    const source = new Uint8Array([1, 2, 3]);
+
+    const pending = transcribe(source.buffer, { model, filename: "hello.wav" });
+    source.fill(9);
+    release();
+    await pending;
+
+    expect(received).toEqual([[1, 2, 3]]);
+  });
+
   it("validates media inputs before calling models", () => {
     const imageModel = fakeImageModel();
     const audioModel = fakeAudioModel();

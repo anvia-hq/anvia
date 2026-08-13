@@ -72,7 +72,6 @@
     "cookbook:multi-agent:01": "pnpm --filter cookbook multi-agent:01",
     "cookbook:multi-agent:02": "pnpm --filter cookbook multi-agent:02",
     "cookbook:multi-agent:03": "pnpm --filter cookbook multi-agent:03",
-    "cookbook:multi-agent:04": "pnpm --filter cookbook multi-agent:04",
     "cookbook:evals": "pnpm --filter cookbook evals",
     "cookbook:evals:01": "pnpm --filter cookbook evals:01",
     "cookbook:evals:02": "pnpm --filter cookbook evals:02",

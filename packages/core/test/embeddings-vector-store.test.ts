@@ -455,6 +455,17 @@ describe("vector metadata filters", () => {
 });
 
 describe("agent dynamic context", () => {
+  it("validates context index search options", () => {
+    const index = InMemoryVectorStore.fromDocuments([]).index(new KeywordEmbeddingModel());
+
+    expect(() => createContextIndex(index, { topK: 0 })).toThrow(
+      "topK must be a positive safe integer",
+    );
+    expect(() => createContextIndex(index, { topK: 1, threshold: Number.NaN })).toThrow(
+      "threshold must be a finite number",
+    );
+  });
+
   it("injects retrieved context into send requests", async () => {
     const embeddingModel = new KeywordEmbeddingModel();
     const index = InMemoryVectorStore.fromDocuments(await sampleEmbedded(embeddingModel)).index(
@@ -583,6 +594,17 @@ describe("agent dynamic context", () => {
 });
 
 describe("agent dynamic tools", () => {
+  it("validates tool index search options before embedding", async () => {
+    const model = new KeywordEmbeddingModel();
+
+    await expect(createToolIndex(model, [issueRefundTool], { topK: 0 })).rejects.toThrow(
+      "topK must be a positive safe integer",
+    );
+    await expect(
+      createToolIndex(model, [issueRefundTool], { topK: 1, threshold: Number.POSITIVE_INFINITY }),
+    ).rejects.toThrow("threshold must be a finite number");
+  });
+
   it("embeds tools into stable searchable records", async () => {
     const model = new KeywordEmbeddingModel();
     const embedded = await embedTools(model, [issueRefundTool], {

@@ -175,6 +175,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
     const metadata = traceMetadata(this.props.args, result.messages);
     const trace: StudioTrace = {
       id: this.props.id,
+      runId: this.props.args.runId,
       sessionId,
       status,
       trace: this.trace,
@@ -483,6 +484,7 @@ function traceObservation(props: {
 
 function traceMetadata(args: AgentRunStartArgs, messages: JsonValue): JsonObject {
   return compactJsonObject({
+    runId: args.runId,
     agentName: args.agentName,
     agentDescription: args.agentDescription,
     maxTurns: args.maxTurns,

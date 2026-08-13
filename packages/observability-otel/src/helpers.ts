@@ -1,4 +1,3 @@
-import { type Message, textFromAssistantContent } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationStartArgs,
@@ -44,7 +43,7 @@ export function runStartAttributes(
     "anvia.trace.name": args.trace?.name ?? args.agentName,
     "anvia.trace.user_id": args.trace?.userId,
     "anvia.trace.session_id": args.trace?.sessionId,
-    "anvia.trace.tags": args.trace?.tags,
+    "anvia.trace.tags": args.trace?.tags === undefined ? undefined : [...args.trace.tags],
     "anvia.trace.version": args.trace?.version,
     "anvia.prompt.name": args.promptRef?.name ?? args.trace?.promptRef?.name,
     "anvia.prompt.version": args.promptRef?.version ?? args.trace?.promptRef?.version,
@@ -115,16 +114,16 @@ export function generationStartAttributes(
   });
 }
 
-export function modelInputMessage(message: Message): Message {
-  if (message.metadata === undefined) {
-    return message;
-  }
-  const result: Message = { ...message };
-  delete result.metadata;
+type ObservedMessage = AgentRunStartArgs["prompt"];
+
+export function modelInputMessage(message: ObservedMessage): Omit<ObservedMessage, "metadata"> {
+  const { metadata: _metadata, ...result } = message;
   return result;
 }
 
-export function modelInputMessages(messages: Message[]): Message[] {
+export function modelInputMessages(
+  messages: readonly ObservedMessage[],
+): Array<Omit<ObservedMessage, "metadata">> {
   return messages.map(modelInputMessage);
 }
 
@@ -137,13 +136,19 @@ export function generationEndAttributes(
     "anvia.generation.message_id": args.response.messageId,
     "anvia.generation.output": capturedJson(args.response.choice, "output", options),
     "anvia.generation.output_text": capturedString(
-      textFromAssistantContent(args.response.choice),
+      textFromObservedAssistantContent(args.response.choice),
       "output",
       options,
     ),
     "anvia.generation.first_delta_ms": args.firstDeltaMs,
     ...usageAttributes(args.response.usage),
   });
+}
+
+function textFromObservedAssistantContent(
+  content: AgentGenerationEndArgs["response"]["choice"],
+): string {
+  return content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
 }
 
 export function toolStartAttributes(

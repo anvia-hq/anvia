@@ -28,7 +28,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   instructions?: string | undefined;
   context?: readonly AgentContextInput<ContextDocument>[] | undefined;
   tools?: readonly AgentToolInput[] | undefined;
-  mcpServers?: McpServer[] | undefined;
+  mcpServers?: readonly McpServer[] | undefined;
   skills?: SkillSet | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
@@ -37,9 +37,9 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   maxTurns?: number | undefined;
   lifecycle?: AgentLifecycle | undefined;
   outputSchema?: ZodSchema | undefined;
-  observers?: AgentObserverInput[] | undefined;
+  observers?: readonly AgentObserverInput[] | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
-  middlewares?: AgentMiddleware[] | undefined;
+  middlewares?: readonly AgentMiddleware[] | undefined;
   memory?: AgentMemoryOptions | undefined;
 };
 
@@ -58,20 +58,20 @@ export type ResolvedAgentOptions<
   description?: string | undefined;
   model: M;
   instructions?: string | undefined;
-  context?: AgentContextInput<ContextDocument>[] | undefined;
+  context?: readonly AgentContextInput<ContextDocument>[] | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   additionalParams?: JsonValue | undefined;
-  tools?: AnyTool[] | undefined;
-  providerTools?: ProviderTool[] | undefined;
-  toolIndexes?: ToolIndex[] | undefined;
+  tools?: readonly AnyTool[] | undefined;
+  providerTools?: readonly ProviderTool[] | undefined;
+  toolIndexes?: readonly ToolIndex[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
   lifecycle?: AgentLifecycle | undefined;
   outputSchema?: import("../completion/index").JsonObject | undefined;
-  observers?: AgentObserverRegistration[] | undefined;
-  guardrails?: GuardrailPolicy[] | undefined;
-  middlewares?: AgentMiddleware[] | undefined;
+  observers?: readonly AgentObserverRegistration[] | undefined;
+  guardrails?: readonly GuardrailPolicy[] | undefined;
+  middlewares?: readonly AgentMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;
 };
 

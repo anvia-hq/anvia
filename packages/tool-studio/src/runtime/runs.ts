@@ -27,6 +27,8 @@ import {
 
 export { transcriptFromMessages } from "./transcript";
 
+export type TranslatedAgentStreamEvent = Exclude<AgentStreamEvent, { type: "approval_required" }>;
+
 export class AsyncEventQueue<T> {
   private readonly values: T[] = [];
   private readonly resolvers: Array<(value: IteratorResult<T>) => void> = [];
@@ -64,15 +66,15 @@ export class AsyncEventQueue<T> {
 }
 
 export async function* mergeRunAndApprovalEvents(
-  runEvents: AsyncIterable<AgentStreamEvent>,
+  runEvents: AsyncIterable<TranslatedAgentStreamEvent>,
   approvalEvents: AsyncEventQueue<AgentRunStreamEvent>,
 ): AsyncIterable<AgentRunStreamEvent> {
   type TaggedNext =
-    | { source: "run"; value: IteratorResult<AgentStreamEvent> }
+    | { source: "run"; value: IteratorResult<TranslatedAgentStreamEvent> }
     | { source: "approval"; value: IteratorResult<AgentRunStreamEvent> };
   const runIterator = runEvents[Symbol.asyncIterator]();
   let runDone = false;
-  let runNext: Promise<IteratorResult<AgentStreamEvent>> | undefined = runIterator.next();
+  let runNext: Promise<IteratorResult<TranslatedAgentStreamEvent>> | undefined = runIterator.next();
   let approvalNext: Promise<IteratorResult<AgentRunStreamEvent>> | undefined =
     approvalEvents.next();
 

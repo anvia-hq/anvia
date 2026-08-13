@@ -4,7 +4,6 @@ import type {
   AgentResult,
   AgentRunOptions,
   AgentStream,
-  AgentStreamEvent,
   AgentStreamOptions,
 } from "@anvia/core/agent";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
@@ -39,6 +38,7 @@ import {
   optionalTitle,
   parseRunRequest,
   streamAgentRunEvents,
+  type TranslatedAgentStreamEvent,
   traceForRun,
   transcriptFromMessages,
 } from "./runs";
@@ -372,7 +372,10 @@ function handleStreamingAgentRun(
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = props.questionRuntime.createHook(questionContext);
-  const streamOptions = withInternalAgentRunOptions({ ...run.options }, { hook: effectiveHook });
+  const streamOptions = withInternalAgentRunOptions(
+    { ...run.options },
+    { hook: effectiveHook, runId: run.runId },
+  );
   const runStream = mergeRunAndApprovalEvents(
     resumeStreamingApprovals(
       run.runAgent,
@@ -461,7 +464,7 @@ async function startBufferedSessionRun(
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = props.questionRuntime.createHook(questionContext);
-  return withInternalAgentRunOptions({ ...run.options }, { hook: effectiveHook });
+  return withInternalAgentRunOptions({ ...run.options }, { hook: effectiveHook, runId: run.runId });
 }
 
 function createApprovalContext(
@@ -483,7 +486,7 @@ async function* resumeStreamingApprovals(
   initialStream: AgentStream,
   approvalRuntime: ReturnType<typeof createApprovalRuntime>,
   context: ApprovalContext,
-): AsyncIterable<AgentStreamEvent> {
+): AsyncIterable<TranslatedAgentStreamEvent> {
   let stream = initialStream;
   while (true) {
     let pending: AgentApprovalRequiredEvent | undefined;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import {
   ActiveGenerationObservers,
@@ -30,6 +30,7 @@ import {
   createHook,
   createTool,
   type JsonObject,
+  Message,
   type StreamingCompletionModel,
   skipTool,
   TestAgentBuilder,
@@ -323,6 +324,101 @@ describe("agent observability", () => {
     );
   });
 
+  it("records one error terminal event when a failed tool recovers through the model", async () => {
+    const observer = new RecordingObserver();
+    const failingTool = createTool({
+      name: "fail",
+      description: "Fail recoverably",
+      inputSchema: z.object({}),
+      execute() {
+        throw new Error("tool failed");
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "fail", {})]),
+      response([AssistantContent.text("handled")]),
+    ]);
+    const agent = new TestAgentBuilder("test-agent", model)
+      .observe(observer)
+      .tools([failingTool])
+      .build();
+
+    await expect(agent.generate("fail")).resolves.toMatchObject({ output: "handled" });
+
+    expect(eventTypes(observer)).toEqual([
+      "run_start",
+      "generation_start",
+      "generation_end",
+      "tool_start",
+      "tool_error",
+      "generation_start",
+      "generation_end",
+      "run_end",
+    ]);
+    expect(
+      eventTypes(observer).filter((type) => type === "tool_error" || type === "tool_end"),
+    ).toHaveLength(1);
+    expect(model.requests[1]?.chatHistory.at(-1)).toMatchObject({
+      role: "tool",
+      content: [
+        {
+          type: "tool_result",
+          id: "call_1",
+          toolName: "fail",
+          content: [{ type: "text", text: "ToolCallError: tool failed" }],
+        },
+      ],
+    });
+  });
+
+  it("records approval requests and decisions as structured run events", async () => {
+    const observer = new RecordingObserver();
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "Guarded operation",
+      inputSchema: z.object({ value: z.number() }),
+      requiresApproval: { reason: "Review the operation" },
+      execute: ({ value }) => String(value),
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", { value: 7 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new anvia.Agent({
+      id: "test-agent",
+      model,
+      tools: [guardedTool],
+      observers: [observer],
+    });
+
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await agent.resume(pending, { approved: true, reason: "Reviewed" });
+
+    expect(observer.events).toContainEqual({
+      type: "run_event",
+      args: {
+        name: "tool.approval_requested",
+        attributes: expect.objectContaining({
+          approvalId: pending.approval.id,
+          toolName: "guarded",
+          reason: "Review the operation",
+        }),
+      },
+    });
+    expect(observer.events).toContainEqual({
+      type: "run_event",
+      args: {
+        name: "tool.approval_resolved",
+        attributes: expect.objectContaining({
+          approvalId: pending.approval.id,
+          approved: true,
+          decisionReason: "Reviewed",
+        }),
+      },
+    });
+  });
+
   it("records skipped tools from hooks", async () => {
     const observer = new RecordingObserver();
     const model = new QueueModel([
@@ -520,9 +616,428 @@ describe("agent observability", () => {
     const agent = new TestAgentBuilder("test-agent", model).observe(observer).build();
     await expect(collect(agent.stream("hi"))).resolves.toBeDefined();
   });
+
+  it.each([
+    {
+      boundary: "tool-call hook",
+      configure(builder: TestAgentBuilder<QueueModel>) {
+        builder.hook(
+          createHook({
+            onToolCall() {
+              throw new Error("tool-call hook failed");
+            },
+          }),
+        );
+      },
+    },
+    {
+      boundary: "tool-input middleware",
+      configure(builder: TestAgentBuilder<QueueModel>) {
+        builder.middlewares([
+          {
+            onToolInput() {
+              throw new Error("tool-input middleware failed");
+            },
+          },
+        ]);
+      },
+    },
+    {
+      boundary: "tool-output middleware",
+      configure(builder: TestAgentBuilder<QueueModel>) {
+        builder.middlewares([
+          {
+            onToolOutput() {
+              throw new Error("tool-output middleware failed");
+            },
+          },
+        ]);
+      },
+    },
+    {
+      boundary: "tool-result hook",
+      configure(builder: TestAgentBuilder<QueueModel>) {
+        builder.hook(
+          createHook({
+            onToolResult() {
+              throw new Error("tool-result hook failed");
+            },
+          }),
+        );
+      },
+    },
+  ])("terminalizes a started tool exactly once when the $boundary fails", async ({ configure }) => {
+    const observer = new RecordingObserver();
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
+    ]);
+    const builder = new TestAgentBuilder("test-agent", model).observe(observer).tools([addTool]);
+    configure(builder);
+
+    await expect(builder.build().generate("add")).rejects.toThrow("failed");
+
+    expect(
+      eventTypes(observer).filter((type) => type === "tool_end" || type === "tool_error"),
+    ).toEqual(["tool_error"]);
+  });
+
+  it("preserves the model failure while every run-error cleanup callback fails", async () => {
+    const primaryError = new Error("primary model failure");
+    const cleanupCalls: string[] = [];
+    const failingModel: CompletionModel = {
+      provider: "test",
+      defaultModel: "test",
+      capabilities: new QueueModel([]).capabilities,
+      async completion() {
+        throw primaryError;
+      },
+    };
+    const observer: AgentObserver = {
+      startRun(): AgentRunObserver {
+        return {
+          startGeneration: () => ({
+            end: () => {},
+            error: () => {
+              cleanupCalls.push("generation observer");
+              throw new Error("generation observer failed");
+            },
+          }),
+          end: () => {},
+          error: () => {
+            cleanupCalls.push("run observer");
+            throw new Error("run observer failed");
+          },
+        };
+      },
+    };
+    const agent = new TestAgentBuilder("test-agent", failingModel)
+      .observe(observer, { failOnObserverError: true })
+      .hook(
+        createHook({
+          onCompletionError() {
+            cleanupCalls.push("completion hook");
+            throw new Error("completion hook failed");
+          },
+          onRunError() {
+            cleanupCalls.push("run hook");
+            throw new Error("run hook failed");
+          },
+        }),
+      )
+      .build();
+
+    await expect(
+      agent.generate("hello", {
+        lifecycle: {
+          onError() {
+            cleanupCalls.push("lifecycle");
+            throw new Error("lifecycle failed");
+          },
+        },
+      }),
+    ).rejects.toBe(primaryError);
+    expect(cleanupCalls).toEqual([
+      "generation observer",
+      "completion hook",
+      "run hook",
+      "lifecycle",
+      "run observer",
+    ]);
+  });
 });
 
 describe("active agent observer groups", () => {
+  it("exposes deeply readonly observer payload types", () => {
+    expectTypeOf<AgentRunStartArgs["history"]>().toEqualTypeOf<
+      Readonly<AgentRunStartArgs["history"]>
+    >();
+    expectTypeOf<AgentRunEndArgs["messages"]>().toEqualTypeOf<
+      Readonly<AgentRunEndArgs["messages"]>
+    >();
+    expectTypeOf<AgentGenerationStartArgs["request"]["chatHistory"]>().toEqualTypeOf<
+      Readonly<AgentGenerationStartArgs["request"]["chatHistory"]>
+    >();
+    expectTypeOf<AgentGenerationEndArgs["response"]["choice"]>().toEqualTypeOf<
+      Readonly<AgentGenerationEndArgs["response"]["choice"]>
+    >();
+    expectTypeOf<AgentToolStartArgs["toolCall"]["function"]>().toEqualTypeOf<
+      Readonly<AgentToolStartArgs["toolCall"]["function"]>
+    >();
+  });
+
+  it("isolates run observer payloads from runtime values and sibling observers", async () => {
+    const original = runStartArgs();
+    const siblingStarts: AgentRunStartArgs[] = [];
+    const siblingEnds: AgentRunEndArgs[] = [];
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun(args) {
+              const mutable = args as unknown as {
+                prompt: { content: Array<{ text?: string }> };
+                history: unknown[];
+              };
+              mutable.prompt.content[0] = { text: "mutated" };
+              mutable.history.push({ role: "user", content: [] });
+              return createRunObserver({
+                end(endArgs) {
+                  const mutableEnd = endArgs as unknown as {
+                    messages: unknown[];
+                    usage: { totalTokens: number };
+                  };
+                  mutableEnd.messages.splice(0);
+                  mutableEnd.usage.totalTokens = 99;
+                },
+              });
+            },
+          },
+        },
+        {
+          observer: {
+            startRun(args) {
+              siblingStarts.push(args);
+              return createRunObserver({
+                end(args) {
+                  siblingEnds.push(args);
+                },
+              });
+            },
+          },
+        },
+      ],
+      original,
+      false,
+    );
+    const endArgs: AgentRunEndArgs = {
+      ...runEndArgs(),
+      messages: [Message.user("hello"), Message.assistant("ok")],
+    };
+
+    await active.end(endArgs);
+
+    expect(original.prompt).toEqual(Message.user("hello"));
+    expect(original.history).toEqual([]);
+    expect(siblingStarts[0]?.prompt).toEqual(Message.user("hello"));
+    expect(siblingStarts[0]?.history).toEqual([]);
+    expect(endArgs.messages).toHaveLength(2);
+    expect(endArgs.usage.totalTokens).toBe(0);
+    expect(siblingEnds[0]?.messages).toHaveLength(2);
+    expect(siblingEnds[0]?.usage.totalTokens).toBe(0);
+  });
+
+  it("isolates generation payloads from model values and sibling observers", async () => {
+    const siblingStarts: AgentGenerationStartArgs[] = [];
+    const siblingEnds: AgentGenerationEndArgs[] = [];
+    const active = await startAgentRunObservers(
+      [
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                startGeneration(args) {
+                  const mutable = args as unknown as {
+                    request: { chatHistory: unknown[]; documents: Array<{ text: string }> };
+                  };
+                  mutable.request.chatHistory.splice(0);
+                  const document = mutable.request.documents[0];
+                  if (document !== undefined) document.text = "mutated";
+                  return {
+                    end(endArgs) {
+                      const mutableEnd = endArgs as unknown as {
+                        response: { choice: unknown[]; usage: { totalTokens: number } };
+                      };
+                      mutableEnd.response.choice.splice(0);
+                      mutableEnd.response.usage.totalTokens = 99;
+                    },
+                  };
+                },
+              }),
+          },
+        },
+        {
+          observer: {
+            startRun: () =>
+              createRunObserver({
+                startGeneration(args) {
+                  siblingStarts.push(args);
+                  return {
+                    end(args) {
+                      siblingEnds.push(args);
+                    },
+                  };
+                },
+              }),
+          },
+        },
+      ],
+      runStartArgs(),
+      false,
+    );
+    const request: CompletionRequest = {
+      chatHistory: [Message.user("hello")],
+      documents: [{ id: "doc_1", text: "original" }],
+      tools: [],
+    };
+    const generation = await active.startGeneration({ turn: 1, request });
+    const completion = response([AssistantContent.text("ok")]);
+
+    await generation.end({ turn: 1, response: completion });
+
+    expect(request.chatHistory).toEqual([Message.user("hello")]);
+    expect(request.documents[0]?.text).toBe("original");
+    expect(siblingStarts[0]?.request.chatHistory).toEqual([Message.user("hello")]);
+    expect(siblingStarts[0]?.request.documents[0]?.text).toBe("original");
+    expect(completion.choice).toEqual([AssistantContent.text("ok")]);
+    expect(completion.usage.totalTokens).toBe(0);
+    expect(siblingEnds[0]?.response.choice).toEqual([AssistantContent.text("ok")]);
+    expect(siblingEnds[0]?.response.usage.totalTokens).toBe(0);
+  });
+
+  it("isolates error, event, generation update, and tool payload fan-out", async () => {
+    const siblingRunErrors: AgentRunErrorArgs[] = [];
+    const siblingEvents: AgentRunEventArgs[] = [];
+    const siblingGenerationErrors: AgentGenerationErrorArgs[] = [];
+    const siblingUpdates: Array<{ delta: unknown }> = [];
+    const siblingToolStarts: AgentToolStartArgs[] = [];
+    const siblingToolEvents: AgentToolStreamEventArgs[] = [];
+    const siblingToolEnds: AgentToolEndArgs[] = [];
+    const siblingToolErrors: AgentToolErrorArgs[] = [];
+    const mutatingRunObserver = createRunObserver({
+      error(args) {
+        (args.error as Error).message = "mutated";
+        (args.messages as unknown[]).splice(0);
+      },
+      event(args) {
+        const mutable = args.attributes as Record<string, unknown> | undefined;
+        if (mutable !== undefined) mutable.label = "mutated";
+      },
+      startGeneration() {
+        return {
+          end() {},
+          error(args) {
+            (args.error as Error).message = "mutated";
+          },
+          update(args) {
+            const mutable = args.delta as unknown as { toolCall: ToolCall };
+            mutable.toolCall.function.arguments = { value: "mutated" };
+          },
+        };
+      },
+      startTool(args) {
+        (args.toolCall.function.arguments as Record<string, unknown>).value = "mutated";
+        return {
+          streamEvent(streamArgs) {
+            const event = streamArgs.event.event as unknown as { chunk: string };
+            event.chunk = "mutated";
+          },
+          end(endArgs) {
+            (endArgs.structuredResult as unknown[] | undefined)?.splice(0);
+          },
+          error(errorArgs) {
+            (errorArgs.error as Error).message = "mutated";
+          },
+        };
+      },
+    });
+    const observingRunObserver = createRunObserver({
+      error(args) {
+        siblingRunErrors.push(args);
+      },
+      event(args) {
+        siblingEvents.push(args);
+      },
+      startGeneration() {
+        return {
+          end() {},
+          error(args) {
+            siblingGenerationErrors.push(args);
+          },
+          update(args) {
+            siblingUpdates.push(args);
+          },
+        };
+      },
+      startTool(args) {
+        siblingToolStarts.push(args);
+        return {
+          streamEvent(args) {
+            siblingToolEvents.push(args);
+          },
+          end(args) {
+            siblingToolEnds.push(args);
+          },
+          error(args) {
+            siblingToolErrors.push(args);
+          },
+        };
+      },
+    });
+    const active = await startAgentRunObservers(
+      [
+        { observer: { startRun: () => mutatingRunObserver } },
+        { observer: { startRun: () => observingRunObserver } },
+      ],
+      runStartArgs(),
+      false,
+    );
+    const runFailure = new Error("run failed");
+    const runError = {
+      ...runErrorArgs(),
+      error: runFailure,
+      messages: [Message.user("hello")],
+    };
+    const eventArgs: AgentRunEventArgs = { name: "custom", attributes: { label: "original" } };
+    const generation = await active.startGeneration(generationStartArgs());
+    const generationFailure = new Error("generation failed");
+    const updateArgs = {
+      turn: 1,
+      delta: { type: "tool_call" as const, toolCall: toolCall() },
+    };
+    const startArgs = toolStartArgs();
+    (startArgs.toolCall.function as { arguments: JsonObject }).arguments = { value: "original" };
+    const streamTools = await active.startTool(startArgs);
+    const endTools = await active.startTool(startArgs);
+    const errorTools = await active.startTool(startArgs);
+    const streamArgs = toolStreamEventArgs();
+    const endArgs = {
+      ...toolEndArgs(),
+      structuredResult: [{ type: "text" as const, text: "3" }],
+    };
+    const toolFailure = new Error("tool failed");
+    const errorArgs = { ...toolErrorArgs(), error: toolFailure };
+
+    await active.error(runError);
+    await active.event(eventArgs);
+    await generation.error({ turn: 1, error: generationFailure });
+    await generation.update(updateArgs);
+    await streamTools.streamEvent(streamArgs);
+    await endTools.end(endArgs);
+    await errorTools.error(errorArgs);
+
+    expect(runFailure.message).toBe("run failed");
+    expect(runError.messages).toHaveLength(1);
+    expect(siblingRunErrors[0]?.error).toMatchObject({ message: "run failed" });
+    expect(siblingRunErrors[0]?.messages).toHaveLength(1);
+    expect(eventArgs.attributes).toEqual({ label: "original" });
+    expect(siblingEvents[0]?.attributes).toEqual({ label: "original" });
+    expect(generationFailure.message).toBe("generation failed");
+    expect(siblingGenerationErrors[0]?.error).toMatchObject({ message: "generation failed" });
+    expect(updateArgs.delta.toolCall.function.arguments).toEqual({ x: 1, y: 2 });
+    expect(siblingUpdates[0]?.delta).toMatchObject({
+      toolCall: { function: { arguments: { x: 1, y: 2 } } },
+    });
+    expect(startArgs.toolCall.function.arguments).toEqual({ value: "original" });
+    expect(siblingToolStarts).toHaveLength(3);
+    expect(siblingToolStarts[0]?.toolCall.function.arguments).toEqual({ value: "original" });
+    expect(streamArgs.event.event).toEqual({ chunk: '{"x":1' });
+    expect(siblingToolEvents[0]?.event.event).toEqual({ chunk: '{"x":1' });
+    expect(endArgs.structuredResult).toHaveLength(1);
+    expect(siblingToolEnds[0]?.structuredResult).toHaveLength(1);
+    expect(toolFailure.message).toBe("tool failed");
+    expect(siblingToolErrors[0]?.error).toMatchObject({ message: "tool failed" });
+  });
+
   it("skips undefined run observers and selects the first available trace", async () => {
     const runObserver = createRunObserver({
       trace: { traceId: "trace_1", observationId: "obs_1" },

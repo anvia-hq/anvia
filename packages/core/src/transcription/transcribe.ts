@@ -45,5 +45,5 @@ function toUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     );
   }
-  return new Uint8Array(bytes);
+  return new Uint8Array(bytes.slice(0));
 }

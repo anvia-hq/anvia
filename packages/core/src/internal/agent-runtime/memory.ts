@@ -33,7 +33,7 @@ export class AgentRunMemory {
     return this.memoryPolicy() === "turn" ? [...newMessages] : [];
   }
 
-  async prepareRun(runId: string, newMessages: MessageType[]): Promise<MemoryPreparation> {
+  async prepareHistory(runId: string, incomingMessageCount: number): Promise<MemoryPreparation> {
     const memory = this.memory();
     if (memory === undefined || this.memoryContext === undefined) {
       return {
@@ -42,21 +42,32 @@ export class AgentRunMemory {
       };
     }
 
-    const preparation = await this.prepareStoredHistory(memory, runId, newMessages.length);
+    const preparation = await this.prepareStoredHistory(memory, runId, incomingMessageCount);
     const memoryHistory = preparation.history;
     const chatHistory = [...memoryHistory, ...this.initialHistory];
-    if (memory.options.savePolicy === "message") {
-      await memory.store.append({
-        context: this.memoryContext,
-        runId,
-        turn: 1,
-        messages: newMessages,
-      });
-    }
     return {
       ...preparation,
       history: chatHistory,
     };
+  }
+
+  async commitAcceptedInput(runId: string, messages: MessageType[]): Promise<void> {
+    const memory = this.memory();
+    if (
+      memory === undefined ||
+      this.memoryContext === undefined ||
+      memory.options.savePolicy !== "message" ||
+      messages.length === 0
+    ) {
+      return;
+    }
+
+    await memory.store.append({
+      context: this.memoryContext,
+      runId,
+      turn: 1,
+      messages,
+    });
   }
 
   async commitMessages(

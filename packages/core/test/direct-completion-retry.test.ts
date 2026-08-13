@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   AssistantContent,
@@ -49,6 +49,37 @@ describe("direct completion retries", () => {
     expect(contexts).toEqual([{ error, attempt: 1, maxAttempts: 2, streaming: false }]);
   });
 
+  it("ignores invalid HTTP status values when classifying retryable error codes", async () => {
+    const error = Object.assign(new Error("socket reset"), {
+      status: 0,
+      code: "ECONNRESET",
+    });
+    const model = new CompletionQueueModel([error, response("recovered")]);
+
+    const result = await createCompletion("hello", {
+      model,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    expect(result.text).toBe("recovered");
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("uses completion retries before parsing structured output", async () => {
+    const error = Object.assign(new Error("unavailable"), { status: 503 });
+    const model = new CompletionQueueModel([error, response('{"ok":true}')]);
+
+    const result = await createParsedCompletion("hello", {
+      model,
+      schema: z.object({ ok: z.boolean() }),
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    expect(result.data).toEqual({ ok: true });
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]).toBe(model.requests[0]);
+  });
+
   it("does not retry parsed-output validation failures", async () => {
     const model = new CompletionQueueModel([response("not json"), response('{"ok":true}')]);
 
@@ -85,6 +116,32 @@ describe("direct completion retries", () => {
     });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
+  });
+
+  it("closes a failed stream attempt before waiting to retry", async () => {
+    const error = Object.assign(new Error("unavailable"), { status: 503 });
+    const model = new ClosingStreamModel(error);
+    const random = vi.spyOn(Math, "random").mockReturnValue(1);
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
+      expect(model.closed).toBe(true);
+      if (typeof callback === "function") callback();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    });
+
+    try {
+      const events = await collect(
+        createCompletionStream("hello", {
+          model,
+          retries: { maxAttempts: 2, initialDelayMs: 1, maxDelayMs: 1 },
+        }),
+      );
+
+      expect(events.at(-1)).toMatchObject({ type: "final" });
+      expect(timer).toHaveBeenCalledOnce();
+    } finally {
+      timer.mockRestore();
+      random.mockRestore();
+    }
   });
 
   it("never retries after a stream event has been exposed", async () => {
@@ -177,6 +234,35 @@ class ThrowingStreamQueueModel implements StreamingCompletionModel {
     this.requests.push(request);
     this.attempt += 1;
     if (this.attempt === 1) throw this.error;
+    yield { type: "final", response: response("ready") };
+  }
+}
+
+class ClosingStreamModel implements StreamingCompletionModel {
+  readonly provider = "test";
+  readonly defaultModel = "test-model";
+  readonly capabilities = capabilities;
+  readonly requests: CompletionRequest[] = [];
+  closed = false;
+  private attempt = 0;
+
+  constructor(private readonly error: Error) {}
+
+  async completion(): Promise<CompletionResponse> {
+    return response("unused");
+  }
+
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+    this.requests.push(request);
+    this.attempt += 1;
+    if (this.attempt === 1) {
+      try {
+        yield { type: "error", error: this.error };
+      } finally {
+        this.closed = true;
+      }
+      return;
+    }
     yield { type: "final", response: response("ready") };
   }
 }

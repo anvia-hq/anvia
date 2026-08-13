@@ -158,9 +158,11 @@ describe("guardrails", () => {
   it("records blocked input guardrail decisions through observers", async () => {
     const model = new QueueModel([]);
     const observedEvents: unknown[] = [];
+    const trace = { traceId: "trace-blocked", observationId: "run-blocked" };
     const observer = createObserver({
       startRun() {
         return {
+          trace,
           event(args) {
             observedEvents.push(args);
           },
@@ -183,6 +185,7 @@ describe("guardrails", () => {
     assertCompleted(result);
 
     expect(result.output).toBe("Input blocked.");
+    expect(result.trace).toEqual(trace);
     expect(observedEvents).toMatchObject([
       {
         name: "guardrail.decision",
@@ -196,6 +199,39 @@ describe("guardrails", () => {
         },
       },
     ]);
+  });
+
+  it("includes observer trace in a blocked streaming final event", async () => {
+    const model = new StreamingQueueModel([]);
+    const trace = { traceId: "trace-stream-blocked", observationId: "run-stream-blocked" };
+    const inputGuardrail = defineInputGuardrail({
+      id: "block-stream-input",
+      check(_ctx, { block }) {
+        return block({ reason: "blocked", message: "Stream input blocked." });
+      },
+    });
+    const agent = new TestAgentBuilder("test-agent", model)
+      .observe(
+        createObserver({
+          startRun() {
+            return { trace, end() {} };
+          },
+        }),
+      )
+      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
+      .build();
+
+    const events: AgentStreamEvent[] = [];
+    for await (const event of agent.stream("blocked")) {
+      events.push(event);
+    }
+
+    expect(model.requests).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      output: "Stream input blocked.",
+      trace,
+    });
   });
 
   it("redacts repeated regex matches and text document sources", async () => {

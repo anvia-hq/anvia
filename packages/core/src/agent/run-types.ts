@@ -18,7 +18,7 @@ import type {
   AgentTraceOptions,
 } from "../observability/types";
 import type { RetryOptions } from "../retry";
-import type { AgentMiddleware, ToolApprovalRequest } from "../tool";
+import type { AgentMiddleware } from "../tool";
 import type { AgentLifecycle } from "./lifecycle";
 
 export type AgentInput = string | MessageType | MessageType[];
@@ -29,7 +29,7 @@ export type AgentRunOptions = {
   lifecycle?: AgentLifecycle | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   toolConcurrency?: number | undefined;
-  middlewares?: AgentMiddleware[] | undefined;
+  middlewares?: readonly AgentMiddleware[] | undefined;
   trace?: AgentTraceOptions | undefined;
 };
 
@@ -56,10 +56,11 @@ export type AgentApprovalRequiredResult = {
 
 export type AgentResult = AgentResponse | AgentApprovalRequiredResult;
 
-export type AgentToolApprovalRequest = Pick<
-  ToolApprovalRequest,
-  "id" | "toolName" | "toolCallId" | "reason"
-> & {
+export type AgentToolApprovalRequest = {
+  id: string;
+  toolName: string;
+  toolCallId?: string | undefined;
+  reason?: string | undefined;
   input: unknown;
 };
 

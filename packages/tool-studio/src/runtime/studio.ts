@@ -292,6 +292,7 @@ function agentMetadata(agent: Agent): JsonObject {
     staticContextCount: staticContextDocuments(agent).length,
     dynamicContextCount: contextIndexes(agent).length,
     dynamicToolCount: getAgentToolState(agent).toolIndexes.length,
+    hasLifecycle: agent.lifecycle !== undefined,
     hasOutputSchema: agent.outputSchema !== undefined,
     observerCount: agent.observers.length,
     approvalToolCount: agent.tools.filter(toolRequiresApproval).length,

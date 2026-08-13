@@ -39,12 +39,15 @@ import {
   type VectorSearchToolOptions,
 } from "@anvia/core/vector-store";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
+  type AgentRunResponse,
+  type AgentRunStreamEvent,
   createInMemoryStudioStore,
   Studio,
   type StudioSessionRunTranscriptInput,
+  type StudioToolApproval,
 } from "../src/index";
 import { registerObservabilityRoutes, StudioObservabilityHub } from "../src/runtime/observability";
 import { createSqliteSessionStore } from "../src/sqlite";
@@ -422,6 +425,11 @@ function vectorFor(text: string): number[] {
 }
 
 describe("Anvia studio", () => {
+  it("exposes translated approval stream events without raw core approval events", () => {
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "approval_required" }>>().toBeNever();
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "tool_approval_request" }>>().not.toBeNever();
+  });
+
   it("generates config from registered agents", async () => {
     const agent = new TestAgentBuilder("support", new QueueModel([]))
       .name("Support")
@@ -443,6 +451,7 @@ describe("Anvia studio", () => {
           quickPrompts: ["What can you do?"],
           metadata: {
             staticContextCount: 0,
+            hasLifecycle: false,
             hasOutputSchema: false,
             observerCount: 0,
             approvalToolCount: 0,
@@ -1394,12 +1403,17 @@ describe("Anvia studio", () => {
   });
 
   it("exposes runtime status and richer agent runtime metadata", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .name("Support")
-      .tools([addTool])
-      .defaultMaxTurns(4)
-      .build();
+    const agent = new Agent({
+      id: "support",
+      name: "Support",
+      model: new QueueModel([]),
+      tools: [addTool],
+      maxTurns: 4,
+      lifecycle: { onStart() {} },
+    });
     const runner = new Studio([agent]);
+
+    expect(runner.config().agents[0]?.metadata).toMatchObject({ hasLifecycle: true });
 
     const status = await runner.fetch(new Request("http://runner.test/status"));
     expect(status.status).toBe(200);
@@ -1433,6 +1447,7 @@ describe("Anvia studio", () => {
       approvalToolCount: 0,
       mcpToolCount: 0,
       hasMemory: false,
+      hasLifecycle: true,
       hasOutputSchema: false,
       defaultMaxTurns: 4,
     });
@@ -1744,6 +1759,67 @@ describe("Anvia studio", () => {
     ]);
   });
 
+  it("uses one run id across buffered approvals, observers, and responses", async () => {
+    let executed = false;
+    const refundTool = createRefundTool(({ orderId, amount }) => {
+      executed = true;
+      return `Refunded ${amount} for ${orderId}`;
+    });
+    const observer = new TraceObserver();
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall(
+          "tool_1",
+          "issue_refund",
+          { orderId: "ORD-1", amount: 25 },
+          "call_1",
+        ),
+      ]),
+      response([AssistantContent.text("Refund complete")]),
+    ]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      tools: [refundTool],
+      observers: [observer],
+      maxTurns: 2,
+    });
+    const runner = new Studio([agent]);
+
+    const runPromise = Promise.resolve(
+      runner.fetch(
+        new Request("http://runner.test/agents/support/runs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: "refund" }),
+        }),
+      ),
+    );
+    const approval = await waitForPendingApproval(runner);
+    expect(executed).toBe(false);
+
+    const decision = await runner.fetch(
+      new Request(`http://runner.test/approvals/${approval.id}/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ approved: true }),
+      }),
+    );
+    expect(decision.status).toBe(200);
+
+    const runResponse = await withTimeout(runPromise, 1_000);
+    expect(runResponse.status).toBe(200);
+    const result = (await runResponse.json()) as AgentRunResponse;
+    expect(result).toMatchObject({
+      status: "completed",
+      runId: approval.runId,
+      output: "Refund complete",
+    });
+    expect(observer.starts).toHaveLength(1);
+    expect(observer.starts[0]?.runId).toBe(approval.runId);
+    expect(executed).toBe(true);
+  });
+
   it("retries transient completion failures for buffered agent runs", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new FlakyQueueModel([
@@ -1991,16 +2067,22 @@ describe("Anvia studio", () => {
     const reader = createJsonlReader(res);
     const eventsBeforeApproval: unknown[] = [];
     let approvalId = "";
+    let approvalRunId = "";
     while (approvalId.length === 0) {
       const event = await withTimeout(reader.read(), 1_000);
       eventsBeforeApproval.push(event);
       if ((event as { type?: string }).type === "tool_approval_request") {
-        approvalId = (event as { approval: { id: string } }).approval.id;
+        const approval = (event as { approval: { id: string; runId: string } }).approval;
+        approvalId = approval.id;
+        approvalRunId = approval.runId;
       }
     }
 
     expect(eventsBeforeApproval).toContainEqual(
       expect.objectContaining({ type: "tool_call", toolCall: expect.any(Object) }),
+    );
+    expect(eventsBeforeApproval).not.toContainEqual(
+      expect.objectContaining({ type: "approval_required" }),
     );
     expect(executed).toBe(false);
 
@@ -2057,7 +2139,9 @@ describe("Anvia studio", () => {
         result: "Refunded 25 for ORD-1",
       }),
     );
-    expect(remaining).toContainEqual(expect.objectContaining({ type: "final" }));
+    expect(remaining).toContainEqual(
+      expect.objectContaining({ type: "final", runId: approvalRunId }),
+    );
   });
 
   it("cancels pending approvals when a streaming response is cancelled", async () => {
@@ -3455,7 +3539,8 @@ describe("Anvia studio", () => {
       }),
     );
     expect(run.status).toBe(200);
-    await expect(run.json()).resolves.toMatchObject({
+    const runResult = (await run.json()) as AgentRunResponse;
+    expect(runResult).toMatchObject({
       output: "traced answer",
       trace: { observationId: expect.any(String), traceId: expect.any(String) },
     });
@@ -3467,12 +3552,14 @@ describe("Anvia studio", () => {
     const traceList = (await traces.json()) as { traces: Array<{ id: string }> };
     expect(traceList.traces).toHaveLength(1);
     expect(traceList.traces[0]).toMatchObject({
+      runId: runResult.runId,
       sessionId: session.id,
       name: "support-run",
       status: "success",
       output: "traced answer",
       observationCount: 1,
       metadata: expect.objectContaining({
+        runId: runResult.runId,
         metadata: { source: "test", agentId: "support" },
       }),
     });
@@ -4492,6 +4579,23 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       clearTimeout(timeout);
     }
   }
+}
+
+async function waitForPendingApproval(runner: Studio): Promise<StudioToolApproval> {
+  return withTimeout(
+    (async () => {
+      while (true) {
+        const response = await runner.fetch(
+          new Request("http://runner.test/approvals?status=pending"),
+        );
+        const body = (await response.json()) as { approvals: StudioToolApproval[] };
+        const approval = body.approvals[0];
+        if (approval !== undefined) return approval;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    })(),
+    1_000,
+  );
 }
 
 async function waitFor(predicate: () => boolean, ms = 1000): Promise<void> {

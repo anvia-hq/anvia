@@ -3,6 +3,7 @@ import type {
   AgentContextInput,
   AgentOptions,
   AgentToolInput,
+  AgentToolOptions,
   ContextIndex,
   CreateContextIndexOptions,
   AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
@@ -23,21 +24,24 @@ import * as embeddings from "../src/embeddings";
 import * as evals from "../src/evals";
 import * as extractor from "../src/extractor";
 import * as guardrails from "../src/guardrails";
-import * as hooks from "../src/hooks";
 import * as imageGeneration from "../src/image-generation";
 import type {
   AgentErrorStreamEvent as RootAgentErrorStreamEvent,
+  AgentSession as RootAgentSessionType,
   AgentStreamEvent as RootAgentStreamEvent,
   AgentStreamEventWithoutToolCallDeltas as RootAgentStreamEventWithoutToolCallDeltas,
   AgentStreamEventWithToolCallDeltas as RootAgentStreamEventWithToolCallDeltas,
   AgentStreamOptions as RootAgentStreamOptions,
   AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
+  AgentToolOptions as RootAgentToolOptions,
   RetryContext as RootRetryContext,
   RetryOptions as RootRetryOptions,
   ToolContent as RootToolContentType,
 } from "../src/index";
 import * as publicCore from "../src/index";
 import { Message as RootMessage, ToolContent as RootToolContent, Usage } from "../src/index";
+// @ts-expect-error ToolApprovalRequest is private to the agent runtime.
+import type { ToolApprovalRequest as InternalToolApprovalRequest } from "../src/internal/agent";
 import * as internalAgent from "../src/internal/agent";
 import * as loaders from "../src/loaders";
 import * as mcp from "../src/mcp";
@@ -61,6 +65,9 @@ describe("public exports", () => {
     expectTypeOf<ContextIndex>().not.toBeNever();
     expectTypeOf<CreateContextIndexOptions>().not.toBeNever();
     expectTypeOf<AgentToolInput>().not.toBeNever();
+    expectTypeOf<AgentToolOptions>().not.toBeNever();
+    expectTypeOf<RootAgentSessionType>().toEqualTypeOf<PublicAgentSessionType>();
+    expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
   });
 
   it("does not expose the removed AgentBuilder", () => {
@@ -90,9 +97,17 @@ describe("public exports", () => {
     expect("AgentSession" in publicAgent).toBe(false);
   });
 
-  it("exposes runtime Agent through the internal agent entrypoint", () => {
+  it("exposes only the internal Agent integration contract", () => {
     expect("Agent" in internalAgent).toBe(true);
-    expect("AgentSession" in internalAgent).toBe(true);
+    expect("createResolvedAgent" in internalAgent).toBe(true);
+    expect("getResolvedAgentOptions" in internalAgent).toBe(true);
+    expect("getAgentToolState" in internalAgent).toBe(true);
+    expect("getAgentApprovalRequestDetails" in internalAgent).toBe(true);
+    expect("withInternalAgentRunOptions" in internalAgent).toBe(true);
+    expect("AgentSession" in internalAgent).toBe(false);
+    expect("DEFAULT_MAX_TURNS" in internalAgent).toBe(false);
+    expect("cancelAgentApproval" in internalAgent).toBe(false);
+    expectTypeOf<InternalToolApprovalRequest>().not.toBeNever();
   });
 
   it("exposes agent run errors from the public agent entrypoint", () => {
@@ -105,9 +120,12 @@ describe("public exports", () => {
 
   it("keeps controlling hooks internal", () => {
     expect("createHook" in publicCore).toBe(false);
-    expect("createHook" in hooks).toBe(true);
     expect("createHook" in internalAgent).toBe(true);
-    expect("skipTool" in hooks).toBe(true);
+    expect("skipTool" in internalAgent).toBe(false);
+    expect("cancelRun" in internalAgent).toBe(false);
+    expect("requestToolApproval" in internalAgent).toBe(false);
+    expect("runControl" in internalAgent).toBe(false);
+    expect("toolCallControl" in internalAgent).toBe(false);
   });
 
   it("exposes agent run contracts from root and agent entrypoints", () => {
@@ -154,7 +172,6 @@ describe("public exports", () => {
   });
 
   it("keeps public subpath runtime exports available", () => {
-    expect(hooks).toHaveProperty("createHook");
     expect(audioGeneration).toHaveProperty("generateSpeech");
     expect(audioGeneration).not.toHaveProperty("audioGenerationRequest");
     expect(audioGeneration).not.toHaveProperty("AudioGenerationRequestBuilder");

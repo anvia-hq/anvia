@@ -149,8 +149,10 @@ function defaultShouldRetry(context: RetryContext): boolean {
 
 function firstStatusCode(errors: Record<string, unknown>[]): number | undefined {
   for (const error of errors) {
-    const status = numberProperty(error, "status") ?? numberProperty(error, "statusCode");
-    if (status !== undefined) return status;
+    const status = numberProperty(error, "status");
+    if (status !== undefined && status >= 100 && status <= 599) return status;
+    const statusCode = numberProperty(error, "statusCode");
+    if (statusCode !== undefined && statusCode >= 100 && statusCode <= 599) return statusCode;
     const code = numberProperty(error, "code");
     if (code !== undefined && code >= 100 && code <= 599) return code;
   }

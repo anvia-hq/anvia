@@ -16,8 +16,10 @@ import {
   Message,
   requestToolApproval,
   TestAgentBuilder,
+  type ToolCallContext,
   ToolOutput,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -392,6 +394,67 @@ describe("Agent execution", () => {
     const finalToolMessage = model.requests[1]?.chatHistory.at(-1);
     expect(finalToolMessage?.role).toBe("tool");
     expect(finalToolMessage?.role === "tool" ? finalToolMessage.content : []).toHaveLength(2);
+  });
+
+  it("serializes tool calls when an internal hook is active", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const trackedTool = (name: string) =>
+      createTool({
+        name,
+        description: name,
+        inputSchema: z.object({}),
+        async execute() {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          active -= 1;
+          return name;
+        },
+      });
+    const first = trackedTool("first");
+    const second = trackedTool("second");
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "first", {}),
+        AssistantContent.toolCall("call_2", "second", {}),
+      ]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new TestAgentBuilder("test-agent", model)
+      .tools([first, second])
+      .hook(createHook({ onToolCall() {} }))
+      .build();
+
+    await expect(agent.generate("run both", { toolConcurrency: 2 })).resolves.toMatchObject({
+      output: "done",
+    });
+    expect(maxActive).toBe(1);
+  });
+
+  it("validates run limits before starting an agent run", () => {
+    const agent = new Agent({ id: "test-agent", model: new QueueModel([]) });
+
+    expect(() => agent.generate("hi", { maxTurns: -1 })).toThrow(
+      "maxTurns must be a nonnegative safe integer",
+    );
+    expect(() => agent.generate("hi", { toolConcurrency: 0 })).toThrow(
+      "toolConcurrency must be a positive safe integer",
+    );
+    expect(() => agent.stream("hi", { toolConcurrency: Number.POSITIVE_INFINITY })).toThrow(
+      "toolConcurrency must be a positive safe integer",
+    );
+  });
+
+  it("uses an internal externally assigned run id consistently", async () => {
+    const agent = new Agent({
+      id: "test-agent",
+      model: new QueueModel([response([AssistantContent.text("done")])]),
+    });
+
+    await expect(
+      agent.generate("hi", withInternalAgentRunOptions({}, { runId: "external-run-id" })),
+    ).resolves.toMatchObject({ runId: "external-run-id", output: "done" });
   });
 
   it("runs tool result middleware before hooks and the next model turn", async () => {
@@ -1083,6 +1146,135 @@ describe("Agent execution", () => {
     );
   });
 
+  it("approves and executes the exact same parsed tool input", async () => {
+    let sequence = 0;
+    let approvalInput: { generated: number } | undefined;
+    let executedInput: { generated: number } | undefined;
+    const baseGuardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool with a generated default",
+      inputSchema: z.object({ generated: z.number().default(() => ++sequence) }),
+      outputSchema: z.string(),
+      requiresApproval(input) {
+        approvalInput = input;
+        return true;
+      },
+      execute(input) {
+        executedInput = input;
+        return `generated ${input.generated}`;
+      },
+    });
+    let decoratedCalls = 0;
+    const guardedTool = {
+      ...baseGuardedTool,
+      call(input: { generated: number }, context?: ToolCallContext) {
+        decoratedCalls += 1;
+        return baseGuardedTool.call(input, context === undefined ? undefined : { ...context });
+      },
+    };
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+    const sequenceBeforeRun = sequence;
+
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    expect(pending.approval.input).toEqual(approvalInput);
+    expect(sequence).toBe(sequenceBeforeRun + 1);
+    const approvedInput = approvalInput;
+
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      status: "completed",
+      output: "done",
+    });
+    expect(executedInput).toEqual(approvedInput);
+    expect(sequence).toBe(sequenceBeforeRun + 1);
+    expect(decoratedCalls).toBe(1);
+  });
+
+  it("isolates a pending approval snapshot from the suspended run state", async () => {
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute: () => "approved",
+    });
+    const toolResponse = response([AssistantContent.toolCall("call_1", "guarded", {})]);
+    toolResponse.usage = {
+      ...Usage.empty(),
+      inputTokens: 2,
+      outputTokens: 3,
+      totalTokens: 5,
+    };
+    const model = new QueueModel([toolResponse, response([AssistantContent.text("done")])]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    pending.usage.totalTokens = 999;
+    const pendingUser = pending.messages[0];
+    if (pendingUser?.role === "user" && pendingUser.content[0]?.type === "text") {
+      pendingUser.content[0].text = "mutated";
+    }
+
+    const result = await agent.resume(pending, { approved: true });
+    if (result.status !== "completed") throw new Error("Expected completed result");
+    expect(result.usage.totalTokens).toBe(5);
+    expect(result.messages[0]).toEqual(Message.user("run guarded"));
+  });
+
+  it("returns invalid tool input to the model so it can recover", async () => {
+    let executions = 0;
+    const numberTool = createTool({
+      name: "number_tool",
+      description: "Accept a number",
+      inputSchema: z.object({ value: z.number() }),
+      outputSchema: z.string(),
+      execute() {
+        executions += 1;
+        return "ok";
+      },
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "number_tool", { value: "invalid" })]),
+      response([AssistantContent.text("recovered")]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [numberTool] });
+
+    await expect(agent.generate("run tool")).resolves.toMatchObject({
+      status: "completed",
+      output: "recovered",
+    });
+    expect(executions).toBe(0);
+    expect(model.requests[1]?.chatHistory.at(-1)).toMatchObject({
+      role: "tool",
+      content: [
+        expect.objectContaining({
+          content: [expect.objectContaining({ text: expect.stringContaining("ToolCallError") })],
+        }),
+      ],
+    });
+  });
+
+  it("fails closed when an approval callback returns an invalid value", async () => {
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      inputSchema: z.object({}),
+      requiresApproval: (() => null) as never,
+      execute: () => "never",
+    });
+    const model = new QueueModel([response([AssistantContent.toolCall("call_1", "guarded", {})])]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+
+    await expect(agent.generate("run guarded")).rejects.toThrow(
+      'Tool "requiresApproval" must be a boolean',
+    );
+  });
+
   it("evaluates tool approval after tool input middleware changes args", async () => {
     let executedAmount: number | undefined;
     const guardedTool = createTool({
@@ -1377,6 +1569,71 @@ describe("Agent execution", () => {
     });
 
     expect(events).toEqual(["agent:start", "run:start", "agent:finish", "run:finish"]);
+  });
+
+  it("isolates observational lifecycle callbacks from runtime state and each other", async () => {
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const observed: string[] = [];
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      lifecycle: {
+        onStart(event) {
+          const input = event.input as unknown as ReturnType<typeof Message.user>;
+          const text = input.role === "user" ? input.content[0] : undefined;
+          if (text?.type === "text") text.text = "mutated";
+        },
+        onStepFinish(event) {
+          const mutable = event.response as unknown as CompletionResponse;
+          mutable.choice.splice(0, mutable.choice.length, AssistantContent.text("mutated"));
+        },
+        onFinish(event) {
+          (event.messages as unknown as Array<(typeof event.messages)[number]>).splice(0);
+        },
+      },
+    });
+
+    const result = await agent.generate("hello", {
+      lifecycle: {
+        onStart(event) {
+          observed.push(
+            event.input.role === "user" && event.input.content[0]?.type === "text"
+              ? event.input.content[0].text
+              : "missing",
+          );
+        },
+        onStepFinish(event) {
+          observed.push(textFromChoice(event.response.choice as CompletionResponse["choice"]));
+        },
+        onFinish(event) {
+          observed.push(String(event.messages.length));
+        },
+      },
+    });
+
+    expect(observed).toEqual(["hello", "done", "2"]);
+    expect(model.requests[0]?.chatHistory).toEqual([Message.user("hello")]);
+    if (result.status !== "completed") throw new Error("Expected completed result");
+    expect(result.output).toBe("done");
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages[0]).toEqual(Message.user("hello"));
+    expect(result.messages.at(-1)).toMatchObject(Message.assistant("done"));
+  });
+
+  it("isolates lifecycle error callbacks from the reported error", async () => {
+    const failure = new Error("provider failed");
+    const agent = new Agent({
+      id: "test-agent",
+      model: new FlakyQueueModel([{ error: failure }]),
+      lifecycle: {
+        onError({ error }) {
+          if (error instanceof Error) error.message = "mutated";
+        },
+      },
+    });
+
+    await expect(agent.generate("hello")).rejects.toThrow("provider failed");
+    expect(failure.message).toBe("provider failed");
   });
 
   it("observes steps and successful tool execution through lifecycle callbacks", async () => {

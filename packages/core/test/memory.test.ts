@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AgentRunCancelledError,
   AssistantContent,
   assertCompleted,
@@ -12,7 +13,10 @@ import {
   cancelRun,
   createHook,
   createMiddleware,
+  createObserver,
   createTool,
+  defineGuardrailPolicy,
+  defineInputGuardrail,
   getAssistantGenerationMetadata,
   type MemoryAppendInput,
   type MemoryContext,
@@ -85,6 +89,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
 class RecordingMemoryStore implements MemoryStore {
   readonly appendCalls: MemoryAppendInput[] = [];
   readonly errorCalls: MemoryErrorInput[] = [];
+  readonly loadCalls: MemoryContext[] = [];
   private readonly sessions = new Map<string, MessageType[]>();
 
   constructor(initial: Record<string, MessageType[]> = {}) {
@@ -94,6 +99,7 @@ class RecordingMemoryStore implements MemoryStore {
   }
 
   async load(context: MemoryContext): Promise<MessageType[]> {
+    this.loadCalls.push({ ...context });
     return [...(this.sessions.get(context.sessionId) ?? [])];
   }
 
@@ -170,6 +176,139 @@ describe("agent memory", () => {
       ...previous,
       Message.user("What is my project named?"),
     ]);
+    expect(store.loadCalls).toHaveLength(1);
+  });
+
+  it("exposes stored history to lifecycle, observers, and input guardrails before a buffered run", async () => {
+    const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
+    const store = new RecordingMemoryStore({ session_1: previous });
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    let lifecycleHistory: unknown;
+    let observerHistory: readonly unknown[] | undefined;
+    let guardrailHistory: MessageType[] | undefined;
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store },
+      lifecycle: {
+        onStart({ history }) {
+          lifecycleHistory = history;
+        },
+      },
+      observers: [
+        createObserver({
+          startRun({ history }) {
+            observerHistory = history;
+            return { end() {} };
+          },
+        }),
+      ],
+      guardrails: defineGuardrailPolicy({
+        id: "history-policy",
+        input: [
+          defineInputGuardrail({
+            id: "history-guardrail",
+            check({ history }, { allow }) {
+              guardrailHistory = history;
+              return allow();
+            },
+          }),
+        ],
+      }),
+    });
+
+    await agent.session("session_1").generate("next");
+
+    expect(lifecycleHistory).toEqual(previous);
+    expect(observerHistory).toEqual(previous);
+    expect(guardrailHistory).toEqual(previous);
+    expect(store.loadCalls).toHaveLength(1);
+    expect(model.requests[0]?.chatHistory).toEqual([...previous, Message.user("next")]);
+  });
+
+  it("exposes stored history before a streaming run without loading it twice", async () => {
+    const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
+    const store = new RecordingMemoryStore({ session_1: previous });
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    let lifecycleHistory: unknown;
+    let observerHistory: readonly unknown[] | undefined;
+    let guardrailHistory: MessageType[] | undefined;
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store },
+      lifecycle: {
+        onStart({ history }) {
+          lifecycleHistory = history;
+        },
+      },
+      observers: [
+        createObserver({
+          startRun({ history }) {
+            observerHistory = history;
+            return { end() {} };
+          },
+        }),
+      ],
+      guardrails: defineGuardrailPolicy({
+        id: "history-policy",
+        input: [
+          defineInputGuardrail({
+            id: "history-guardrail",
+            check({ history }, { allow }) {
+              guardrailHistory = history;
+              return allow();
+            },
+          }),
+        ],
+      }),
+    });
+
+    for await (const _event of agent.session("session_1").stream("next")) {
+      // exhaust the stream
+    }
+
+    expect(lifecycleHistory).toEqual(previous);
+    expect(observerHistory).toEqual(previous);
+    expect(guardrailHistory).toEqual(previous);
+    expect(store.loadCalls).toHaveLength(1);
+    expect(model.requests[0]?.chatHistory).toEqual([...previous, Message.user("next")]);
+  });
+
+  it("does not persist a session prompt rejected by an input guardrail", async () => {
+    const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
+    const store = new RecordingMemoryStore({ session_1: previous });
+    const model = new QueueModel([]);
+    let guardrailHistory: MessageType[] | undefined;
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store },
+      guardrails: defineGuardrailPolicy({
+        id: "history-policy",
+        input: [
+          defineInputGuardrail({
+            id: "block-input",
+            check({ history }, { block }) {
+              guardrailHistory = history;
+              return block({ reason: "blocked", message: "Input blocked." });
+            },
+          }),
+        ],
+      }),
+    });
+
+    await expect(agent.session("session_1").generate("blocked prompt")).resolves.toMatchObject({
+      status: "completed",
+      output: "Input blocked.",
+    });
+
+    expect(guardrailHistory).toEqual(previous);
+    expect(store.loadCalls).toHaveLength(1);
+    expect(store.appendCalls).toHaveLength(0);
+    expect(model.requests).toHaveLength(0);
+    await expect(agent.session("session_1").messages()).resolves.toEqual(previous);
+    expect(store.loadCalls).toHaveLength(2);
   });
 
   it("applies completion retries to session prompts without duplicating memory", async () => {
@@ -215,11 +354,50 @@ describe("agent memory", () => {
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
-      ["assistant"],
-      ["tool"],
+      ["assistant", "tool"],
       ["assistant"],
     ]);
     await expect(agent.session("session_1").messages()).resolves.toHaveLength(4);
+  });
+
+  it("does not persist an orphaned assistant tool call while approval is pending", async () => {
+    const store = new RecordingMemoryStore();
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "Run a guarded operation",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute: () => "approved",
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [guardedTool],
+      memory: { store },
+    });
+    const session = agent.session("session_1");
+
+    const pending = await session.generate("run guarded");
+    expect(pending.status).toBe("approval_required");
+    expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
+      ["user"],
+    ]);
+    await expect(session.messages()).resolves.toEqual([Message.user("run guarded")]);
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      status: "completed",
+      output: "done",
+    });
+    expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
+      ["user"],
+      ["assistant", "tool"],
+      ["assistant"],
+    ]);
   });
 
   it.each<MemorySavePolicy>([
@@ -330,8 +508,7 @@ describe("agent memory", () => {
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
-      ["assistant"],
-      ["tool"],
+      ["assistant", "tool"],
     ]);
     expect(store.errorCalls).toHaveLength(1);
     expect(store.errorCalls[0]?.messages.map((message) => message.role)).toEqual([
@@ -460,6 +637,70 @@ describe("agent memory", () => {
     ]);
   });
 
+  it.each([
+    "buffered",
+    "streaming",
+  ] as const)("commits %s run memory before reporting success", async (mode) => {
+    const events: string[] = [];
+    const persistenceError = new Error("memory append failed");
+    const store: MemoryStore = {
+      async load() {
+        return [];
+      },
+      async append() {
+        events.push("memory:append");
+        throw persistenceError;
+      },
+      async clear() {},
+      async recordError() {
+        events.push("memory:error");
+      },
+    };
+    const model: CompletionModel =
+      mode === "buffered"
+        ? new QueueModel([response([AssistantContent.text("done")])])
+        : new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store, savePolicy: "run" },
+      lifecycle: {
+        onFinish() {
+          events.push("lifecycle:finish");
+        },
+        onError() {
+          events.push("lifecycle:error");
+        },
+      },
+      observers: [
+        createObserver({
+          startRun() {
+            return {
+              end() {
+                events.push("observer:end");
+              },
+              error() {
+                events.push("observer:error");
+              },
+            };
+          },
+        }),
+      ],
+    });
+    const session = agent.session(`session-${mode}`);
+    const execution =
+      mode === "buffered"
+        ? session.generate("hello")
+        : (async () => {
+            for await (const _event of session.stream("hello")) {
+              // exhaust the stream
+            }
+          })();
+
+    await expect(execution).rejects.toBe(persistenceError);
+    expect(events).toEqual(["memory:append", "lifecycle:error", "observer:error", "memory:error"]);
+  });
+
   it("does not commit run memory when the run end hook cancels", async () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([response([AssistantContent.text("done")])]);
@@ -511,8 +752,7 @@ describe("agent memory", () => {
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
-      ["assistant"],
-      ["tool"],
+      ["assistant", "tool"],
       ["assistant"],
     ]);
     await expect(parentAgent.session("session_1").messages()).resolves.toHaveLength(4);

@@ -1,4 +1,4 @@
-import type { Agent } from "../agent/agent";
+import { type Agent, cancelAgentApproval } from "../agent/agent";
 import type { AgentResponse } from "../agent/run-types";
 import type { Message } from "../completion";
 import type { EvalCase, EvalTarget } from "./types";
@@ -24,6 +24,7 @@ export function agentEvalTarget<Input, Output, Expected>(
     const prompt = options.prompt?.(input, testCase) ?? String(input);
     const response = await agent.generate(prompt);
     if (response.status === "approval_required") {
+      await cancelAgentApproval(response, "Agent eval targets cannot suspend for tool approval.");
       throw new Error("Agent eval targets cannot suspend for tool approval.");
     }
     return options.output === undefined ? response : options.output(response, testCase);

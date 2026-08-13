@@ -12,24 +12,34 @@ import type {
 import { getAssistantGenerationMetadata, isProviderTool } from "../completion/types";
 import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
+import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
+import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
+import {
+  assertFiniteSearchThreshold,
+  assertPositiveSearchLimit,
+} from "../internal/vector-search-options";
 import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import { toProviderJsonSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/create-tool";
 import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
-import { ToolCallError, ToolJsonError, ToolNotFoundError } from "../tool/errors";
+import { ToolNotFoundError } from "../tool/errors";
 import type { AgentMiddleware } from "../tool/middleware";
-import { isSkillTool } from "../tool/skill-tool-marker";
-import {
-  type AnyTool,
-  type NormalizedToolOutput,
-  normalizeToolResultOutput,
-  parseToolArgs,
-  type Tool,
-  type ToolCallContext,
-  type ToolCallStreamEvent,
+import type {
+  AnyTool,
+  NormalizedToolOutput,
+  Tool,
+  ToolCallContext,
+  ToolCallStreamEvent,
 } from "../tool/tool";
+import type {
+  VectorInspectRequest,
+  VectorSearchRequest,
+  VectorSearchResult,
+  VectorSearchToolOptions,
+} from "../vector-store";
+import { type ContextIndex, isContextIndex } from "./context-index";
 import { normalizeAgentId } from "./ids";
 import type { AgentLifecycle } from "./lifecycle";
 import type {
@@ -57,10 +67,14 @@ export type AgentToolState = {
   staticTools: readonly AnyTool[];
   providerTools: readonly ProviderTool[];
   toolIndexes: readonly ToolIndex[];
-  toolsByName: ReadonlyMap<string, AnyTool>;
 };
 
-const agentToolStates = new WeakMap<object, AgentToolState>();
+type StoredAgentToolState = {
+  publicState: AgentToolState;
+  toolsByName: Map<string, AnyTool>;
+};
+
+const agentToolStates = new WeakMap<object, StoredAgentToolState>();
 
 export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
   readonly id: string;
@@ -77,9 +91,9 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly defaultMaxTurns: number | undefined;
   readonly lifecycle: AgentLifecycle | undefined;
   readonly outputSchema: JsonObject | undefined;
-  readonly observers: AgentObserverRegistration[];
-  readonly guardrails: GuardrailPolicy[];
-  readonly middlewares: AgentMiddleware[];
+  readonly observers: readonly AgentObserverRegistration[];
+  readonly guardrails: readonly GuardrailPolicy[];
+  readonly middlewares: readonly AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
 
   constructor(options: AgentOptions<M, ContextDocument>) {
@@ -89,12 +103,15 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.description = resolved.description;
     this.model = resolved.model;
     this.instructions = resolved.instructions;
-    this.context = Object.freeze([...(resolved.context ?? [])]);
+    const context = (resolved.context ?? []).map(snapshotContextInput);
+    assertValidContextIndexes(context);
+    this.context = Object.freeze(context);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
-    this.additionalParams = resolved.additionalParams;
+    this.additionalParams = cloneFrozenPlainData(resolved.additionalParams);
     const staticTools = dedupeTools(resolved.tools ?? []);
-    const toolIndexes = [...(resolved.toolIndexes ?? [])];
+    const toolIndexes = (resolved.toolIndexes ?? []).map(snapshotToolIndex);
+    assertUniqueIndexedToolNames(toolIndexes);
     const toolsByName = new Map(staticTools.map((tool) => [tool.name, tool]));
     for (const index of toolIndexes) {
       for (const tool of index.tools) {
@@ -104,20 +121,28 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       }
     }
     this.tools = Object.freeze([...toolsByName.values()]);
-    agentToolStates.set(this, {
+    const publicToolState = Object.freeze({
       staticTools: Object.freeze(staticTools),
-      providerTools: Object.freeze([...(resolved.providerTools ?? [])]),
+      providerTools: Object.freeze((resolved.providerTools ?? []).map(snapshotProviderTool)),
       toolIndexes: Object.freeze(toolIndexes),
+    });
+    agentToolStates.set(this, {
+      publicState: publicToolState,
       toolsByName,
     });
-    this.toolChoice = resolved.toolChoice;
-    this.defaultMaxTurns = resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS;
+    this.toolChoice = cloneFrozenPlainData(resolved.toolChoice);
+    this.defaultMaxTurns = assertNonnegativeSafeInteger(
+      resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS,
+      "maxTurns",
+    );
     this.lifecycle = resolved.lifecycle;
-    this.outputSchema = resolved.outputSchema;
-    this.observers = [...(resolved.observers ?? [])];
-    this.guardrails = [...(resolved.guardrails ?? [])];
-    this.middlewares = [...(resolved.middlewares ?? [])];
-    this.memory = resolved.memory;
+    this.outputSchema = cloneFrozenPlainData(resolved.outputSchema);
+    this.observers = Object.freeze(
+      (resolved.observers ?? []).map((registration) => Object.freeze({ ...registration })),
+    );
+    this.guardrails = Object.freeze((resolved.guardrails ?? []).map(snapshotGuardrailPolicy));
+    this.middlewares = Object.freeze([...(resolved.middlewares ?? [])]);
+    this.memory = snapshotMemoryRegistration(resolved.memory);
   }
 
   generate(input: AgentInput, options: AgentRunOptions = {}): Promise<AgentResult> {
@@ -180,7 +205,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       context.userId = options.userId;
     }
     if (options.metadata !== undefined) {
-      context.metadata = options.metadata;
+      context.metadata = cloneFrozenPlainData(options.metadata);
     }
     return new AgentSession(this, context);
   }
@@ -209,6 +234,15 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
             includeToolCallDeltas: context.includeToolCallDeltas !== false,
           });
           for await (const event of childStream) {
+            if (event.type === "approval_required") {
+              await cancelAgentApproval(
+                event,
+                `Agent tool "${options.name}" cannot suspend for tool approval.`,
+              );
+              throw new Error(
+                `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
+              );
+            }
             const streamEvent: ToolCallStreamEvent = {
               agentId: this.id,
               event,
@@ -219,16 +253,16 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
             await context.emitStreamEvent(streamEvent);
             if (event.type === "final") {
               output = event.output;
-            } else if (event.type === "approval_required") {
-              throw new Error(
-                `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
-              );
             }
           }
           return output;
         }
         const response = await this.generate(prompt, { maxTurns: options.maxTurns });
         if (response.status === "approval_required") {
+          await cancelAgentApproval(
+            response,
+            `Agent tool "${options.name}" cannot suspend for tool approval.`,
+          );
           throw new Error(
             `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
           );
@@ -239,7 +273,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   }
 
   getTool(toolName: string): AnyTool | undefined {
-    return getAgentToolState(this).toolsByName.get(toolName);
+    return getStoredAgentToolState(this).toolsByName.get(toolName);
   }
 
   async callTool(
@@ -252,25 +286,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       throw new ToolNotFoundError(toolName);
     }
 
-    let parsedArgs: unknown;
-    try {
-      parsedArgs = parseToolArgs(args);
-    } catch (error) {
-      throw new ToolJsonError(`Invalid JSON arguments for tool ${toolName}`, error);
-    }
-
-    try {
-      return normalizeToolResultOutput(await tool.call(parsedArgs, context));
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new ToolCallError(error.message, error);
-      }
-      throw new ToolCallError(`Tool ${toolName} failed`, error);
-    }
-  }
-
-  shouldApplyToolMiddleware(toolName: string): boolean {
-    return !isSkillTool(this.getTool(toolName));
+    return prepareToolCall(tool, args).call(context ?? {});
   }
 }
 
@@ -321,6 +337,10 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
 }
 
 export function getAgentToolState(agent: Agent): AgentToolState {
+  return getStoredAgentToolState(agent).publicState;
+}
+
+function getStoredAgentToolState(agent: Agent): StoredAgentToolState {
   const state = agentToolStates.get(agent);
   if (state === undefined) {
     throw new TypeError("Agent tool state is unavailable.");
@@ -343,6 +363,10 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
       providerTools.push(tool);
     } else if (isToolIndex(tool)) {
       toolIndexes.push(tool);
+    } else if ((tool as { kind?: unknown }).kind === "tool-index") {
+      throw new TypeError(
+        "Invalid tool index: search, searchIds, asTool, tools, and a numeric topK are required.",
+      );
     } else {
       toolsByName.set(tool.name, tool);
     }
@@ -357,7 +381,6 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
       toolsByName.set(tool.name, tool);
     }
   }
-
   const memory = resolveAgentMemory(options);
   const instructions = [options.instructions, options.skills?.instructions]
     .filter((part): part is string => part !== undefined && part.length > 0)
@@ -393,6 +416,41 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
   };
 }
 
+function assertUniqueIndexedToolNames(indexes: readonly ToolIndex[]): void {
+  const owners = new Map<string, number>();
+  for (const [indexPosition, index] of indexes.entries()) {
+    if (!isToolIndex(index)) {
+      throw new TypeError(
+        "Invalid tool index: search, searchIds, asTool, tools, and a numeric topK are required.",
+      );
+    }
+    assertPositiveSearchLimit(index.topK);
+    assertFiniteSearchThreshold(index.threshold);
+    for (const tool of index.tools) {
+      const existingPosition = owners.get(tool.name);
+      if (existingPosition !== undefined) {
+        if (existingPosition === indexPosition) {
+          throw new TypeError(
+            `Tool "${tool.name}" is registered more than once by tool index ${indexPosition + 1}. Tool names must be unique within each index.`,
+          );
+        }
+        throw new TypeError(
+          `Tool "${tool.name}" is registered by multiple tool indexes (${existingPosition + 1} and ${indexPosition + 1}). Tool names must be unique across indexes.`,
+        );
+      }
+      owners.set(tool.name, indexPosition);
+    }
+  }
+}
+
+function assertValidContextIndexes(inputs: readonly AgentContextInput[]): void {
+  for (const input of inputs) {
+    if (!isContextIndex(input)) continue;
+    assertPositiveSearchLimit(input.topK);
+    assertFiniteSearchThreshold(input.threshold);
+  }
+}
+
 function isInternalAgentOptions<M extends CompletionModel, ContextDocument>(
   options: AgentOptions<M, ContextDocument>,
 ): boolean {
@@ -421,6 +479,7 @@ function resolveAgentMemory<M extends CompletionModel, ContextDocument>(
 
 type GenerateExecution = {
   next(): Promise<AgentResult>;
+  cancel(reason: string): Promise<void>;
 };
 
 type ApprovalContinuation =
@@ -463,6 +522,10 @@ function createGenerateExecution(agent: Agent, run: AgentRun): GenerateExecution
       approvalContinuations.set(pending, { agent, run, mode: "generate", execution });
       return pending;
     },
+    async cancel(reason) {
+      run.cancel(reason);
+      await completion.catch(() => undefined);
+    },
   };
   return execution;
 }
@@ -470,6 +533,7 @@ function createGenerateExecution(agent: Agent, run: AgentRun): GenerateExecution
 class StreamExecution {
   private readonly iterator: AsyncIterator<AgentStreamEvent>;
   private nextEvent: Promise<IteratorResult<AgentStreamEvent>> | undefined;
+  private phase: "active" | "approval" | "terminal" | "cancelled" = "active";
 
   constructor(
     private readonly agent: Agent,
@@ -480,6 +544,9 @@ class StreamExecution {
   }
 
   segment(): AgentStream<AgentStreamEvent> {
+    if (this.phase === "approval") {
+      this.phase = "active";
+    }
     return new DefaultAgentStream(this);
   }
 
@@ -490,11 +557,20 @@ class StreamExecution {
   async *events(): AsyncIterable<AgentStreamEvent> {
     while (true) {
       this.nextEvent ??= this.iterator.next();
-      const outcome = await Promise.race([
-        this.nextEvent.then((event) => ({ type: "event" as const, event })),
-        this.run.waitForApproval().then(() => ({ type: "approval" as const })),
-      ]);
+      let outcome:
+        | { type: "event"; event: IteratorResult<AgentStreamEvent> }
+        | { type: "approval" };
+      try {
+        outcome = await Promise.race([
+          this.nextEvent.then((event) => ({ type: "event" as const, event })),
+          this.run.waitForApproval().then(() => ({ type: "approval" as const })),
+        ]);
+      } catch (error) {
+        this.phase = "terminal";
+        throw error;
+      }
       if (outcome.type === "approval") {
+        this.phase = "approval";
         const pending = this.run.approvalEvent();
         approvalContinuations.set(pending, {
           agent: this.agent,
@@ -506,8 +582,28 @@ class StreamExecution {
         return;
       }
       this.nextEvent = undefined;
-      if (outcome.event.done) return;
+      if (outcome.event.done) {
+        this.phase = "terminal";
+        return;
+      }
       yield outcome.event.value;
+    }
+  }
+
+  shouldCancelActiveSegment(): boolean {
+    return this.phase === "active";
+  }
+
+  async cancel(reason: string): Promise<void> {
+    if (this.phase === "terminal" || this.phase === "cancelled") {
+      return;
+    }
+    this.phase = "cancelled";
+    this.run.cancel(reason);
+    try {
+      await this.iterator.return?.();
+    } catch {
+      // Cancellation is best-effort; the run finalizes its observers and memory before rejecting.
     }
   }
 }
@@ -549,10 +645,25 @@ class DefaultAgentStream<Event extends AgentStreamEvent = AgentStreamEvent>
         yield event as Event;
       }
     } finally {
+      if (this.execution.shouldCancelActiveSegment()) {
+        await this.execution.cancel("Agent stream consumer closed the stream.");
+      }
       this.consuming = false;
       this.completed = true;
     }
   }
+}
+
+export async function cancelAgentApproval(
+  pending: AgentApprovalRequiredResult | AgentApprovalRequiredEvent,
+  reason: string,
+): Promise<void> {
+  const continuation = approvalContinuations.get(pending);
+  if (continuation === undefined) {
+    return;
+  }
+  approvalContinuations.delete(pending);
+  await continuation.execution.cancel(reason);
 }
 
 export class AgentSession<M extends CompletionModel = CompletionModel> {
@@ -629,6 +740,99 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
     }
     await memory.store.clear(this.context);
   }
+}
+
+function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {
+  if (!isContextIndex(input)) {
+    return Object.freeze({
+      id: input.id,
+      text: input.text,
+      ...(input.additionalProps === undefined
+        ? {}
+        : { additionalProps: cloneFrozenPlainData(input.additionalProps) }),
+    });
+  }
+  const format = input.format;
+  return Object.freeze<ContextIndex<T>>({
+    kind: "context-index",
+    index: input.index,
+    topK: input.topK,
+    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
+    ...(input.filter === undefined ? {} : { filter: cloneFrozenPlainData(input.filter) }),
+    ...(format === undefined
+      ? {}
+      : { format: (result: VectorSearchResult<T>) => format.call(input, result) }),
+  });
+}
+
+function snapshotProviderTool(tool: ProviderTool): ProviderTool {
+  return Object.freeze({
+    ...tool,
+    ...(tool.configuration === undefined
+      ? {}
+      : { configuration: cloneFrozenPlainData(tool.configuration) }),
+  });
+}
+
+function snapshotToolIndex(index: ToolIndex): ToolIndex {
+  const inspect = index.inspect;
+  return Object.freeze({
+    kind: "tool-index" as const,
+    tools: Object.freeze([...index.tools]),
+    topK: index.topK,
+    ...(index.threshold === undefined ? {} : { threshold: index.threshold }),
+    ...(index.filter === undefined ? {} : { filter: cloneFrozenPlainData(index.filter) }),
+    search: (request: VectorSearchRequest) => index.search(request),
+    searchIds: (request: VectorSearchRequest) => index.searchIds(request),
+    asTool: (options: VectorSearchToolOptions) => index.asTool(options),
+    ...(inspect === undefined
+      ? {}
+      : { inspect: (request: VectorInspectRequest) => inspect.call(index, request) }),
+  });
+}
+
+function snapshotGuardrailPolicy(policy: GuardrailPolicy): GuardrailPolicy {
+  return Object.freeze({
+    ...policy,
+    input: Object.freeze([...policy.input]),
+    output: Object.freeze([...policy.output]),
+  }) as GuardrailPolicy;
+}
+
+function snapshotMemoryRegistration(
+  memory: MemoryRegistration | undefined,
+): MemoryRegistration | undefined {
+  if (memory === undefined) {
+    return undefined;
+  }
+  const compaction =
+    memory.options.compaction === undefined
+      ? undefined
+      : Object.freeze({ ...memory.options.compaction });
+  return Object.freeze({
+    store: memory.store,
+    options: Object.freeze({
+      ...memory.options,
+      ...(compaction === undefined ? {} : { compaction }),
+    }),
+  });
+}
+
+function cloneFrozenPlainData<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(cloneFrozenPlainData)) as T;
+  }
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return value;
+  }
+  const clone = Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, cloneFrozenPlainData(item)]),
+  );
+  return Object.freeze(clone) as T;
 }
 
 function dedupeTools(tools: readonly AnyTool[]): AnyTool[] {

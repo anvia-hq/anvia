@@ -102,24 +102,14 @@ export async function createParsedCompletion<T, Model extends CompletionModel>(
   input: CreateCompletionInput,
   options: CreateParsedCompletionOptions<T, Model>,
 ): Promise<CreateParsedCompletionResult<T, RawResponseOf<Model>>> {
-  const { schema } = options;
-  const request = toCompletionRequest(input, {
-    ...options,
+  const { schema, ...completionOptions } = options;
+  const result = await createCompletion(input, {
+    ...completionOptions,
     outputSchema: toProviderJsonSchema(schema),
   });
-  assertCompletionRequestSupported(options.model, request);
-  const response = await runWithRetries(
-    () => options.model.completion(request) as Promise<CompletionResponse<RawResponseOf<Model>>>,
-    resolveOptionalRetries(options.retries),
-    { streaming: false },
-  );
-  const text = textFromAssistantContent(response.choice);
   return {
-    data: parseCompletionData(text, schema),
-    text,
-    content: response.choice,
-    usage: response.usage,
-    response,
+    ...result,
+    data: parseCompletionData(result.text, schema),
   };
 }
 
@@ -208,7 +198,7 @@ async function* streamCompletionWithRetries<Model extends StreamingCompletionMod
 
   while (true) {
     let exposedEvent = false;
-    let retry = false;
+    let retryDelay: number | undefined;
     try {
       const events = model.streamCompletion(request) as AsyncIterable<
         CompletionStreamEvent<RawResponseOf<Model>>
@@ -224,9 +214,7 @@ async function* streamCompletionWithRetries<Model extends StreamingCompletionMod
             if (event.usage !== undefined) {
               swallowedUsage = Usage.add(swallowedUsage, event.usage);
             }
-            await waitForRetry(retryDelayMs(retryOptions, attempt));
-            attempt += 1;
-            retry = true;
+            retryDelay = retryDelayMs(retryOptions, attempt);
             break;
           }
         }
@@ -249,7 +237,9 @@ async function* streamCompletionWithRetries<Model extends StreamingCompletionMod
           yield event;
         }
       }
-      if (!retry) return;
+      if (retryDelay === undefined) return;
+      await waitForRetry(retryDelay);
+      attempt += 1;
     } catch (error) {
       if (exposedEvent) throw error;
       const retryOptions = retryOptionsForFailure(retries, {

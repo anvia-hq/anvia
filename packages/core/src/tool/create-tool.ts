@@ -1,4 +1,10 @@
 import type { z } from "zod";
+import { assertToolApprovalRequirement } from "../internal/agent-runtime/approval-requirement";
+import {
+  attachPreparedToolOwner,
+  preparedToolInput,
+  withoutPreparedToolInput,
+} from "../internal/agent-runtime/prepared-tool-call";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { Tool, ToolCallContext, ToolRequiresApproval } from "./tool";
 
@@ -40,33 +46,55 @@ export function createTool<
 >(
   options: CreateToolOptions<InputSchema, OutputSchema, Output>,
 ): Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> {
-  const parameters = toProviderJsonSchema(options.inputSchema);
+  const { name, description, inputSchema, outputSchema, execute } = options;
+  const requiresApproval = snapshotApprovalRequirement(options.requiresApproval);
+  if (requiresApproval !== undefined) {
+    assertToolApprovalRequirement(requiresApproval, { allowFunction: true });
+  }
+  const parameters = toProviderJsonSchema(inputSchema);
+  const preparedInputOwner = {};
   const definition = () => ({
-    name: options.name,
-    description: options.description,
-    parameters,
+    name,
+    description,
+    parameters: globalThis.structuredClone(parameters),
   });
   const call = async (
     args: z.output<InputSchema>,
     context: ToolCallContext = {},
   ): Promise<CreateToolOutput<OutputSchema, Output>> => {
-    const parsedArgs = options.inputSchema.parse(args);
-    const result = await options.execute(parsedArgs, context);
-    return (
-      options.outputSchema === undefined ? result : options.outputSchema.parse(result)
-    ) as CreateToolOutput<OutputSchema, Output>;
+    const prepared = preparedToolInput(context, preparedInputOwner);
+    const parsedArgs =
+      prepared === undefined ? inputSchema.parse(args) : (prepared.input as z.output<InputSchema>);
+    const executionContext = prepared === undefined ? context : withoutPreparedToolInput(context);
+    const result = await execute(parsedArgs, executionContext);
+    return (outputSchema === undefined ? result : outputSchema.parse(result)) as CreateToolOutput<
+      OutputSchema,
+      Output
+    >;
   };
-  const parseApprovalArgs = (args: unknown): z.output<InputSchema> =>
-    options.inputSchema.parse(args);
+  const parseInput = (args: unknown): z.output<InputSchema> => inputSchema.parse(args);
 
-  if (options.requiresApproval === undefined) {
-    return { name: options.name, definition, call, parseApprovalArgs };
-  }
-  return {
-    name: options.name,
-    requiresApproval: options.requiresApproval,
+  const tool: Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> = {
+    name,
     definition,
     call,
-    parseApprovalArgs,
+    parseInput,
   };
+  if (requiresApproval !== undefined) {
+    Object.defineProperty(tool, "requiresApproval", {
+      configurable: false,
+      enumerable: true,
+      value: requiresApproval,
+      writable: false,
+    });
+  }
+  return attachPreparedToolOwner(tool, preparedInputOwner);
+}
+
+function snapshotApprovalRequirement<Args>(
+  requirement: ToolRequiresApproval<Args> | undefined,
+): ToolRequiresApproval<Args> | undefined {
+  return typeof requirement === "object" && requirement !== null
+    ? Object.freeze({ ...requirement })
+    : requirement;
 }

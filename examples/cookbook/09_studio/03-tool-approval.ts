@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createHook } from "@anvia/core/hooks";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
@@ -90,19 +90,19 @@ const approvalHook = createHook({
 });
 
 const agentModel = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-support-operations", agentModel)
-  .name("Studio Support Operations")
-  .description("Handles operational order lookups and guarded refund actions.")
-  .instructions(
-    [
-      "Use tools for private order data and refund operations.",
-      "Look up an order before issuing a refund or cancellation.",
-      "Keep responses short and mention whether the guarded action was issued, cancelled, or denied.",
-    ].join("\n"),
-  )
-  .tools([getOrder, issueRefund, cancelOrder])
-  .hook(approvalHook)
-  .defaultMaxTurns(5)
-  .build();
+const agent = new Agent({
+  id: "studio-support-operations",
+  model: agentModel,
+  name: "Studio Support Operations",
+  description: "Handles operational order lookups and guarded refund actions.",
+  instructions: [
+    "Use tools for private order data and refund operations.",
+    "Look up an order before issuing a refund or cancellation.",
+    "Keep responses short and mention whether the guarded action was issued, cancelled, or denied.",
+  ].join("\n"),
+  hook: approvalHook,
+  maxTurns: 5,
+  tools: [getOrder, issueRefund, cancelOrder],
+});
 
 new Studio([agent]).start();

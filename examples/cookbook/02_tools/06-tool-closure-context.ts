@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -54,11 +54,13 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use local tools when the user asks about private support tickets.")
-  .tool(getTicketTool)
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use local tools when the user asks about private support tickets.",
+  maxTurns: 2,
+  tools: [getTicketTool],
+});
 
 for await (const event of agent.prompt("Summarize TICKET-1001 for a product engineer.").stream()) {
   if (event.type === "tool_call") {

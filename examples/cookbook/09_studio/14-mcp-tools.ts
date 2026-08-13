@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { connectMcp, mcp } from "@anvia/core/mcp";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -18,19 +18,19 @@ const counterMcp = await connectMcp(
 );
 
 const model = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-mcp-counter", model)
-  .name("Studio MCP Counter")
-  .description("Demonstrates MCP tools surfaced through Studio.")
-  .instructions(
-    [
-      "Use MCP tools for arithmetic and counter updates.",
-      "When the user asks to add numbers, call the add MCP tool.",
-      "When the user asks to update the counter, call increment_counter.",
-    ].join("\n"),
-  )
-  .mcp([counterMcp])
-  .defaultMaxTurns(4)
-  .build();
+const agent = new Agent({
+  id: "studio-mcp-counter",
+  model: model,
+  name: "Studio MCP Counter",
+  description: "Demonstrates MCP tools surfaced through Studio.",
+  instructions: [
+    "Use MCP tools for arithmetic and counter updates.",
+    "When the user asks to add numbers, call the add MCP tool.",
+    "When the user asks to update the counter, call increment_counter.",
+  ].join("\n"),
+  mcpServers: [counterMcp],
+  maxTurns: 4,
+});
 
 new Studio([agent], {
   quickPrompts: {

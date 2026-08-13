@@ -2,7 +2,7 @@
 // run a one-case eval suite with the Langfuse eval reporter, flush, then log
 // every artifact ID.
 
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseDatasetClient, createLangfuseEvalReporter } from "@anvia/langfuse";
 import { buildSupportAgent, getTicket } from "./_support/agent.js";
@@ -72,10 +72,12 @@ async function main(): Promise<void> {
             },
           }),
     };
-    const evalAgent = new AgentBuilder("eval-target", client.completionModel(defaultModel()))
-      .instructions("Answer with a short factual sentence.")
-      .defaultMaxTurns(1)
-      .build();
+    const evalAgent = new Agent({
+      id: "eval-target",
+      model: client.completionModel(defaultModel()),
+      instructions: "Answer with a short factual sentence.",
+      maxTurns: 1,
+    });
     const evalResult = await runEvalSuite({
       name: "quickstart-suite",
       cases: [evalCase],

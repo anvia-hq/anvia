@@ -184,6 +184,7 @@ describe("agent observability", () => {
       .send();
 
     expect(result.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
+    expect(result.runId).toEqual(expect.any(String));
     expect(eventTypes(observer)).toEqual([
       "run_start",
       "generation_start",
@@ -192,6 +193,7 @@ describe("agent observability", () => {
     ]);
     expect(observer.events[0]).toMatchObject({
       args: {
+        runId: result.runId,
         trace: {
           name: "test-run",
           userId: "user_1",
@@ -806,6 +808,7 @@ function createRunObserver(overrides: Partial<AgentRunObserver> = {}): AgentRunO
 
 function runStartArgs(): AgentRunStartArgs {
   return {
+    runId: "run_1",
     prompt: { role: "user", content: [{ type: "text", text: "hello" }] },
     history: [],
     maxTurns: 3,
@@ -918,6 +921,7 @@ describe("AgentRunPromptRef", () => {
   it("is accepted on AgentRunStartArgs", () => {
     const promptRef: AgentRunPromptRef = { name: "support.system", version: 3 };
     const args: AgentRunStartArgs = {
+      runId: "run_1",
       prompt: { role: "user", content: [{ type: "text", text: "hi" }] },
       history: [],
       maxTurns: 1,

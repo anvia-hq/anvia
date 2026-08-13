@@ -95,6 +95,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       instructions: "You are a careful support agent.",
       prompt: userMessage("hello"),
       history: [],
@@ -168,6 +169,7 @@ describe("langfuse", () => {
         captureMode,
       });
       const run = (await tracing.startRun({
+        runId: "run_1",
         prompt: userMessage("hello"),
         history: [],
         maxTurns: 1,
@@ -336,6 +338,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ serviceName: "support-agent" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -365,6 +368,7 @@ describe("langfuse", () => {
       captureMode: "full",
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -434,6 +438,7 @@ describe("langfuse", () => {
       captureMode: "full",
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -472,6 +477,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -497,6 +503,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -532,6 +539,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -568,6 +576,7 @@ describe("langfuse", () => {
       captureMode: "full",
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -615,6 +624,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -660,6 +670,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -707,6 +718,7 @@ describe("langfuse", () => {
       captureMode: "full",
     });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       agentDescription: "Support agent",
       prompt: userMessage("Summarize ticket"),
@@ -845,6 +857,7 @@ describe("langfuse", () => {
       captureMode: "full",
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       prompt: Message.user("hello", { metadata }),
       history: [Message.user("earlier", { metadata })],
       maxTurns: 1,
@@ -906,6 +919,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1082,6 +1096,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1130,6 +1145,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("skip"),
       history: [],
@@ -1175,6 +1191,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1248,6 +1265,7 @@ describe("langfuse", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -2113,6 +2131,7 @@ describe("LangfuseGenerationObserver.update", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2136,6 +2155,7 @@ describe("LangfuseGenerationObserver.update", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2164,6 +2184,7 @@ describe("LangfuseGenerationObserver.update", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2188,6 +2209,7 @@ describe("LangfuseGenerationObserver.update", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2662,6 +2684,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const runObserver = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2690,6 +2713,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const runObserver = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2713,6 +2737,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2731,6 +2756,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2754,6 +2780,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const runObserver = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2782,6 +2809,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const runObserver = (await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("hi"),
       history: [],
       maxTurns: 1,
@@ -2810,6 +2838,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2846,6 +2875,7 @@ describe("LangfuseTraceHandle", () => {
 
     const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
     const runA = (await tracing.startRun({
+      runId: "run_1",
       agentName: "agent-a",
       prompt: userMessage("hi"),
       history: [],
@@ -2861,6 +2891,7 @@ describe("LangfuseTraceHandle", () => {
     });
 
     const runB = (await tracing.startRun({
+      runId: "run_1",
       agentName: "agent-b",
       prompt: userMessage("hi"),
       history: [],
@@ -3722,6 +3753,7 @@ describe("Langfuse prompt attribute binding", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3746,6 +3778,7 @@ describe("Langfuse prompt attribute binding", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3770,6 +3803,7 @@ describe("Langfuse prompt attribute binding", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3793,6 +3827,7 @@ describe("Langfuse prompt attribute binding", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4039,6 +4074,7 @@ describe("Langfuse redaction integration", () => {
 
     const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("email alice@example.com please"),
       history: [],
@@ -4063,6 +4099,7 @@ describe("Langfuse redaction integration", () => {
       redactInputs: true,
     });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("email alice@example.com please"),
       history: [userMessage("also bob@example.com")],
@@ -4093,6 +4130,7 @@ describe("Langfuse redaction integration", () => {
       redactInputs: "deep",
     });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4130,6 +4168,7 @@ describe("Langfuse redaction integration", () => {
       redactOutputs: true,
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4167,6 +4206,7 @@ describe("Langfuse redaction integration", () => {
       redactOutputs: "deep",
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4206,6 +4246,7 @@ describe("Langfuse redaction integration", () => {
       redactOutputs: true,
     });
     const run = (await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4252,6 +4293,7 @@ describe("Langfuse redaction integration", () => {
       redaction: { replacement: "<HIDDEN>" },
     });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("alice@example.com"),
       history: [],

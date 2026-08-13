@@ -1,4 +1,12 @@
+export { Agent } from "./agent/agent";
 export { AgentBuilder } from "./agent/builder";
+export type {
+  AgentDynamicContext,
+  AgentDynamicTool,
+  AgentMemoryOptions,
+  AgentObserverInput,
+  AgentOptions,
+} from "./agent/types";
 export type {
   AssistantGenerationMetadata,
   AssistantMessage,

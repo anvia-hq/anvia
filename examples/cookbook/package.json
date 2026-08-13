@@ -72,7 +72,6 @@
     "multi-agent:01": "tsx -r dotenv/config 07_multi_agent/01-agent-as-tool.ts dotenv_config_path=../../.env",
     "multi-agent:02": "tsx -r dotenv/config 07_multi_agent/02-parallel-specialists.ts dotenv_config_path=../../.env",
     "multi-agent:03": "tsx -r dotenv/config 07_multi_agent/03-streaming-agent-tools.ts dotenv_config_path=../../.env",
-    "multi-agent:04": "tsx -r dotenv/config 07_multi_agent/04-agent-event-store.ts dotenv_config_path=../../.env",
     "evals": "tsx -r dotenv/config 08_evals/01-basic-metrics.ts dotenv_config_path=../../.env",
     "evals:01": "tsx -r dotenv/config 08_evals/01-basic-metrics.ts dotenv_config_path=../../.env",
     "evals:02": "tsx -r dotenv/config 08_evals/02-semantic-similarity.ts dotenv_config_path=../../.env",

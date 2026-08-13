@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { GrokClient } from "@anvia/grok";
 
 const client = new GrokClient({
@@ -7,9 +7,11 @@ const client = new GrokClient({
 
 const agentModel = client.completionModel();
 
-const agent = new AgentBuilder("grok-agent", agentModel)
-  .instructions("You are a concise assistant. Answer in two sentences or less.")
-  .build();
+const agent = new Agent({
+  id: "grok-agent",
+  model: agentModel,
+  instructions: "You are a concise assistant. Answer in two sentences or less.",
+});
 
 const response = await agent.prompt("Explain what a context-aware agent does.").send();
 console.log(response.output);

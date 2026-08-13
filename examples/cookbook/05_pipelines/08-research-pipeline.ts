@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import {
   createTool,
@@ -54,16 +54,16 @@ const sourceQuality = new PipelineBuilder(z.string())
   .build();
 
 const synthesizerModel = client.completionModel("gpt-5.5");
-const synthesizer = new AgentBuilder("synthesizer", synthesizerModel)
-  .instructions(
-    [
-      "You synthesize product research notes.",
-      "Separate findings, risks, and recommended next steps.",
-      "Call out when evidence is mock or incomplete.",
-      "Return visible final text, not only reasoning.",
-    ].join("\n"),
-  )
-  .build();
+const synthesizer = new Agent({
+  id: "synthesizer",
+  model: synthesizerModel,
+  instructions: [
+    "You synthesize product research notes.",
+    "Separate findings, risks, and recommended next steps.",
+    "Call out when evidence is mock or incomplete.",
+    "Return visible final text, not only reasoning.",
+  ].join("\n"),
+});
 
 const researchPipeline = new PipelineBuilder(z.string())
   .parallel({

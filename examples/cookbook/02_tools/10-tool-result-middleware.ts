@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createMiddleware, createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -47,12 +47,14 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use tools when useful. Summarize tool results briefly.")
-  .tool(longReportTool)
-  .middleware(outputGate)
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use tools when useful. Summarize tool results briefly.",
+  middlewares: [outputGate],
+  maxTurns: 2,
+  tools: [longReportTool],
+});
 
 const response = await agent
   .prompt("Create a short update from the long report about onboarding.")

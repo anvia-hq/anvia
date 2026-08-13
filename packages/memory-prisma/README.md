@@ -48,7 +48,7 @@ npx prisma migrate dev --name add_anvia_memory
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { createPrismaMemoryStore } from "@anvia/memory-prisma";
 import { prisma } from "./db";
 
@@ -58,9 +58,11 @@ const memory = createPrismaMemoryStore(prisma, {
   },
 });
 
-const agent = new AgentBuilder("support", model)
-  .memory(memory, { savePolicy: "turn" })
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  memory: { store: memory, savePolicy: "turn" },
+});
 
 await agent
   .session("thread_123", {

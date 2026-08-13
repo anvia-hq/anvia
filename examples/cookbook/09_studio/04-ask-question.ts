@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -69,22 +69,22 @@ const prepareEscalation = createTool({
 });
 
 const agentModel = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-human-feedback", agentModel)
-  .name("Studio Human Feedback")
-  .description("Collects missing operator input through Studio before acting.")
-  .instructions(
-    [
-      "Use ask_question when priority, channel, or operator context is missing.",
-      "Ask multiple questions in one ask_question call when you need multiple answers.",
-      "Use choices for bounded decisions.",
-      "Studio always shows a custom input after the choices.",
-      "After the human answers, call prepare_escalation with the confirmed values.",
-      "Keep the final answer concise.",
-    ].join("\n"),
-  )
-  .tools([askQuestion, prepareEscalation])
-  .defaultMaxTurns(5)
-  .build();
+const agent = new Agent({
+  id: "studio-human-feedback",
+  model: agentModel,
+  name: "Studio Human Feedback",
+  description: "Collects missing operator input through Studio before acting.",
+  instructions: [
+    "Use ask_question when priority, channel, or operator context is missing.",
+    "Ask multiple questions in one ask_question call when you need multiple answers.",
+    "Use choices for bounded decisions.",
+    "Studio always shows a custom input after the choices.",
+    "After the human answers, call prepare_escalation with the confirmed values.",
+    "Keep the final answer concise.",
+  ].join("\n"),
+  maxTurns: 5,
+  tools: [askQuestion, prepareEscalation],
+});
 
 new Studio([agent], {
   quickPrompts: {

@@ -21,7 +21,7 @@ import type { AgentMiddleware } from "../tool/middleware";
 import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
-import { Agent } from "./agent";
+import { type Agent, createResolvedAgent } from "./agent";
 import { normalizeAgentId } from "./ids";
 import type {
   AgentEventStore,
@@ -97,6 +97,9 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
+  /**
+   * @deprecated Use `tools([tool])` instead.
+   */
   tool(tool: AnyTool | ProviderTool): this {
     if (isProviderTool(tool)) {
       this.providerToolDefs.push(tool);
@@ -108,7 +111,11 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
 
   tools(tools: Array<AnyTool | ProviderTool>): this {
     for (const tool of tools) {
-      this.tool(tool);
+      if (isProviderTool(tool)) {
+        this.providerToolDefs.push(tool);
+      } else {
+        this.activeToolSet.addTool(tool);
+      }
     }
     return this;
   }
@@ -164,6 +171,9 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
+  /**
+   * @deprecated Use `middlewares([middleware])` instead.
+   */
   middleware(middleware: AgentMiddleware): this {
     this.middlewareRegistrations.push(middleware);
     return this;
@@ -206,6 +216,9 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
+  /**
+   * @deprecated Event stores will be removed in 1.0. Use `observe()` for run inspection.
+   */
   eventStore(store: AgentEventStore, options: AgentEventStoreOptions = {}): this {
     this.eventStoreRegistration = {
       store,
@@ -222,7 +235,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   }
 
   build(): Agent<M> {
-    return new Agent({
+    return createResolvedAgent({
       id: this.agentId,
       name: this.agentName,
       description: this.agentDescription,

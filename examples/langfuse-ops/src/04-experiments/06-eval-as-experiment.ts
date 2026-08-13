@@ -10,10 +10,12 @@ async function main(): Promise<void> {
   const tracing = createTracing({ name: "langfuse-ops-experiments-06" });
   try {
     const model = getStaticModel("Refunds are available for 30 days after purchase.");
-    const { AgentBuilder } = await import("@anvia/core/agent");
-    const agent = new AgentBuilder("eval-target", model)
-      .instructions("Answer support questions from policy.")
-      .build();
+    const { Agent } = await import("@anvia/core/agent");
+    const agent = new Agent({
+      id: "eval-target",
+      model: model,
+      instructions: "Answer support questions from policy.",
+    });
 
     const datasetName = `langfuse-ops-eval-as-experiment-${Date.now()}`;
     const datasetClient = createLangfuseDatasetClient(tracing);

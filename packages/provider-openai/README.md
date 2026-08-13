@@ -19,7 +19,7 @@ pnpm --filter @anvia/openai build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -28,9 +28,11 @@ const client = new OpenAIClient({
 
 const model = client.completionModel("gpt-5");
 
-const agent = new AgentBuilder("assistant", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "assistant",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
 const response = await agent.prompt("Summarize Anvia in one sentence.").send();
 

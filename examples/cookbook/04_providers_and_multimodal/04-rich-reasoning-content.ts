@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import type {
   AssistantContent as AssistantContentType,
   Reasoning,
@@ -40,7 +40,11 @@ const additionalParams =
 
 const model = provider === "gemini" ? geminiModel : openAIModel;
 
-const agent = new AgentBuilder("reasoning-demo", model).additionalParams(additionalParams).build();
+const agent = new Agent({
+  id: "reasoning-demo",
+  model: model,
+  additionalParams: additionalParams,
+});
 
 let activeReasoningContentType: ReasoningContentType | undefined;
 let wroteReasoning = false;

@@ -19,15 +19,17 @@ pnpm --filter @anvia/mistral build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { MistralClient } from "@anvia/mistral";
 
 const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
 const model = client.completionModel("mistral-large-latest");
 
-const agent = new AgentBuilder("support", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
 const response = await agent.prompt("What should I check before launch?").send();
 console.log(response.output);

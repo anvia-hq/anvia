@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -17,47 +17,47 @@ const incident = [
 
 const model = client.completionModel("gpt-5.5");
 
-const supportAgent = new AgentBuilder("support", model)
-  .name("Support Specialist")
-  .instructions(
-    [
-      "Summarize customer impact, support priority, and the next support reply using only provided facts.",
-      "Return visible final text, not only reasoning.",
-    ].join("\n"),
-  )
-  .build();
+const supportAgent = new Agent({
+  id: "support",
+  model: model,
+  name: "Support Specialist",
+  instructions: [
+    "Summarize customer impact, support priority, and the next support reply using only provided facts.",
+    "Return visible final text, not only reasoning.",
+  ].join("\n"),
+});
 
-const engineeringAgent = new AgentBuilder("engineering", model)
-  .name("Engineering Specialist")
-  .instructions(
-    [
-      "Identify likely diagnostics, owner, and safest technical next step using only provided facts.",
-      "Return visible final text, not only reasoning.",
-    ].join("\n"),
-  )
-  .build();
+const engineeringAgent = new Agent({
+  id: "engineering",
+  model: model,
+  name: "Engineering Specialist",
+  instructions: [
+    "Identify likely diagnostics, owner, and safest technical next step using only provided facts.",
+    "Return visible final text, not only reasoning.",
+  ].join("\n"),
+});
 
-const commsAgent = new AgentBuilder("comms", model)
-  .name("Customer Comms Specialist")
-  .instructions(
-    [
-      "Draft a short customer-facing update without unverified root-cause claims.",
-      "Return visible final text, not only reasoning.",
-    ].join("\n"),
-  )
-  .build();
+const commsAgent = new Agent({
+  id: "comms",
+  model: model,
+  name: "Customer Comms Specialist",
+  instructions: [
+    "Draft a short customer-facing update without unverified root-cause claims.",
+    "Return visible final text, not only reasoning.",
+  ].join("\n"),
+});
 
-const synthesizerAgent = new AgentBuilder("synthesizer", model)
-  .name("Incident Synthesizer")
-  .instructions(
-    [
-      "Merge specialist notes into one operational incident brief.",
-      "Keep the brief concise.",
-      "Include customer impact, engineering next step, support next step, and customer update.",
-      "Use plain text bullets, no tables, and no emoji.",
-    ].join("\n"),
-  )
-  .build();
+const synthesizerAgent = new Agent({
+  id: "synthesizer",
+  model: model,
+  name: "Incident Synthesizer",
+  instructions: [
+    "Merge specialist notes into one operational incident brief.",
+    "Keep the brief concise.",
+    "Include customer impact, engineering next step, support next step, and customer update.",
+    "Use plain text bullets, no tables, and no emoji.",
+  ].join("\n"),
+});
 
 const supportNotesPipeline = new PipelineBuilder(z.string())
   .step((input) => `Triage this incident for support:\n\n${input}`)

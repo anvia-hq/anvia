@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { InMemoryVectorStore } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
@@ -32,10 +32,12 @@ const embedded = await embedDocuments(embeddingModel, notes, {
 const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddingModel);
 
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Answer using the retrieved policy context. If context is thin, say so.")
-  .dynamicContext(index, { topK: 1 })
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Answer using the retrieved policy context. If context is thin, say so.",
+  dynamicContexts: [{ index: index, topK: 1 }],
+});
 
 const response = await agent.prompt("What should I do for a security incident?").send();
 

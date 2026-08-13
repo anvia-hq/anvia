@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
@@ -52,13 +52,15 @@ const getEscalation = createTool({
 });
 
 const model = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-persistent-ops", model)
-  .name("Studio Persistent Ops")
-  .description("Demonstrates persisted Studio sessions, traces, pipeline logs, and run history.")
-  .instructions("Use get_escalation when the user asks who owns an operational follow-up.")
-  .tool(getEscalation)
-  .defaultMaxTurns(4)
-  .build();
+const agent = new Agent({
+  id: "studio-persistent-ops",
+  model: model,
+  name: "Studio Persistent Ops",
+  description: "Demonstrates persisted Studio sessions, traces, pipeline logs, and run history.",
+  instructions: "Use get_escalation when the user asks who owns an operational follow-up.",
+  maxTurns: 4,
+  tools: [getEscalation],
+});
 
 const escalationPipeline = new PipelineBuilder(z.string(), {
   id: "persistent-escalation-pipeline",

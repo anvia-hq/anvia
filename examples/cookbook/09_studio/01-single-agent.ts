@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -30,12 +30,14 @@ const getOrder = createTool({
 });
 
 const agentModel = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("support-operations", agentModel)
-  .name("Support Operations")
-  .description("Answers operational questions with short, concrete summaries.")
-  .instructions("Use tools when useful. Keep answers concise and action-oriented.")
-  .tool(getOrder)
-  .defaultMaxTurns(50)
-  .build();
+const agent = new Agent({
+  id: "support-operations",
+  model: agentModel,
+  name: "Support Operations",
+  description: "Answers operational questions with short, concrete summaries.",
+  instructions: "Use tools when useful. Keep answers concise and action-oriented.",
+  maxTurns: 50,
+  tools: [getOrder],
+});
 
 new Studio([agent]).start();

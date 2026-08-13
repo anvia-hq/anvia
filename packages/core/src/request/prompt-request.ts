@@ -175,7 +175,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
     let newMessages: MessageType[] = [this.promptMessage];
-    const runObservers = await this.startRunObservers();
+    const runObservers = await this.startRunObservers(runId);
 
     try {
       const inputResult = await runInputGuardrails(this.guardrailPolicies, {
@@ -191,6 +191,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       if (inputResult.blocked) {
         const output = inputResult.message ?? "The request was blocked by a guardrail.";
         const result: PromptResponse = {
+          runId,
           output,
           usage: Usage.empty(),
           messages: [this.promptMessage, Message.assistant(output)],
@@ -290,6 +291,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             pendingTurnMessages,
           );
           const result: PromptResponse = {
+            runId,
             output: guardedOutput.output,
             usage,
             messages: [...newMessages],
@@ -374,7 +376,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
     let newMessages: MessageType[] = [this.promptMessage];
-    const runObservers = await this.startRunObservers();
+    const runObservers = await this.startRunObservers(runId);
     const bufferOutputDeltas = hasEnforcedOutputGuardrails(this.guardrailPolicies);
 
     try {
@@ -392,6 +394,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       if (inputResult.blocked) {
         const output = inputResult.message ?? "The request was blocked by a guardrail.";
         const result: PromptResponse = {
+          runId,
           output,
           usage: Usage.empty(),
           messages: [this.promptMessage, Message.assistant(output)],
@@ -621,6 +624,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           }
 
           const result: PromptResponse = {
+            runId,
             output: guardedOutput.output,
             usage,
             messages: [...newMessages],
@@ -988,13 +992,14 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     return context;
   }
 
-  private async startRunObservers(): Promise<ActiveAgentRunObservers> {
+  private async startRunObservers(runId: string): Promise<ActiveAgentRunObservers> {
     const failOnObserverError =
       this.traceOptions?.failOnObserverError === true ||
       this.agent.observers.some((registration) => registration.failOnObserverError === true);
     return startAgentRunObservers(
       this.agent.observers,
       {
+        runId,
         agentName: this.agent.name,
         agentDescription: this.agent.description,
         instructions: this.agent.instructions,

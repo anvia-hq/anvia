@@ -38,6 +38,7 @@ export type AgentRunPromptRef = {
 };
 
 export type AgentRunStartArgs = {
+  runId: string;
   agentName?: string | undefined;
   agentDescription?: string | undefined;
   instructions?: string | undefined;

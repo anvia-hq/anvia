@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { createSandboxTools, DockerSandbox } from "@anvia/sandbox";
 import { Studio } from "@anvia/studio";
@@ -88,20 +88,20 @@ try {
   });
 
   const model = client.completionModel("gpt-5.6-luna");
-  const agent = new AgentBuilder("studio-sandbox-builder", model)
-    .name("Sandbox Builder")
-    .description("Inspects and edits a live Docker sandbox workspace from Studio.")
-    .instructions(
-      [
-        "Work only through the provided sandbox tools.",
-        "Inspect existing files before changing them.",
-        "Keep the preview process running; do not replace it with a foreground command.",
-        "After a change, verify the relevant file or command output and summarize what changed.",
-      ].join("\n"),
-    )
-    .tools(tools)
-    .defaultMaxTurns(8)
-    .build();
+  const agent = new Agent({
+    id: "studio-sandbox-builder",
+    model: model,
+    name: "Sandbox Builder",
+    description: "Inspects and edits a live Docker sandbox workspace from Studio.",
+    instructions: [
+      "Work only through the provided sandbox tools.",
+      "Inspect existing files before changing them.",
+      "Keep the preview process running; do not replace it with a foreground command.",
+      "After a change, verify the relevant file or command output and summarize what changed.",
+    ].join("\n"),
+    maxTurns: 8,
+    tools: [...tools],
+  });
 
   const studio = new Studio([agent], {
     quickPrompts: {

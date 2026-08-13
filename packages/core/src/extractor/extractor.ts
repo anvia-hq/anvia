@@ -112,7 +112,7 @@ export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
   ) {
     this.agentBuilder = new AgentBuilder("extractor", model)
       .instructions(DEFAULT_EXTRACTOR_INSTRUCTIONS)
-      .tool(
+      .tools([
         createTool({
           name: SUBMIT_TOOL_NAME,
           description: "Submit the structured data extracted from the provided text.",
@@ -120,7 +120,7 @@ export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
           output: schema,
           execute: (args) => args,
         }),
-      )
+      ])
       .toolChoice("required");
   }
 

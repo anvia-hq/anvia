@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -16,10 +16,12 @@ const client = new OpenAIClient({
 });
 const agentModel = client.completionModel("gpt-5.5");
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Return only data that matches the requested schema.")
-  .outputSchema(summarySchema)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Return only data that matches the requested schema.",
+  outputSchema: summarySchema,
+});
 
 const response = await agent
   .prompt("Summarize why tool calling is useful for agent frameworks.")

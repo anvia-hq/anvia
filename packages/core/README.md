@@ -26,7 +26,7 @@ pnpm --filter @anvia/core build
 
 ```ts
 import { z } from "zod";
-import { AgentBuilder, createTool } from "@anvia/core";
+import { Agent, createTool } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -42,11 +42,13 @@ const lookupOrder = createTool({
   execute: async ({ orderId }) => ({ orderId, status: "processing" }),
 });
 
-const agent = new AgentBuilder("support", model)
-  .instructions("Help customers with order questions.")
-  .tool(lookupOrder)
-  .defaultMaxTurns(4)
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  instructions: "Help customers with order questions.",
+  maxTurns: 4,
+  tools: [lookupOrder],
+});
 
 const response = await agent.prompt("What is happening with order A123?").send();
 
@@ -160,7 +162,7 @@ await agent
 Configure durable conversation memory on the agent, then run through a session:
 
 ```ts
-import { AgentBuilder, type MemoryStore, type Message } from "@anvia/core";
+import { Agent, type MemoryStore, type Message } from "@anvia/core";
 import type { MemoryAppendInput, MemoryContext } from "@anvia/core/memory";
 
 class AppMemoryStore implements MemoryStore {
@@ -181,7 +183,11 @@ class AppMemoryStore implements MemoryStore {
 }
 
 const memory = new AppMemoryStore();
-const agent = new AgentBuilder("support", model).memory(memory).build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  memory: { store: memory },
+});
 
 await agent.session("thread_123", { userId: "user_456" }).prompt("Remember my plan.").send();
 await agent.session("thread_123", { userId: "user_456" }).prompt("What is my plan?").send();
@@ -190,7 +196,11 @@ await agent.session("thread_123", { userId: "user_456" }).prompt("What is my pla
 Memory defaults to `savePolicy: "message"`, which saves the user prompt, each completed assistant message, and each completed tool result as soon as they are ready. You can choose `"turn"` or `"run"` at configuration time:
 
 ```ts
-new AgentBuilder("support", model).memory(memory, { savePolicy: "turn" });
+new Agent({
+  id: "support",
+  model,
+  memory: { store: memory, savePolicy: "turn" },
+});
 ```
 
 ## Structured Extraction
@@ -228,7 +238,7 @@ const result = await pipeline.run("Customer cannot complete checkout.");
 
 ## Public Areas
 
-- `agent`: agent runtime and `AgentBuilder`
+- `agent`: agent runtime and the compatibility `AgentBuilder`
 - `tool`: typed tool creation and tool sets
 - `completion`: provider-neutral completion request and response types
 - `memory`: durable session memory interfaces and in-memory store

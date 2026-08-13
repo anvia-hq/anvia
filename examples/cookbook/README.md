@@ -26,7 +26,7 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | `04_providers_and_multimodal` | Provider adapters, model capabilities, model listing, reasoning streams, image/PDF attachments, image generation, audio generation, and transcription. |
 | `05_pipelines` | Step transforms, async steps, composition, named parallel branches, batching, agents, extractors, and richer workflows. |
 | `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document loaders, vector stores, and embedding provider variants. |
-| `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, streaming agent-tools, and event stores. |
+| `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, and streaming agent-tools. |
 | `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, LLM judges, RAG quality, G-Eval, and conversational evals. |
 | `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool and sandbox inspection, MCP tools, SQLite persistence, multi-provider model selection, and UI route options. |
 | `10_integrations` | MCP tools, local skills, Langfuse and OpenTelemetry tracing, logging, and correlated eval reporting. |

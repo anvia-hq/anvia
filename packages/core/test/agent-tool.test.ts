@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AgentBuilder,
   AssistantContent,
   type CompletionModel,
@@ -99,6 +100,78 @@ function emptyIndex<T>(): VectorSearchIndex<T> {
     },
   };
 }
+
+describe("Agent construction", () => {
+  it("normalizes the public options into ready-to-run agent state", () => {
+    const model = new QueueModel([]);
+    const middleware = createMiddleware({});
+    const observer = createObserver({
+      startRun() {
+        return { end() {} };
+      },
+    });
+    const dynamicContextIndex = emptyIndex<unknown>();
+    const dynamicToolIndex = emptyIndex<ToolSearchDocument>();
+    const skillTool = { ...addTool, name: "skill_add" };
+    const mcpTool = { ...addTool, name: "mcp_add" };
+    const tools = [addTool];
+    const context = [{ id: "policy", text: "Keep answers short." }];
+
+    const agent = new Agent({
+      id: " support ",
+      model,
+      name: "Support",
+      instructions: "Help customers.",
+      context,
+      tools,
+      mcpServers: [{ name: "math", tools: [mcpTool], async close() {} }],
+      skills: {
+        skills: [],
+        tools: [skillTool],
+        instructions: "Use the loaded skills.",
+      },
+      temperature: 0.2,
+      maxTokens: 500,
+      maxTurns: 4,
+      middlewares: [middleware],
+      observers: [observer, { observer, failOnObserverError: true }],
+      dynamicContexts: [{ index: dynamicContextIndex, topK: 2, threshold: 0.5 }],
+      dynamicTools: [{ index: dynamicToolIndex, topK: 3 }],
+      outputSchema: z.object({ answer: z.string() }),
+    });
+
+    tools.push(skillTool);
+    context.push({ id: "late", text: "Late context." });
+
+    expect(agent.id).toBe("support");
+    expect(agent.instructions).toBe("Help customers.\n\nUse the loaded skills.");
+    expect(agent.staticContext).toEqual([{ id: "policy", text: "Keep answers short." }]);
+    expect(agent.toolSet.values().map((tool) => tool.name)).toEqual([
+      "add",
+      "mcp_add",
+      "skill_add",
+    ]);
+    expect(agent.defaultMaxTurns).toBe(4);
+    expect(agent.middlewares).toEqual([middleware]);
+    expect(agent.observers).toEqual([{ observer }, { observer, failOnObserverError: true }]);
+    expect(agent.dynamicContexts).toEqual([
+      { index: dynamicContextIndex, options: { topK: 2, threshold: 0.5 } },
+    ]);
+    expect(agent.dynamicTools).toEqual([{ index: dynamicToolIndex, options: { topK: 3 } }]);
+    expect(agent.outputSchema).toMatchObject({
+      type: "object",
+      properties: { answer: { type: "string" } },
+      required: ["answer"],
+    });
+  });
+
+  it("uses the existing max-turn default without requiring build", () => {
+    const agent = new Agent({ id: "agent", model: new QueueModel([]) });
+
+    expect(agent.defaultMaxTurns).toBe(20);
+    expect(agent).not.toHaveProperty("build");
+  });
+});
 
 describe("Agent.asTool", () => {
   it("stores a stable trimmed agent id", () => {

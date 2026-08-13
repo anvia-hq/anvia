@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createHook } from "@anvia/core/hooks";
 import { PromptCancelledError } from "@anvia/core/request";
 import { createTool } from "@anvia/core/tool";
@@ -73,12 +73,14 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use tools for service status and administrative requests.")
-  .tools([getServiceStatusTool, readPayrollTool, deleteAccountTool])
-  .hook(permissionHook)
-  .defaultMaxTurns(3)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use tools for service status and administrative requests.",
+  hook: permissionHook,
+  maxTurns: 3,
+  tools: [getServiceStatusTool, readPayrollTool, deleteAccountTool],
+});
 
 try {
   const response = await agent

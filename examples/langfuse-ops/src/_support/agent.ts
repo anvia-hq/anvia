@@ -1,5 +1,5 @@
 import type { CompletionModel } from "@anvia/core";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { type AnyTool, createTool } from "@anvia/core/tool";
 import type { LangfuseTracing } from "@anvia/langfuse";
 import { z } from "zod";
@@ -35,15 +35,14 @@ export type BuildSupportAgentOptions = {
 
 export function buildSupportAgent(model: CompletionModel, options: BuildSupportAgentOptions = {}) {
   const tools = options.tools ?? [];
-  const agent = new AgentBuilder("support-agent", model)
-    .instructions(
+  return new Agent({
+    id: "support-agent",
+    model,
+    instructions:
       options.instructions ??
-        "Use tools when useful. Answer with a short engineering-focused summary.",
-    )
-    .tools(tools)
-    .defaultMaxTurns(2);
-  if (options.tracing !== undefined) {
-    agent.observe(options.tracing);
-  }
-  return agent.build();
+      "Use tools when useful. Answer with a short engineering-focused summary.",
+    tools,
+    maxTurns: 2,
+    observers: options.tracing === undefined ? [] : [options.tracing],
+  });
 }

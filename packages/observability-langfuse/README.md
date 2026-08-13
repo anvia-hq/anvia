@@ -19,7 +19,7 @@ pnpm --filter @anvia/langfuse build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { langfuse } from "@anvia/langfuse";
 
@@ -35,10 +35,12 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const agent = new AgentBuilder("support", client.completionModel())
-  .instructions("Answer support questions clearly.")
-  .observe(tracing)
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: client.completionModel(),
+  instructions: "Answer support questions clearly.",
+  observers: [tracing],
+});
 
 const response = await agent.prompt("How do I reset my password?").send();
 

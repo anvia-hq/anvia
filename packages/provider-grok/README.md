@@ -20,7 +20,7 @@ pnpm --filter @anvia/grok build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { GrokClient } from "@anvia/grok";
 
 const client = new GrokClient({
@@ -29,9 +29,11 @@ const client = new GrokClient({
 
 const model = client.completionModel(); // grok-4.5
 
-const agent = new AgentBuilder("assistant", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "assistant",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
 const response = await agent.prompt("Summarize Anvia in one sentence.").send();
 
@@ -77,20 +79,17 @@ remote MCP tools on xAI's servers. Pass them through the same `.tools(...)` API 
 tools:
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { GrokClient, tools as grokTools } from "@anvia/grok";
 
 const grok = new GrokClient({ apiKey: process.env.XAI_API_KEY });
 
-const researcher = new AgentBuilder("researcher", grok.completionModel())
-  .tools([
-    localDatabaseTool,
-    grokTools.webSearch({ allowedDomains: ["x.ai"] }),
-    grokTools.xSearch({ allowedHandles: ["xai"] }),
-    grokTools.codeInterpreter(),
-  ])
-  .additionalParams({ max_turns: 5 })
-  .build();
+const researcher = new Agent({
+  id: "researcher",
+  model: grok.completionModel(),
+  additionalParams: { max_turns: 5 },
+  tools: [localDatabaseTool, grokTools.webSearch({ allowedDomains: ["x.ai"] }), grokTools.xSearch({ allowedHandles: ["xai"] }), grokTools.codeInterpreter()],
+});
 
 const result = await researcher.prompt("Summarize the latest xAI updates.").send();
 

@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -6,12 +6,14 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Provider clients create models; AgentBuilder composes model-independent behavior.
+// Provider clients create models; Agent composes model-independent behavior.
 const agentModel = client.completionModel("gpt-5.5");
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("You are a concise assistant. Answer in two sentences or less.")
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "You are a concise assistant. Answer in two sentences or less.",
+});
 
 const response = await agent.prompt("Explain what an agent framework does.").send();
 

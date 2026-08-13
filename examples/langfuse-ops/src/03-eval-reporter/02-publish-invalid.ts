@@ -12,8 +12,12 @@ async function main(): Promise<void> {
   const tracing = createTracing({ name: "langfuse-ops-eval-reporter-02" });
   try {
     const model = getStaticModel("placeholder");
-    const { AgentBuilder } = await import("@anvia/core/agent");
-    const agent = new AgentBuilder("invalid-agent", model).instructions("invalid").build();
+    const { Agent } = await import("@anvia/core/agent");
+    const agent = new Agent({
+      id: "invalid-agent",
+      model: model,
+      instructions: "invalid",
+    });
 
     const reporter = createLangfuseEvalReporter(tracing, { publishInvalid: true });
     const result = await runEvalSuite({

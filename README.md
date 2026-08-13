@@ -36,18 +36,20 @@ Install the core runtime and a provider adapter:
 pnpm add @anvia/core @anvia/openai
 ```
 
-Create a provider client, build an agent, and run it from your app:
+Create a provider client, construct an agent, and run it from your app:
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({ apiKey });
 const model = client.completionModel("gpt-5.5");
 
-const supportAgent = new AgentBuilder("support", model)
-  .instructions("Answer support questions clearly. Ask for missing details.")
-  .build();
+const supportAgent = new Agent({
+  id: "support",
+  model: model,
+  instructions: "Answer support questions clearly. Ask for missing details.",
+});
 
 const response = await supportAgent
   .prompt("A customer cannot reset their password. What should I check first?")

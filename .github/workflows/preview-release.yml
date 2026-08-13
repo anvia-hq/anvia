@@ -15,15 +15,16 @@ jobs:
   publish:
     name: Publish preview packages to npm
     runs-on: ubuntu-latest
+    environment: npm-preview
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Require main branch
+      - name: Require staging branch
         run: |
-          if [ "${GITHUB_REF_NAME}" != "main" ]; then
-            echo "Preview package publishing must run from the main branch."
+          if [ "${GITHUB_REF_NAME}" != "staging" ]; then
+            echo "Preview package publishing must run from the staging branch."
             exit 1
           fi
 
@@ -43,6 +44,21 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check formatting and linting
+        run: pnpm check
+
+      - name: Build core package
+        run: pnpm --filter @anvia/core build
+
+      - name: Build remaining packages
+        run: pnpm --filter './packages/**' --filter '!@anvia/core' build
+
+      - name: Typecheck packages
+        run: pnpm --filter './packages/**' typecheck
+
+      - name: Test packages
+        run: pnpm --filter './packages/**' test
 
       - name: Publish preview packages
         run: pnpm preview:release

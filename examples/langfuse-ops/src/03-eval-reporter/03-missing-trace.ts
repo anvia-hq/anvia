@@ -2,7 +2,7 @@
 // None of the cases have a traceId, so all three modes are exercised
 // in sequence by a single run.
 
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseEvalReporter } from "@anvia/langfuse";
 import { getStaticModel } from "../_support/model.js";
@@ -12,9 +12,11 @@ async function main(): Promise<void> {
   const tracing = createTracing({ name: "langfuse-ops-eval-reporter-03" });
   try {
     const model = getStaticModel("Refunds are available for 30 days after purchase.");
-    const agent = new AgentBuilder("no-trace-agent", model)
-      .instructions("Answer support questions from policy.")
-      .build();
+    const agent = new Agent({
+      id: "no-trace-agent",
+      model: model,
+      instructions: "Answer support questions from policy.",
+    });
 
     const cases = [
       { id: "no-trace-1", input: "?", expected: "?" },

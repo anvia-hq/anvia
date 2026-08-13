@@ -1,5 +1,5 @@
 import {
-  AgentBuilder,
+  Agent,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -32,11 +32,13 @@ class StaticSupportModel implements CompletionModel {
 }
 
 const evals = lens.evals({ includePayloads: true, serviceName: "lens-native-smoke" });
-const agent = new AgentBuilder("lens-native-smoke", new StaticSupportModel())
-  .name("Lens Native Smoke")
-  .instructions("Answer support questions from the supplied policy.")
-  .observe(evals.observer)
-  .build();
+const agent = new Agent({
+  id: "lens-native-smoke",
+  model: new StaticSupportModel(),
+  name: "Lens Native Smoke",
+  instructions: "Answer support questions from the supplied policy.",
+  observers: [evals.observer],
+});
 
 try {
   const suite = await runEvalSuite({

@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -27,11 +27,13 @@ const client = new OpenAIClient({
 });
 const agentModel = client.completionModel("gpt-5.5");
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use the weather tool when the user asks for weather.")
-  .tool(weatherTool)
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use the weather tool when the user asks for weather.",
+  maxTurns: 2,
+  tools: [weatherTool],
+});
 
 // Provisional deltas let the UI show a tool as soon as the model names it.
 const preparedToolIds = new Set<string>();

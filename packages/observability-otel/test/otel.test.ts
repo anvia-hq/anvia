@@ -292,6 +292,7 @@ describe("otel", () => {
 
     const tracing = otel.create({ tracer: tracer.tracer });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -316,6 +317,7 @@ describe("otel", () => {
     const tracing = otel.create({ tracer: tracer.tracer });
 
     await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("hello"),
       history: [],
       maxTurns: 1,
@@ -329,6 +331,7 @@ describe("otel", () => {
     const tracing = otel.create({ tracer: tracer.tracer, serviceName: "cookbook" });
 
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       agentDescription: "Support agent",
       instructions: "Answer clearly.",
@@ -454,6 +457,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
     const run = await tracing.startRun({
+      runId: "run_1",
       instructions: "private instructions",
       prompt: userMessage("private prompt"),
       history: [userMessage("private history")],
@@ -513,6 +517,7 @@ describe("otel", () => {
       });
 
       await tracing.startRun({
+        runId: "run_1",
         instructions: "sensitive payload",
         prompt: userMessage("hello"),
         history: [],
@@ -529,6 +534,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("hello"),
       history: [],
       maxTurns: 1,
@@ -557,6 +563,7 @@ describe("otel", () => {
     const tracing = otel.create({ tracer: tracer.tracer });
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
     const run = await tracing.startRun({
+      runId: "run_1",
       prompt: Message.user("hello", { metadata }),
       history: [Message.user("earlier", { metadata })],
       maxTurns: 1,
@@ -607,6 +614,7 @@ describe("otel", () => {
         JSON.parse(JSON.stringify(value).replaceAll("private", "<redacted>")),
     });
     const run = await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("private prompt"),
       history: [],
       maxTurns: 1,
@@ -631,6 +639,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -684,6 +693,7 @@ describe("otel", () => {
     circular.self = circular;
 
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -702,6 +712,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -753,6 +764,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -918,6 +930,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1055,6 +1068,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1101,6 +1115,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = otel.create({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1168,6 +1183,7 @@ describe("otel", () => {
     const incomingTraceId = "1234567890abcdef1234567890abcdef";
 
     const joined = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -1175,6 +1191,7 @@ describe("otel", () => {
       trace: { traceId: incomingTraceId },
     });
     const generated = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],

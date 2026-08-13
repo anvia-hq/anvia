@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -21,12 +21,13 @@ const client = new OpenAIClient({
 });
 const agentModel = client.completionModel("gpt-5.5");
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("You are a concise assistant. Use tools when useful.")
-  .tool(addTool)
-  // Tool calls need extra turns: model asks for a tool, receives the result, then answers.
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "You are a concise assistant. Use tools when useful.",
+  maxTurns: 2,
+  tools: [addTool],
+});
 
 const response = await agent.prompt("What is 12 + 30? Use the add tool.").send();
 

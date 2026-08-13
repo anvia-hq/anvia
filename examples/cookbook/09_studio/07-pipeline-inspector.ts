@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -10,17 +10,17 @@ const client = new OpenAIClient({
 });
 
 const replyModel = client.completionModel("gpt-5.6-luna");
-const replyAgent = new AgentBuilder("studio-reply-drafter", replyModel)
-  .name("Studio Reply Drafter")
-  .description("Drafts short support replies from normalized ticket context.")
-  .instructions(
-    [
-      "Draft concise customer support replies.",
-      "Use only the ticket context provided by the pipeline.",
-      "Mention the priority and the next operational step.",
-    ].join("\n"),
-  )
-  .build();
+const replyAgent = new Agent({
+  id: "studio-reply-drafter",
+  model: replyModel,
+  name: "Studio Reply Drafter",
+  description: "Drafts short support replies from normalized ticket context.",
+  instructions: [
+    "Draft concise customer support replies.",
+    "Use only the ticket context provided by the pipeline.",
+    "Mention the priority and the next operational step.",
+  ].join("\n"),
+});
 
 const ticketPipeline = new PipelineBuilder(z.string(), {
   id: "ticket-triage-pipeline",

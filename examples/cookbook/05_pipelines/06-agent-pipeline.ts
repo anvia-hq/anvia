@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -9,16 +9,16 @@ const client = new OpenAIClient({
 });
 
 const analystModel = client.completionModel("gpt-5.5");
-const analyst = new AgentBuilder("analyst", analystModel)
-  .instructions(
-    [
-      "You turn rough operational notes into a concise executive update.",
-      "Use only the facts provided.",
-      "Return visible final text, not only reasoning.",
-      "Use compact bullets.",
-    ].join("\n"),
-  )
-  .build();
+const analyst = new Agent({
+  id: "analyst",
+  model: analystModel,
+  instructions: [
+    "You turn rough operational notes into a concise executive update.",
+    "Use only the facts provided.",
+    "Return visible final text, not only reasoning.",
+    "Use compact bullets.",
+  ].join("\n"),
+});
 
 const executiveUpdate = new PipelineBuilder(z.array(z.string()))
   .step((notes) => notes.map((note) => `- ${note}`).join("\n"))

@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
@@ -57,12 +57,14 @@ const getTicket = createTool({
 });
 
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use tools when useful. Answer with a short engineering-focused summary.")
-  .observe(tracing)
-  .tools([getTicket])
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
+  maxTurns: 2,
+  tools: [getTicket],
+  observers: [tracing],
+});
 
 try {
   const response = await agent

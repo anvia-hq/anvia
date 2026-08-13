@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { PipelineBuilder } from "@anvia/core/pipeline";
 import {
   createTool,
@@ -75,16 +75,16 @@ const riskFlags = new PipelineBuilder(z.string())
   .build();
 
 const marketAnalystModel = client.completionModel("gpt-5.5");
-const marketAnalyst = new AgentBuilder("market-analyst", marketAnalystModel)
-  .instructions(
-    [
-      "You write cautious market analysis from provided data only.",
-      "Do not provide personalized investment advice.",
-      "Separate summary, drivers, risks, and follow-up checks.",
-      "Return visible final text, not only reasoning.",
-    ].join("\n"),
-  )
-  .build();
+const marketAnalyst = new Agent({
+  id: "market-analyst",
+  model: marketAnalystModel,
+  instructions: [
+    "You write cautious market analysis from provided data only.",
+    "Do not provide personalized investment advice.",
+    "Separate summary, drivers, risks, and follow-up checks.",
+    "Return visible final text, not only reasoning.",
+  ].join("\n"),
+});
 
 const marketPipeline = new PipelineBuilder(z.string())
   .step((ticker) => ticker.trim().toUpperCase())

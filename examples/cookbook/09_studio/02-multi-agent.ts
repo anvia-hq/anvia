@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -54,29 +54,35 @@ const getRunbook = createTool({
 });
 
 const supportAgentModel = client.completionModel("gpt-5.6-luna");
-const supportAgent = new AgentBuilder("support-triage", supportAgentModel)
-  .name("Support Triage")
-  .description("Summarizes customer-facing support tickets.")
-  .instructions("Use private ticket data. Keep support summaries concise and action-oriented.")
-  .tool(getTicket)
-  .defaultMaxTurns(2)
-  .build();
+const supportAgent = new Agent({
+  id: "support-triage",
+  model: supportAgentModel,
+  name: "Support Triage",
+  description: "Summarizes customer-facing support tickets.",
+  instructions: "Use private ticket data. Keep support summaries concise and action-oriented.",
+  maxTurns: 2,
+  tools: [getTicket],
+});
 
 const engineeringAgentModel = client.completionModel("gpt-5.6-luna");
-const engineeringAgent = new AgentBuilder("engineering-triage", engineeringAgentModel)
-  .name("Engineering Triage")
-  .description("Turns incidents and runbooks into engineering next steps.")
-  .instructions("Use runbooks for operational questions. Return concrete diagnostics and owners.")
-  .tool(getRunbook)
-  .defaultMaxTurns(2)
-  .build();
+const engineeringAgent = new Agent({
+  id: "engineering-triage",
+  model: engineeringAgentModel,
+  name: "Engineering Triage",
+  description: "Turns incidents and runbooks into engineering next steps.",
+  instructions: "Use runbooks for operational questions. Return concrete diagnostics and owners.",
+  maxTurns: 2,
+  tools: [getRunbook],
+});
 
 const commsAgentModel = client.completionModel("gpt-5.6-luna");
-const commsAgent = new AgentBuilder("customer-comms", commsAgentModel)
-  .name("Customer Comms")
-  .description("Drafts concise customer updates for incidents.")
-  .instructions("Draft customer updates without unverified root-cause claims.")
-  .build();
+const commsAgent = new Agent({
+  id: "customer-comms",
+  model: commsAgentModel,
+  name: "Customer Comms",
+  description: "Drafts concise customer updates for incidents.",
+  instructions: "Draft customer updates without unverified root-cause claims.",
+});
 
 new Studio([supportAgent, engineeringAgent, commsAgent], {
   quickPrompts: {

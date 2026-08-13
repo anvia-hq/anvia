@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { Message, UserContent } from "@anvia/core/completion";
 import { OpenAIClient } from "@anvia/openai";
 
@@ -7,9 +7,11 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Answer visual questions briefly.")
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Answer visual questions briefly.",
+});
 
 // Multimodal prompts combine text with image content parts.
 const response = await agent

@@ -79,6 +79,7 @@ describe("createLoggerObserver", () => {
     });
 
     const run = (await observer.startRun({
+      runId: "run_1",
       agentName: "support",
       agentDescription: "Support assistant",
       instructions: "Answer support questions.",
@@ -175,6 +176,7 @@ describe("createLoggerObserver", () => {
     ]);
     expect(logger.records[0]?.context).toMatchObject({
       component: "anvia.agent",
+      runId: "run_1",
       agentName: "support",
       userId: "user_1",
       sessionId: "session_1",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionModel,
@@ -78,12 +78,11 @@ const embeddings = new KeywordEmbeddingModel();
 const toolIndex = await createToolIndex(embeddings, [issueRefund, updateAddress, lookupRunbook]);
 const model = new InspectingModel();
 
-const agent = new AgentBuilder("support", model)
-  .dynamicTools(toolIndex, {
-    topK: 1,
-    threshold: 0.9,
-  })
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  dynamicTools: [{ index: toolIndex, topK: 1, threshold: 0.9 }],
+});
 
 await agent.prompt("Refund order A-100.").send();
 

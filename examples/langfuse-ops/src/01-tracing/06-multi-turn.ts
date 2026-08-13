@@ -1,7 +1,7 @@
 // Demonstrates: a multi-turn agent session, where memory carries context
 // across traced generations.
 
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryStore } from "@anvia/core/memory";
 import { getTicket } from "../_support/agent.js";
@@ -29,13 +29,15 @@ async function main(): Promise<void> {
   const tracing = createTracing({ name: "langfuse-ops-tracing-06" });
   try {
     const client = buildOpenAIClient();
-    const agent = new AgentBuilder("support-agent", client.completionModel(defaultModel()))
-      .instructions("Use tools when useful. Answer with a short engineering-focused summary.")
-      .observe(tracing)
-      .tools([getTicket])
-      .memory(new LocalMemoryStore())
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({
+      id: "support-agent",
+      model: client.completionModel(defaultModel()),
+      instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
+      memory: { store: new LocalMemoryStore() },
+      maxTurns: 2,
+      tools: [getTicket],
+      observers: [tracing],
+    });
     const session = agent.session("langfuse-ops-multi-turn", { userId: "langfuse-ops-user" });
 
     const first = await session

@@ -1,28 +1,70 @@
 import type {
   CompletionModel,
   Document,
-  JsonObject,
   JsonValue,
   ProviderTool,
   ToolChoice,
 } from "../completion/index";
-import type { GuardrailPolicy } from "../guardrails";
+import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
 import type { PromptHook } from "../hooks";
-import type { MemoryRegistration } from "../memory/types";
-import type { AgentObserverRegistration } from "../observability";
+import type { McpServer } from "../mcp";
+import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
+import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
+import type { ZodSchema } from "../schema";
+import type { SkillSet } from "../skills";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
-import type { ToolApprovalsOptions } from "../tool/tool";
+import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
 import type { ToolSet } from "../tool/tool-set";
 import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
 
-export type AgentOptions<M extends CompletionModel = CompletionModel> = {
+export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDocument = unknown> = {
   id: string;
   name?: string | undefined;
   description?: string | undefined;
   model: M;
   instructions?: string | undefined;
-  staticContext?: Document[];
+  context?: Document[] | undefined;
+  tools?: Array<AnyTool | ProviderTool> | undefined;
+  mcpServers?: McpServer[] | undefined;
+  skills?: SkillSet | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  additionalParams?: JsonValue | undefined;
+  toolChoice?: ToolChoice | undefined;
+  maxTurns?: number | undefined;
+  hook?: PromptHook | undefined;
+  outputSchema?: ZodSchema | undefined;
+  observers?: AgentObserverInput[] | undefined;
+  approvals?: ToolApprovalsOptions | undefined;
+  guardrails?: GuardrailPolicyInput | undefined;
+  dynamicContexts?: AgentDynamicContext<ContextDocument>[] | undefined;
+  dynamicTools?: AgentDynamicTool[] | undefined;
+  middlewares?: AgentMiddleware[] | undefined;
+  memory?: AgentMemoryOptions | undefined;
+};
+
+export type AgentObserverInput = AgentObserver | (ObserveOptions & { observer: AgentObserver });
+
+export type AgentMemoryOptions = MemoryOptions & {
+  store: MemoryStore;
+};
+
+export type AgentDynamicContext<T = unknown> = DynamicContextOptions<T> & {
+  index: VectorSearchIndex<T>;
+};
+
+export type AgentDynamicTool = DynamicToolOptions & {
+  index: VectorSearchIndex<ToolSearchDocument>;
+};
+
+export type ResolvedAgentOptions<M extends CompletionModel = CompletionModel> = {
+  id: string;
+  name?: string | undefined;
+  description?: string | undefined;
+  model: M;
+  instructions?: string | undefined;
+  staticContext?: Document[] | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   additionalParams?: JsonValue | undefined;
@@ -31,7 +73,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
   hook?: PromptHook | undefined;
-  outputSchema?: JsonObject | undefined;
+  outputSchema?: import("../completion/index").JsonObject | undefined;
   observers?: AgentObserverRegistration[] | undefined;
   approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicy[] | undefined;
@@ -39,6 +81,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel> = {
   dynamicTools?: DynamicToolRegistration[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;
+  /** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
   eventStore?: AgentEventStoreRegistration | undefined;
 };
 
@@ -49,12 +92,15 @@ export type AgentToolOptions = {
   stream?: boolean | undefined;
 };
 
+/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
 export type AgentEventStoreInclude = "all" | "agent_tool_events";
 
+/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
 export type AgentEventStoreOptions = {
   include?: AgentEventStoreInclude | undefined;
 };
 
+/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
 export type AgentEventAppendInput = {
   runId: string;
   agentId: string;
@@ -66,16 +112,19 @@ export type AgentEventAppendInput = {
   event: unknown;
 };
 
+/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
 export type AgentEventRecord = AgentEventAppendInput & {
   createdAt?: Date | undefined;
 };
 
+/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
 export interface AgentEventStore {
   append(input: AgentEventAppendInput): Promise<void>;
   load(runId: string): Promise<AgentEventRecord[]>;
   clear?(runId: string): Promise<void>;
 }
 
+/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
 export type AgentEventStoreRegistration = {
   store: AgentEventStore;
   options: Required<AgentEventStoreOptions>;

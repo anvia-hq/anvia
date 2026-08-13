@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -55,18 +55,18 @@ const getTicket = createTool({
 });
 
 const model = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-inspection-surfaces", model)
-  .name("Studio Inspection Surfaces")
-  .description("Demonstrates Memory, Status, tool runner, and richer agent inspection.")
-  .instructions(
-    [
-      "Use get_ticket when the user asks about a ticket.",
-      "Answer with status, priority, customer, and a short next action.",
-    ].join("\n"),
-  )
-  .tool(getTicket)
-  .defaultMaxTurns(4)
-  .build();
+const agent = new Agent({
+  id: "studio-inspection-surfaces",
+  model: model,
+  name: "Studio Inspection Surfaces",
+  description: "Demonstrates Memory, Status, tool runner, and richer agent inspection.",
+  instructions: [
+    "Use get_ticket when the user asks about a ticket.",
+    "Answer with status, priority, customer, and a short next action.",
+  ].join("\n"),
+  maxTurns: 4,
+  tools: [getTicket],
+});
 
 new Studio([agent], {
   quickPrompts: {

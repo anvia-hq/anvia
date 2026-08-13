@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryStore } from "@anvia/core/memory";
 import { createTool } from "@anvia/core/tool";
@@ -66,12 +66,14 @@ const client = new OpenAIClient({
 const agentModel = client.completionModel("gpt-5.5");
 const memory = new LocalMemoryStore();
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use tools for private ticket data. Use durable session memory when relevant.")
-  .tools([getTicketTool])
-  .memory(memory)
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use tools for private ticket data. Use durable session memory when relevant.",
+  memory: { store: memory },
+  maxTurns: 2,
+  tools: [getTicketTool],
+});
 
 const session = agent.session("ticket-demo", { userId: "cookbook-user" });
 const prompt = "Use the ticket tool to summarize TICKET-1001 and remember who owns it.";

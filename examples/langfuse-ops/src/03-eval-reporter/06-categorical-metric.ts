@@ -2,7 +2,7 @@
 // CATEGORICAL and BOOLEAN metrics. The reporter forwards dataType,
 // configId, and metadata to Langfuse.
 
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, defineMetric, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseEvalReporter } from "@anvia/langfuse";
 import { getStaticModel } from "../_support/model.js";
@@ -12,7 +12,11 @@ async function main(): Promise<void> {
   const tracing = createTracing({ name: "langfuse-ops-eval-reporter-06" });
   try {
     const model = getStaticModel("ok");
-    const agent = new AgentBuilder("cat-agent", model).instructions("ok").build();
+    const agent = new Agent({
+      id: "cat-agent",
+      model: model,
+      instructions: "ok",
+    });
 
     const categorical = defineMetric({
       name: "verdict",

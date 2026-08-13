@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -56,65 +56,65 @@ const getRunbook = createTool({
   }),
 });
 
-const supportAgent = new AgentBuilder("subagent-support", model)
-  .name("Support Subagent")
-  .description("Summarizes customer impact from support tickets.")
-  .instructions(
-    [
-      "Use ticket data when available.",
-      "Return customer impact, severity, and support follow-up.",
-      "Do not include engineering remediation unless it is directly in the ticket.",
-    ].join("\n"),
-  )
-  .tool(getTicket)
-  .defaultMaxTurns(2)
-  .build();
+const supportAgent = new Agent({
+  id: "subagent-support",
+  model: model,
+  name: "Support Subagent",
+  description: "Summarizes customer impact from support tickets.",
+  instructions: [
+    "Use ticket data when available.",
+    "Return customer impact, severity, and support follow-up.",
+    "Do not include engineering remediation unless it is directly in the ticket.",
+  ].join("\n"),
+  maxTurns: 2,
+  tools: [getTicket],
+});
 
-const engineeringAgent = new AgentBuilder("subagent-engineering", model)
-  .name("Engineering Subagent")
-  .description("Turns runbooks and incident facts into engineering diagnostics.")
-  .instructions(
-    [
-      "Use runbook data when available.",
-      "Return likely diagnostic checks, owner, and immediate mitigation options.",
-      "Avoid customer-facing language.",
-    ].join("\n"),
-  )
-  .tool(getRunbook)
-  .defaultMaxTurns(2)
-  .build();
+const engineeringAgent = new Agent({
+  id: "subagent-engineering",
+  model: model,
+  name: "Engineering Subagent",
+  description: "Turns runbooks and incident facts into engineering diagnostics.",
+  instructions: [
+    "Use runbook data when available.",
+    "Return likely diagnostic checks, owner, and immediate mitigation options.",
+    "Avoid customer-facing language.",
+  ].join("\n"),
+  maxTurns: 2,
+  tools: [getRunbook],
+});
 
-const commsAgent = new AgentBuilder("subagent-comms", model)
-  .name("Comms Subagent")
-  .description("Drafts concise customer updates from incident facts.")
-  .instructions(
-    [
-      "Draft customer-facing updates.",
-      "Acknowledge impact without claiming an unverified root cause.",
-      "Include the next checkpoint time when useful.",
-    ].join("\n"),
-  )
-  .build();
+const commsAgent = new Agent({
+  id: "subagent-comms",
+  model: model,
+  name: "Comms Subagent",
+  description: "Drafts concise customer updates from incident facts.",
+  instructions: [
+    "Draft customer-facing updates.",
+    "Acknowledge impact without claiming an unverified root cause.",
+    "Include the next checkpoint time when useful.",
+  ].join("\n"),
+});
 
-const coordinator = new AgentBuilder("studio-subagent-coordinator", model)
-  .name("Studio Subagent Coordinator")
-  .description("Delegates incident work to specialist subagents and synthesizes the result.")
-  .instructions(
-    [
-      "You are the coordinator visible in Studio.",
-      "Delegate support impact work to ask_support_subagent.",
-      "Delegate engineering diagnostics to ask_engineering_subagent.",
-      "Delegate customer-facing copy to ask_comms_subagent when the user asks for communication.",
-      "Combine specialist outputs into one concise operator-ready answer.",
-    ].join("\n"),
-  )
-  .tools([
+const coordinator = new Agent({
+  id: "studio-subagent-coordinator",
+  model: model,
+  name: "Studio Subagent Coordinator",
+  description: "Delegates incident work to specialist subagents and synthesizes the result.",
+  instructions: [
+    "You are the coordinator visible in Studio.",
+    "Delegate support impact work to ask_support_subagent.",
+    "Delegate engineering diagnostics to ask_engineering_subagent.",
+    "Delegate customer-facing copy to ask_comms_subagent when the user asks for communication.",
+    "Combine specialist outputs into one concise operator-ready answer.",
+  ].join("\n"),
+  maxTurns: 4,
+  tools: [
     supportAgent.asTool({ name: "ask_support_subagent", stream: true }),
     engineeringAgent.asTool({ name: "ask_engineering_subagent", stream: true }),
     commsAgent.asTool({ name: "ask_comms_subagent", stream: true }),
-  ])
-  .defaultMaxTurns(4)
-  .build();
+  ],
+});
 
 new Studio([coordinator], {
   quickPrompts: {

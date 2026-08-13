@@ -19,7 +19,7 @@ pnpm --filter @anvia/gemini build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { GeminiClient } from "@anvia/gemini";
 
 const client = new GeminiClient({
@@ -28,9 +28,11 @@ const client = new GeminiClient({
 
 const model = client.completionModel("gemini-2.5-flash");
 
-const agent = new AgentBuilder("assistant", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "assistant",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
 const response = await agent.prompt("Summarize Anvia in one sentence.").send();
 

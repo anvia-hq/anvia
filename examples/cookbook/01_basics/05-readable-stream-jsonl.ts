@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -7,9 +7,11 @@ const client = new OpenAIClient({
 });
 const agentModel = client.completionModel("gpt-5.5");
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("You are a concise assistant.")
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "You are a concise assistant.",
+});
 
 // readableStream() is useful when forwarding agent events from a web server.
 const stream = agent

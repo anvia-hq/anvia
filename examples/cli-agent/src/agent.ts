@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { Message } from "@anvia/core/completion";
 import { OpenAIClient } from "@anvia/openai";
 import { getModelName, getTavilyApiKey, OPENROUTER_BASE_URL } from "./config.js";
@@ -40,12 +40,12 @@ export async function streamAssistantResponse({
   });
   const tavilyApiKey = getTavilyApiKey();
   const model = client.completionModel(getModelName());
-  const builder = new AgentBuilder("assistant", model)
-    .instructions(SYSTEM_PROMPT)
-    .tool(createTavilySearchTool(tavilyApiKey))
-    .tools(createLocalWorkspaceTools());
-
-  const agent = builder.build();
+  const agent = new Agent({
+    id: "assistant",
+    model,
+    instructions: SYSTEM_PROMPT,
+    tools: [createTavilySearchTool(tavilyApiKey), ...createLocalWorkspaceTools()],
+  });
 
   const transcript = [...toAnviaHistory(history), Message.user(prompt)];
 

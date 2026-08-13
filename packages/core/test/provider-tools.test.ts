@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AgentBuilder,
   AssistantContent,
   type CompletionModel,
@@ -133,6 +134,23 @@ describe("provider-executed tools", () => {
     expect(result.providerToolCalls).toEqual([
       { id: "search_1", name: "web_search", status: "completed" },
     ]);
+  });
+
+  it("partitions provider tools passed to the public Agent constructor", async () => {
+    const model = new ProviderToolModel();
+    const localTool = createTool({
+      name: "local",
+      description: "Local tool",
+      input: z.object({}),
+      execute: () => "done",
+    });
+    const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
+
+    await agent.prompt("research").send();
+
+    expect(agent.toolSet.values()).toEqual([localTool]);
+    expect(agent.providerTools).toEqual([searchTool]);
+    expect(model.requests[0]?.providerTools).toEqual([searchTool]);
   });
 
   it("rejects provider tools when the model does not advertise support", async () => {

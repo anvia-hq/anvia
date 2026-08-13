@@ -19,7 +19,7 @@ pnpm --filter @anvia/anthropic build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { AnthropicClient } from "@anvia/anthropic";
 
 const client = new AnthropicClient({
@@ -28,9 +28,11 @@ const client = new AnthropicClient({
 
 const model = client.completionModel("claude-sonnet-4-20250514");
 
-const agent = new AgentBuilder("assistant", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "assistant",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
 const response = await agent.prompt("Summarize Anvia in one sentence.").send();
 

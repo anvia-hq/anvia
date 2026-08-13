@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createHook } from "@anvia/core/hooks";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
@@ -43,12 +43,14 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use tools for arithmetic and then explain the result briefly.")
-  .tools([addTool, multiplyTool])
-  .hook(hook)
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use tools for arithmetic and then explain the result briefly.",
+  hook: hook,
+  maxTurns: 2,
+  tools: [addTool, multiplyTool],
+});
 
 const response = await agent
   .prompt("Calculate 3 + 9 and 7 * 6. Use both tools before answering.")

@@ -44,6 +44,7 @@ class LoggerRunObserver implements AgentRunObserver {
   ) {
     const context: LogContext = {
       component: "anvia.agent",
+      runId: args.runId,
     };
     if (args.agentName !== undefined) context.agentName = args.agentName;
     if (args.trace?.name !== undefined) context.traceName = args.trace.name;

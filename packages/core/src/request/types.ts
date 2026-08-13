@@ -15,6 +15,7 @@ import type { GuardrailDecisionRecord } from "../guardrails";
 import type { AgentGenerationModelInfo, AgentTraceInfo } from "../observability/types";
 
 export type PromptResponse = {
+  runId: string;
   output: string;
   usage: Usage;
   contextUsage?: ContextUsage | undefined;

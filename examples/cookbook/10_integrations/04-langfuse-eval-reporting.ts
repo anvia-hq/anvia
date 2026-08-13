@@ -1,5 +1,5 @@
 import {
-  AgentBuilder,
+  Agent,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -38,9 +38,11 @@ const reporter = createLangfuseEvalReporter({
   },
 });
 
-const agent = new AgentBuilder("support-agent", new StaticCompletionModel())
-  .instructions("Answer support questions from policy.")
-  .build();
+const agent = new Agent({
+  id: "support-agent",
+  model: new StaticCompletionModel(),
+  instructions: "Answer support questions from policy.",
+});
 
 const result = await runEvalSuite({
   name: "support-agent-regression",

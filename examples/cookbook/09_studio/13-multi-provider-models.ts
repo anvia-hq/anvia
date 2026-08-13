@@ -1,5 +1,5 @@
 import { AnthropicClient } from "@anvia/anthropic";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 
@@ -13,16 +13,16 @@ const anthropic = new AnthropicClient({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const agent = new AgentBuilder("studio-model-router", openai.completionModel("gpt-5.6-luna"))
-  .name("Studio Model Router")
-  .description("Demonstrates Studio model selection across multiple providers.")
-  .instructions(
-    [
-      "You are a helpful general-purpose assistant used to compare provider behavior in Anvia Studio.",
-      "Answer clearly and concisely. Adapt your tone and depth to the user's request.",
-    ].join("\n"),
-  )
-  .build();
+const agent = new Agent({
+  id: "studio-model-router",
+  model: openai.completionModel("gpt-5.6-luna"),
+  name: "Studio Model Router",
+  description: "Demonstrates Studio model selection across multiple providers.",
+  instructions: [
+    "You are a helpful general-purpose assistant used to compare provider behavior in Anvia Studio.",
+    "Answer clearly and concisely. Adapt your tone and depth to the user's request.",
+  ].join("\n"),
+});
 
 new Studio([agent], {
   models: {

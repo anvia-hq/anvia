@@ -19,7 +19,7 @@ pnpm --filter @anvia/studio build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 
@@ -27,11 +27,13 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const agent = new AgentBuilder("support", client.completionModel())
-  .name("Support")
-  .description("Answers support questions.")
-  .instructions("Answer support questions clearly.")
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: client.completionModel(),
+  name: "Support",
+  description: "Answers support questions.",
+  instructions: "Answer support questions clearly.",
+});
 
 new Studio([agent]).start({
   port: 4021,
@@ -49,7 +51,7 @@ http://localhost:4021/ui/playground
 Studio can expose a shared model catalog and let each agent choose from registered providers:
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { AnthropicClient } from "@anvia/anthropic";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -57,10 +59,12 @@ import { Studio } from "@anvia/studio";
 const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const agent = new AgentBuilder("support", openai.completionModel("gpt-5"))
-  .name("Support")
-  .instructions("Answer support questions clearly.")
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: openai.completionModel("gpt-5"),
+  name: "Support",
+  instructions: "Answer support questions clearly.",
+});
 
 new Studio([agent], {
   models: {

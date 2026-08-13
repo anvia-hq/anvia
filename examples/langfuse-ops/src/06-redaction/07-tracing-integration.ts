@@ -1,7 +1,7 @@
 // Demonstrates: redaction in langfuse.create(). redacts inputs, outputs,
 // or both. Uses a static model so the LLM call is deterministic.
 
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { getStaticModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -13,11 +13,13 @@ async function main(): Promise<void> {
     redaction: { replacement: "[HIDDEN]" },
   });
   try {
-    const agent = new AgentBuilder("redact-agent", getStaticModel("Reach alice@example.com"))
-      .instructions("Answer support questions.")
-      .observe(tracing)
-      .defaultMaxTurns(1)
-      .build();
+    const agent = new Agent({
+      id: "redact-agent",
+      model: getStaticModel("Reach alice@example.com"),
+      instructions: "Answer support questions.",
+      maxTurns: 1,
+      observers: [tracing],
+    });
 
     const response = await agent
       .prompt("My email is alice@example.com. What is your refund policy?")

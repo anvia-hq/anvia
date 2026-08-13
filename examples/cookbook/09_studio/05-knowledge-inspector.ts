@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { createTool, createToolIndex } from "@anvia/core/tool";
@@ -92,38 +92,40 @@ const knowledgeIndex = InMemoryVectorStore.fromDocuments(embeddedNotes).index(em
 const toolIndex = await createToolIndex(embeddings, [getTicket, lookupCustomer]);
 
 const model = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-knowledge-ops", model)
-  .name("Studio Knowledge Ops")
-  .description("Demonstrates the Studio Knowledge inspector.")
-  .instructions(
-    [
-      "Use retrieved knowledge and tools when relevant.",
-      "Cite the operational policy or runbook facts you used in plain language.",
-      "Keep the response concise and action-oriented.",
-    ].join("\n"),
-  )
-  .context(
-    "Studio Knowledge is an inspector surface. It shows static context, dynamic context, dynamic tools, and trace evidence; it does not edit documents.",
-    "studio-knowledge-scope",
-  )
-  .dynamicContext(knowledgeIndex, {
-    topK: 2,
-    threshold: 0.55,
-    format: (result) => ({
-      id: result.id,
-      text: result.document.text,
-      additionalProps: {
-        area: result.document.area,
-        score: result.score.toFixed(3),
-      },
-    }),
-  })
-  .dynamicTools(toolIndex, {
-    topK: 1,
-    threshold: 0.75,
-  })
-  .defaultMaxTurns(4)
-  .build();
+const agent = new Agent({
+  id: "studio-knowledge-ops",
+  model: model,
+  name: "Studio Knowledge Ops",
+  description: "Demonstrates the Studio Knowledge inspector.",
+  instructions: [
+    "Use retrieved knowledge and tools when relevant.",
+    "Cite the operational policy or runbook facts you used in plain language.",
+    "Keep the response concise and action-oriented.",
+  ].join("\n"),
+  dynamicContexts: [
+    {
+      index: knowledgeIndex,
+      topK: 2,
+      threshold: 0.55,
+      format: (result) => ({
+        id: result.id,
+        text: result.document.text,
+        additionalProps: {
+          area: result.document.area,
+          score: result.score.toFixed(3),
+        },
+      }),
+    },
+  ],
+  dynamicTools: [{ index: toolIndex, topK: 1, threshold: 0.75 }],
+  maxTurns: 4,
+  context: [
+    {
+      id: "studio-knowledge-scope",
+      text: "Studio Knowledge is an inspector surface. It shows static context, dynamic context, dynamic tools, and trace evidence; it does not edit documents.",
+    },
+  ],
+});
 
 new Studio([agent], {
   quickPrompts: {

@@ -4,13 +4,14 @@ import {
   type PromptHook,
   type ToolCallHookAction,
 } from "@anvia/core/hooks";
-import { Agent } from "@anvia/core/internal/agent";
+import {
+  type Agent,
+  createResolvedAgent,
+  type ResolvedAgentOptions,
+} from "@anvia/core/internal/agent";
 
-export function cloneAgent(
-  agent: Agent,
-  overrides: Partial<ConstructorParameters<typeof Agent>[0]> = {},
-): Agent {
-  return new Agent({
+export function cloneAgent(agent: Agent, overrides: Partial<ResolvedAgentOptions> = {}): Agent {
+  return createResolvedAgent({
     id: agent.id,
     name: agent.name,
     description: agent.description,

@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
 import type { PromptResponse } from "@anvia/core/request";
 import { OpenAIClient } from "@anvia/openai";
@@ -9,16 +9,16 @@ const openAIClient = new OpenAIClient({
 });
 const model = openAIClient.completionModel("gpt-5.5");
 
-const agent = new AgentBuilder("support-policy-agent", model)
-  .instructions(
-    [
-      "Answer with only the relevant policy fact.",
-      "Use these exact policy phrases when relevant:",
-      "- Refunds are available for 30 days.",
-      "- Workspace owners can change billing settings.",
-    ].join("\n"),
-  )
-  .build();
+const agent = new Agent({
+  id: "support-policy-agent",
+  model: model,
+  instructions: [
+    "Answer with only the relevant policy fact.",
+    "Use these exact policy phrases when relevant:",
+    "- Refunds are available for 30 days.",
+    "- Workspace owners can change billing settings.",
+  ].join("\n"),
+});
 
 const cases = [
   {

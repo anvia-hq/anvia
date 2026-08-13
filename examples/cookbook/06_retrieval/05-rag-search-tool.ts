@@ -1,5 +1,5 @@
 import { ChromaVectorStore } from "@anvia/chroma";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { OpenAIClient } from "@anvia/openai";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
@@ -41,11 +41,13 @@ const searchRunbooks = store.index(embeddingModel).asTool({
 });
 
 const agentModel = client.completionModel("gpt-5.5");
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("Use the runbook search tool before answering incident questions.")
-  .tools([searchRunbooks])
-  .defaultMaxTurns(2)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use the runbook search tool before answering incident questions.",
+  maxTurns: 2,
+  tools: [searchRunbooks],
+});
 
 const response = await agent.prompt("The queue is backing up. What should I check?").send();
 

@@ -7,7 +7,7 @@ pnpm add @anvia/lens @anvia/core
 ```
 
 ```ts
-import { AgentBuilder, type CompletionModel } from "@anvia/core";
+import { Agent, type CompletionModel } from "@anvia/core";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createLensEvalReporter, lens } from "@anvia/lens";
 
@@ -22,10 +22,12 @@ const tracing = lens.create({
   release: "2026.08.1",
 });
 
-const agent = new AgentBuilder("support", model)
-  .name("Support Agent")
-  .observe(tracing)
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  name: "Support Agent",
+  observers: [tracing],
+});
 
 const reporter = createLensEvalReporter(tracing);
 
@@ -55,7 +57,11 @@ const evals = lens.evals({
   includePayloads: true,
 });
 
-const agent = new AgentBuilder("support", model).observe(evals.observer).build();
+const agent = new Agent({
+  id: "support",
+  model: model,
+  observers: [evals.observer],
+});
 await runEvalSuite({
   ...suiteOptions,
   target: agentEvalTarget(agent),

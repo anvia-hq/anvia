@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryStore } from "@anvia/core/memory";
 import { OpenAIClient } from "@anvia/openai";
@@ -27,10 +27,12 @@ const client = new OpenAIClient({
 const agentModel = client.completionModel("gpt-5.5");
 const memory = new LocalMemoryStore();
 
-const agent = new AgentBuilder("agent", agentModel)
-  .instructions("You are a concise assistant that remembers durable session context.")
-  .memory(memory)
-  .build();
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "You are a concise assistant that remembers durable session context.",
+  memory: { store: memory },
+});
 
 const session = agent.session("demo-session", { userId: "cookbook-user" });
 

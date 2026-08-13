@@ -2,7 +2,7 @@
 // to a real Langfuse trace. The case bundles a traceId in metadata so
 // the reporter can resolve the trace.
 
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseEvalReporter } from "@anvia/langfuse";
 import { getStaticModel } from "../_support/model.js";
@@ -12,9 +12,11 @@ async function main(): Promise<void> {
   const tracing = createTracing({ name: "langfuse-ops-eval-reporter-01" });
   try {
     const model = getStaticModel("Refunds are available for 30 days after purchase.");
-    const agent = new AgentBuilder("support-agent", model)
-      .instructions("Answer support questions from policy.")
-      .build();
+    const agent = new Agent({
+      id: "support-agent",
+      model: model,
+      instructions: "Answer support questions from policy.",
+    });
 
     const result = await runEvalSuite({
       name: "support-agent-regression",

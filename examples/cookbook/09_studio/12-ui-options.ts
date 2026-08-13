@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -31,12 +31,14 @@ const getRunbook = createTool({
 });
 
 const model = client.completionModel("gpt-5.6-luna");
-const agent = new AgentBuilder("studio-custom-ui", model)
-  .name("Studio Custom UI")
-  .description("Demonstrates Studio UI title and root-route behavior.")
-  .instructions("Use get_runbook when the user asks for an operational checklist.")
-  .tool(getRunbook)
-  .build();
+const agent = new Agent({
+  id: "studio-custom-ui",
+  model: model,
+  name: "Studio Custom UI",
+  description: "Demonstrates Studio UI title and root-route behavior.",
+  instructions: "Use get_runbook when the user asks for an operational checklist.",
+  tools: [getRunbook],
+});
 
 new Studio([agent], {
   ui: {

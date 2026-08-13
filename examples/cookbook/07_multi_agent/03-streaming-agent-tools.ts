@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import type { AgentStreamEvent } from "@anvia/core/request";
 import { OpenAIClient } from "@anvia/openai";
 
@@ -9,33 +9,37 @@ const client = new OpenAIClient({
 
 const model = client.completionModel("gpt-5.5");
 
-const supportAgent = new AgentBuilder("support", model)
-  .name("Support Specialist")
-  .description("Summarize customer impact and support next steps.")
-  .instructions("Return compact support triage bullets using only the provided facts.")
-  .build();
+const supportAgent = new Agent({
+  id: "support",
+  model: model,
+  name: "Support Specialist",
+  description: "Summarize customer impact and support next steps.",
+  instructions: "Return compact support triage bullets using only the provided facts.",
+});
 
-const engineeringAgent = new AgentBuilder("engineering", model)
-  .name("Engineering Specialist")
-  .description("Summarize diagnostics and engineering next steps.")
-  .instructions("Return compact engineering triage bullets without unverified root-cause claims.")
-  .build();
+const engineeringAgent = new Agent({
+  id: "engineering",
+  model: model,
+  name: "Engineering Specialist",
+  description: "Summarize diagnostics and engineering next steps.",
+  instructions: "Return compact engineering triage bullets without unverified root-cause claims.",
+});
 
-const coordinator = new AgentBuilder("coordinator", model)
-  .name("Incident Coordinator")
-  .instructions(
-    [
-      "Coordinate specialist agents through tools.",
-      "Call specialists when their expertise is useful.",
-      "Combine specialist findings into one concise incident brief.",
-    ].join("\n"),
-  )
-  .tools([
+const coordinator = new Agent({
+  id: "coordinator",
+  model: model,
+  name: "Incident Coordinator",
+  instructions: [
+    "Coordinate specialist agents through tools.",
+    "Call specialists when their expertise is useful.",
+    "Combine specialist findings into one concise incident brief.",
+  ].join("\n"),
+  maxTurns: 4,
+  tools: [
     supportAgent.asTool({ name: "ask_support_agent", stream: true }),
     engineeringAgent.asTool({ name: "ask_engineering_agent", stream: true }),
-  ])
-  .defaultMaxTurns(4)
-  .build();
+  ],
+});
 
 const prompt = [
   "Acme Co. reports webhook retries fail for payloads larger than 512 KB.",

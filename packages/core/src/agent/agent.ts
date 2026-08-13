@@ -10,12 +10,14 @@ import type {
   ProviderTool,
   ToolChoice,
 } from "../completion/index";
-import { getAssistantGenerationMetadata } from "../completion/types";
-import type { GuardrailPolicy } from "../guardrails";
+import { getAssistantGenerationMetadata, isProviderTool } from "../completion/types";
+import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
 import type { PromptHook } from "../hooks";
+import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import { PromptRequest } from "../request";
+import { toProviderJsonSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
@@ -32,16 +34,18 @@ import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
 import { normalizeAgentId } from "./ids";
 import type {
+  AgentDynamicContext,
   AgentEventStoreRegistration,
   AgentOptions,
   AgentToolOptions,
   DynamicContextRegistration,
   DynamicToolRegistration,
+  ResolvedAgentOptions,
 } from "./types";
 
 export const DEFAULT_MAX_TURNS = 20;
 
-export class Agent<M extends CompletionModel = CompletionModel> {
+export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
   readonly id: string;
   readonly name: string | undefined;
   readonly description: string | undefined;
@@ -64,32 +68,34 @@ export class Agent<M extends CompletionModel = CompletionModel> {
   readonly dynamicTools: DynamicToolRegistration[];
   readonly middlewares: AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
+  /** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
   readonly eventStore: AgentEventStoreRegistration | undefined;
 
-  constructor(options: AgentOptions<M>) {
-    this.id = normalizeAgentId(options.id);
-    this.name = options.name;
-    this.description = options.description;
-    this.model = options.model;
-    this.instructions = options.instructions;
-    this.staticContext = [...(options.staticContext ?? [])];
-    this.temperature = options.temperature;
-    this.maxTokens = options.maxTokens;
-    this.additionalParams = options.additionalParams;
-    this.toolSet = options.toolSet ?? new ToolSet();
-    this.providerTools = [...(options.providerTools ?? [])];
-    this.toolChoice = options.toolChoice;
-    this.defaultMaxTurns = options.defaultMaxTurns ?? DEFAULT_MAX_TURNS;
-    this.hook = options.hook;
-    this.outputSchema = options.outputSchema;
-    this.observers = [...(options.observers ?? [])];
-    this.approvals = options.approvals;
-    this.guardrails = [...(options.guardrails ?? [])];
-    this.dynamicContexts = [...(options.dynamicContexts ?? [])];
-    this.dynamicTools = [...(options.dynamicTools ?? [])];
-    this.middlewares = [...(options.middlewares ?? [])];
-    this.memory = options.memory;
-    this.eventStore = options.eventStore;
+  constructor(options: AgentOptions<M, ContextDocument>) {
+    const resolved = resolveAgentOptions(options);
+    this.id = normalizeAgentId(resolved.id);
+    this.name = resolved.name;
+    this.description = resolved.description;
+    this.model = resolved.model;
+    this.instructions = resolved.instructions;
+    this.staticContext = [...(resolved.staticContext ?? [])];
+    this.temperature = resolved.temperature;
+    this.maxTokens = resolved.maxTokens;
+    this.additionalParams = resolved.additionalParams;
+    this.toolSet = resolved.toolSet ?? new ToolSet();
+    this.providerTools = [...(resolved.providerTools ?? [])];
+    this.toolChoice = resolved.toolChoice;
+    this.defaultMaxTurns = resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS;
+    this.hook = resolved.hook;
+    this.outputSchema = resolved.outputSchema;
+    this.observers = [...(resolved.observers ?? [])];
+    this.approvals = resolved.approvals;
+    this.guardrails = [...(resolved.guardrails ?? [])];
+    this.dynamicContexts = [...(resolved.dynamicContexts ?? [])];
+    this.dynamicTools = [...(resolved.dynamicTools ?? [])];
+    this.middlewares = [...(resolved.middlewares ?? [])];
+    this.memory = resolved.memory;
+    this.eventStore = resolved.eventStore;
   }
 
   prompt(prompt: string | MessageType | MessageType[]): PromptRequest<M> {
@@ -201,6 +207,115 @@ export class Agent<M extends CompletionModel = CompletionModel> {
   shouldApplyToolMiddleware(toolName: string): boolean {
     return !isSkillTool(this.getTool(toolName));
   }
+}
+
+const resolvedAgentOptions = Symbol("resolvedAgentOptions");
+
+type InternalAgentOptions<M extends CompletionModel> = ResolvedAgentOptions<M> & {
+  [resolvedAgentOptions]: true;
+};
+
+export function createResolvedAgent<M extends CompletionModel>(
+  options: ResolvedAgentOptions<M>,
+): Agent<M> {
+  return new Agent({
+    ...options,
+    [resolvedAgentOptions]: true,
+  } as unknown as AgentOptions<M>);
+}
+
+function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
+  options: AgentOptions<M, ContextDocument>,
+): ResolvedAgentOptions<M> {
+  if (isInternalAgentOptions(options)) {
+    return options as unknown as ResolvedAgentOptions<M>;
+  }
+
+  const toolSet = new ToolSet();
+  const providerTools: ProviderTool[] = [];
+  for (const tool of options.tools ?? []) {
+    if (isProviderTool(tool)) {
+      providerTools.push(tool);
+    } else {
+      toolSet.addTool(tool);
+    }
+  }
+  for (const server of options.mcpServers ?? []) {
+    toolSet.addTools(server.tools);
+  }
+  if (options.skills !== undefined) {
+    toolSet.addTools(options.skills.tools);
+  }
+
+  const memory = resolveAgentMemory(options);
+  const instructions = [options.instructions, options.skills?.instructions]
+    .filter((part): part is string => part !== undefined && part.length > 0)
+    .join("\n\n");
+
+  return {
+    id: options.id,
+    name: options.name,
+    description: options.description,
+    model: options.model,
+    instructions: instructions.length === 0 ? undefined : instructions,
+    staticContext: [...(options.context ?? [])],
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+    additionalParams: options.additionalParams,
+    toolSet,
+    providerTools,
+    toolChoice: options.toolChoice,
+    defaultMaxTurns: options.maxTurns,
+    hook: options.hook,
+    outputSchema:
+      options.outputSchema === undefined ? undefined : toProviderJsonSchema(options.outputSchema),
+    observers: (options.observers ?? []).map((input) =>
+      "observer" in input
+        ? { observer: input.observer, failOnObserverError: input.failOnObserverError }
+        : { observer: input },
+    ),
+    approvals: options.approvals,
+    guardrails:
+      options.guardrails === undefined ? [] : appendGuardrailPolicies([], options.guardrails),
+    dynamicContexts: (options.dynamicContexts ?? []).map(
+      resolveDynamicContext,
+    ) as unknown as DynamicContextRegistration[],
+    dynamicTools: (options.dynamicTools ?? []).map(({ index, ...dynamicOptions }) => ({
+      index,
+      options: dynamicOptions,
+    })),
+    middlewares: [...(options.middlewares ?? [])],
+    memory,
+  };
+}
+
+function isInternalAgentOptions<M extends CompletionModel, ContextDocument>(
+  options: AgentOptions<M, ContextDocument>,
+): boolean {
+  return (options as unknown as Partial<InternalAgentOptions<M>>)[resolvedAgentOptions] === true;
+}
+
+function resolveDynamicContext<T>({
+  index,
+  ...options
+}: AgentDynamicContext<T>): DynamicContextRegistration<T> {
+  return { index, options };
+}
+
+function resolveAgentMemory<M extends CompletionModel, ContextDocument>(
+  options: AgentOptions<M, ContextDocument>,
+): MemoryRegistration | undefined {
+  if (options.memory === undefined) {
+    return undefined;
+  }
+  const { store, ...memoryOptions } = options.memory;
+  const resolvedOptions = resolveMemoryOptions(memoryOptions);
+  if (resolvedOptions.compaction !== undefined && store.compaction === undefined) {
+    throw new TypeError(
+      "Memory compaction requires a store with the optional compaction capability.",
+    );
+  }
+  return { store, options: resolvedOptions };
 }
 
 export class AgentSession<M extends CompletionModel = CompletionModel> {

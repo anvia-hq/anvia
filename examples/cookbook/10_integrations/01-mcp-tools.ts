@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { connectMcp, mcp } from "@anvia/core/mcp";
 import { OpenAIClient } from "@anvia/openai";
 
@@ -17,11 +17,13 @@ const counterMcp = await connectMcp(
 
 try {
   const agentModel = client.completionModel("gpt-5.5");
-  const agent = new AgentBuilder("agent", agentModel)
-    .instructions("Use MCP tools for arithmetic and counter updates.")
-    .mcp([counterMcp])
-    .defaultMaxTurns(3)
-    .build();
+  const agent = new Agent({
+    id: "agent",
+    model: agentModel,
+    instructions: "Use MCP tools for arithmetic and counter updates.",
+    mcpServers: [counterMcp],
+    maxTurns: 3,
+  });
 
   for await (const event of agent
     .prompt("Add 8 and 13, then increment the counter by the result.")

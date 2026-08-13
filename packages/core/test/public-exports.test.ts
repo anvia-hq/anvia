@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
+  AgentOptions,
   DynamicContextOptions,
   DynamicToolOptions,
   AgentSession as PublicAgentSessionType,
@@ -54,6 +55,7 @@ import * as vectorStore from "../src/vector-store";
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
+    expectTypeOf<AgentOptions>().not.toBeNever();
     expectTypeOf<PublicAgentType>().not.toBeNever();
     expectTypeOf<PublicAgentSessionType>().not.toBeNever();
     expectTypeOf<DynamicContextOptions>().not.toBeNever();
@@ -74,9 +76,9 @@ describe("public exports", () => {
     expect("createToolMiddleware" in tool).toBe(false);
   });
 
-  it("keeps runtime Agent and AgentSession out of public entrypoints", () => {
-    expect("Agent" in publicCore).toBe(false);
-    expect("Agent" in publicAgent).toBe(false);
+  it("exposes runtime Agent but keeps AgentSession type-only", () => {
+    expect("Agent" in publicCore).toBe(true);
+    expect("Agent" in publicAgent).toBe(true);
     expect("AgentSession" in publicAgent).toBe(false);
   });
 

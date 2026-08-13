@@ -19,7 +19,7 @@ pnpm --filter @anvia/logger build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { createLoggerObserver, createPinoLogger } from "@anvia/logger";
 
@@ -32,10 +32,12 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const agent = new AgentBuilder("support", client.completionModel())
-  .instructions("Answer support questions clearly.")
-  .observe(createLoggerObserver(logger))
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: client.completionModel(),
+  instructions: "Answer support questions clearly.",
+  observers: [createLoggerObserver(logger)],
+});
 
 const response = await agent.prompt("How do I reset my password?").send();
 

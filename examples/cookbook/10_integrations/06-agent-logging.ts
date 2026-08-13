@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { createLoggerObserver, createPinoLogger } from "@anvia/logger";
 import { OpenAIClient } from "@anvia/openai";
@@ -35,16 +35,18 @@ const lookupTicket = createTool({
   }),
 });
 
-const agent = new AgentBuilder("support-logger-demo", client.completionModel("gpt-5.5"))
-  .instructions("Use tools when useful. Answer with a short engineering-focused summary.")
-  .observe(
+const agent = new Agent({
+  id: "support-logger-demo",
+  model: client.completionModel("gpt-5.5"),
+  instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
+  maxTurns: 2,
+  tools: [lookupTicket],
+  observers: [
     createLoggerObserver(logger, {
       includeToolResult: true,
     }),
-  )
-  .tool(lookupTicket)
-  .defaultMaxTurns(2)
-  .build();
+  ],
+});
 
 const response = await agent
   .prompt("Summarize ticket TICKET-1001 for the product engineering team.")

@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -20,17 +20,13 @@ const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
   apiKey: process.env.OPENAI_API_KEY,
 });
-const builderModel = client.completionModel("gpt-5.5");
-const builder = new AgentBuilder("builder", builderModel)
-  .instructions("You are a concise assistant. Use tools only when they are available.")
-  .defaultMaxTurns(2);
-
-// Builders are mutable until build(), so application config can decide available tools.
-if (enableMathTools) {
-  builder.tool(addTool);
-}
-
-const agent = builder.build();
+const agent = new Agent({
+  id: "agent",
+  model: client.completionModel("gpt-5.5"),
+  instructions: "You are a concise assistant. Use tools only when they are available.",
+  maxTurns: 2,
+  tools: enableMathTools ? [addTool] : [],
+});
 const prompt = enableMathTools
   ? "What is 18 + 24? Use the add tool."
   : "Are arithmetic tools available in this run?";

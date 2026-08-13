@@ -1,5 +1,5 @@
+import type { AgentStreamEvent } from "@anvia/core/agent";
 import { Agent } from "@anvia/core/agent";
-import type { AgentStreamEvent } from "@anvia/core/request";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -47,7 +47,7 @@ const prompt = [
   "Prepare an incident brief for support and engineering.",
 ].join(" ");
 
-for await (const event of coordinator.prompt(prompt).withToolConcurrency(2).stream()) {
+for await (const event of coordinator.stream(prompt, { toolConcurrency: 2 })) {
   renderEvent(event);
 }
 

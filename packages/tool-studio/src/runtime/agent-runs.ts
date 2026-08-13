@@ -1,3 +1,9 @@
+import type {
+  AgentResponse,
+  AgentRunOptions,
+  AgentStream,
+  AgentStreamOptions,
+} from "@anvia/core/agent";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
 import type { Agent } from "@anvia/core/internal/agent";
 import type { Context, Hono } from "hono";
@@ -54,14 +60,18 @@ type AgentRunRouteProps = {
 };
 
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
-type RunRequest = ReturnType<Agent["prompt"]>;
+type RunExecution = {
+  generate(options: AgentRunOptions): Promise<AgentResponse>;
+  stream(options: AgentStreamOptions): AgentStream;
+};
 
 type PreparedAgentRun = {
   agentId: string;
   agent: StudioAgent;
   body: AgentRunRequest;
   memoryMetadata: JsonObject;
-  request: RunRequest;
+  execution: RunExecution;
+  options: AgentRunOptions;
   runAgent: Agent;
   runId: string;
   runStartedAt: number;
@@ -149,7 +159,7 @@ async function prepareAgentRun(
     });
   }
 
-  const request = createRunRequest({
+  const execution = createRunExecution({
     agentId,
     body,
     memoryMetadata,
@@ -163,7 +173,8 @@ async function prepareAgentRun(
     agent,
     body,
     memoryMetadata,
-    request,
+    execution,
+    options: createRunOptions(body, agentId, session),
     runAgent,
     runId,
     runStartedAt,
@@ -293,39 +304,48 @@ function runMemoryMetadata(
   return metadata;
 }
 
-function createRunRequest(props: {
+function createRunExecution(props: {
   agentId: string;
   body: AgentRunRequest;
   memoryMetadata: JsonObject;
   promptMessage: CoreMessage;
   runAgent: Agent;
   session: StudioSession | undefined;
-}): RunRequest {
-  const request =
+}): RunExecution {
+  if (props.session !== undefined && props.runAgent.memory !== undefined) {
+    const session = props.runAgent.session(props.session.id, { metadata: props.memoryMetadata });
+    return {
+      generate: (options) => session.generate(props.body.message, options),
+      stream: (options) => session.stream(props.body.message, options),
+    };
+  }
+
+  const input =
     props.session !== undefined
-      ? props.runAgent.memory === undefined
-        ? props.runAgent.prompt([...props.session.messages, props.promptMessage])
-        : props.runAgent
-            .session(props.session.id, { metadata: props.memoryMetadata })
-            .prompt(props.body.message)
-      : props.runAgent.prompt(
-          props.body.history !== undefined
-            ? [...props.body.history, props.promptMessage]
-            : props.body.message,
-        );
-  request.withCompletionRetries();
-  if (props.body.maxTurns !== undefined) {
-    request.maxTurns(props.body.maxTurns);
+      ? [...props.session.messages, props.promptMessage]
+      : props.body.history !== undefined
+        ? [...props.body.history, props.promptMessage]
+        : props.body.message;
+  return {
+    generate: (options) => props.runAgent.generate(input, options),
+    stream: (options) => props.runAgent.stream(input, options),
+  };
+}
+
+function createRunOptions(
+  body: AgentRunRequest,
+  agentId: string,
+  session: StudioSession | undefined,
+): AgentRunOptions {
+  const options: AgentRunOptions = { retries: {} };
+  if (body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
+  if (body.toolConcurrency !== undefined) options.toolConcurrency = body.toolConcurrency;
+  if (body.trace !== undefined) {
+    options.trace = traceForRun(body.trace, agentId, session);
+  } else if (session !== undefined) {
+    options.trace = traceForRun(undefined, agentId, session);
   }
-  if (props.body.toolConcurrency !== undefined) {
-    request.withToolConcurrency(props.body.toolConcurrency);
-  }
-  if (props.body.trace !== undefined) {
-    request.withTrace(traceForRun(props.body.trace, props.agentId, props.session));
-  } else if (props.session !== undefined) {
-    request.withTrace(traceForRun(undefined, props.agentId, props.session));
-  }
-  return request;
+  return options;
 }
 
 function handleStreamingAgentRun(
@@ -341,7 +361,7 @@ function handleStreamingAgentRun(
   };
   if (run.session !== undefined) approvalContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
-  run.request.approvals(props.approvalRuntime.createApprovals(approvalContext));
+  const approvals = props.approvalRuntime.createApprovals(approvalContext);
   const questionContext: Parameters<typeof props.questionRuntime.createHook>[0] = {
     runId: run.runId,
     agentId: run.agentId,
@@ -353,11 +373,14 @@ function handleStreamingAgentRun(
     run.runAgent.hook,
     props.questionRuntime.createHook(questionContext),
   );
-  if (effectiveHook !== undefined) {
-    run.request.withHook(effectiveHook);
-  }
-
-  const runStream = mergeRunAndApprovalEvents(run.request.stream(), runtimeEvents);
+  const runStream = mergeRunAndApprovalEvents(
+    run.execution.stream({
+      ...run.options,
+      approvals,
+      ...(effectiveHook === undefined ? {} : { hook: effectiveHook }),
+    }),
+    runtimeEvents,
+  );
   let stream: AsyncIterable<AgentRunStreamEvent> = runStream;
   let persistedRun: ReturnType<typeof createPersistedStreamingSessionTranscript> | undefined;
   if (run.session !== undefined && run.sessionStore !== undefined) {
@@ -406,8 +429,8 @@ async function handleBufferedAgentRun(
   props: AgentRunRouteProps,
 ): Promise<Response> {
   try {
-    await startBufferedSessionRun(run, props);
-    const response = await run.request.send();
+    const runtimeOptions = await startBufferedSessionRun(run, props);
+    const response = await run.execution.generate({ ...run.options, ...runtimeOptions });
     await completeBufferedSessionRun(run, response);
     return c.json(response);
   } catch (error) {
@@ -419,7 +442,7 @@ async function handleBufferedAgentRun(
 async function startBufferedSessionRun(
   run: PreparedAgentRun,
   props: AgentRunRouteProps,
-): Promise<void> {
+): Promise<AgentRunOptions> {
   if (run.session !== undefined) {
     await appendSessionLog(run.sessionStore, runStartedLog(run.session, run.runId));
     await appendSessionLog(run.sessionStore, memoryLoadedLog(run.session, run.runId));
@@ -440,15 +463,15 @@ async function startBufferedSessionRun(
   };
   if (run.session !== undefined) approvalContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
-  run.request.approvals(props.approvalRuntime.createApprovals(approvalContext));
-  if (effectiveHook !== undefined) {
-    run.request.withHook(effectiveHook);
-  }
+  return {
+    approvals: props.approvalRuntime.createApprovals(approvalContext),
+    ...(effectiveHook === undefined ? {} : { hook: effectiveHook }),
+  };
 }
 
 async function completeBufferedSessionRun(
   run: PreparedAgentRun,
-  response: Awaited<ReturnType<RunRequest["send"]>>,
+  response: AgentResponse,
 ): Promise<void> {
   if (run.session === undefined || run.sessionStore === undefined) {
     return;

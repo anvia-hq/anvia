@@ -289,7 +289,7 @@ describe("OpenAI chat-completions client path", () => {
     const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
     const agent = new AgentBuilder("test-agent", model).build();
 
-    const events = await collect(agent.prompt("introduce yourself").stream());
+    const events = await collect(agent.stream("introduce yourself"));
     const turnEnd = events.find((event) => event.type === "turn_end");
 
     expect(turnEnd?.type).toBe("turn_end");
@@ -468,10 +468,10 @@ describe("OpenAI chat-completions client path", () => {
       finalTextStream(),
     ]);
     const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", calls))
+      .tools([recordingTool("ExecCommand", calls)])
       .build();
 
-    const events = await collect(agent.prompt("run pwd").stream());
+    const events = await collect(agent.stream("run pwd"));
 
     expect(events).toContainEqual({
       type: "tool_call",
@@ -502,11 +502,11 @@ describe("OpenAI chat-completions client path", () => {
       finalTextStream(),
     ]);
     const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", execCalls))
-      .tool(recordingTool("ReadFile", readCalls))
+      .tools([recordingTool("ExecCommand", execCalls)])
+      .tools([recordingTool("ReadFile", readCalls)])
       .build();
 
-    const events = await collect(agent.prompt("run tools").stream());
+    const events = await collect(agent.stream("run tools"));
 
     expect(events.flatMap((event) => (event.type === "tool_call" ? [event.toolCall] : []))).toEqual(
       [
@@ -532,13 +532,11 @@ describe("OpenAI chat-completions client path", () => {
       ],
     ]);
     const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", calls))
-      .tool(recordingTool("ReadFile", calls))
+      .tools([recordingTool("ExecCommand", calls)])
+      .tools([recordingTool("ReadFile", calls)])
       .build();
 
-    await expect(collect(agent.prompt("run tools").stream())).rejects.toThrow(
-      INVALID_TOOL_INDEX_ERROR,
-    );
+    await expect(collect(agent.stream("run tools"))).rejects.toThrow(INVALID_TOOL_INDEX_ERROR);
     expect(calls).toHaveLength(0);
   });
 
@@ -686,10 +684,10 @@ describe("OpenAI chat-completions client path", () => {
       ],
     ]);
     const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", calls))
+      .tools([recordingTool("ExecCommand", calls)])
       .build();
 
-    await expect(collect(agent.prompt("run pwd").stream())).rejects.toThrow(
+    await expect(collect(agent.stream("run pwd"))).rejects.toThrow(
       'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
     );
     expect(calls).toHaveLength(0);

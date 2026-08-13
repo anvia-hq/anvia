@@ -1,6 +1,6 @@
 import type {
+  AgentHook,
   HookAction,
-  PromptHook,
   RunControl,
   ToolApprovalRequestOptions,
   ToolCallControl,
@@ -8,12 +8,12 @@ import type {
 } from "./types";
 
 export function createHook<RawResponse = unknown>(
-  hook: PromptHook<RawResponse>,
-): PromptHook<RawResponse> {
+  hook: AgentHook<RawResponse>,
+): AgentHook<RawResponse> {
   return hook;
 }
 
-export function cancelPrompt(reason: string): HookAction {
+export function cancelRun(reason: string): HookAction {
   return { type: "terminate", reason };
 }
 
@@ -39,7 +39,7 @@ export const runControl: RunControl = {
     return { type: "continue" };
   },
   cancel(reason: string) {
-    return cancelPrompt(reason);
+    return cancelRun(reason);
   },
 };
 

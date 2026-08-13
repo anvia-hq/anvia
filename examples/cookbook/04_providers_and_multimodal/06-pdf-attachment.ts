@@ -14,17 +14,15 @@ const agent = new Agent({
 });
 
 // Document content parts include a URL, MIME type, and optional filename.
-const response = await agent
-  .prompt(
-    Message.user([
-      UserContent.text("Summarize this PDF."),
-      UserContent.documentUrl(
-        "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-        "application/pdf",
-        { filename: "dummy.pdf" },
-      ),
-    ]),
-  )
-  .send();
+const response = await agent.generate(
+  Message.user([
+    UserContent.text("Summarize this PDF."),
+    UserContent.documentUrl(
+      "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "application/pdf",
+      { filename: "dummy.pdf" },
+    ),
+  ]),
+);
 
 console.log(response.output);

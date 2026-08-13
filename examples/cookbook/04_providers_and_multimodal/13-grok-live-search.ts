@@ -16,7 +16,7 @@ const researcher = new Agent({
   ],
 });
 
-const response = await researcher.prompt("What are the latest xAI product updates?").send();
+const response = await researcher.generate("What are the latest xAI product updates?");
 
 console.log(response.output);
 console.log(response.sources);

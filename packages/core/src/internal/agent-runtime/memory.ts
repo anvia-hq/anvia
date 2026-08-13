@@ -18,7 +18,7 @@ export type MemoryPreparation = {
   };
 };
 
-export class PromptRequestMemory {
+export class AgentRunMemory {
   constructor(
     private readonly agent: Agent,
     private readonly memoryContext: MemoryContext | undefined,

@@ -1,3 +1,4 @@
+import type { AgentDeltaEvent } from "../../agent/run-types";
 import type {
   AssistantContent as AssistantContentType,
   CompletionResponse,
@@ -9,7 +10,6 @@ import type {
   ToolCall,
 } from "../../completion/index";
 import { Usage } from "../../completion/index";
-import type { AgentDeltaEvent } from "../../request/types";
 
 type ReasoningState = {
   id?: string;

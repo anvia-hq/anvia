@@ -1,10 +1,10 @@
+import type { AgentStreamEvent } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionStreamEvent,
   Message,
   Usage,
 } from "@anvia/core/completion";
-import type { AgentStreamEvent } from "@anvia/core/request";
 import type { UIMessage, UIStreamEvent, UIStreamRequest } from "@anvia/core/ui";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";

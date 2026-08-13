@@ -1,14 +1,27 @@
 export type { AgentSession } from "./agent";
 export { Agent } from "./agent";
 export { AgentBuilder } from "./builder";
+export { AgentRunCancelledError, MaxTurnsError, ToolApprovalRequiredError } from "./errors";
+export type { CompletionRetryContext, CompletionRetryOptions } from "./retry";
+export type {
+  AgentChildStreamEvent,
+  AgentChildStreamEventWithoutToolCallDeltas,
+  AgentChildStreamEventWithToolCallDeltas,
+  AgentDeltaEvent,
+  AgentErrorStreamEvent,
+  AgentInput,
+  AgentResponse,
+  AgentRunOptions,
+  AgentStream,
+  AgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas,
+  AgentStreamEventWithToolCallDeltas,
+  AgentStreamOptions,
+  AgentToolCallDeltaEvent,
+} from "./run-types";
 export type {
   AgentDynamicContext,
   AgentDynamicTool,
-  AgentEventAppendInput,
-  AgentEventRecord,
-  AgentEventStore,
-  AgentEventStoreInclude,
-  AgentEventStoreOptions,
   AgentMemoryOptions,
   AgentObserverInput,
   AgentOptions,

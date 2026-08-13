@@ -3,6 +3,6 @@
 "@anvia/logger": patch
 ---
 
-Expose `new Agent(options)` as the primary declarative agent API, add run IDs to prompt responses
-and observer starts, deprecate singular builder registrations, and begin retiring agent event stores
-in favor of observability integrations.
+Expose `new Agent(options)` with direct `generate()` and steerable `stream()` execution, add run IDs
+to agent responses and observer starts, remove the prompt-request API and request subpath, remove
+singular builder registrations, and remove agent event stores in favor of observability integrations.

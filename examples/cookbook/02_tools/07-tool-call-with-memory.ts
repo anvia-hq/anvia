@@ -78,7 +78,7 @@ const agent = new Agent({
 const session = agent.session("ticket-demo", { userId: "cookbook-user" });
 const prompt = "Use the ticket tool to summarize TICKET-1001 and remember who owns it.";
 
-for await (const event of session.prompt(prompt).stream()) {
+for await (const event of session.stream(prompt)) {
   if (event.type === "tool_call") {
     console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
   }
@@ -94,5 +94,5 @@ for await (const event of session.prompt(prompt).stream()) {
 
 process.stdout.write("\n");
 
-const followUp = await session.prompt("Who owns the ticket we just discussed?").send();
+const followUp = await session.generate("Who owns the ticket we just discussed?");
 console.log(followUp.output);

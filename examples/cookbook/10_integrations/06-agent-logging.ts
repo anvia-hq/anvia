@@ -48,15 +48,17 @@ const agent = new Agent({
   ],
 });
 
-const response = await agent
-  .prompt("Summarize ticket TICKET-1001 for the product engineering team.")
-  .withTrace({
-    name: "support-ticket-logging",
-    userId: "cookbook-user",
-    sessionId: "cookbook-session",
-    metadata: { ticketId: "TICKET-1001", example: "integrations:06" },
-    tags: ["cookbook", "logging"],
-  })
-  .send();
+const response = await agent.generate(
+  "Summarize ticket TICKET-1001 for the product engineering team.",
+  {
+    trace: {
+      name: "support-ticket-logging",
+      userId: "cookbook-user",
+      sessionId: "cookbook-session",
+      metadata: { ticketId: "TICKET-1001", example: "integrations:06" },
+      tags: ["cookbook", "logging"],
+    },
+  },
+);
 
 console.log(response.output);

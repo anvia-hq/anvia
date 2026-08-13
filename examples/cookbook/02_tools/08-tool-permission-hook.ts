@@ -1,6 +1,5 @@
-import { Agent } from "@anvia/core/agent";
+import { Agent, AgentRunCancelledError } from "@anvia/core/agent";
 import { createHook } from "@anvia/core/hooks";
-import { PromptCancelledError } from "@anvia/core/request";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -83,15 +82,13 @@ const agent = new Agent({
 });
 
 try {
-  const response = await agent
-    .prompt(
-      "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
-    )
-    .send();
+  const response = await agent.generate(
+    "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
+  );
 
   console.log(response.output);
 } catch (error) {
-  if (error instanceof PromptCancelledError) {
+  if (error instanceof AgentRunCancelledError) {
     // Without Studio or another approval handler, requestApproval cancels clearly.
     console.log("prompt cancelled:", error.reason);
   } else {

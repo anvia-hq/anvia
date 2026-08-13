@@ -25,9 +25,9 @@ try {
     maxTurns: 3,
   });
 
-  for await (const event of agent
-    .prompt("Add 8 and 13, then increment the counter by the result.")
-    .stream()) {
+  for await (const event of agent.stream(
+    "Add 8 and 13, then increment the counter by the result.",
+  )) {
     if (event.type === "tool_call") {
       console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
     }

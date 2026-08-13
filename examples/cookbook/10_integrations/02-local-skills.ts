@@ -23,7 +23,7 @@ const agent = new Agent({
 const prompt =
   "Draft release notes for Anvia: added local skills, MCP tools, streaming, and PDF/image attachments.";
 
-for await (const event of agent.prompt(prompt).stream()) {
+for await (const event of agent.stream(prompt)) {
   if (event.type === "tool_call") {
     console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
   }

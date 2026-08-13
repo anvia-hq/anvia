@@ -13,7 +13,6 @@ export * from "../../src/memory";
 export * from "../../src/model-listing";
 export * from "../../src/observability";
 export * from "../../src/pipeline";
-export * from "../../src/request";
 export * from "../../src/skills";
 export * from "../../src/streaming";
 export * from "../../src/tool";

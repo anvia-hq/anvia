@@ -39,6 +39,6 @@ const agent = new Agent({
   dynamicContexts: [{ index: index, topK: 1 }],
 });
 
-const response = await agent.prompt("What should I do for a security incident?").send();
+const response = await agent.generate("What should I do for a security incident?");
 
 console.log(response.output);

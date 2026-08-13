@@ -1,6 +1,6 @@
+import type { AgentResponse } from "@anvia/core/agent";
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
-import type { PromptResponse } from "@anvia/core/request";
 import { OpenAIClient } from "@anvia/openai";
 
 const openAIClient = new OpenAIClient({
@@ -38,10 +38,10 @@ const result = await runEvalSuite({
   cases,
   target: agentEvalTarget<string>(agent),
   metrics: [
-    contains<string, PromptResponse, string>({
+    contains<string, AgentResponse, string>({
       actual: ({ output }) => output.output,
     }),
-    exactMatch<string, PromptResponse, string>({
+    exactMatch<string, AgentResponse, string>({
       name: "not_blank",
       actual: ({ output }) => output.output.trim().length > 0,
       expected: true,

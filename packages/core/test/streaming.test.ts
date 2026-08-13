@@ -2,10 +2,9 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
   AgentBuilder,
-  type AgentEventAppendInput,
-  type AgentEventRecord,
-  type AgentEventStore,
+  AgentRunCancelledError,
   type AgentRunErrorArgs,
+  type AgentStream,
   type AgentStreamEvent,
   type AgentStreamEventWithoutToolCallDeltas,
   type AgentStreamEventWithToolCallDeltas,
@@ -13,7 +12,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
-  cancelPrompt,
+  cancelRun,
   createHook,
   createMiddleware,
   createObserver,
@@ -22,7 +21,6 @@ import {
   defineOutputGuardrail,
   getAssistantGenerationMetadata,
   Message,
-  PromptCancelledError,
   type StreamingCompletionModel,
   ToolOutput,
   toReadableStream,
@@ -73,24 +71,6 @@ async function* streamThenThrow(
   throw error;
 }
 
-class RecordingEventStore implements AgentEventStore {
-  readonly appendCalls: AgentEventAppendInput[] = [];
-
-  async append(input: AgentEventAppendInput): Promise<void> {
-    this.appendCalls.push(input);
-  }
-
-  async load(runId: string): Promise<AgentEventRecord[]> {
-    return this.appendCalls.filter((call) => call.runId === runId);
-  }
-
-  async clear(runId: string): Promise<void> {
-    const remaining = this.appendCalls.filter((call) => call.runId !== runId);
-    this.appendCalls.length = 0;
-    this.appendCalls.push(...remaining);
-  }
-}
-
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
@@ -102,17 +82,17 @@ const addTool = createTool({
   execute: (args) => args.x + args.y,
 });
 
-describe("PromptRequest streaming", () => {
+describe("Agent streaming", () => {
   it("types tool call deltas by default and narrows explicit opt-out streams", () => {
     const model = new StreamingQueueModel([]);
     const agent = new AgentBuilder("test-agent", model).build();
 
-    expectTypeOf(agent.prompt("hi").stream()).toEqualTypeOf<AsyncIterable<AgentStreamEvent>>();
-    expectTypeOf(agent.prompt("hi").stream({ includeToolCallDeltas: false })).toEqualTypeOf<
-      AsyncIterable<AgentStreamEventWithoutToolCallDeltas>
+    expectTypeOf(agent.stream("hi")).toEqualTypeOf<AgentStream<AgentStreamEvent>>();
+    expectTypeOf(agent.stream("hi", { includeToolCallDeltas: false })).toEqualTypeOf<
+      AgentStream<AgentStreamEventWithoutToolCallDeltas>
     >();
-    expectTypeOf(agent.prompt("hi").stream({ includeToolCallDeltas: true })).toEqualTypeOf<
-      AsyncIterable<AgentStreamEvent>
+    expectTypeOf(agent.stream("hi", { includeToolCallDeltas: true })).toEqualTypeOf<
+      AgentStream<AgentStreamEvent>
     >();
     expectTypeOf<AgentStreamEventWithToolCallDeltas>().toEqualTypeOf<AgentStreamEvent>();
   });
@@ -126,7 +106,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).instructions("system").build();
 
-    const events = await collect(agent.prompt("hi").stream());
+    const events = await collect(agent.stream("hi"));
 
     expect(events.map((event) => event.type)).toEqual([
       "turn_start",
@@ -147,7 +127,7 @@ describe("PromptRequest streaming", () => {
     try {
       const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
       const agent = new AgentBuilder("test-agent", model).build();
-      const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+      const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
       expect((await iterator.next()).value).toMatchObject({ type: "turn_start" });
       expect((await iterator.next()).value).toMatchObject({ type: "generation_start" });
@@ -172,7 +152,7 @@ describe("PromptRequest streaming", () => {
     const agent = new AgentBuilder("test-agent", model).build();
 
     const events = await collect(
-      agent.prompt("hi").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).stream(),
+      agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     );
 
     expect(events.map((event) => event.type)).toEqual([
@@ -196,7 +176,7 @@ describe("PromptRequest streaming", () => {
     const agent = new AgentBuilder("test-agent", model).build();
 
     const events = await collect(
-      agent.prompt("hi").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).stream(),
+      agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     );
 
     expect(events.some((event) => event.type === "error")).toBe(false);
@@ -220,7 +200,7 @@ describe("PromptRequest streaming", () => {
     const agent = new AgentBuilder("test-agent", model).build();
 
     const events = await collect(
-      agent.prompt("hi").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).stream(),
+      agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     );
 
     expect(events.at(-1)).toMatchObject({
@@ -243,7 +223,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
 
-    const events = await collect(agent.prompt("hi").stream());
+    const events = await collect(agent.stream("hi"));
 
     expect(events.at(-1)).toMatchObject({ type: "final", output: "done", usage: finalUsage });
   });
@@ -253,7 +233,7 @@ describe("PromptRequest streaming", () => {
     const providerUsage = usage(7, 2);
     const model = new StreamingQueueModel([[{ type: "error", error, usage: providerUsage }]]);
     const agent = new AgentBuilder("test-agent", model).build();
-    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -265,7 +245,7 @@ describe("PromptRequest streaming", () => {
     const error = new Error("provider failed before usage");
     const model = new StreamingQueueModel([[{ type: "error", error }]]);
     const agent = new AgentBuilder("test-agent", model).build();
-    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -288,8 +268,8 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "error", error }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
-    const iterator = agent.prompt("add").stream()[Symbol.asyncIterator]();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).build();
+    const iterator = agent.stream("add")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -332,16 +312,16 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model)
       .observe(observer)
-      .tool(failingTool)
+      .tools([failingTool])
       .hook(
         createHook({
           onToolError() {
-            return cancelPrompt("stop after tool failure");
+            return cancelRun("stop after tool failure");
           },
         }),
       )
       .build();
-    const iterator = agent.prompt("fail").stream()[Symbol.asyncIterator]();
+    const iterator = agent.stream("fail")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -350,7 +330,7 @@ describe("PromptRequest streaming", () => {
     await expect(iterator.next()).rejects.toBe(errorEvent.error);
   });
 
-  it("applies completion retries through PromptRequest readable streams", async () => {
+  it("applies completion retries through readable agent streams", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new StreamingQueueModel([
       streamThenThrow([], error),
@@ -359,10 +339,7 @@ describe("PromptRequest streaming", () => {
     const agent = new AgentBuilder("test-agent", model).build();
 
     const text = await readAll(
-      agent
-        .prompt("hi")
-        .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
-        .readableStream(),
+      toReadableStream(agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })),
     );
     const events = text
       .trim()
@@ -374,7 +351,7 @@ describe("PromptRequest streaming", () => {
     expect(model.requests).toHaveLength(2);
   });
 
-  it("serializes tool call deltas through PromptRequest readable streams by default", async () => {
+  it("serializes tool call deltas through readable agent streams by default", async () => {
     const model = new StreamingQueueModel([
       [
         {
@@ -387,9 +364,9 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).build();
 
-    const text = await readAll(agent.prompt("add").readableStream());
+    const text = await readAll(toReadableStream(agent.stream("add")));
     const events = text
       .trim()
       .split("\n")
@@ -417,9 +394,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
     const iterator = agent
-      .prompt("hi")
-      .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
-      .stream()
+      .stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
@@ -442,9 +417,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
     const iterator = agent
-      .prompt("hi")
-      .withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 })
-      .stream()
+      .stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
@@ -457,7 +430,7 @@ describe("PromptRequest streaming", () => {
   it("streams post-middleware response content when response middleware is registered", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "secret" }]]);
     const agent = new AgentBuilder("test-agent", model)
-      .middleware(
+      .middlewares([
         createMiddleware({
           onCompletionResponse({ response }) {
             return {
@@ -468,10 +441,10 @@ describe("PromptRequest streaming", () => {
             };
           },
         }),
-      )
+      ])
       .build();
 
-    const events = await collect(agent.prompt("hi").stream());
+    const events = await collect(agent.stream("hi"));
     const textDeltas = events
       .filter((event): event is Extract<AgentStreamEvent, { type: "text_delta" }> => {
         return event.type === "text_delta";
@@ -494,12 +467,12 @@ describe("PromptRequest streaming", () => {
       .hook(
         createHook({
           onRunEnd() {
-            return cancelPrompt("blocked at end");
+            return cancelRun("blocked at end");
           },
         }),
       )
       .build();
-    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
     const events: AgentStreamEvent[] = [];
 
     events.push(await nextEvent(iterator));
@@ -516,7 +489,7 @@ describe("PromptRequest streaming", () => {
       "error",
     ]);
     expect(events.at(-1)).toMatchObject({ type: "error", usage: finalUsage });
-    await expect(iterator.next()).rejects.toBeInstanceOf(PromptCancelledError);
+    await expect(iterator.next()).rejects.toBeInstanceOf(AgentRunCancelledError);
   });
 
   it("retains completed usage when an output guardrail fails", async () => {
@@ -539,46 +512,12 @@ describe("PromptRequest streaming", () => {
     const agent = new AgentBuilder("test-agent", model)
       .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
       .build();
-    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
+    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent).toEqual({ type: "error", error: guardrailError, usage: finalUsage });
     await expect(iterator.next()).rejects.toBe(guardrailError);
-  });
-
-  it("retains completed usage when event persistence fails", async () => {
-    const finalUsage = usage(7, 3);
-    const persistenceError = new Error("event persistence failed");
-    let failed = false;
-    const eventStore: AgentEventStore = {
-      async append(input) {
-        if (!failed && eventType(input.event) === "turn_end") {
-          failed = true;
-          throw persistenceError;
-        }
-      },
-      async load() {
-        return [];
-      },
-    };
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "final",
-          response: completionResponse([AssistantContent.text("done")], finalUsage),
-        },
-      ],
-    ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .eventStore(eventStore, { include: "all" })
-      .build();
-    const iterator = agent.prompt("hi").stream()[Symbol.asyncIterator]();
-
-    const errorEvent = await nextAgentError(iterator);
-
-    expect(errorEvent).toEqual({ type: "error", error: persistenceError, usage: finalUsage });
-    await expect(iterator.next()).rejects.toBe(persistenceError);
   });
 
   it("retains every completed turn usage when the max-turn limit fails the run", async () => {
@@ -604,8 +543,8 @@ describe("PromptRequest streaming", () => {
         },
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).defaultMaxTurns(0).build();
-    const iterator = agent.prompt("loop").stream()[Symbol.asyncIterator]();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).defaultMaxTurns(0).build();
+    const iterator = agent.stream("loop")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -613,17 +552,54 @@ describe("PromptRequest streaming", () => {
     await expect(iterator.next()).rejects.toBe(errorEvent.error);
   });
 
-  it("rejects concurrent stream execution on the same prompt request", async () => {
+  it("rejects concurrent consumption of the same agent stream", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
     const agent = new AgentBuilder("test-agent", model).build();
-    const request = agent.prompt("hi");
-    const iterator = request.stream()[Symbol.asyncIterator]();
+    const stream = agent.stream("hi");
+    const iterator = stream[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
-    await expect(collect(request.stream())).rejects.toThrow("PromptRequest is already running.");
+    await expect(collect(stream)).rejects.toThrow("Agent stream is already running.");
 
     const rest = await collectIterator(iterator);
     expect(rest.at(-1)).toMatchObject({ type: "final", output: "done" });
+  });
+
+  it("accepts steering before consumption and rejects it after completion", async () => {
+    const model = new StreamingQueueModel([
+      [{ type: "text_delta", delta: "first" }],
+      [{ type: "text_delta", delta: "second" }],
+    ]);
+    const agent = new AgentBuilder("test-agent", model).build();
+    const stream = agent.stream("hi");
+
+    expect(stream.steer("revise")).toBe(true);
+    const events = await collect(stream);
+
+    expect(events.at(-1)).toMatchObject({ type: "final", output: "second" });
+    expect(stream.steer("late")).toBe(false);
+    await expect(collect(stream)).rejects.toThrow("Agent stream has already been consumed.");
+  });
+
+  it("rejects steering after stream errors and cancellation", async () => {
+    const errorStream = new AgentBuilder("test-agent", new StreamingQueueModel([]))
+      .build()
+      .stream("hi");
+    await expect(collect(errorStream)).rejects.toThrow("No queued response");
+    expect(errorStream.steer("late")).toBe(false);
+
+    const cancelledStream = new AgentBuilder("test-agent", new StreamingQueueModel([]))
+      .hook(
+        createHook({
+          onRunStart() {
+            return cancelRun("stop");
+          },
+        }),
+      )
+      .build()
+      .stream("hi");
+    await expect(collect(cancelledStream)).rejects.toBeInstanceOf(AgentRunCancelledError);
+    expect(cancelledStream.steer("late")).toBe(false);
   });
 
   it("continues when steering arrives before a no-tool response finalizes", async () => {
@@ -632,8 +608,8 @@ describe("PromptRequest streaming", () => {
       [{ type: "text_delta", delta: "second" }],
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
-    const request = agent.prompt("hi");
-    const iterator = request.stream()[Symbol.asyncIterator]();
+    const stream = agent.stream("hi");
+    const iterator = stream[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({
       type: "turn_start",
@@ -651,7 +627,7 @@ describe("PromptRequest streaming", () => {
     });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
-    expect(request.steer("revise")).toBe(true);
+    expect(stream.steer("revise")).toBe(true);
 
     const rest = await collectIterator(iterator);
     expect(rest.map((event) => event.type)).toEqual([
@@ -702,12 +678,12 @@ describe("PromptRequest streaming", () => {
       [{ type: "tool_call", toolCall }],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(slowAddTool).build();
-    const request = agent.prompt("add");
-    const eventsPromise = collect(request.stream());
+    const agent = new AgentBuilder("test-agent", model).tools([slowAddTool]).build();
+    const stream = agent.stream("add");
+    const eventsPromise = collect(stream);
 
     await toolStarted.promise;
-    expect(request.steer("also explain")).toBe(true);
+    expect(stream.steer("also explain")).toBe(true);
     toolRelease.resolve(7);
 
     const events = await eventsPromise;
@@ -733,8 +709,8 @@ describe("PromptRequest streaming", () => {
       [{ type: "text_delta", delta: "done" }],
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
-    const request = agent.prompt("start");
-    const iterator = request.stream()[Symbol.asyncIterator]();
+    const stream = agent.stream("start");
+    const iterator = stream[Symbol.asyncIterator]();
     const firstSteer = Message.user("first steer");
     const secondSteer = Message.user("second steer");
 
@@ -743,8 +719,8 @@ describe("PromptRequest streaming", () => {
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
-    expect(request.steer(firstSteer)).toBe(true);
-    expect(request.steer([secondSteer])).toBe(true);
+    expect(stream.steer(firstSteer)).toBe(true);
+    expect(stream.steer([secondSteer])).toBe(true);
 
     const rest = await collectIterator(iterator);
     expect(rest[0]).toMatchObject({
@@ -792,7 +768,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
 
-    const events = await collect(agent.prompt("hi").stream());
+    const events = await collect(agent.stream("hi"));
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
@@ -834,9 +810,9 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).build();
 
-    const events = await collect(agent.prompt("add").stream());
+    const events = await collect(agent.stream("add"));
 
     expect(events).toContainEqual({
       type: "tool_call_delta",
@@ -878,9 +854,9 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).build();
 
-    const events = await collect(agent.prompt("add").stream({ includeToolCallDeltas: false }));
+    const events = await collect(agent.stream("add", { includeToolCallDeltas: false }));
 
     expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_call_delta" }));
     expect(events).toContainEqual({
@@ -911,8 +887,8 @@ describe("PromptRequest streaming", () => {
     const releaseMiddleware = deferred<void>();
     const model = new StreamingQueueModel([firstTurn, [{ type: "text_delta", delta: "7" }]]);
     const agent = new AgentBuilder("test-agent", model)
-      .tool(addTool)
-      .middleware(
+      .tools([addTool])
+      .middlewares([
         createMiddleware({
           async onCompletionResponse({ response }) {
             middlewareStarted.resolve();
@@ -920,9 +896,9 @@ describe("PromptRequest streaming", () => {
             return { response };
           },
         }),
-      )
+      ])
       .build();
-    const iterator = agent.prompt("add").stream()[Symbol.asyncIterator]();
+    const iterator = agent.stream("add")[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start", turn: 1 });
@@ -977,17 +953,17 @@ describe("PromptRequest streaming", () => {
       [{ type: "text_delta", delta: "done" }],
     ]);
     const agent = new AgentBuilder("test-agent", model)
-      .tool(addTool)
-      .middleware(
+      .tools([addTool])
+      .middlewares([
         createMiddleware({
           onToolOutput({ result }) {
             return `stored:${result}`;
           },
         }),
-      )
+      ])
       .build();
 
-    const events = await collect(agent.prompt("add").stream());
+    const events = await collect(agent.stream("add"));
 
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -1029,13 +1005,9 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const eventStore = new RecordingEventStore();
-    const agent = new AgentBuilder("test-agent", model)
-      .tool(screenshotTool)
-      .eventStore(eventStore, { include: "all" })
-      .build();
+    const agent = new AgentBuilder("test-agent", model).tools([screenshotTool]).build();
 
-    const events = await collect(agent.prompt("screenshot").stream());
+    const events = await collect(agent.stream("screenshot"));
 
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -1056,16 +1028,6 @@ describe("PromptRequest streaming", () => {
         },
       ]),
     );
-    expect(
-      eventStore.appendCalls.some((call) => {
-        const event = JSON.parse(JSON.stringify(call.event)) as AgentStreamEvent;
-        return (
-          event.type === "tool_result" &&
-          event.result === "screen\n[image:image/png]" &&
-          event.structuredResult?.[1]?.type === "image"
-        );
-      }),
-    ).toBe(true);
   });
 
   it("streams concurrent tool results as each tool finishes", async () => {
@@ -1106,12 +1068,8 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(slowTool).tool(fastTool).build();
-    const iterator = agent
-      .prompt("call both")
-      .withToolConcurrency(2)
-      .stream()
-      [Symbol.asyncIterator]();
+    const agent = new AgentBuilder("test-agent", model).tools([slowTool]).tools([fastTool]).build();
+    const iterator = agent.stream("call both", { toolConcurrency: 2 })[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
     expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start" });
@@ -1188,10 +1146,10 @@ describe("PromptRequest streaming", () => {
     ]);
     const childAgent = new AgentBuilder("child", childModel).name("Child Agent").build();
     const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
+      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
       .build();
 
-    const events = await collect(parentAgent.prompt("delegate").stream());
+    const events = await collect(parentAgent.stream("delegate"));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
     expect(childEvents.map((event) => event.event.type)).toEqual([
@@ -1245,16 +1203,14 @@ describe("PromptRequest streaming", () => {
       [{ type: "text_delta", delta: "7" }],
     ]);
     const childAgent = new AgentBuilder("child", childModel)
-      .tool(addTool)
+      .tools([addTool])
       .defaultMaxTurns(2)
       .build();
     const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
+      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
       .build();
 
-    const events = await collect(
-      parentAgent.prompt("delegate").stream({ includeToolCallDeltas: false }),
-    );
+    const events = await collect(parentAgent.stream("delegate", { includeToolCallDeltas: false }));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
     expect(childEvents.map((event) => eventType(event.event))).not.toContain("tool_call_delta");
@@ -1287,7 +1243,6 @@ describe("PromptRequest streaming", () => {
   });
 
   it("propagates tool call deltas through streaming agent tools by default", async () => {
-    const eventStore = new RecordingEventStore();
     const parentModel = new StreamingQueueModel([
       [
         {
@@ -1309,15 +1264,14 @@ describe("PromptRequest streaming", () => {
       [{ type: "text_delta", delta: "7" }],
     ]);
     const childAgent = new AgentBuilder("child", childModel)
-      .tool(addTool)
+      .tools([addTool])
       .defaultMaxTurns(2)
       .build();
     const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
-      .eventStore(eventStore)
+      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
       .build();
 
-    const events = await collect(parentAgent.prompt("delegate").stream());
+    const events = await collect(parentAgent.stream("delegate"));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
     expect(childEvents).toContainEqual(
@@ -1341,76 +1295,6 @@ describe("PromptRequest streaming", () => {
         }),
       }),
     );
-    expect(eventStore.appendCalls).toContainEqual(
-      expect.objectContaining({
-        event: expect.objectContaining({
-          type: "agent_tool_event",
-          event: expect.objectContaining({ type: "tool_call_delta", id: "call_add" }),
-        }),
-      }),
-    );
-  });
-
-  it("persists streamed parent and child agent events to the event store", async () => {
-    const eventStore = new RecordingEventStore();
-    const parentModel = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "inspect" }),
-        },
-      ],
-      [{ type: "text_delta", delta: "parent done" }],
-    ]);
-    const childModel = new StreamingQueueModel([[{ type: "text_delta", delta: "child done" }]]);
-    const childAgent = new AgentBuilder("child", childModel).build();
-    const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
-      .eventStore(eventStore, { include: "all" })
-      .build();
-
-    const events = await collect(parentAgent.prompt("delegate").stream());
-    const finalEvent = events.find(
-      (event): event is Extract<AgentStreamEvent, { type: "final" }> => event.type === "final",
-    );
-
-    expect(eventStore.appendCalls).toHaveLength(events.length);
-    expect(finalEvent).toMatchObject({ type: "final", runId: expect.any(String) });
-    expect(eventStore.appendCalls.every((call) => call.runId === finalEvent?.runId)).toBe(true);
-    expect(eventStore.appendCalls.some((call) => eventType(call.event) === "turn_start")).toBe(
-      true,
-    );
-    expect(
-      eventStore.appendCalls.some(
-        (call) => eventType(call.event) === "agent_tool_event" && call.agentId === "child",
-      ),
-    ).toBe(true);
-  });
-
-  it("can persist only streamed child agent tool events", async () => {
-    const eventStore = new RecordingEventStore();
-    const parentModel = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "inspect" }),
-        },
-      ],
-      [{ type: "text_delta", delta: "parent done" }],
-    ]);
-    const childModel = new StreamingQueueModel([[{ type: "text_delta", delta: "child done" }]]);
-    const childAgent = new AgentBuilder("child", childModel).build();
-    const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
-      .eventStore(eventStore, { include: "agent_tool_events" })
-      .build();
-
-    await collect(parentAgent.prompt("delegate").stream());
-
-    expect(eventStore.appendCalls.length).toBeGreaterThan(0);
-    expect(
-      eventStore.appendCalls.every((call) => eventType(call.event) === "agent_tool_event"),
-    ).toBe(true);
   });
 
   it("buffers reasoning deltas without ids into one reasoning message", async () => {
@@ -1423,7 +1307,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
 
-    const events = await collect(agent.prompt("reason").stream());
+    const events = await collect(agent.stream("reason"));
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
@@ -1456,7 +1340,7 @@ describe("PromptRequest streaming", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).build();
 
-    const events = await collect(agent.prompt("reason").stream());
+    const events = await collect(agent.stream("reason"));
 
     expect(events).toContainEqual({
       type: "reasoning_delta",
@@ -1511,9 +1395,9 @@ describe("PromptRequest streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).build();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).build();
 
-    const events = await collect(agent.prompt("add").stream());
+    const events = await collect(agent.stream("add"));
 
     expect(events).toContainEqual({
       type: "tool_call",

@@ -56,8 +56,8 @@ const agent = new Agent({
   tools: [longReportTool],
 });
 
-const response = await agent
-  .prompt("Create a short update from the long report about onboarding.")
-  .send();
+const response = await agent.generate(
+  "Create a short update from the long report about onboarding.",
+);
 
 console.log(response.output);

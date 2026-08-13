@@ -36,7 +36,7 @@ const agent = new Agent({
 
 const session = agent.session("demo-session", { userId: "cookbook-user" });
 
-await session.prompt("Remember that my project is named Anvia.").send();
-const response = await session.prompt("What is my project named?").send();
+await session.generate("Remember that my project is named Anvia.");
+const response = await session.generate("What is my project named?");
 
 console.log(response.output);

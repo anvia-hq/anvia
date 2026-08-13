@@ -31,8 +31,8 @@ const agent = new Agent({
   ],
 });
 
-const response = await agent
-  .prompt("Who owns the checkout launch checklist, and what should the engineer include?")
-  .send();
+const response = await agent.generate(
+  "Who owns the checkout launch checklist, and what should the engineer include?",
+);
 
 console.log(response.output);

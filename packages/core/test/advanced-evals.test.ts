@@ -360,7 +360,7 @@ describe("advanced eval metrics", () => {
     expect(model.requests).toHaveLength(3);
   });
 
-  it("scores turn relevancy from EvalTurn arrays and native PromptResponse messages", async () => {
+  it("scores turn relevancy from EvalTurn arrays and native AgentResponse messages", async () => {
     const turns = [
       { role: "user" as const, content: "My name is Ada" },
       { role: "assistant" as const, content: "Hello Ada" },

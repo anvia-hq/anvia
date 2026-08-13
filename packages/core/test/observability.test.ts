@@ -173,15 +173,14 @@ describe("agent observability", () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
     const agent = new AgentBuilder("test-agent", model).observe(observer).build();
 
-    const result = await agent
-      .prompt("hello")
-      .withTrace({
+    const result = await agent.generate("hello", {
+      trace: {
         name: "test-run",
         userId: "user_1",
         metadata: { case: "text" },
         promptRef: { name: "support.system", version: 3 },
-      })
-      .send();
+      },
+    });
 
     expect(result.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
     expect(result.runId).toEqual(expect.any(String));
@@ -246,7 +245,7 @@ describe("agent observability", () => {
     const agent = new AgentBuilder("test-agent", model).observe(observer).build();
 
     await expect(
-      agent.prompt("hello").withCompletionRetries({ initialDelayMs: 0, maxDelayMs: 0 }).send(),
+      agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     ).resolves.toMatchObject({ output: "recovered" });
 
     expect(eventTypes(observer)).toEqual([
@@ -283,9 +282,9 @@ describe("agent observability", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new AgentBuilder("test-agent", model).observe(observer).tool(addTool).build();
+    const agent = new AgentBuilder("test-agent", model).observe(observer).tools([addTool]).build();
 
-    await expect(agent.prompt("add").send()).resolves.toMatchObject({ output: "7" });
+    await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
 
     expect(eventTypes(observer)).toEqual([
       "run_start",
@@ -327,7 +326,7 @@ describe("agent observability", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model)
       .observe(observer)
-      .tool(addTool)
+      .tools([addTool])
       .hook(
         createHook({
           onToolCall() {
@@ -337,7 +336,7 @@ describe("agent observability", () => {
       )
       .build();
 
-    await agent.prompt("add").send();
+    await agent.generate("add");
 
     expect(observer.events).toContainEqual(
       expect.objectContaining({
@@ -355,11 +354,11 @@ describe("agent observability", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model)
       .observe(observer)
-      .tool(addTool)
+      .tools([addTool])
       .defaultMaxTurns(0)
       .build();
 
-    await expect(agent.prompt("loop").send()).rejects.toThrow("Reached max turn limit");
+    await expect(agent.generate("loop")).rejects.toThrow("Reached max turn limit");
 
     expect(eventTypes(observer).at(-1)).toBe("run_error");
   });
@@ -380,9 +379,9 @@ describe("agent observability", () => {
         { type: "text_delta", delta: "llo" },
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model).observe(observer).tool(addTool).build();
+    const agent = new AgentBuilder("test-agent", model).observe(observer).tools([addTool]).build();
 
-    const events = await collect(agent.prompt("add").stream());
+    const events = await collect(agent.stream("add"));
 
     expect(events.at(-1)).toMatchObject({ type: "final", output: "hello" });
     expect(eventTypes(observer)).toEqual([
@@ -436,17 +435,14 @@ describe("agent observability", () => {
       new AgentBuilder("test-agent", new QueueModel([response([AssistantContent.text("ok")])]))
         .observe(observer)
         .build()
-        .prompt("hello")
-        .send(),
+        .generate("hello"),
     ).resolves.toMatchObject({ output: "ok" });
 
     await expect(
       new AgentBuilder("test-agent", new QueueModel([response([AssistantContent.text("ok")])]))
         .observe(observer)
         .build()
-        .prompt("hello")
-        .withTrace({ failOnObserverError: true })
-        .send(),
+        .generate("hello", { trace: { failOnObserverError: true } }),
     ).rejects.toThrow("observer failed");
   });
 
@@ -472,7 +468,7 @@ describe("agent observability", () => {
       ],
     ]);
     const agent = new AgentBuilder("test-agent", model).observe(observer).build();
-    await collect(agent.prompt("hi").stream());
+    await collect(agent.stream("hi"));
 
     expect(updates).toEqual([
       { turn: 1, delta: { type: "text_delta", delta: "he" } },
@@ -497,7 +493,7 @@ describe("agent observability", () => {
     };
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
     const agent = new AgentBuilder("test-agent", model).observe(observer).build();
-    await agent.prompt("hi").send();
+    await agent.generate("hi");
     expect(updates).toEqual([]);
   });
 
@@ -514,7 +510,7 @@ describe("agent observability", () => {
     };
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hi" }]]);
     const agent = new AgentBuilder("test-agent", model).observe(observer).build();
-    await expect(collect(agent.prompt("hi").stream())).resolves.toBeDefined();
+    await expect(collect(agent.stream("hi"))).resolves.toBeDefined();
   });
 });
 

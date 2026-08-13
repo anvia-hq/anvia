@@ -258,7 +258,7 @@ describe("skills", () => {
       .defaultMaxTurns(1)
       .build();
 
-    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+    await expect(agent.generate("review")).resolves.toMatchObject({ output: "loaded" });
 
     expect(model.requests[0]?.instructions).toEqual(
       expect.stringContaining("Base instructions.\n\nYou have access to Agent Skills."),
@@ -286,14 +286,14 @@ describe("skills", () => {
     const events: string[] = [];
     const agent = new AgentBuilder("test-agent", model)
       .skills(skillSet)
-      .middleware(
+      .middlewares([
         createMiddleware({
           onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
         }),
-      )
+      ])
       .hook(
         createHook({
           onToolResult({ result }) {
@@ -304,7 +304,7 @@ describe("skills", () => {
       .defaultMaxTurns(1)
       .build();
 
-    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+    await expect(agent.generate("review")).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -335,14 +335,14 @@ describe("skills", () => {
     const events: string[] = [];
     const agent = new AgentBuilder("test-agent", model)
       .tools(skillSet.tools)
-      .middleware(
+      .middlewares([
         createMiddleware({
           onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
         }),
-      )
+      ])
       .hook(
         createHook({
           onToolResult({ result }) {
@@ -353,7 +353,7 @@ describe("skills", () => {
       .defaultMaxTurns(1)
       .build();
 
-    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+    await expect(agent.generate("review")).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -388,7 +388,7 @@ describe("skills", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).skills(skillSet).defaultMaxTurns(1).build();
 
-    const events = await collect(agent.prompt("review").stream());
+    const events = await collect(agent.stream("review"));
 
     expect(events).toContainEqual(
       expect.objectContaining({

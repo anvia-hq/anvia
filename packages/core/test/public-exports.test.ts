@@ -3,8 +3,16 @@ import type {
   AgentOptions,
   DynamicContextOptions,
   DynamicToolOptions,
+  AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
   AgentSession as PublicAgentSessionType,
+  AgentStreamEvent as PublicAgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas as PublicAgentStreamEventWithoutToolCallDeltas,
+  AgentStreamEventWithToolCallDeltas as PublicAgentStreamEventWithToolCallDeltas,
+  AgentStreamOptions as PublicAgentStreamOptions,
+  AgentToolCallDeltaEvent as PublicAgentToolCallDeltaEvent,
   Agent as PublicAgentType,
+  CompletionRetryContext as PublicCompletionRetryContext,
+  CompletionRetryOptions as PublicCompletionRetryOptions,
 } from "../src/agent";
 import * as publicAgent from "../src/agent";
 import * as audioGeneration from "../src/audio-generation";
@@ -35,17 +43,6 @@ import * as memory from "../src/memory";
 import * as modelListing from "../src/model-listing";
 import * as observability from "../src/observability";
 import * as pipeline from "../src/pipeline";
-import type {
-  AgentErrorStreamEvent as RequestAgentErrorStreamEvent,
-  AgentStreamEvent as RequestAgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas as RequestAgentStreamEventWithoutToolCallDeltas,
-  AgentStreamEventWithToolCallDeltas as RequestAgentStreamEventWithToolCallDeltas,
-  AgentStreamOptions as RequestAgentStreamOptions,
-  AgentToolCallDeltaEvent as RequestAgentToolCallDeltaEvent,
-  CompletionRetryContext as RequestCompletionRetryContext,
-  CompletionRetryOptions as RequestCompletionRetryOptions,
-} from "../src/request";
-import * as request from "../src/request";
 import * as skills from "../src/skills";
 import * as streaming from "../src/streaming";
 import * as tool from "../src/tool";
@@ -87,12 +84,12 @@ describe("public exports", () => {
     expect("AgentSession" in internalAgent).toBe(true);
   });
 
-  it("keeps prompt runtime helpers out of the public agent entrypoint", () => {
+  it("exposes agent run errors from the public agent entrypoint", () => {
     expect("createHook" in publicAgent).toBe(false);
     expect("skipTool" in publicAgent).toBe(false);
-    expect("PromptCancelledError" in publicAgent).toBe(false);
-    expect("MaxTurnsError" in publicAgent).toBe(false);
-    expect("ToolApprovalRequiredError" in publicAgent).toBe(false);
+    expect("AgentRunCancelledError" in publicAgent).toBe(true);
+    expect("MaxTurnsError" in publicAgent).toBe(true);
+    expect("ToolApprovalRequiredError" in publicAgent).toBe(true);
   });
 
   it("exposes prompt hooks from the hooks entrypoint", () => {
@@ -101,30 +98,27 @@ describe("public exports", () => {
     expect("skipTool" in hooks).toBe(true);
   });
 
-  it("exposes prompt request contracts from the request entrypoint", () => {
-    expect("PromptCancelledError" in request).toBe(true);
-    expect("MaxTurnsError" in request).toBe(true);
-    expect("ToolApprovalRequiredError" in request).toBe(true);
-    expectTypeOf<RootCompletionRetryContext>().toEqualTypeOf<RequestCompletionRetryContext>();
-    expectTypeOf<RootCompletionRetryOptions>().toEqualTypeOf<RequestCompletionRetryOptions>();
-    expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<RequestAgentErrorStreamEvent>();
-    expectTypeOf<RootAgentStreamOptions>().toEqualTypeOf<RequestAgentStreamOptions>();
-    expectTypeOf<RootAgentToolCallDeltaEvent>().toEqualTypeOf<RequestAgentToolCallDeltaEvent>();
-    expectTypeOf<RootAgentStreamEvent>().toEqualTypeOf<RequestAgentStreamEvent>();
-    expectTypeOf<RootAgentStreamEventWithoutToolCallDeltas>().toEqualTypeOf<RequestAgentStreamEventWithoutToolCallDeltas>();
-    expectTypeOf<RootAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<RequestAgentStreamEventWithToolCallDeltas>();
+  it("exposes agent run contracts from root and agent entrypoints", () => {
+    expectTypeOf<RootCompletionRetryContext>().toEqualTypeOf<PublicCompletionRetryContext>();
+    expectTypeOf<RootCompletionRetryOptions>().toEqualTypeOf<PublicCompletionRetryOptions>();
+    expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<PublicAgentErrorStreamEvent>();
+    expectTypeOf<RootAgentStreamOptions>().toEqualTypeOf<PublicAgentStreamOptions>();
+    expectTypeOf<RootAgentToolCallDeltaEvent>().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
+    expectTypeOf<RootAgentStreamEvent>().toEqualTypeOf<PublicAgentStreamEvent>();
+    expectTypeOf<RootAgentStreamEventWithoutToolCallDeltas>().toEqualTypeOf<PublicAgentStreamEventWithoutToolCallDeltas>();
+    expectTypeOf<RootAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<PublicAgentStreamEventWithToolCallDeltas>();
     expectTypeOf<
-      Extract<RequestAgentStreamEvent, { type: "tool_call_delta" }>
-    >().toEqualTypeOf<RequestAgentToolCallDeltaEvent>();
+      Extract<PublicAgentStreamEvent, { type: "tool_call_delta" }>
+    >().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
     expectTypeOf<
-      Extract<RequestAgentStreamEventWithoutToolCallDeltas, { type: "tool_call_delta" }>
+      Extract<PublicAgentStreamEventWithoutToolCallDeltas, { type: "tool_call_delta" }>
     >().toBeNever();
-    expectTypeOf<RequestAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<RequestAgentStreamEvent>();
+    expectTypeOf<PublicAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<PublicAgentStreamEvent>();
     expectTypeOf<
-      Extract<RequestAgentStreamEvent, { type: "error" }>
-    >().toEqualTypeOf<RequestAgentErrorStreamEvent>();
+      Extract<PublicAgentStreamEvent, { type: "error" }>
+    >().toEqualTypeOf<PublicAgentErrorStreamEvent>();
 
-    const errorEvent: RequestAgentErrorStreamEvent = {
+    const errorEvent: PublicAgentErrorStreamEvent = {
       type: "error",
       error: new Error("failed"),
       usage: Usage.empty(),
@@ -132,7 +126,7 @@ describe("public exports", () => {
     expect(errorEvent.usage).toEqual(Usage.empty());
 
     // @ts-expect-error Agent runtime error events require cumulative usage.
-    const missingUsage: RequestAgentErrorStreamEvent = { type: "error", error: "failed" };
+    const missingUsage: PublicAgentErrorStreamEvent = { type: "error", error: "failed" };
     void missingUsage;
   });
 
@@ -150,7 +144,6 @@ describe("public exports", () => {
   it("keeps public subpath runtime exports available", () => {
     expect(audioGeneration).toHaveProperty("AudioGenerationRequestBuilder");
     expect(hooks).toHaveProperty("createHook");
-    expect(request).toHaveProperty("PromptRequest");
     expect(audioGeneration).toHaveProperty("audioGenerationRequest");
     expect(completion).toHaveProperty("CompletionRequestBuilder");
     expect(completion).toHaveProperty("createCompletion");

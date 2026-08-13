@@ -6,7 +6,7 @@ import type {
   ToolChoice,
 } from "../completion/index";
 import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
-import type { PromptHook } from "../hooks";
+import type { AgentHook } from "../hooks";
 import type { McpServer } from "../mcp";
 import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
@@ -33,7 +33,7 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   additionalParams?: JsonValue | undefined;
   toolChoice?: ToolChoice | undefined;
   maxTurns?: number | undefined;
-  hook?: PromptHook | undefined;
+  hook?: AgentHook | undefined;
   outputSchema?: ZodSchema | undefined;
   observers?: AgentObserverInput[] | undefined;
   approvals?: ToolApprovalsOptions | undefined;
@@ -72,7 +72,7 @@ export type ResolvedAgentOptions<M extends CompletionModel = CompletionModel> = 
   providerTools?: ProviderTool[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
-  hook?: PromptHook | undefined;
+  hook?: AgentHook | undefined;
   outputSchema?: import("../completion/index").JsonObject | undefined;
   observers?: AgentObserverRegistration[] | undefined;
   approvals?: ToolApprovalsOptions | undefined;
@@ -81,8 +81,6 @@ export type ResolvedAgentOptions<M extends CompletionModel = CompletionModel> = 
   dynamicTools?: DynamicToolRegistration[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;
-  /** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-  eventStore?: AgentEventStoreRegistration | undefined;
 };
 
 export type AgentToolOptions = {
@@ -90,44 +88,6 @@ export type AgentToolOptions = {
   description?: string | undefined;
   maxTurns?: number | undefined;
   stream?: boolean | undefined;
-};
-
-/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-export type AgentEventStoreInclude = "all" | "agent_tool_events";
-
-/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-export type AgentEventStoreOptions = {
-  include?: AgentEventStoreInclude | undefined;
-};
-
-/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-export type AgentEventAppendInput = {
-  runId: string;
-  agentId: string;
-  agentName?: string | undefined;
-  turn?: number | undefined;
-  toolName?: string | undefined;
-  toolCallId?: string | undefined;
-  internalCallId?: string | undefined;
-  event: unknown;
-};
-
-/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-export type AgentEventRecord = AgentEventAppendInput & {
-  createdAt?: Date | undefined;
-};
-
-/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-export interface AgentEventStore {
-  append(input: AgentEventAppendInput): Promise<void>;
-  load(runId: string): Promise<AgentEventRecord[]>;
-  clear?(runId: string): Promise<void>;
-}
-
-/** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-export type AgentEventStoreRegistration = {
-  store: AgentEventStore;
-  options: Required<AgentEventStoreOptions>;
 };
 
 export type DynamicContextOptions<T = unknown> = {

@@ -62,7 +62,7 @@ const agent = new Agent({
   tools: [getTicketTool],
 });
 
-for await (const event of agent.prompt("Summarize TICKET-1001 for a product engineer.").stream()) {
+for await (const event of agent.stream("Summarize TICKET-1001 for a product engineer.")) {
   if (event.type === "tool_call") {
     console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
   }

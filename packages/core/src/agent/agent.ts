@@ -12,11 +12,11 @@ import type {
 } from "../completion/index";
 import { getAssistantGenerationMetadata, isProviderTool } from "../completion/types";
 import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
-import type { PromptHook } from "../hooks";
+import type { AgentHook } from "../hooks";
+import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
-import { PromptRequest } from "../request";
 import { toProviderJsonSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/create-tool";
 import type { ToolSearchDocument } from "../tool/dynamic-tools";
@@ -34,8 +34,16 @@ import { ToolSet } from "../tool/tool-set";
 import type { VectorSearchIndex } from "../vector-store";
 import { normalizeAgentId } from "./ids";
 import type {
+  AgentInput,
+  AgentResponse,
+  AgentRunOptions,
+  AgentStream,
+  AgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas,
+  AgentStreamOptions,
+} from "./run-types";
+import type {
   AgentDynamicContext,
-  AgentEventStoreRegistration,
   AgentOptions,
   AgentToolOptions,
   DynamicContextRegistration,
@@ -59,7 +67,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly providerTools: ProviderTool[];
   readonly toolChoice: ToolChoice | undefined;
   readonly defaultMaxTurns: number | undefined;
-  readonly hook: PromptHook | undefined;
+  readonly hook: AgentHook | undefined;
   readonly outputSchema: JsonObject | undefined;
   readonly observers: AgentObserverRegistration[];
   readonly approvals: ToolApprovalsOptions | undefined;
@@ -68,8 +76,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly dynamicTools: DynamicToolRegistration[];
   readonly middlewares: AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
-  /** @deprecated Event stores will be removed in 1.0. Use observers for run inspection. */
-  readonly eventStore: AgentEventStoreRegistration | undefined;
 
   constructor(options: AgentOptions<M, ContextDocument>) {
     const resolved = resolveAgentOptions(options);
@@ -95,11 +101,26 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.dynamicTools = [...(resolved.dynamicTools ?? [])];
     this.middlewares = [...(resolved.middlewares ?? [])];
     this.memory = resolved.memory;
-    this.eventStore = resolved.eventStore;
   }
 
-  prompt(prompt: string | MessageType | MessageType[]): PromptRequest<M> {
-    return PromptRequest.fromAgent(this, prompt);
+  generate(input: AgentInput, options: AgentRunOptions = {}): Promise<AgentResponse> {
+    return AgentRun.fromAgent(this, input, options).generate();
+  }
+
+  stream(
+    input: AgentInput,
+    options: AgentStreamOptions & { includeToolCallDeltas: false },
+  ): AgentStream<AgentStreamEventWithoutToolCallDeltas>;
+  stream(
+    input: AgentInput,
+    options?: AgentStreamOptions & { includeToolCallDeltas?: true },
+  ): AgentStream<AgentStreamEvent>;
+  stream(input: AgentInput, options: AgentStreamOptions): AgentStream<AgentStreamEvent>;
+  stream(input: AgentInput, options: AgentStreamOptions = {}): AgentStream<AgentStreamEvent> {
+    return new DefaultAgentStream(
+      AgentRun.fromAgent(this, input, options),
+      options.includeToolCallDeltas !== false,
+    );
   }
 
   session(sessionId: string, options: SessionOptions = {}): AgentSession<M> {
@@ -134,9 +155,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       }),
       output: z.string(),
       execute: async ({ prompt }, context: ToolCallContext) => {
-        const request = this.prompt(prompt);
-        const childRequest =
-          options.maxTurns === undefined ? request : request.maxTurns(options.maxTurns);
         if (
           options.stream === true &&
           context.emitStreamEvent !== undefined &&
@@ -144,10 +162,10 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
           isStreamingCompletionModel(this.model)
         ) {
           let output = "";
-          const childStream =
-            context.includeToolCallDeltas === false
-              ? childRequest.stream({ includeToolCallDeltas: false })
-              : childRequest.stream();
+          const childStream = this.stream(prompt, {
+            maxTurns: options.maxTurns,
+            includeToolCallDeltas: context.includeToolCallDeltas !== false,
+          });
           for await (const event of childStream) {
             const streamEvent: ToolCallStreamEvent = {
               agentId: this.id,
@@ -163,7 +181,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
           }
           return output;
         }
-        const response = await childRequest.send();
+        const response = await this.generate(prompt, { maxTurns: options.maxTurns });
         return response.output;
       },
     });
@@ -318,6 +336,25 @@ function resolveAgentMemory<M extends CompletionModel, ContextDocument>(
   return { store, options: resolvedOptions };
 }
 
+class DefaultAgentStream<Event extends AgentStreamEvent = AgentStreamEvent>
+  implements AgentStream<Event>
+{
+  constructor(
+    private readonly run: AgentRun,
+    private readonly includeToolCallDeltas: boolean,
+  ) {}
+
+  steer(input: AgentInput): boolean {
+    return this.run.steer(input);
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<Event> {
+    return this.run
+      .events(this.includeToolCallDeltas)
+      [Symbol.asyncIterator]() as AsyncIterator<Event>;
+  }
+}
+
 export class AgentSession<M extends CompletionModel = CompletionModel> {
   constructor(
     private readonly agent: Agent<M>,
@@ -328,11 +365,39 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
     },
   ) {}
 
-  prompt(prompt: string | MessageType): PromptRequest<M> {
-    if (Array.isArray(prompt)) {
-      throw new TypeError("AgentSession.prompt does not accept Message[] transcripts.");
+  generate(input: string | MessageType, options: AgentRunOptions = {}): Promise<AgentResponse> {
+    if (Array.isArray(input)) {
+      throw new TypeError("AgentSession.generate does not accept Message[] transcripts.");
     }
-    return PromptRequest.fromAgent(this.agent, prompt, { memoryContext: this.context });
+    return AgentRun.fromAgent(this.agent, input, {
+      ...options,
+      memoryContext: this.context,
+    }).generate();
+  }
+
+  stream(
+    input: string | MessageType,
+    options: AgentStreamOptions & { includeToolCallDeltas: false },
+  ): AgentStream<AgentStreamEventWithoutToolCallDeltas>;
+  stream(
+    input: string | MessageType,
+    options?: AgentStreamOptions & { includeToolCallDeltas?: true },
+  ): AgentStream<AgentStreamEvent>;
+  stream(input: string | MessageType, options: AgentStreamOptions): AgentStream<AgentStreamEvent>;
+  stream(
+    input: string | MessageType,
+    options: AgentStreamOptions = {},
+  ): AgentStream<AgentStreamEvent> {
+    if (Array.isArray(input)) {
+      throw new TypeError("AgentSession.stream does not accept Message[] transcripts.");
+    }
+    return new DefaultAgentStream(
+      AgentRun.fromAgent(this.agent, input, {
+        ...options,
+        memoryContext: this.context,
+      }),
+      options.includeToolCallDeltas !== false,
+    );
   }
 
   async messages(): Promise<MessageType[]> {

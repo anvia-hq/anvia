@@ -159,21 +159,21 @@ describe("completion model capabilities", () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it("PromptRequest.send enforces capabilities before model calls", async () => {
+  it("AgentRun.send enforces capabilities before model calls", async () => {
     const model = new QueueModel({ imageInput: false });
     const agent = new AgentBuilder("agent", model).build();
 
     await expect(
-      agent.prompt(Message.user([UserContent.imageUrl("https://example.com/a.png")])).send(),
+      agent.generate(Message.user([UserContent.imageUrl("https://example.com/a.png")])),
     ).rejects.toThrow("test:test-model does not support image input.");
     expect(model.requests).toHaveLength(0);
   });
 
-  it("PromptRequest.stream enforces streaming capabilities before model calls", async () => {
+  it("AgentRun.stream enforces streaming capabilities before model calls", async () => {
     const model = new StreamingQueueModel({ streaming: false });
     const agent = new AgentBuilder("agent", model).build();
 
-    await expect(collect(agent.prompt("hello").stream())).rejects.toThrow(
+    await expect(collect(agent.stream("hello"))).rejects.toThrow(
       "This completion model does not support streaming",
     );
     expect(model.requests).toHaveLength(0);

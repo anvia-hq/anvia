@@ -1,6 +1,19 @@
-import type { Agent } from "../agent/agent";
-import type { AgentEventAppendInput } from "../agent/types";
-import { isStreamingCompletionModel } from "../completion/create-completion";
+import type { Agent } from "../../agent/agent";
+import { AgentRunCancelledError, MaxTurnsError } from "../../agent/errors";
+import {
+  completionRetryDelayMs,
+  completionRetryErrorAttributes,
+  type ResolvedCompletionRetryOptions,
+  resolveCompletionRetryOptions,
+  waitForCompletionRetry,
+} from "../../agent/retry";
+import type {
+  AgentInput,
+  AgentResponse,
+  AgentRunOptions,
+  AgentStreamEvent,
+} from "../../agent/run-types";
+import { isStreamingCompletionModel } from "../../completion/create-completion";
 import {
   AssistantContent,
   assertCompletionRequestSupported,
@@ -18,145 +31,93 @@ import {
   type ToolResult,
   textFromAssistantContent,
   Usage,
-} from "../completion/index";
+} from "../../completion/index";
 import {
   appendGuardrailPolicies,
   type GuardrailDecisionRecord,
   type GuardrailPolicy,
-  type GuardrailPolicyInput,
   type GuardrailRunContext,
   hasEnforcedOutputGuardrails,
   runInputGuardrails,
   runOutputGuardrails,
-} from "../guardrails";
-import type { PromptHook } from "../hooks";
-import { runControl } from "../hooks";
-import { createAsyncQueue } from "../internal/async-queue";
-import { type MemoryPreparation, PromptRequestMemory } from "../internal/prompt-runtime/memory";
-import { fetchDynamicContext, fetchToolDefinitions } from "../internal/prompt-runtime/retrieval";
-import { CompletionStreamAccumulator } from "../internal/prompt-runtime/stream-accumulator";
-import {
-  addTurn,
-  addTurnToToolCallDelta,
-  isGenerationDeltaEvent,
-} from "../internal/prompt-runtime/stream-events";
+} from "../../guardrails";
+import type { AgentHook } from "../../hooks";
+import { runControl } from "../../hooks";
+import { MemoryCompactionError } from "../../memory/errors";
+import type { MemoryContext } from "../../memory/types";
+import { type ActiveAgentRunObservers, startAgentRunObservers } from "../../observability/group";
+import type {
+  AgentGenerationEndArgs,
+  AgentGenerationModelInfo,
+  AgentGenerationStartArgs,
+  AgentTraceOptions,
+} from "../../observability/types";
+import type { ToolApprovalsOptions } from "../../tool";
+import type { AgentMiddleware } from "../../tool/middleware";
+import { createAsyncQueue } from "../async-queue";
+import { extractRagText } from "../rag-text";
+import { AgentRunMemory, type MemoryPreparation } from "./memory";
+import { fetchDynamicContext, fetchToolDefinitions } from "./retrieval";
+import { CompletionStreamAccumulator } from "./stream-accumulator";
+import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
 import {
   type AgentToolEventPayload,
   ToolCallExecutor,
   type ToolExecutionEventPayload,
   type ToolExecutionObservation,
   type ToolResultEventPayload,
-} from "../internal/prompt-runtime/tool-execution";
-import { extractRagText } from "../internal/rag-text";
-import { MemoryCompactionError } from "../memory/errors";
-import type { MemoryContext } from "../memory/types";
-import { type ActiveAgentRunObservers, startAgentRunObservers } from "../observability/group";
-import type {
-  AgentGenerationEndArgs,
-  AgentGenerationModelInfo,
-  AgentGenerationStartArgs,
-  AgentTraceOptions,
-} from "../observability/types";
-import { toReadableStream } from "../streaming";
-import type { ToolApprovalsOptions } from "../tool";
-import type { AgentMiddleware } from "../tool/middleware";
-import { MaxTurnsError, PromptCancelledError } from "./errors";
-import {
-  type CompletionRetryOptions,
-  completionRetryDelayMs,
-  completionRetryErrorAttributes,
-  type ResolvedCompletionRetryOptions,
-  resolveCompletionRetryOptions,
-  waitForCompletionRetry,
-} from "./retry";
-import type {
-  AgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas,
-  AgentStreamOptions,
-  PromptResponse,
-} from "./types";
+} from "./tool-execution";
 
-export class PromptRequest<M extends CompletionModel = CompletionModel> {
+type AgentRunCreateOptions = AgentRunOptions & {
+  memoryContext?: MemoryContext | undefined;
+};
+
+export class AgentRun<M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
   private maxTurnCount: number;
-  private activeHook: PromptHook | undefined;
+  private activeHook: AgentHook | undefined;
   private approvalOptions: ToolApprovalsOptions | undefined;
   private guardrailPolicies: GuardrailPolicy[];
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
-  private concurrency = 1;
+  private readonly concurrency: number;
   private traceOptions: AgentTraceOptions | undefined;
   private completionRetryOptions: ResolvedCompletionRetryOptions | undefined;
-  private requestMiddlewares: AgentMiddleware[] = [];
+  private readonly requestMiddlewares: AgentMiddleware[];
   private readonly steeringMessages: MessageType[] = [];
   private runState: "idle" | "running" | "completed" | "errored" | "cancelled" = "idle";
-  private readonly memoryRecorder: PromptRequestMemory;
+  private readonly memoryRecorder: AgentRunMemory;
+  private readonly memoryContext: MemoryContext | undefined;
 
   private constructor(
     private readonly agent: Agent<M>,
     private promptMessage: MessageType,
     initialHistory: MessageType[] = [],
-    private readonly memoryContext: MemoryContext | undefined = undefined,
+    options: AgentRunCreateOptions = {},
   ) {
     this.chatHistory = initialHistory;
-    this.maxTurnCount = agent.defaultMaxTurns ?? 0;
-    this.activeHook = agent.hook;
-    this.approvalOptions = agent.approvals;
-    this.guardrailPolicies = [...agent.guardrails];
-    this.memoryRecorder = new PromptRequestMemory(agent, memoryContext, initialHistory);
+    this.maxTurnCount = options.maxTurns ?? agent.defaultMaxTurns ?? 0;
+    this.activeHook = options.hook ?? agent.hook;
+    this.approvalOptions = options.approvals ?? agent.approvals;
+    this.guardrailPolicies =
+      options.guardrails === undefined
+        ? [...agent.guardrails]
+        : appendGuardrailPolicies([...agent.guardrails], options.guardrails);
+    this.concurrency = Math.max(1, options.toolConcurrency ?? 1);
+    this.traceOptions = options.trace;
+    this.completionRetryOptions =
+      options.retries === undefined ? undefined : resolveCompletionRetryOptions(options.retries);
+    this.requestMiddlewares = [...(options.middlewares ?? [])];
+    this.memoryContext = options.memoryContext;
+    this.memoryRecorder = new AgentRunMemory(agent, options.memoryContext, initialHistory);
   }
 
   static fromAgent<M extends CompletionModel>(
     agent: Agent<M>,
-    prompt: string | MessageType | MessageType[],
-    options: { memoryContext?: MemoryContext | undefined } = {},
-  ): PromptRequest<M> {
-    const normalized = normalizePromptInput(prompt);
-    return new PromptRequest(agent, normalized.prompt, normalized.history, options.memoryContext);
-  }
-
-  maxTurns(maxTurns: number): this {
-    this.maxTurnCount = maxTurns;
-    return this;
-  }
-
-  withCompletionRetries(options: CompletionRetryOptions = {}): this {
-    this.completionRetryOptions = resolveCompletionRetryOptions(options);
-    return this;
-  }
-
-  withHook(hook: PromptHook): this {
-    this.activeHook = hook;
-    return this;
-  }
-
-  approvals(options: ToolApprovalsOptions): this {
-    this.approvalOptions = options;
-    return this;
-  }
-
-  guardrails(policies: GuardrailPolicyInput): this {
-    this.guardrailPolicies = appendGuardrailPolicies(this.guardrailPolicies, policies);
-    return this;
-  }
-
-  withToolConcurrency(concurrency: number): this {
-    this.concurrency = Math.max(1, concurrency);
-    return this;
-  }
-
-  withMiddleware(middleware: AgentMiddleware): this {
-    this.requestMiddlewares.push(middleware);
-    return this;
-  }
-
-  withMiddlewares(middlewares: AgentMiddleware[]): this {
-    this.requestMiddlewares.push(...middlewares);
-    return this;
-  }
-
-  withTrace(trace: AgentTraceOptions): this {
-    this.traceOptions = trace;
-    return this;
+    input: AgentInput,
+    options: AgentRunCreateOptions = {},
+  ): AgentRun<M> {
+    const normalized = normalizeAgentInput(input);
+    return new AgentRun(agent, normalized.prompt, normalized.history, options);
   }
 
   steer(input: string | MessageType | MessageType[]): boolean {
@@ -168,7 +129,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     return true;
   }
 
-  async send(): Promise<PromptResponse> {
+  async generate(): Promise<AgentResponse> {
     this.startRun();
     const runId = globalThis.crypto.randomUUID();
     let usage = Usage.empty();
@@ -190,7 +151,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       this.promptMessage = inputResult.prompt;
       if (inputResult.blocked) {
         const output = inputResult.message ?? "The request was blocked by a guardrail.";
-        const result: PromptResponse = {
+        const result: AgentResponse = {
           runId,
           output,
           usage: Usage.empty(),
@@ -212,7 +173,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       while (currentTurns <= this.maxTurnCount + 1) {
         const prompt = newMessages.at(-1);
         if (prompt === undefined) {
-          throw new Error("PromptRequest requires at least one message");
+          throw new Error("AgentRun requires at least one message");
         }
 
         lastPrompt = prompt;
@@ -290,7 +251,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             [finalAssistantMessage],
             pendingTurnMessages,
           );
-          const result: PromptResponse = {
+          const result: AgentResponse = {
             runId,
             output: guardedOutput.output,
             usage,
@@ -347,31 +308,20 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         usage = Usage.add(usage, error.usage);
       }
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
-      this.runState = finalError instanceof PromptCancelledError ? "cancelled" : "errored";
+      this.runState = finalError instanceof AgentRunCancelledError ? "cancelled" : "errored";
       await runObservers.error({ error: finalError, usage, messages: [...newMessages] });
       await this.memoryRecorder.recordError(runId, finalError, newMessages);
       throw finalError;
     }
   }
 
-  stream(): AsyncIterable<AgentStreamEvent>;
-  stream(options: {
-    includeToolCallDeltas: false;
-  }): AsyncIterable<AgentStreamEventWithoutToolCallDeltas>;
-  stream(options: { includeToolCallDeltas?: true }): AsyncIterable<AgentStreamEvent>;
-  stream(options: AgentStreamOptions): AsyncIterable<AgentStreamEvent>;
-  async *stream(options: AgentStreamOptions = {}): AsyncIterable<AgentStreamEvent> {
+  async *events(includeToolCallDeltas = true): AsyncIterable<AgentStreamEvent> {
     if (!this.agent.model.capabilities.streaming || !isStreamingCompletionModel(this.agent.model)) {
       throw new Error("This completion model does not support streaming");
     }
 
     this.startRun();
-    const includeToolCallDeltas = options.includeToolCallDeltas !== false;
     const runId = globalThis.crypto.randomUUID();
-    const emit = async (event: AgentStreamEvent): Promise<AgentStreamEvent> => {
-      await this.recordAgentEvent(runId, event);
-      return event;
-    };
     let usage = Usage.empty();
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
@@ -388,12 +338,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       });
       for (const decision of inputResult.decisions) {
         await this.recordGuardrailDecision(decision, runObservers);
-        yield await emit({ type: "guardrail_decision", decision });
+        yield { type: "guardrail_decision", decision };
       }
       this.promptMessage = inputResult.prompt;
       if (inputResult.blocked) {
         const output = inputResult.message ?? "The request was blocked by a guardrail.";
-        const result: PromptResponse = {
+        const result: AgentResponse = {
           runId,
           output,
           usage: Usage.empty(),
@@ -402,14 +352,14 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         };
         await runObservers.end(result);
         this.runState = "completed";
-        yield await emit({
+        yield {
           type: "final",
           runId,
           output: result.output,
           usage: result.usage,
           messages: result.messages,
           guardrails: result.guardrails,
-        });
+        };
         return;
       }
 
@@ -423,19 +373,19 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       while (currentTurns <= this.maxTurnCount + 1) {
         const prompt = newMessages.at(-1);
         if (prompt === undefined) {
-          throw new Error("PromptRequest requires at least one message");
+          throw new Error("AgentRun requires at least one message");
         }
 
         lastPrompt = prompt;
         currentTurns += 1;
 
         const historyForRequest = [...this.chatHistory, ...newMessages.slice(0, -1)];
-        yield await emit({
+        yield {
           type: "turn_start",
           turn: currentTurns,
           prompt,
           history: historyForRequest,
-        });
+        };
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
@@ -467,12 +417,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         );
         const generationObservers = await runObservers.startGeneration(generationStartArgs);
         const generationStartedAt = Date.now();
-        yield await emit({
+        yield {
           type: "generation_start",
           turn: currentTurns,
           request,
           modelInfo: generationStartArgs.modelInfo,
-        });
+        };
         const accumulator = new CompletionStreamAccumulator();
         let firstDeltaMs: number | undefined;
         const bufferResponseEvents = this.shouldBufferStreamResponseEvents();
@@ -495,7 +445,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
                 }
                 const mapped = accumulator.accept(event);
                 if (includeToolCallDeltas && event.type === "tool_call_delta") {
-                  yield await emit(addTurnToToolCallDelta(currentTurns, event));
+                  yield addTurnToToolCallDelta(currentTurns, event);
                 }
                 if (mapped !== undefined) {
                   await generationObservers.update?.({ turn: currentTurns, delta: mapped });
@@ -507,7 +457,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
                     (bufferOutputDeltas &&
                       (mapped.type === "text_delta" || mapped.type === "reasoning_delta"));
                   if (!shouldBuffer) {
-                    yield await emit(addTurn(currentTurns, mapped));
+                    yield addTurn(currentTurns, mapped);
                   }
                 }
               }
@@ -560,15 +510,15 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           if (!bufferOutputDeltas) {
             if (bufferResponseEvents) {
               for (const event of responseStreamEvents(currentTurns, response)) {
-                yield await emit(event);
+                yield event;
               }
             }
-            yield await emit({
+            yield {
               type: "turn_end",
               turn: currentTurns,
               response,
               firstDeltaMs,
-            });
+            };
             emittedTurnEnd = true;
           }
           if (this.steeringMessages.length > 0) {
@@ -594,7 +544,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             runObservers,
           );
           for (const decision of guardedOutput.decisions) {
-            yield await emit({ type: "guardrail_decision", decision });
+            yield { type: "guardrail_decision", decision };
           }
           response = guardedOutput.response;
           assistantMessage = this.generatedAssistantMessage(response, request);
@@ -611,19 +561,19 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
               response,
               bufferResponseEvents,
             )) {
-              yield await emit(event);
+              yield event;
             }
           }
           if (!emittedTurnEnd) {
-            yield await emit({
+            yield {
               type: "turn_end",
               turn: currentTurns,
               response,
               firstDeltaMs,
-            });
+            };
           }
 
-          const result: PromptResponse = {
+          const result: AgentResponse = {
             runId,
             output: guardedOutput.output,
             usage,
@@ -641,7 +591,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             pendingTurnMessages,
           );
           this.runState = "completed";
-          yield await emit({
+          yield {
             type: "final",
             runId,
             output: result.output,
@@ -652,18 +602,18 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
             guardrails: result.guardrails,
             sources: result.sources,
             providerToolCalls: result.providerToolCalls,
-          });
+          };
           return;
         }
 
         if (bufferResponseEvents) {
           for (const event of responseStreamEvents(currentTurns, response)) {
-            yield await emit(event);
+            yield event;
           }
         } else {
           for (const toolCall of toolCalls) {
             if (!emittedToolCallIds.has(toolCall.id)) {
-              yield await emit({ type: "tool_call", turn: currentTurns, toolCall });
+              yield { type: "tool_call", turn: currentTurns, toolCall };
             }
           }
         }
@@ -673,12 +623,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           [assistantMessage],
           pendingTurnMessages,
         );
-        yield await emit({
+        yield {
           type: "turn_end",
           turn: currentTurns,
           response,
           firstDeltaMs,
-        });
+        };
 
         const toolResultEvents = createAsyncQueue<ToolExecutionEventPayload>();
         const toolResultsPromise = this.executeToolCalls(
@@ -703,7 +653,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
           (error: unknown) => toolResultEvents.throw(error),
         );
         for await (const result of toolResultEvents) {
-          yield await emit({ turn: currentTurns, ...result });
+          yield { turn: currentTurns, ...result };
         }
         const toolResults = await toolResultsPromise;
         const toolMessage = Message.tool(toolResults);
@@ -724,7 +674,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         usage = Usage.add(usage, error.usage);
       }
       const finalError = await this.runRunErrorHook(error, usage, newMessages);
-      this.runState = finalError instanceof PromptCancelledError ? "cancelled" : "errored";
+      this.runState = finalError instanceof AgentRunCancelledError ? "cancelled" : "errored";
       const finalUsage = usage;
       await runObservers.error({
         error: finalError,
@@ -732,13 +682,9 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
         messages: [...newMessages],
       });
       await this.memoryRecorder.recordError(runId, finalError, newMessages);
-      yield await emit({ type: "error", error: finalError, usage: finalUsage });
+      yield { type: "error", error: finalError, usage: finalUsage };
       throw finalError;
     }
-  }
-
-  readableStream(options: AgentStreamOptions = {}): ReadableStream<Uint8Array> {
-    return toReadableStream(this.stream(options));
   }
 
   private async runCompletion(
@@ -1013,39 +959,6 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     );
   }
 
-  private async recordAgentEvent(runId: string, event: AgentStreamEvent): Promise<void> {
-    const registration = this.agent.eventStore;
-    if (registration === undefined) {
-      return;
-    }
-    if (registration.options.include === "agent_tool_events" && event.type !== "agent_tool_event") {
-      return;
-    }
-
-    const turn = "turn" in event ? event.turn : undefined;
-    const agentId = event.type === "agent_tool_event" ? event.agentId : this.agent.id;
-    const agentName = event.type === "agent_tool_event" ? event.agentName : this.agent.name;
-    const input: AgentEventAppendInput = {
-      runId,
-      agentId,
-      event,
-    };
-    if (agentName !== undefined) {
-      input.agentName = agentName;
-    }
-    if (turn !== undefined) {
-      input.turn = turn;
-    }
-    if (event.type === "agent_tool_event") {
-      input.toolName = event.toolName;
-      input.internalCallId = event.internalCallId;
-      if (event.toolCallId !== undefined) {
-        input.toolCallId = event.toolCallId;
-      }
-    }
-    await registration.store.append(input);
-  }
-
   private async runCompletionCallHook(
     prompt: MessageType,
     history: MessageType[],
@@ -1073,7 +986,7 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     }
   }
 
-  private async runRunEndHook(result: PromptResponse, newMessages: MessageType[]): Promise<void> {
+  private async runRunEndHook(result: AgentResponse, newMessages: MessageType[]): Promise<void> {
     const action = await this.activeHook?.onRunEnd?.({
       output: result.output,
       usage: result.usage,
@@ -1237,9 +1150,9 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
       return;
     }
     if (this.runState === "running") {
-      throw new Error("PromptRequest is already running.");
+      throw new Error("Agent stream is already running.");
     }
-    throw new Error("PromptRequest has already been used.");
+    throw new Error("Agent stream has already been consumed.");
   }
 
   private isTerminal(): boolean {
@@ -1248,12 +1161,12 @@ export class PromptRequest<M extends CompletionModel = CompletionModel> {
     );
   }
 
-  private cancelled(newMessages: MessageType[], reason: string): PromptCancelledError {
-    return new PromptCancelledError([...this.chatHistory, ...newMessages], reason);
+  private cancelled(newMessages: MessageType[], reason: string): AgentRunCancelledError {
+    return new AgentRunCancelledError([...this.chatHistory, ...newMessages], reason);
   }
 }
 
-function normalizePromptInput(prompt: string | MessageType | MessageType[]): {
+function normalizeAgentInput(prompt: AgentInput): {
   prompt: MessageType;
   history: MessageType[];
 } {
@@ -1264,11 +1177,11 @@ function normalizePromptInput(prompt: string | MessageType | MessageType[]): {
     return { prompt, history: [] };
   }
   if (prompt.length === 0) {
-    throw new TypeError("Prompt transcript must contain at least one message.");
+    throw new TypeError("Agent input transcript must contain at least one message.");
   }
   const activePrompt = prompt.at(-1);
   if (activePrompt === undefined) {
-    throw new TypeError("Prompt transcript must contain at least one message.");
+    throw new TypeError("Agent input transcript must contain at least one message.");
   }
   return {
     prompt: activePrompt,
@@ -1337,11 +1250,11 @@ function responseStreamEvents(
 function generationArtifacts(messages: MessageType[]): {
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
-  contextUsage?: import("../completion/index").ContextUsage;
+  contextUsage?: import("../../completion/index").ContextUsage;
 } {
   const sources = new Map<string, CompletionSource>();
   const providerToolCalls = new Map<string, ProviderToolCall>();
-  let contextUsage: import("../completion/index").ContextUsage | undefined;
+  let contextUsage: import("../../completion/index").ContextUsage | undefined;
   for (const message of messages) {
     const metadata = getAssistantGenerationMetadata(message);
     if (metadata !== undefined) {

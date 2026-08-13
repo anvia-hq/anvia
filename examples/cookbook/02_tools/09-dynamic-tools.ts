@@ -84,7 +84,7 @@ const agent = new Agent({
   dynamicTools: [{ index: toolIndex, topK: 1, threshold: 0.9 }],
 });
 
-await agent.prompt("Refund order A-100.").send();
+await agent.generate("Refund order A-100.");
 
 const selected = model.requests[0]?.tools.map((tool) => tool.name) ?? [];
 console.log("selected tools:", selected.join(", "));

@@ -12,13 +12,13 @@ export class MaxTurnsError extends Error {
   }
 }
 
-export class PromptCancelledError extends Error {
+export class AgentRunCancelledError extends Error {
   constructor(
     readonly chatHistory: Message[],
     readonly reason: string,
   ) {
-    super(`Prompt cancelled: ${reason}`);
-    this.name = "PromptCancelledError";
+    super(`Agent run cancelled: ${reason}`);
+    this.name = "AgentRunCancelledError";
   }
 }
 

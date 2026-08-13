@@ -48,16 +48,18 @@ const agent = new Agent({
 });
 
 try {
-  const response = await agent
-    .prompt("Summarize ticket TICKET-1001 for the product engineering team.")
-    .withTrace({
-      name: "support-ticket-summary",
-      userId: "cookbook-user",
-      sessionId: "cookbook-session",
-      metadata: { ticketId: "TICKET-1001", example: "integrations:03" },
-      tags: ["cookbook", "anvia"],
-    })
-    .send();
+  const response = await agent.generate(
+    "Summarize ticket TICKET-1001 for the product engineering team.",
+    {
+      trace: {
+        name: "support-ticket-summary",
+        userId: "cookbook-user",
+        sessionId: "cookbook-session",
+        metadata: { ticketId: "TICKET-1001", example: "integrations:03" },
+        tags: ["cookbook", "anvia"],
+      },
+    },
+  );
 
   console.log(response.output);
   console.log("trace:", response.trace?.traceId ?? "(not available)");

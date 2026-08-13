@@ -180,7 +180,7 @@ export class PipelineBuilder<Input, Output = Input> {
     return new PipelineBuilder<Input, string>(async (input, context) => {
       const value = await this.runStep(input, context);
       return runNode(context, next.node, async () => {
-        const response = await agent.prompt(String(value)).send();
+        const response = await agent.generate(String(value));
         return response.output;
       });
     }, next.state);

@@ -234,7 +234,7 @@ describe("Agent.asTool", () => {
       response([AssistantContent.toolCall("call_2", "add", { x: 2, y: 2 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).defaultMaxTurns(3).build();
+    const agent = new AgentBuilder("test-agent", model).tools([addTool]).defaultMaxTurns(3).build();
     const tool = agent.asTool({ name: "ask_agent", maxTurns: 0 });
 
     await expect(tool.call({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
@@ -253,7 +253,7 @@ describe("Agent.asTool", () => {
 
     toolSet.addTool(addTool);
 
-    await expect(agent.prompt("add numbers").send()).resolves.toMatchObject({ output: "done" });
+    await expect(agent.generate("add numbers")).resolves.toMatchObject({ output: "done" });
     expect(model.requests[0]?.tools).toEqual([expect.objectContaining({ name: "add" })]);
   });
 
@@ -268,7 +268,7 @@ describe("Agent.asTool", () => {
       .context("late context")
       .dynamicContext(dynamicContextIndex, { topK: 1 })
       .dynamicTools(dynamicToolIndex, { topK: 1 })
-      .middleware(createMiddleware({}))
+      .middlewares([createMiddleware({})])
       .observe(
         createObserver({
           startRun() {
@@ -307,13 +307,13 @@ describe("Agent.asTool", () => {
     ]);
     const toolSet = new ToolSet();
     const agent = new AgentBuilder("test-agent", model)
-      .tool(addTool)
+      .tools([addTool])
       .useToolSet(toolSet)
       .defaultMaxTurns(1)
       .build();
 
     expect(toolSet.get("add")).toBe(addTool);
-    await expect(agent.prompt("add numbers").send()).resolves.toMatchObject({ output: "done" });
+    await expect(agent.generate("add numbers")).resolves.toMatchObject({ output: "done" });
   });
 
   it("registers multiple wrapped agents as distinct tools", async () => {

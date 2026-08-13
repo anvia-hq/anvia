@@ -227,7 +227,7 @@ async function promptForImage(
           ? undefined
           : "Use 1-63 lowercase letters, numbers, or hyphens.",
     }));
-  if (prompts.isCancel(nameResult)) return cancelPrompt(prompts);
+  if (prompts.isCancel(nameResult)) return cancelRun(prompts);
   const name = String(nameResult);
 
   let runtimes = [...options.runtimes];
@@ -249,7 +249,7 @@ async function promptForImage(
         { value: "playwright", label: "Playwright + Chromium", hint: "Adds Node.js automatically" },
       ],
     });
-    if (prompts.isCancel(capabilities)) return cancelPrompt(prompts);
+    if (prompts.isCancel(capabilities)) return cancelRun(prompts);
     runtimes = capabilities.filter(isRuntime);
     features = capabilities.filter(isFeature);
   }
@@ -260,21 +260,21 @@ async function promptForImage(
     commonAptPackages,
     options.apt,
   );
-  if (aptResult === undefined) return cancelPrompt(prompts);
+  if (aptResult === undefined) return cancelRun(prompts);
   const npmResult = await selectCommonPackages(
     prompts,
     "Select common npm libraries (optional)",
     commonNpmPackages,
     options.npm,
   );
-  if (npmResult === undefined) return cancelPrompt(prompts);
+  if (npmResult === undefined) return cancelRun(prompts);
   const uvResult = await selectCommonPackages(
     prompts,
     "Select common Python libraries with uv (optional)",
     commonUvPackages,
     options.uv,
   );
-  if (uvResult === undefined) return cancelPrompt(prompts);
+  if (uvResult === undefined) return cancelRun(prompts);
 
   const tagResult =
     options.tag ??
@@ -282,24 +282,24 @@ async function promptForImage(
       message: "Docker image tag",
       initialValue: `anvia-sandbox-${name}:latest`,
     }));
-  if (prompts.isCancel(tagResult)) return cancelPrompt(prompts);
+  if (prompts.isCancel(tagResult)) return cancelRun(prompts);
   const outputResult =
     options.output ??
     (await prompts.text({
       message: "Generated source directory",
       initialValue: path.join(".anvia", "sandbox-images", name),
     }));
-  if (prompts.isCancel(outputResult)) return cancelPrompt(prompts);
+  if (prompts.isCancel(outputResult)) return cancelRun(prompts);
 
   const buildResult = options.buildExplicit
     ? options.build
     : await prompts.confirm({ message: "Build the image now?", initialValue: true });
-  if (prompts.isCancel(buildResult)) return cancelPrompt(prompts);
+  if (prompts.isCancel(buildResult)) return cancelRun(prompts);
   const confirmed = await prompts.confirm({
     message: "Create this sandbox image?",
     initialValue: true,
   });
-  if (prompts.isCancel(confirmed) || !confirmed) return cancelPrompt(prompts);
+  if (prompts.isCancel(confirmed) || !confirmed) return cancelRun(prompts);
 
   prompts.outro("Configuration ready");
   return {
@@ -332,7 +332,7 @@ async function selectCommonPackages(
   return [...new Set([...existing, ...result])];
 }
 
-function cancelPrompt(prompts: typeof import("@clack/prompts")): undefined {
+function cancelRun(prompts: typeof import("@clack/prompts")): undefined {
   prompts.cancel("Image creation cancelled.");
   return undefined;
 }

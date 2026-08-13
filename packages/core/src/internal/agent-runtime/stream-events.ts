@@ -1,9 +1,9 @@
-import type { CompletionStreamEvent } from "../../completion/types";
 import type {
   AgentDeltaEvent,
   AgentStreamEvent,
   AgentToolCallDeltaEvent,
-} from "../../request/types";
+} from "../../agent/run-types";
+import type { CompletionStreamEvent } from "../../completion/types";
 
 export function addTurn(turn: number, event: AgentDeltaEvent): AgentStreamEvent {
   if (event.type === "text_delta") {

@@ -1,7 +1,7 @@
 import {
+  type AgentHook,
   createHook,
   type HookAction,
-  type PromptHook,
   type ToolCallHookAction,
 } from "@anvia/core/hooks";
 import {
@@ -32,15 +32,14 @@ export function cloneAgent(agent: Agent, overrides: Partial<ResolvedAgentOptions
     dynamicTools: agent.dynamicTools,
     middlewares: agent.middlewares,
     memory: agent.memory,
-    eventStore: agent.eventStore,
     ...overrides,
   });
 }
 
 export function composeHooks(
-  first: PromptHook | undefined,
-  second: PromptHook | undefined,
-): PromptHook | undefined {
+  first: AgentHook | undefined,
+  second: AgentHook | undefined,
+): AgentHook | undefined {
   if (first === undefined) {
     return second;
   }

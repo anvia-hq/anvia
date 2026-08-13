@@ -52,10 +52,9 @@ const agent = new Agent({
   tools: [addTool, multiplyTool],
 });
 
-const response = await agent
-  .prompt("Calculate 3 + 9 and 7 * 6. Use both tools before answering.")
-  // Independent tool calls can run concurrently.
-  .withToolConcurrency(2)
-  .send();
+const response = await agent.generate(
+  "Calculate 3 + 9 and 7 * 6. Use both tools before answering.",
+  { toolConcurrency: 2 },
+);
 
 console.log(response.output);

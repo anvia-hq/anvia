@@ -14,18 +14,16 @@ const agent = new Agent({
 });
 
 // Multimodal prompts combine text with image content parts.
-const response = await agent
-  .prompt(
-    Message.user([
-      UserContent.text("What is shown in this image?"),
-      UserContent.imageUrl(
-        "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
-        {
-          detail: "auto",
-        },
-      ),
-    ]),
-  )
-  .send();
+const response = await agent.generate(
+  Message.user([
+    UserContent.text("What is shown in this image?"),
+    UserContent.imageUrl(
+      "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
+      {
+        detail: "auto",
+      },
+    ),
+  ]),
+);
 
 console.log(response.output);

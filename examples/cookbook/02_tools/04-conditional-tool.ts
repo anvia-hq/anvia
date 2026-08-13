@@ -31,7 +31,7 @@ const prompt = enableMathTools
   ? "What is 18 + 24? Use the add tool."
   : "Are arithmetic tools available in this run?";
 
-const response = await agent.prompt(prompt).send();
+const response = await agent.generate(prompt);
 
 console.log("math tools enabled:", enableMathTools);
 console.log(response.output);

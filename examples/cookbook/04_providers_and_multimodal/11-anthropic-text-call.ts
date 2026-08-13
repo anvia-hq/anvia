@@ -16,6 +16,6 @@ const agent = new Agent({
   instructions: "You are a concise assistant. Answer in two sentences or less.",
 });
 
-const response = await agent.prompt("Explain what a provider adapter does.").send();
+const response = await agent.generate("Explain what a provider adapter does.");
 
 console.log(response.output);

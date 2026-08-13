@@ -13,5 +13,5 @@ const agent = new Agent({
   instructions: "You are a concise assistant. Answer in two sentences or less.",
 });
 
-const response = await agent.prompt("Explain what a context-aware agent does.").send();
+const response = await agent.generate("Explain what a context-aware agent does.");
 console.log(response.output);

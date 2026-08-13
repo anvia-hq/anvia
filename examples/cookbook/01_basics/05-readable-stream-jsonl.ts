@@ -1,4 +1,5 @@
 import { Agent } from "@anvia/core/agent";
+import { toReadableStream } from "@anvia/core/streaming";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -13,10 +14,10 @@ const agent = new Agent({
   instructions: "You are a concise assistant.",
 });
 
-// readableStream() is useful when forwarding agent events from a web server.
-const stream = agent
-  .prompt("Give three short reasons to use AsyncIterable for streaming.")
-  .readableStream();
+// toReadableStream() is useful when forwarding agent events from a web server.
+const stream = toReadableStream(
+  agent.stream("Give three short reasons to use AsyncIterable for streaming."),
+);
 
 const reader = stream.getReader();
 const decoder = new TextDecoder();

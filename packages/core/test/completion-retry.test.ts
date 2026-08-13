@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { completionRetryDelayMs, resolveCompletionRetryOptions } from "../src/request/retry";
+import { completionRetryDelayMs, resolveCompletionRetryOptions } from "../src/agent/retry";
 
 describe("completion retry policy", () => {
   afterEach(() => {

@@ -308,7 +308,7 @@ describe("MCP tools", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model).mcp([fakeMcpServer()]).build();
 
-    await expect(agent.prompt("add").send()).resolves.toMatchObject({ output: "7" });
+    await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
 
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("mcp_add");
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -330,16 +330,16 @@ describe("MCP tools", () => {
     ]);
     const agent = new AgentBuilder("test-agent", model)
       .mcp([fakeMcpServer()])
-      .middleware(
+      .middlewares([
         createMiddleware({
           onToolOutput({ result }) {
             return `mcp:${result}`;
           },
         }),
-      )
+      ])
       .build();
 
-    await expect(agent.prompt("add").send()).resolves.toMatchObject({ output: "done" });
+    await expect(agent.generate("add")).resolves.toMatchObject({ output: "done" });
 
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -380,7 +380,7 @@ describe("MCP tools", () => {
       )
       .build();
 
-    const streamEvents = await collect(agent.prompt("add").stream());
+    const streamEvents = await collect(agent.stream("add"));
 
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("mcp_add");
     expect(streamEvents.at(-1)).toMatchObject({ type: "final", output: "7" });

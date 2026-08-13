@@ -462,7 +462,7 @@ describe("agent dynamic context", () => {
       .dynamicContext(index, { topK: 1 })
       .build();
 
-    await agent.prompt("cat").send();
+    await agent.generate("cat");
 
     expect(completionModel.requests[0]?.documents).toMatchObject([
       { id: "static", text: "static context" },
@@ -480,7 +480,7 @@ describe("agent dynamic context", () => {
       .dynamicContext(index, { topK: 1 })
       .build();
 
-    for await (const _event of agent.prompt("dog").stream()) {
+    for await (const _event of agent.stream("dog")) {
       // exhaust stream
     }
 
@@ -541,7 +541,7 @@ describe("agent dynamic tools", () => {
       .dynamicTools(index, { topK: 1, threshold: 0.9 })
       .build();
 
-    const response = await agent.prompt("refund order A-100").send();
+    const response = await agent.generate("refund order A-100");
 
     expect(completionModel.requests[0]?.tools).toEqual([
       expect.objectContaining({ name: "issue_refund" }),
@@ -567,7 +567,7 @@ describe("agent dynamic tools", () => {
       .dynamicTools(index, { topK: 1, threshold: 0.9 })
       .build();
 
-    for await (const _event of agent.prompt("dog").stream()) {
+    for await (const _event of agent.stream("dog")) {
       // exhaust stream
     }
 
@@ -595,11 +595,11 @@ describe("agent dynamic tools", () => {
     const index = await createToolIndex(embeddingModel, [dynamicRefundTool]);
     const completionModel = new QueueModel();
     const agent = new AgentBuilder("test-agent", completionModel)
-      .tool(staticRefundTool)
+      .tools([staticRefundTool])
       .dynamicTools(index, { topK: 1, threshold: 0.9 })
       .build();
 
-    await agent.prompt("refund order A-100").send();
+    await agent.generate("refund order A-100");
 
     expect(completionModel.requests[0]?.tools).toEqual([
       expect.objectContaining({ name: "issue_refund", description: "Static refund tool." }),
@@ -614,7 +614,7 @@ describe("agent dynamic tools", () => {
       .dynamicTools(index, { topK: 1, threshold: 0.95 })
       .build();
 
-    await agent.prompt("start").send();
+    await agent.generate("start");
 
     expect(completionModel.requests[0]?.tools).toEqual([]);
   });
@@ -631,11 +631,11 @@ describe("agent dynamic tools", () => {
     });
     const completionModel = new TwoTurnModel();
     const agent = new AgentBuilder("test-agent", completionModel)
-      .tool(seedTopicTool)
+      .tools([seedTopicTool])
       .dynamicTools(index, { topK: 1, threshold: 0.9 })
       .build();
 
-    await agent.prompt("start").send();
+    await agent.generate("start");
 
     expect(completionModel.requests[0]?.tools).toEqual([
       expect.objectContaining({ name: "seed_topic" }),

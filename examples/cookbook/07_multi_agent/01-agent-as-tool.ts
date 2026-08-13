@@ -74,7 +74,7 @@ const prompt = [
   "Prepare an incident brief for support, engineering, and customer success.",
 ].join(" ");
 
-for await (const event of coordinator.prompt(prompt).withToolConcurrency(3).stream()) {
+for await (const event of coordinator.stream(prompt, { toolConcurrency: 3 })) {
   if (event.type === "tool_call") {
     console.log("delegating:", event.toolCall.function.name, event.toolCall.function.arguments);
   }

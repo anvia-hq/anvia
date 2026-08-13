@@ -11,10 +11,30 @@ import type {
   ToolResultContent,
   Usage,
 } from "../completion/index";
-import type { GuardrailDecisionRecord } from "../guardrails";
-import type { AgentGenerationModelInfo, AgentTraceInfo } from "../observability/types";
+import type { GuardrailDecisionRecord, GuardrailPolicyInput } from "../guardrails";
+import type { AgentHook } from "../hooks";
+import type {
+  AgentGenerationModelInfo,
+  AgentTraceInfo,
+  AgentTraceOptions,
+} from "../observability/types";
+import type { AgentMiddleware, ToolApprovalsOptions } from "../tool";
+import type { CompletionRetryOptions } from "./retry";
 
-export type PromptResponse = {
+export type AgentInput = string | MessageType | MessageType[];
+
+export type AgentRunOptions = {
+  maxTurns?: number | undefined;
+  retries?: CompletionRetryOptions | undefined;
+  hook?: AgentHook | undefined;
+  approvals?: ToolApprovalsOptions | undefined;
+  guardrails?: GuardrailPolicyInput | undefined;
+  toolConcurrency?: number | undefined;
+  middlewares?: AgentMiddleware[] | undefined;
+  trace?: AgentTraceOptions | undefined;
+};
+
+export type AgentResponse = {
   runId: string;
   output: string;
   usage: Usage;
@@ -45,7 +65,7 @@ export type AgentErrorStreamEvent = {
   usage: Usage;
 };
 
-export type AgentStreamOptions = {
+export type AgentStreamOptions = AgentRunOptions & {
   /** @default true */
   includeToolCallDeltas?: boolean;
 };
@@ -168,3 +188,7 @@ export type AgentStreamEvent<RawResponse = unknown> =
 
 export type AgentStreamEventWithToolCallDeltas<RawResponse = unknown> =
   AgentStreamEvent<RawResponse>;
+
+export interface AgentStream<Event = AgentStreamEvent> extends AsyncIterable<Event> {
+  steer(input: AgentInput): boolean;
+}

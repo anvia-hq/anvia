@@ -1,3 +1,4 @@
+import type { AgentResponse, AgentStreamEvent } from "@anvia/core/agent";
 import type {
   CompletionModel,
   CompletionModelCapabilities,
@@ -11,7 +12,6 @@ import type {
 import type { Agent } from "@anvia/core/internal/agent";
 import type { ModelList } from "@anvia/core/model-listing";
 import type { Pipeline, PipelineGraph } from "@anvia/core/pipeline";
-import type { AgentStreamEvent, PromptResponse } from "@anvia/core/request";
 import type { Hono } from "hono";
 
 export type StudioCapability =
@@ -1182,7 +1182,7 @@ export type AgentRunUIRequest = {
   trace?: AgentTraceOptions;
 };
 
-export type AgentRunResponse = PromptResponse;
+export type AgentRunResponse = AgentResponse;
 
 export type AgentRunStreamEvent =
   | AgentStreamEvent

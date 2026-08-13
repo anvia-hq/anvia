@@ -29,6 +29,6 @@ const agent = new Agent({
   tools: [addTool],
 });
 
-const response = await agent.prompt("What is 12 + 30? Use the add tool.").send();
+const response = await agent.generate("What is 12 + 30? Use the add tool.");
 
 console.log(response.output);

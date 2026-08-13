@@ -1255,8 +1255,8 @@ describe("Anvia studio", () => {
     const index = await createToolIndex(embeddings, [lookupPolicyTool]);
     const refundTool = createRefundTool(() => "ok");
     const agent = new AgentBuilder("support", new QueueModel([]))
-      .tool(addTool)
-      .tool(refundTool)
+      .tools([addTool])
+      .tools([refundTool])
       .dynamicTools(index, { topK: 1 })
       .build();
     const runner = new Studio([agent]);
@@ -1294,7 +1294,7 @@ describe("Anvia studio", () => {
   });
 
   it("runs registered tools directly", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).tool(addTool).build();
+    const agent = new AgentBuilder("support", new QueueModel([])).tools([addTool]).build();
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1336,7 +1336,7 @@ describe("Anvia studio", () => {
       value: { session },
       enumerable: false,
     });
-    const agent = new AgentBuilder("coder", new QueueModel([])).tool(tool).build();
+    const agent = new AgentBuilder("coder", new QueueModel([])).tools([tool]).build();
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.sandboxes).toEqual({ enabled: true });
@@ -1364,7 +1364,7 @@ describe("Anvia studio", () => {
   it("exposes runtime status and richer agent runtime metadata", async () => {
     const agent = new AgentBuilder("support", new QueueModel([]))
       .name("Support")
-      .tool(addTool)
+      .tools([addTool])
       .defaultMaxTurns(4)
       .build();
     const runner = new Studio([agent]);
@@ -1656,7 +1656,7 @@ describe("Anvia studio", () => {
       new QueueModel([response([AssistantContent.text("ok")])]),
     )
       .name("Support")
-      .tool(createRefundTool(() => "ok"))
+      .tools([createRefundTool(() => "ok")])
       .build();
     const runner = new Studio([agent], {
       quickPrompts: {
@@ -1945,7 +1945,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
+    const agent = new AgentBuilder("support", model).tools([refundTool]).defaultMaxTurns(2).build();
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2045,7 +2045,7 @@ describe("Anvia studio", () => {
         },
       ],
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
+    const agent = new AgentBuilder("support", model).tools([refundTool]).defaultMaxTurns(2).build();
     const runner = new Studio([agent]);
     const response = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
@@ -2099,7 +2099,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund denied" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
+    const agent = new AgentBuilder("support", model).tools([refundTool]).defaultMaxTurns(2).build();
     const runner = new Studio([agent]);
     const created = await runner.fetch(
       new Request("http://runner.test/sessions", {
@@ -2200,7 +2200,7 @@ describe("Anvia studio", () => {
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
+      .tools([refundTool])
       .hook(
         createHook({
           onToolCall({ toolName, tool }) {
@@ -2299,7 +2299,7 @@ describe("Anvia studio", () => {
       [{ type: "text_delta", delta: "Refund denied" }],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
+      .tools([refundTool])
       .hook(
         createHook({
           onToolCall({ tool }) {
@@ -2377,7 +2377,7 @@ describe("Anvia studio", () => {
       [{ type: "text_delta", delta: "Thanks for the context" }],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(askQuestionTool)
+      .tools([askQuestionTool])
       .defaultMaxTurns(2)
       .build();
     const runner = new Studio([agent]);
@@ -2495,7 +2495,7 @@ describe("Anvia studio", () => {
       ],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(askQuestionTool)
+      .tools([askQuestionTool])
       .defaultMaxTurns(2)
       .build();
     const runner = new Studio([agent]);
@@ -2583,7 +2583,7 @@ describe("Anvia studio", () => {
       [{ type: "text_delta", delta: "I need choices first" }],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(askQuestionTool)
+      .tools([askQuestionTool])
       .defaultMaxTurns(2)
       .build();
     const runner = new Studio([agent]);
@@ -2629,7 +2629,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
+    const agent = new AgentBuilder("support", model).tools([refundTool]).defaultMaxTurns(2).build();
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2670,7 +2670,7 @@ describe("Anvia studio", () => {
       [{ type: "text_delta", delta: "Skipped" }],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
+      .tools([refundTool])
       .hook(
         createHook({
           onToolCall() {
@@ -2715,7 +2715,7 @@ describe("Anvia studio", () => {
       ],
     ]);
     const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
+      .tools([refundTool])
       .hook(
         createHook({
           onToolCall() {
@@ -2827,7 +2827,7 @@ describe("Anvia studio", () => {
 
   it("marks approvals enabled when a registered agent protects tools", () => {
     const agent = new AgentBuilder("support", new QueueModel([]))
-      .tool(createRefundTool(() => "ok"))
+      .tools([createRefundTool(() => "ok")])
       .build();
     const runner = new Studio([agent]);
 
@@ -3517,11 +3517,11 @@ describe("Anvia studio", () => {
     ]);
     const childAgent = new AgentBuilder("child", childModel)
       .name("Child Agent")
-      .tool(addTool)
+      .tools([addTool])
       .defaultMaxTurns(2)
       .build();
     const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
+      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
       .defaultMaxTurns(2)
       .build();
     const runner = new Studio([parentAgent]);
@@ -3826,7 +3826,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(addTool).defaultMaxTurns(2).build();
+    const agent = new AgentBuilder("support", model).tools([addTool]).defaultMaxTurns(2).build();
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(

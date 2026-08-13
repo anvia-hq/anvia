@@ -1,4 +1,6 @@
 import type { Agent } from "../../agent/agent";
+import { ToolApprovalRequiredError } from "../../agent/errors";
+import type { AgentChildStreamEvent } from "../../agent/run-types";
 import type {
   JsonObject,
   ToolCall,
@@ -7,7 +9,7 @@ import type {
   ToolResultContent,
 } from "../../completion";
 import { ToolContent } from "../../completion";
-import type { PromptHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
+import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
 import { runControl, toolCallControl } from "../../hooks";
 import type { ActiveAgentRunObservers, ActiveToolObservers } from "../../observability/group";
 import type {
@@ -15,8 +17,6 @@ import type {
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
 } from "../../observability/types";
-import { ToolApprovalRequiredError } from "../../request/errors";
-import type { AgentChildStreamEvent } from "../../request/types";
 import type {
   AnyTool,
   NormalizedToolOutput,
@@ -77,7 +77,7 @@ export type ToolExecutionRunContext = {
 export class ToolCallExecutor {
   constructor(
     private readonly agent: Agent,
-    private readonly activeHook: PromptHook | undefined,
+    private readonly activeHook: AgentHook | undefined,
     private readonly approvals: ToolApprovalsOptions | undefined,
     private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,

@@ -9,7 +9,7 @@ import {
 } from "../completion";
 import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
 import { appendGuardrailPolicies } from "../guardrails";
-import type { PromptHook } from "../hooks";
+import type { AgentHook } from "../hooks";
 import type { McpServer } from "../mcp";
 import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
@@ -24,9 +24,6 @@ import type { VectorSearchIndex } from "../vector-store";
 import { type Agent, createResolvedAgent } from "./agent";
 import { normalizeAgentId } from "./ids";
 import type {
-  AgentEventStore,
-  AgentEventStoreOptions,
-  AgentEventStoreRegistration,
   DynamicContextOptions,
   DynamicContextRegistration,
   DynamicToolOptions,
@@ -44,7 +41,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private params: JsonValue | undefined;
   private choice: ToolChoice | undefined;
   private turns: number | undefined;
-  private requestHook: PromptHook | undefined;
+  private agentHook: AgentHook | undefined;
   private schema: JsonObject | undefined;
   private approvalOptions: ToolApprovalsOptions | undefined;
   private guardrailPolicies: GuardrailPolicy[] = [];
@@ -54,7 +51,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
   private dynamicToolRegistrations: DynamicToolRegistration[] = [];
   private middlewareRegistrations: AgentMiddleware[] = [];
   private memoryRegistration: MemoryRegistration | undefined;
-  private eventStoreRegistration: AgentEventStoreRegistration | undefined;
   private activeToolSet = new ToolSet();
   private providerToolDefs: ProviderTool[] = [];
 
@@ -94,18 +90,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
 
   dynamicTools(index: VectorSearchIndex<ToolSearchDocument>, options: DynamicToolOptions): this {
     this.dynamicToolRegistrations.push({ index, options });
-    return this;
-  }
-
-  /**
-   * @deprecated Use `tools([tool])` instead.
-   */
-  tool(tool: AnyTool | ProviderTool): this {
-    if (isProviderTool(tool)) {
-      this.providerToolDefs.push(tool);
-    } else {
-      this.activeToolSet.addTool(tool);
-    }
     return this;
   }
 
@@ -166,16 +150,8 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  hook(hook: PromptHook): this {
-    this.requestHook = hook;
-    return this;
-  }
-
-  /**
-   * @deprecated Use `middlewares([middleware])` instead.
-   */
-  middleware(middleware: AgentMiddleware): this {
-    this.middlewareRegistrations.push(middleware);
+  hook(hook: AgentHook): this {
+    this.agentHook = hook;
     return this;
   }
 
@@ -216,19 +192,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
     return this;
   }
 
-  /**
-   * @deprecated Event stores will be removed in 1.0. Use `observe()` for run inspection.
-   */
-  eventStore(store: AgentEventStore, options: AgentEventStoreOptions = {}): this {
-    this.eventStoreRegistration = {
-      store,
-      options: {
-        include: options.include ?? "all",
-      },
-    };
-    return this;
-  }
-
   outputSchema(schema: ZodSchema): this {
     this.schema = toProviderJsonSchema(schema);
     return this;
@@ -249,7 +212,7 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       providerTools: this.providerToolDefs,
       toolChoice: this.choice,
       defaultMaxTurns: this.turns,
-      hook: this.requestHook,
+      hook: this.agentHook,
       outputSchema: this.schema,
       observers: this.observerRegistrations,
       approvals: this.approvalOptions,
@@ -258,7 +221,6 @@ export class AgentBuilder<M extends CompletionModel = CompletionModel> {
       dynamicTools: this.dynamicToolRegistrations,
       middlewares: this.middlewareRegistrations,
       memory: this.memoryRegistration,
-      eventStore: this.eventStoreRegistration,
     });
   }
 

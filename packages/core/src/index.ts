@@ -1,5 +1,23 @@
 export { Agent } from "./agent/agent";
 export { AgentBuilder } from "./agent/builder";
+export { AgentRunCancelledError, MaxTurnsError, ToolApprovalRequiredError } from "./agent/errors";
+export type { CompletionRetryContext, CompletionRetryOptions } from "./agent/retry";
+export type {
+  AgentChildStreamEvent,
+  AgentChildStreamEventWithoutToolCallDeltas,
+  AgentChildStreamEventWithToolCallDeltas,
+  AgentDeltaEvent,
+  AgentErrorStreamEvent,
+  AgentInput,
+  AgentResponse,
+  AgentRunOptions,
+  AgentStream,
+  AgentStreamEvent,
+  AgentStreamEventWithoutToolCallDeltas,
+  AgentStreamEventWithToolCallDeltas,
+  AgentStreamOptions,
+  AgentToolCallDeltaEvent,
+} from "./agent/run-types";
 export type {
   AgentDynamicContext,
   AgentDynamicTool,
@@ -84,8 +102,9 @@ export {
   defineOutputGuardrail,
   guardrails,
 } from "./guardrails";
+export type { AgentHook } from "./hooks";
 export {
-  cancelPrompt,
+  cancelRun,
   createHook,
   requestToolApproval,
   runControl,
@@ -116,20 +135,6 @@ export {
   MemoryCompactionConflictError,
   MemoryCompactionError,
 } from "./memory";
-export { MaxTurnsError, PromptCancelledError, ToolApprovalRequiredError } from "./request/errors";
-export type { CompletionRetryContext, CompletionRetryOptions } from "./request/retry";
-export type {
-  AgentChildStreamEvent,
-  AgentChildStreamEventWithoutToolCallDeltas,
-  AgentChildStreamEventWithToolCallDeltas,
-  AgentErrorStreamEvent,
-  AgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas,
-  AgentStreamEventWithToolCallDeltas,
-  AgentStreamOptions,
-  AgentToolCallDeltaEvent,
-  PromptResponse,
-} from "./request/types";
 export type { ZodSchema } from "./schema";
 export { loadSkills, SkillValidationError, skill } from "./skills";
 export type {

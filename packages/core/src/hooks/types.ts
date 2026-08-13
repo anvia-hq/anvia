@@ -108,7 +108,7 @@ export type ToolErrorHookArgs = ToolHookArgs & {
   run: RunControl;
 };
 
-export interface PromptHook<RawResponse = unknown> {
+export interface AgentHook<RawResponse = unknown> {
   onRunStart?: HookCallback<RunStartHookArgs>;
   onRunEnd?: HookCallback<RunEndHookArgs>;
   onRunError?: HookCallback<RunErrorHookArgs>;

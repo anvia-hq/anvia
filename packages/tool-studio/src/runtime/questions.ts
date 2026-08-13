@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
-import { createHook, type PromptHook } from "@anvia/core/hooks";
+import { type AgentHook, createHook } from "@anvia/core/hooks";
 import { parseToolArgs } from "@anvia/core/tool";
 import type { Context, Hono } from "hono";
 import type {
@@ -38,7 +38,7 @@ type QuestionRequest = {
 
 export type QuestionRuntime = {
   questions: Map<string, PendingQuestion | StudioToolQuestion>;
-  createHook(context: QuestionHookContext): PromptHook;
+  createHook(context: QuestionHookContext): AgentHook;
   list(options: QuestionListOptions): StudioToolQuestion[];
   cancelRun(runId: string): StudioToolQuestion[];
   answer(

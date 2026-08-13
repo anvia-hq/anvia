@@ -186,7 +186,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    const result = await agent.session(context.sessionId).prompt("next").send();
+    const result = await agent.session(context.sessionId).generate("next");
 
     expect(summaryModel.requests).toHaveLength(1);
     expect(mainModel.requests[0]?.chatHistory).toEqual([
@@ -214,7 +214,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.session(context.sessionId).generate("next");
 
     expect(compactor).not.toHaveBeenCalled();
     expect(store.commitCalls).toHaveLength(0);
@@ -286,7 +286,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.session(context.sessionId).generate("next");
 
     expect(history.length + 1).toBeGreaterThan(4);
     expect(compactor).not.toHaveBeenCalled();
@@ -322,7 +322,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.session(context.sessionId).generate("next");
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     const serialized =
@@ -363,7 +363,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    const result = await agent.session(context.sessionId).prompt("next").send();
+    const result = await agent.session(context.sessionId).generate("next");
 
     expect(summaryModel.requests).toHaveLength(2);
     expect(store.commitCalls).toHaveLength(2);
@@ -392,7 +392,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    await expect(agent.session(context.sessionId).prompt("next").send()).rejects.toBeInstanceOf(
+    await expect(agent.session(context.sessionId).generate("next")).rejects.toBeInstanceOf(
       MemoryCompactionConflictError,
     );
     expect(mainModel.requests).toHaveLength(0);
@@ -432,7 +432,7 @@ describe("memory compaction", () => {
     const events: AgentStreamEvent[] = [];
 
     await expect(async () => {
-      for await (const event of agent.session(context.sessionId).prompt("next").stream()) {
+      for await (const event of agent.session(context.sessionId).stream("next")) {
         events.push(event);
       }
     }).rejects.toBeInstanceOf(MemoryCompactionConflictError);
@@ -471,7 +471,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    await expect(agent.session(context.sessionId).prompt("next").send()).rejects.toBeInstanceOf(
+    await expect(agent.session(context.sessionId).generate("next")).rejects.toBeInstanceOf(
       MemoryCompactionError,
     );
     expect(mainModel.requests).toHaveLength(0);
@@ -511,7 +511,7 @@ describe("memory compaction", () => {
       })
       .build();
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.session(context.sessionId).generate("next");
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     expect(summaryPrompt?.role).toBe("user");

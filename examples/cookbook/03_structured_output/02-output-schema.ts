@@ -23,8 +23,6 @@ const agent = new Agent({
   outputSchema: summarySchema,
 });
 
-const response = await agent
-  .prompt("Summarize why tool calling is useful for agent frameworks.")
-  .send();
+const response = await agent.generate("Summarize why tool calling is useful for agent frameworks.");
 
 console.log(response.output);

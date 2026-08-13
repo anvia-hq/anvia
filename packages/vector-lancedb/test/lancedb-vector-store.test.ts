@@ -225,4 +225,100 @@ describe("filterToLanceExpr", () => {
   it("escapes single quotes in string values", () => {
     expect(filterToLanceExpr(vectorFilter.eq("name", "it's"))).toBe("name = 'it''s'");
   });
+
+  describe("SQL injection protection", () => {
+    it("rejects malicious column names with SQL injection attempts", () => {
+      expect(() =>
+        filterToLanceExpr(vectorFilter.eq("name'; DROP TABLE users; --", "value")),
+      ).toThrow("Invalid column name");
+      expect(() => filterToLanceExpr(vectorFilter.eq("name; DELETE FROM users", "value"))).toThrow(
+        "Invalid column name",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("name OR 1=1", "value"))).toThrow(
+        "Invalid column name",
+      );
+    });
+
+    it("rejects column names with special SQL characters", () => {
+      expect(() => filterToLanceExpr(vectorFilter.eq("name'", "value"))).toThrow(
+        "Invalid column name",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("name;", "value"))).toThrow(
+        "Invalid column name",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("name--", "value"))).toThrow(
+        "Invalid column name",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("name/**/", "value"))).toThrow(
+        "Invalid column name",
+      );
+    });
+
+    it("rejects column names that are SQL keywords", () => {
+      expect(() => filterToLanceExpr(vectorFilter.eq("SELECT", "value"))).toThrow(
+        "Column name cannot be or contain SQL keywords",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("DROP", "value"))).toThrow(
+        "Column name cannot be or contain SQL keywords",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("DELETE", "value"))).toThrow(
+        "Column name cannot be or contain SQL keywords",
+      );
+    });
+
+    it("rejects column names starting with numbers", () => {
+      expect(() => filterToLanceExpr(vectorFilter.eq("123column", "value"))).toThrow(
+        "Invalid column name",
+      );
+    });
+
+    it("rejects non-finite numeric values in gt/lt filters", () => {
+      expect(() => filterToLanceExpr(vectorFilter.gt("rank", NaN))).toThrow(
+        "Value must be a finite number",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.gt("rank", Infinity))).toThrow(
+        "Value must be a finite number",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.lt("rank", -Infinity))).toThrow(
+        "Value must be a finite number",
+      );
+    });
+
+    it("rejects non-numeric values in gt/lt filters", () => {
+      expect(() =>
+        filterToLanceExpr(vectorFilter.gt("rank", "2; DROP TABLE" as unknown as number)),
+      ).toThrow("Expected a number");
+    });
+
+    it("allows valid column names with underscores", () => {
+      expect(filterToLanceExpr(vectorFilter.eq("user_name", "alice"))).toBe("user_name = 'alice'");
+      expect(filterToLanceExpr(vectorFilter.eq("_private_field", "value"))).toBe(
+        "_private_field = 'value'",
+      );
+    });
+
+    it("allows valid column names with dots for nested fields", () => {
+      expect(filterToLanceExpr(vectorFilter.eq("user.name", "alice"))).toBe("user.name = 'alice'");
+      expect(filterToLanceExpr(vectorFilter.eq("metadata.tags.category", "tech"))).toBe(
+        "metadata.tags.category = 'tech'",
+      );
+    });
+
+    it("allows valid numeric values", () => {
+      expect(filterToLanceExpr(vectorFilter.gt("rank", 0))).toBe("rank > 0");
+      expect(filterToLanceExpr(vectorFilter.gt("rank", -100))).toBe("rank > -100");
+      expect(filterToLanceExpr(vectorFilter.lt("rank", 999.99))).toBe("rank < 999.99");
+    });
+
+    it("protects against SQL injection in compound filters", () => {
+      expect(() =>
+        filterToLanceExpr(
+          vectorFilter.and(
+            vectorFilter.eq("name'; DROP TABLE users; --", "value"),
+            vectorFilter.eq("status", "active"),
+          ),
+        ),
+      ).toThrow("Invalid column name");
+    });
+  });
 });

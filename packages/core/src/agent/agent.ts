@@ -150,10 +150,10 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     return createTool({
       name: options.name,
       description,
-      input: z.object({
+      inputSchema: z.object({
         prompt: z.string().describe("The prompt to send to the agent."),
       }),
-      output: z.string(),
+      outputSchema: z.string(),
       execute: async ({ prompt }, context: ToolCallContext) => {
         if (
           options.stream === true &&

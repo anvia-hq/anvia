@@ -58,8 +58,8 @@ function createWriteFileTool() {
   return createTool({
     name: "write_file",
     description: "Write a file inside the local .tmp workspace. Creates parent directories.",
-    input: writeFileInput,
-    output: textOutput,
+    inputSchema: writeFileInput,
+    outputSchema: textOutput,
     execute: async ({ path: filePath, content }) => {
       const targetPath = await resolveTempPath(filePath);
       await mkdir(path.dirname(targetPath), { recursive: true });
@@ -74,8 +74,8 @@ function createUpdateFileTool() {
     name: "update_file",
     description:
       "Update a file inside the local .tmp workspace by replacing existing text with new text.",
-    input: updateFileInput,
-    output: textOutput,
+    inputSchema: updateFileInput,
+    outputSchema: textOutput,
     execute: async ({ path: filePath, oldText, newText, replaceAll }) => {
       const targetPath = await resolveTempPath(filePath);
       const currentContent = await readFile(targetPath, "utf8");
@@ -99,8 +99,8 @@ function createExecCommandTool() {
   return createTool({
     name: "exec_command",
     description: "Run a shell command from the local .tmp workspace and return stdout/stderr.",
-    input: execCommandInput,
-    output: textOutput,
+    inputSchema: execCommandInput,
+    outputSchema: textOutput,
     execute: async ({ command, timeoutMs }) => {
       await ensureTempWorkspace();
       const { stdout, stderr } = await execAsync(command, {

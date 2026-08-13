@@ -8,4 +8,5 @@ to agent responses and observer starts, remove the prompt-request API and reques
 singular builder registrations, and remove agent event stores in favor of observability integrations.
 Unify direct model calls around input-first completion, image, speech, and transcription functions,
 share retry options across agents and model calls, internalize request builders, and rename the
-pipeline agent stage to `agent()`.
+pipeline agent stage to `agent()`. Rename `createTool()` schema options from `input` and `output` to
+`inputSchema` and `outputSchema`.

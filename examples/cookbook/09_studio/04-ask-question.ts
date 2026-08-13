@@ -17,7 +17,7 @@ const questionChoiceSchema = z.object({
 const askQuestion = createTool({
   name: "ask_question",
   description: "Ask the human operator one or more follow-up questions. Always include choices.",
-  input: z.object({
+  inputSchema: z.object({
     questions: z.array(
       z.object({
         id: z.string().describe("Stable id for this question."),
@@ -29,7 +29,7 @@ const askQuestion = createTool({
       }),
     ),
   }),
-  output: z.object({
+  outputSchema: z.object({
     answers: z.array(
       z.object({
         questionId: z.string(),
@@ -52,13 +52,13 @@ const askQuestion = createTool({
 const prepareEscalation = createTool({
   name: "prepare_escalation",
   description: "Create a support escalation summary from confirmed human input.",
-  input: z.object({
+  inputSchema: z.object({
     customer: z.string(),
     priority: z.string(),
     channel: z.string(),
     note: z.string(),
   }),
-  output: z.object({
+  outputSchema: z.object({
     escalationId: z.string(),
     summary: z.string(),
   }),

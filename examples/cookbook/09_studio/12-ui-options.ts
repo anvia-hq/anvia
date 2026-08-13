@@ -12,10 +12,10 @@ const client = new OpenAIClient({
 const getRunbook = createTool({
   name: "get_runbook",
   description: "Read a short runbook by area.",
-  input: z.object({
+  inputSchema: z.object({
     area: z.enum(["payments", "shipping", "incidents"]),
   }),
-  output: z.object({
+  outputSchema: z.object({
     area: z.string(),
     checklist: z.array(z.string()),
   }),

@@ -18,10 +18,10 @@ const researchTools = ToolSet.fromTools([
   createTool({
     name: "search_notes",
     description: "Return mock search notes for a research topic.",
-    input: z.object({
+    inputSchema: z.object({
       topic: z.string(),
     }),
-    output: z.array(z.string()),
+    outputSchema: z.array(z.string()),
     execute: ({ topic }) => [
       `${topic}: customer teams ask for clearer implementation guidance.`,
       `${topic}: support volume increased after the latest product launch.`,
@@ -31,10 +31,10 @@ const researchTools = ToolSet.fromTools([
   createTool({
     name: "source_quality",
     description: "Return mock source quality signals for a research topic.",
-    input: z.object({
+    inputSchema: z.object({
       topic: z.string(),
     }),
-    output: z.object({
+    outputSchema: z.object({
       confidence: z.enum(["low", "medium", "high"]),
       caveat: z.string(),
     }),

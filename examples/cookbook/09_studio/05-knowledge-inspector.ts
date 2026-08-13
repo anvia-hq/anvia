@@ -45,10 +45,10 @@ const notes: KnowledgeNote[] = [
 const getTicket = createTool({
   name: "get_ticket",
   description: "Read a support ticket from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("The support ticket id."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     customer: z.string(),
     status: z.string(),
@@ -67,10 +67,10 @@ const getTicket = createTool({
 const lookupCustomer = createTool({
   name: "lookup_customer",
   description: "Read customer account context and communication preferences.",
-  input: z.object({
+  inputSchema: z.object({
     name: z.string().describe("The customer name."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     name: z.string(),
     tier: z.string(),
     preferredChannel: z.string(),

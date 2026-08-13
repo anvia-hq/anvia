@@ -98,11 +98,11 @@ function textFromChoice(choice: CompletionResponse["choice"]): string {
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 
@@ -273,8 +273,8 @@ describe("Agent execution", () => {
     const countingTool = createTool({
       name: "counted_add",
       description: "Add numbers and count executions",
-      input: z.object({ x: z.number(), y: z.number() }),
-      output: z.number(),
+      inputSchema: z.object({ x: z.number(), y: z.number() }),
+      outputSchema: z.number(),
       execute: ({ x, y }) => {
         toolExecutions += 1;
         return x + y;
@@ -435,7 +435,7 @@ describe("Agent execution", () => {
     const screenshotTool = createTool({
       name: "computer_screenshot",
       description: "Return screenshot",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => structuredContent,
     });
     const model = new QueueModel([
@@ -474,7 +474,7 @@ describe("Agent execution", () => {
     const screenshotTool = createTool({
       name: "computer_screenshot",
       description: "Return screenshot",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => structuredContent,
     });
     const model = new QueueModel([
@@ -809,8 +809,8 @@ describe("Agent execution", () => {
     const blockedTool = createTool({
       name: "blocked",
       description: "A tool that should not run",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         executed = true;
         return "ran";
@@ -840,8 +840,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         executed = true;
         return "should not run";
@@ -868,8 +868,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         executed = true;
         return "approved result";
@@ -900,8 +900,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         executed = true;
         return "should not run";
@@ -942,8 +942,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         executed = true;
         return "approved result";
@@ -984,8 +984,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         executed = true;
         return "should not run";
@@ -1026,8 +1026,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({ amount: z.number() }),
-      output: z.string(),
+      inputSchema: z.object({ amount: z.number() }),
+      outputSchema: z.string(),
       approval: {
         when: ({ args }) => args.amount > 100,
         reason: ({ args }) => `Approve ${args.amount}`,
@@ -1079,8 +1079,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({ amount: z.number() }),
-      output: z.string(),
+      inputSchema: z.object({ amount: z.number() }),
+      outputSchema: z.string(),
       approval: {
         when: ({ args }) => args.amount > 100,
         reason: ({ args }) => `Approve ${args.amount}`,
@@ -1130,8 +1130,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({ amount: z.number() }),
-      output: z.string(),
+      inputSchema: z.object({ amount: z.number() }),
+      outputSchema: z.string(),
       approval: {
         when: ({ args }) => args.amount > 100,
         rejectMessage: "Rejected by policy.",
@@ -1170,8 +1170,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({ amount: z.number() }),
-      output: z.string(),
+      inputSchema: z.object({ amount: z.number() }),
+      outputSchema: z.string(),
       approval: {
         when: ({ args }) => args.amount > 100,
       },
@@ -1204,8 +1204,8 @@ describe("Agent execution", () => {
     const guardedTool = createTool({
       name: "guarded",
       description: "A guarded tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       approval: {
         when: () => true,
         rejectMessage: "Rejected by request.",
@@ -1267,8 +1267,8 @@ describe("Agent execution", () => {
     const failingTool = createTool({
       name: "fail",
       description: "Fail",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         throw new Error("tool failed");
       },

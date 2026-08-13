@@ -74,11 +74,11 @@ async function* streamThenThrow(
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 
@@ -293,8 +293,8 @@ describe("Agent streaming", () => {
     const failingTool = createTool({
       name: "fail",
       description: "Fail",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute() {
         throw new Error("tool failed");
       },
@@ -662,11 +662,11 @@ describe("Agent streaming", () => {
     const slowAddTool = createTool({
       name: "slow_add",
       description: "Add numbers slowly",
-      input: z.object({
+      inputSchema: z.object({
         x: z.number(),
         y: z.number(),
       }),
-      output: z.number(),
+      outputSchema: z.number(),
       async execute(args) {
         toolStarted.resolve();
         await toolRelease.promise;
@@ -993,7 +993,7 @@ describe("Agent streaming", () => {
     const screenshotTool = createTool({
       name: "computer_screenshot",
       description: "Return screenshot",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => structuredContent,
     });
     const model = new StreamingQueueModel([
@@ -1037,8 +1037,8 @@ describe("Agent streaming", () => {
     const slowTool = createTool({
       name: "slow_tool",
       description: "Slow tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       async execute() {
         slowStarted.resolve();
         await slowRelease.promise;
@@ -1048,8 +1048,8 @@ describe("Agent streaming", () => {
     const fastTool = createTool({
       name: "fast_tool",
       description: "Fast tool",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       async execute() {
         fastStarted.resolve();
         return "fast";

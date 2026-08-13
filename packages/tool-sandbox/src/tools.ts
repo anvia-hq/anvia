@@ -196,8 +196,8 @@ function createExecCommandTool(session: SandboxSession, options: SandboxToolsOpt
     name: "exec_command",
     description:
       "Run a command inside the sandbox workspace. Use structured args instead of shell quoting.",
-    input: execCommandInput,
-    output: textOutput,
+    inputSchema: execCommandInput,
+    outputSchema: textOutput,
     execute: async ({ command, args, cwd, env, timeoutMs, input }) => {
       assertCommandAllowed(command, options);
 
@@ -235,8 +235,8 @@ function createReadFileTool(session: SandboxSession, options: SandboxToolsOption
     name: "read_file",
     description:
       "Read a bounded page of a text file from the sandbox workspace. Continue with nextStartLine when provided.",
-    input: readFileInput,
-    output: readFileOutput,
+    inputSchema: readFileInput,
+    outputSchema: readFileOutput,
     execute: async ({ path, startLine, lineCount }) => {
       const limits = resolveReadFileLimits(options);
       const effectiveStartLine = startLine ?? 1;
@@ -269,8 +269,8 @@ function createWriteFileTool(session: SandboxSession, options: SandboxToolsOptio
   return createTool({
     name: "write_file",
     description: "Write a text file inside the sandbox workspace. Creates parent directories.",
-    input: writeFileInput,
-    output: textOutput,
+    inputSchema: writeFileInput,
+    outputSchema: textOutput,
     execute: async ({ path, content }) => {
       assertContentAllowed(content, options);
       await session.writeTextFile(path, content);
@@ -283,8 +283,8 @@ function createListFilesTool(session: SandboxSession): AnyTool {
   return createTool({
     name: "list_files",
     description: "List files and directories inside the sandbox workspace.",
-    input: listFilesInput,
-    output: textOutput,
+    inputSchema: listFilesInput,
+    outputSchema: textOutput,
     execute: async ({ path }) => {
       const entries = await session.listFiles(path);
 
@@ -307,8 +307,8 @@ function createListPortsTool(session: SandboxPortSession): AnyTool {
     name: "list_ports",
     description:
       "List pre-authorized sandbox preview ports. Servers must bind to 0.0.0.0 on a listed container port.",
-    input: emptyInput,
-    output: textOutput,
+    inputSchema: emptyInput,
+    outputSchema: textOutput,
     execute: async () => {
       if (session.publishedPorts.length === 0) {
         return "No sandbox ports are published.";
@@ -328,8 +328,8 @@ function createStartProcessTool(
     name: "start_process",
     description:
       "Start a managed long-running process inside the sandbox. Use list_ports first and bind web servers to 0.0.0.0.",
-    input: startProcessInput,
-    output: textOutput,
+    inputSchema: startProcessInput,
+    outputSchema: textOutput,
     execute: async ({ command, args, cwd, env }) => {
       assertCommandAllowed(command, options);
       const processOptions: SandboxProcessStartOptions = { command };
@@ -345,8 +345,8 @@ function createListProcessesTool(session: SandboxProcessSession): AnyTool {
   return createTool({
     name: "list_processes",
     description: "List managed sandbox processes and their current status.",
-    input: emptyInput,
-    output: textOutput,
+    inputSchema: emptyInput,
+    outputSchema: textOutput,
     execute: async () => {
       const processes = await session.listProcesses();
       if (processes.length === 0) return "No managed processes.";
@@ -362,8 +362,8 @@ function createReadProcessLogsTool(
   return createTool({
     name: "read_process_logs",
     description: "Read recent stdout and stderr from a managed sandbox process.",
-    input: readProcessLogsInput,
-    output: textOutput,
+    inputSchema: readProcessLogsInput,
+    outputSchema: textOutput,
     execute: async ({ processId, tailBytes }) => {
       const configuredMaxLogBytes = options.process?.maxLogBytes ?? 64 * 1024;
       if (!Number.isInteger(configuredMaxLogBytes) || configuredMaxLogBytes < 0) {
@@ -395,8 +395,8 @@ function createStopProcessTool(
   return createTool({
     name: "stop_process",
     description: "Stop a managed sandbox process.",
-    input: processIdInput,
-    output: textOutput,
+    inputSchema: processIdInput,
+    outputSchema: textOutput,
     execute: async ({ processId }) =>
       formatProcessInfo(
         await session.stopProcess(processId, {
@@ -410,8 +410,8 @@ function createWaitForPortTool(session: SandboxPortSession, options: SandboxTool
   return createTool({
     name: "wait_for_port",
     description: "Wait until a pre-authorized sandbox TCP port is accepting connections.",
-    input: waitForPortInput,
-    output: textOutput,
+    inputSchema: waitForPortInput,
+    outputSchema: textOutput,
     execute: async ({ containerPort, timeoutMs }) => {
       const effectiveTimeoutMs = timeoutMs ?? options.process?.defaultWaitTimeoutMs ?? 30_000;
       const maxWaitTimeoutMs = options.process?.maxWaitTimeoutMs ?? 300_000;

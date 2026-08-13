@@ -405,11 +405,11 @@ function fakeMcpServer(): McpServer {
       createTool({
         name: "mcp_add",
         description: "Add numbers from MCP",
-        input: z.object({
+        inputSchema: z.object({
           x: z.number(),
           y: z.number(),
         }),
-        output: z.number(),
+        outputSchema: z.number(),
         execute: ({ x, y }) => x + y,
       }),
     ],

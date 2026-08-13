@@ -35,10 +35,10 @@ const tickets = new Map([
 const getTicket = createTool({
   name: "get_ticket",
   description: "Read a support ticket from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("Ticket id, for example TICKET-1001."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     customer: z.string(),
     status: z.enum(["waiting_on_engineering", "monitoring"]),

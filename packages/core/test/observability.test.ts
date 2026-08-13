@@ -159,11 +159,11 @@ class RecordingObserver implements AgentObserver {
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 

@@ -20,13 +20,13 @@ const client = new OpenAIClient({
 const getEscalation = createTool({
   name: "get_escalation",
   description: "Read the current escalation owner for an operational area.",
-  input: z.object({
+  inputSchema: z.object({
     area: z
       .string()
       .optional()
       .describe("Operational area, such as billing, fulfillment, webhooks, payments, or shipping."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     area: z.string(),
     owner: z.string(),
     nextAction: z.string(),

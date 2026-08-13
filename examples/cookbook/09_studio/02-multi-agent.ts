@@ -12,10 +12,10 @@ const client = new OpenAIClient({
 const getTicket = createTool({
   name: "get_ticket",
   description: "Read a support ticket from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("The support ticket id."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     customer: z.string(),
     priority: z.enum(["low", "medium", "high"]),
@@ -34,10 +34,10 @@ const getTicket = createTool({
 const getRunbook = createTool({
   name: "get_runbook",
   description: "Read an internal runbook excerpt.",
-  input: z.object({
+  inputSchema: z.object({
     name: z.string().describe("The runbook name."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     name: z.string(),
     owner: z.string(),
     checklist: z.array(z.string()),

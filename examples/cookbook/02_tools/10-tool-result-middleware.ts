@@ -9,10 +9,10 @@ import { z } from "zod";
 const longReportTool = createTool({
   name: "long_report",
   description: "Return a long internal report for a topic.",
-  input: z.object({
+  inputSchema: z.object({
     topic: z.string(),
   }),
-  output: z.string(),
+  outputSchema: z.string(),
   execute: ({ topic }) =>
     [
       `Report topic: ${topic}`,

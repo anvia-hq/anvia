@@ -210,11 +210,11 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
     name: options.name,
     description:
       options.description ?? "Search a vector store for documents relevant to the provided query.",
-    input: z.object({
+    inputSchema: z.object({
       query: z.string().describe("The query string to search for relevant documents."),
       topK: z.number().int().positive().optional().describe("The maximum number of results."),
     }),
-    output: z.array(
+    outputSchema: z.array(
       z.object({
         score: z.number(),
         id: z.string(),

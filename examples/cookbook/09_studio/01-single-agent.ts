@@ -12,10 +12,10 @@ const client = new OpenAIClient({
 const getOrder = createTool({
   name: "get_order",
   description: "Read an order summary from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("The order id to read."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     status: z.enum(["processing", "blocked", "shipped"]),
     customer: z.string(),

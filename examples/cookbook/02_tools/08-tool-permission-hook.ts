@@ -7,10 +7,10 @@ import { z } from "zod";
 const getServiceStatusTool = createTool({
   name: "get_service_status",
   description: "Read the public status for a customer-facing service.",
-  input: z.object({
+  inputSchema: z.object({
     service: z.string().describe("The service name."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     service: z.string(),
     status: z.string(),
   }),
@@ -25,10 +25,10 @@ const getServiceStatusTool = createTool({
 const readPayrollTool = createTool({
   name: "read_payroll",
   description: "Read payroll information for an employee.",
-  input: z.object({
+  inputSchema: z.object({
     employeeId: z.string().describe("The employee id."),
   }),
-  output: z.string(),
+  outputSchema: z.string(),
   execute({ employeeId }) {
     return `Payroll record for ${employeeId}`;
   },
@@ -37,10 +37,10 @@ const readPayrollTool = createTool({
 const deleteAccountTool = createTool({
   name: "delete_account",
   description: "Delete a customer account permanently.",
-  input: z.object({
+  inputSchema: z.object({
     accountId: z.string().describe("The account id."),
   }),
-  output: z.string(),
+  outputSchema: z.string(),
   execute({ accountId }) {
     return `Deleted account ${accountId}`;
   },

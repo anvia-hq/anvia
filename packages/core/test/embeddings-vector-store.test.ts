@@ -151,18 +151,18 @@ class TwoTurnModel extends QueueModel {
 const issueRefundTool = createTool({
   name: "issue_refund",
   description: "Issue a refund for a customer order.",
-  input: z.object({
+  inputSchema: z.object({
     orderId: z.string(),
   }),
-  output: z.string(),
+  outputSchema: z.string(),
   execute: ({ orderId }) => `refunded ${orderId}`,
 });
 
 const lookupDogTool = createTool({
   name: "lookup_dog",
   description: "Look up dog care runbooks.",
-  input: z.object({}),
-  output: z.string(),
+  inputSchema: z.object({}),
+  outputSchema: z.string(),
   execute: () => "dog",
 });
 
@@ -581,15 +581,15 @@ describe("agent dynamic tools", () => {
     const dynamicRefundTool = createTool({
       name: "issue_refund",
       description: "Dynamic refund tool.",
-      input: z.object({ orderId: z.string() }),
-      output: z.string(),
+      inputSchema: z.object({ orderId: z.string() }),
+      outputSchema: z.string(),
       execute: () => "dynamic",
     });
     const staticRefundTool = createTool({
       name: "issue_refund",
       description: "Static refund tool.",
-      input: z.object({ orderId: z.string() }),
-      output: z.string(),
+      inputSchema: z.object({ orderId: z.string() }),
+      outputSchema: z.string(),
       execute: () => "static",
     });
     const index = await createToolIndex(embeddingModel, [dynamicRefundTool]);
@@ -625,8 +625,8 @@ describe("agent dynamic tools", () => {
     const seedTopicTool = createTool({
       name: "seed_topic",
       description: "Seed the next turn topic.",
-      input: z.object({}),
-      output: z.string(),
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
       execute: () => "refund",
     });
     const completionModel = new TwoTurnModel();

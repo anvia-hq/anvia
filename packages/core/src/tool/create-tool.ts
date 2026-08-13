@@ -9,8 +9,8 @@ export type CreateToolOptions<
 > = {
   name: string;
   description: string;
-  input: InputSchema;
-  output?: OutputSchema;
+  inputSchema: InputSchema;
+  outputSchema?: OutputSchema;
   approval?: ToolApprovalPolicy<z.output<InputSchema>>;
   execute(
     args: z.output<InputSchema>,
@@ -26,7 +26,7 @@ type CreateToolOutput<
 > = OutputSchema extends ZodSchema ? z.output<OutputSchema> : Output;
 
 export function createTool<InputSchema extends ZodSchema, Output = unknown>(
-  options: CreateToolOptions<InputSchema, undefined, Output> & { output?: undefined },
+  options: CreateToolOptions<InputSchema, undefined, Output> & { outputSchema?: undefined },
 ): Tool<z.output<InputSchema>, Output>;
 
 export function createTool<InputSchema extends ZodSchema, OutputSchema extends ZodSchema>(
@@ -40,7 +40,7 @@ export function createTool<
 >(
   options: CreateToolOptions<InputSchema, OutputSchema, Output>,
 ): Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> {
-  const parameters = toProviderJsonSchema(options.input);
+  const parameters = toProviderJsonSchema(options.inputSchema);
   const definition = () => ({
     name: options.name,
     description: options.description,
@@ -50,13 +50,14 @@ export function createTool<
     args: z.output<InputSchema>,
     context: ToolCallContext = {},
   ): Promise<CreateToolOutput<OutputSchema, Output>> => {
-    const parsedArgs = options.input.parse(args);
+    const parsedArgs = options.inputSchema.parse(args);
     const result = await options.execute(parsedArgs, context);
     return (
-      options.output === undefined ? result : options.output.parse(result)
+      options.outputSchema === undefined ? result : options.outputSchema.parse(result)
     ) as CreateToolOutput<OutputSchema, Output>;
   };
-  const parseApprovalArgs = (args: unknown): z.output<InputSchema> => options.input.parse(args);
+  const parseApprovalArgs = (args: unknown): z.output<InputSchema> =>
+    options.inputSchema.parse(args);
 
   if (options.approval === undefined) {
     return { name: options.name, definition, call, parseApprovalArgs };

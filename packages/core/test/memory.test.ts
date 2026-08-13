@@ -127,11 +127,11 @@ function response(
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 
@@ -364,7 +364,7 @@ describe("agent memory", () => {
     const probeTool = createTool({
       name: "Probe",
       description: "Record whether a sibling tool executes",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => {
         probeExecutions += 1;
         return "probed";
@@ -373,7 +373,7 @@ describe("agent memory", () => {
     const execCommandTool = createTool({
       name: "ExecCommand",
       description: "Execute a command",
-      input: z.object({ command: z.string() }),
+      inputSchema: z.object({ command: z.string() }),
       execute: () => {
         commandExecutions += 1;
         return "executed";

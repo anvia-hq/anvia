@@ -9,10 +9,10 @@ import { z } from "zod";
 export const getTicket = createTool({
   name: "get_ticket",
   description: "Read a support ticket from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("The ticket id to read."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     title: z.string(),
     severity: z.enum(["low", "medium", "high"]),

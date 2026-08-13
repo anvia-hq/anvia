@@ -17,10 +17,10 @@ const client = new OpenAIClient({
 const lookupTicket = createTool({
   name: "lookup_ticket",
   description: "Read a support ticket from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("The ticket id to read."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     title: z.string(),
     status: z.enum(["open", "pending", "closed"]),

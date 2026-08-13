@@ -7,11 +7,11 @@ import { z } from "zod";
 const addTool = createTool({
   name: "add",
   description: "Add two numbers together.",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number().describe("The first number."),
     y: z.number().describe("The second number."),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 

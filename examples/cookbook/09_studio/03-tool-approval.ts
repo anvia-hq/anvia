@@ -13,10 +13,10 @@ const client = new OpenAIClient({
 const getOrder = createTool({
   name: "get_order",
   description: "Read an order summary from local application state.",
-  input: z.object({
+  inputSchema: z.object({
     id: z.string().describe("The order id to read."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     id: z.string(),
     status: z.enum(["processing", "blocked", "shipped"]),
     customer: z.string(),
@@ -35,12 +35,12 @@ const getOrder = createTool({
 const issueRefund = createTool({
   name: "issue_refund",
   description: "Issue a customer refund. This changes account balance and requires approval.",
-  input: z.object({
+  inputSchema: z.object({
     orderId: z.string().describe("The order id to refund."),
     amount: z.number().positive().describe("The refund amount in USD."),
     reason: z.string().describe("The reason to record with the refund."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     refundId: z.string(),
     orderId: z.string(),
     amount: z.number(),
@@ -62,11 +62,11 @@ const issueRefund = createTool({
 const cancelOrder = createTool({
   name: "cancel_order",
   description: "Cancel an order before fulfillment. This is guarded by a hook approval.",
-  input: z.object({
+  inputSchema: z.object({
     orderId: z.string().describe("The order id to cancel."),
     reason: z.string().describe("The reason to record with the cancellation."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     orderId: z.string(),
     status: z.enum(["cancelled"]),
   }),

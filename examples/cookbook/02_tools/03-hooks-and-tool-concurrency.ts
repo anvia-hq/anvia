@@ -12,16 +12,16 @@ const mathInput = z.object({
 const addTool = createTool({
   name: "add",
   description: "Add two numbers.",
-  input: mathInput,
-  output: z.number(),
+  inputSchema: mathInput,
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 
 const multiplyTool = createTool({
   name: "multiply",
   description: "Multiply two numbers.",
-  input: mathInput,
-  output: z.number(),
+  inputSchema: mathInput,
+  outputSchema: z.number(),
   execute: (args) => args.x * args.y,
 });
 

@@ -117,8 +117,8 @@ export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
         createTool({
           name: SUBMIT_TOOL_NAME,
           description: "Submit the structured data extracted from the provided text.",
-          input: schema,
-          output: schema,
+          inputSchema: schema,
+          outputSchema: schema,
           execute: (args) => args,
         }),
       ])

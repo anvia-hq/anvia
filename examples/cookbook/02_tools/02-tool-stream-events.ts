@@ -6,10 +6,10 @@ import { z } from "zod";
 const weatherTool = createTool({
   name: "get_weather",
   description: "Get a simple local weather forecast.",
-  input: z.object({
+  inputSchema: z.object({
     city: z.string().describe("The city to check."),
   }),
-  output: z.object({
+  outputSchema: z.object({
     city: z.string(),
     forecast: z.string(),
   }),

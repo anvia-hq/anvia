@@ -57,11 +57,11 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: ({ x, y }) => x + y,
 });
 

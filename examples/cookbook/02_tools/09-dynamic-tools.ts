@@ -53,24 +53,24 @@ class InspectingModel implements CompletionModel {
 const issueRefund = createTool({
   name: "issue_refund",
   description: "Issue a refund for a customer order.",
-  input: z.object({ orderId: z.string() }),
-  output: z.string(),
+  inputSchema: z.object({ orderId: z.string() }),
+  outputSchema: z.string(),
   execute: ({ orderId }) => `refunded ${orderId}`,
 });
 
 const updateAddress = createTool({
   name: "update_address",
   description: "Update the shipping address for an order.",
-  input: z.object({ orderId: z.string(), address: z.string() }),
-  output: z.string(),
+  inputSchema: z.object({ orderId: z.string(), address: z.string() }),
+  outputSchema: z.string(),
   execute: ({ orderId }) => `updated address for ${orderId}`,
 });
 
 const lookupRunbook = createTool({
   name: "lookup_runbook",
   description: "Look up operational runbooks.",
-  input: z.object({ query: z.string() }),
-  output: z.string(),
+  inputSchema: z.object({ query: z.string() }),
+  outputSchema: z.string(),
   execute: ({ query }) => `runbook: ${query}`,
 });
 

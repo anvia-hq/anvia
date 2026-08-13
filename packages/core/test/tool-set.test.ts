@@ -12,11 +12,11 @@ import {
 const addTool = createTool({
   name: "add",
   description: "Add two numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: (args) => args.x + args.y,
 });
 
@@ -46,8 +46,8 @@ describe("ToolSet", () => {
     const approvedTool = createTool({
       name: "approved",
       description: "Needs conditional approval",
-      input: z.object({ amount: z.number() }),
-      output: z.string(),
+      inputSchema: z.object({ amount: z.number() }),
+      outputSchema: z.string(),
       approval: {
         when: ({ args }) => args.amount > 100,
         reason: ({ args }) => `Approve ${args.amount}`,
@@ -91,7 +91,7 @@ describe("ToolSet", () => {
       createTool({
         name: "echo",
         description: "Echo",
-        input: z.object({}),
+        inputSchema: z.object({}),
         execute: () => "hello",
       }),
     ]);
@@ -112,8 +112,8 @@ describe("ToolSet", () => {
       createTool({
         name: "bad_output",
         description: "Return bad output",
-        input: z.object({}),
-        output: z.number(),
+        inputSchema: z.object({}),
+        outputSchema: z.number(),
         execute: () => "not a number" as unknown as number,
       }),
     ]);
@@ -121,12 +121,36 @@ describe("ToolSet", () => {
     await expect(toolSet.call("bad_output", "{}")).rejects.toBeInstanceOf(ToolCallError);
   });
 
+  it("applies input and output schema transformations", async () => {
+    let executedAmount: number | undefined;
+    const transformedTool = createTool({
+      name: "transform",
+      description: "Transform input and output",
+      inputSchema: z.object({ amount: z.coerce.number() }),
+      outputSchema: z.number().transform((total) => ({ total })),
+      approval: {
+        when: ({ args }) => args.amount > 100,
+      },
+      execute: ({ amount }) => {
+        executedAmount = amount;
+        return amount * 2;
+      },
+    });
+    const toolSet = ToolSet.fromTools([transformedTool]);
+
+    expect(transformedTool.parseApprovalArgs?.({ amount: "125" })).toEqual({ amount: 125 });
+    await expect(toolSet.call("transform", JSON.stringify({ amount: "21" }))).resolves.toBe(
+      '{"total":42}',
+    );
+    expect(executedAmount).toBe(21);
+  });
+
   it("allows arbitrary output when output schema is omitted", async () => {
     const toolSet = ToolSet.fromTools([
       createTool({
         name: "object_output",
         description: "Return object output",
-        input: z.object({}),
+        inputSchema: z.object({}),
         execute: () => ({ ok: true }),
       }),
     ]);
@@ -143,7 +167,7 @@ describe("ToolSet", () => {
       createTool({
         name: "screenshot",
         description: "Return screenshot",
-        input: z.object({}),
+        inputSchema: z.object({}),
         execute: () => content,
       }),
     ]);
@@ -156,8 +180,8 @@ describe("ToolSet", () => {
     const echoTool = createTool({
       name: "echo",
       description: "Echo",
-      input: z.object({ value: z.string() }),
-      output: z.string(),
+      inputSchema: z.object({ value: z.string() }),
+      outputSchema: z.string(),
       execute: ({ value }) => value,
     });
 
@@ -185,8 +209,8 @@ describe("ToolSet", () => {
       createTool({
         name: "add",
         description: "Replace add",
-        input: z.object({ x: z.number(), y: z.number() }),
-        output: z.number(),
+        inputSchema: z.object({ x: z.number(), y: z.number() }),
+        outputSchema: z.number(),
         execute: ({ x, y }) => x * y,
       }),
     );

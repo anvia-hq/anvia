@@ -28,8 +28,8 @@ export function createTavilySearchTool(apiKey: string) {
     name: "web_search",
     description:
       "Search the public internet for current or external information. Use this when the user asks about recent events, facts that may have changed, or anything that needs web lookup.",
-    input: searchInputSchema,
-    output: searchOutputSchema,
+    inputSchema: searchInputSchema,
+    outputSchema: searchOutputSchema,
     execute: async ({ query }) => {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",

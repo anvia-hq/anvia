@@ -18,10 +18,10 @@ const marketTools = ToolSet.fromTools([
   createTool({
     name: "quote_snapshot",
     description: "Return a mock quote snapshot for a ticker.",
-    input: z.object({
+    inputSchema: z.object({
       ticker: z.string(),
     }),
-    output: z.object({
+    outputSchema: z.object({
       ticker: z.string(),
       price: z.number(),
       changePercent: z.number(),
@@ -37,10 +37,10 @@ const marketTools = ToolSet.fromTools([
   createTool({
     name: "market_news",
     description: "Return mock market news for a ticker.",
-    input: z.object({
+    inputSchema: z.object({
       ticker: z.string(),
     }),
-    output: z.array(z.string()),
+    outputSchema: z.array(z.string()),
     execute: ({ ticker }) => [
       `${ticker.toUpperCase()} raised full-year margin guidance.`,
       "Sector peers traded higher after stronger cloud infrastructure demand.",
@@ -50,10 +50,10 @@ const marketTools = ToolSet.fromTools([
   createTool({
     name: "risk_flags",
     description: "Return mock risk flags for a ticker.",
-    input: z.object({
+    inputSchema: z.object({
       ticker: z.string(),
     }),
-    output: z.array(z.string()),
+    outputSchema: z.array(z.string()),
     execute: () => [
       "Mock data; do not treat this as investment advice.",
       "Single-day price movement can be noise.",

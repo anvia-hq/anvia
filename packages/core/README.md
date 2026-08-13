@@ -38,7 +38,7 @@ const model = client.completionModel("gpt-5");
 const lookupOrder = createTool({
   name: "lookup_order",
   description: "Look up an order by id.",
-  input: z.object({ orderId: z.string() }),
+  inputSchema: z.object({ orderId: z.string() }),
   execute: async ({ orderId }) => ({ orderId, status: "processing" }),
 });
 

@@ -119,7 +119,7 @@ describe("provider-executed tools", () => {
     const localTool = createTool({
       name: "local",
       description: "Local tool",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => "done",
     });
     const agent = new AgentBuilder("researcher", model).tools([localTool, searchTool]).build();
@@ -141,7 +141,7 @@ describe("provider-executed tools", () => {
     const localTool = createTool({
       name: "local",
       description: "Local tool",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => "done",
     });
     const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  AgentBuilder,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -16,6 +15,7 @@ import {
   SkillValidationError,
   type StreamingCompletionModel,
   skill,
+  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -154,7 +154,7 @@ describe("skills", () => {
       scriptFiles: { "helper.sh": "#!/bin/sh\necho helper\n" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const agent = new AgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
+    const agent = new TestAgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
 
     await expect(
       agent.callTool("get_skill_instructions", JSON.stringify({ skillName: "review" })),
@@ -184,7 +184,7 @@ describe("skills", () => {
       },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const agent = new AgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
+    const agent = new TestAgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
 
     await expect(
       agent.callTool(
@@ -217,7 +217,7 @@ describe("skills", () => {
       referenceFiles: { "guide.md": "Reference text" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const agent = new AgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
+    const agent = new TestAgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
 
     await expect(
       agent.callTool(
@@ -241,7 +241,7 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .instructions("Base instructions.")
       .skills(skillSet)
       .hook(
@@ -283,7 +283,7 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .skills(skillSet)
       .middlewares([
         createMiddleware({
@@ -332,7 +332,7 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .tools(skillSet.tools)
       .middlewares([
         createMiddleware({
@@ -385,7 +385,10 @@ describe("skills", () => {
       ],
       [{ type: "text_delta", delta: "loaded" }],
     ]);
-    const agent = new AgentBuilder("test-agent", model).skills(skillSet).defaultMaxTurns(1).build();
+    const agent = new TestAgentBuilder("test-agent", model)
+      .skills(skillSet)
+      .defaultMaxTurns(1)
+      .build();
 
     const events = await collect(agent.stream("review"));
 

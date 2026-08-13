@@ -18,6 +18,6 @@ Unify static documents and searchable context indexes under the `context` option
 settings onto `createContextIndex()`, and expose the declaration inventory through readonly
 `agent.context`. Replace controlling hooks on `new Agent()` with observational `lifecycle`
 callbacks, rename tool approval configuration to `requiresApproval`, and add resumable
-`approval_required` results and stream events through `agent.resume()`. Keep AgentBuilder hooks and
-approval handlers as a compatibility layer while Studio bridges resumable approvals to its existing
-approval routes and events.
+`approval_required` results and stream events through `agent.resume()`. Remove `AgentBuilder`, its
+legacy approval handlers, and the controlling hooks entrypoint; Studio keeps its question workflow
+through an internal runtime hook while bridging resumable approvals to its existing routes and events.

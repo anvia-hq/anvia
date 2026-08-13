@@ -1,5 +1,4 @@
 import type { JsonValue } from "@anvia/core/completion";
-import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import type {
   StudioAgent,
   StudioAgentConfig,
@@ -60,7 +59,6 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     dynamicContextCount: indexedContext.length,
     observerCount: agent.agent.observers.length,
     hasMemory: agent.agent.memory !== undefined,
-    hasHook: getResolvedAgentOptions(agent.agent).hook !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,
   };
   if (name !== undefined) summary.name = name;
@@ -156,13 +154,7 @@ export function capabilityConfig(
     capabilities.sandboxes = { enabled: true };
   }
 
-  if (
-    agents.some(
-      (agent) =>
-        getResolvedAgentOptions(agent.agent).hook !== undefined ||
-        agent.agent.tools.some(toolRequiresApproval),
-    )
-  ) {
+  if (agents.some((agent) => agent.agent.tools.some(toolRequiresApproval))) {
     capabilities.approvals = { enabled: true };
   }
   if (agents.some(agentHasKnowledge)) {

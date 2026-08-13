@@ -1,10 +1,9 @@
 // Demonstrates: getCurrentTrace(), addEvent, and addAttributes. The trace
 // handle is only valid while a run is in flight, so the demo wires a
-// `withHook` hook that reaches the handle via `tracing.getCurrentTrace()`
+// lifecycle callbacks that reach the handle via `tracing.getCurrentTrace()`
 // and emits ad-hoc checkpoint events + attributes from the run lifecycle.
 
-import { createHook } from "@anvia/core/hooks";
-import { buildSupportAgent } from "../_support/agent.js";
+import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -19,22 +18,23 @@ async function main(): Promise<void> {
 
     const response = await agent.generate("Summarize ticket TICKET-1001.", {
       trace: { name: "trace-handle-demo", tags: ["tracing:03"] },
-      hook: createHook({
-        onRunStart() {
+      lifecycle: {
+        onStart() {
           const handle = tracing.getCurrentTrace();
           handle?.addEvent("checkpoint.started", { phase: "pre-inference" });
           handle?.addAttributes({ quality: "high" });
         },
-        onTurnStart() {
+        onStepFinish() {
           const handle = tracing.getCurrentTrace();
           handle?.addEvent("checkpoint.inference", { phase: "llm" });
         },
-        onRunEnd({ output }) {
+        onFinish({ output }) {
           const handle = tracing.getCurrentTrace();
           handle?.addEvent("checkpoint.done", { outputLength: output.length });
         },
-      }),
+      },
     });
+    assertCompleted(response);
 
     // After the run: handle is cleared.
     console.log("[tracing:03] post-run handle:", tracing.getCurrentTrace());

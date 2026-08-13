@@ -1,8 +1,7 @@
 export { Agent } from "./agent/agent";
-export { AgentBuilder } from "./agent/builder";
 export type { ContextIndex, CreateContextIndexOptions } from "./agent/context-index";
 export { createContextIndex, isContextIndex } from "./agent/context-index";
-export { AgentRunCancelledError, MaxTurnsError, ToolApprovalRequiredError } from "./agent/errors";
+export { AgentRunCancelledError, MaxTurnsError } from "./agent/errors";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,
@@ -124,15 +123,6 @@ export {
   defineOutputGuardrail,
   guardrails,
 } from "./guardrails";
-export type { AgentHook } from "./hooks";
-export {
-  cancelRun,
-  createHook,
-  requestToolApproval,
-  runControl,
-  skipTool,
-  toolCallControl,
-} from "./hooks";
 export type {
   GeneratedImage,
   GenerateImageOptions,
@@ -173,11 +163,8 @@ export type {
   CreateToolOptions,
   Tool,
   ToolApprovalContext,
-  ToolApprovalDecision,
-  ToolApprovalPolicy,
   ToolApprovalRequest,
   ToolApprovalRequirement,
-  ToolApprovalsOptions,
   ToolCallContext,
   ToolCallStreamEvent,
   ToolRequiresApproval,

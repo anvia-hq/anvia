@@ -11,7 +11,6 @@ import type {
 } from "../completion/index";
 import { getAssistantGenerationMetadata, isProviderTool } from "../completion/types";
 import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
-import type { AgentHook } from "../hooks";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
@@ -28,7 +27,6 @@ import {
   normalizeToolResultOutput,
   parseToolArgs,
   type Tool,
-  type ToolApprovalsOptions,
   type ToolCallContext,
   type ToolCallStreamEvent,
 } from "../tool/tool";
@@ -62,14 +60,7 @@ export type AgentToolState = {
   toolsByName: ReadonlyMap<string, AnyTool>;
 };
 
-type AgentLegacyRuntime = {
-  legacy: boolean;
-  hook?: AgentHook | undefined;
-  approvals?: ToolApprovalsOptions | undefined;
-};
-
 const agentToolStates = new WeakMap<object, AgentToolState>();
-const agentLegacyRuntimes = new WeakMap<object, AgentLegacyRuntime>();
 
 export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
   readonly id: string;
@@ -124,11 +115,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.lifecycle = resolved.lifecycle;
     this.outputSchema = resolved.outputSchema;
     this.observers = [...(resolved.observers ?? [])];
-    agentLegacyRuntimes.set(this, {
-      legacy: resolved.legacy === true,
-      hook: resolved.hook,
-      approvals: resolved.approvals,
-    });
     this.guardrails = [...(resolved.guardrails ?? [])];
     this.middlewares = [...(resolved.middlewares ?? [])];
     this.memory = resolved.memory;
@@ -311,7 +297,6 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
 ): ResolvedAgentOptions<M, ContextDocument> {
   const toolState = getAgentToolState(agent);
   return {
-    legacy: getAgentLegacyRuntime(agent).legacy,
     id: agent.id,
     name: agent.name,
     description: agent.description,
@@ -327,10 +312,8 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
     toolChoice: agent.toolChoice,
     defaultMaxTurns: agent.defaultMaxTurns,
     lifecycle: agent.lifecycle,
-    hook: getAgentLegacyRuntime(agent).hook,
     outputSchema: agent.outputSchema,
     observers: [...agent.observers],
-    approvals: getAgentLegacyRuntime(agent).approvals,
     guardrails: [...agent.guardrails],
     middlewares: [...agent.middlewares],
     memory: agent.memory,
@@ -343,10 +326,6 @@ export function getAgentToolState(agent: Agent): AgentToolState {
     throw new TypeError("Agent tool state is unavailable.");
   }
   return state;
-}
-
-export function getAgentLegacyRuntime(agent: Agent): AgentLegacyRuntime {
-  return agentLegacyRuntimes.get(agent) ?? { legacy: false };
 }
 
 function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
@@ -385,7 +364,6 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     .join("\n\n");
 
   return {
-    legacy: false,
     id: options.id,
     name: options.name,
     description: options.description,

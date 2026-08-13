@@ -1,5 +1,5 @@
 import type { CompletionModel } from "@anvia/core";
-import { Agent } from "@anvia/core/agent";
+import { Agent, type AgentResponse, type AgentResult } from "@anvia/core/agent";
 import { type AnyTool, createTool } from "@anvia/core/tool";
 import type { LangfuseTracing } from "@anvia/langfuse";
 import { z } from "zod";
@@ -32,6 +32,12 @@ export type BuildSupportAgentOptions = {
   tools?: AnyTool[];
   instructions?: string;
 };
+
+export function assertCompleted(result: AgentResult): asserts result is AgentResponse {
+  if (result.status !== "completed") {
+    throw new Error(`Unexpected approval request for tool "${result.approval.toolName}".`);
+  }
+}
 
 export function buildSupportAgent(model: CompletionModel, options: BuildSupportAgentOptions = {}) {
   const tools = options.tools ?? [];

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  AgentBuilder,
   AssistantContent,
   assertCompletionRequestSupported,
   CompletionCapabilityError,
@@ -15,6 +14,7 @@ import {
   createParsedCompletion,
   Message,
   type StreamingCompletionModel,
+  TestAgentBuilder,
   Usage,
   UserContent,
 } from "./helpers/imports";
@@ -149,7 +149,7 @@ describe("completion model capabilities", () => {
 
   it("Agent.generate enforces capabilities before model calls", async () => {
     const model = new QueueModel({ imageInput: false });
-    const agent = new AgentBuilder("agent", model).build();
+    const agent = new TestAgentBuilder("agent", model).build();
 
     await expect(
       agent.generate(Message.user([UserContent.imageUrl("https://example.com/a.png")])),
@@ -159,7 +159,7 @@ describe("completion model capabilities", () => {
 
   it("Agent.stream enforces streaming capabilities before model calls", async () => {
     const model = new StreamingQueueModel({ streaming: false });
-    const agent = new AgentBuilder("agent", model).build();
+    const agent = new TestAgentBuilder("agent", model).build();
 
     await expect(collect(agent.stream("hello"))).rejects.toThrow(
       "This completion model does not support streaming",

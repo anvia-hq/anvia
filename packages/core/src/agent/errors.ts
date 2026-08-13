@@ -1,5 +1,4 @@
 import type { Message } from "../completion/index";
-import type { ToolApprovalRequest } from "../tool";
 
 export class MaxTurnsError extends Error {
   constructor(
@@ -19,12 +18,5 @@ export class AgentRunCancelledError extends Error {
   ) {
     super(`Agent run cancelled: ${reason}`);
     this.name = "AgentRunCancelledError";
-  }
-}
-
-export class ToolApprovalRequiredError extends Error {
-  constructor(readonly request: ToolApprovalRequest) {
-    super(`Tool approval required for ${request.toolName}, but no approval handler is configured.`);
-    this.name = "ToolApprovalRequiredError";
   }
 }

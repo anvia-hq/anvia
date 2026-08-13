@@ -152,7 +152,6 @@ export type StudioAgentRuntimeSummary = {
   dynamicContextCount: number;
   observerCount: number;
   hasMemory: boolean;
-  hasHook: boolean;
   hasOutputSchema: boolean;
   defaultMaxTurns?: number;
   metadata?: JsonObject;

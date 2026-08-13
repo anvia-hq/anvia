@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { matchesVectorFilter } from "../src/vector-store/filter";
 import {
-  AgentBuilder,
   AssistantContent,
   angularDistance,
   type CompletionModel,
@@ -31,6 +30,7 @@ import {
   type SparseEmbedding,
   type SparseEmbeddingModel,
   type StreamingCompletionModel,
+  TestAgentBuilder,
   Usage,
   UserContent,
   type VectorSearchIndex,
@@ -461,7 +461,7 @@ describe("agent dynamic context", () => {
       embeddingModel,
     );
     const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
+    const agent = new TestAgentBuilder("test-agent", completionModel)
       .context("static context", "static")
       .context(createContextIndex(index, { topK: 1 }))
       .context("closing context", "closing")
@@ -486,7 +486,7 @@ describe("agent dynamic context", () => {
       embeddingModel,
     );
     const completionModel = new StreamingQueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
+    const agent = new TestAgentBuilder("test-agent", completionModel)
       .context(
         createContextIndex(index, {
           topK: 1,
@@ -517,7 +517,7 @@ describe("agent dynamic context", () => {
       },
     };
     const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
+    const agent = new TestAgentBuilder("test-agent", completionModel)
       .context("static context", "static")
       .context(createContextIndex(index, { topK: 1 }))
       .build();
@@ -542,7 +542,7 @@ describe("agent dynamic context", () => {
         throw new Error("Not used by this test");
       },
     };
-    const agent = new AgentBuilder("test-agent", new QueueModel())
+    const agent = new TestAgentBuilder("test-agent", new QueueModel())
       .context(createContextIndex(index, { topK: 1 }))
       .build();
 
@@ -568,7 +568,7 @@ describe("agent dynamic context", () => {
       execute: () => "refund",
     });
     const completionModel = new TwoTurnModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
+    const agent = new TestAgentBuilder("test-agent", completionModel)
       .context(createContextIndex(index, { topK: 1, threshold: 0.9 }))
       .tools([seedTopicTool])
       .build();
@@ -634,7 +634,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.9,
     });
     const completionModel = new ToolCallingModel();
-    const agent = new AgentBuilder("test-agent", completionModel).tools([index]).build();
+    const agent = new TestAgentBuilder("test-agent", completionModel).tools([index]).build();
 
     const response = await agent.generate("refund order A-100");
 
@@ -661,7 +661,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.9,
     });
     const completionModel = new StreamingQueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel).tools([index]).build();
+    const agent = new TestAgentBuilder("test-agent", completionModel).tools([index]).build();
 
     for await (const _event of agent.stream("dog")) {
       // exhaust stream
@@ -693,7 +693,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.9,
     });
     const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
+    const agent = new TestAgentBuilder("test-agent", completionModel)
       .tools([staticRefundTool])
       .tools([index])
       .build();
@@ -712,7 +712,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.95,
     });
     const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel).tools([index]).build();
+    const agent = new TestAgentBuilder("test-agent", completionModel).tools([index]).build();
 
     await agent.generate("start");
 
@@ -733,7 +733,7 @@ describe("agent dynamic tools", () => {
       execute: () => "refund",
     });
     const completionModel = new TwoTurnModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
+    const agent = new TestAgentBuilder("test-agent", completionModel)
       .tools([seedTopicTool])
       .tools([index])
       .build();

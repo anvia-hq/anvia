@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
-import { type AgentHook, createHook } from "@anvia/core/hooks";
+import { type AgentHook, createHook } from "@anvia/core/internal/agent";
 import { parseToolArgs } from "@anvia/core/tool";
 import type { Context, Hono } from "hono";
 import type {

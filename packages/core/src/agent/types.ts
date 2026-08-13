@@ -6,7 +6,6 @@ import type {
   ToolChoice,
 } from "../completion/index";
 import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
-import type { AgentHook } from "../hooks";
 import type { McpServer } from "../mcp";
 import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
@@ -14,7 +13,7 @@ import type { ZodSchema } from "../schema";
 import type { SkillSet } from "../skills";
 import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
-import type { AnyTool, ToolApprovalsOptions } from "../tool/tool";
+import type { AnyTool } from "../tool/tool";
 import type { ContextIndex } from "./context-index";
 import type { AgentLifecycle } from "./lifecycle";
 
@@ -54,8 +53,6 @@ export type ResolvedAgentOptions<
   M extends CompletionModel = CompletionModel,
   ContextDocument = unknown,
 > = {
-  /** Legacy AgentBuilder compatibility. */
-  legacy?: boolean | undefined;
   id: string;
   name?: string | undefined;
   description?: string | undefined;
@@ -71,12 +68,8 @@ export type ResolvedAgentOptions<
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
   lifecycle?: AgentLifecycle | undefined;
-  /** Legacy AgentBuilder compatibility. */
-  hook?: AgentHook | undefined;
   outputSchema?: import("../completion/index").JsonObject | undefined;
   observers?: AgentObserverRegistration[] | undefined;
-  /** Legacy AgentBuilder compatibility. */
-  approvals?: ToolApprovalsOptions | undefined;
   guardrails?: GuardrailPolicy[] | undefined;
   middlewares?: AgentMiddleware[] | undefined;
   memory?: MemoryRegistration | undefined;

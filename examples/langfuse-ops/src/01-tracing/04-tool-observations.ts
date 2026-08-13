@@ -2,7 +2,7 @@
 // toolDefinition, toolMetadata, and structuredResult on the matching
 // observation in the trace.
 
-import { buildSupportAgent, getTicket } from "../_support/agent.js";
+import { assertCompleted, buildSupportAgent, getTicket } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -18,6 +18,7 @@ async function main(): Promise<void> {
     const response = await agent.generate("Look up ticket TICKET-1001 and summarize the issue.", {
       trace: { name: "tool-observations-demo", tags: ["tracing:04"] },
     });
+    assertCompleted(response);
 
     console.log("[tracing:04] output:", response.output);
     console.log(

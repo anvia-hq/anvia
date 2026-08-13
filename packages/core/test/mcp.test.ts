@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  AgentBuilder,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -16,6 +15,7 @@ import {
   type McpServer,
   Message,
   type StreamingCompletionModel,
+  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -306,7 +306,7 @@ describe("MCP tools", () => {
       response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new AgentBuilder("test-agent", model).mcp([fakeMcpServer()]).build();
+    const agent = new TestAgentBuilder("test-agent", model).mcp([fakeMcpServer()]).build();
 
     await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
 
@@ -328,7 +328,7 @@ describe("MCP tools", () => {
       response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .mcp([fakeMcpServer()])
       .middlewares([
         createMiddleware({
@@ -366,7 +366,7 @@ describe("MCP tools", () => {
       [{ type: "text_delta", delta: "7" }],
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .mcp([fakeMcpServer()])
       .hook(
         createHook({

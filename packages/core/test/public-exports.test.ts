@@ -63,9 +63,9 @@ describe("public exports", () => {
     expectTypeOf<AgentToolInput>().not.toBeNever();
   });
 
-  it("exposes AgentBuilder from the public entrypoints", () => {
-    expect("AgentBuilder" in publicCore).toBe(true);
-    expect("AgentBuilder" in publicAgent).toBe(true);
+  it("does not expose the removed AgentBuilder", () => {
+    expect("AgentBuilder" in publicCore).toBe(false);
+    expect("AgentBuilder" in publicAgent).toBe(false);
   });
 
   it("exposes context index helpers from the public entrypoints", () => {
@@ -100,12 +100,13 @@ describe("public exports", () => {
     expect("skipTool" in publicAgent).toBe(false);
     expect("AgentRunCancelledError" in publicAgent).toBe(true);
     expect("MaxTurnsError" in publicAgent).toBe(true);
-    expect("ToolApprovalRequiredError" in publicAgent).toBe(true);
+    expect("ToolApprovalRequiredError" in publicAgent).toBe(false);
   });
 
-  it("exposes prompt hooks from the hooks entrypoint", () => {
-    expect("createHook" in publicCore).toBe(true);
+  it("keeps controlling hooks internal", () => {
+    expect("createHook" in publicCore).toBe(false);
     expect("createHook" in hooks).toBe(true);
+    expect("createHook" in internalAgent).toBe(true);
     expect("skipTool" in hooks).toBe(true);
   });
 

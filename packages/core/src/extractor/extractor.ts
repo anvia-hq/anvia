@@ -1,6 +1,5 @@
-import { type Agent, getAgentToolState } from "../agent/agent";
-import { AgentBuilder } from "../agent/builder";
-import type { ContextIndex } from "../agent/context-index";
+import { Agent, getAgentToolState } from "../agent/agent";
+import { type ContextIndex, isContextIndex } from "../agent/context-index";
 import {
   CompletionCapabilityError,
   type CompletionModel,
@@ -112,29 +111,25 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
 }
 
 export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
-  private readonly agentBuilder: AgentBuilder<M>;
+  private readonly model: M;
+  private instructionBlocks = [DEFAULT_EXTRACTOR_INSTRUCTIONS];
+  private contextInputs: (Document | ContextIndex)[] = [];
+  private contextDocumentCount = 0;
+  private temperatureValue: number | undefined;
+  private maxTokensValue: number | undefined;
+  private additionalParamsValue: JsonValue | undefined;
+  private toolChoiceValue: ToolChoice = "required";
   private retryCount = 0;
 
   constructor(
     model: M,
     private readonly schema: ZodSchema<T>,
   ) {
-    this.agentBuilder = new AgentBuilder("extractor", model)
-      .instructions(DEFAULT_EXTRACTOR_INSTRUCTIONS)
-      .tools([
-        createTool({
-          name: SUBMIT_TOOL_NAME,
-          description: "Submit the structured data extracted from the provided text.",
-          inputSchema: schema,
-          outputSchema: schema,
-          execute: (args) => args,
-        }),
-      ])
-      .toolChoice("required");
+    this.model = model;
   }
 
   instructions(instructions: string): this {
-    this.agentBuilder.instructions(instructions);
+    if (instructions.length > 0) this.instructionBlocks.push(instructions);
     return this;
   }
 
@@ -142,30 +137,34 @@ export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
   context(input: Document | ContextIndex): this;
   context(input: string | Document | ContextIndex, id?: string): this {
     if (typeof input === "string") {
-      this.agentBuilder.context(input, id);
+      this.contextInputs.push({
+        id: id ?? `static_doc_${this.contextDocumentCount}`,
+        text: input,
+      });
     } else {
-      this.agentBuilder.context(input);
+      this.contextInputs.push(input);
     }
+    if (typeof input === "string" || !isContextIndex(input)) this.contextDocumentCount += 1;
     return this;
   }
 
   temperature(temperature: number): this {
-    this.agentBuilder.temperature(temperature);
+    this.temperatureValue = temperature;
     return this;
   }
 
   maxTokens(maxTokens: number): this {
-    this.agentBuilder.maxTokens(maxTokens);
+    this.maxTokensValue = maxTokens;
     return this;
   }
 
   additionalParams(params: JsonValue): this {
-    this.agentBuilder.additionalParams(params);
+    this.additionalParamsValue = params;
     return this;
   }
 
   toolChoice(toolChoice: ToolChoice): this {
-    this.agentBuilder.toolChoice(toolChoice);
+    this.toolChoiceValue = toolChoice;
     return this;
   }
 
@@ -175,7 +174,28 @@ export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
   }
 
   build(): Extractor<T, M> {
-    return new Extractor(this.agentBuilder.build(), this.schema, this.retryCount);
+    const submitTool = createTool({
+      name: SUBMIT_TOOL_NAME,
+      description: "Submit the structured data extracted from the provided text.",
+      inputSchema: this.schema,
+      outputSchema: this.schema,
+      execute: (args) => args,
+    });
+    return new Extractor(
+      new Agent({
+        id: "extractor",
+        model: this.model,
+        instructions: this.instructionBlocks.join("\n\n"),
+        context: this.contextInputs,
+        tools: [submitTool],
+        temperature: this.temperatureValue,
+        maxTokens: this.maxTokensValue,
+        additionalParams: this.additionalParamsValue,
+        toolChoice: this.toolChoiceValue,
+      }),
+      this.schema,
+      this.retryCount,
+    );
   }
 }
 

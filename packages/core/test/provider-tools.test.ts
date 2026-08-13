@@ -3,7 +3,6 @@ import { z } from "zod";
 import { CompletionRequestBuilder } from "../src/internal/completion-request-builder";
 import {
   Agent,
-  AgentBuilder,
   AssistantContent,
   assertCompleted,
   type CompletionModel,
@@ -15,6 +14,7 @@ import {
   Message,
   type ProviderTool,
   type StreamingCompletionModel,
+  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -123,7 +123,7 @@ describe("provider-executed tools", () => {
       inputSchema: z.object({}),
       execute: () => "done",
     });
-    const agent = new AgentBuilder("researcher", model).tools([localTool, searchTool]).build();
+    const agent = new TestAgentBuilder("researcher", model).tools([localTool, searchTool]).build();
 
     const result = await agent.generate("research");
     assertCompleted(result);
@@ -168,7 +168,7 @@ describe("provider-executed tools", () => {
 
   it("propagates and aggregates provider artifacts through Agent streams", async () => {
     const model = new StreamingProviderToolModel();
-    const agent = new AgentBuilder("researcher", model).tools([searchTool]).build();
+    const agent = new TestAgentBuilder("researcher", model).tools([searchTool]).build();
 
     const events = [];
     for await (const event of agent.stream("research")) {

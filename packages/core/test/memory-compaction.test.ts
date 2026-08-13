@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  AgentBuilder,
   type AgentStreamEvent,
   AssistantContent,
   type CompletionModel,
@@ -19,6 +18,7 @@ import {
   Message,
   type Message as MessageType,
   type StreamingCompletionModel,
+  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -168,7 +168,7 @@ describe("memory compaction", () => {
     const summaryModel = new QueueModel([response("Earlier discussion summary.", summaryUsage)]);
     const mainModel = new QueueModel([response("done", mainUsage)]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .observe({
         startRun: () => ({
           event: ({ name }) => {
@@ -205,7 +205,7 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore([Message.user("first"), Message.assistant("answer")]);
     const compactor = vi.fn(async () => ({ summary: "unused" }));
     const model = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", model)
+    const agent = new TestAgentBuilder("test", model)
       .memory(store, {
         compaction: {
           maxMessages: 10,
@@ -226,22 +226,22 @@ describe("memory compaction", () => {
     const compactor = async () => ({ summary: "summary" });
 
     expect(() =>
-      new AgentBuilder("test", model).memory(store, {
+      new TestAgentBuilder("test", model).memory(store, {
         compaction: { maxMessages: 0, compactor },
       }),
     ).toThrow(RangeError);
     expect(() =>
-      new AgentBuilder("test", model).memory(store, {
+      new TestAgentBuilder("test", model).memory(store, {
         compaction: { maxMessages: 4, keepRecentUserTurns: 0, compactor },
       }),
     ).toThrow(RangeError);
     expect(() =>
-      new AgentBuilder("test", model).memory(store, {
+      new TestAgentBuilder("test", model).memory(store, {
         compaction: { maxMessages: 4, conflictRetries: -1, compactor },
       }),
     ).toThrow(RangeError);
     expect(() =>
-      new AgentBuilder("test", model).memory(store, {
+      new TestAgentBuilder("test", model).memory(store, {
         compaction: {
           maxMessages: 4,
           compactor: "nope" as unknown as () => Promise<{ summary: string }>,
@@ -249,7 +249,7 @@ describe("memory compaction", () => {
       }),
     ).toThrow(TypeError);
 
-    const agent = new AgentBuilder("test", model)
+    const agent = new TestAgentBuilder("test", model)
       .memory(store, {
         compaction: {
           maxMessages: 8,
@@ -276,7 +276,7 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore(history);
     const compactor = vi.fn(async () => ({ summary: "unused" }));
     const model = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", model)
+    const agent = new TestAgentBuilder("test", model)
       .memory(store, {
         compaction: {
           maxMessages: 4,
@@ -312,7 +312,7 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore(history);
     const summaryModel = new QueueModel([response("summary")]);
     const mainModel = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .memory(store, {
         compaction: {
           maxMessages: 6,
@@ -353,7 +353,7 @@ describe("memory compaction", () => {
       response("summary two", summaryUsage),
     ]);
     const mainModel = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .memory(store, {
         compaction: {
           maxMessages: 4,
@@ -382,7 +382,7 @@ describe("memory compaction", () => {
     );
     const summaryModel = new QueueModel([response("one"), response("two")]);
     const mainModel = new QueueModel([]);
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .memory(store, {
         compaction: {
           maxMessages: 4,
@@ -420,7 +420,7 @@ describe("memory compaction", () => {
       response("two", summaryUsage),
     ]);
     const mainModel = new StreamingQueueModel([]);
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .memory(store, {
         compaction: {
           maxMessages: 4,
@@ -461,7 +461,7 @@ describe("memory compaction", () => {
       },
     };
     const mainModel = new QueueModel([]);
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .memory(store, {
         compaction: {
           maxMessages: 4,
@@ -501,7 +501,7 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore(history);
     const summaryModel = new QueueModel([response("summary")]);
     const mainModel = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", mainModel)
+    const agent = new TestAgentBuilder("test", mainModel)
       .memory(store, {
         compaction: {
           maxMessages: 6,
@@ -547,7 +547,7 @@ describe("memory compaction", () => {
     const model = new QueueModel([]);
 
     expect(() =>
-      new AgentBuilder("test", model).memory(store, {
+      new TestAgentBuilder("test", model).memory(store, {
         compaction: {
           maxMessages: 4,
           compactor: async () => ({ summary: "summary" }),

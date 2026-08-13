@@ -1,5 +1,5 @@
 import type { JsonObject } from "@anvia/core/completion";
-import { Agent, getAgentToolState, getResolvedAgentOptions } from "@anvia/core/internal/agent";
+import { Agent, getAgentToolState } from "@anvia/core/internal/agent";
 import { Pipeline } from "@anvia/core/pipeline";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -293,7 +293,6 @@ function agentMetadata(agent: Agent): JsonObject {
     dynamicContextCount: contextIndexes(agent).length,
     dynamicToolCount: getAgentToolState(agent).toolIndexes.length,
     hasOutputSchema: agent.outputSchema !== undefined,
-    hasHook: getResolvedAgentOptions(agent).hook !== undefined,
     observerCount: agent.observers.length,
     approvalToolCount: agent.tools.filter(toolRequiresApproval).length,
   };

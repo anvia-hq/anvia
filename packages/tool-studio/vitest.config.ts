@@ -15,7 +15,6 @@ export default defineConfig({
       "@anvia/core/evals": new URL("../core/src/evals/index.ts", import.meta.url).pathname,
       "@anvia/core/internal/agent": new URL("../core/src/internal/agent.ts", import.meta.url)
         .pathname,
-      "@anvia/core/hooks": new URL("../core/src/hooks/index.ts", import.meta.url).pathname,
       "@anvia/core/mcp": new URL("../core/src/mcp/index.ts", import.meta.url).pathname,
       "@anvia/core/memory": new URL("../core/src/memory/index.ts", import.meta.url).pathname,
       "@anvia/core/observability": new URL("../core/src/observability/index.ts", import.meta.url)

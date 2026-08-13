@@ -2,10 +2,10 @@ import type { AgentRunOptions } from "../../agent/run-types";
 import type { AgentHook } from "../../hooks";
 
 const internalAgentRunOptions = Symbol("internalAgentRunOptions");
+const internalAgentHooks = new WeakMap<object, AgentHook>();
 
 export type InternalAgentRunOptions = {
   hook?: AgentHook | undefined;
-  resumableApprovals?: boolean | undefined;
 };
 
 type AgentRunOptionsWithInternal = AgentRunOptions & {
@@ -26,4 +26,12 @@ export function getInternalAgentRunOptions(
   options: AgentRunOptions,
 ): InternalAgentRunOptions | undefined {
   return (options as AgentRunOptionsWithInternal)[internalAgentRunOptions];
+}
+
+export function setInternalAgentHook(agent: object, hook: AgentHook): void {
+  internalAgentHooks.set(agent, hook);
+}
+
+export function getInternalAgentHook(agent: object): AgentHook | undefined {
+  return internalAgentHooks.get(agent);
 }

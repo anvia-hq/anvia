@@ -1,4 +1,4 @@
-import { AgentBuilder, type Tool } from "@anvia/core";
+import { Agent, type Tool } from "@anvia/core";
 import {
   AssistantContent,
   type CompletionRequest,
@@ -287,14 +287,14 @@ describe("OpenAI chat-completions client path", () => {
 
   it("assembles interleaved reasoning and text into one ordered Agent response", async () => {
     const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
-    const agent = new AgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(agent.stream("introduce yourself"));
     const turnEnd = events.find((event) => event.type === "turn_end");
 
     expect(turnEnd?.type).toBe("turn_end");
     if (turnEnd?.type !== "turn_end") {
-      throw new Error("Expected AgentBuilder to emit a turn_end event");
+      throw new Error("Expected Agent to emit a turn_end event");
     }
     expect(turnEnd.response.choice).toEqual([
       {
@@ -467,9 +467,11 @@ describe("OpenAI chat-completions client path", () => {
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tools([recordingTool("ExecCommand", calls)])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", calls)],
+    });
 
     const events = await collect(agent.stream("run pwd"));
 
@@ -501,10 +503,11 @@ describe("OpenAI chat-completions client path", () => {
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tools([recordingTool("ExecCommand", execCalls)])
-      .tools([recordingTool("ReadFile", readCalls)])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", execCalls), recordingTool("ReadFile", readCalls)],
+    });
 
     const events = await collect(agent.stream("run tools"));
 
@@ -531,10 +534,11 @@ describe("OpenAI chat-completions client path", () => {
         chatChunk([chatChoice([], 0, "tool_calls")]),
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tools([recordingTool("ExecCommand", calls)])
-      .tools([recordingTool("ReadFile", calls)])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", calls), recordingTool("ReadFile", calls)],
+    });
 
     await expect(collect(agent.stream("run tools"))).rejects.toThrow(INVALID_TOOL_INDEX_ERROR);
     expect(calls).toHaveLength(0);
@@ -683,9 +687,11 @@ describe("OpenAI chat-completions client path", () => {
         chatChunk([chatChoice([], 0, "tool_calls")]),
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tools([recordingTool("ExecCommand", calls)])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", calls)],
+    });
 
     await expect(collect(agent.stream("run pwd"))).rejects.toThrow(
       'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',

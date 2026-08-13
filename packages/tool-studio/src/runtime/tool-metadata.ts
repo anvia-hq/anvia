@@ -27,8 +27,7 @@ export function agentToolItems(agent: StudioAgent): AgentToolItem[] {
 }
 
 export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata {
-  const legacyApproval = (tool as { approval?: unknown }).approval;
-  const approval = tool.requiresApproval ?? legacyApproval;
+  const approval = tool.requiresApproval;
   if (approval === undefined || approval === false) {
     return { required: false };
   }
@@ -37,19 +36,14 @@ export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata
     return { required: true };
   }
 
-  const policy = approval as {
-    reason?: unknown;
-    rejectMessage?: unknown;
-  };
+  const policy = approval as { reason?: unknown };
   const metadata: StudioAgentToolApprovalMetadata = { required: true };
   if (typeof policy.reason === "string") metadata.reason = policy.reason;
-  if (typeof policy.rejectMessage === "string") metadata.rejectMessage = policy.rejectMessage;
   return metadata;
 }
 
 export function toolRequiresApproval(tool: AnyTool): boolean {
-  const legacyApproval = (tool as { approval?: unknown }).approval;
-  const approval = tool.requiresApproval ?? legacyApproval;
+  const approval = tool.requiresApproval;
   return approval !== undefined && approval !== false;
 }
 

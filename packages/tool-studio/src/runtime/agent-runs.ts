@@ -8,11 +8,7 @@ import type {
   AgentStreamOptions,
 } from "@anvia/core/agent";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
-import {
-  type Agent,
-  getResolvedAgentOptions,
-  withInternalAgentRunOptions,
-} from "@anvia/core/internal/agent";
+import { type Agent, withInternalAgentRunOptions } from "@anvia/core/internal/agent";
 import type { Context, Hono } from "hono";
 import type {
   AgentRunRequest,
@@ -21,7 +17,7 @@ import type {
   StudioSession,
   StudioSessionStore,
 } from "../types";
-import { cloneAgent, composeHooks } from "./agent-utils";
+import { cloneAgent } from "./agent-utils";
 import type { ApprovalContext, createApprovalRuntime } from "./approvals";
 import { serializeError } from "./errors";
 import { errorResponse, unsupportedCapability } from "./http";
@@ -375,14 +371,8 @@ function handleStreamingAgentRun(
   };
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
-  const effectiveHook = composeHooks(
-    getResolvedAgentOptions(run.runAgent).hook,
-    props.questionRuntime.createHook(questionContext),
-  );
-  const streamOptions = withInternalAgentRunOptions(
-    { ...run.options },
-    { hook: effectiveHook, resumableApprovals: true },
-  );
+  const effectiveHook = props.questionRuntime.createHook(questionContext);
+  const streamOptions = withInternalAgentRunOptions({ ...run.options }, { hook: effectiveHook });
   const runStream = mergeRunAndApprovalEvents(
     resumeStreamingApprovals(
       run.runAgent,
@@ -470,14 +460,8 @@ async function startBufferedSessionRun(
   };
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
-  const effectiveHook = composeHooks(
-    getResolvedAgentOptions(run.runAgent).hook,
-    props.questionRuntime.createHook(questionContext),
-  );
-  return withInternalAgentRunOptions(
-    { ...run.options },
-    { hook: effectiveHook, resumableApprovals: true },
-  );
+  const effectiveHook = props.questionRuntime.createHook(questionContext);
+  return withInternalAgentRunOptions({ ...run.options }, { hook: effectiveHook });
 }
 
 function createApprovalContext(

@@ -5,7 +5,7 @@
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createLangfuseDatasetClient, createLangfuseEvalReporter } from "@anvia/langfuse";
-import { buildSupportAgent, getTicket } from "./_support/agent.js";
+import { assertCompleted, buildSupportAgent, getTicket } from "./_support/agent.js";
 import { optionalEnv } from "./_support/env.js";
 import { buildOpenAIClient, defaultModel } from "./_support/model.js";
 import { createTracing } from "./_support/tracing.js";
@@ -34,6 +34,7 @@ async function main(): Promise<void> {
         },
       },
     );
+    assertCompleted(response);
 
     console.log("[quickstart] agent output:", response.output);
     console.log("[quickstart] trace:", response.trace?.traceId);

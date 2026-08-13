@@ -2,7 +2,6 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import * as anvia from "./helpers/imports";
 import {
-  AgentBuilder,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -10,6 +9,7 @@ import {
   ExtractorBuilder,
   PipelineBuilder,
   type PipelineOp,
+  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -112,7 +112,7 @@ describe("PipelineBuilder", () => {
 
   it("prompts an agent and returns output", async () => {
     const model = new QueueModel([response([AssistantContent.text("answer")])]);
-    const agent = new AgentBuilder("test-agent", model).build();
+    const agent = new TestAgentBuilder("test-agent", model).build();
     const op = new PipelineBuilder(z.string())
       .step((value) => `Question: ${value}`)
       .agent(agent)
@@ -163,7 +163,7 @@ describe("PipelineBuilder", () => {
 
   it("exposes an automatic graph", () => {
     const model = new QueueModel([response([AssistantContent.text("answer")])]);
-    const agent = new AgentBuilder("support", model).name("Support").build();
+    const agent = new TestAgentBuilder("support", model).name("Support").build();
     const op = new PipelineBuilder(z.string(), {
       id: "ticket_triage",
       name: "Ticket triage",

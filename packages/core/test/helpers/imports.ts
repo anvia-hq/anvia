@@ -19,6 +19,7 @@ export * from "../../src/tool";
 export * from "../../src/transcription";
 export * from "../../src/ui";
 export * from "../../src/vector-store";
+export * from "./test-agent-builder";
 
 import type { AgentResponse, AgentResult } from "../../src/agent";
 

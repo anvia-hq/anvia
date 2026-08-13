@@ -20,12 +20,6 @@ export type ToolApprovalContext<Args = unknown> = {
   run: ToolApprovalRunContext;
 };
 
-export type ToolApprovalPolicy<Args = unknown> = {
-  when(ctx: ToolApprovalContext<Args>): boolean | Promise<boolean>;
-  reason?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
-  rejectMessage?: string | ((ctx: ToolApprovalContext<Args>) => string | Promise<string>);
-};
-
 export type ToolApprovalRequirement = {
   reason?: string | undefined;
 };
@@ -42,15 +36,6 @@ export type ToolApprovalRequest<Args = unknown> = ToolApprovalContext<Args> & {
   id: string;
   reason?: string;
   rejectMessage?: string;
-};
-
-export type ToolApprovalDecision =
-  | boolean
-  | { approved: true; reason?: string }
-  | { approved: false; reason?: string; rejectMessage?: string };
-
-export type ToolApprovalsOptions = {
-  handler(request: ToolApprovalRequest): ToolApprovalDecision | Promise<ToolApprovalDecision>;
 };
 
 export type ToolCallStreamEvent = {

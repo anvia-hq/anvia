@@ -2,6 +2,7 @@
 // or both. Uses a static model so the LLM call is deterministic.
 
 import { Agent } from "@anvia/core/agent";
+import { assertCompleted } from "../_support/agent.js";
 import { getStaticModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
       "My email is alice@example.com. What is your refund policy?",
       { trace: { name: "redaction-tracing-demo", tags: ["redaction:07"] } },
     );
+    assertCompleted(response);
 
     console.log("[redaction:07] output:", response.output);
     console.log(

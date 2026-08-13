@@ -170,7 +170,6 @@ function AgentRegistryRow(props: {
         ) : (
           <div className="flex min-w-0 flex-wrap gap-2">
             <CapabilityBadge enabled={runtime.hasMemory}>memory</CapabilityBadge>
-            <CapabilityBadge enabled={runtime.hasHook}>hook</CapabilityBadge>
             <CapabilityBadge enabled={runtime.hasOutputSchema}>schema</CapabilityBadge>
             {runtime.defaultMaxTurns === undefined ? null : (
               <Badge className={neutralBadge}>{runtime.defaultMaxTurns} turns</Badge>

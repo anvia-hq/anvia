@@ -2,7 +2,7 @@
 // trace.metadata keys promptName/promptVersion.
 
 import { createLangfusePromptClient } from "@anvia/langfuse";
-import { buildSupportAgent } from "../_support/agent.js";
+import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { optionalEnv } from "../_support/env.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
@@ -26,6 +26,7 @@ async function main(): Promise<void> {
         metadata: { promptName: prompt.name, promptVersion: prompt.version },
       },
     });
+    assertCompleted(response);
     console.log("[prompts:05] output (metadata):", response.output);
 
     // Repeat with a second trace to show the same prompt metadata on another run.
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
         metadata: { promptName: prompt.name, promptVersion: prompt.version },
       },
     });
+    assertCompleted(response2);
     console.log("[prompts:05] output (metadata repeat):", response2.output);
   } finally {
     await tracing.shutdown();

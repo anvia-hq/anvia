@@ -1,4 +1,4 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionRequest,
@@ -450,7 +450,7 @@ describe("Anthropic Messages mapping", () => {
         { type: "message_stop" },
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(agent.stream("say hello"));
 
@@ -758,7 +758,7 @@ describe("Anthropic Messages mapping", () => {
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model).tools([writeTool(toolCalls)]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
 
     const events = await collect(agent.stream("write"));
 
@@ -798,7 +798,7 @@ describe("Anthropic Messages mapping", () => {
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model).tools([writeTool(toolCalls)]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
 
     const events = await collect(agent.stream("write"));
 

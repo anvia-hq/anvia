@@ -1,4 +1,4 @@
-import { type Agent, getAgentLegacyRuntime, getAgentToolState } from "../../agent/agent";
+import { type Agent, getAgentToolState } from "../../agent/agent";
 import { AgentRunCancelledError, MaxTurnsError } from "../../agent/errors";
 import { type AgentLifecycle, composeAgentLifecycle } from "../../agent/lifecycle";
 import type {
@@ -55,7 +55,7 @@ import {
   retryErrorAttributes,
   waitForRetry,
 } from "../../retry";
-import type { ToolApprovalDecision, ToolApprovalRequest, ToolApprovalsOptions } from "../../tool";
+import type { ToolApprovalRequest } from "../../tool";
 import type { AgentMiddleware } from "../../tool/middleware";
 import { createAsyncQueue } from "../async-queue";
 import { CompletionRequestBuilder } from "../completion-request-builder";
@@ -63,7 +63,7 @@ import { extractRagText } from "../rag-text";
 import { registerAgentApprovalRequestDetails } from "./approval-details";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
-import { getInternalAgentRunOptions } from "./run-options";
+import { getInternalAgentHook, getInternalAgentRunOptions } from "./run-options";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
 import {
@@ -80,7 +80,7 @@ type AgentRunCreateOptions = AgentRunOptions & {
 
 type PendingApproval = {
   request: ToolApprovalRequest;
-  resolve(decision: ToolApprovalDecision): void;
+  resolve(decision: AgentApprovalDecision): void;
 };
 
 type DeferredSignal = {
@@ -101,7 +101,6 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   private maxTurnCount: number;
   private activeHook: AgentHook | undefined;
   private readonly activeLifecycle: AgentLifecycle | undefined;
-  private approvalOptions: ToolApprovalsOptions | undefined;
   private guardrailPolicies: GuardrailPolicy[];
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
   private readonly concurrency: number;
@@ -126,16 +125,9 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   ) {
     this.chatHistory = initialHistory;
     this.maxTurnCount = options.maxTurns ?? agent.defaultMaxTurns ?? 0;
-    const legacyRuntime = getAgentLegacyRuntime(agent);
     const internalOptions = getInternalAgentRunOptions(options);
-    this.activeHook = internalOptions?.hook ?? legacyRuntime.hook;
+    this.activeHook = internalOptions?.hook ?? getInternalAgentHook(agent);
     this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle);
-    this.approvalOptions =
-      internalOptions?.resumableApprovals === true || !legacyRuntime.legacy
-        ? {
-            handler: (request) => this.suspendForApproval(request),
-          }
-        : legacyRuntime.approvals;
     this.guardrailPolicies =
       options.guardrails === undefined
         ? [...agent.guardrails]
@@ -945,7 +937,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     const executor = new ToolCallExecutor(
       this.agent,
       this.activeHook,
-      this.approvalOptions,
+      (request) => this.suspendForApproval(request),
       this.activeLifecycle,
       {
         runId,
@@ -960,11 +952,11 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     return executor.execute(toolCalls, onResult, onStreamEvent, observation);
   }
 
-  private suspendForApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
+  private suspendForApproval(request: ToolApprovalRequest): Promise<AgentApprovalDecision> {
     if (this.pendingApproval !== undefined) {
       throw new Error("Agent run already has a pending tool approval.");
     }
-    return new Promise<ToolApprovalDecision>((resolve) => {
+    return new Promise<AgentApprovalDecision>((resolve) => {
       this.pendingApproval = { request, resolve };
       this.approvalSignal.resolve();
     });

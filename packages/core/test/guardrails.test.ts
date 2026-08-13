@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  AgentBuilder,
   type AgentStreamEvent,
   AssistantContent,
   assertCompleted,
@@ -19,6 +18,7 @@ import {
   Message,
   type OutputGuardrail,
   type StreamingCompletionModel,
+  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -116,7 +116,7 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
       .build();
 
@@ -141,7 +141,7 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
       .build();
 
@@ -174,7 +174,7 @@ describe("guardrails", () => {
         return block({ reason: "blocked", message: "Input blocked." });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .observe(observer)
       .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
       .build();
@@ -209,7 +209,7 @@ describe("guardrails", () => {
       patterns: [/secret/g],
       reason: "secret_redacted",
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .guardrails(defineGuardrailPolicy({ id: "policy", input: [redactInput] }))
       .build();
 
@@ -238,7 +238,7 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
       .build();
 
@@ -274,7 +274,7 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
       .build();
 
@@ -321,7 +321,7 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
+    const agent = new TestAgentBuilder("test-agent", model)
       .hook(
         createHook({
           onTurnEnd({ turn }) {

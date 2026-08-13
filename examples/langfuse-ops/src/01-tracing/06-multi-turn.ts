@@ -4,7 +4,7 @@
 import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { MemoryAppendInput, MemoryContext, MemoryStore } from "@anvia/core/memory";
-import { getTicket } from "../_support/agent.js";
+import { assertCompleted, getTicket } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -44,11 +44,13 @@ async function main(): Promise<void> {
       "What ticket is TICKET-1001 about? Give a one-line summary.",
       { trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] } },
     );
+    assertCompleted(first);
     console.log("[tracing:06] turn 1:", first.output);
 
     const second = await session.generate("Now rewrite the summary in two sentences.", {
       trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-2"] },
     });
+    assertCompleted(second);
     console.log("[tracing:06] turn 2:", second.output);
   } finally {
     await tracing.shutdown();

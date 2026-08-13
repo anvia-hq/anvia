@@ -1,6 +1,6 @@
 // Demonstrates: langfuse.create, .observe(tracing), withTrace(...), flush, shutdown.
 
-import { buildSupportAgent } from "../_support/agent.js";
+import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -19,6 +19,7 @@ async function main(): Promise<void> {
         tags: ["tracing:01", "basic"],
       },
     });
+    assertCompleted(response);
 
     console.log("[tracing:01] output:", response.output);
     console.log("[tracing:01] traceId:", response.trace?.traceId);

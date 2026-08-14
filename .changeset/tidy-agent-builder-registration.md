@@ -24,3 +24,6 @@ callbacks, rename tool approval configuration to `requiresApproval`, and add res
 `approval_required` results and stream events through `agent.resume()`. Remove `AgentBuilder`, its
 legacy approval handlers, and the controlling hooks entrypoint; Studio keeps its question workflow
 through an internal runtime hook while bridging resumable approvals to its existing routes and events.
+Replace `PipelineBuilder` and its `build()` phase with an immutable, directly executable
+`new Pipeline({ id, inputSchema })` API while preserving typed fluent composition and graph
+inspection.

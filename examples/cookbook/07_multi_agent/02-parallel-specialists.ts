@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -59,22 +59,22 @@ const synthesizerAgent = new Agent({
   ].join("\n"),
 });
 
-const supportNotesPipeline = new PipelineBuilder(z.string())
+const supportNotesPipeline = new Pipeline({ id: "support-notes", inputSchema: z.string() })
   .step((input) => `Triage this incident for support:\n\n${input}`)
-  .agent(supportAgent)
-  .build();
+  .agent(supportAgent);
 
-const engineeringNotesPipeline = new PipelineBuilder(z.string())
+const engineeringNotesPipeline = new Pipeline({
+  id: "engineering-notes",
+  inputSchema: z.string(),
+})
   .step((input) => `Triage this incident for engineering:\n\n${input}`)
-  .agent(engineeringAgent)
-  .build();
+  .agent(engineeringAgent);
 
-const commsNotesPipeline = new PipelineBuilder(z.string())
+const commsNotesPipeline = new Pipeline({ id: "comms-notes", inputSchema: z.string() })
   .step((input) => `Draft customer communication for this incident:\n\n${input}`)
-  .agent(commsAgent)
-  .build();
+  .agent(commsAgent);
 
-const incidentBrief = new PipelineBuilder(z.string())
+const incidentBrief = new Pipeline({ id: "incident-brief", inputSchema: z.string() })
   .parallel({
     support: supportNotesPipeline,
     engineering: engineeringNotesPipeline,
@@ -110,8 +110,7 @@ const incidentBrief = new PipelineBuilder(z.string())
       `Customer comms notes:\n${commsNotes}`,
     ].join("\n");
   })
-  .agent(synthesizerAgent)
-  .build();
+  .agent(synthesizerAgent);
 
 const final = await incidentBrief.run(incident);
 

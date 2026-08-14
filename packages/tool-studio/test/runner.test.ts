@@ -30,7 +30,7 @@ import type {
   MemoryStore,
 } from "@anvia/core/memory";
 import type { AgentObserver, AgentRunObserver, AgentRunStartArgs } from "@anvia/core/observability";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { createToolIndex, type Tool } from "@anvia/core/tool";
 import {
   InMemoryVectorStore,
@@ -729,15 +729,15 @@ describe("Anvia studio", () => {
 
   it("registers pipelines separately from agents", async () => {
     const agent = new TestAgentBuilder("support", new QueueModel([])).name("Support").build();
-    const pipeline = new PipelineBuilder(z.string(), {
+    const pipeline = new Pipeline({
       id: "ticket-pipeline",
+      inputSchema: z.string(),
       name: "Ticket Pipeline",
       description: "Prepare support tickets",
       metadata: { owner: "support" },
     })
       .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
-      .step((input) => input.toUpperCase(), { id: "classify", name: "Classify" })
-      .build();
+      .step((input) => input.toUpperCase(), { id: "classify", name: "Classify" });
     const runner = new Studio([agent, pipeline]);
 
     expect(runner.config()).toMatchObject({
@@ -781,10 +781,9 @@ describe("Anvia studio", () => {
   });
 
   it("runs pipelines over HTTP and persists runs plus metadata-only pipeline logs", async () => {
-    const pipeline = new PipelineBuilder(z.string(), { id: "audit-pipeline" })
+    const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() })
       .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
-      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
-      .build();
+      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" });
     const studioDbPath = join(studioDbDir ?? tmpdir(), "pipeline.sqlite");
     const runner = new Studio([pipeline], {
       stores: {
@@ -950,9 +949,10 @@ describe("Anvia studio", () => {
   });
 
   it("replays persisted pipeline runs outside the first runs page", async () => {
-    const pipeline = new PipelineBuilder(z.string(), { id: "audit-pipeline" })
-      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
-      .build();
+    const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() }).step(
+      (input) => ({ reply: input.toUpperCase() }),
+      { id: "shape", name: "Shape" },
+    );
     const store = createSqliteSessionStore({
       path: join(studioDbDir ?? tmpdir(), "replay.sqlite"),
     });

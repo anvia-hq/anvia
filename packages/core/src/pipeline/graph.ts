@@ -1,13 +1,13 @@
 import type { JsonObject } from "../completion";
 import type {
-  PipelineBuilderState,
   PipelineGraph,
   PipelineGraphNode,
   PipelineMetadata,
   PipelineStageKind,
+  PipelineState,
 } from "./types";
 
-export function initialBuilderState(metadata: PipelineMetadata): PipelineBuilderState {
+export function initialPipelineState(metadata: PipelineMetadata): PipelineState {
   return {
     graph: initialGraph(metadata),
     terminalNodeId: "input",
@@ -18,7 +18,7 @@ export function initialBuilderState(metadata: PipelineMetadata): PipelineBuilder
 }
 
 export function initialGraph(metadata: PipelineMetadata): PipelineGraph {
-  const id = normalizeId(metadata.id ?? "pipeline");
+  const id = metadata.id ?? "pipeline";
   const graph: PipelineGraph = {
     id,
     nodes: [{ id: "input", kind: "input", label: "Input" }],
@@ -37,7 +37,7 @@ export function initialGraph(metadata: PipelineMetadata): PipelineGraph {
 }
 
 export function appendNode(
-  state: PipelineBuilderState,
+  state: PipelineState,
   kind: PipelineStageKind,
   label: string,
   options: {
@@ -48,7 +48,7 @@ export function appendNode(
     agentName?: string | undefined;
     pipelineId?: string | undefined;
   } = {},
-): { state: PipelineBuilderState; node: PipelineGraphNode } {
+): { state: PipelineState; node: PipelineGraphNode } {
   const node = graphNode(kind, label, state.nextNodeIndex, {
     ...options,
     existingIds: new Set(state.graph.nodes.map((item) => item.id)),
@@ -60,14 +60,14 @@ export function appendNode(
 }
 
 export function appendChildNode(
-  state: PipelineBuilderState,
+  state: PipelineState,
   parentId: string,
   kind: PipelineStageKind,
   label: string,
   options: {
     branchKey?: string | undefined;
   } = {},
-): { state: PipelineBuilderState; node: PipelineGraphNode } {
+): { state: PipelineState; node: PipelineGraphNode } {
   const node = graphNode(kind, label, state.nextNodeIndex, {
     ...options,
     existingIds: new Set(state.graph.nodes.map((item) => item.id)),
@@ -78,14 +78,11 @@ export function appendChildNode(
   };
 }
 
-export function activeTerminalNodeIds(state: PipelineBuilderState): string[] {
+export function activeTerminalNodeIds(state: PipelineState): string[] {
   return state.terminalNodeIds.length > 0 ? state.terminalNodeIds : [state.terminalNodeId];
 }
 
-export function withTerminalNodes(
-  state: PipelineBuilderState,
-  terminalNodeIds: string[],
-): PipelineBuilderState {
+export function withTerminalNodes(state: PipelineState, terminalNodeIds: string[]): PipelineState {
   return {
     ...state,
     terminalNodeId: terminalNodeIds.at(-1) ?? state.terminalNodeId,
@@ -93,7 +90,7 @@ export function withTerminalNodes(
   };
 }
 
-export function withOutputNode(state: PipelineBuilderState): PipelineGraph {
+export function withOutputNode(state: PipelineState): PipelineGraph {
   const graph = cloneGraph(state.graph);
   if (graph.nodes.some((node) => node.id === "output")) {
     return graph;
@@ -109,7 +106,7 @@ export function withOutputNode(state: PipelineBuilderState): PipelineGraph {
   return graph;
 }
 
-export function nextStageLabel(state: PipelineBuilderState, prefix: string): string {
+export function nextStageLabel(state: PipelineState, prefix: string): string {
   return `${prefix} ${state.nextNodeIndex}`;
 }
 
@@ -122,11 +119,11 @@ export function cloneGraph(graph: PipelineGraph): PipelineGraph {
 }
 
 function appendGraphNode(
-  state: PipelineBuilderState,
+  state: PipelineState,
   node: PipelineGraphNode,
   sourceIds: string[],
   terminalNodeIds: string[],
-): PipelineBuilderState {
+): PipelineState {
   const edges = sourceIds.map((sourceId, index) => ({
     id: `edge_${state.nextEdgeIndex + index}`,
     source: sourceId,

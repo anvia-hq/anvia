@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 import { z } from "zod";
@@ -22,8 +22,9 @@ const replyAgent = new Agent({
   ].join("\n"),
 });
 
-const ticketPipeline = new PipelineBuilder(z.string(), {
+const ticketPipeline = new Pipeline({
   id: "ticket-triage-pipeline",
+  inputSchema: z.string(),
   name: "Ticket Triage Pipeline",
   description: "Normalizes a ticket, computes metadata, then drafts a reply.",
   metadata: {
@@ -36,19 +37,18 @@ const ticketPipeline = new PipelineBuilder(z.string(), {
   })
   .parallel(
     {
-      classification: new PipelineBuilder(z.string())
-        .step((ticket) => ({
-          topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
-        }))
-        .build(),
-      priority: new PipelineBuilder(z.string())
-        .step((ticket) => ({
-          priority:
-            ticket.toLowerCase().includes("outage") || ticket.toLowerCase().includes("enterprise")
-              ? "high"
-              : "normal",
-        }))
-        .build(),
+      classification: new Pipeline({
+        id: "ticket-classification",
+        inputSchema: z.string(),
+      }).step((ticket) => ({
+        topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
+      })),
+      priority: new Pipeline({ id: "ticket-priority", inputSchema: z.string() }).step((ticket) => ({
+        priority:
+          ticket.toLowerCase().includes("outage") || ticket.toLowerCase().includes("enterprise")
+            ? "high"
+            : "normal",
+      })),
     },
     {
       name: "Analyze Ticket",
@@ -69,7 +69,6 @@ const ticketPipeline = new PipelineBuilder(z.string(), {
   .agent(replyAgent, {
     name: "Draft Reply",
     description: "Send the prepared context to the reply agent.",
-  })
-  .build();
+  });
 
 new Studio([replyAgent, ticketPipeline]).start();

@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -38,13 +38,13 @@ const sourceQualityTool = createTool({
   }),
 });
 
-const searchNotes = new PipelineBuilder(z.string())
-  .step((topic) => searchNotesTool.call({ topic }))
-  .build();
+const searchNotes = new Pipeline({ id: "search-notes", inputSchema: z.string() }).step((topic) =>
+  searchNotesTool.call({ topic }),
+);
 
-const sourceQuality = new PipelineBuilder(z.string())
-  .step((topic) => sourceQualityTool.call({ topic }))
-  .build();
+const sourceQuality = new Pipeline({ id: "source-quality", inputSchema: z.string() }).step(
+  (topic) => sourceQualityTool.call({ topic }),
+);
 
 const synthesizerModel = client.completionModel("gpt-5.5");
 const synthesizer = new Agent({
@@ -58,7 +58,7 @@ const synthesizer = new Agent({
   ].join("\n"),
 });
 
-const researchPipeline = new PipelineBuilder(z.string())
+const researchPipeline = new Pipeline({ id: "research", inputSchema: z.string() })
   .parallel({
     notesJson: searchNotes,
     qualityJson: sourceQuality,
@@ -74,8 +74,7 @@ const researchPipeline = new PipelineBuilder(z.string())
       `Caveat: ${quality.caveat}`,
     ].join("\n");
   })
-  .agent(synthesizer)
-  .build();
+  .agent(synthesizer);
 
 const report = await researchPipeline.run("Anvia pipeline cookbook examples");
 

@@ -1,29 +1,29 @@
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
-const classifyText = new PipelineBuilder(z.string())
-  .step((text) => ({
+const classifyText = new Pipeline({ id: "classify-text", inputSchema: z.string() }).step(
+  (text) => ({
     topic: text.toLowerCase().includes("payment") ? "billing" : "operations",
-  }))
-  .build();
+  }),
+);
 
-const extractSignals = new PipelineBuilder(z.string())
-  .step((text) => ({
+const extractSignals = new Pipeline({ id: "extract-signals", inputSchema: z.string() }).step(
+  (text) => ({
     hasOutage: text.toLowerCase().includes("outage"),
     hasEnterpriseCustomer: text.toLowerCase().includes("enterprise"),
-  }))
-  .build();
+  }),
+);
 
-const estimatePriority = new PipelineBuilder(z.string())
-  .step((text) => ({
+const estimatePriority = new Pipeline({ id: "estimate-priority", inputSchema: z.string() }).step(
+  (text) => ({
     priority:
       text.toLowerCase().includes("outage") || text.toLowerCase().includes("missed orders")
         ? "high"
         : "normal",
-  }))
-  .build();
+  }),
+);
 
-const triage = new PipelineBuilder(z.string())
+const triage = new Pipeline({ id: "triage", inputSchema: z.string() })
   .parallel({
     classification: classifyText,
     signals: extractSignals,
@@ -33,8 +33,7 @@ const triage = new PipelineBuilder(z.string())
     ...classification,
     ...signals,
     ...priority,
-  }))
-  .build();
+  }));
 
 const result = await triage.run(
   "Enterprise customer reports checkout outage and missed orders after payment retries failed.",

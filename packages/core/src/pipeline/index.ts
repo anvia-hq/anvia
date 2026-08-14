@@ -1,4 +1,3 @@
-export * from "./builder";
 export * from "./pipeline";
 export type {
   PipelineBatchOptions,
@@ -7,6 +6,7 @@ export type {
   PipelineGraphNode,
   PipelineMetadata,
   PipelineOp,
+  PipelineOptions,
   PipelineRunEvent,
   PipelineRunObserver,
   PipelineRunOptions,

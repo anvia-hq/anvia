@@ -1,7 +1,10 @@
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
-const fetchCustomerProfile = new PipelineBuilder(z.string())
+const fetchCustomerProfile = new Pipeline({
+  id: "fetch-customer-profile",
+  inputSchema: z.string(),
+})
   .step(async (customerId) => {
     await delay(10);
     return {
@@ -14,8 +17,7 @@ const fetchCustomerProfile = new PipelineBuilder(z.string())
   .step((customer) => ({
     ...customer,
     priority: customer.plan === "enterprise" || customer.openTickets > 2 ? "high" : "normal",
-  }))
-  .build();
+  }));
 
 const profile = await fetchCustomerProfile.run("cus_123");
 

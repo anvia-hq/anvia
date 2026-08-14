@@ -1,4 +1,4 @@
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
 const SearchInput = z.object({
@@ -11,13 +11,14 @@ async function search(query: string, limit: number): Promise<string[]> {
   return Array.from({ length: limit }, (_, index) => `${query} #${index + 1}`);
 }
 
-const searchPipeline = new PipelineBuilder(SearchInput, {
+const searchPipeline = new Pipeline({
+  id: "search",
+  inputSchema: SearchInput,
   name: "Search Pipeline",
   description: "Validates input with a Zod schema, then runs a search.",
 })
   .step(({ query, limit }) => search(query, limit ?? 10))
-  .step((results) => ({ query: results[0]?.split(" #")[0] ?? "", count: results.length }))
-  .build();
+  .step((results) => ({ query: results[0]?.split(" #")[0] ?? "", count: results.length }));
 
 const result = await searchPipeline.run({ query: "anvia" });
 

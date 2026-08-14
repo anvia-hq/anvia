@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -55,17 +55,17 @@ const riskFlagsTool = createTool({
   ],
 });
 
-const quoteSnapshot = new PipelineBuilder(z.string())
-  .step((ticker) => quoteSnapshotTool.call({ ticker }))
-  .build();
+const quoteSnapshot = new Pipeline({ id: "quote-snapshot", inputSchema: z.string() }).step(
+  (ticker) => quoteSnapshotTool.call({ ticker }),
+);
 
-const marketNews = new PipelineBuilder(z.string())
-  .step((ticker) => marketNewsTool.call({ ticker }))
-  .build();
+const marketNews = new Pipeline({ id: "market-news", inputSchema: z.string() }).step((ticker) =>
+  marketNewsTool.call({ ticker }),
+);
 
-const riskFlags = new PipelineBuilder(z.string())
-  .step((ticker) => riskFlagsTool.call({ ticker }))
-  .build();
+const riskFlags = new Pipeline({ id: "risk-flags", inputSchema: z.string() }).step((ticker) =>
+  riskFlagsTool.call({ ticker }),
+);
 
 const marketAnalystModel = client.completionModel("gpt-5.5");
 const marketAnalyst = new Agent({
@@ -79,7 +79,7 @@ const marketAnalyst = new Agent({
   ].join("\n"),
 });
 
-const marketPipeline = new PipelineBuilder(z.string())
+const marketPipeline = new Pipeline({ id: "market-analysis", inputSchema: z.string() })
   .step((ticker) => ticker.trim().toUpperCase())
   .parallel({
     quoteJson: quoteSnapshot,
@@ -101,8 +101,7 @@ const marketPipeline = new PipelineBuilder(z.string())
       ...risks.map((item) => `- ${item}`),
     ].join("\n");
   })
-  .agent(marketAnalyst)
-  .build();
+  .agent(marketAnalyst);
 
 const analysis = await marketPipeline.run("ACME");
 

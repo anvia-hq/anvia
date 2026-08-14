@@ -1,4 +1,4 @@
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { Studio } from "@anvia/studio";
 import { z } from "zod";
 
@@ -30,8 +30,9 @@ const orders: Record<string, OrderSnapshot> = {
   },
 };
 
-const orderStatusPipeline = new PipelineBuilder(z.string(), {
+const orderStatusPipeline = new Pipeline({
   id: "order-status-pipeline",
+  inputSchema: z.string(),
   name: "Order Status Pipeline",
   description:
     "Normalizes an order lookup, reads local order state, and returns an operator summary.",
@@ -76,11 +77,11 @@ const orderStatusPipeline = new PipelineBuilder(z.string(), {
       name: "Build Operator Summary",
       description: "Return a compact result object for Studio inspection.",
     },
-  )
-  .build();
+  );
 
-const ticketRoutingPipeline = new PipelineBuilder(z.string(), {
+const ticketRoutingPipeline = new Pipeline({
   id: "ticket-routing-pipeline",
+  inputSchema: z.string(),
   name: "Ticket Routing Pipeline",
   description: "Classifies a pasted support ticket and recommends an operational route.",
   metadata: {
@@ -94,26 +95,23 @@ const ticketRoutingPipeline = new PipelineBuilder(z.string(), {
   })
   .parallel(
     {
-      classification: new PipelineBuilder(z.string())
-        .step((ticket) => ({
-          topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
-        }))
-        .build(),
-      priority: new PipelineBuilder(z.string())
-        .step((ticket) => ({
-          priority:
-            ticket.toLowerCase().includes("outage") ||
-            ticket.toLowerCase().includes("enterprise") ||
-            ticket.toLowerCase().includes("blocked")
-              ? "high"
-              : "normal",
-        }))
-        .build(),
-      routing: new PipelineBuilder(z.string())
-        .step((ticket) => ({
-          team: ticket.toLowerCase().includes("payment") ? "billing-ops" : "support-ops",
-        }))
-        .build(),
+      classification: new Pipeline({
+        id: "ticket-classification",
+        inputSchema: z.string(),
+      }).step((ticket) => ({
+        topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
+      })),
+      priority: new Pipeline({ id: "ticket-priority", inputSchema: z.string() }).step((ticket) => ({
+        priority:
+          ticket.toLowerCase().includes("outage") ||
+          ticket.toLowerCase().includes("enterprise") ||
+          ticket.toLowerCase().includes("blocked")
+            ? "high"
+            : "normal",
+      })),
+      routing: new Pipeline({ id: "ticket-routing", inputSchema: z.string() }).step((ticket) => ({
+        team: ticket.toLowerCase().includes("payment") ? "billing-ops" : "support-ops",
+      })),
     },
     {
       name: "Analyze Ticket",
@@ -135,7 +133,6 @@ const ticketRoutingPipeline = new PipelineBuilder(z.string(), {
       name: "Build Routing Decision",
       description: "Merge branch outputs into one routing object.",
     },
-  )
-  .build();
+  );
 
 new Studio([orderStatusPipeline, ticketRoutingPipeline]).start();

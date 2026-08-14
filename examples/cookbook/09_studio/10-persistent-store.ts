@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Agent } from "@anvia/core/agent";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { createSqliteSessionStore, Studio } from "@anvia/studio";
@@ -62,8 +62,9 @@ const agent = new Agent({
   tools: [getEscalation],
 });
 
-const escalationPipeline = new PipelineBuilder(z.string(), {
+const escalationPipeline = new Pipeline({
   id: "persistent-escalation-pipeline",
+  inputSchema: z.string(),
   name: "Persistent Escalation Pipeline",
   description: "Creates pipeline logs and replayable run history in the same SQLite store.",
 })
@@ -78,8 +79,7 @@ const escalationPipeline = new PipelineBuilder(z.string(), {
       : area.includes("fulfillment")
         ? "warehouse-ops"
         : "platform",
-  }))
-  .build();
+  }));
 
 new Studio([agent, escalationPipeline], {
   stores: {

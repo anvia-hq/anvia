@@ -48,6 +48,8 @@ import * as mcp from "../src/mcp";
 import * as memory from "../src/memory";
 import * as modelListing from "../src/model-listing";
 import * as observability from "../src/observability";
+// @ts-expect-error PipelineBuilder was removed from the public pipeline API.
+import type { PipelineBuilder as RemovedPipelineBuilder } from "../src/pipeline";
 import * as pipeline from "../src/pipeline";
 import * as skills from "../src/skills";
 import * as streaming from "../src/streaming";
@@ -213,7 +215,8 @@ describe("public exports", () => {
     expect(mcp).toHaveProperty("connectMcp");
     expect(modelListing).toHaveProperty("ModelListingError");
     expect(observability).toHaveProperty("createObserver");
-    expect(pipeline).toHaveProperty("PipelineBuilder");
+    expect(pipeline).toHaveProperty("Pipeline");
+    expect(pipeline).not.toHaveProperty("PipelineBuilder");
     expect(skills).toHaveProperty("loadSkills");
     expect(streaming).toHaveProperty("toReadableStream");
     expect(tool).toHaveProperty("createTool");
@@ -223,9 +226,12 @@ describe("public exports", () => {
     expect(vectorStore).toHaveProperty("InMemoryVectorStore");
   });
 
-  it("exposes pipeline agent stages without prompt aliases", () => {
-    expect(pipeline.PipelineBuilder.prototype).toHaveProperty("agent");
-    expect(pipeline.PipelineBuilder.prototype).not.toHaveProperty("prompt");
+  it("exposes direct pipelines without builder, build, or prompt aliases", () => {
+    expectTypeOf<RemovedPipelineBuilder>().toBeAny();
+    expect(publicCore).not.toHaveProperty("Pipeline");
+    expect(pipeline.Pipeline.prototype).toHaveProperty("agent");
+    expect(pipeline.Pipeline.prototype).not.toHaveProperty("build");
+    expect(pipeline.Pipeline.prototype).not.toHaveProperty("prompt");
   });
 
   it("exposes direct model operations from the root entrypoint", () => {

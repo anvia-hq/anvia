@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { JsonObject } from "../completion";
 
 /** Minimal interface for anything that can run as a pipeline stage. */
@@ -19,6 +20,14 @@ export type ParallelOutput<Branches extends Record<string, PipelineOp<unknown, u
 
 export type PipelineMetadata = {
   id?: string | undefined;
+  name?: string | undefined;
+  description?: string | undefined;
+  metadata?: JsonObject | undefined;
+};
+
+export type PipelineOptions<Input, Parsed = Input> = {
+  id: string;
+  inputSchema: z.ZodType<Parsed, Input>;
   name?: string | undefined;
   description?: string | undefined;
   metadata?: JsonObject | undefined;
@@ -100,7 +109,7 @@ export type PipelineExecutor<Input, Output> = (
   context: PipelineRunContext,
 ) => Output | Promise<Output>;
 
-export type PipelineBuilderState = {
+export type PipelineState = {
   graph: PipelineGraph;
   terminalNodeId: string;
   terminalNodeIds: string[];

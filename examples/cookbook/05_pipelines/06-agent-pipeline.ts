@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -20,11 +20,13 @@ const analyst = new Agent({
   ].join("\n"),
 });
 
-const executiveUpdate = new PipelineBuilder(z.array(z.string()))
+const executiveUpdate = new Pipeline({
+  id: "executive-update",
+  inputSchema: z.array(z.string()),
+})
   .step((notes) => notes.map((note) => `- ${note}`).join("\n"))
   .step((notes) => `Prepare an executive update from these notes:\n\n${notes}`)
-  .agent(analyst)
-  .build();
+  .agent(analyst);
 
 const output = await executiveUpdate.run([
   "Acme Co. missed several webhook retries in the last hour.",

@@ -1,5 +1,5 @@
 import { ExtractorBuilder } from "@anvia/core/extractor";
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -19,10 +19,9 @@ const ticketExtractor = new ExtractorBuilder(model, ticketSchema)
   .instructions("Extract a support ticket from the provided operational note.")
   .build();
 
-const ticketPipeline = new PipelineBuilder(z.string())
+const ticketPipeline = new Pipeline({ id: "ticket-extraction", inputSchema: z.string() })
   .step((note) => `Extract a support ticket from this note:\n\n${note}`)
-  .extract(ticketExtractor)
-  .build();
+  .extract(ticketExtractor);
 
 const ticket = await ticketPipeline.run(
   "Acme Co. reports checkout outage and missed orders after payment retries failed.",

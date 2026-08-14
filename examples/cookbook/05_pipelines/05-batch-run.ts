@@ -1,13 +1,12 @@
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
-const normalizeIncident = new PipelineBuilder(z.string())
+const normalizeIncident = new Pipeline({ id: "normalize-incident", inputSchema: z.string() })
   .step((input) => input.trim().replace(/\s+/g, " "))
   .step((input) => ({
     normalized: input,
     priority: input.toLowerCase().includes("outage") ? "high" : "normal",
-  }))
-  .build();
+  }));
 
 const batch = await normalizeIncident.batch(
   [

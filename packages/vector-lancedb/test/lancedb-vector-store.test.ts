@@ -256,13 +256,25 @@ describe("filterToLanceExpr", () => {
 
     it("rejects column names that are SQL keywords", () => {
       expect(() => filterToLanceExpr(vectorFilter.eq("SELECT", "value"))).toThrow(
-        "Column name cannot be or contain SQL keywords",
+        "Column name segment",
       );
       expect(() => filterToLanceExpr(vectorFilter.eq("DROP", "value"))).toThrow(
-        "Column name cannot be or contain SQL keywords",
+        "Column name segment",
       );
       expect(() => filterToLanceExpr(vectorFilter.eq("DELETE", "value"))).toThrow(
-        "Column name cannot be or contain SQL keywords",
+        "Column name segment",
+      );
+    });
+
+    it("rejects SQL keywords in nested field segments", () => {
+      expect(() => filterToLanceExpr(vectorFilter.eq("metadata.SELECT", "value"))).toThrow(
+        "Column name segment",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("user.DROP", "value"))).toThrow(
+        "Column name segment",
+      );
+      expect(() => filterToLanceExpr(vectorFilter.eq("data.DELETE.field", "value"))).toThrow(
+        "Column name segment",
       );
     });
 

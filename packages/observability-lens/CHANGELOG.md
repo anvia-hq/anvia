@@ -1,5 +1,13 @@
 # @anvia/lens
 
+## 1.0.0-rc.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @anvia/core@1.0.0-rc.1
+  - @anvia/otel@1.0.0-rc.1
+
 ## 1.0.0-rc.0
 
 ### Major Changes

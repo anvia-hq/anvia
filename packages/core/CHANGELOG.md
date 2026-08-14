@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.0.0-rc.1
+
+### Patch Changes
+
+- Prepare the synchronized Anvia 1.0 package train for its first public release candidate.
+
 ## 1.0.0-rc.0
 
 ### Major Changes

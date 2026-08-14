@@ -75,12 +75,16 @@ function sanitizeColumnName(columnName: string): string {
     "FUNCTION",
   ];
 
-  const upperColumnName = columnName.toUpperCase();
-  for (const keyword of sqlKeywords) {
-    if (upperColumnName === keyword || upperColumnName.includes(` ${keyword} `)) {
-      throw new Error(
-        `Invalid column name: "${columnName}". Column name cannot be or contain SQL keywords.`,
-      );
+  // Check each segment of the column name (for nested fields like user.name)
+  const segments = columnName.split(".");
+  for (const segment of segments) {
+    const upperSegment = segment.toUpperCase();
+    for (const keyword of sqlKeywords) {
+      if (upperSegment === keyword) {
+        throw new Error(
+          `Invalid column name: "${columnName}". Column name segment "${segment}" cannot be a SQL keyword.`,
+        );
+      }
     }
   }
 

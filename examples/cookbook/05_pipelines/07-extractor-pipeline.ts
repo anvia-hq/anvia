@@ -1,4 +1,4 @@
-import { ExtractorBuilder } from "@anvia/core/extractor";
+import { Extractor } from "@anvia/core/extractor";
 import { Pipeline } from "@anvia/core/pipeline";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
@@ -15,9 +15,11 @@ const ticketSchema = z.object({
 });
 
 const model = client.completionModel("gpt-5.5");
-const ticketExtractor = new ExtractorBuilder(model, ticketSchema)
-  .instructions("Extract a support ticket from the provided operational note.")
-  .build();
+const ticketExtractor = new Extractor({
+  model,
+  outputSchema: ticketSchema,
+  instructions: "Extract a support ticket from the provided operational note.",
+});
 
 const ticketPipeline = new Pipeline({ id: "ticket-extraction", inputSchema: z.string() })
   .step((note) => `Extract a support ticket from this note:\n\n${note}`)

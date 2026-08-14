@@ -27,3 +27,6 @@ through an internal runtime hook while bridging resumable approvals to its exist
 Replace `PipelineBuilder` and its `build()` phase with an immutable, directly executable
 `new Pipeline({ id, inputSchema })` API while preserving typed fluent composition and graph
 inspection.
+Replace `ExtractorBuilder` with a focused `new Extractor({ model, outputSchema })` API that accepts
+text directly, uses call-level generation and retry options, and returns either parsed data or a
+detailed extraction result without exposing Agent, context, history, or builder configuration.

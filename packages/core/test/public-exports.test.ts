@@ -22,6 +22,8 @@ import * as audioGeneration from "../src/audio-generation";
 import * as completion from "../src/completion";
 import * as embeddings from "../src/embeddings";
 import * as evals from "../src/evals";
+// @ts-expect-error ExtractorBuilder was removed from the public extractor API.
+import type { ExtractorBuilder as RemovedExtractorBuilder } from "../src/extractor";
 import * as extractor from "../src/extractor";
 import * as guardrails from "../src/guardrails";
 import * as imageGeneration from "../src/image-generation";
@@ -197,7 +199,8 @@ describe("public exports", () => {
     expect(evals).toHaveProperty("faithfulness");
     expect(evals).toHaveProperty("turnRelevancy");
     expect(evals).toHaveProperty("knowledgeRetention");
-    expect(extractor).toHaveProperty("ExtractorBuilder");
+    expect(extractor).toHaveProperty("Extractor");
+    expect(extractor).not.toHaveProperty("ExtractorBuilder");
     expect(guardrails).toHaveProperty("defineGuardrailPolicy");
     expect(guardrails).toHaveProperty("defineInputGuardrail");
     expect(guardrails).toHaveProperty("defineOutputGuardrail");
@@ -232,6 +235,17 @@ describe("public exports", () => {
     expect(pipeline.Pipeline.prototype).toHaveProperty("agent");
     expect(pipeline.Pipeline.prototype).not.toHaveProperty("build");
     expect(pipeline.Pipeline.prototype).not.toHaveProperty("prompt");
+  });
+
+  it("exposes the focused Extractor without builder or legacy execution methods", () => {
+    expectTypeOf<RemovedExtractorBuilder>().toBeAny();
+    expect(publicCore).not.toHaveProperty("Extractor");
+    expect(extractor.Extractor.prototype).toHaveProperty("extract");
+    expect(extractor.Extractor.prototype).toHaveProperty("extractResult");
+    expect(extractor.Extractor.prototype).not.toHaveProperty("build");
+    expect(extractor.Extractor.prototype).not.toHaveProperty("extractWithUsage");
+    expect(extractor.Extractor.prototype).not.toHaveProperty("extractWithHistory");
+    expect(extractor.Extractor.prototype).not.toHaveProperty("getInner");
   });
 
   it("exposes direct model operations from the root entrypoint", () => {

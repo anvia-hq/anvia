@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { CompletionModel } from "../completion";
 import { cosineSimilarity, type EmbeddingModel, embedText } from "../embeddings";
-import { ExtractorBuilder } from "../extractor";
+import { Extractor } from "../extractor";
 import type { ZodSchema } from "../schema";
 import { errorMessage, formatValue, stableComparable } from "./format";
 import { EvalOutcome } from "./outcome";
@@ -429,21 +429,24 @@ export function llmJudge<
 >(
   options: LlmJudgeOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, SchemaOutput, Expected, Name> {
-  const extractor = new ExtractorBuilder(options.model, options.schema)
-    .instructions(
+  const extractor = new Extractor({
+    model: options.model,
+    outputSchema: options.schema,
+    instructions:
       options.instructions ??
-        "Judge the eval case by the requested schema. Submit the judgment using the schema.",
-    )
-    .retries(options.retries ?? 0)
-    .build();
+      "Judge the eval case by the requested schema. Submit the judgment using the schema.",
+  });
 
   return {
     name: (options.name ?? "llm_judge") as Name,
     required: options.required ?? true,
     async evaluate(args) {
       try {
-        const result = await extractor.extractWithUsage(
+        const result = await extractor.extractResult(
           await resolveJudgePrompt(options.prompt, args),
+          {
+            retries: evalExtractionRetries(options.retries),
+          },
         );
         return options.passes(result.data)
           ? EvalOutcome.pass(result.data, { usage: result.usage })
@@ -475,19 +478,16 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
   options: LlmScoreOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, LlmScoreMetricScore, Expected, Name> {
   const criteria = Array.isArray(options.criteria) ? options.criteria.join("\n") : options.criteria;
-  const extractor = new ExtractorBuilder(
-    options.model,
-    z.object({
+  const extractor = new Extractor({
+    model: options.model,
+    outputSchema: z.object({
       score: z.number(),
       feedback: z.string(),
     }),
-  )
-    .instructions(
+    instructions:
       options.instructions ??
-        `Score the eval case against these criteria:\n${criteria}\n\nReturn a score between 0 and 1 and brief feedback.`,
-    )
-    .retries(options.retries ?? 0)
-    .build();
+      `Score the eval case against these criteria:\n${criteria}\n\nReturn a score between 0 and 1 and brief feedback.`,
+  });
 
   return {
     name: (options.name ?? "llm_score") as Name,
@@ -498,8 +498,11 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
     threshold: options.threshold,
     async evaluate(args) {
       try {
-        const result = await extractor.extractWithUsage(
+        const result = await extractor.extractResult(
           await resolveJudgePrompt(options.prompt, args),
+          {
+            retries: evalExtractionRetries(options.retries),
+          },
         );
         const score = result.data;
         if (score.score < 0 || score.score > 1) {
@@ -516,4 +519,12 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
       }
     },
   };
+}
+
+function evalExtractionRetries(retries: number | undefined): { maxAttempts: number } | undefined {
+  const retryCount = Math.max(0, Math.trunc(retries ?? 0));
+  if (retryCount === 0) {
+    return undefined;
+  }
+  return { maxAttempts: retryCount + 1 };
 }

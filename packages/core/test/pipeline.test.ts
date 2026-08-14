@@ -10,7 +10,7 @@ import {
   type CompletionResponse,
   createObserver,
   createTool,
-  ExtractorBuilder,
+  Extractor,
   Pipeline,
   type PipelineOp,
   TestAgentBuilder,
@@ -194,10 +194,10 @@ describe("Pipeline", () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("submit_1", "submit", { priority: "high" })]),
     ]);
-    const extractor = new ExtractorBuilder(
+    const extractor = new Extractor({
       model,
-      z.object({ priority: z.enum(["low", "high"]) }),
-    ).build();
+      outputSchema: z.object({ priority: z.enum(["low", "high"]) }),
+    });
     const pipeline = new Pipeline({ id: "extractor-stage", inputSchema: z.string() })
       .step((value) => `Extract priority: ${value}`)
       .extract(extractor);

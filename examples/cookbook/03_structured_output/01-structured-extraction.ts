@@ -1,8 +1,8 @@
-import { ExtractorBuilder } from "@anvia/core/extractor";
+import { Extractor } from "@anvia/core/extractor";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
-// ExtractorBuilder uses the schema as the shape of the returned data.
+// Extractor uses the schema as the shape of the returned data.
 const personSchema = z.object({
   firstName: z.string().describe("The person's first name."),
   lastName: z.string().describe("The person's last name."),
@@ -14,7 +14,7 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const model = client.completionModel("gpt-5.5");
-const extractor = new ExtractorBuilder(model, personSchema).build();
+const extractor = new Extractor({ model, outputSchema: personSchema });
 
 const person = await extractor.extract("Ada Lovelace was a mathematician and computing pioneer.");
 

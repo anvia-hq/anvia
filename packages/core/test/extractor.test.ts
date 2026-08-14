@@ -1,13 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
-import * as agentLite from "./helpers/imports";
+import * as publicExtractor from "../src/extractor";
 import {
   AssistantContent,
+  CompletionCapabilityError,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
-  createContextIndex,
-  ExtractorBuilder,
+  ExtractionError,
+  Extractor,
   Message,
   Usage,
 } from "./helpers/imports";
@@ -15,18 +16,23 @@ import {
 class QueueModel implements CompletionModel {
   readonly provider = "test";
   readonly defaultModel = "test";
-  readonly capabilities = {
-    streaming: false,
-    tools: true,
-    toolChoice: true,
-    imageInput: true,
-    documentInput: true,
-    outputSchema: true,
-    reasoning: true,
-  };
+  readonly capabilities: CompletionModel["capabilities"];
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionResponse[]) {}
+  constructor(
+    private readonly responses: Array<CompletionResponse | Error>,
+    supportsTools = true,
+  ) {
+    this.capabilities = {
+      streaming: false,
+      tools: supportsTools,
+      toolChoice: supportsTools,
+      imageInput: true,
+      documentInput: true,
+      outputSchema: true,
+      reasoning: true,
+    };
+  }
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
@@ -34,20 +40,33 @@ class QueueModel implements CompletionModel {
     if (response === undefined) {
       throw new Error("No queued response");
     }
+    if (response instanceof Error) {
+      throw response;
+    }
     return response;
   }
 }
 
 describe("Extractor", () => {
-  it("uses a fixed internal extractor agent id", () => {
-    const extractor = new ExtractorBuilder(new QueueModel([]), z.object({ value: z.string() }))
-      .build()
-      .getInner();
+  it("constructs directly and validates the output schema", () => {
+    const model = new QueueModel([]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.string() }),
+    });
 
-    expect(extractor.id).toBe("extractor");
+    expect(extractor.model).toBe(model);
+    expect(extractor.outputSchema).toBeInstanceOf(z.ZodType);
+    expect(
+      () =>
+        new Extractor({
+          model,
+          outputSchema: {} as z.ZodType<{ value: string }>,
+        }),
+    ).toThrow("Extractor outputSchema must be a Zod schema");
   });
 
-  it("generates a submit tool from Zod schema output", async () => {
+  it("generates a required submit tool from the output schema", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("submit_1", "submit", { name: "Ada", age: 36 })]),
     ]);
@@ -56,7 +75,7 @@ describe("Extractor", () => {
       age: z.number().optional(),
     });
 
-    await new ExtractorBuilder(model, personSchema).build().extract("Ada is 36");
+    await new Extractor({ model, outputSchema: personSchema }).extract("Ada is 36");
 
     expect(model.requests[0]?.tools).toEqual([
       {
@@ -69,14 +88,34 @@ describe("Extractor", () => {
             age: { type: "number" },
           },
           required: ["name"],
-          additionalProperties: false,
         },
       },
     ]);
     expect(model.requests[0]?.toolChoice).toBe("required");
   });
 
-  it("returns submitted data and usage", async () => {
+  it("preserves Zod output inference, defaults, refinements, and transforms", async () => {
+    const schema = z
+      .object({
+        label: z.string().transform((value) => value.trim().toUpperCase()),
+        count: z.number().default(1),
+      })
+      .refine((value) => value.label.length > 0);
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("submit_1", "submit", { label: " accepted " })]),
+    ]);
+    const extractor = new Extractor({ model, outputSchema: schema });
+
+    expectTypeOf(extractor).toEqualTypeOf<
+      Extractor<{ label: string; count: number }, QueueModel>
+    >();
+    await expect(extractor.extract("status accepted")).resolves.toEqual({
+      label: "ACCEPTED",
+      count: 1,
+    });
+  });
+
+  it("returns submitted data, cumulative usage, and successful messages", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("submit_1", "submit", { sentiment: "positive" })], {
         inputTokens: 5,
@@ -84,41 +123,87 @@ describe("Extractor", () => {
         totalTokens: 8,
       }),
     ]);
-
-    const result = await new ExtractorBuilder(
+    const extractor = new Extractor({
       model,
-      z.object({ sentiment: z.enum(["positive", "negative"]) }),
-    )
-      .retries(1)
-      .build()
-      .extractWithUsage("great");
+      outputSchema: z.object({ sentiment: z.enum(["positive", "negative"]) }),
+    });
+
+    const result = await extractor.extractResult("great");
 
     expect(result.data).toEqual({ sentiment: "positive" });
     expect(result.usage.totalTokens).toBe(8);
-    expect(result.messages.some((message) => message.role === "assistant")).toBe(true);
+    expect(result.messages).toEqual([
+      Message.user("great"),
+      expect.objectContaining({ role: "assistant" }),
+    ]);
   });
 
-  it("retries when no submit tool call is produced", async () => {
+  it("combines extraction instructions and forwards call options", async () => {
     const model = new QueueModel([
-      response([AssistantContent.text("not json")], {
+      response([AssistantContent.toolCall("submit_1", "submit", { value: "ok" })]),
+    ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.string() }),
+      instructions: "Prefer concise values.",
+    });
+
+    await extractor.extract("extract", {
+      temperature: 0.1,
+      maxTokens: 100,
+      additionalParams: { seed: 1 },
+    });
+
+    expect(model.requests[0]).toMatchObject({
+      temperature: 0.1,
+      maxTokens: 100,
+      additionalParams: { seed: 1 },
+      chatHistory: [Message.user("extract")],
+    });
+    expect(model.requests[0]?.instructions).toEqual(
+      expect.stringContaining("purpose is to extract structured data"),
+    );
+    expect(model.requests[0]?.instructions).toEqual(
+      expect.stringContaining("Prefer concise values."),
+    );
+  });
+
+  it("retries when the model omits the submit call", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.text("not structured")], {
         inputTokens: 1,
         outputTokens: 1,
         totalTokens: 2,
       }),
       response([AssistantContent.toolCall("submit_1", "submit", { value: 1 })]),
     ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.number() }),
+    });
 
-    const result = await new ExtractorBuilder(model, z.object({ value: z.number() }))
-      .retries(1)
-      .build()
-      .extractWithUsage("one");
+    const result = await extractor.extractResult("one", retryTwice());
 
     expect(result.data).toEqual({ value: 1 });
     expect(result.usage.totalTokens).toBe(2);
     expect(model.requests).toHaveLength(2);
   });
 
-  it("retries when submitted data fails Zod validation", async () => {
+  it("does not retry extraction failures unless retries are configured", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.text("not structured")]),
+      response([AssistantContent.toolCall("submit_1", "submit", { value: 1 })]),
+    ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.number() }),
+    });
+
+    await expect(extractor.extract("one")).rejects.toBeInstanceOf(ExtractionError);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("retries invalid submitted data and accumulates usage", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("submit_1", "submit", { value: "one" })], {
         inputTokens: 1,
@@ -131,15 +216,94 @@ describe("Extractor", () => {
         totalTokens: 3,
       }),
     ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.number() }),
+    });
 
-    const result = await new ExtractorBuilder(model, z.object({ value: z.number() }))
-      .retries(1)
-      .build()
-      .extractWithUsage("one");
+    const result = await extractor.extractResult("one", retryTwice());
 
     expect(result.data).toEqual({ value: 1 });
     expect(result.usage.totalTokens).toBe(5);
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("retries provider failures as complete extraction attempts", async () => {
+    const model = new QueueModel([
+      new Error("temporary provider failure"),
+      response([AssistantContent.toolCall("submit_1", "submit", { value: "ok" })]),
+    ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.string() }),
+    });
+
+    await expect(extractor.extract("extract", retryTwice())).resolves.toEqual({ value: "ok" });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("honors a custom retry decision", async () => {
+    const retryContexts: unknown[] = [];
+    const model = new QueueModel([
+      new Error("do not retry"),
+      response([AssistantContent.toolCall("submit_1", "submit", { value: "unused" })]),
+    ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.string() }),
+    });
+
+    await expect(
+      extractor.extract("extract", {
+        retries: {
+          maxAttempts: 3,
+          initialDelayMs: 0,
+          maxDelayMs: 0,
+          shouldRetry(context) {
+            retryContexts.push(context);
+            return false;
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: "ExtractionError",
+      cause: expect.objectContaining({ message: "do not retry" }),
+    });
+    expect(retryContexts).toHaveLength(1);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("throws ExtractionError with the final failure after exhausting attempts", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.text("first failure")]),
+      response([AssistantContent.text("last failure")]),
+    ]);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.string() }),
+    });
+
+    const error = await extractor.extract("extract", retryTwice()).catch((failure) => failure);
+
+    expect(error).toBeInstanceOf(ExtractionError);
+    expect(error).toMatchObject({
+      message: "No data extracted",
+      cause: expect.objectContaining({ message: "The model did not call the submit tool" }),
+    });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("never retries capability errors", async () => {
+    const model = new QueueModel([], false);
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.string() }),
+    });
+
+    await expect(extractor.extract("extract", retryTwice())).rejects.toBeInstanceOf(
+      CompletionCapabilityError,
+    );
+    expect(model.requests).toHaveLength(0);
   });
 
   it("uses the last submit call when multiple are present", async () => {
@@ -149,73 +313,59 @@ describe("Extractor", () => {
         AssistantContent.toolCall("submit_2", "submit", { value: 2 }),
       ]),
     ]);
-
-    await expect(
-      new ExtractorBuilder(model, z.object({ value: z.number() })).build().extract("two"),
-    ).resolves.toEqual({ value: 2 });
-  });
-
-  it("passes history and builder options to the inner agent request", async () => {
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("submit_1", "submit", { value: "ok" })]),
-    ]);
-
-    await new ExtractorBuilder(model, z.object({ value: z.string() }))
-      .instructions("Prefer concise values.")
-      .context("Static facts", "facts")
-      .temperature(0.1)
-      .maxTokens(100)
-      .additionalParams({ seed: 1 })
-      .build()
-      .extractWithHistory("extract", [Message.user("previous")]);
-
-    expect(model.requests[0]).toMatchObject({
-      documents: [{ id: "facts", text: "Static facts" }],
-      temperature: 0.1,
-      maxTokens: 100,
-      additionalParams: { seed: 1 },
+    const extractor = new Extractor({
+      model,
+      outputSchema: z.object({ value: z.number() }),
     });
-    expect(model.requests[0]?.instructions).toEqual(
-      expect.stringContaining("Prefer concise values."),
-    );
-    expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("previous"));
+
+    await expect(extractor.extract("two")).resolves.toEqual({ value: 2 });
   });
 
-  it("retrieves indexed context using the extraction prompt", async () => {
-    const searches: unknown[] = [];
-    const index = {
-      async search(request: unknown) {
-        searches.push(request);
-        return [{ id: "policy", score: 1, document: "Refunds are available for 30 days." }];
-      },
-      async searchIds() {
-        return [];
-      },
-      asTool() {
-        throw new Error("Not used by this test");
-      },
-    };
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("submit_1", "submit", { value: "30 days" })]),
-    ]);
+  it("does not expose builder, context, history, identity, or inner-agent APIs", () => {
+    const model = new QueueModel([]);
+    const extractor = new Extractor({ model, outputSchema: z.string() });
 
-    await new ExtractorBuilder(model, z.object({ value: z.string() }))
-      .context(createContextIndex(index, { topK: 2, threshold: 0.8 }))
-      .build()
-      .extract("What is the refund window?");
+    expect("ExtractorBuilder" in publicExtractor).toBe(false);
+    expect("build" in extractor).toBe(false);
+    expect("getInner" in extractor).toBe(false);
+    expect("extractWithUsage" in extractor).toBe(false);
+    expect("extractWithHistory" in extractor).toBe(false);
+    expect("id" in extractor).toBe(false);
+    expect("name" in extractor).toBe(false);
+    expect("description" in extractor).toBe(false);
 
-    expect(searches).toEqual([
-      { query: "What is the refund window?", topK: 2, threshold: 0.8, filter: undefined },
-    ]);
-    expect(model.requests[0]?.documents).toEqual([
-      { id: "policy", text: "Refunds are available for 30 days." },
-    ]);
-  });
-
-  it("does not export the removed custom schema helper", () => {
-    expect("schema" in agentLite).toBe(false);
+    if (unreachable()) {
+      // @ts-expect-error - Extractor accepts one options object.
+      new Extractor(model, z.string());
+      // @ts-expect-error - retrieval context belongs to Agent.
+      new Extractor({ model, outputSchema: z.string(), context: [] });
+      // @ts-expect-error - Extractor accepts text only.
+      extractor.extract(Message.user("extract"));
+      // @ts-expect-error - history is not an extraction option.
+      extractor.extract("extract", { history: [] });
+      // @ts-expect-error - use extractResult(...).
+      extractor.extractWithUsage("extract");
+      // @ts-expect-error - Extractor has no internal Agent escape hatch.
+      extractor.getInner();
+      // @ts-expect-error - configuration belongs in constructor options.
+      extractor.instructions("custom");
+    }
   });
 });
+
+function retryTwice() {
+  return {
+    retries: {
+      maxAttempts: 2,
+      initialDelayMs: 0,
+      maxDelayMs: 0,
+    },
+  };
+}
+
+function unreachable(): boolean {
+  return false;
+}
 
 function response(
   choice: CompletionResponse["choice"],

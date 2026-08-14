@@ -17,11 +17,11 @@ describe("Studio Core peer dependency boundaries", () => {
   it.each([
     "../../react/package.json",
     "../../server/package.json",
-  ])("keeps Core as a peer of %s", (relativePath) => {
+  ])("keeps Core as a synchronized workspace peer of %s", (relativePath) => {
     const packageManifest = readPackageManifest(relativePath);
 
     expect(packageManifest.dependencies?.["@anvia/core"]).toBeUndefined();
     expect(packageManifest.devDependencies?.["@anvia/core"]).toBe("workspace:*");
-    expect(packageManifest.peerDependencies?.["@anvia/core"]).toBe(">=0.25.0 <1.0.0");
+    expect(packageManifest.peerDependencies?.["@anvia/core"]).toBe("workspace:*");
   });
 });

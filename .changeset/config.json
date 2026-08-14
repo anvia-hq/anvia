@@ -2,11 +2,47 @@
   "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@anvia/anthropic",
+      "@anvia/chroma",
+      "@anvia/core",
+      "@anvia/fastembed",
+      "@anvia/gemini",
+      "@anvia/grok",
+      "@anvia/lancedb",
+      "@anvia/langfuse",
+      "@anvia/lens",
+      "@anvia/logger",
+      "@anvia/memory-drizzle",
+      "@anvia/memory-postgres",
+      "@anvia/memory-prisma",
+      "@anvia/memory-sqlite",
+      "@anvia/milvus",
+      "@anvia/mistral",
+      "@anvia/openai",
+      "@anvia/otel",
+      "@anvia/pgvector",
+      "@anvia/pinecone",
+      "@anvia/qdrant",
+      "@anvia/react",
+      "@anvia/react-ui",
+      "@anvia/redis",
+      "@anvia/sandbox",
+      "@anvia/server",
+      "@anvia/studio",
+      "@anvia/transformers",
+      "@anvia/weaviate"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
+  "privatePackages": {
+    "version": false,
+    "tag": false
+  },
   "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
     "onlyUpdatePeerDependentsWhenOutOfRange": true
   },

@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { releasesReadyForTags } from "./publish-release-state.mjs";
 
 const root = process.cwd();
 const packagesRoot = path.join(root, "packages");
@@ -30,6 +31,7 @@ const packages = packageDirs
 const packageNames = new Set(packages.map((pkg) => pkg.packageJson.name));
 const sortedPackages = topologicalSort(packages, packageNames);
 const published = [];
+const alreadyPublished = [];
 const failed = [];
 
 for (const pkg of sortedPackages) {
@@ -38,6 +40,7 @@ for (const pkg of sortedPackages) {
     console.warn(
       `${name} is not being published because version ${version} is already published on npm`,
     );
+    alreadyPublished.push({ name, version });
     continue;
   }
 
@@ -65,23 +68,12 @@ for (const pkg of sortedPackages) {
   packedPackage.cleanup();
 
   if (result.status === 0) {
-    published.push({ name, version });
+    const release = { name, version };
+    published.push(release);
     continue;
   }
 
   failed.push({ name, version });
-}
-
-if (published.length > 0) {
-  console.info("packages published successfully:");
-  for (const pkg of published) {
-    console.info(`${pkg.name}@${pkg.version}`);
-  }
-  if (skipGitTags) {
-    console.info("Skipping git tag creation.");
-  } else {
-    createGitTags(published);
-  }
 }
 
 if (failed.length > 0) {
@@ -90,6 +82,19 @@ if (failed.length > 0) {
     console.error(`${pkg.name}@${pkg.version}`);
   }
   process.exit(1);
+}
+
+if (published.length > 0) {
+  console.info("packages published successfully:");
+  for (const pkg of published) {
+    console.info(`${pkg.name}@${pkg.version}`);
+  }
+}
+
+if (skipGitTags) {
+  console.info("Skipping git tag creation.");
+} else {
+  createGitTags(releasesReadyForTags(alreadyPublished, published, failed));
 }
 
 writePublishedPackages(published);
@@ -200,14 +205,27 @@ function createGitTags(releases) {
     const tag = `${release.name}@${release.version}`;
     const existing = spawnSync("git", ["rev-parse", "--quiet", "--verify", `refs/tags/${tag}`], {
       cwd: root,
-      stdio: "ignore",
+      encoding: "utf8",
     });
     if (existing.status === 0) {
+      const taggedCommit = gitOutput(["rev-list", "-n", "1", tag]);
+      const currentCommit = gitOutput(["rev-parse", "HEAD"]);
+      if (taggedCommit !== currentCommit) {
+        throw new Error(`${tag} already exists on ${taggedCommit}, not ${currentCommit}.`);
+      }
       continue;
     }
     console.info("New tag:", tag);
     run("git", ["tag", tag], root);
   }
+}
+
+function gitOutput(args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed`);
+  }
+  return result.stdout.trim();
 }
 
 function topologicalSort(items, workspaceNames) {

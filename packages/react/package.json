@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.25.0 <1.0.0",
+    "@anvia/core": "workspace:*",
     "react": ">=18"
   },
   "devDependencies": {

@@ -111,7 +111,7 @@ jobs:
           PUBLISHED_PACKAGES_FILE: .published-packages.json
 
       - name: Push release tags
-        run: git push --follow-tags
+        run: git push origin --tags
 
       - name: Create GitHub Releases
         run: pnpm github-releases

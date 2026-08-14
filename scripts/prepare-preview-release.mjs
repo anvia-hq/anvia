@@ -1,38 +1,28 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  assertPreviewAllowed,
+  createPreviewVersion,
+  DEPENDENCY_FIELDS,
+  findPublicPackages,
+} from "./release-train.mjs";
 
 const root = process.cwd();
-const packagesRoot = path.join(root, "packages");
 const dryRun = process.argv.includes("--dry-run");
 const buildId = process.env.PREVIEW_BUILD_ID ?? createBuildId();
-const dependencyFields = [
-  "dependencies",
-  "devDependencies",
-  "optionalDependencies",
-  "peerDependencies",
-];
+assertPreviewAllowed(root);
+const packages = findPublicPackages(root);
+const previewVersion = createPreviewVersion(buildId);
 
-const packages = findPackageDirs(packagesRoot)
-  .map((dir) => ({ dir, packageJson: readPackageJson(dir) }))
-  .filter((pkg) => pkg.packageJson.private !== true)
-  .filter((pkg) => typeof pkg.packageJson.name === "string")
-  .filter((pkg) => typeof pkg.packageJson.version === "string")
-  .sort((a, b) => a.packageJson.name.localeCompare(b.packageJson.name));
-
-const previewVersions = new Map(
-  packages.map((pkg) => [
-    pkg.packageJson.name,
-    `${nextPatchVersion(pkg.packageJson.version)}-preview.${buildId}`,
-  ]),
-);
+const previewVersions = new Map(packages.map((pkg) => [pkg.packageJson.name, previewVersion]));
 
 for (const pkg of packages) {
   const nextVersion = previewVersions.get(pkg.packageJson.name);
   const updated = structuredClone(pkg.packageJson);
   updated.version = nextVersion;
 
-  for (const field of dependencyFields) {
+  for (const field of DEPENDENCY_FIELDS) {
     rewriteInternalDependencies(updated[field], previewVersions);
   }
 
@@ -42,7 +32,7 @@ for (const pkg of packages) {
   if (!dryRun) {
     writeFileSync(path.join(pkg.dir, "package.json"), `${JSON.stringify(updated, null, 2)}\n`);
   } else {
-    for (const field of dependencyFields) {
+    for (const field of DEPENDENCY_FIELDS) {
       for (const [name, version] of rewrittenDependencies(
         pkg.packageJson[field],
         previewVersions,
@@ -55,31 +45,6 @@ for (const pkg of packages) {
 
 if (dryRun) {
   console.info("Dry run complete. No package files were changed.");
-}
-
-function findPackageDirs(dir) {
-  const entries = readdirSync(dir).sort();
-  const dirs = [];
-
-  for (const entry of entries) {
-    const entryPath = path.join(dir, entry);
-    if (!statSync(entryPath).isDirectory()) {
-      continue;
-    }
-
-    if (existsSync(path.join(entryPath, "package.json"))) {
-      dirs.push(entryPath);
-      continue;
-    }
-
-    dirs.push(...findPackageDirs(entryPath));
-  }
-
-  return dirs;
-}
-
-function readPackageJson(dir) {
-  return JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
 }
 
 function rewriteInternalDependencies(dependencies, versions) {
@@ -108,23 +73,16 @@ function* rewrittenDependencies(dependencies, versions) {
   }
 }
 
-function nextPatchVersion(version) {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-.+)?$/);
-  if (match === null) {
-    throw new Error(`Unsupported semver version: ${version}`);
-  }
-
-  const [, major, minor, patch] = match;
-  return `${major}.${minor}.${Number(patch) + 1}`;
-}
-
 function createBuildId() {
   const timestamp = new Date()
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "");
   const shortSha = getShortSha();
-  return shortSha === undefined ? timestamp : `${timestamp}.${shortSha}`;
+  if (shortSha === undefined) {
+    throw new Error("Preview versioning requires a Git commit SHA.");
+  }
+  return `${timestamp}.sha-${shortSha}`;
 }
 
 function getShortSha() {

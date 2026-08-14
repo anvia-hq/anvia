@@ -1,32 +1,38 @@
-name: Publish Preview Packages
+name: Publish Release Candidate Packages
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - "v1.0.0-rc.*"
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: package-preview-release
+  group: package-rc-release
   cancel-in-progress: false
 
 jobs:
   publish:
-    name: Publish preview packages to npm
+    name: Publish synchronized RC packages to npm
     runs-on: ubuntu-latest
-    environment: npm-preview
+    environment: npm-rc
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
-      - name: Checkout
+      - name: Checkout tagged commit
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Require staging branch
-        run: |
-          if [ "${GITHUB_REF_NAME}" != "staging" ]; then
-            echo "Preview package publishing must run from the staging branch."
-            exit 1
-          fi
+      - name: Fetch staging
+        run: git fetch origin staging:refs/remotes/origin/staging
+
+      - name: Validate tag and release state
+        run: node scripts/validate-release-train.mjs --tag "${GITHUB_REF_NAME}" --require-staging-ancestor
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -45,17 +51,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate release train
-        run: pnpm release-train:validate
-
       - name: Test release infrastructure
         run: pnpm test:release-scripts
 
       - name: Check formatting and linting
         run: pnpm check
-
-      - name: Prepare synchronized preview versions
-        run: pnpm preview:version
 
       - name: Build core package
         run: pnpm --filter @anvia/core build
@@ -75,16 +75,24 @@ jobs:
       - name: Test packages
         run: pnpm --filter './packages/**' test
 
-      - name: Publish preview packages
-        run: node scripts/publish-packages.mjs --tag preview --skip-git-tags
+      - name: Publish release candidate packages
+        run: node scripts/publish-packages.mjs --tag rc
         env:
           NPM_CONFIG_PROVENANCE: true
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PUBLISHED_PACKAGES_FILE: .published-packages.json
 
+      - name: Push package release tags
+        run: git push origin --tags
+
+      - name: Create prerelease GitHub Releases
+        run: pnpm github-releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Notify Discord
         continue-on-error: true
-        run: node scripts/notify-discord-release.mjs preview
+        run: node scripts/notify-discord-release.mjs rc
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PREVIEW_RELEASE_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RC_RELEASE_WEBHOOK_URL }}
           PUBLISHED_PACKAGES_FILE: .published-packages.json

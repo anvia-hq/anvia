@@ -191,6 +191,23 @@ For public package behavior changes, add or update a changeset unless the user
 or maintainer explicitly says not to. Avoid versioning, publishing, creating
 tags, or deployment commands unless explicitly requested.
 
+### 1.0 RC Flow
+
+1. Public API and fix PRs target `staging` and include a patch changeset.
+2. First RC preparation only: run `pnpm rc:enter` in a release PR. This creates
+   unpublished `1.0.0-rc.0`.
+3. To cut a public RC, run `pnpm rc:version` in a release PR and merge it into
+   `staging`.
+4. Tag the exact merged commit and push the tag:
+
+```sh
+git tag v1.0.0-rc.N
+git push origin v1.0.0-rc.N
+```
+
+The tag publishes all public packages together under the npm `rc` tag. Multiple
+change PRs may be combined into one RC.
+
 ## Pull Request Expectations
 
 Before handing work back, report:

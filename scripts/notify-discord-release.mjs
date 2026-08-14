@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { releasePresentation } from "./release-notification.mjs";
 
 const root = process.cwd();
 const packagesRoot = path.join(root, "packages");
@@ -7,9 +8,7 @@ const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
 const publishedPackagesFile = process.env.PUBLISHED_PACKAGES_FILE;
 const releaseChannel = process.argv[2];
 
-if (releaseChannel !== "stable" && releaseChannel !== "preview") {
-  throw new Error("Usage: node scripts/notify-discord-release.mjs <stable|preview>");
-}
+const presentation = releasePresentation(releaseChannel);
 
 if (webhookUrl === undefined || webhookUrl.length === 0) {
   console.warn("DISCORD_WEBHOOK_URL is not set. Skipping Discord release notification.");
@@ -42,10 +41,6 @@ const packageSummary =
     ? `${changedPackageCount} changed package${changedPackageCount === 1 ? "" : "s"}`
     : `${releasedPackages.length} published package${releasedPackages.length === 1 ? "" : "s"}`;
 
-const title =
-  releaseChannel === "stable" ? "Stable packages published" : "Preview packages published";
-const npmTag = releaseChannel === "stable" ? "latest" : "preview";
-const color = releaseChannel === "stable" ? 0x22c55e : 0xf59e0b;
 const repository = process.env.GITHUB_REPOSITORY;
 const serverUrl = process.env.GITHUB_SERVER_URL ?? "https://github.com";
 const runUrl =
@@ -61,7 +56,7 @@ const shortSha = process.env.GITHUB_SHA?.slice(0, 7);
 const fields = [
   {
     name: "npm tag",
-    value: `\`${npmTag}\``,
+    value: `\`${presentation.npmTag}\``,
     inline: true,
   },
   {
@@ -101,12 +96,9 @@ const response = await fetch(webhookUrl, {
   body: JSON.stringify({
     embeds: [
       {
-        title,
-        description:
-          releaseChannel === "stable"
-            ? `Stable packages were published successfully: ${packageSummary}.`
-            : `Preview packages were published successfully: ${packageSummary}.`,
-        color,
+        title: presentation.title,
+        description: `${presentation.description} were published successfully: ${packageSummary}.`,
+        color: presentation.color,
         fields,
         timestamp: new Date().toISOString(),
       },

@@ -51,10 +51,11 @@ const supportAgent = new Agent({
   instructions: "Answer support questions clearly. Ask for missing details.",
 });
 
-const response = await supportAgent
-  .prompt("A customer cannot reset their password. What should I check first?")
-  .send();
+const response = await supportAgent.generate(
+  "A customer cannot reset their password. What should I check first?",
+);
 
+if (response.status !== "completed") throw new Error("Tool approval required.");
 console.log(response.output);
 ```
 
@@ -78,7 +79,7 @@ new Studio([agent]).start({ port: 4021 });
 
 | Capability | Use it for |
 | --- | --- |
-| Agents | Promptable workflows with instructions, context, tools, hooks, history, streaming, and typed outputs. |
+| Agents | Model workflows with instructions, context, tools, lifecycle callbacks, memory, approvals, and streaming. |
 | Tools | Safe, typed access to application-owned actions such as lookup, search, mutation, approval, or dispatch. |
 | Extractors | Schema-shaped data from text, tickets, documents, messages, and model responses. |
 | Pipelines | Explicit multi-step workflows that combine functions, agents, extraction, branching, and batching. |

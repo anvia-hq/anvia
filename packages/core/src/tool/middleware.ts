@@ -4,8 +4,7 @@ import type {
   JsonValue,
   ToolResultContent,
 } from "../completion";
-
-type MaybePromise<T> = T | Promise<T>;
+import type { MaybePromise } from "../internal/type-utils";
 
 export type CompletionRequestMiddlewareArgs = {
   turn: number;

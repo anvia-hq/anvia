@@ -17,7 +17,7 @@ export function initialPipelineState(metadata: PipelineMetadata): PipelineState 
   };
 }
 
-export function initialGraph(metadata: PipelineMetadata): PipelineGraph {
+function initialGraph(metadata: PipelineMetadata): PipelineGraph {
   const id = metadata.id ?? "pipeline";
   const graph: PipelineGraph = {
     id,
@@ -78,7 +78,7 @@ export function appendChildNode(
   };
 }
 
-export function activeTerminalNodeIds(state: PipelineState): string[] {
+function activeTerminalNodeIds(state: PipelineState): string[] {
   return state.terminalNodeIds.length > 0 ? state.terminalNodeIds : [state.terminalNodeId];
 }
 

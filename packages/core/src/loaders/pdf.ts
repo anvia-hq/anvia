@@ -1,11 +1,16 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { err, ok, sortedGlob, toUint8Array } from "./shared";
-import type { LoaderResult, PdfPage, PdfPageWithPath, PdfReadWithPath, PdfSource } from "./types";
+import type {
+  LoaderResult,
+  PdfPage,
+  PdfPageWithPath,
+  PdfReadWithPath,
+  PdfSource,
+  UnwrapLoaderResult,
+} from "./types";
 
 type PdfMode = "source" | "read" | "readWithPath" | "byPage" | "byPageWithPath";
-type LoaderValue<T> = T extends { ok: true; value: infer Value } ? Value : never;
-type UnwrapLoaderResult<T> = [LoaderValue<T>] extends [never] ? T : LoaderValue<T>;
 
 export class PdfFileLoader<T = LoaderResult<PdfSource>> implements AsyncIterable<T> {
   private constructor(

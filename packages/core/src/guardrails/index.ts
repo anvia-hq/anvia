@@ -1,6 +1,5 @@
 import type { JsonObject, Message, Usage } from "../completion";
-
-type MaybePromise<T> = T | Promise<T>;
+import type { MaybePromise } from "../internal/type-utils";
 
 export type GuardrailMode = "enforce" | "observe";
 

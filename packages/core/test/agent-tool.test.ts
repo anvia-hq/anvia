@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { getAgentToolState } from "../src/agent/agent";
+import { getAgentToolState } from "../src/agent/tool-state";
 import {
   Agent,
   AgentRunCancelledError,

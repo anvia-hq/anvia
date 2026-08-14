@@ -16,7 +16,7 @@ import {
   UserContent,
   type UserContent as UserContentType,
 } from "../completion/types";
-import type { UIAttachment, UIMessage, UIMessagePart } from "./types";
+import type { UIAttachment, UIMessage, UIMessagePart, UIToolMessagePart } from "./types";
 
 type UIToolPartLocation = {
   messageIndex: number;
@@ -27,8 +27,6 @@ type UIToolPartLocations = {
   byToolCallId: Map<string, UIToolPartLocation>;
   byCallId: Map<string, UIToolPartLocation>;
 };
-
-type UIToolMessagePart = Extract<UIMessagePart, { type: "tool" }>;
 
 export function uiMessagesToCoreMessages(messages: UIMessage[]): CoreMessage[] {
   const coreMessages: CoreMessage[] = [];
@@ -372,19 +370,6 @@ function toolNameForResult(
   return part?.type === "tool" ? part.toolName : "tool";
 }
 
-export function isUIMessage(value: unknown): value is UIMessage {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    isUIMessageRole(value.role) &&
-    Array.isArray(value.parts)
-  );
-}
-
-export function isUIMessageArray(value: unknown): value is UIMessage[] {
-  return Array.isArray(value) && value.every(isUIMessage);
-}
-
 function textFromUIParts(parts: UIMessagePart[]): string {
   return parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
 }
@@ -573,10 +558,6 @@ function createId(prefix: string): string {
   }
   nextId += 1;
   return `${prefix}_${nextId.toString(36)}`;
-}
-
-function isUIMessageRole(value: unknown): value is UIMessage["role"] {
-  return value === "system" || value === "user" || value === "assistant" || value === "tool";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

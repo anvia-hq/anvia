@@ -40,7 +40,7 @@ export function evaluationMetadata(details: JsonObject, usage: Usage): EvalMetad
   return { evaluation };
 }
 
-export function usageToJson(usage: Usage): JsonObject {
+function usageToJson(usage: Usage): JsonObject {
   const value: JsonObject = {
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,

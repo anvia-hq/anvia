@@ -1,5 +1,6 @@
-import { type Agent, getAgentToolState } from "../../agent/agent";
+import type { Agent } from "../../agent/agent";
 import { isContextIndex } from "../../agent/context-index";
+import { getAgentToolState } from "../../agent/tool-state";
 import type { Document, ToolDefinition } from "../../completion/index";
 
 export async function fetchContextDocuments(

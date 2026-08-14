@@ -54,6 +54,7 @@ import type {
   AgentStreamEventWithoutToolCallDeltas,
   AgentStreamOptions,
 } from "./run-types";
+import { getAgentToolState, getRegisteredAgentTool, registerAgentToolState } from "./tool-state";
 import type {
   AgentContextInput,
   AgentOptions,
@@ -61,20 +62,7 @@ import type {
   ResolvedAgentOptions,
 } from "./types";
 
-export const DEFAULT_MAX_TURNS = 20;
-
-export type AgentToolState = {
-  staticTools: readonly AnyTool[];
-  providerTools: readonly ProviderTool[];
-  toolIndexes: readonly ToolIndex[];
-};
-
-type StoredAgentToolState = {
-  publicState: AgentToolState;
-  toolsByName: Map<string, AnyTool>;
-};
-
-const agentToolStates = new WeakMap<object, StoredAgentToolState>();
+const DEFAULT_MAX_TURNS = 20;
 
 export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
   readonly id: string;
@@ -126,10 +114,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       providerTools: Object.freeze((resolved.providerTools ?? []).map(snapshotProviderTool)),
       toolIndexes: Object.freeze(toolIndexes),
     });
-    agentToolStates.set(this, {
-      publicState: publicToolState,
-      toolsByName,
-    });
+    registerAgentToolState(this, publicToolState, toolsByName);
     this.toolChoice = cloneFrozenPlainData(resolved.toolChoice);
     this.defaultMaxTurns = assertNonnegativeSafeInteger(
       resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS,
@@ -273,7 +258,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   }
 
   getTool(toolName: string): AnyTool | undefined {
-    return getStoredAgentToolState(this).toolsByName.get(toolName);
+    return getRegisteredAgentTool(this, toolName);
   }
 
   async callTool(
@@ -334,18 +319,6 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
     middlewares: [...agent.middlewares],
     memory: agent.memory,
   };
-}
-
-export function getAgentToolState(agent: Agent): AgentToolState {
-  return getStoredAgentToolState(agent).publicState;
-}
-
-function getStoredAgentToolState(agent: Agent): StoredAgentToolState {
-  const state = agentToolStates.get(agent);
-  if (state === undefined) {
-    throw new TypeError("Agent tool state is unavailable.");
-  }
-  return state;
 }
 
 function resolveAgentOptions<M extends CompletionModel, ContextDocument>(

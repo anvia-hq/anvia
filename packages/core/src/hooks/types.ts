@@ -24,9 +24,6 @@ export type ToolCallControl = {
   requestApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
 };
 
-export type HookResult = HookAction | undefined;
-export type ToolCallHookResult = ToolCallHookAction | undefined;
-
 type HookCallback<Args> = (
   args: Args,
 ) => HookAction | Promise<HookAction | undefined> | Promise<void> | void;

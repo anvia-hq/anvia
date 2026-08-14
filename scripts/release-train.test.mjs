@@ -29,6 +29,7 @@ import {
   findPublicPackages,
   parseRcTag,
   readPendingChangesets,
+  readPrereleaseState,
 } from "./release-train.mjs";
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -56,7 +57,7 @@ test("validates preview and public RC versions", () => {
   assert.throws(() => parseRcTag("v1.0.0-rc.01"), /Invalid/);
 });
 
-test("preview dry runs synchronize versions without changing package manifests", () => {
+test("preview dry runs respect the release phase without changing package manifests", () => {
   const packages = findPublicPackages(repositoryRoot);
   const before = packages.map(({ dir }) => readFileSync(path.join(dir, "package.json"), "utf8"));
   const result = spawnSync(process.execPath, [previewScript, "--dry-run"], {
@@ -64,12 +65,19 @@ test("preview dry runs synchronize versions without changing package manifests",
     encoding: "utf8",
     env: { ...process.env, PREVIEW_BUILD_ID: "20260814T120102.sha-abcdef0" },
   });
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(
-    result.stdout.match(/^@anvia\/[^:]+: .* -> 1\.0\.0-preview\.20260814T120102\.sha-abcdef0$/gm)
-      ?.length,
-    packages.length,
-  );
+
+  if (readPrereleaseState(repositoryRoot) === undefined) {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      result.stdout.match(/^@anvia\/[^:]+: .* -> 1\.0\.0-preview\.20260814T120102\.sha-abcdef0$/gm)
+        ?.length,
+      packages.length,
+    );
+  } else {
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Preview releases are disabled/);
+  }
+
   assert.deepEqual(
     packages.map(({ dir }) => readFileSync(path.join(dir, "package.json"), "utf8")),
     before,

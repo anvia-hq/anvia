@@ -1,5 +1,18 @@
 # @anvia/grok
 
+## 1.0.0-rc.0
+
+### Major Changes
+
+- 4564d2f: Prepare the synchronized Anvia 1.0 release train.
+
+### Patch Changes
+
+- Updated dependencies [4564d2f]
+- Updated dependencies [4ab25bb]
+  - @anvia/core@1.0.0-rc.0
+  - @anvia/openai@1.0.0-rc.0
+
 ## 0.4.1
 
 ### Patch Changes

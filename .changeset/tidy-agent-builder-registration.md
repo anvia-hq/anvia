@@ -30,3 +30,5 @@ inspection.
 Replace `ExtractorBuilder` with a focused `new Extractor({ model, outputSchema })` API that accepts
 text directly, uses call-level generation and retry options, and returns either parsed data or a
 detailed extraction result without exposing Agent, context, history, or builder configuration.
+Internalize the eval suite's metric factory type and consolidate direct completion and Agent request
+normalization behind one internal request factory, removing the final Core builder abstractions.

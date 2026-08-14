@@ -12,10 +12,10 @@ import {
   createHook,
   createMiddleware,
   createTool,
+  getAgentApprovalRequestDetails,
   MaxTurnsError,
   Message,
   requestToolApproval,
-  TestAgentBuilder,
   type ToolCallContext,
   ToolOutput,
   Usage,
@@ -112,7 +112,7 @@ const addTool = createTool({
 describe("Agent execution", () => {
   it("returns text-only completions", async () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new TestAgentBuilder("test-agent", model).instructions("system").build();
+    const agent = new Agent({ id: "test-agent", model, instructions: "system" });
 
     const result = await agent.generate("hello");
     assertCompleted(result);
@@ -128,7 +128,7 @@ describe("Agent execution", () => {
       { error },
       { response: response([AssistantContent.text("recovered")]) },
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
     try {
@@ -151,21 +151,21 @@ describe("Agent execution", () => {
     ];
     const model = new FlakyQueueModel(errors.map((error) => ({ error })));
     const hookCalls = { completionCall: 0, completionError: 0 };
-    const agent = new TestAgentBuilder("test-agent", model)
-      .hook(
-        createHook({
-          onCompletionCall() {
-            hookCalls.completionCall += 1;
-          },
-          onCompletionError() {
-            hookCalls.completionError += 1;
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onCompletionCall() {
+        hookCalls.completionCall += 1;
+      },
+      onCompletionError() {
+        hookCalls.completionError += 1;
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.generate(
+        "hello",
+        withInternalAgentRunOptions({ retries: { initialDelayMs: 0, maxDelayMs: 0 } }, { hook }),
+      ),
     ).rejects.toBe(errors[2]);
 
     expect(model.requests).toHaveLength(3);
@@ -178,7 +178,7 @@ describe("Agent execution", () => {
       { error },
       { response: response([AssistantContent.text("unexpected")]) },
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     await expect(
       agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -194,7 +194,7 @@ describe("Agent execution", () => {
       { error },
       { response: response([AssistantContent.text("recovered")]) },
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     await expect(
       agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -209,7 +209,7 @@ describe("Agent execution", () => {
       { error },
       { response: response([AssistantContent.text("unexpected")]) },
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     await expect(
       agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -225,7 +225,7 @@ describe("Agent execution", () => {
       { response: response([AssistantContent.text("ready")]) },
     ]);
     const contexts: unknown[] = [];
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const result = await agent.generate("hello", {
       retries: {
@@ -253,10 +253,10 @@ describe("Agent execution", () => {
   });
 
   it("validates completion retry options when configuring the request", () => {
-    const agent = new TestAgentBuilder(
-      "test-agent",
-      new QueueModel([response([AssistantContent.text("unused")])]),
-    ).build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: new QueueModel([response([AssistantContent.text("unused")])]),
+    });
 
     expect(() => agent.generate("hello", { retries: { maxAttempts: 0 } })).toThrow(RangeError);
     expect(() => agent.generate("hello", { retries: { maxAttempts: 1.5 } })).toThrow(RangeError);
@@ -293,29 +293,32 @@ describe("Agent execution", () => {
       { error: Object.assign(new Error("temporarily unavailable"), { status: 503 }) },
       { response: response([AssistantContent.text("7")]) },
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([countingTool])
-      .middlewares([
+    const hook = createHook({
+      onCompletionCall() {
+        completionCalls += 1;
+      },
+      onCompletionError() {
+        completionErrors += 1;
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [countingTool],
+      middlewares: [
         createMiddleware({
           onCompletionRequest() {
             middlewareCalls += 1;
             return undefined;
           },
         }),
-      ])
-      .hook(
-        createHook({
-          onCompletionCall() {
-            completionCalls += 1;
-          },
-          onCompletionError() {
-            completionErrors += 1;
-          },
-        }),
-      )
-      .build();
+      ],
+    });
 
-    const result = await agent.generate("add", { retries: { initialDelayMs: 0, maxDelayMs: 0 } });
+    const result = await agent.generate(
+      "add",
+      withInternalAgentRunOptions({ retries: { initialDelayMs: 0, maxDelayMs: 0 } }, { hook }),
+    );
     assertCompleted(result);
 
     expect(result.output).toBe("7");
@@ -327,12 +330,13 @@ describe("Agent execution", () => {
     expect(result.messages.filter((message) => message.role === "tool")).toHaveLength(1);
   });
 
-  it("merges repeated instruction blocks", async () => {
+  it("passes complete configured instructions", async () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .instructions("First block.")
-      .instructions("Second block.")
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      instructions: "First block.\n\nSecond block.",
+    });
 
     await agent.generate("hello");
 
@@ -344,7 +348,7 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }, "fc_1")]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     const result = await agent.generate("add");
     assertCompleted(result);
@@ -370,7 +374,7 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("tool_0", "", { command: "pwd" }, "call_abc")]),
       response([AssistantContent.text("should not continue")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     await expect(agent.generate("run a command")).rejects.toThrow(
       'Completion returned tool call "tool_0" with an empty function name; this indicates invalid provider output or provider mapping.',
@@ -386,7 +390,7 @@ describe("Agent execution", () => {
       ]),
       response([AssistantContent.text("ok")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     await expect(agent.generate("add twice", { toolConcurrency: 2 })).resolves.toMatchObject({
       output: "ok",
@@ -421,14 +425,12 @@ describe("Agent execution", () => {
       ]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([first, second])
-      .hook(createHook({ onToolCall() {} }))
-      .build();
+    const hook = createHook({ onToolCall() {} });
+    const agent = new Agent({ id: "test-agent", model, tools: [first, second] });
 
-    await expect(agent.generate("run both", { toolConcurrency: 2 })).resolves.toMatchObject({
-      output: "done",
-    });
+    await expect(
+      agent.generate("run both", withInternalAgentRunOptions({ toolConcurrency: 2 }, { hook })),
+    ).resolves.toMatchObject({ output: "done" });
     expect(maxActive).toBe(1);
   });
 
@@ -474,13 +476,16 @@ describe("Agent execution", () => {
         events.push(`hook:${result}`);
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .middlewares([outputGate])
-      .hook(hook)
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      middlewares: [outputGate],
+    });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({ output: "done" });
+    await expect(
+      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual(["add:fc_1:7", "hook:stored:7"]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -517,12 +522,11 @@ describe("Agent execution", () => {
         events.push(`${result}:${structuredResult?.length ?? 0}`);
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([screenshotTool])
-      .hook(hook)
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [screenshotTool] });
 
-    await expect(agent.generate("screenshot")).resolves.toMatchObject({ output: "done" });
+    await expect(
+      agent.generate("screenshot", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual(['{"coordMap":"0,0,100,100,100,100"}\n[image:image/png]:2']);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -554,9 +558,11 @@ describe("Agent execution", () => {
       response([AssistantContent.text("done")]),
     ]);
     const seen: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([screenshotTool])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [screenshotTool],
+      middlewares: [
         createMiddleware({
           onToolOutput({ result, structuredResult, originalStructuredResult }) {
             seen.push(
@@ -565,8 +571,8 @@ describe("Agent execution", () => {
             return "stored:screenshot";
           },
         }),
-      ])
-      .build();
+      ],
+    });
 
     await expect(agent.generate("screenshot")).resolves.toMatchObject({ output: "done" });
 
@@ -607,10 +613,12 @@ describe("Agent execution", () => {
         return `${result}:request`;
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .middlewares([keep, agentAppend])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      middlewares: [keep, agentAppend],
+    });
 
     await expect(agent.generate("add", { middlewares: [requestAppend] })).resolves.toMatchObject({
       output: "done",
@@ -649,9 +657,11 @@ describe("Agent execution", () => {
         events.push(`tool_result:${toolName}:${result}`);
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).hook(hook).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
+    await expect(
+      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "7" });
 
     expect(events).toEqual([
       "completion_call:user:0",
@@ -666,26 +676,25 @@ describe("Agent execution", () => {
   it("runs lifecycle hooks around prompt turns", async () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .hook(
-        createHook({
-          onRunStart({ prompt, history, maxTurns }) {
-            events.push(`run_start:${prompt.role}:${history.length}:${maxTurns}`);
-          },
-          onTurnStart({ turn, prompt, history }) {
-            events.push(`turn_start:${turn}:${prompt.role}:${history.length}`);
-          },
-          onTurnEnd({ turn, response }) {
-            events.push(`turn_end:${turn}:${response.choice.length}`);
-          },
-          onRunEnd({ output, messages }) {
-            events.push(`run_end:${output}:${messages.length}`);
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onRunStart({ prompt, history, maxTurns }) {
+        events.push(`run_start:${prompt.role}:${history.length}:${maxTurns}`);
+      },
+      onTurnStart({ turn, prompt, history }) {
+        events.push(`turn_start:${turn}:${prompt.role}:${history.length}`);
+      },
+      onTurnEnd({ turn, response }) {
+        events.push(`turn_end:${turn}:${response.choice.length}`);
+      },
+      onRunEnd({ output, messages }) {
+        events.push(`run_end:${output}:${messages.length}`);
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model });
 
-    await expect(agent.generate("hello")).resolves.toMatchObject({ output: "done" });
+    await expect(
+      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual([
       "run_start:user:0:20",
@@ -698,8 +707,15 @@ describe("Agent execution", () => {
   it("runs completion middleware before the model and before response hooks", async () => {
     const model = new QueueModel([response([AssistantContent.text("original")])]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .middlewares([
+    const hook = createHook({
+      onCompletionResponse({ response }) {
+        events.push(`hook:${textFromChoice(response.choice)}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      middlewares: [
         createMiddleware({
           onCompletionRequest({ request, originalRequest }) {
             events.push(
@@ -724,17 +740,12 @@ describe("Agent execution", () => {
             };
           },
         }),
-      ])
-      .hook(
-        createHook({
-          onCompletionResponse({ response }) {
-            events.push(`hook:${textFromChoice(response.choice)}`);
-          },
-        }),
-      )
-      .build();
+      ],
+    });
 
-    await expect(agent.generate("hello")).resolves.toMatchObject({ output: "changed" });
+    await expect(
+      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "changed" });
 
     expect(model.requests[0]?.instructions).toBe("middleware instructions");
     expect(events).toEqual(["request:1:1", "response:original:original", "hook:changed"]);
@@ -746,9 +757,11 @@ describe("Agent execution", () => {
       response([AssistantContent.text("done")]),
     ]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      middlewares: [
         createMiddleware({
           onToolInput({ args, originalArgs }) {
             events.push(`input:${args}:${originalArgs}`);
@@ -759,8 +772,8 @@ describe("Agent execution", () => {
             return { result: `stored:${result}` };
           },
         }),
-      ])
-      .build();
+      ],
+    });
 
     await expect(agent.generate("add")).resolves.toMatchObject({ output: "done" });
 
@@ -777,21 +790,23 @@ describe("Agent execution", () => {
     );
   });
 
-  it("composes new and deprecated middleware registrations in order", async () => {
+  it("composes agent and run middleware registrations in order", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             return { result: `${result}:agent` };
           },
         }),
-      ])
-      .build();
+      ],
+    });
 
     await expect(
       agent.generate("add", {
@@ -834,9 +849,11 @@ describe("Agent execution", () => {
         return tool.run();
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).hook(hook).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
+    await expect(
+      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "7" });
 
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -860,9 +877,11 @@ describe("Agent execution", () => {
         return tool.skip("not needed");
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).hook(hook).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({ output: "skipped" });
+    await expect(
+      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "skipped" });
 
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -897,9 +916,11 @@ describe("Agent execution", () => {
         return tool.cancel("blocked");
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model).tools([blockedTool]).hook(hook).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [blockedTool] });
 
-    await expect(agent.generate("run blocked")).rejects.toMatchObject({
+    await expect(
+      agent.generate("run blocked", withInternalAgentRunOptions({}, { hook })),
+    ).rejects.toMatchObject({
       name: "AgentRunCancelledError",
       reason: "blocked",
     });
@@ -928,9 +949,11 @@ describe("Agent execution", () => {
         return tool.requestApproval({ reason: "Guarded action." });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model).tools([guardedTool]).hook(hook).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({
+    await expect(
+      agent.generate("run guarded", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({
       status: "approval_required",
       approval: { toolName: "guarded", reason: "Guarded action." },
     });
@@ -954,19 +977,18 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", {})]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .hook(
-        createHook({
-          onToolCall({ tool }) {
-            return tool.requestApproval({ reason: "Guarded action." });
-          },
-        }),
-      )
-      .approvals({ handler: () => true })
-      .build();
+    const hook = createHook({
+      onToolCall({ tool }) {
+        return tool.requestApproval({ reason: "Guarded action." });
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "done" });
+    const pending = await agent.generate("run guarded", withInternalAgentRunOptions({}, { hook }));
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      output: "done",
+    });
     expect(executed).toBe(true);
   });
 
@@ -986,19 +1008,18 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", {})]),
       response([AssistantContent.text("denied")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .hook(
-        createHook({
-          onToolCall({ tool }) {
-            return tool.requestApproval({ rejectMessage: "Rejected by hook." });
-          },
-        }),
-      )
-      .approvals({ handler: () => false })
-      .build();
+    const hook = createHook({
+      onToolCall({ tool }) {
+        return tool.requestApproval({ rejectMessage: "Rejected by hook." });
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "denied" });
+    const pending = await agent.generate("run guarded", withInternalAgentRunOptions({}, { hook }));
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await expect(agent.resume(pending, { approved: false })).resolves.toMatchObject({
+      output: "denied",
+    });
     expect(executed).toBe(false);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -1028,19 +1049,17 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", {})]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .hook(
-        createHook({
-          async onToolCall({ tool }) {
-            const approved = await Promise.resolve(true);
-            return approved ? tool.run() : tool.skip("not approved");
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      async onToolCall({ tool }) {
+        const approved = await Promise.resolve(true);
+        return approved ? tool.run() : tool.skip("not approved");
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "done" });
+    await expect(
+      agent.generate("run guarded", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "done" });
     expect(executed).toBe(true);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -1070,19 +1089,17 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", {})]),
       response([AssistantContent.text("denied")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .hook(
-        createHook({
-          async onToolCall({ tool }) {
-            const approved = await Promise.resolve(false);
-            return approved ? tool.run() : tool.skip("Rejected by policy.");
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      async onToolCall({ tool }) {
+        const approved = await Promise.resolve(false);
+        return approved ? tool.run() : tool.skip("Rejected by policy.");
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "denied" });
+    await expect(
+      agent.generate("run guarded", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "denied" });
     expect(executed).toBe(false);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -1096,7 +1113,7 @@ describe("Agent execution", () => {
     );
   });
 
-  it("runs approval-protected tools when the handler approves", async () => {
+  it("runs approval-protected tools after explicit approval", async () => {
     let executed = false;
     const guardedTool = createTool({
       name: "guarded",
@@ -1114,17 +1131,14 @@ describe("Agent execution", () => {
       response([AssistantContent.text("done")]),
     ]);
     const requests: unknown[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .approvals({
-        handler(request) {
-          requests.push(request);
-          return true;
-        },
-      })
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "done" });
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    requests.push(getAgentApprovalRequestDetails(pending.approval));
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      output: "done",
+    });
     expect(executed).toBe(true);
     expect(requests).toMatchObject([
       {
@@ -1293,24 +1307,25 @@ describe("Agent execution", () => {
       response([AssistantContent.text("done")]),
     ]);
     const approvalRequests: unknown[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [guardedTool],
+      middlewares: [
         createMiddleware({
           onToolInput() {
             return { args: { amount: 250 } };
           },
         }),
-      ])
-      .approvals({
-        handler(request) {
-          approvalRequests.push(request);
-          return true;
-        },
-      })
-      .build();
+      ],
+    });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "done" });
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    approvalRequests.push(getAgentApprovalRequestDetails(pending.approval));
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      output: "done",
+    });
 
     expect(executedAmount).toBe(250);
     expect(approvalRequests).toMatchObject([
@@ -1323,7 +1338,7 @@ describe("Agent execution", () => {
     ]);
   });
 
-  it("skips approval-protected tools when the handler rejects", async () => {
+  it("skips approval-protected tools after explicit rejection", async () => {
     let executed = false;
     const guardedTool = createTool({
       name: "guarded",
@@ -1340,12 +1355,13 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", { amount: 250 })]),
       response([AssistantContent.text("denied")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .approvals({ handler: () => false })
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "denied" });
+    const pending = await agent.generate("run guarded");
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await expect(agent.resume(pending, { approved: false })).resolves.toMatchObject({
+      output: "denied",
+    });
     expect(executed).toBe(false);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -1360,7 +1376,6 @@ describe("Agent execution", () => {
   });
 
   it("runs approval-protected tools directly when the condition is false", async () => {
-    let approvals = 0;
     let executed = false;
     const guardedTool = createTool({
       name: "guarded",
@@ -1377,19 +1392,10 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "guarded", { amount: 50 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([guardedTool])
-      .approvals({
-        handler() {
-          approvals += 1;
-          return false;
-        },
-      })
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "done" });
     expect(executed).toBe(true);
-    expect(approvals).toBe(0);
   });
 
   it("returns resumable approval state for new Agent instances", async () => {
@@ -1466,28 +1472,29 @@ describe("Agent execution", () => {
         return run.cancel("blocked");
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model).hook(hook).build();
+    const agent = new Agent({ id: "test-agent", model });
 
-    await expect(agent.generate("hello")).rejects.toBeInstanceOf(AgentRunCancelledError);
+    await expect(
+      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+    ).rejects.toBeInstanceOf(AgentRunCancelledError);
   });
 
   it("runs completion error hooks before run error hooks", async () => {
     const model = new QueueModel([]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .hook(
-        createHook({
-          onCompletionError({ error }) {
-            events.push(`completion_error:${error instanceof Error ? error.message : error}`);
-          },
-          onRunError({ error }) {
-            events.push(`run_error:${error instanceof Error ? error.message : error}`);
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onCompletionError({ error }) {
+        events.push(`completion_error:${error instanceof Error ? error.message : error}`);
+      },
+      onRunError({ error }) {
+        events.push(`run_error:${error instanceof Error ? error.message : error}`);
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model });
 
-    await expect(agent.generate("hello")).rejects.toThrow("No queued response");
+    await expect(
+      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+    ).rejects.toThrow("No queued response");
 
     expect(events).toEqual(["completion_error:No queued response", "run_error:No queued response"]);
   });
@@ -1507,18 +1514,16 @@ describe("Agent execution", () => {
       response([AssistantContent.text("handled")]),
     ]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([failingTool])
-      .hook(
-        createHook({
-          onToolError({ toolName, error }) {
-            events.push(`${toolName}:${error instanceof Error ? error.message : error}`);
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onToolError({ toolName, error }) {
+        events.push(`${toolName}:${error instanceof Error ? error.message : error}`);
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model, tools: [failingTool] });
 
-    await expect(agent.generate("fail")).resolves.toMatchObject({ output: "handled" });
+    await expect(
+      agent.generate("fail", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "handled" });
 
     expect(events).toEqual(["fail:tool failed"]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -1701,19 +1706,18 @@ describe("Agent execution", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })]),
       response([AssistantContent.toolCall("call_2", "add", { x: 3, y: 4 })]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .defaultMaxTurns(0)
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
 
     await expect(agent.generate("loop")).rejects.toBeInstanceOf(MaxTurnsError);
   });
 
   it("converts Zod output schemas into completion request JSON Schema", async () => {
     const model = new QueueModel([response([AssistantContent.text('{"title":"ok"}')])]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .outputSchema(z.object({ title: z.string() }).meta({ title: "summary_response" }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      outputSchema: z.object({ title: z.string() }).meta({ title: "summary_response" }),
+    });
 
     await agent.generate("summarize");
 

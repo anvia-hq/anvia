@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CompletionRequestBuilder } from "../src/internal/completion-request-builder";
+import { createCompletionRequest } from "../src/internal/completion-request";
 import {
   Agent,
   AssistantContent,
@@ -9,12 +9,12 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionStreamEvent,
+  type CompletionTool,
   createCompletion,
   createTool,
   Message,
   type ProviderTool,
   type StreamingCompletionModel,
-  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -85,14 +85,60 @@ class StreamingProviderToolModel extends ProviderToolModel implements StreamingC
 }
 
 describe("provider-executed tools", () => {
+  it("creates a normalized request with copied collections and every optional field", () => {
+    const model = new ProviderToolModel();
+    const history = [Message.system("system"), Message.user("research")];
+    const documents = [{ id: "policy", text: "Refunds take 30 days." }];
+    const localTool: CompletionTool = {
+      name: "local",
+      description: "Local tool",
+      parameters: { type: "object" },
+    };
+    const tools = [localTool, searchTool];
+    const outputSchema = { type: "object", properties: { answer: { type: "string" } } };
+    const additionalParams = { seed: 42 };
+
+    const request = createCompletionRequest(history, {
+      model,
+      modelOverride: "override-model",
+      instructions: "Use the policy.",
+      documents,
+      tools,
+      temperature: 0.2,
+      maxTokens: 256,
+      toolChoice: "required",
+      outputSchema,
+      additionalParams,
+    });
+
+    expect(request).toEqual({
+      chatHistory: history,
+      model: "override-model",
+      instructions: "Use the policy.",
+      documents,
+      tools: [localTool],
+      providerTools: [searchTool],
+      temperature: 0.2,
+      maxTokens: 256,
+      toolChoice: "required",
+      outputSchema,
+      additionalParams,
+    });
+    expect(request.chatHistory).not.toBe(history);
+    expect(request.documents).not.toBe(documents);
+    expect(request.tools).not.toBe(tools);
+    expect(request.providerTools).not.toBe(tools);
+  });
+
   it("partitions unified completion tools into local and provider collections", () => {
     const model = new ProviderToolModel();
-    const request = new CompletionRequestBuilder(model, Message.user("research"))
-      .tools([
+    const request = createCompletionRequest(Message.user("research"), {
+      model,
+      tools: [
         { name: "local", description: "Local tool", parameters: { type: "object" } },
         searchTool,
-      ])
-      .build();
+      ],
+    });
 
     expect(request.tools).toEqual([
       { name: "local", description: "Local tool", parameters: { type: "object" } },
@@ -123,7 +169,7 @@ describe("provider-executed tools", () => {
       inputSchema: z.object({}),
       execute: () => "done",
     });
-    const agent = new TestAgentBuilder("researcher", model).tools([localTool, searchTool]).build();
+    const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
 
     const result = await agent.generate("research");
     assertCompleted(result);
@@ -168,7 +214,7 @@ describe("provider-executed tools", () => {
 
   it("propagates and aggregates provider artifacts through Agent streams", async () => {
     const model = new StreamingProviderToolModel();
-    const agent = new TestAgentBuilder("researcher", model).tools([searchTool]).build();
+    const agent = new Agent({ id: "researcher", model, tools: [searchTool] });
 
     const events = [];
     for await (const event of agent.stream("research")) {

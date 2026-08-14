@@ -7,6 +7,7 @@ import {
 } from "../src/observability/group";
 import * as anvia from "./helpers/imports";
 import {
+  Agent,
   type AgentGenerationEndArgs,
   type AgentGenerationErrorArgs,
   type AgentGenerationStartArgs,
@@ -33,9 +34,9 @@ import {
   Message,
   type StreamingCompletionModel,
   skipTool,
-  TestAgentBuilder,
   type ToolCall,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 // @ts-expect-error - Langfuse moved to @anvia/langfuse.
@@ -173,7 +174,7 @@ describe("agent observability", () => {
   it("records one run and one generation for text-only send", async () => {
     const observer = new RecordingObserver();
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new TestAgentBuilder("test-agent", model).observe(observer).build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
 
     const result = await agent.generate("hello", {
       trace: {
@@ -245,7 +246,7 @@ describe("agent observability", () => {
         return delegate.completion(request);
       },
     };
-    const agent = new TestAgentBuilder("test-agent", model).observe(observer).build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
 
     await expect(
       agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -285,10 +286,7 @@ describe("agent observability", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .tools([addTool])
-      .build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer], tools: [addTool] });
 
     await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
 
@@ -338,10 +336,12 @@ describe("agent observability", () => {
       response([AssistantContent.toolCall("call_1", "fail", {})]),
       response([AssistantContent.text("handled")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .tools([failingTool])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [observer],
+      tools: [failingTool],
+    });
 
     await expect(agent.generate("fail")).resolves.toMatchObject({ output: "handled" });
 
@@ -425,19 +425,19 @@ describe("agent observability", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("skipped")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .tools([addTool])
-      .hook(
-        createHook({
-          onToolCall() {
-            return skipTool("not allowed");
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onToolCall() {
+        return skipTool("not allowed");
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [observer],
+      tools: [addTool],
+    });
 
-    await agent.generate("add");
+    await agent.generate("add", withInternalAgentRunOptions({}, { hook }));
 
     expect(observer.events).toContainEqual(
       expect.objectContaining({
@@ -453,11 +453,13 @@ describe("agent observability", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })]),
       response([AssistantContent.toolCall("call_2", "add", { x: 3, y: 4 })]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .tools([addTool])
-      .defaultMaxTurns(0)
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [observer],
+      tools: [addTool],
+      maxTurns: 0,
+    });
 
     await expect(agent.generate("loop")).rejects.toThrow("Reached max turn limit");
 
@@ -480,10 +482,7 @@ describe("agent observability", () => {
         { type: "text_delta", delta: "llo" },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .tools([addTool])
-      .build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer], tools: [addTool] });
 
     const events = await collect(agent.stream("add"));
 
@@ -536,17 +535,19 @@ describe("agent observability", () => {
     };
 
     await expect(
-      new TestAgentBuilder("test-agent", new QueueModel([response([AssistantContent.text("ok")])]))
-        .observe(observer)
-        .build()
-        .generate("hello"),
+      new Agent({
+        id: "test-agent",
+        model: new QueueModel([response([AssistantContent.text("ok")])]),
+        observers: [observer],
+      }).generate("hello"),
     ).resolves.toMatchObject({ output: "ok" });
 
     await expect(
-      new TestAgentBuilder("test-agent", new QueueModel([response([AssistantContent.text("ok")])]))
-        .observe(observer)
-        .build()
-        .generate("hello", { trace: { failOnObserverError: true } }),
+      new Agent({
+        id: "test-agent",
+        model: new QueueModel([response([AssistantContent.text("ok")])]),
+        observers: [observer],
+      }).generate("hello", { trace: { failOnObserverError: true } }),
     ).rejects.toThrow("observer failed");
   });
 
@@ -571,7 +572,7 @@ describe("agent observability", () => {
         { type: "text_delta", delta: "llo" },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).observe(observer).build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
     await collect(agent.stream("hi"));
 
     expect(updates).toEqual([
@@ -596,7 +597,7 @@ describe("agent observability", () => {
       },
     };
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new TestAgentBuilder("test-agent", model).observe(observer).build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
     await agent.generate("hi");
     expect(updates).toEqual([]);
   });
@@ -613,68 +614,69 @@ describe("agent observability", () => {
       },
     };
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hi" }]]);
-    const agent = new TestAgentBuilder("test-agent", model).observe(observer).build();
+    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
     await expect(collect(agent.stream("hi"))).resolves.toBeDefined();
   });
 
   it.each([
     {
       boundary: "tool-call hook",
-      configure(builder: TestAgentBuilder<QueueModel>) {
-        builder.hook(
-          createHook({
-            onToolCall() {
-              throw new Error("tool-call hook failed");
-            },
-          }),
-        );
-      },
+      hook: createHook({
+        onToolCall() {
+          throw new Error("tool-call hook failed");
+        },
+      }),
+      middlewares: undefined,
     },
     {
       boundary: "tool-input middleware",
-      configure(builder: TestAgentBuilder<QueueModel>) {
-        builder.middlewares([
-          {
-            onToolInput() {
-              throw new Error("tool-input middleware failed");
-            },
+      hook: undefined,
+      middlewares: [
+        {
+          onToolInput() {
+            throw new Error("tool-input middleware failed");
           },
-        ]);
-      },
+        },
+      ],
     },
     {
       boundary: "tool-output middleware",
-      configure(builder: TestAgentBuilder<QueueModel>) {
-        builder.middlewares([
-          {
-            onToolOutput() {
-              throw new Error("tool-output middleware failed");
-            },
+      hook: undefined,
+      middlewares: [
+        {
+          onToolOutput() {
+            throw new Error("tool-output middleware failed");
           },
-        ]);
-      },
+        },
+      ],
     },
     {
       boundary: "tool-result hook",
-      configure(builder: TestAgentBuilder<QueueModel>) {
-        builder.hook(
-          createHook({
-            onToolResult() {
-              throw new Error("tool-result hook failed");
-            },
-          }),
-        );
-      },
+      hook: createHook({
+        onToolResult() {
+          throw new Error("tool-result hook failed");
+        },
+      }),
+      middlewares: undefined,
     },
-  ])("terminalizes a started tool exactly once when the $boundary fails", async ({ configure }) => {
+  ])("terminalizes a started tool exactly once when the $boundary fails", async ({
+    hook,
+    middlewares,
+  }) => {
     const observer = new RecordingObserver();
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
     ]);
-    const builder = new TestAgentBuilder("test-agent", model).observe(observer).tools([addTool]);
-    configure(builder);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [observer],
+      tools: [addTool],
+      middlewares: middlewares ?? [],
+    });
+    const runOptions = hook === undefined ? {} : withInternalAgentRunOptions({}, { hook });
 
-    await expect(builder.build().generate("add")).rejects.toThrow("failed");
+    await expect(agent.generate("add", runOptions)).rejects.toThrow("failed");
 
     expect(
       eventTypes(observer).filter((type) => type === "tool_end" || type === "tool_error"),
@@ -710,31 +712,37 @@ describe("agent observability", () => {
         };
       },
     };
-    const agent = new TestAgentBuilder("test-agent", failingModel)
-      .observe(observer, { failOnObserverError: true })
-      .hook(
-        createHook({
-          onCompletionError() {
-            cleanupCalls.push("completion hook");
-            throw new Error("completion hook failed");
-          },
-          onRunError() {
-            cleanupCalls.push("run hook");
-            throw new Error("run hook failed");
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onCompletionError() {
+        cleanupCalls.push("completion hook");
+        throw new Error("completion hook failed");
+      },
+      onRunError() {
+        cleanupCalls.push("run hook");
+        throw new Error("run hook failed");
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model: failingModel,
+      observers: [{ observer, failOnObserverError: true }],
+    });
 
     await expect(
-      agent.generate("hello", {
-        lifecycle: {
-          onError() {
-            cleanupCalls.push("lifecycle");
-            throw new Error("lifecycle failed");
+      agent.generate(
+        "hello",
+        withInternalAgentRunOptions(
+          {
+            lifecycle: {
+              onError() {
+                cleanupCalls.push("lifecycle");
+                throw new Error("lifecycle failed");
+              },
+            },
           },
-        },
-      }),
+          { hook },
+        ),
+      ),
     ).rejects.toBe(primaryError);
     expect(cleanupCalls).toEqual([
       "generation observer",

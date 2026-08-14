@@ -65,7 +65,7 @@ import {
 } from "../../retry";
 import type { AgentMiddleware } from "../../tool/middleware";
 import { createAsyncQueue } from "../async-queue";
-import { CompletionRequestBuilder } from "../completion-request-builder";
+import { type CompletionRequestFor, createCompletionRequest } from "../completion-request";
 import { extractRagText } from "../rag-text";
 import { registerAgentApprovalRequestDetails } from "./approval-details";
 import type { ToolApprovalRequest } from "./approval-request";
@@ -306,17 +306,17 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         const ragText = extractRagText(prompt);
         const context = await fetchContextDocuments(this.agent, ragText);
         const toolDefs = await fetchToolDefinitions(this.agent, ragText);
-        let request = new CompletionRequestBuilder(this.agent.model, prompt)
-          .instructions(this.agent.instructions)
-          .messages(historyForRequest)
-          .documents(context)
-          .tools([...toolDefs, ...getAgentToolState(this.agent).providerTools])
-          .temperature(this.agent.temperature)
-          .maxTokens(this.agent.maxTokens)
-          .additionalParams(this.agent.additionalParams)
-          .toolChoice(this.agent.toolChoice)
-          .outputSchema(this.agent.outputSchema)
-          .build();
+        let request = createCompletionRequest([...historyForRequest, prompt], {
+          model: this.agent.model,
+          instructions: this.agent.instructions,
+          documents: context,
+          tools: [...toolDefs, ...getAgentToolState(this.agent).providerTools],
+          temperature: this.agent.temperature,
+          maxTokens: this.agent.maxTokens,
+          additionalParams: this.agent.additionalParams,
+          toolChoice: this.agent.toolChoice,
+          outputSchema: this.agent.outputSchema,
+        });
         request = (await this.runCompletionRequestMiddlewares(
           request,
           currentTurns,
@@ -535,17 +535,17 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         const ragText = extractRagText(prompt);
         const context = await fetchContextDocuments(this.agent, ragText);
         const toolDefs = await fetchToolDefinitions(this.agent, ragText);
-        let request = new CompletionRequestBuilder(this.agent.model, prompt)
-          .instructions(this.agent.instructions)
-          .messages(historyForRequest)
-          .documents(context)
-          .tools([...toolDefs, ...getAgentToolState(this.agent).providerTools])
-          .temperature(this.agent.temperature)
-          .maxTokens(this.agent.maxTokens)
-          .additionalParams(this.agent.additionalParams)
-          .toolChoice(this.agent.toolChoice)
-          .outputSchema(this.agent.outputSchema)
-          .build();
+        let request = createCompletionRequest([...historyForRequest, prompt], {
+          model: this.agent.model,
+          instructions: this.agent.instructions,
+          documents: context,
+          tools: [...toolDefs, ...getAgentToolState(this.agent).providerTools],
+          temperature: this.agent.temperature,
+          maxTokens: this.agent.maxTokens,
+          additionalParams: this.agent.additionalParams,
+          toolChoice: this.agent.toolChoice,
+          outputSchema: this.agent.outputSchema,
+        });
         request = (await this.runCompletionRequestMiddlewares(
           request,
           currentTurns,
@@ -847,7 +847,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   }
 
   private async runCompletion(
-    request: ReturnType<CompletionRequestBuilder["build"]>,
+    request: CompletionRequestFor<M>,
     turn: number,
     runObservers: ActiveAgentRunObservers,
   ): Promise<CompletionResponse> {
@@ -887,7 +887,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
 
   private generatedAssistantMessage(
     response: CompletionResponse,
-    request: ReturnType<CompletionRequestBuilder["build"]>,
+    request: CompletionRequestFor<M>,
   ): MessageType {
     const metadata: JsonObject = {
       anvia: {
@@ -910,7 +910,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   }
 
   private providerTraceRequest(
-    request: ReturnType<CompletionRequestBuilder["build"]>,
+    request: CompletionRequestFor<M>,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject | undefined {
     try {
@@ -924,7 +924,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
 
   private generationStartArgs(
     turn: number,
-    request: ReturnType<CompletionRequestBuilder["build"]>,
+    request: CompletionRequestFor<M>,
     providerRequest: JsonObject | undefined,
   ): AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } {
     return {
@@ -1319,9 +1319,9 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   }
 
   private async runCompletionRequestMiddlewares(
-    request: ReturnType<CompletionRequestBuilder["build"]>,
+    request: CompletionRequestFor<M>,
     turn: number,
-  ): Promise<ReturnType<CompletionRequestBuilder["build"]>> {
+  ): Promise<CompletionRequestFor<M>> {
     let current = request;
     for (const middleware of this.activeMiddlewares()) {
       const replacement = await middleware.onCompletionRequest?.({
@@ -1330,14 +1330,14 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         originalRequest: request,
       });
       if (replacement?.request !== undefined) {
-        current = replacement.request;
+        current = replacement.request as CompletionRequestFor<M>;
       }
     }
     return current;
   }
 
   private async runCompletionResponseMiddlewares(
-    request: ReturnType<CompletionRequestBuilder["build"]>,
+    request: CompletionRequestFor<M>,
     response: CompletionResponse,
     turn: number,
   ): Promise<CompletionResponse> {

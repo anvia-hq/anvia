@@ -51,7 +51,6 @@ import {
 } from "../src/index";
 import { registerObservabilityRoutes, StudioObservabilityHub } from "../src/runtime/observability";
 import { createSqliteSessionStore } from "../src/sqlite";
-import { TestAgentBuilder } from "./test-agent-builder";
 
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
@@ -431,10 +430,12 @@ describe("Anvia studio", () => {
   });
 
   it("generates config from registered agents", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .name("Support")
-      .description("Support assistant")
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      name: "Support",
+      description: "Support assistant",
+    });
     const runner = new Studio([agent], {
       quickPrompts: {
         support: ["What can you do?"],
@@ -478,13 +479,17 @@ describe("Anvia studio", () => {
   });
 
   it("uses agent ids and uniquifies duplicates", () => {
-    const first = new TestAgentBuilder("support-triage", new QueueModel([]))
-      .name("Support Triage")
-      .build();
-    const duplicate = new TestAgentBuilder("support-triage", new QueueModel([]))
-      .name("Support Triage")
-      .build();
-    const unnamed = new TestAgentBuilder("agent-3", new QueueModel([])).build();
+    const first = new Agent({
+      id: "support-triage",
+      model: new QueueModel([]),
+      name: "Support Triage",
+    });
+    const duplicate = new Agent({
+      id: "support-triage",
+      model: new QueueModel([]),
+      name: "Support Triage",
+    });
+    const unnamed = new Agent({ id: "agent-3", model: new QueueModel([]) });
     const runner = new Studio([first, duplicate, unnamed], {
       quickPrompts: {
         "support-triage": ["first"],
@@ -506,7 +511,7 @@ describe("Anvia studio", () => {
   });
 
   it("exposes configured and listed provider models", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).name("Support").build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]), name: "Support" });
     const runner = new Studio([agent], {
       models: {
         default: "openai:gpt-5",
@@ -580,7 +585,7 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("First answer")]),
       response([AssistantContent.text("Second answer")]),
     ]);
-    const agent = new TestAgentBuilder("support", baseModel).build();
+    const agent = new Agent({ id: "support", model: baseModel });
     const runner = new Studio([agent], {
       models: {
         providers: [
@@ -645,7 +650,7 @@ describe("Anvia studio", () => {
   });
 
   it("rejects models outside the agent policy", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent], {
       models: {
         providers: [
@@ -683,7 +688,7 @@ describe("Anvia studio", () => {
 
   it("accepts multimodal message payloads from Studio runs", async () => {
     const model = new QueueModel([response([AssistantContent.text("image noted")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const run = await runner.fetch(
@@ -728,7 +733,7 @@ describe("Anvia studio", () => {
   });
 
   it("registers pipelines separately from agents", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).name("Support").build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]), name: "Support" });
     const pipeline = new Pipeline({
       id: "ticket-pipeline",
       inputSchema: z.string(),
@@ -1024,14 +1029,13 @@ describe("Anvia studio", () => {
     }
   });
 
-  it("starts a served single-agent runner from a built agent", async () => {
-    const agent = new TestAgentBuilder(
-      "support",
-      new QueueModel([response([AssistantContent.text("ok")])]),
-    )
-      .name("Support")
-      .description("Support assistant")
-      .build();
+  it("starts a served single-agent runner", async () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([response([AssistantContent.text("ok")])]),
+      name: "Support",
+      description: "Support assistant",
+    });
     const runner = new Studio([agent]).start({ port: 0, log: false });
 
     try {
@@ -1061,7 +1065,7 @@ describe("Anvia studio", () => {
 
   it("can leave process signal handling to the application", () => {
     const listenersBeforeStart = process.listeners("SIGINT");
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]).start({ port: 0, log: false, handleSignals: false });
 
     try {
@@ -1073,7 +1077,7 @@ describe("Anvia studio", () => {
 
   it("serves until aborted and awaits shutdown cleanup", async () => {
     const controller = new AbortController();
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const studio = new Studio([agent]);
     let releaseCleanup: () => void = () => {};
     let markCleanupStarted: () => void = () => {};
@@ -1119,7 +1123,7 @@ describe("Anvia studio", () => {
         else reject(new Error("Expected a TCP server address"));
       });
     });
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const studio = new Studio([agent]);
     let cleanedUp = false;
 
@@ -1143,10 +1147,12 @@ describe("Anvia studio", () => {
 
   it("uses built-in stores with automatic Studio traces", async () => {
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
-    const agent = new TestAgentBuilder("support", model)
-      .name("Support")
-      .description("Support assistant")
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      name: "Support",
+      description: "Support assistant",
+    });
     const studio = new Studio([agent]).start({ port: 0, log: false });
 
     try {
@@ -1192,14 +1198,16 @@ describe("Anvia studio", () => {
     );
     const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddings);
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new TestAgentBuilder("support", model)
-      .context(
+    const agent = new Agent({
+      id: "support",
+      model,
+      context: [
         createContextIndex(index, {
           topK: 1,
           format: (result) => ({ id: result.id, text: result.document.text }),
         }),
-      )
-      .build();
+      ],
+    });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -1232,7 +1240,7 @@ describe("Anvia studio", () => {
     const embeddings = new KeywordEmbeddingModel();
     const index = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new TestAgentBuilder("support", model).tools([index]).build();
+    const agent = new Agent({ id: "support", model, tools: [index] });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -1267,7 +1275,7 @@ describe("Anvia studio", () => {
       name: "web_search",
     };
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new TestAgentBuilder("support", model).tools([providerTool]).build();
+    const agent = new Agent({ id: "support", model, tools: [providerTool] });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -1295,11 +1303,11 @@ describe("Anvia studio", () => {
     const embeddings = new KeywordEmbeddingModel();
     const index = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
     const refundTool = createRefundTool(() => "ok");
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .tools([addTool])
-      .tools([refundTool])
-      .tools([index])
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      tools: [addTool, refundTool, index],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.tools).toEqual({ enabled: true });
@@ -1335,7 +1343,7 @@ describe("Anvia studio", () => {
   });
 
   it("runs registered tools directly", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).tools([addTool]).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]), tools: [addTool] });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1377,7 +1385,7 @@ describe("Anvia studio", () => {
       value: { session },
       enumerable: false,
     });
-    const agent = new TestAgentBuilder("coder", new QueueModel([])).tools([tool]).build();
+    const agent = new Agent({ id: "coder", model: new QueueModel([]), tools: [tool] });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.sandboxes).toEqual({ enabled: true });
@@ -1456,7 +1464,7 @@ describe("Anvia studio", () => {
   it("serializes cyclic model metadata in runtime summaries", async () => {
     const model = new QueueModel([]);
     Object.assign(model, { self: model });
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const runtime = await runner.fetch(new Request("http://runner.test/agents/support/runtime"));
@@ -1498,7 +1506,11 @@ describe("Anvia studio", () => {
       name: "policies",
       connect: async () => mcpClient,
     });
-    const agent = new TestAgentBuilder("support", new QueueModel([])).mcp([mcpServer]).build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      mcpServers: [mcpServer],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.mcps).toEqual({ enabled: true });
@@ -1547,9 +1559,11 @@ describe("Anvia studio", () => {
   });
 
   it("reports knowledge capability and exposes the knowledge inspector route", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .context("Refund policy is 30 days.", "refund-policy")
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      context: [{ id: "refund-policy", text: "Refund policy is 30 days." }],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities).toMatchObject({
@@ -1615,11 +1629,15 @@ describe("Anvia studio", () => {
       asTool: (_options: VectorSearchToolOptions) => lookupPolicyTool,
     };
     const toolIndex = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .context(createContextIndex(inspectableIndex, { topK: 1 }))
-      .context(createContextIndex(unsupportedIndex, { topK: 1 }))
-      .tools([toolIndex])
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      context: [
+        createContextIndex(inspectableIndex, { topK: 1 }),
+        createContextIndex(unsupportedIndex, { topK: 1 }),
+      ],
+      tools: [toolIndex],
+    });
     const runner = new Studio([agent]);
 
     const knowledge = (await (
@@ -1697,13 +1715,12 @@ describe("Anvia studio", () => {
   });
 
   it("starts a served runner from configured agents", async () => {
-    const agent = new TestAgentBuilder(
-      "support",
-      new QueueModel([response([AssistantContent.text("ok")])]),
-    )
-      .name("Support")
-      .tools([createRefundTool(() => "ok")])
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([response([AssistantContent.text("ok")])]),
+      name: "Support",
+      tools: [createRefundTool(() => "ok")],
+    });
     const runner = new Studio([agent], {
       quickPrompts: {
         support: ["Issue a refund"],
@@ -1731,7 +1748,7 @@ describe("Anvia studio", () => {
 
   it("runs an agent without streaming and passes history", async () => {
     const model = new QueueModel([response([AssistantContent.text("Anvia")])]);
-    const agent = new TestAgentBuilder("support", model).instructions("system").build();
+    const agent = new Agent({ id: "support", model, instructions: "system" });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1826,7 +1843,7 @@ describe("Anvia studio", () => {
       { error },
       { response: response([AssistantContent.text("recovered")]) },
     ]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
@@ -1851,7 +1868,7 @@ describe("Anvia studio", () => {
   it("passes trace options to observed non-streaming runs and preserves trace output", async () => {
     const observer = new TraceObserver();
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
-    const agent = new TestAgentBuilder("support", model).observe(observer).build();
+    const agent = new Agent({ id: "support", model, observers: [observer] });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1885,7 +1902,7 @@ describe("Anvia studio", () => {
 
   it("streams agent events as JSONL", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1917,7 +1934,7 @@ describe("Anvia studio", () => {
       streamThenThrow([], error),
       [{ type: "text_delta", delta: "recovered" }],
     ]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
@@ -1945,7 +1962,7 @@ describe("Anvia studio", () => {
 
   it("accepts shared UI-style agent run requests", async () => {
     const model = new QueueModel([response([AssistantContent.text("hello")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1965,7 +1982,7 @@ describe("Anvia studio", () => {
 
   it("normalizes UI-style agent run messages into history plus the latest prompt", async () => {
     const model = new QueueModel([response([AssistantContent.text("next")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1987,7 +2004,7 @@ describe("Anvia studio", () => {
   });
 
   it("rejects UI-style history combined with a session id", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]);
     const created = await runner.fetch(
       new Request("http://runner.test/sessions", {
@@ -2017,7 +2034,7 @@ describe("Anvia studio", () => {
 
   it("keeps legacy message bodies authoritative when both request shapes are sent", async () => {
     const model = new QueueModel([response([AssistantContent.text("legacy")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2160,10 +2177,7 @@ describe("Anvia studio", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([refundTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
     const runner = new Studio([agent]);
     const response = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
@@ -2217,10 +2231,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund denied" }],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([refundTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
     const runner = new Studio([agent]);
     const created = await runner.fetch(
       new Request("http://runner.test/sessions", {
@@ -2311,10 +2322,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Thanks for the context" }],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([askQuestionTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -2429,10 +2437,7 @@ describe("Anvia studio", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([askQuestionTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 });
     const runner = new Studio([agent]);
     const created = await runner.fetch(
       new Request("http://runner.test/sessions", {
@@ -2517,10 +2522,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "I need choices first" }],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([askQuestionTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2562,10 +2564,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([refundTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2590,7 +2589,7 @@ describe("Anvia studio", () => {
 
   it("flushes reasoning deltas before the run completes", async () => {
     const model = new GatedReasoningModel();
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -2636,7 +2635,7 @@ describe("Anvia studio", () => {
   it("preserves trace output on streaming final events", async () => {
     const observer = new TraceObserver("trace_stream");
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new TestAgentBuilder("support", model).observe(observer).build();
+    const agent = new Agent({ id: "support", model, observers: [observer] });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2658,18 +2657,22 @@ describe("Anvia studio", () => {
   });
 
   it("marks observability enabled when a registered agent has observers", () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .observe(new TraceObserver())
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      observers: [new TraceObserver()],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.observability).toEqual({ enabled: true });
   });
 
   it("marks approvals enabled when a registered agent protects tools", () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .tools([createRefundTool(() => "ok")])
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      tools: [createRefundTool(() => "ok")],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
@@ -2767,7 +2770,7 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("Second answer")]),
     ]);
     const path = join(studioDbDir ?? tmpdir(), "studio.sqlite");
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent], {
       stores: {
         sessions: createSqliteSessionStore({ path }),
@@ -2811,14 +2814,11 @@ describe("Anvia studio", () => {
       Message.user("Follow up"),
     ]);
 
-    const reloadedRunner = new Studio(
-      [new TestAgentBuilder("support", new QueueModel([])).build()],
-      {
-        stores: {
-          sessions: createSqliteSessionStore({ path }),
-        },
+    const reloadedRunner = new Studio([new Agent({ id: "support", model: new QueueModel([]) })], {
+      stores: {
+        sessions: createSqliteSessionStore({ path }),
       },
-    );
+    });
     const loaded = await reloadedRunner.fetch(
       new Request(`http://runner.test/sessions/${session.id}`),
     );
@@ -2859,7 +2859,7 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("Second answer")]),
     ]);
     const memory = new RecordingMemoryStore();
-    const agent = new TestAgentBuilder("support", model).memory(memory).build();
+    const agent = new Agent({ id: "support", model, memory: { store: memory } });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -2914,7 +2914,7 @@ describe("Anvia studio", () => {
 
   it("exposes stored sessions through memory explorer routes", async () => {
     const model = new QueueModel([response([AssistantContent.text("Ticket is blocked")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3024,9 +3024,17 @@ describe("Anvia studio", () => {
         ],
       },
     ]);
-    const support = new TestAgentBuilder("support", new QueueModel([])).memory(memory).build();
-    const billing = new TestAgentBuilder("billing", new QueueModel([])).memory(memory).build();
-    const fallback = new TestAgentBuilder("fallback", new QueueModel([])).build();
+    const support = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      memory: { store: memory },
+    });
+    const billing = new Agent({
+      id: "billing",
+      model: new QueueModel([]),
+      memory: { store: memory },
+    });
+    const fallback = new Agent({ id: "fallback", model: new QueueModel([]) });
     const runner = new Studio([support, billing, fallback]);
 
     const sourcesResponse = await runner.fetch(new Request("http://runner.test/memory/sources"));
@@ -3110,9 +3118,11 @@ describe("Anvia studio", () => {
   });
 
   it("reports non-inspectable agent memory without falling back to Studio sessions", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([]))
-      .memory(new RecordingMemoryStore())
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      memory: { store: new RecordingMemoryStore() },
+    });
     const runner = new Studio([agent]);
 
     const config = await runner.fetch(new Request("http://runner.test/config"));
@@ -3136,7 +3146,7 @@ describe("Anvia studio", () => {
 
   it("persists streaming sessions with UI transcript entries", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3177,7 +3187,7 @@ describe("Anvia studio", () => {
 
   it("persists cancelled streams with their partial transcript and audit log", async () => {
     const model = new GatedReasoningModel();
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const store = createInMemoryStudioStore();
     const saves: StudioSessionRunTranscriptInput[] = [];
     const saveSessionRunTranscript = store.saveSessionRunTranscript.bind(store);
@@ -3251,7 +3261,7 @@ describe("Anvia studio", () => {
 
   it("streams and persists metadata-only session audit logs", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "safe answer" }]]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3350,15 +3360,19 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const childAgent = new TestAgentBuilder("child", childModel)
-      .name("Child Agent")
-      .tools([addTool])
-      .defaultMaxTurns(2)
-      .build();
-    const parentAgent = new TestAgentBuilder("parent", parentModel)
-      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
-      .defaultMaxTurns(2)
-      .build();
+    const childAgent = new Agent({
+      id: "child",
+      model: childModel,
+      name: "Child Agent",
+      tools: [addTool],
+      maxTurns: 2,
+    });
+    const parentAgent = new Agent({
+      id: "parent",
+      model: parentModel,
+      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+      maxTurns: 2,
+    });
     const runner = new Studio([parentAgent]);
 
     const created = await runner.fetch(
@@ -3481,7 +3495,7 @@ describe("Anvia studio", () => {
   });
 
   it("validates session run requests", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]);
 
     const invalid = await runner.fetch(
@@ -3515,7 +3529,7 @@ describe("Anvia studio", () => {
 
   it("persists non-streaming runner traces linked to a session", async () => {
     const model = new QueueModel([response([AssistantContent.text("traced answer")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3608,7 +3622,7 @@ describe("Anvia studio", () => {
 
   it("deletes sessions and their traces", async () => {
     const model = new QueueModel([response([AssistantContent.text("delete me")])]);
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3664,10 +3678,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new TestAgentBuilder("support", model)
-      .tools([addTool])
-      .defaultMaxTurns(2)
-      .build();
+    const agent = new Agent({ id: "support", model, tools: [addTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3771,7 +3782,7 @@ describe("Anvia studio", () => {
   });
 
   it("persists failed runner traces with partial session memory", async () => {
-    const agent = new TestAgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3825,7 +3836,7 @@ describe("Anvia studio", () => {
 
   it("persists streaming failures with partial transcript entries", async () => {
     const model = new FailingStreamingModel();
-    const agent = new TestAgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -4191,18 +4202,16 @@ describe("Anvia studio", () => {
   });
 
   it("lists global runner traces with filters", async () => {
-    const mainAgent = new TestAgentBuilder(
-      "main",
-      new QueueModel([response([AssistantContent.text("main answer")])]),
-    )
-      .name("Main")
-      .build();
-    const backupAgent = new TestAgentBuilder(
-      "backup",
-      new QueueModel([response([AssistantContent.text("backup answer")])]),
-    )
-      .name("Backup")
-      .build();
+    const mainAgent = new Agent({
+      id: "main",
+      model: new QueueModel([response([AssistantContent.text("main answer")])]),
+      name: "Main",
+    });
+    const backupAgent = new Agent({
+      id: "backup",
+      model: new QueueModel([response([AssistantContent.text("backup answer")])]),
+      name: "Backup",
+    });
     const runner = new Studio([mainAgent, backupAgent]);
 
     const mainCreated = await runner.fetch(
@@ -4296,10 +4305,10 @@ describe("Anvia studio", () => {
   });
 
   it("streams realtime observability events", async () => {
-    const agent = new TestAgentBuilder(
-      "support",
-      new QueueModel([response([AssistantContent.text("observed")])]),
-    ).build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([response([AssistantContent.text("observed")])]),
+    });
     const runner = new Studio([agent]);
     const session = (await (
       await runner.fetch(

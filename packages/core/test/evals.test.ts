@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AssistantContent,
   agentEvalTarget,
   type CompletionModel,
@@ -26,7 +27,6 @@ import {
   resolveEvalTraceRef,
   runEvalSuite,
   semanticSimilarity,
-  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -223,7 +223,7 @@ describe("evals", () => {
 
   it("wraps agents as eval targets and preserves prompt trace output", async () => {
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new TestAgentBuilder("agent", model).build();
+    const agent = new Agent({ id: "agent", model });
     const target = agentEvalTarget<string>(agent);
 
     const output = await target("hello", { id: "case", input: "hello" });

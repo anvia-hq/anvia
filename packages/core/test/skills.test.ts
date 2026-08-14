@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  Agent,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -15,8 +16,8 @@ import {
   SkillValidationError,
   type StreamingCompletionModel,
   skill,
-  TestAgentBuilder,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 const tempDirs: string[] = [];
@@ -154,7 +155,11 @@ describe("skills", () => {
       scriptFiles: { "helper.sh": "#!/bin/sh\necho helper\n" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const agent = new TestAgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
+    const agent = new Agent({
+      id: "skills",
+      model: new QueueModel([]),
+      tools: skillSet.tools,
+    });
 
     await expect(
       agent.callTool("get_skill_instructions", JSON.stringify({ skillName: "review" })),
@@ -184,7 +189,11 @@ describe("skills", () => {
       },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const agent = new TestAgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
+    const agent = new Agent({
+      id: "skills",
+      model: new QueueModel([]),
+      tools: skillSet.tools,
+    });
 
     await expect(
       agent.callTool(
@@ -217,7 +226,11 @@ describe("skills", () => {
       referenceFiles: { "guide.md": "Reference text" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const agent = new TestAgentBuilder("skills", new QueueModel([])).tools(skillSet.tools).build();
+    const agent = new Agent({
+      id: "skills",
+      model: new QueueModel([]),
+      tools: skillSet.tools,
+    });
 
     await expect(
       agent.callTool(
@@ -241,23 +254,25 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .instructions("Base instructions.")
-      .skills(skillSet)
-      .hook(
-        createHook({
-          onToolCall({ toolName }) {
-            events.push(`call:${toolName}`);
-          },
-          onToolResult({ toolName, result }) {
-            events.push(`result:${toolName}:${result}`);
-          },
-        }),
-      )
-      .defaultMaxTurns(1)
-      .build();
+    const hook = createHook({
+      onToolCall({ toolName }) {
+        events.push(`call:${toolName}`);
+      },
+      onToolResult({ toolName, result }) {
+        events.push(`result:${toolName}:${result}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      instructions: "Base instructions.",
+      skills: skillSet,
+      maxTurns: 1,
+    });
 
-    await expect(agent.generate("review")).resolves.toMatchObject({ output: "loaded" });
+    await expect(
+      agent.generate("review", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "loaded" });
 
     expect(model.requests[0]?.instructions).toEqual(
       expect.stringContaining("Base instructions.\n\nYou have access to Agent Skills."),
@@ -283,27 +298,29 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .skills(skillSet)
-      .middlewares([
+    const hook = createHook({
+      onToolResult({ result }) {
+        events.push(`hook:${result}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      skills: skillSet,
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
         }),
-      ])
-      .hook(
-        createHook({
-          onToolResult({ result }) {
-            events.push(`hook:${result}`);
-          },
-        }),
-      )
-      .defaultMaxTurns(1)
-      .build();
+      ],
+      maxTurns: 1,
+    });
 
-    await expect(agent.generate("review")).resolves.toMatchObject({ output: "loaded" });
+    await expect(
+      agent.generate("review", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -332,27 +349,29 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools(skillSet.tools)
-      .middlewares([
+    const hook = createHook({
+      onToolResult({ result }) {
+        events.push(`hook:${result}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: skillSet.tools,
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
         }),
-      ])
-      .hook(
-        createHook({
-          onToolResult({ result }) {
-            events.push(`hook:${result}`);
-          },
-        }),
-      )
-      .defaultMaxTurns(1)
-      .build();
+      ],
+      maxTurns: 1,
+    });
 
-    await expect(agent.generate("review")).resolves.toMatchObject({ output: "loaded" });
+    await expect(
+      agent.generate("review", withInternalAgentRunOptions({}, { hook })),
+    ).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -385,10 +404,12 @@ describe("skills", () => {
       ],
       [{ type: "text_delta", delta: "loaded" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .skills(skillSet)
-      .defaultMaxTurns(1)
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      skills: skillSet,
+      maxTurns: 1,
+    });
 
     const events = await collect(agent.stream("review"));
 

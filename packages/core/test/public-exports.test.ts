@@ -21,6 +21,8 @@ import * as publicAgent from "../src/agent";
 import * as audioGeneration from "../src/audio-generation";
 import * as completion from "../src/completion";
 import * as embeddings from "../src/embeddings";
+// @ts-expect-error EvalSuiteTypeBuilder was removed from the public eval API.
+import type { EvalSuiteTypeBuilder as RemovedEvalSuiteTypeBuilder } from "../src/evals";
 import * as evals from "../src/evals";
 // @ts-expect-error ExtractorBuilder was removed from the public extractor API.
 import type { ExtractorBuilder as RemovedExtractorBuilder } from "../src/extractor";
@@ -176,6 +178,7 @@ describe("public exports", () => {
   });
 
   it("keeps public subpath runtime exports available", () => {
+    expectTypeOf<RemovedEvalSuiteTypeBuilder>().toBeAny();
     expect(audioGeneration).toHaveProperty("generateSpeech");
     expect(audioGeneration).not.toHaveProperty("audioGenerationRequest");
     expect(audioGeneration).not.toHaveProperty("AudioGenerationRequestBuilder");

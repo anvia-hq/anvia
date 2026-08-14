@@ -26,8 +26,8 @@ import {
   Message,
   type Message as MessageType,
   type StreamingCompletionModel,
-  TestAgentBuilder,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -145,7 +145,7 @@ const addTool = createTool({
 describe("agent memory", () => {
   it("uses prompt transcripts as stateless history", async () => {
     const model = new QueueModel([response([AssistantContent.text("Anvia")])]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const transcript = [
       Message.user("My project is named Anvia."),
       Message.assistant("Noted."),
@@ -159,7 +159,7 @@ describe("agent memory", () => {
 
   it("rejects empty prompt transcripts", async () => {
     const model = new QueueModel([]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     expect(() => agent.generate([])).toThrow("at least one message");
   });
@@ -168,7 +168,7 @@ describe("agent memory", () => {
     const previous = [Message.user("My project is named Anvia."), Message.assistant("Noted.")];
     const store = new RecordingMemoryStore({ session_1: previous });
     const model = new QueueModel([response([AssistantContent.text("Anvia")])]);
-    const agent = new TestAgentBuilder("test-agent", model).memory(store).build();
+    const agent = new Agent({ id: "test-agent", model, memory: { store } });
 
     await agent.session("session_1").generate("What is my project named?");
 
@@ -327,7 +327,7 @@ describe("agent memory", () => {
         return delegate.completion(request);
       },
     };
-    const agent = new TestAgentBuilder("test-agent", model).memory(store).build();
+    const agent = new Agent({ id: "test-agent", model, memory: { store } });
 
     await expect(
       agent
@@ -348,7 +348,7 @@ describe("agent memory", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).memory(store).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, memory: { store }, tools: [addTool] });
 
     await agent.session("session_1").generate("add");
 
@@ -424,17 +424,19 @@ describe("agent memory", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], firstUsage),
       response([AssistantContent.text("7")], secondUsage),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .memory(store, { savePolicy })
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store, savePolicy },
+      middlewares: [
         createMiddleware({
           onCompletionRequest({ request }) {
             return { request: { ...request, model: "test-override" } };
           },
         }),
-      ])
-      .tools([addTool])
-      .build();
+      ],
+      tools: [addTool],
+    });
 
     const result = await agent.session("session-generation-metadata").generate("add");
     const resultMetadata = result.messages
@@ -482,7 +484,7 @@ describe("agent memory", () => {
         cacheCreationInputTokens: 0,
       }),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).memory(store).build();
+    const agent = new Agent({ id: "test-agent", model, memory: { store } });
     const session = agent.session("context-usage");
 
     const result = await session.generate("hello");
@@ -502,7 +504,7 @@ describe("agent memory", () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).memory(store).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, memory: { store }, tools: [addTool] });
 
     await expect(agent.session("session_1").generate("add")).rejects.toThrow("No queued response");
 
@@ -559,22 +561,24 @@ describe("agent memory", () => {
         return "executed";
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .memory(store)
-      .tools([probeTool])
-      .tools([execCommandTool])
-      .hook(
-        createHook({
-          onCompletionError({ error }) {
-            completionErrors.push(error instanceof Error ? error.message : String(error));
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onCompletionError({ error }) {
+        completionErrors.push(error instanceof Error ? error.message : String(error));
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store },
+      tools: [probeTool, execCommandTool],
+    });
     const session = agent.session("session_1");
 
     const runMalformedStream = async () => {
-      for await (const _event of session.stream("run tools")) {
+      for await (const _event of session.stream(
+        "run tools",
+        withInternalAgentRunOptions({}, { hook }),
+      )) {
         // exhaust the stream
       }
     };
@@ -610,10 +614,12 @@ describe("agent memory", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .memory(store, { savePolicy: "turn" })
-      .tools([addTool])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store, savePolicy: "turn" },
+      tools: [addTool],
+    });
 
     await agent.session("session_1").generate("add");
 
@@ -626,9 +632,11 @@ describe("agent memory", () => {
   it("supports run save policy", async () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .memory(store, { savePolicy: "run" })
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store, savePolicy: "run" },
+    });
 
     await agent.session("session_1").generate("hello");
 
@@ -704,20 +712,20 @@ describe("agent memory", () => {
   it("does not commit run memory when the run end hook cancels", async () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .memory(store, { savePolicy: "run" })
-      .hook(
-        createHook({
-          onRunEnd() {
-            return cancelRun("blocked at end");
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onRunEnd() {
+        return cancelRun("blocked at end");
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      memory: { store, savePolicy: "run" },
+    });
 
-    await expect(agent.session("session_1").generate("hello")).rejects.toBeInstanceOf(
-      AgentRunCancelledError,
-    );
+    await expect(
+      agent.session("session_1").generate("hello", withInternalAgentRunOptions({}, { hook })),
+    ).rejects.toBeInstanceOf(AgentRunCancelledError);
 
     expect(store.appendCalls).toHaveLength(0);
     expect(store.errorCalls).toHaveLength(1);
@@ -740,11 +748,13 @@ describe("agent memory", () => {
         { type: "text_delta", delta: "done" },
       ],
     ]);
-    const childAgent = new TestAgentBuilder("child", childModel).build();
-    const parentAgent = new TestAgentBuilder("parent", parentModel)
-      .memory(store)
-      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
-      .build();
+    const childAgent = new Agent({ id: "child", model: childModel });
+    const parentAgent = new Agent({
+      id: "parent",
+      model: parentModel,
+      memory: { store },
+      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+    });
 
     for await (const _event of parentAgent.session("session_1").stream("delegate")) {
       // exhaust stream
@@ -761,7 +771,7 @@ describe("agent memory", () => {
   it("rejects transcript input for session runs", () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([]);
-    const agent = new TestAgentBuilder("test-agent", model).memory(store).build();
+    const agent = new Agent({ id: "test-agent", model, memory: { store } });
     const generate = agent.session("session_1").generate as unknown as (
       input: MessageType[],
     ) => unknown;

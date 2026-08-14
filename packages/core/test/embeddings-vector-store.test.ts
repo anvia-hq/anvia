@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { matchesVectorFilter } from "../src/vector-store/filter";
 import {
+  Agent,
   AssistantContent,
   angularDistance,
   type CompletionModel,
@@ -30,7 +31,6 @@ import {
   type SparseEmbedding,
   type SparseEmbeddingModel,
   type StreamingCompletionModel,
-  TestAgentBuilder,
   Usage,
   UserContent,
   type VectorSearchIndex,
@@ -472,11 +472,15 @@ describe("agent dynamic context", () => {
       embeddingModel,
     );
     const completionModel = new QueueModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel)
-      .context("static context", "static")
-      .context(createContextIndex(index, { topK: 1 }))
-      .context("closing context", "closing")
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: completionModel,
+      context: [
+        { id: "static", text: "static context" },
+        createContextIndex(index, { topK: 1 }),
+        { id: "closing", text: "closing context" },
+      ],
+    });
 
     await agent.generate("cat");
 
@@ -497,14 +501,16 @@ describe("agent dynamic context", () => {
       embeddingModel,
     );
     const completionModel = new StreamingQueueModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel)
-      .context(
+    const agent = new Agent({
+      id: "test-agent",
+      model: completionModel,
+      context: [
         createContextIndex(index, {
           topK: 1,
           format: (result) => ({ id: result.id, text: result.document.title }),
         }),
-      )
-      .build();
+      ],
+    });
 
     for await (const _event of agent.stream("dog")) {
       // exhaust stream
@@ -528,10 +534,11 @@ describe("agent dynamic context", () => {
       },
     };
     const completionModel = new QueueModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel)
-      .context("static context", "static")
-      .context(createContextIndex(index, { topK: 1 }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: completionModel,
+      context: [{ id: "static", text: "static context" }, createContextIndex(index, { topK: 1 })],
+    });
 
     await agent.generate(Message.user([UserContent.imageUrl("https://example.com/cat.png")]));
 
@@ -553,9 +560,11 @@ describe("agent dynamic context", () => {
         throw new Error("Not used by this test");
       },
     };
-    const agent = new TestAgentBuilder("test-agent", new QueueModel())
-      .context(createContextIndex(index, { topK: 1 }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: new QueueModel(),
+      context: [createContextIndex(index, { topK: 1 })],
+    });
 
     await expect(agent.generate("cat")).rejects.toThrow("context unavailable");
   });
@@ -579,10 +588,12 @@ describe("agent dynamic context", () => {
       execute: () => "refund",
     });
     const completionModel = new TwoTurnModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel)
-      .context(createContextIndex(index, { topK: 1, threshold: 0.9 }))
-      .tools([seedTopicTool])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: completionModel,
+      context: [createContextIndex(index, { topK: 1, threshold: 0.9 })],
+      tools: [seedTopicTool],
+    });
 
     await agent.generate("start");
 
@@ -656,7 +667,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.9,
     });
     const completionModel = new ToolCallingModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel).tools([index]).build();
+    const agent = new Agent({ id: "test-agent", model: completionModel, tools: [index] });
 
     const response = await agent.generate("refund order A-100");
 
@@ -683,7 +694,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.9,
     });
     const completionModel = new StreamingQueueModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel).tools([index]).build();
+    const agent = new Agent({ id: "test-agent", model: completionModel, tools: [index] });
 
     for await (const _event of agent.stream("dog")) {
       // exhaust stream
@@ -715,10 +726,11 @@ describe("agent dynamic tools", () => {
       threshold: 0.9,
     });
     const completionModel = new QueueModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel)
-      .tools([staticRefundTool])
-      .tools([index])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: completionModel,
+      tools: [staticRefundTool, index],
+    });
 
     await agent.generate("refund order A-100");
 
@@ -734,7 +746,7 @@ describe("agent dynamic tools", () => {
       threshold: 0.95,
     });
     const completionModel = new QueueModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel).tools([index]).build();
+    const agent = new Agent({ id: "test-agent", model: completionModel, tools: [index] });
 
     await agent.generate("start");
 
@@ -755,10 +767,11 @@ describe("agent dynamic tools", () => {
       execute: () => "refund",
     });
     const completionModel = new TwoTurnModel();
-    const agent = new TestAgentBuilder("test-agent", completionModel)
-      .tools([seedTopicTool])
-      .tools([index])
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model: completionModel,
+      tools: [seedTopicTool, index],
+    });
 
     await agent.generate("start");
 

@@ -19,7 +19,6 @@ import {
   isToolIndex,
   type JsonObject,
   MaxTurnsError,
-  TestAgentBuilder,
   type Tool,
   type ToolIndex,
   type ToolSearchDocument,
@@ -492,18 +491,22 @@ describe("Agent construction", () => {
     ]);
   });
 
-  it("registers documents and context indexes through TestAgentBuilder.context", () => {
+  it("registers documents and context indexes through Agent options", () => {
     const index = createContextIndex(emptyIndex<string>(), { topK: 2 });
-    const agent = new TestAgentBuilder("agent", new QueueModel([]))
-      .context({ id: "policy", text: "Keep answers short." })
-      .context(index)
-      .context("Generated id")
-      .build();
+    const agent = new Agent({
+      id: "agent",
+      model: new QueueModel([]),
+      context: [
+        { id: "policy", text: "Keep answers short." },
+        index,
+        { id: "generated", text: "Generated id" },
+      ],
+    });
 
     expect(agent.context).toEqual([
       { id: "policy", text: "Keep answers short." },
       index,
-      { id: "static_doc_1", text: "Generated id" },
+      { id: "generated", text: "Generated id" },
     ]);
     expect(Object.isFrozen(agent.context)).toBe(true);
     expect(Object.isFrozen(index)).toBe(true);
@@ -513,7 +516,7 @@ describe("Agent construction", () => {
 describe("Agent.asTool", () => {
   it("stores a stable trimmed agent id", () => {
     const model = new QueueModel([]);
-    const agent = new TestAgentBuilder(" support ", model).build();
+    const agent = new Agent({ id: " support ", model });
 
     expect(agent.id).toBe("support");
   });
@@ -521,16 +524,18 @@ describe("Agent.asTool", () => {
   it("rejects empty agent ids", () => {
     const model = new QueueModel([]);
 
-    expect(() => new TestAgentBuilder("", model)).toThrow(TypeError);
-    expect(() => new TestAgentBuilder("   ", model)).toThrow(TypeError);
-    expect(() => new TestAgentBuilder(undefined as unknown as string, model)).toThrow(TypeError);
+    expect(() => new Agent({ id: "", model })).toThrow(TypeError);
+    expect(() => new Agent({ id: "   ", model })).toThrow(TypeError);
+    expect(() => new Agent({ id: undefined as unknown as string, model })).toThrow(TypeError);
   });
 
   it("creates a tool definition from an agent", async () => {
     const model = new QueueModel([]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .description("Answer support questions.")
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      description: "Answer support questions.",
+    });
     const tool = agent.asTool({ name: "ask_support" });
 
     await expect(Promise.resolve(tool.definition(""))).resolves.toEqual({
@@ -552,7 +557,7 @@ describe("Agent.asTool", () => {
 
   it("delegates tool calls to the wrapped agent", async () => {
     const model = new QueueModel([response([AssistantContent.text("delegated")])]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const tool = agent.asTool({
       name: "ask_agent",
       description: "Ask an agent.",
@@ -604,70 +609,21 @@ describe("Agent.asTool", () => {
       response([AssistantContent.toolCall("call_2", "add", { x: 2, y: 2 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .defaultMaxTurns(3)
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 3 });
     const tool = agent.asTool({ name: "ask_agent", maxTurns: 0 });
 
     await expect(tool.call({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
   });
 
-  it("isolates built agents from later builder collection changes", () => {
-    const model = new QueueModel([]);
-    const builder = new TestAgentBuilder("test-agent", model).context("initial context");
-    const agent = builder.build();
-    const dynamicContextIndex = emptyIndex<unknown>();
-    const toolIndex = emptyToolIndex([{ ...addTool, name: "late_tool" }]);
-
-    builder
-      .context("late context")
-      .context(createContextIndex(dynamicContextIndex, { topK: 1 }))
-      .tools([toolIndex])
-      .middlewares([createMiddleware({})])
-      .observe(
-        createObserver({
-          startRun() {
-            return {
-              end() {},
-            };
-          },
-        }),
-      )
-      .guardrails(
-        defineGuardrailPolicy({
-          id: "late-policy",
-          input: [
-            defineInputGuardrail({
-              id: "late-input",
-              check(_context, { allow }) {
-                return allow();
-              },
-            }),
-          ],
-        }),
-      );
-
-    expect(agent.context).toEqual([{ id: "static_doc_0", text: "initial context" }]);
-    expect(agent.middlewares).toHaveLength(0);
-    expect(agent.observers).toHaveLength(0);
-    expect(agent.guardrails).toHaveLength(0);
-    expect(agent.tools).toHaveLength(0);
-  });
-
   it("registers multiple wrapped agents as distinct tools", async () => {
-    const first = new TestAgentBuilder(
-      "test-agent",
-      new QueueModel([response([AssistantContent.text("one")])]),
-    )
-      .build()
-      .asTool({ name: "ask_one" });
-    const second = new TestAgentBuilder(
-      "test-agent",
-      new QueueModel([response([AssistantContent.text("two")])]),
-    )
-      .build()
-      .asTool({ name: "ask_two" });
+    const first = new Agent({
+      id: "test-agent",
+      model: new QueueModel([response([AssistantContent.text("one")])]),
+    }).asTool({ name: "ask_one" });
+    const second = new Agent({
+      id: "test-agent",
+      model: new QueueModel([response([AssistantContent.text("two")])]),
+    }).asTool({ name: "ask_two" });
     await expect(first.call({ prompt: "run" })).resolves.toBe("one");
     await expect(second.call({ prompt: "run" })).resolves.toBe("two");
   });

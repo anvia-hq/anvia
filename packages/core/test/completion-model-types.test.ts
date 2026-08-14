@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from "vitest";
-import { CompletionRequestBuilder } from "../src/internal/completion-request-builder";
+import { createCompletionRequest } from "../src/internal/completion-request";
 import type { ModelId } from "../src/model-listing";
 import {
   type CompletionModel,
@@ -33,11 +33,11 @@ class TypedModel implements CompletionModel<unknown, TestModelName> {
 }
 
 describe("completion model types", () => {
-  it("infers known model names for request builder overrides while accepting custom strings", () => {
-    const request = new CompletionRequestBuilder(new TypedModel(), Message.user("hello"))
-      .modelOverride("known-model")
-      .modelOverride("custom-model")
-      .build();
+  it("infers known model names for request overrides while accepting custom strings", () => {
+    const request = createCompletionRequest(Message.user("hello"), {
+      model: new TypedModel(),
+      modelOverride: "custom-model",
+    });
 
     expectTypeOf(request.model).toEqualTypeOf<TestModelName | undefined>();
   });

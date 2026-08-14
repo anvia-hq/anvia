@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  Agent,
   type AgentStreamEvent,
   AssistantContent,
   assertCompleted,
@@ -18,8 +19,8 @@ import {
   Message,
   type OutputGuardrail,
   type StreamingCompletionModel,
-  TestAgentBuilder,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -116,9 +117,11 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
     const result = await agent.generate("hello secret");
     assertCompleted(result);
@@ -141,9 +144,11 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
     const result = await agent.generate("blocked");
     assertCompleted(result);
@@ -176,10 +181,12 @@ describe("guardrails", () => {
         return block({ reason: "blocked", message: "Input blocked." });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [observer],
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
     const result = await agent.generate("blocked");
     assertCompleted(result);
@@ -210,16 +217,18 @@ describe("guardrails", () => {
         return block({ reason: "blocked", message: "Stream input blocked." });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [
         createObserver({
           startRun() {
             return { trace, end() {} };
           },
         }),
-      )
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+      ],
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
     const events: AgentStreamEvent[] = [];
     for await (const event of agent.stream("blocked")) {
@@ -245,9 +254,11 @@ describe("guardrails", () => {
       patterns: [/secret/g],
       reason: "secret_redacted",
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [redactInput] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [redactInput] }),
+    });
 
     await agent.generate(
       Message.user([
@@ -274,9 +285,11 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
 
     const result = await agent.generate("hello");
     assertCompleted(result);
@@ -310,9 +323,11 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
 
     const events: AgentStreamEvent[] = [];
     for await (const event of agent.stream("hello")) {
@@ -357,19 +372,19 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .hook(
-        createHook({
-          onTurnEnd({ turn }) {
-            if (turn === 1) {
-              expect(steer?.("revise")).toBe(true);
-            }
-          },
-        }),
-      )
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
-    const stream = agent.stream("hello");
+    const hook = createHook({
+      onTurnEnd({ turn }) {
+        if (turn === 1) {
+          expect(steer?.("revise")).toBe(true);
+        }
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
+    const stream = agent.stream("hello", withInternalAgentRunOptions({}, { hook }));
     steer = stream.steer.bind(stream);
 
     const events: AgentStreamEvent[] = [];

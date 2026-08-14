@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  Agent,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -15,8 +16,8 @@ import {
   type McpServer,
   Message,
   type StreamingCompletionModel,
-  TestAgentBuilder,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -306,7 +307,7 @@ describe("MCP tools", () => {
       response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).mcp([fakeMcpServer()]).build();
+    const agent = new Agent({ id: "test-agent", model, mcpServers: [fakeMcpServer()] });
 
     await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
 
@@ -328,16 +329,18 @@ describe("MCP tools", () => {
       response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .mcp([fakeMcpServer()])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      mcpServers: [fakeMcpServer()],
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             return `mcp:${result}`;
           },
         }),
-      ])
-      .build();
+      ],
+    });
 
     await expect(agent.generate("add")).resolves.toMatchObject({ output: "done" });
 
@@ -366,21 +369,19 @@ describe("MCP tools", () => {
       [{ type: "text_delta", delta: "7" }],
     ]);
     const events: string[] = [];
-    const agent = new TestAgentBuilder("test-agent", model)
-      .mcp([fakeMcpServer()])
-      .hook(
-        createHook({
-          onToolCall({ toolName, args }) {
-            events.push(`call:${toolName}:${args}`);
-          },
-          onToolResult({ toolName, result }) {
-            events.push(`result:${toolName}:${result}`);
-          },
-        }),
-      )
-      .build();
+    const hook = createHook({
+      onToolCall({ toolName, args }) {
+        events.push(`call:${toolName}:${args}`);
+      },
+      onToolResult({ toolName, result }) {
+        events.push(`result:${toolName}:${result}`);
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model, mcpServers: [fakeMcpServer()] });
 
-    const streamEvents = await collect(agent.stream("add"));
+    const streamEvents = await collect(
+      agent.stream("add", withInternalAgentRunOptions({}, { hook })),
+    );
 
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("mcp_add");
     expect(streamEvents.at(-1)).toMatchObject({ type: "final", output: "7" });

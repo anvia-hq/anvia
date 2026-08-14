@@ -22,10 +22,10 @@ import {
   getAssistantGenerationMetadata,
   Message,
   type StreamingCompletionModel,
-  TestAgentBuilder,
   ToolOutput,
   toReadableStream,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 class StreamingQueueModel implements StreamingCompletionModel {
@@ -86,7 +86,7 @@ const addTool = createTool({
 describe("Agent streaming", () => {
   it("types tool call deltas by default and narrows explicit opt-out streams", () => {
     const model = new StreamingQueueModel([]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     expectTypeOf(agent.stream("hi")).toEqualTypeOf<AgentStream<AgentStreamEvent>>();
     expectTypeOf(agent.stream("hi", { includeToolCallDeltas: false })).toEqualTypeOf<
@@ -105,7 +105,7 @@ describe("Agent streaming", () => {
         { type: "text_delta", delta: "lo" },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).instructions("system").build();
+    const agent = new Agent({ id: "test-agent", model, instructions: "system" });
 
     const events = await collect(agent.stream("hi"));
 
@@ -183,7 +183,7 @@ describe("Agent streaming", () => {
     vi.setSystemTime(new Date(0));
     try {
       const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-      const agent = new TestAgentBuilder("test-agent", model).build();
+      const agent = new Agent({ id: "test-agent", model });
       const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
       expect((await iterator.next()).value).toMatchObject({ type: "turn_start" });
@@ -206,7 +206,7 @@ describe("Agent streaming", () => {
       streamThenThrow([], error),
       [{ type: "text_delta", delta: "recovered" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(
       agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -230,7 +230,7 @@ describe("Agent streaming", () => {
       [{ type: "error", error }],
       [{ type: "text_delta", delta: "ready" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(
       agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -254,7 +254,7 @@ describe("Agent streaming", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(
       agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -278,7 +278,7 @@ describe("Agent streaming", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(agent.stream("hi"));
 
@@ -289,7 +289,7 @@ describe("Agent streaming", () => {
     const error = new Error("provider failed");
     const providerUsage = usage(7, 2);
     const model = new StreamingQueueModel([[{ type: "error", error, usage: providerUsage }]]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -301,7 +301,7 @@ describe("Agent streaming", () => {
   it("uses empty usage when the first provider failure has no authoritative usage", async () => {
     const error = new Error("provider failed before usage");
     const model = new StreamingQueueModel([[{ type: "error", error }]]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -325,7 +325,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "error", error }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
     const iterator = agent.stream("add")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -367,18 +367,20 @@ describe("Agent streaming", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .observe(observer)
-      .tools([failingTool])
-      .hook(
-        createHook({
-          onToolError() {
-            return cancelRun("stop after tool failure");
-          },
-        }),
-      )
-      .build();
-    const iterator = agent.stream("fail")[Symbol.asyncIterator]();
+    const hook = createHook({
+      onToolError() {
+        return cancelRun("stop after tool failure");
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observers: [observer],
+      tools: [failingTool],
+    });
+    const iterator = agent
+      .stream("fail", withInternalAgentRunOptions({}, { hook }))
+      [Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -393,7 +395,7 @@ describe("Agent streaming", () => {
       streamThenThrow([], error),
       [{ type: "text_delta", delta: "ready" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const text = await readAll(
       toReadableStream(agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })),
@@ -421,7 +423,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     const text = await readAll(toReadableStream(agent.stream("add")));
     const events = text
@@ -449,7 +451,7 @@ describe("Agent streaming", () => {
       streamThenThrow([{ type: "text_delta", delta: "partial" }], error),
       [{ type: "text_delta", delta: "duplicate" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const iterator = agent
       .stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })
       [Symbol.asyncIterator]();
@@ -472,7 +474,7 @@ describe("Agent streaming", () => {
       streamThenThrow([{ type: "message_id", id: "msg_1" }], error),
       [{ type: "text_delta", delta: "duplicate" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const iterator = agent
       .stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })
       [Symbol.asyncIterator]();
@@ -486,8 +488,10 @@ describe("Agent streaming", () => {
 
   it("streams post-middleware response content when response middleware is registered", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "secret" }]]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      middlewares: [
         createMiddleware({
           onCompletionResponse({ response }) {
             return {
@@ -498,8 +502,8 @@ describe("Agent streaming", () => {
             };
           },
         }),
-      ])
-      .build();
+      ],
+    });
 
     const events = await collect(agent.stream("hi"));
     const textDeltas = events
@@ -520,16 +524,15 @@ describe("Agent streaming", () => {
         { type: "final", response: completionResponse([], finalUsage) },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .hook(
-        createHook({
-          onRunEnd() {
-            return cancelRun("blocked at end");
-          },
-        }),
-      )
-      .build();
-    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
+    const hook = createHook({
+      onRunEnd() {
+        return cancelRun("blocked at end");
+      },
+    });
+    const agent = new Agent({ id: "test-agent", model });
+    const iterator = agent
+      .stream("hi", withInternalAgentRunOptions({}, { hook }))
+      [Symbol.asyncIterator]();
     const events: AgentStreamEvent[] = [];
 
     events.push(await nextEvent(iterator));
@@ -566,9 +569,11 @@ describe("Agent streaming", () => {
         throw guardrailError;
       },
     });
-    const agent = new TestAgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
     const iterator = agent.stream("hi")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -600,10 +605,7 @@ describe("Agent streaming", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .defaultMaxTurns(0)
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
     const iterator = agent.stream("loop")[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -614,7 +616,7 @@ describe("Agent streaming", () => {
 
   it("rejects concurrent consumption of the same agent stream", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream("hi");
     const iterator = stream[Symbol.asyncIterator]();
 
@@ -630,7 +632,7 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "first" }],
       [{ type: "text_delta", delta: "second" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream("hi");
 
     expect(stream.steer("revise")).toBe(true);
@@ -642,22 +644,22 @@ describe("Agent streaming", () => {
   });
 
   it("rejects steering after stream errors and cancellation", async () => {
-    const errorStream = new TestAgentBuilder("test-agent", new StreamingQueueModel([]))
-      .build()
-      .stream("hi");
+    const errorStream = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([]),
+    }).stream("hi");
     await expect(collect(errorStream)).rejects.toThrow("No queued response");
     expect(errorStream.steer("late")).toBe(false);
 
-    const cancelledStream = new TestAgentBuilder("test-agent", new StreamingQueueModel([]))
-      .hook(
-        createHook({
-          onRunStart() {
-            return cancelRun("stop");
-          },
-        }),
-      )
-      .build()
-      .stream("hi");
+    const hook = createHook({
+      onRunStart() {
+        return cancelRun("stop");
+      },
+    });
+    const cancelledStream = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([]),
+    }).stream("hi", withInternalAgentRunOptions({}, { hook }));
     await expect(collect(cancelledStream)).rejects.toBeInstanceOf(AgentRunCancelledError);
     expect(cancelledStream.steer("late")).toBe(false);
   });
@@ -667,7 +669,7 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "first" }],
       [{ type: "text_delta", delta: "second" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream("hi");
     const iterator = stream[Symbol.asyncIterator]();
 
@@ -738,7 +740,7 @@ describe("Agent streaming", () => {
       [{ type: "tool_call", toolCall }],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([slowAddTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [slowAddTool] });
     const stream = agent.stream("add");
     const eventsPromise = collect(stream);
 
@@ -768,7 +770,7 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "base" }],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream("start");
     const iterator = stream[Symbol.asyncIterator]();
     const firstSteer = Message.user("first steer");
@@ -826,7 +828,7 @@ describe("Agent streaming", () => {
         },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(agent.stream("hi"));
 
@@ -870,7 +872,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     const events = await collect(agent.stream("add"));
 
@@ -960,7 +962,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     const events = await collect(agent.stream("add", { includeToolCallDeltas: false }));
 
@@ -992,9 +994,11 @@ describe("Agent streaming", () => {
     const middlewareStarted = deferred<void>();
     const releaseMiddleware = deferred<void>();
     const model = new StreamingQueueModel([firstTurn, [{ type: "text_delta", delta: "7" }]]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      middlewares: [
         createMiddleware({
           async onCompletionResponse({ response }) {
             middlewareStarted.resolve();
@@ -1002,8 +1006,8 @@ describe("Agent streaming", () => {
             return { response };
           },
         }),
-      ])
-      .build();
+      ],
+    });
     const iterator = agent.stream("add")[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
@@ -1058,16 +1062,18 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([addTool])
-      .middlewares([
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [addTool],
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             return `stored:${result}`;
           },
         }),
-      ])
-      .build();
+      ],
+    });
 
     const events = await collect(agent.stream("add"));
 
@@ -1111,7 +1117,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([screenshotTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [screenshotTool] });
 
     const events = await collect(agent.stream("screenshot"));
 
@@ -1176,10 +1182,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "done" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model)
-      .tools([slowTool])
-      .tools([fastTool])
-      .build();
+    const agent = new Agent({ id: "test-agent", model, tools: [slowTool, fastTool] });
     const iterator = agent.stream("call both", { toolConcurrency: 2 })[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
@@ -1255,10 +1258,12 @@ describe("Agent streaming", () => {
         { type: "text_delta", delta: "done" },
       ],
     ]);
-    const childAgent = new TestAgentBuilder("child", childModel).name("Child Agent").build();
-    const parentAgent = new TestAgentBuilder("parent", parentModel)
-      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
-      .build();
+    const childAgent = new Agent({ id: "child", model: childModel, name: "Child Agent" });
+    const parentAgent = new Agent({
+      id: "parent",
+      model: parentModel,
+      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+    });
 
     const events = await collect(parentAgent.stream("delegate"));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
@@ -1313,13 +1318,12 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const childAgent = new TestAgentBuilder("child", childModel)
-      .tools([addTool])
-      .defaultMaxTurns(2)
-      .build();
-    const parentAgent = new TestAgentBuilder("parent", parentModel)
-      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
-      .build();
+    const childAgent = new Agent({ id: "child", model: childModel, tools: [addTool], maxTurns: 2 });
+    const parentAgent = new Agent({
+      id: "parent",
+      model: parentModel,
+      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+    });
 
     const events = await collect(parentAgent.stream("delegate", { includeToolCallDeltas: false }));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
@@ -1374,13 +1378,12 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const childAgent = new TestAgentBuilder("child", childModel)
-      .tools([addTool])
-      .defaultMaxTurns(2)
-      .build();
-    const parentAgent = new TestAgentBuilder("parent", parentModel)
-      .tools([childAgent.asTool({ name: "ask_child", stream: true })])
-      .build();
+    const childAgent = new Agent({ id: "child", model: childModel, tools: [addTool], maxTurns: 2 });
+    const parentAgent = new Agent({
+      id: "parent",
+      model: parentModel,
+      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+    });
 
     const events = await collect(parentAgent.stream("delegate"));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
@@ -1416,7 +1419,7 @@ describe("Agent streaming", () => {
         { type: "text_delta", delta: "done" },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(agent.stream("reason"));
 
@@ -1449,7 +1452,7 @@ describe("Agent streaming", () => {
         { type: "text_delta", delta: "done" },
       ],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(agent.stream("reason"));
 
@@ -1506,7 +1509,7 @@ describe("Agent streaming", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new TestAgentBuilder("test-agent", model).tools([addTool]).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     const events = await collect(agent.stream("add"));
 

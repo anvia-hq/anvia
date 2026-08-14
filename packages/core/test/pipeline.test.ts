@@ -13,7 +13,6 @@ import {
   Extractor,
   Pipeline,
   type PipelineOp,
-  TestAgentBuilder,
   Usage,
 } from "./helpers/imports";
 
@@ -140,7 +139,7 @@ describe("Pipeline", () => {
 
   it("prompts an agent and returns output", async () => {
     const model = new QueueModel([response([AssistantContent.text("answer")])]);
-    const agent = new TestAgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const pipeline = new Pipeline({ id: "agent-stage", inputSchema: z.string() })
       .step((value) => `Question: ${value}`)
       .agent(agent);
@@ -248,7 +247,7 @@ describe("Pipeline", () => {
 
   it("exposes an automatic graph", () => {
     const model = new QueueModel([response([AssistantContent.text("answer")])]);
-    const agent = new TestAgentBuilder("support", model).name("Support").build();
+    const agent = new Agent({ id: "support", model, name: "Support" });
     const pipeline = new Pipeline({
       id: "ticket_triage",
       inputSchema: z.string(),

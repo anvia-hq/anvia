@@ -39,8 +39,9 @@ function withStudioStreamErrors<TEvent>(
             const next = await iterator.next();
             if (next.done === true) {
               done = true;
+              return next;
             }
-            return next;
+            return { done: false, value: serializeStreamError(next.value) };
           } catch (error) {
             done = true;
             return {
@@ -57,6 +58,19 @@ function withStudioStreamErrors<TEvent>(
       };
     },
   };
+}
+
+function serializeStreamError<TEvent>(event: TEvent): TEvent {
+  if (
+    typeof event !== "object" ||
+    event === null ||
+    !("type" in event) ||
+    event.type !== "error" ||
+    !("error" in event)
+  ) {
+    return event;
+  }
+  return { ...event, error: serializeError(event.error) } as TEvent;
 }
 
 function studioStreamError(error: unknown): StudioStreamErrorEvent {

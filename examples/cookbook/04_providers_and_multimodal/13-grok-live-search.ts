@@ -9,7 +9,7 @@ const researcher = new Agent({
   id: "grok-researcher",
   model: grok.completionModel(),
   instructions: "Research current information and cite the sources you use.",
-  additionalParams: { max_turns: 5 },
+  providerOptions: { max_turns: 5 },
   tools: [
     grokTools.webSearch({ allowedDomains: ["x.ai"] }),
     grokTools.xSearch({ allowedHandles: ["xai"] }),

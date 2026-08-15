@@ -3,7 +3,8 @@ import type {
   GeneratedImage,
   ImageGenerationModel,
   ImageGenerationRequest,
-  ImageGenerationResponse,
+  ImageGenerationResult,
+  ModelCallOptions,
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
 import { isPlainObject } from "../utils";
@@ -26,8 +27,10 @@ export class OpenAIImageGenerationModel
 
   async imageGeneration(
     request: ImageGenerationRequest,
-  ): Promise<ImageGenerationResponse<unknown>> {
+    options?: ModelCallOptions,
+  ): Promise<ImageGenerationResult<unknown>> {
     const params: Record<string, unknown> = {
+      ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
       model: this.defaultModel,
       prompt: request.prompt,
       size: `${request.width}x${request.height}`,
@@ -37,16 +40,15 @@ export class OpenAIImageGenerationModel
       params.response_format = "b64_json";
     }
 
-    if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-      Object.assign(params, request.additionalParams);
-    }
-
-    const response = await this.client.images.generate(params as never);
+    const response = await this.client.images.generate(
+      params as never,
+      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
+    );
     return imageResponseFromOpenAI(response);
   }
 }
 
-export function imageResponseFromOpenAI(response: unknown): ImageGenerationResponse<unknown> {
+export function imageResponseFromOpenAI(response: unknown): ImageGenerationResult<unknown> {
   const raw = response as Record<string, unknown>;
   const mediaType = mediaTypeFromFormat(
     typeof raw.output_format === "string" ? raw.output_format : "png",
@@ -59,8 +61,7 @@ export function imageResponseFromOpenAI(response: unknown): ImageGenerationRespo
     return [{ data: new Uint8Array(Buffer.from(item.b64_json, "base64")), mediaType }];
   });
 
-  const image = images[0]?.data;
-  if (image === undefined) {
+  if (images.length === 0) {
     if (data.some((item) => isPlainObject(item) && typeof item.url === "string")) {
       throw new Error(
         "OpenAI image generation response contained image URLs, which are not supported.",
@@ -70,9 +71,7 @@ export function imageResponseFromOpenAI(response: unknown): ImageGenerationRespo
   }
 
   return {
-    image,
-    images,
-    mediaType,
+    images: images as [GeneratedImage, ...GeneratedImage[]],
     rawResponse: response,
   };
 }

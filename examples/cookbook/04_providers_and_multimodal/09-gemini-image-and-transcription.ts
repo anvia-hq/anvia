@@ -9,29 +9,27 @@ const imageModel = client.imageGenerationModel(
   process.env.GEMINI_IMAGE_MODEL ?? GEMINI_2_5_FLASH_IMAGE,
 );
 
-const image = await generateImage(
-  "A minimal technical diagram showing audio, image, and text model interfaces",
-  {
-    model: imageModel,
-    width: 1024,
-    height: 1024,
-    additionalParams: { config: { imageConfig: { imageSize: "1K" } } },
-  },
-);
+const image = await generateImage({
+  model: imageModel,
+  prompt: "A minimal technical diagram showing audio, image, and text model interfaces",
+  width: 1024,
+  height: 1024,
+  providerOptions: { config: { imageConfig: { imageSize: "1K" } } },
+});
 
-await writeFile("gemini-image-generation.png", image.image);
+await writeFile("gemini-image-generation.png", image.images[0].data);
 
 const audioPath = process.env.ANVIA_AUDIO_FILE ?? "assets/audio/voice.wav";
-const transcript = await transcribe(await readFile(audioPath), {
+const transcript = await transcribe({
   model: client.transcriptionModel(),
-  filename: audioPath,
+  audio: { data: await readFile(audioPath), filename: audioPath },
   prompt: "Return only the transcript.",
   temperature: 0,
 });
 
 console.log({
   image: "gemini-image-generation.png",
-  imageMediaType: image.mediaType,
+  imageMediaType: image.images[0].mediaType,
   transcript: transcript.text,
 });
 

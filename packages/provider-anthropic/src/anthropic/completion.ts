@@ -7,14 +7,15 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelMetadataOptions,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type DocumentContent,
   type ImageContent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  type ModelCallOptions,
   type ReasoningContent,
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
@@ -82,10 +83,14 @@ export class AnthropicCompletionModel
 
   async completion(
     request: CompletionRequest<AnthropicCompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toAnthropicMessagesParams(this.defaultModel, request);
-    const response = await this.client.messages.create(params as never);
+    const response = await this.client.messages.create(
+      params as never,
+      anthropicRequestOptions(options),
+    );
     return withContextUsage(
       fromAnthropicMessage(response),
       this.getModelInfo(request.model ?? this.defaultModel),
@@ -94,10 +99,14 @@ export class AnthropicCompletionModel
 
   async *streamCompletion(
     request: CompletionRequest<AnthropicCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = { ...toAnthropicMessagesParams(this.defaultModel, request), stream: true };
-    const stream = await this.client.messages.create(params as never);
+    const stream = await this.client.messages.create(
+      params as never,
+      anthropicRequestOptions(options),
+    );
     const toolIdsByIndex = new Map<number, string>();
     const blocksWithInitialToolInput = new Set<number>();
     const streamUsage = Usage.empty();
@@ -294,10 +303,13 @@ export function toAnthropicMessagesParams(
   const messages = requestMessages(request);
   const system = systemFromMessages(request, messages);
   const params: AnthropicCreateParams = {
+    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
     model: request.model ?? defaultModel,
     max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
     messages: messages.flatMap(messageToAnthropicMessages),
   };
+
+  delete params.tools;
 
   if (system !== undefined) {
     params.system = system;
@@ -315,11 +327,13 @@ export function toAnthropicMessagesParams(
     params.tool_choice = toolChoiceToAnthropic(request.toolChoice);
   }
 
-  if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    Object.assign(params, request.additionalParams);
-  }
-
   return params;
+}
+
+function anthropicRequestOptions(
+  options: ModelCallOptions | undefined,
+): { signal?: AbortSignal | undefined } | undefined {
+  return options?.abortSignal === undefined ? undefined : { signal: options.abortSignal };
 }
 
 function providerRequestSummary(
@@ -340,8 +354,8 @@ function providerRequestSummary(
     temperature: request.temperature,
     maxTokens: request.maxTokens ?? numberFrom(params.max_tokens),
     toolChoice: toolChoiceSummary(request.toolChoice),
-    additionalParamKeys: isPlainObject(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isPlainObject(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
 }
@@ -459,7 +473,7 @@ function anthropicUsage(
   };
 }
 
-export function fromAnthropicStreamEvent(event: unknown): CompletionStreamEvent[] {
+export function fromAnthropicStreamEvent(event: unknown): CompletionModelStreamEvent[] {
   if (!isPlainObject(event) || typeof event.type !== "string") {
     return [];
   }
@@ -780,8 +794,8 @@ function toolInputArgumentsDelta(input: unknown): string | undefined {
 function toolCallDelta(
   id: string,
   values: { name?: string | undefined; argumentsDelta?: string | undefined },
-): CompletionStreamEvent {
-  const event: CompletionStreamEvent = { type: "tool_call_delta", id };
+): CompletionModelStreamEvent {
+  const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
   return event;

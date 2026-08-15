@@ -25,9 +25,9 @@ import {
   AssistantContent,
   assertCompleted,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createHook,
   createTool,
   type JsonObject,
@@ -92,7 +92,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
@@ -107,7 +107,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
     };
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -486,7 +486,7 @@ describe("agent observability", () => {
 
     const events = await collect(agent.stream("add"));
 
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "hello" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "hello" } });
     expect(eventTypes(observer)).toEqual([
       "run_start",
       "generation_start",
@@ -1344,7 +1344,9 @@ function runStartArgs(): AgentRunStartArgs {
 
 function runEndArgs(): AgentRunEndArgs {
   return {
+    status: "completed",
     output: "ok",
+    text: "ok",
     usage: Usage.empty(),
     messages: [],
   };

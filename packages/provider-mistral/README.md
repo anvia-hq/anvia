@@ -31,8 +31,8 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
-const response = await agent.prompt("What should I check before launch?").send();
-console.log(response.output);
+const result = await agent.generate("What should I check before launch?");
+if (result.status === "completed") console.log(result.output);
 ```
 
 ## Embeddings

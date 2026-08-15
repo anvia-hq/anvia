@@ -1,9 +1,9 @@
 import type { AgentDeltaEvent } from "../../agent/run-types";
 import type {
   AssistantContent as AssistantContentType,
+  CompletionModelStreamEvent,
   CompletionResponse,
   CompletionSource,
-  CompletionStreamEvent,
   JsonValue,
   ProviderToolCall,
   ReasoningContent,
@@ -44,7 +44,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   private nextTextKey = 0;
   private nextReasoningKey = 0;
 
-  accept(event: CompletionStreamEvent<RawResponse>): AgentDeltaEvent | undefined {
+  accept(event: CompletionModelStreamEvent<RawResponse>): AgentDeltaEvent | undefined {
     if (event.type === "text_delta") {
       this.appendText(event.delta);
       return { type: "text_delta", delta: event.delta };
@@ -246,7 +246,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   }
 
   private reasoningStateForEvent(
-    event: Extract<CompletionStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
+    event: Extract<CompletionModelStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
   ): ReasoningState {
     if (event.id !== undefined) {
       const existingKey = this.reasoningKeyById.get(event.id);
@@ -335,7 +335,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
   private appendReasoning(
     reasoning: ReasoningState,
-    event: Extract<CompletionStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
+    event: Extract<CompletionModelStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
   ): void {
     const contentType = event.contentType ?? "text";
     if (contentType === "text" || contentType === "summary") {
@@ -473,7 +473,7 @@ function mergeFinalToolCall(accumulated: ToolCall, finalToolCall: ToolCall): Too
 }
 
 function reasoningDeltaEvent(
-  event: Extract<CompletionStreamEvent, { type: "reasoning_delta" }>,
+  event: Extract<CompletionModelStreamEvent, { type: "reasoning_delta" }>,
 ): AgentDeltaEvent {
   const mapped: AgentDeltaEvent = { type: "reasoning_delta", delta: event.delta };
   if (event.id !== undefined) mapped.id = event.id;

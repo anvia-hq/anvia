@@ -5,6 +5,7 @@ import {
   type OpenAICompletionModelName,
   type OpenAIEmbeddingModelName,
   type OpenAIImageGenerationModelName,
+  type OpenAISpeechGenerationModelName,
   type OpenAITranscriptionModelName,
 } from "../src/index";
 
@@ -30,8 +31,10 @@ describe("OpenAIClient", () => {
     ).toEqualTypeOf<OpenAIImageGenerationModelName>();
     client.imageGenerationModel("custom-image-model");
 
-    client.audioGenerationModel("tts-1-hd");
-    client.audioGenerationModel("custom-audio-model");
+    expectTypeOf(
+      client.speechGenerationModel("tts-1-hd").defaultModel,
+    ).toEqualTypeOf<OpenAISpeechGenerationModelName>();
+    client.speechGenerationModel("custom-speech-model");
 
     expectTypeOf(
       client.transcriptionModel("whisper-1").defaultModel,

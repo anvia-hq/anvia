@@ -37,7 +37,7 @@ try {
     }
 
     if (event.type === "final") {
-      console.log("final:", event.output);
+      console.log("final:", event.result.text);
     }
   }
 } finally {

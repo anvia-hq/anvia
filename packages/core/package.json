@@ -32,9 +32,9 @@
       "types": "./dist/internal/agent.d.ts",
       "import": "./dist/internal/agent.js"
     },
-    "./audio-generation": {
-      "types": "./dist/audio-generation/index.d.ts",
-      "import": "./dist/audio-generation/index.js"
+    "./speech-generation": {
+      "types": "./dist/speech-generation/index.d.ts",
+      "import": "./dist/speech-generation/index.js"
     },
     "./completion": {
       "types": "./dist/completion/index.d.ts",
@@ -110,7 +110,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/ui/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/speech-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/ui/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -4,9 +4,9 @@ import {
   type AgentStreamEvent,
   AssistantContent,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createSummaryMemoryCompactor,
   isMemoryCompactionSummary,
   type MemoryAppendInput,
@@ -62,13 +62,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly events: CompletionStreamEvent[][]) {}
+  constructor(private readonly events: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const events = this.events.shift();
     if (events === undefined) {
@@ -472,15 +472,14 @@ describe("memory compaction", () => {
     });
     const events: AgentStreamEvent[] = [];
 
-    await expect(async () => {
-      for await (const event of agent.session(context.sessionId).stream("next")) {
-        events.push(event);
-      }
-    }).rejects.toBeInstanceOf(MemoryCompactionConflictError);
+    for await (const event of agent.session(context.sessionId).stream("next")) {
+      events.push(event);
+    }
 
     const error = events.find((event) => event.type === "error");
     expect(error).toMatchObject({
       type: "error",
+      error: expect.any(MemoryCompactionConflictError),
       usage: Usage.add(summaryUsage, summaryUsage),
     });
     expect(mainModel.requests).toHaveLength(0);

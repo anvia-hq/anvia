@@ -7,18 +7,15 @@ import type {
   ContextIndex,
   CreateContextIndexOptions,
   AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
+  AgentRunOptions as PublicAgentRunOptions,
   AgentSession as PublicAgentSessionType,
   AgentStreamEvent as PublicAgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas as PublicAgentStreamEventWithoutToolCallDeltas,
-  AgentStreamEventWithToolCallDeltas as PublicAgentStreamEventWithToolCallDeltas,
-  AgentStreamOptions as PublicAgentStreamOptions,
   AgentToolCallDeltaEvent as PublicAgentToolCallDeltaEvent,
   Agent as PublicAgentType,
   RetryContext as PublicRetryContext,
   RetryOptions as PublicRetryOptions,
 } from "../src/agent";
 import * as publicAgent from "../src/agent";
-import * as audioGeneration from "../src/audio-generation";
 import * as completion from "../src/completion";
 import * as embeddings from "../src/embeddings";
 // @ts-expect-error EvalSuiteTypeBuilder was removed from the public eval API.
@@ -31,11 +28,9 @@ import * as guardrails from "../src/guardrails";
 import * as imageGeneration from "../src/image-generation";
 import type {
   AgentErrorStreamEvent as RootAgentErrorStreamEvent,
+  AgentRunOptions as RootAgentRunOptions,
   AgentSession as RootAgentSessionType,
   AgentStreamEvent as RootAgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas as RootAgentStreamEventWithoutToolCallDeltas,
-  AgentStreamEventWithToolCallDeltas as RootAgentStreamEventWithToolCallDeltas,
-  AgentStreamOptions as RootAgentStreamOptions,
   AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
   AgentToolOptions as RootAgentToolOptions,
   RetryContext as RootRetryContext,
@@ -56,6 +51,7 @@ import * as observability from "../src/observability";
 import type { PipelineBuilder as RemovedPipelineBuilder } from "../src/pipeline";
 import * as pipeline from "../src/pipeline";
 import * as skills from "../src/skills";
+import * as speechGeneration from "../src/speech-generation";
 import * as streaming from "../src/streaming";
 import * as tool from "../src/tool";
 import * as transcription from "../src/transcription";
@@ -120,6 +116,7 @@ describe("public exports", () => {
     expect("createHook" in publicAgent).toBe(false);
     expect("skipTool" in publicAgent).toBe(false);
     expect("AgentRunCancelledError" in publicAgent).toBe(true);
+    expect("AgentRunBlockedError" in publicAgent).toBe(true);
     expect("MaxTurnsError" in publicAgent).toBe(true);
     expect("ToolApprovalRequiredError" in publicAgent).toBe(false);
   });
@@ -138,18 +135,12 @@ describe("public exports", () => {
     expectTypeOf<RootRetryContext>().toEqualTypeOf<PublicRetryContext>();
     expectTypeOf<RootRetryOptions>().toEqualTypeOf<PublicRetryOptions>();
     expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<PublicAgentErrorStreamEvent>();
-    expectTypeOf<RootAgentStreamOptions>().toEqualTypeOf<PublicAgentStreamOptions>();
+    expectTypeOf<RootAgentRunOptions>().toEqualTypeOf<PublicAgentRunOptions>();
     expectTypeOf<RootAgentToolCallDeltaEvent>().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
     expectTypeOf<RootAgentStreamEvent>().toEqualTypeOf<PublicAgentStreamEvent>();
-    expectTypeOf<RootAgentStreamEventWithoutToolCallDeltas>().toEqualTypeOf<PublicAgentStreamEventWithoutToolCallDeltas>();
-    expectTypeOf<RootAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<PublicAgentStreamEventWithToolCallDeltas>();
     expectTypeOf<
       Extract<PublicAgentStreamEvent, { type: "tool_call_delta" }>
     >().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
-    expectTypeOf<
-      Extract<PublicAgentStreamEventWithoutToolCallDeltas, { type: "tool_call_delta" }>
-    >().toBeNever();
-    expectTypeOf<PublicAgentStreamEventWithToolCallDeltas>().toEqualTypeOf<PublicAgentStreamEvent>();
     expectTypeOf<
       Extract<PublicAgentStreamEvent, { type: "error" }>
     >().toEqualTypeOf<PublicAgentErrorStreamEvent>();
@@ -179,13 +170,13 @@ describe("public exports", () => {
 
   it("keeps public subpath runtime exports available", () => {
     expectTypeOf<RemovedEvalSuiteTypeBuilder>().toBeAny();
-    expect(audioGeneration).toHaveProperty("generateSpeech");
-    expect(audioGeneration).not.toHaveProperty("audioGenerationRequest");
-    expect(audioGeneration).not.toHaveProperty("AudioGenerationRequestBuilder");
+    expect(speechGeneration).toHaveProperty("generateSpeech");
     expect(completion).not.toHaveProperty("CompletionRequestBuilder");
-    expect(completion).toHaveProperty("createCompletion");
-    expect(completion).toHaveProperty("createParsedCompletion");
-    expect(completion).toHaveProperty("createCompletionStream");
+    expect(completion).toHaveProperty("generateCompletion");
+    expect(completion).toHaveProperty("streamCompletion");
+    expect(completion).not.toHaveProperty("createCompletion");
+    expect(completion).not.toHaveProperty("createParsedCompletion");
+    expect(completion).not.toHaveProperty("createCompletionStream");
     expect(completion).toHaveProperty("Message");
     expect(embeddings).toHaveProperty("embedText");
     expect(evals).toHaveProperty("runEvalSuite");
@@ -252,9 +243,11 @@ describe("public exports", () => {
   });
 
   it("exposes direct model operations from the root entrypoint", () => {
-    expect("createCompletion" in publicCore).toBe(true);
-    expect("createParsedCompletion" in publicCore).toBe(true);
-    expect("createCompletionStream" in publicCore).toBe(true);
+    expect("generateCompletion" in publicCore).toBe(true);
+    expect("streamCompletion" in publicCore).toBe(true);
+    expect("createCompletion" in publicCore).toBe(false);
+    expect("createParsedCompletion" in publicCore).toBe(false);
+    expect("createCompletionStream" in publicCore).toBe(false);
     expect("generateImage" in publicCore).toBe(true);
     expect("generateSpeech" in publicCore).toBe(true);
     expect("transcribe" in publicCore).toBe(true);

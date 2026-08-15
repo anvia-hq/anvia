@@ -1,6 +1,7 @@
-import type { Agent } from "../../agent/agent";
+import { type Agent, getAgentProviderOutputSchema } from "../../agent/agent";
 import { AgentRunCancelledError, MaxTurnsError } from "../../agent/errors";
 import {
+  type AgentFinishEvent,
   type AgentLifecycle,
   composeAgentLifecycle,
   lifecycleSnapshot,
@@ -9,13 +10,14 @@ import type {
   AgentApprovalDecision,
   AgentApprovalRequiredEvent,
   AgentApprovalRequiredResult,
+  AgentBlockedResult,
   AgentInput,
   AgentResponse,
   AgentRunOptions,
   AgentStreamEvent,
 } from "../../agent/run-types";
 import { getAgentToolState } from "../../agent/tool-state";
-import { isStreamingCompletionModel } from "../../completion/create-completion";
+import { isStreamingCompletionModel } from "../../completion/generate-completion";
 import {
   AssistantContent,
   assertCompletionRequestSupported,
@@ -46,6 +48,7 @@ import type { AgentHook } from "../../hooks";
 import { runControl } from "../../hooks";
 import { MemoryCompactionError } from "../../memory/errors";
 import type { MemoryContext } from "../../memory/types";
+import type { ModelCallOptions } from "../../model-call-options";
 import {
   type ActiveAgentRunObservers,
   type ActiveGenerationObservers,
@@ -62,9 +65,11 @@ import {
   resolveRetryOptions,
   retryDelayMs,
   retryErrorAttributes,
+  retryOptionsForFailure,
   waitForRetry,
 } from "../../retry";
 import type { AgentMiddleware } from "../../tool/middleware";
+import { abortError, throwIfAborted } from "../abort";
 import { createAsyncQueue } from "../async-queue";
 import { type CompletionRequestFor, createCompletionRequest } from "../completion-request";
 import { extractRagText } from "../rag-text";
@@ -85,7 +90,7 @@ import {
   type ToolResultEventPayload,
 } from "./tool-execution";
 
-type AgentRunCreateOptions = AgentRunOptions & {
+type AgentRunCreateOptions<Output, RawResponse> = AgentRunOptions<Output, RawResponse> & {
   memoryContext?: MemoryContext | undefined;
 };
 
@@ -127,11 +132,16 @@ async function settleFailureCleanup(
   }
 }
 
-export class AgentRun<M extends CompletionModel = CompletionModel> {
+type RawResponseOf<Model> =
+  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+
+type AgentTerminalResult<Output> = AgentResponse<Output> | AgentBlockedResult;
+
+export class AgentRun<Output = string, M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
   private maxTurnCount: number;
   private activeHook: AgentHook | undefined;
-  private readonly activeLifecycle: AgentLifecycle | undefined;
+  private readonly activeLifecycle: AgentLifecycle<Output, unknown> | undefined;
   private guardrailPolicies: GuardrailPolicy[];
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
   private readonly concurrency: number;
@@ -150,12 +160,14 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   private currentMessages: MessageType[] = [];
   private cancellationError: AgentRunCancelledError | undefined;
   private activeGeneration: { turn: number; observers: ActiveGenerationObservers } | undefined;
+  private readonly abortController = new AbortController();
+  private removeExternalAbortListener: (() => void) | undefined;
 
   private constructor(
-    private readonly agent: Agent<M>,
+    private readonly agent: Agent<Output, M>,
     private promptMessage: MessageType,
     initialHistory: MessageType[] = [],
-    options: AgentRunCreateOptions = {},
+    options: AgentRunCreateOptions<Output, RawResponseOf<M>> = {},
   ) {
     this.chatHistory = initialHistory;
     this.maxTurnCount = assertNonnegativeSafeInteger(
@@ -165,7 +177,9 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     const internalOptions = getInternalAgentRunOptions(options);
     this.activeHook = internalOptions?.hook;
     this.requestedRunId = normalizeRequestedRunId(internalOptions?.runId);
-    this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle);
+    this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
+      | AgentLifecycle<Output, unknown>
+      | undefined;
     this.guardrailPolicies =
       options.guardrails === undefined
         ? [...agent.guardrails]
@@ -180,18 +194,22 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         ? 1
         : configuredConcurrency;
     this.traceOptions = options.trace;
+    const retrySetting = options.retries === undefined ? agent.retries : options.retries;
     this.completionRetryOptions =
-      options.retries === undefined ? undefined : resolveRetryOptions(options.retries);
+      retrySetting === undefined || retrySetting === false
+        ? undefined
+        : resolveRetryOptions(retrySetting);
     this.requestMiddlewares = [...(options.middlewares ?? [])];
     this.memoryContext = options.memoryContext;
     this.memoryRecorder = new AgentRunMemory(agent, options.memoryContext, initialHistory);
+    this.linkExternalAbortSignal(options.abortSignal);
   }
 
-  static fromAgent<M extends CompletionModel>(
-    agent: Agent<M>,
+  static fromAgent<Output, M extends CompletionModel>(
+    agent: Agent<Output, M>,
     input: AgentInput,
-    options: AgentRunCreateOptions = {},
-  ): AgentRun<M> {
+    options: AgentRunCreateOptions<Output, RawResponseOf<M>> = {},
+  ): AgentRun<Output, M> {
     const normalized = normalizeAgentInput(input);
     return new AgentRun(agent, normalized.prompt, normalized.history, options);
   }
@@ -236,7 +254,12 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     const messages =
       this.currentMessages.length === 0 ? [this.promptMessage] : [...this.currentMessages];
     const error = new AgentRunCancelledError([...this.chatHistory, ...messages], reason);
+    this.setCancellationError(error);
+  }
+
+  private setCancellationError(error: AgentRunCancelledError): void {
     this.cancellationError = error;
+    if (!this.abortController.signal.aborted) this.abortController.abort(error);
     const pending = this.pendingApproval;
     if (pending !== undefined) {
       this.pendingApproval = undefined;
@@ -245,7 +268,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     }
   }
 
-  async generate(): Promise<AgentResponse> {
+  async generate(): Promise<AgentTerminalResult<Output>> {
     this.startRun();
     const runId = this.requestedRunId ?? globalThis.crypto.randomUUID();
     this.activeRunId = runId;
@@ -256,6 +279,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     let runObservers: ActiveAgentRunObservers | undefined;
 
     try {
+      this.throwIfCancelled();
       const memoryPreparation = await this.memoryRecorder.prepareHistory(runId, newMessages.length);
       this.chatHistory = memoryPreparation.history;
       usage = Usage.add(usage, memoryPreparation.usage);
@@ -278,19 +302,21 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       }
       this.promptMessage = inputResult.prompt;
       if (inputResult.blocked) {
-        const output = inputResult.message ?? "The request was blocked by a guardrail.";
-        const result: AgentResponse = {
-          status: "completed",
+        const text = inputResult.message ?? "The request was blocked by a guardrail.";
+        const result: AgentBlockedResult = {
+          status: "blocked",
+          stage: "input",
           runId,
-          output,
+          text,
           usage,
-          messages: [this.promptMessage, Message.assistant(output)],
+          messages: [this.promptMessage, Message.assistant(text)],
           trace: runObservers.trace,
           guardrails: [...this.guardrailDecisions],
         };
         await this.runLifecycleFinish(result);
         await runObservers.end(result);
         this.runState = "completed";
+        this.disposeAbortLink();
         return result;
       }
 
@@ -371,17 +397,17 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
             [finalAssistantMessage],
             pendingTurnMessages,
           );
-          const result: AgentResponse = {
-            status: "completed",
+          const result = this.createTerminalResult(
             runId,
-            output: guardedOutput.output,
+            guardedOutput.text,
+            guardedOutput.blocked,
             usage,
-            messages: [...newMessages],
-            trace: runObservers.trace,
-            guardrails: [...this.guardrailDecisions],
-            ...generationArtifacts(newMessages),
-          };
-          await this.runRunEndHook(result, newMessages);
+            newMessages,
+            runObservers,
+          );
+          if (result.status === "completed") {
+            await this.runRunEndHook(result, newMessages);
+          }
           await this.memoryRecorder.commitCompletedRun(
             runId,
             currentTurns,
@@ -391,6 +417,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           await this.runLifecycleFinish(result);
           await runObservers.end(result);
           this.runState = "completed";
+          this.disposeAbortLink();
           return result;
         }
 
@@ -424,23 +451,21 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
         usage = Usage.add(usage, error.usage);
       }
+      const runError = this.normalizeRunError(error);
       const reportedError = await this.reportRunFailure(
-        error,
+        runError,
         runId,
         usage,
         newMessages,
         runObservers,
       );
       this.runState = reportedError instanceof AgentRunCancelledError ? "cancelled" : "errored";
+      this.disposeAbortLink();
       throw reportedError;
     }
   }
 
-  async *events(includeToolCallDeltas = true): AsyncIterable<AgentStreamEvent> {
-    if (!this.agent.model.capabilities.streaming || !isStreamingCompletionModel(this.agent.model)) {
-      throw new Error("This completion model does not support streaming");
-    }
-
+  async *events(): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
     this.startRun();
     const runId = this.requestedRunId ?? globalThis.crypto.randomUUID();
     this.activeRunId = runId;
@@ -452,6 +477,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     let runObservers: ActiveAgentRunObservers | undefined;
 
     try {
+      this.throwIfCancelled();
       const memoryPreparation = await this.memoryRecorder.prepareHistory(runId, newMessages.length);
       this.chatHistory = memoryPreparation.history;
       usage = Usage.add(usage, memoryPreparation.usage);
@@ -475,28 +501,22 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       }
       this.promptMessage = inputResult.prompt;
       if (inputResult.blocked) {
-        const output = inputResult.message ?? "The request was blocked by a guardrail.";
-        const result: AgentResponse = {
-          status: "completed",
+        const text = inputResult.message ?? "The request was blocked by a guardrail.";
+        const result: AgentBlockedResult = {
+          status: "blocked",
+          stage: "input",
           runId,
-          output,
+          text,
           usage,
-          messages: [this.promptMessage, Message.assistant(output)],
+          messages: [this.promptMessage, Message.assistant(text)],
           trace: runObservers.trace,
           guardrails: [...this.guardrailDecisions],
         };
         await this.runLifecycleFinish(result);
         await runObservers.end(result);
         this.runState = "completed";
-        yield {
-          type: "final",
-          runId,
-          output: result.output,
-          usage: result.usage,
-          messages: result.messages,
-          trace: result.trace,
-          guardrails: result.guardrails,
-        };
+        this.disposeAbortLink();
+        yield { type: "final", result };
         return;
       }
 
@@ -554,7 +574,6 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
             for await (const event of this.streamCompletion({
               request,
               turn: currentTurns,
-              includeToolCallDeltas,
               bufferResponseEvents,
               bufferOutputDeltas,
               generationStartedAt,
@@ -610,13 +629,13 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           if (!bufferOutputDeltas) {
             if (bufferResponseEvents) {
               for (const event of responseStreamEvents(currentTurns, response)) {
-                yield event;
+                yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
               }
             }
             yield {
               type: "turn_end",
               turn: currentTurns,
-              response,
+              response: response as CompletionResponse<RawResponseOf<M>>,
               firstDeltaMs,
             };
             emittedTurnEnd = true;
@@ -657,7 +676,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
 
         if (bufferResponseEvents) {
           for (const event of responseStreamEvents(currentTurns, response)) {
-            yield event;
+            yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
           }
         } else {
           for (const toolCall of toolCalls) {
@@ -670,7 +689,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         yield {
           type: "turn_end",
           turn: currentTurns,
-          response,
+          response: response as CompletionResponse<RawResponseOf<M>>,
           firstDeltaMs,
         };
 
@@ -678,7 +697,6 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
           turn: currentTurns,
           runObservers,
           toolDefinitions: request.tools,
-          includeToolCallDeltas,
         });
         for await (const result of toolExecution.events) {
           yield { turn: currentTurns, ...result };
@@ -701,8 +719,9 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
         usage = Usage.add(usage, error.usage);
       }
+      const runError = this.normalizeRunError(error);
       const reportedError = await this.reportRunFailure(
-        error,
+        runError,
         runId,
         usage,
         newMessages,
@@ -711,7 +730,8 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       this.runState = reportedError instanceof AgentRunCancelledError ? "cancelled" : "errored";
       const finalUsage = usage;
       yield { type: "error", error: reportedError, usage: finalUsage };
-      throw reportedError;
+      this.disposeAbortLink();
+      return;
     } finally {
       if (this.runState === "running") {
         const cancellation =
@@ -721,6 +741,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         await settleFailureCleanup([() => this.closeActiveGeneration(cancellation)]);
         await this.reportRunFailure(cancellation, runId, usage, newMessages, runObservers);
         this.runState = "cancelled";
+        this.disposeAbortLink();
       }
     }
   }
@@ -739,7 +760,8 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       for (let attempt = 1; ; attempt += 1) {
         let response: CompletionResponse;
         try {
-          response = await this.agent.model.completion(request);
+          this.throwIfCancelled();
+          response = await this.agent.model.completion(request, this.modelCallOptions());
         } catch (error) {
           const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
           if (retryOptions === undefined) {
@@ -779,9 +801,9 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       tools: [...toolDefinitions, ...getAgentToolState(this.agent).providerTools],
       temperature: this.agent.temperature,
       maxTokens: this.agent.maxTokens,
-      additionalParams: this.agent.additionalParams,
+      providerOptions: this.agent.providerOptions,
       toolChoice: this.agent.toolChoice,
-      outputSchema: this.agent.outputSchema,
+      outputSchema: getAgentProviderOutputSchema(this.agent),
     });
     return (await this.runCompletionRequestMiddlewares(request, turn)) as CompletionRequestFor<M>;
   }
@@ -789,14 +811,13 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   private async *streamCompletion(args: {
     request: CompletionRequestFor<M>;
     turn: number;
-    includeToolCallDeltas: boolean;
     bufferResponseEvents: boolean;
     bufferOutputDeltas: boolean;
     generationStartedAt: number;
     generationObservers: ActiveGenerationObservers;
     runObservers: ActiveAgentRunObservers;
     state: StreamingCompletionState;
-  }): AsyncIterable<AgentStreamEvent> {
+  }): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
     const model = this.agent.model;
     if (!isStreamingCompletionModel(model)) {
       throw new TypeError("Streaming completion requires a streaming-capable model.");
@@ -805,7 +826,8 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     for (let attempt = 1; ; attempt += 1) {
       let hasProviderProgress = false;
       try {
-        for await (const event of model.streamCompletion(args.request)) {
+        this.throwIfCancelled();
+        for await (const event of model.streamCompletion(args.request, this.modelCallOptions())) {
           if (event.type === "error") {
             if (event.usage !== undefined) {
               args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, event.usage);
@@ -817,7 +839,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
             args.state.firstDeltaMs = Date.now() - args.generationStartedAt;
           }
           const mapped = accumulator.accept(event);
-          if (args.includeToolCallDeltas && event.type === "tool_call_delta") {
+          if (event.type === "tool_call_delta") {
             yield addTurnToToolCallDelta(args.turn, event);
           }
           if (mapped !== undefined) {
@@ -830,7 +852,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
               (args.bufferOutputDeltas &&
                 (mapped.type === "text_delta" || mapped.type === "reasoning_delta"));
             if (!shouldBuffer) {
-              yield addTurn(args.turn, mapped);
+              yield addTurn(args.turn, mapped) as AgentStreamEvent<Output, RawResponseOf<M>>;
             }
           }
         }
@@ -868,7 +890,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     bufferResponseEvents: boolean;
     bufferOutputDeltas: boolean;
     emittedTurnEnd: boolean;
-  }): AsyncIterable<AgentStreamEvent> {
+  }): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
     const guardedOutput = await this.runOutputGuardrailsForResponse(
       args.runId,
       args.usage,
@@ -891,29 +913,29 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     );
     if (!args.emittedTurnEnd && (args.bufferResponseEvents || args.bufferOutputDeltas)) {
       for (const event of responseStreamEvents(args.turn, response, args.bufferResponseEvents)) {
-        yield event;
+        yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
       }
     }
     if (!args.emittedTurnEnd) {
       yield {
         type: "turn_end",
         turn: args.turn,
-        response,
+        response: response as CompletionResponse<RawResponseOf<M>>,
         firstDeltaMs: args.firstDeltaMs,
       };
     }
 
-    const result: AgentResponse = {
-      status: "completed",
-      runId: args.runId,
-      output: guardedOutput.output,
-      usage: args.usage,
-      messages: [...args.newMessages],
-      trace: args.runObservers.trace,
-      guardrails: [...this.guardrailDecisions],
-      ...generationArtifacts(args.newMessages),
-    };
-    await this.runRunEndHook(result, args.newMessages);
+    const result = this.createTerminalResult(
+      args.runId,
+      guardedOutput.text,
+      guardedOutput.blocked,
+      args.usage,
+      args.newMessages,
+      args.runObservers,
+    );
+    if (result.status === "completed") {
+      await this.runRunEndHook(result, args.newMessages);
+    }
     await this.memoryRecorder.commitCompletedRun(
       args.runId,
       args.turn,
@@ -923,18 +945,8 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     await this.runLifecycleFinish(result);
     await args.runObservers.end(result);
     this.runState = "completed";
-    yield {
-      type: "final",
-      runId: args.runId,
-      output: result.output,
-      usage: result.usage,
-      contextUsage: result.contextUsage,
-      messages: result.messages,
-      trace: result.trace,
-      guardrails: result.guardrails,
-      sources: result.sources,
-      providerToolCalls: result.providerToolCalls,
-    };
+    this.disposeAbortLink();
+    yield { type: "final", result };
   }
 
   private generatedAssistantMessage(
@@ -997,18 +1009,13 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     turn: number,
     streaming: boolean,
   ): ResolvedRetryOptions | undefined {
-    const options = this.completionRetryOptions;
-    if (options === undefined || attempt >= options.maxAttempts) {
-      return undefined;
-    }
-    const shouldRetry = options.shouldRetry({
+    if (this.abortController.signal.aborted) return undefined;
+    return retryOptionsForFailure(this.completionRetryOptions, {
       error,
       attempt,
-      maxAttempts: options.maxAttempts,
       turn,
       streaming,
     });
-    return shouldRetry ? options : undefined;
   }
 
   private async scheduleCompletionRetry(
@@ -1033,7 +1040,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
         ...retryErrorAttributes(error),
       },
     });
-    await waitForRetry(delayMs);
+    await waitForRetry(delayMs, this.abortController.signal);
   }
 
   private async executeToolCalls(
@@ -1056,7 +1063,7 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
       },
       this.concurrency,
       this.requestMiddlewares,
-      observation?.includeToolCallDeltas ?? false,
+      this.abortController.signal,
       (reason) => this.cancelled(newMessages, reason),
     );
     return executor.execute(toolCalls, onResult, onStreamEvent, observation);
@@ -1139,13 +1146,26 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     this.currentMessages = [...messages];
   }
 
-  private async runLifecycleFinish(result: AgentResponse): Promise<void> {
-    await this.activeLifecycle?.onFinish?.({
+  private async runLifecycleFinish(result: AgentTerminalResult<Output>): Promise<void> {
+    const common = {
       runId: result.runId,
-      output: result.output,
+      text: result.text,
       usage: lifecycleSnapshot(result.usage),
       messages: lifecycleSnapshot(result.messages),
-    });
+    };
+    const event =
+      result.status === "completed"
+        ? {
+            ...common,
+            status: "completed",
+            output: lifecycleSnapshot(result.output),
+          }
+        : {
+            ...common,
+            status: "blocked",
+            stage: result.stage,
+          };
+    await this.activeLifecycle?.onFinish?.(event as AgentFinishEvent<Output>);
   }
 
   private async runLifecycleError(
@@ -1209,7 +1229,8 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     messages: MessageType[],
     runObservers: ActiveAgentRunObservers,
   ): Promise<{
-    output: string;
+    text: string;
+    blocked: boolean;
     response: CompletionResponse;
     decisions: GuardrailDecisionRecord[];
   }> {
@@ -1223,20 +1244,60 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     for (const decision of result.decisions) {
       await this.recordGuardrailDecision(decision, runObservers);
     }
-    const output = result.blocked
+    const text = result.blocked
       ? (result.message ?? "The response was blocked by a guardrail.")
       : result.outputText;
-    if (output === originalOutput) {
-      return { output, response, decisions: result.decisions };
+    if (text === originalOutput) {
+      return { text, blocked: result.blocked, response, decisions: result.decisions };
     }
     return {
-      output,
+      text,
+      blocked: result.blocked,
       response: {
         ...response,
-        choice: [AssistantContent.text(output)],
+        choice: [AssistantContent.text(text)],
       },
       decisions: result.decisions,
     };
+  }
+
+  private createTerminalResult(
+    runId: string,
+    text: string,
+    blocked: boolean,
+    usage: Usage,
+    messages: MessageType[],
+    runObservers: ActiveAgentRunObservers,
+  ): AgentTerminalResult<Output> {
+    const common = {
+      runId,
+      text,
+      usage,
+      messages: [...messages],
+      trace: runObservers.trace,
+      guardrails: [...this.guardrailDecisions],
+      ...generationArtifacts(messages),
+    };
+    if (blocked) {
+      return { ...common, status: "blocked", stage: "output" };
+    }
+    return {
+      ...common,
+      status: "completed",
+      output: this.parseOutput(text),
+    };
+  }
+
+  private parseOutput(text: string): Output {
+    const schema = this.agent.outputSchema;
+    if (schema === undefined) return text as Output;
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch (error) {
+      throw new Error("Agent expected the model response to be valid JSON.", { cause: error });
+    }
+    return schema.parse(json);
   }
 
   private async recordGuardrailDecision(
@@ -1335,9 +1396,14 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
     }
   }
 
-  private async runRunEndHook(result: AgentResponse, newMessages: MessageType[]): Promise<void> {
+  private async runRunEndHook(
+    result: AgentResponse<Output>,
+    newMessages: MessageType[],
+  ): Promise<void> {
     const action = await this.activeHook?.onRunEnd?.({
+      status: "completed",
       output: result.output,
+      text: result.text,
       usage: result.usage,
       messages: result.messages,
       run: runControl,
@@ -1510,8 +1576,57 @@ export class AgentRun<M extends CompletionModel = CompletionModel> {
   }
 
   private cancelled(newMessages: MessageType[], reason: string): AgentRunCancelledError {
-    return new AgentRunCancelledError([...this.chatHistory, ...newMessages], reason);
+    if (this.cancellationError !== undefined) return this.cancellationError;
+    const error = new AgentRunCancelledError([...this.chatHistory, ...newMessages], reason);
+    this.setCancellationError(error);
+    return error;
   }
+
+  private linkExternalAbortSignal(signal: AbortSignal | undefined): void {
+    if (signal === undefined) return;
+    const cancelFromSignal = () => {
+      if (this.cancellationError !== undefined || this.isTerminal()) return;
+      const cause = abortError(signal.reason);
+      const reason = abortReason(signal.reason);
+      const messages =
+        this.currentMessages.length === 0 ? [this.promptMessage] : [...this.currentMessages];
+      this.setCancellationError(
+        new AgentRunCancelledError([...this.chatHistory, ...messages], reason, { cause }),
+      );
+    };
+    if (signal.aborted) {
+      cancelFromSignal();
+      return;
+    }
+    signal.addEventListener("abort", cancelFromSignal, { once: true });
+    this.removeExternalAbortListener = () => signal.removeEventListener("abort", cancelFromSignal);
+  }
+
+  private throwIfCancelled(): void {
+    if (this.cancellationError !== undefined) throw this.cancellationError;
+    throwIfAborted(this.abortController.signal);
+  }
+
+  private normalizeRunError(error: unknown): unknown {
+    return this.abortController.signal.aborted && this.cancellationError !== undefined
+      ? this.cancellationError
+      : error;
+  }
+
+  private modelCallOptions(): ModelCallOptions {
+    return { abortSignal: this.abortController.signal };
+  }
+
+  private disposeAbortLink(): void {
+    this.removeExternalAbortListener?.();
+    this.removeExternalAbortListener = undefined;
+  }
+}
+
+function abortReason(reason: unknown): string {
+  if (typeof reason === "string" && reason.trim().length > 0) return reason;
+  if (reason instanceof Error && reason.message.trim().length > 0) return reason.message;
+  return "External abort signal.";
 }
 
 function normalizeAgentInput(prompt: AgentInput): {

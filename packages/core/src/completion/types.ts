@@ -1,3 +1,4 @@
+import type { ModelCallOptions } from "../model-call-options";
 import { isJsonValue } from "./json";
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -802,7 +803,7 @@ export type CompletionRequest<ModelName extends string = string> = {
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
-  additionalParams?: JsonValue;
+  providerOptions?: JsonObject;
   outputSchema?: JsonObject;
 };
 
@@ -814,6 +815,18 @@ export type CompletionResponse<RawResponse = unknown> = {
   messageId?: string;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
+};
+
+export type CompletionResult<Output = string, RawResponse = unknown> = {
+  output: Output;
+  text: string;
+  content: readonly AssistantContent[];
+  usage: Usage;
+  contextUsage?: ContextUsage;
+  rawResponse: RawResponse;
+  messageId?: string;
+  sources?: readonly CompletionSource[];
+  providerToolCalls?: readonly ProviderToolCall[];
 };
 
 export type CompletionModelCapabilities = {
@@ -836,12 +849,15 @@ export interface CompletionModel<RawResponse = unknown, ModelName extends string
     request: CompletionRequest<ModelName>,
     options?: { stream?: boolean | undefined },
   ): JsonObject | undefined;
-  completion(request: CompletionRequest<ModelName>): Promise<CompletionResponse<RawResponse>>;
+  completion(
+    request: CompletionRequest<ModelName>,
+    options?: ModelCallOptions,
+  ): Promise<CompletionResponse<RawResponse>>;
 }
 
 export type ToolCallArgumentsMode = "append" | "replace";
 
-export type CompletionStreamEvent<RawResponse = unknown> =
+export type CompletionStreamPart =
   | {
       type: "text_delta";
       delta: string;
@@ -877,7 +893,10 @@ export type CompletionStreamEvent<RawResponse = unknown> =
   | {
       type: "message_id";
       id: string;
-    }
+    };
+
+export type CompletionModelStreamEvent<RawResponse = unknown> =
+  | CompletionStreamPart
   | {
       type: "final";
       response: CompletionResponse<RawResponse>;
@@ -888,11 +907,24 @@ export type CompletionStreamEvent<RawResponse = unknown> =
       usage?: Usage;
     };
 
+export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
+  | CompletionStreamPart
+  | {
+      type: "final";
+      result: CompletionResult<Output, RawResponse>;
+    }
+  | {
+      type: "error";
+      error: unknown;
+      usage: Usage;
+    };
+
 export interface StreamingCompletionModel<RawResponse = unknown, ModelName extends string = string>
   extends CompletionModel<RawResponse, ModelName> {
   streamCompletion(
     request: CompletionRequest<ModelName>,
-  ): AsyncIterable<CompletionStreamEvent<RawResponse>>;
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent<RawResponse>>;
 }
 
 export class CompletionCapabilityError extends Error {

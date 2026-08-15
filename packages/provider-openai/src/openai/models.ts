@@ -131,9 +131,9 @@ export type KnownOpenAIImageGenerationModelName =
 
 export type OpenAIImageGenerationModelName = ModelId<KnownOpenAIImageGenerationModelName>;
 
-export type KnownOpenAIAudioGenerationModelName = "tts-1" | "tts-1-hd";
+export type KnownOpenAISpeechGenerationModelName = "tts-1" | "tts-1-hd";
 
-export type OpenAIAudioGenerationModelName = ModelId<KnownOpenAIAudioGenerationModelName>;
+export type OpenAISpeechGenerationModelName = ModelId<KnownOpenAISpeechGenerationModelName>;
 
 export type KnownOpenAITranscriptionModelName = "whisper-1";
 

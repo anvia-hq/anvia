@@ -39,9 +39,8 @@ const agent = new Agent({
   observers: [createLoggerObserver(logger)],
 });
 
-const response = await agent.prompt("How do I reset my password?").send();
-
-console.log(response.output);
+const result = await agent.generate("How do I reset my password?");
+if (result.status === "completed") console.log(result.output);
 ```
 
 The logger observer omits final outputs, full model requests, model responses, and tool results by default. Pass `LoggerObserverOptions` to opt in when your data policy allows those payloads in logs.

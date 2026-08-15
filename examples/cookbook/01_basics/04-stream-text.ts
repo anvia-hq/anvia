@@ -21,6 +21,6 @@ for await (const event of agent.stream("Write a short haiku about TypeScript age
 
   if (event.type === "final") {
     process.stdout.write("\n");
-    console.log(event.usage);
+    console.log(event.result.usage);
   }
 }

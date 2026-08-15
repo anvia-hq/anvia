@@ -115,7 +115,7 @@ describe("eval type safety", () => {
   });
 
   it("preserves Expected in agent target callbacks", () => {
-    const options: AgentEvalTargetOptions<string, string, { answer: string }> = {
+    const options: AgentEvalTargetOptions<string, string, string, { answer: string }> = {
       output: (_response, testCase) => {
         expectTypeOf(testCase.expected).toEqualTypeOf<{ answer: string } | undefined>();
         return testCase.expected?.answer ?? "";

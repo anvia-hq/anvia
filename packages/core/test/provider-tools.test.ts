@@ -6,12 +6,12 @@ import {
   AssistantContent,
   assertCompleted,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type CompletionTool,
-  createCompletion,
   createTool,
+  generateCompletion,
   Message,
   type ProviderTool,
   type StreamingCompletionModel,
@@ -64,7 +64,7 @@ class StreamingProviderToolModel extends ProviderToolModel implements StreamingC
     providerTools: true,
   };
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const source = { type: "url" as const, url: "https://example.com" };
     const toolCall = { id: "search_1", name: "web_search", status: "completed" };
@@ -96,7 +96,7 @@ describe("provider-executed tools", () => {
     };
     const tools = [localTool, searchTool];
     const outputSchema = { type: "object", properties: { answer: { type: "string" } } };
-    const additionalParams = { seed: 42 };
+    const providerOptions = { seed: 42 };
 
     const request = createCompletionRequest(history, {
       model,
@@ -108,7 +108,7 @@ describe("provider-executed tools", () => {
       maxTokens: 256,
       toolChoice: "required",
       outputSchema,
-      additionalParams,
+      providerOptions,
     });
 
     expect(request).toEqual({
@@ -122,7 +122,7 @@ describe("provider-executed tools", () => {
       maxTokens: 256,
       toolChoice: "required",
       outputSchema,
-      additionalParams,
+      providerOptions,
     });
     expect(request.chatHistory).not.toBe(history);
     expect(request.documents).not.toBe(documents);
@@ -146,11 +146,12 @@ describe("provider-executed tools", () => {
     expect(request.providerTools).toEqual([searchTool]);
   });
 
-  it("accepts provider tools in createCompletion", async () => {
+  it("accepts provider tools in generateCompletion", async () => {
     const model = new ProviderToolModel();
 
-    const result = await createCompletion("research", {
+    const result = await generateCompletion({
       model,
+      prompt: "research",
       tools: [searchTool],
     });
 
@@ -158,7 +159,7 @@ describe("provider-executed tools", () => {
       tools: [],
       providerTools: [searchTool],
     });
-    expect(result.response.sources).toEqual([{ type: "url", url: "https://example.com" }]);
+    expect(result.sources).toEqual([{ type: "url", url: "https://example.com" }]);
   });
 
   it("keeps provider tools out of the local Agent tools", async () => {
@@ -205,8 +206,9 @@ describe("provider-executed tools", () => {
     model.capabilities.providerTools = false;
 
     await expect(
-      createCompletion("research", {
+      generateCompletion({
         model,
+        prompt: "research",
         tools: [searchTool],
       }),
     ).rejects.toThrow("does not support provider-executed tools");
@@ -233,8 +235,10 @@ describe("provider-executed tools", () => {
     });
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      sources: [{ type: "url", url: "https://example.com" }],
-      providerToolCalls: [{ id: "search_1", name: "web_search", status: "completed" }],
+      result: {
+        sources: [{ type: "url", url: "https://example.com" }],
+        providerToolCalls: [{ id: "search_1", name: "web_search", status: "completed" }],
+      },
     });
   });
 });

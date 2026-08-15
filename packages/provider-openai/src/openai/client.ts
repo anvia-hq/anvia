@@ -5,18 +5,18 @@ import {
   ModelListingError,
 } from "@anvia/core/model-listing";
 import OpenAI from "openai";
-import { OpenAIAudioGenerationModel, TTS_1 } from "./audio-generation";
 import { OpenAIChatCompletionModel } from "./chat-completion";
 import { OpenAIEmbeddingModel, type ProviderEmbeddingModelOptions } from "./embedding";
 import { GPT_IMAGE_1, OpenAIImageGenerationModel } from "./image-generation";
 import type {
-  OpenAIAudioGenerationModelName,
   OpenAICompletionModelName,
   OpenAIEmbeddingModelName,
   OpenAIImageGenerationModelName,
+  OpenAISpeechGenerationModelName,
   OpenAITranscriptionModelName,
 } from "./models";
 import { OpenAIResponsesCompletionModel } from "./responses";
+import { OpenAISpeechGenerationModel, TTS_1 } from "./speech-generation";
 import { OpenAITranscriptionModel, WHISPER_1 } from "./transcription";
 
 export type OpenAIClientOptions = {
@@ -64,8 +64,10 @@ export class OpenAIClient implements ModelListingClient {
     return new OpenAIImageGenerationModel(this.client, model);
   }
 
-  audioGenerationModel(model: OpenAIAudioGenerationModelName = TTS_1): OpenAIAudioGenerationModel {
-    return new OpenAIAudioGenerationModel(this.client, model);
+  speechGenerationModel(
+    model: OpenAISpeechGenerationModelName = TTS_1,
+  ): OpenAISpeechGenerationModel {
+    return new OpenAISpeechGenerationModel(this.client, model);
   }
 
   transcriptionModel(model: OpenAITranscriptionModelName = WHISPER_1): OpenAITranscriptionModel {

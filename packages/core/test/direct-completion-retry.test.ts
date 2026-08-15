@@ -4,13 +4,12 @@ import {
   AssistantContent,
   type CompletionModel,
   type CompletionModelCapabilities,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
-  createCompletion,
-  createCompletionStream,
-  createParsedCompletion,
+  generateCompletion,
   type StreamingCompletionModel,
+  streamCompletion,
   Usage,
 } from "./helpers/imports";
 
@@ -30,8 +29,9 @@ describe("direct completion retries", () => {
     const model = new CompletionQueueModel([error, response("recovered")]);
     const contexts: unknown[] = [];
 
-    const result = await createCompletion("hello", {
+    const result = await generateCompletion({
       model,
+      prompt: "hello",
       retries: {
         maxAttempts: 2,
         initialDelayMs: 0,
@@ -56,8 +56,9 @@ describe("direct completion retries", () => {
     });
     const model = new CompletionQueueModel([error, response("recovered")]);
 
-    const result = await createCompletion("hello", {
+    const result = await generateCompletion({
       model,
+      prompt: "hello",
       retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
     });
 
@@ -69,13 +70,14 @@ describe("direct completion retries", () => {
     const error = Object.assign(new Error("unavailable"), { status: 503 });
     const model = new CompletionQueueModel([error, response('{"ok":true}')]);
 
-    const result = await createParsedCompletion("hello", {
+    const result = await generateCompletion({
       model,
-      schema: z.object({ ok: z.boolean() }),
+      prompt: "hello",
+      outputSchema: z.object({ ok: z.boolean() }),
       retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
     });
 
-    expect(result.data).toEqual({ ok: true });
+    expect(result.output).toEqual({ ok: true });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
   });
@@ -84,9 +86,10 @@ describe("direct completion retries", () => {
     const model = new CompletionQueueModel([response("not json"), response('{"ok":true}')]);
 
     await expect(
-      createParsedCompletion("hello", {
+      generateCompletion({
         model,
-        schema: z.object({ ok: z.boolean() }),
+        prompt: "hello",
+        outputSchema: z.object({ ok: z.boolean() }),
         retries: { initialDelayMs: 0, maxDelayMs: 0 },
       }),
     ).rejects.toThrow("valid JSON");
@@ -103,8 +106,9 @@ describe("direct completion retries", () => {
     ]);
 
     const events = await collect(
-      createCompletionStream("hello", {
+      streamCompletion({
         model,
+        prompt: "hello",
         retries: { initialDelayMs: 0, maxDelayMs: 0 },
       }),
     );
@@ -112,7 +116,7 @@ describe("direct completion retries", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: "final",
-      response: { usage: Usage.add(failedUsage, finalUsage) },
+      result: { usage: Usage.add(failedUsage, finalUsage) },
     });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
@@ -130,8 +134,9 @@ describe("direct completion retries", () => {
 
     try {
       const events = await collect(
-        createCompletionStream("hello", {
+        streamCompletion({
           model,
+          prompt: "hello",
           retries: { maxAttempts: 2, initialDelayMs: 1, maxDelayMs: 1 },
         }),
       );
@@ -155,8 +160,9 @@ describe("direct completion retries", () => {
     ]);
 
     const events = await collect(
-      createCompletionStream("hello", {
+      streamCompletion({
         model,
+        prompt: "hello",
         retries: { initialDelayMs: 0, maxDelayMs: 0 },
       }),
     );
@@ -170,8 +176,9 @@ describe("direct completion retries", () => {
     const model = new ThrowingStreamQueueModel(error);
 
     const events = await collect(
-      createCompletionStream("hello", {
+      streamCompletion({
         model,
+        prompt: "hello",
         retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
       }),
     );
@@ -205,13 +212,13 @@ class StreamQueueModel implements StreamingCompletionModel {
   readonly capabilities = capabilities;
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly queue: CompletionStreamEvent[][]) {}
+  constructor(private readonly queue: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     return response("unused");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     for (const event of this.queue.shift() ?? []) yield event;
   }
@@ -230,7 +237,7 @@ class ThrowingStreamQueueModel implements StreamingCompletionModel {
     return response("unused");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     this.attempt += 1;
     if (this.attempt === 1) throw this.error;
@@ -252,7 +259,7 @@ class ClosingStreamModel implements StreamingCompletionModel {
     return response("unused");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     this.attempt += 1;
     if (this.attempt === 1) {

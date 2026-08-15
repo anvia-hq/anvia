@@ -1,10 +1,11 @@
 import { Buffer } from "node:buffer";
-import type {
-  AudioGenerationModel,
-  AudioGenerationRequest,
-  AudioGenerationResponse,
-} from "@anvia/core/audio-generation";
 import type { JsonObject } from "@anvia/core/completion";
+import type {
+  ModelCallOptions,
+  SpeechGenerationModel,
+  SpeechGenerationRequest,
+  SpeechGenerationResult,
+} from "@anvia/core/speech-generation";
 import {
   type GrokHttpOptions,
   grokEndpoint,
@@ -13,30 +14,32 @@ import {
   throwGrokHttpError,
 } from "./http";
 
-export class GrokAudioGenerationModel implements AudioGenerationModel<unknown> {
+export class GrokSpeechGenerationModel implements SpeechGenerationModel<unknown> {
   readonly provider = "grok";
 
   constructor(private readonly http: GrokHttpOptions) {}
 
-  async audioGeneration(
-    request: AudioGenerationRequest,
-  ): Promise<AudioGenerationResponse<unknown>> {
+  async speechGeneration(
+    request: SpeechGenerationRequest,
+    options?: ModelCallOptions,
+  ): Promise<SpeechGenerationResult<unknown>> {
     if (request.speed !== 1) {
       throw new TypeError(
         "Grok text-to-speech does not expose speed control; use the default speed of 1.",
       );
     }
-    const additional = jsonObject(request.additionalParams, "audio generation");
+    const providerOptions = jsonObject(request.providerOptions, "speech generation");
     const body = {
-      ...additional,
+      ...providerOptions,
       text: request.text,
       voice_id: request.voice,
-      language: typeof additional.language === "string" ? additional.language : "auto",
+      language: typeof providerOptions.language === "string" ? providerOptions.language : "auto",
     };
     const response = await grokFetch(this.http)(grokEndpoint(this.http, "tts"), {
       method: "POST",
       headers: grokHeaders(this.http, { "Content-Type": "application/json" }),
       body: JSON.stringify(body),
+      ...(options?.abortSignal === undefined ? {} : { signal: options.abortSignal }),
     });
     if (!response.ok) {
       return throwGrokHttpError(response, "text-to-speech");
@@ -46,14 +49,18 @@ export class GrokAudioGenerationModel implements AudioGenerationModel<unknown> {
     if (contentType === "application/json") {
       const payload = (await response.json()) as unknown;
       return {
-        audio: audioFromJson(payload),
-        mediaType: mediaTypeFromJson(payload),
+        audio: {
+          data: audioFromJson(payload),
+          mediaType: mediaTypeFromJson(payload),
+        },
         rawResponse: payload,
       };
     }
     return {
-      audio: new Uint8Array(await response.arrayBuffer()),
-      mediaType: contentType ?? "audio/mpeg",
+      audio: {
+        data: new Uint8Array(await response.arrayBuffer()),
+        mediaType: contentType ?? "audio/mpeg",
+      },
       rawResponse: response,
     };
   }
@@ -84,7 +91,7 @@ function jsonObject(value: unknown, operation: string): JsonObject {
     return {};
   }
   if (!isObject(value) || Array.isArray(value)) {
-    throw new TypeError(`Grok ${operation} additionalParams must be an object.`);
+    throw new TypeError(`Grok ${operation} providerOptions must be an object.`);
   }
   return value as JsonObject;
 }

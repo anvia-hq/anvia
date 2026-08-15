@@ -1,9 +1,9 @@
 import { Agent } from "@anvia/core/agent";
 import {
   AssistantContent,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   Message,
   ToolContent,
   Usage,
@@ -461,12 +461,14 @@ describe("Anthropic Messages mapping", () => {
     });
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      output: "Hello",
-      usage: {
-        inputTokens: 13,
-        outputTokens: 4,
-        totalTokens: 17,
-        cachedInputTokens: 3,
+      result: {
+        output: "Hello",
+        usage: {
+          inputTokens: 13,
+          outputTokens: 4,
+          totalTokens: 17,
+          cachedInputTokens: 3,
+        },
       },
     });
     expect(events.find((event) => event.type === "turn_end")).toMatchObject({
@@ -814,7 +816,7 @@ describe("Anthropic Messages mapping", () => {
   });
 });
 
-async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamEvent[]> {
+async function collectStreamEvents(events: unknown[]): Promise<CompletionModelStreamEvent[]> {
   const model = new AnthropicCompletionModel(
     {
       messages: {
@@ -824,7 +826,7 @@ async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamE
     "claude-test",
   );
 
-  const mapped: CompletionStreamEvent[] = [];
+  const mapped: CompletionModelStreamEvent[] = [];
   for await (const event of model.streamCompletion({
     chatHistory: [Message.user("write a file")],
     documents: [],
@@ -835,9 +837,9 @@ async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamE
   return mapped;
 }
 
-function finalResponseFrom(events: CompletionStreamEvent[]): CompletionResponse {
+function finalResponseFrom(events: CompletionModelStreamEvent[]): CompletionResponse {
   const event = events.find(
-    (item): item is Extract<CompletionStreamEvent, { type: "final" }> => item.type === "final",
+    (item): item is Extract<CompletionModelStreamEvent, { type: "final" }> => item.type === "final",
   );
   if (event === undefined) {
     throw new Error("Expected final stream event");
@@ -908,7 +910,7 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
-function accumulatedToolArguments(events: CompletionStreamEvent[], id: string): unknown {
+function accumulatedToolArguments(events: CompletionModelStreamEvent[], id: string): unknown {
   const argumentsText = events
     .flatMap((event) =>
       event.type === "tool_call_delta" && event.id === id && event.argumentsDelta !== undefined

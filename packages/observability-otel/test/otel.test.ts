@@ -402,7 +402,9 @@ describe("otel", () => {
       toolCallId: "call-1",
     });
     await run?.end({
+      status: "completed",
       output: "Done",
+      text: "Done",
       usage: usage(2, 3),
       messages: [],
     });
@@ -444,7 +446,8 @@ describe("otel", () => {
     expect(toolSpan?.ended).toBe(true);
 
     expect(root?.attributes).toMatchObject({
-      "anvia.run.output": "Done",
+      "anvia.run.text": "Done",
+      "anvia.run.output": '"Done"',
       "anvia.usage.input_tokens": 2,
       "anvia.usage.output_tokens": 3,
       "anvia.usage.total_tokens": 5,
@@ -491,7 +494,13 @@ describe("otel", () => {
       internalCallId: "internal-1",
       toolCallId: "call-1",
     });
-    await run?.end({ output: "private output", usage: usage(2, 3), messages: [] });
+    await run?.end({
+      status: "completed",
+      output: "private output",
+      text: "private output",
+      usage: usage(2, 3),
+      messages: [],
+    });
 
     expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.agent.instructions");
     expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.run.prompt");
@@ -586,7 +595,7 @@ describe("otel", () => {
         chatHistory: [Message.user("hello", { metadata })],
         documents: [],
         tools: [],
-        additionalParams: {},
+        providerOptions: {},
       },
     });
     const generationInput = JSON.parse(
@@ -596,7 +605,9 @@ describe("otel", () => {
     expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run?.end({
+      status: "completed",
       output: "done",
+      text: "done",
       usage: usage(1, 1),
       messages: [Message.assistant("done", { metadata })],
     });
@@ -662,7 +673,7 @@ describe("otel", () => {
         temperature: 0.2,
         maxTokens: 128,
         toolChoice: { type: "function", name: "get_ticket" },
-        additionalParams: {},
+        providerOptions: {},
         outputSchema: { type: "object" },
       },
     });
@@ -889,10 +900,14 @@ describe("otel", () => {
         agentName: "Child Agent",
         event: {
           type: "final",
-          runId: "child-run",
-          output: "7",
-          usage: usage(2, 1),
-          messages: [Message.assistant("7")],
+          result: {
+            status: "completed",
+            runId: "child-run",
+            output: "7",
+            text: "7",
+            usage: usage(2, 1),
+            messages: [Message.assistant("7")],
+          },
         },
       },
     });
@@ -1044,10 +1059,14 @@ describe("otel", () => {
         agentName: "Child Agent",
         event: {
           type: "final",
-          runId: "child-run",
-          output: "private child output",
-          usage: usage(2, 1),
-          messages: [Message.assistant("private child message")],
+          result: {
+            status: "completed",
+            runId: "child-run",
+            output: "private child output",
+            text: "private child output",
+            usage: usage(2, 1),
+            messages: [Message.assistant("private child message")],
+          },
         },
       },
     });
@@ -1293,7 +1312,7 @@ function generationStartArgs(): AgentGenerationStartArgs {
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
-      additionalParams: {},
+      providerOptions: {},
     },
   };
 }

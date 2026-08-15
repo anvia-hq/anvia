@@ -828,8 +828,10 @@ describe("@anvia/react useChat", () => {
         yield { type: "text_delta", delta: "lo" };
         yield {
           type: "final",
-          response: {
-            choice: [AssistantContent.text("Hello")],
+          result: {
+            output: "Hello",
+            text: "Hello",
+            content: [AssistantContent.text("Hello")],
             usage: Usage.empty(),
             contextUsage: {
               model: { id: "gpt-5", context: { contextWindow: 400_000 } },
@@ -962,10 +964,14 @@ describe("@anvia/react useChat", () => {
         yield { type: "text_delta", turn: 1, delta: "7" };
         yield {
           type: "final",
-          runId: "run_1",
-          output: "7",
-          usage: Usage.empty(),
-          messages: [],
+          result: {
+            status: "completed",
+            runId: "run_1",
+            output: "7",
+            text: "7",
+            usage: Usage.empty(),
+            messages: [],
+          },
         };
       },
     };
@@ -1288,10 +1294,14 @@ describe("@anvia/react useChat", () => {
         yield { type: "text_delta", turn: 1, delta: "Let me verify the file." };
         yield {
           type: "final",
-          runId: "run_1",
-          output: "Let me verify the file.",
-          usage: Usage.empty(),
-          messages: finalMessages,
+          result: {
+            status: "completed",
+            runId: "run_1",
+            output: "Let me verify the file.",
+            text: "Let me verify the file.",
+            usage: Usage.empty(),
+            messages: finalMessages,
+          },
         };
       },
     };

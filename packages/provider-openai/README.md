@@ -2,7 +2,8 @@
 
 OpenAI provider adapter for Anvia.
 
-Use this package when you want Anvia agents, extractors, pipelines, embeddings, image generation, audio generation, or transcription to run on OpenAI models or OpenAI-compatible endpoints.
+Use this package when you want Anvia agents, direct completions, embeddings, image generation,
+speech generation, or transcription to run on OpenAI models or OpenAI-compatible endpoints.
 
 ## Installation
 
@@ -34,9 +35,8 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
-const response = await agent.prompt("Summarize Anvia in one sentence.").send();
-
-console.log(response.output);
+const result = await agent.generate("Summarize Anvia in one sentence.");
+if (result.status === "completed") console.log(result.output);
 ```
 
 ## OpenAI-Compatible APIs
@@ -70,6 +70,8 @@ missing its prior `reasoning_content`.
 For Moonshot Kimi K2.6 thinking mode:
 
 ```ts
+import { generateCompletion } from "@anvia/core";
+
 const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
   baseUrl: "https://api.moonshot.ai/v1",
@@ -77,12 +79,12 @@ const client = new OpenAIClient({
 
 const model = client.completionModel("kimi-k2.6");
 
-const response = await model.completion({
-  chatHistory,
-  documents: [],
+const response = await generateCompletion({
+  model,
+  messages: chatHistory,
   tools,
   maxTokens: 16_000,
-  additionalParams: {
+  providerOptions: {
     thinking: { type: "enabled", keep: "all" },
   },
 });
@@ -96,8 +98,25 @@ enabled. Let the model choose tools naturally when using Kimi thinking mode.
 ```ts
 const embeddingModel = client.embeddingModel("text-embedding-3-small");
 const imageModel = client.imageGenerationModel();
-const audioModel = client.audioGenerationModel();
+const speechModel = client.speechGenerationModel();
 const transcriptionModel = client.transcriptionModel();
+```
+
+Use the provider-neutral helpers from `@anvia/core` to call media models:
+
+```ts
+import { generateImage, generateSpeech, transcribe } from "@anvia/core";
+
+const image = await generateImage({ model: imageModel, prompt: "A launch poster." });
+const speech = await generateSpeech({
+  model: speechModel,
+  text: "Hello from Anvia.",
+  voice: "alloy",
+});
+const transcript = await transcribe({
+  model: transcriptionModel,
+  audio: { data: speech.audio.data, filename: "speech.mp3" },
+});
 ```
 
 ## Exports
@@ -107,7 +126,7 @@ const transcriptionModel = client.transcriptionModel();
 - `OpenAIChatCompletionModel`
 - `OpenAIEmbeddingModel`
 - `OpenAIImageGenerationModel`
-- `OpenAIAudioGenerationModel`
+- `OpenAISpeechGenerationModel`
 - `OpenAITranscriptionModel`
 - model constants such as `GPT_IMAGE_1`, `DALL_E_3`, `TTS_1`, and `WHISPER_1`
 - `openai`

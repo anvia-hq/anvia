@@ -83,10 +83,15 @@ class LoggerRunObserver implements AgentRunObserver {
 
   end(args: AgentRunEndArgs): void {
     const context: LogContext = {
+      status: args.status,
+      text: args.text,
       usage: args.usage,
       messageCount: args.messages.length,
     };
-    if (this.options.includeOutput === true) context.output = args.output;
+    if (args.status === "blocked") context.blockedStage = args.stage;
+    if (this.options.includeOutput === true && args.status === "completed") {
+      context.output = args.output;
+    }
     this.logger.info("agent run ended", context);
   }
 

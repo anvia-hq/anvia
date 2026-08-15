@@ -1,4 +1,4 @@
-import type { JsonValue } from "@anvia/core/completion";
+import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
 import { isPlainObject } from "../utils";
 import type { MistralOcrModelName } from "./models";
@@ -40,7 +40,7 @@ export type MistralOcrRequest = {
   extractHeader?: boolean | undefined;
   extractFooter?: boolean | undefined;
   confidenceScoresGranularity?: "word" | "page" | null | undefined;
-  additionalParams?: JsonValue | undefined;
+  providerOptions?: JsonObject | undefined;
 };
 
 export type MistralOcrUploadedFile = {
@@ -154,16 +154,10 @@ export class MistralOcrModel {
 
   private toOcrParams(request: MistralOcrRequest, document: Record<string, unknown>) {
     const params: Record<string, unknown> = {
+      ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
       model: this.defaultModel,
       document,
     };
-
-    if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-      const additionalParams = { ...request.additionalParams };
-      delete additionalParams.model;
-      delete additionalParams.document;
-      Object.assign(params, additionalParams);
-    }
 
     if (request.pages !== undefined) params.pages = request.pages;
     if (request.includeImageBase64 !== undefined) {

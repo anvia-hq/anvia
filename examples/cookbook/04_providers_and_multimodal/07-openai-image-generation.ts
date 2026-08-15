@@ -8,19 +8,17 @@ const client = new OpenAIClient({
 });
 const imageModel = client.imageGenerationModel(process.env.OPENAI_IMAGE_MODEL ?? GPT_IMAGE_2);
 
-const response = await generateImage(
-  "A clean product illustration of a document ingestion pipeline",
-  {
-    model: imageModel,
-    width: 1024,
-    height: 1024,
-    additionalParams: { output_format: "png" },
-  },
-);
+const response = await generateImage({
+  model: imageModel,
+  prompt: "A clean product illustration of a document ingestion pipeline",
+  width: 1024,
+  height: 1024,
+  providerOptions: { output_format: "png" },
+});
 
-await writeFile("openai-image-generation.png", response.image);
+await writeFile("openai-image-generation.png", response.images[0].data);
 console.log({
   images: response.images.length,
-  mediaType: response.mediaType,
+  mediaType: response.images[0].mediaType,
   output: "openai-image-generation.png",
 });

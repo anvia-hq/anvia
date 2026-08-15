@@ -9,7 +9,7 @@ pnpm fullstack-agent:dev
 The command loads `../../.env`, builds the local Anvia packages it needs, starts a Hono API server on
 `http://127.0.0.1:8787`, and starts the Vite React frontend on `http://127.0.0.1:5177`.
 
-The server runs a real OpenAI-backed completion model with `createCompletionStream`, returns the
+The server runs a real OpenAI-backed completion model with `streamCompletion`, returns the
 completion events with `createEventStream`, and the frontend sends chat-shaped requests with
 `useChat` plus the chat primitives from `@anvia/react-ui`.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type AudioGenerationModel, generateSpeech } from "../src/audio-generation";
 import { generateImage, type ImageGenerationModel } from "../src/image-generation";
+import { generateSpeech, type SpeechGenerationModel } from "../src/speech-generation";
 import { type TranscriptionModel, transcribe } from "../src/transcription";
 
 describe("direct multimodal model APIs", () => {
@@ -11,19 +11,18 @@ describe("direct multimodal model APIs", () => {
         calls.push(request);
         const image = new Uint8Array([1, 2, 3]);
         return {
-          image,
-          images: [{ data: image, mediaType: "image/png" }],
-          mediaType: "image/png",
+          images: [{ data: image, mediaType: "image/png" }] as const,
           rawResponse: { ok: true },
         };
       },
     };
 
-    const response = await generateImage("draw a map", {
+    const response = await generateImage({
       model,
+      prompt: "draw a map",
       width: 1024,
       height: 768,
-      additionalParams: { quality: "high" },
+      providerOptions: { quality: "high" },
     });
 
     expect(calls).toEqual([
@@ -31,35 +30,39 @@ describe("direct multimodal model APIs", () => {
         prompt: "draw a map",
         width: 1024,
         height: 768,
-        additionalParams: { quality: "high" },
+        providerOptions: { quality: "high" },
       },
     ]);
-    expect(response.image).toEqual(new Uint8Array([1, 2, 3]));
+    expect(response.images[0].data).toEqual(new Uint8Array([1, 2, 3]));
   });
 
   it("uses stable image defaults", async () => {
     const calls: unknown[] = [];
     const model = fakeImageModel(calls);
 
-    await generateImage("draw", { model });
+    await generateImage({ model, prompt: "draw" });
 
     expect(calls).toEqual([{ prompt: "draw", width: 1024, height: 1024 }]);
   });
 
   it("generates speech with explicit options", async () => {
     const calls: unknown[] = [];
-    const model: AudioGenerationModel = {
-      async audioGeneration(request) {
+    const model: SpeechGenerationModel = {
+      async speechGeneration(request) {
         calls.push(request);
-        return { audio: new Uint8Array([4, 5]), mediaType: "audio/mpeg", rawResponse: "raw" };
+        return {
+          audio: { data: new Uint8Array([4, 5]), mediaType: "audio/mpeg" },
+          rawResponse: "raw",
+        };
       },
     };
 
-    const response = await generateSpeech("hello", {
+    const response = await generateSpeech({
       model,
+      text: "hello",
       voice: "alloy",
       speed: 1.25,
-      additionalParams: { format: "mp3" },
+      providerOptions: { format: "mp3" },
     });
 
     expect(calls).toEqual([
@@ -67,17 +70,17 @@ describe("direct multimodal model APIs", () => {
         text: "hello",
         voice: "alloy",
         speed: 1.25,
-        additionalParams: { format: "mp3" },
+        providerOptions: { format: "mp3" },
       },
     ]);
-    expect(response.audio).toEqual(new Uint8Array([4, 5]));
+    expect(response.audio.data).toEqual(new Uint8Array([4, 5]));
   });
 
   it("uses the stable speech speed default", async () => {
     const calls: unknown[] = [];
     const model = fakeAudioModel(calls);
 
-    await generateSpeech("hello", { model, voice: "alloy" });
+    await generateSpeech({ model, text: "hello", voice: "alloy" });
 
     expect(calls).toEqual([{ text: "hello", voice: "alloy", speed: 1 }]);
   });
@@ -91,13 +94,13 @@ describe("direct multimodal model APIs", () => {
       },
     };
 
-    const response = await transcribe(new Uint8Array([1, 2, 3]), {
+    const response = await transcribe({
       model,
-      filename: "hello.mp3",
+      audio: { data: new Uint8Array([1, 2, 3]), filename: "hello.mp3" },
       language: "en",
       prompt: "transcribe exactly",
       temperature: 0.2,
-      additionalParams: { response_format: "json" },
+      providerOptions: { response_format: "json" },
     });
 
     expect(calls).toEqual([
@@ -107,7 +110,7 @@ describe("direct multimodal model APIs", () => {
         language: "en",
         prompt: "transcribe exactly",
         temperature: 0.2,
-        additionalParams: { response_format: "json" },
+        providerOptions: { response_format: "json" },
       },
     ]);
     expect(response.text).toBe("hello world");
@@ -128,7 +131,7 @@ describe("direct multimodal model APIs", () => {
     };
     const source = new Uint8Array([1, 2, 3]);
 
-    const pending = transcribe(source.buffer, { model, filename: "hello.wav" });
+    const pending = transcribe({ model, audio: { data: source.buffer, filename: "hello.wav" } });
     source.fill(9);
     release();
     await pending;
@@ -136,39 +139,51 @@ describe("direct multimodal model APIs", () => {
     expect(received).toEqual([[1, 2, 3]]);
   });
 
-  it("validates media inputs before calling models", () => {
+  it("validates media inputs before calling models", async () => {
     const imageModel = fakeImageModel();
     const audioModel = fakeAudioModel();
     const transcriptionModel = fakeTranscriptionModel();
 
-    expect(() => generateImage("", { model: imageModel })).toThrow("non-empty string");
-    expect(() => generateImage("draw", { model: imageModel, width: 0 })).toThrow(
+    await expect(generateImage({ model: imageModel, prompt: "" })).rejects.toThrow(
+      "non-empty string",
+    );
+    await expect(generateImage({ model: imageModel, prompt: "draw", width: 0 })).rejects.toThrow(
       "positive integer",
     );
-    expect(() => generateSpeech("", { model: audioModel, voice: "alloy" })).toThrow(
+    await expect(generateSpeech({ model: audioModel, text: "", voice: "alloy" })).rejects.toThrow(
       "non-empty string",
     );
-    expect(() => generateSpeech("hello", { model: audioModel, voice: "" })).toThrow(
+    await expect(generateSpeech({ model: audioModel, text: "hello", voice: "" })).rejects.toThrow(
       "non-empty string",
     );
-    expect(() => generateSpeech("hello", { model: audioModel, voice: "alloy", speed: 0 })).toThrow(
-      "positive finite number",
-    );
-    expect(() =>
-      transcribe(new Uint8Array(), { model: transcriptionModel, filename: "audio.mp3" }),
-    ).toThrow("cannot be empty");
-    expect(() =>
-      transcribe(new Uint8Array([1]), { model: transcriptionModel, filename: "" }),
-    ).toThrow("non-empty string");
+    await expect(
+      generateSpeech({ model: audioModel, text: "hello", voice: "alloy", speed: 0 }),
+    ).rejects.toThrow("positive finite number");
+    await expect(
+      transcribe({
+        model: transcriptionModel,
+        audio: { data: new Uint8Array(), filename: "audio.mp3" },
+      }),
+    ).rejects.toThrow("cannot be empty");
+    await expect(
+      transcribe({
+        model: transcriptionModel,
+        audio: { data: new Uint8Array([1]), filename: "" },
+      }),
+    ).rejects.toThrow("non-empty string");
   });
 
   it.each([
-    ["image", () => generateImage("draw", { model: flakyImageModel(), retries: noDelayRetries })],
+    [
+      "image",
+      () => generateImage({ model: flakyImageModel(), prompt: "draw", retries: noDelayRetries }),
+    ],
     [
       "speech",
       () =>
-        generateSpeech("hello", {
+        generateSpeech({
           model: flakyAudioModel(),
+          text: "hello",
           voice: "alloy",
           retries: noDelayRetries,
         }),
@@ -176,9 +191,9 @@ describe("direct multimodal model APIs", () => {
     [
       "transcription",
       () =>
-        transcribe(new Uint8Array([1]), {
+        transcribe({
           model: flakyTranscriptionModel(),
-          filename: "audio.mp3",
+          audio: { data: new Uint8Array([1]), filename: "audio.mp3" },
           retries: noDelayRetries,
         }),
     ],
@@ -194,16 +209,16 @@ function fakeImageModel(calls: unknown[] = []): ImageGenerationModel {
     async imageGeneration(request) {
       calls.push(request);
       const image = new Uint8Array([1]);
-      return { image, images: [{ data: image }], rawResponse: {} };
+      return { images: [{ data: image }], rawResponse: {} };
     },
   };
 }
 
-function fakeAudioModel(calls: unknown[] = []): AudioGenerationModel {
+function fakeAudioModel(calls: unknown[] = []): SpeechGenerationModel {
   return {
-    async audioGeneration(request) {
+    async speechGeneration(request) {
       calls.push(request);
-      return { audio: new Uint8Array([1]), rawResponse: {} };
+      return { audio: { data: new Uint8Array([1]) }, rawResponse: {} };
     },
   };
 }
@@ -223,18 +238,18 @@ function flakyImageModel(): ImageGenerationModel {
       attempt += 1;
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
       const image = new Uint8Array([1]);
-      return { image, images: [{ data: image }], rawResponse: {} };
+      return { images: [{ data: image }], rawResponse: {} };
     },
   };
 }
 
-function flakyAudioModel(): AudioGenerationModel {
+function flakyAudioModel(): SpeechGenerationModel {
   let attempt = 0;
   return {
-    async audioGeneration() {
+    async speechGeneration() {
       attempt += 1;
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
-      return { audio: new Uint8Array([1]), rawResponse: {} };
+      return { audio: { data: new Uint8Array([1]) }, rawResponse: {} };
     },
   };
 }

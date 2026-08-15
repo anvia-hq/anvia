@@ -1,4 +1,4 @@
-import { createCompletion } from "../completion/create-completion";
+import { generateCompletion } from "../completion/generate-completion";
 import {
   type AssistantContent,
   type CompletionModel,
@@ -39,8 +39,9 @@ export function createSummaryMemoryCompactor(
 
   return async ({ messages }) => {
     try {
-      const result = await createCompletion(Message.user(serializeMessagesForSummary(messages)), {
+      const result = await generateCompletion({
         model,
+        prompt: serializeMessagesForSummary(messages),
         instructions: options.instructions ?? defaultSummaryInstructions,
         maxTokens,
         temperature,

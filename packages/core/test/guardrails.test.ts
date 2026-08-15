@@ -5,9 +5,9 @@ import {
   AssistantContent,
   assertCompleted,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createHook,
   createObserver,
   defineGuardrailPolicy,
@@ -63,13 +63,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -151,9 +151,9 @@ describe("guardrails", () => {
     });
 
     const result = await agent.generate("blocked");
-    assertCompleted(result);
 
-    expect(result.output).toBe("Input blocked.");
+    expect(result).toMatchObject({ status: "blocked", stage: "input", text: "Input blocked." });
+    if (result.status !== "blocked") throw new Error("Expected a blocked result.");
     expect(model.requests).toHaveLength(0);
     expect(result.guardrails).toMatchObject([
       { guardrailId: "block-input", action: "block", applied: true },
@@ -189,9 +189,9 @@ describe("guardrails", () => {
     });
 
     const result = await agent.generate("blocked");
-    assertCompleted(result);
 
-    expect(result.output).toBe("Input blocked.");
+    expect(result).toMatchObject({ status: "blocked", stage: "input", text: "Input blocked." });
+    if (result.status !== "blocked") throw new Error("Expected a blocked result.");
     expect(result.trace).toEqual(trace);
     expect(observedEvents).toMatchObject([
       {
@@ -238,8 +238,12 @@ describe("guardrails", () => {
     expect(model.requests).toHaveLength(0);
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      output: "Stream input blocked.",
-      trace,
+      result: {
+        status: "blocked",
+        stage: "input",
+        text: "Stream input blocked.",
+        trace,
+      },
     });
   });
 
@@ -346,7 +350,10 @@ describe("guardrails", () => {
         decision: expect.objectContaining({ guardrailId: "stream-output", action: "rewrite" }),
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "[redacted] token" });
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: { output: "[redacted] token" },
+    });
   });
 
   it("skips output guardrails for streamed intermediate turns when steering continues", async () => {
@@ -394,6 +401,9 @@ describe("guardrails", () => {
 
     expect(checkedOutputs).toEqual(["secret second"]);
     expect(model.requests).toHaveLength(2);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "[redacted] second" });
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: { output: "[redacted] second" },
+    });
   });
 });

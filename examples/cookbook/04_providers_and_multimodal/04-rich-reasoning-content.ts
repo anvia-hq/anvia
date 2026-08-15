@@ -22,7 +22,7 @@ const geminiModel = geminiClient.completionModel(
 );
 const openAIModel = openAIClient.completionModel("gpt-5.5");
 
-const additionalParams =
+const providerOptions =
   provider === "gemini"
     ? {
         config: {
@@ -43,7 +43,7 @@ const model = provider === "gemini" ? geminiModel : openAIModel;
 const agent = new Agent({
   id: "reasoning-demo",
   model: model,
-  additionalParams: additionalParams,
+  providerOptions,
 });
 
 let activeReasoningContentType: ReasoningContentType | undefined;
@@ -64,7 +64,7 @@ for await (const event of agent.stream(prompt)) {
   }
 
   if (event.type === "final") {
-    const reasoning = event.messages
+    const reasoning = event.result.messages
       .flatMap((message) => (message.role === "assistant" ? message.content : []))
       .filter(isReasoning);
     console.log("\nreasoning blocks:", JSON.stringify(reasoning.map(summarizeReasoning), null, 2));

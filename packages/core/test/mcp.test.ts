@@ -4,9 +4,9 @@ import {
   Agent,
   AssistantContent,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   connectMcp,
   createHook,
   createMiddleware,
@@ -60,13 +60,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -384,7 +384,7 @@ describe("MCP tools", () => {
     );
 
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("mcp_add");
-    expect(streamEvents.at(-1)).toMatchObject({ type: "final", output: "7" });
+    expect(streamEvents.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
     expect(events).toEqual(['call:mcp_add:{"x":2,"y":5}', "result:mcp_add:7"]);
   });
 });

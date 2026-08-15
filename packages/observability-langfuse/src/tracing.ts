@@ -504,7 +504,7 @@ class LangfuseRunObserver implements AgentRunObserver {
       safeInput.tools = args.request.tools;
       safeInput.providerTools = args.request.providerTools;
       safeInput.outputSchema = args.request.outputSchema;
-      safeInput.additionalParams = args.request.additionalParams;
+      safeInput.providerOptions = args.request.providerOptions;
     }
     const metadata: Record<string, unknown> = {
       turn: args.turn,
@@ -512,8 +512,8 @@ class LangfuseRunObserver implements AgentRunObserver {
       toolNames: args.request.tools.map((tool) => tool.name),
       providerToolNames: args.request.providerTools?.map((tool) => tool.name) ?? [],
       hasOutputSchema: args.request.outputSchema !== undefined,
-      additionalParamKeys: isRecord(args.request.additionalParams)
-        ? Object.keys(args.request.additionalParams)
+      providerOptionKeys: isRecord(args.request.providerOptions)
+        ? Object.keys(args.request.providerOptions)
         : [],
     };
     if (this.captureMode === "full" && args.providerRequest !== undefined) {
@@ -576,8 +576,13 @@ class LangfuseRunObserver implements AgentRunObserver {
 
   end(args: AgentRunEndArgs): void {
     this.closeAllTurns();
-    const redactedOutput = this.redactOutputValue(args.output);
+    const observedOutput =
+      args.status === "completed"
+        ? { status: args.status, output: args.output, text: args.text }
+        : { status: args.status, stage: args.stage, text: args.text };
+    const redactedOutput = this.redactOutputValue(observedOutput);
     const metadata: Record<string, unknown> = {
+      status: args.status,
       usage: args.usage,
       messageCount: args.messages.length,
       sources: this.redactOutputValue(args.sources),
@@ -832,7 +837,7 @@ class LangfuseToolObserver implements AgentToolObserver {
         input.tools = request.tools;
         input.providerTools = request.providerTools;
         input.outputSchema = request.outputSchema;
-        input.additionalParams = request.additionalParams;
+        input.providerOptions = request.providerOptions;
       }
       const toolNames = Array.isArray(request.tools)
         ? request.tools
@@ -1016,13 +1021,18 @@ class LangfuseToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "final") {
+      const result = isRecord(child.result) ? child.result : {};
       const update: Parameters<LangfuseAgent["update"]>[0] = {
-        output: this.run.redactOutputValue(child.output),
+        output: this.run.redactOutputValue({
+          status: result.status,
+          output: result.output,
+          text: result.text,
+        }),
       };
       const metadata: Record<string, unknown> = {};
-      if (isRecord(child.usage)) metadata.usage = child.usage;
-      if (this.run.isFullCapture() && Array.isArray(child.messages)) {
-        metadata.messages = this.run.redactTranscript(child.messages as Message[]);
+      if (isRecord(result.usage)) metadata.usage = result.usage;
+      if (this.run.isFullCapture() && Array.isArray(result.messages)) {
+        metadata.messages = this.run.redactTranscript(result.messages as Message[]);
       }
       if (Object.keys(metadata).length > 0) update.metadata = metadata;
       agent.update(update).end();

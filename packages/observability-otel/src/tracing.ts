@@ -334,16 +334,19 @@ class OtelToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "final") {
+      const result = isRecord(child.result) ? child.result : {};
       const attributes: Attributes = {
-        "anvia.child_agent.output": capturedString(
-          typeof child.output === "string" ? child.output : undefined,
+        "anvia.child_agent.status": typeof result.status === "string" ? result.status : undefined,
+        "anvia.child_agent.text": capturedString(
+          typeof result.text === "string" ? result.text : undefined,
           "output",
           this.options,
         ),
-        "anvia.child_agent.messages": capturedJson(child.messages, "output", this.options),
+        "anvia.child_agent.output": capturedJson(result.output, "output", this.options),
+        "anvia.child_agent.messages": capturedJson(result.messages, "output", this.options),
       };
-      if (isRecord(child.usage)) {
-        Object.assign(attributes, usageAttributesFromRecord(child.usage));
+      if (isRecord(result.usage)) {
+        Object.assign(attributes, usageAttributesFromRecord(result.usage));
       }
       agent.setAttributes(compactAttributes(attributes));
       agent.setStatus({ code: SpanStatusCode.OK });

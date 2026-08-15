@@ -2,13 +2,13 @@ import type { ModelListingError } from "@anvia/core/model-listing";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   GROK_4_5,
-  GrokAudioGenerationModel,
   GrokChatCompletionModel,
   GrokClient,
   type GrokCompletionModelName,
   GrokImageGenerationModel,
   type GrokImageGenerationModelName,
   GrokResponsesCompletionModel,
+  GrokSpeechGenerationModel,
   GrokTranscriptionModel,
   XAI_BASE_URL,
 } from "../src/index";
@@ -70,10 +70,10 @@ describe("GrokClient", () => {
     expect(client.imageGenerationModel()).toBeInstanceOf(GrokImageGenerationModel);
   });
 
-  it("creates batch audio generation and transcription models", () => {
+  it("creates batch speech generation and transcription models", () => {
     const client = new GrokClient({ client: fakeSdk() as never });
 
-    expect(client.audioGenerationModel()).toBeInstanceOf(GrokAudioGenerationModel);
+    expect(client.speechGenerationModel()).toBeInstanceOf(GrokSpeechGenerationModel);
     expect(client.transcriptionModel()).toBeInstanceOf(GrokTranscriptionModel);
   });
 

@@ -151,13 +151,13 @@ describe("Extractor", () => {
     await extractor.extract("extract", {
       temperature: 0.1,
       maxTokens: 100,
-      additionalParams: { seed: 1 },
+      providerOptions: { seed: 1 },
     });
 
     expect(model.requests[0]).toMatchObject({
       temperature: 0.1,
       maxTokens: 100,
-      additionalParams: { seed: 1 },
+      providerOptions: { seed: 1 },
       chatHistory: [Message.user("extract")],
     });
     expect(model.requests[0]?.instructions).toEqual(

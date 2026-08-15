@@ -1,10 +1,10 @@
 import type {
   AgentApprovalRequiredEvent,
+  AgentBlockedResult,
   AgentResponse,
   AgentResult,
   AgentRunOptions,
   AgentStream,
-  AgentStreamOptions,
 } from "@anvia/core/agent";
 import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
 import { type Agent, withInternalAgentRunOptions } from "@anvia/core/internal/agent";
@@ -65,7 +65,7 @@ type AgentRunRouteProps = {
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
 type RunExecution = {
   generate(options: AgentRunOptions): Promise<AgentResult>;
-  stream(options: AgentStreamOptions): AgentStream;
+  stream(options: AgentRunOptions): AgentStream;
 };
 
 type PreparedAgentRun = {
@@ -177,7 +177,7 @@ async function prepareAgentRun(
     body,
     memoryMetadata,
     execution,
-    options: createRunOptions(body, agentId, session),
+    options: createRunOptions(body, agentId, session, c.req.raw.signal),
     runAgent,
     runId,
     runStartedAt,
@@ -339,8 +339,9 @@ function createRunOptions(
   body: AgentRunRequest,
   agentId: string,
   session: StudioSession | undefined,
+  abortSignal: AbortSignal,
 ): AgentRunOptions {
-  const options: AgentRunOptions = { retries: {} };
+  const options: AgentRunOptions = { abortSignal };
   if (body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
   if (body.toolConcurrency !== undefined) options.toolConcurrency = body.toolConcurrency;
   if (body.trace !== undefined) {
@@ -505,7 +506,7 @@ async function* resumeStreamingApprovals(
 
 async function completeBufferedSessionRun(
   run: PreparedAgentRun,
-  response: AgentResponse,
+  response: AgentResponse | AgentBlockedResult,
 ): Promise<void> {
   if (run.session === undefined || run.sessionStore === undefined) {
     return;
@@ -538,7 +539,7 @@ async function completeBufferedSessionRun(
       runId: run.runId,
       durationMs,
       usage: response.usage,
-      output: response.output,
+      output: response.text,
       messageCount: response.messages.length,
     }),
   );

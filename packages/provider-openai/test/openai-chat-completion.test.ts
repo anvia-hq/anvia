@@ -1,8 +1,8 @@
 import { Agent, type Tool } from "@anvia/core";
 import {
   AssistantContent,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
-  type CompletionStreamEvent,
   Message,
   ToolContent,
   UserContent,
@@ -540,7 +540,11 @@ describe("OpenAI chat-completions client path", () => {
       tools: [recordingTool("ExecCommand", calls), recordingTool("ReadFile", calls)],
     });
 
-    await expect(collect(agent.stream("run tools"))).rejects.toThrow(INVALID_TOOL_INDEX_ERROR);
+    const events = await collect(agent.stream("run tools"));
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: { message: INVALID_TOOL_INDEX_ERROR },
+    });
     expect(calls).toHaveLength(0);
   });
 
@@ -693,9 +697,14 @@ describe("OpenAI chat-completions client path", () => {
       tools: [recordingTool("ExecCommand", calls)],
     });
 
-    await expect(collect(agent.stream("run pwd"))).rejects.toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
-    );
+    const events = await collect(agent.stream("run pwd"));
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: {
+        message:
+          'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+      },
+    });
     expect(calls).toHaveLength(0);
   });
 
@@ -883,7 +892,7 @@ function reasoningInterleaveStream(): unknown[] {
 
 async function collectStreamEvents(
   model: OpenAIChatCompletionModel,
-): Promise<CompletionStreamEvent[]> {
+): Promise<CompletionModelStreamEvent[]> {
   return collect(
     model.streamCompletion({
       chatHistory: [Message.user("run a tool")],
@@ -908,10 +917,10 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
 }
 
 function streamedReasoningEvents(
-  events: CompletionStreamEvent[],
-): Array<Extract<CompletionStreamEvent, { type: "reasoning_delta" }>> {
+  events: CompletionModelStreamEvent[],
+): Array<Extract<CompletionModelStreamEvent, { type: "reasoning_delta" }>> {
   return events.filter(
-    (event): event is Extract<CompletionStreamEvent, { type: "reasoning_delta" }> =>
+    (event): event is Extract<CompletionModelStreamEvent, { type: "reasoning_delta" }> =>
       event.type === "reasoning_delta",
   );
 }

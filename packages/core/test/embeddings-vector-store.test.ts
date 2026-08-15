@@ -6,9 +6,9 @@ import {
   AssistantContent,
   angularDistance,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   chebyshevDistance,
   cosineSimilarity,
   createContextIndex,
@@ -101,7 +101,7 @@ class StreamingQueueModel extends QueueModel implements StreamingCompletionModel
     reasoning: true,
   };
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     yield {
       type: "final",

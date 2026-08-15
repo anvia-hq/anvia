@@ -1,7 +1,7 @@
 import type {
   CompletionModel,
   Document,
-  JsonValue,
+  JsonObject,
   ProviderTool,
   ToolChoice,
 } from "../completion/index";
@@ -9,6 +9,7 @@ import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
 import type { McpServer } from "../mcp";
 import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
+import type { RetrySetting } from "../retry";
 import type { ZodSchema } from "../schema";
 import type { SkillSet } from "../skills";
 import type { ToolIndex } from "../tool/dynamic-tools";
@@ -20,7 +21,14 @@ import type { AgentLifecycle } from "./lifecycle";
 export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
 export type AgentContextInput<T = unknown> = Document | ContextIndex<T>;
 
-export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDocument = unknown> = {
+type RawResponseOf<Model> =
+  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+
+export type AgentOptions<
+  Output = string,
+  M extends CompletionModel = CompletionModel,
+  ContextDocument = unknown,
+> = {
   id: string;
   name?: string | undefined;
   description?: string | undefined;
@@ -32,11 +40,12 @@ export type AgentOptions<M extends CompletionModel = CompletionModel, ContextDoc
   skills?: SkillSet | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
-  additionalParams?: JsonValue | undefined;
+  providerOptions?: JsonObject | undefined;
+  retries?: RetrySetting | undefined;
   toolChoice?: ToolChoice | undefined;
   maxTurns?: number | undefined;
-  lifecycle?: AgentLifecycle | undefined;
-  outputSchema?: ZodSchema | undefined;
+  lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
+  outputSchema?: ZodSchema<Output> | undefined;
   observers?: readonly AgentObserverInput[] | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;
@@ -50,6 +59,7 @@ export type AgentMemoryOptions = MemoryOptions & {
 };
 
 export type ResolvedAgentOptions<
+  Output = string,
   M extends CompletionModel = CompletionModel,
   ContextDocument = unknown,
 > = {
@@ -61,14 +71,15 @@ export type ResolvedAgentOptions<
   context?: readonly AgentContextInput<ContextDocument>[] | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
-  additionalParams?: JsonValue | undefined;
+  providerOptions?: JsonObject | undefined;
+  retries?: RetrySetting | undefined;
   tools?: readonly AnyTool[] | undefined;
   providerTools?: readonly ProviderTool[] | undefined;
   toolIndexes?: readonly ToolIndex[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
-  lifecycle?: AgentLifecycle | undefined;
-  outputSchema?: import("../completion/index").JsonObject | undefined;
+  lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
+  outputSchema?: ZodSchema<Output> | undefined;
   observers?: readonly AgentObserverRegistration[] | undefined;
   guardrails?: readonly GuardrailPolicy[] | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;

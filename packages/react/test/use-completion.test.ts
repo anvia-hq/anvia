@@ -31,8 +31,10 @@ describe("@anvia/react useCompletion", () => {
         };
         yield {
           type: "final",
-          response: {
-            choice: [AssistantContent.text("Hello")],
+          result: {
+            output: "Hello",
+            text: "Hello",
+            content: [AssistantContent.text("Hello")],
             usage: Usage.empty(),
             contextUsage: {
               model: { id: "gpt-5", context: { contextWindow: 400_000 } },
@@ -109,8 +111,10 @@ describe("@anvia/react useCompletion", () => {
         yield { type: "text_delta", delta: text };
         yield {
           type: "final",
-          response: {
-            choice: [AssistantContent.text(text)],
+          result: {
+            output: text,
+            text,
+            content: [AssistantContent.text(text)],
             usage: Usage.empty(),
             rawResponse: {},
             messageId: `provider_${requests.length}`,
@@ -165,8 +169,10 @@ describe("@anvia/react useCompletion", () => {
         yield { type: "text_delta", delta: "done" };
         yield {
           type: "final",
-          response: {
-            choice: [AssistantContent.text("done")],
+          result: {
+            output: "done",
+            text: "done",
+            content: [AssistantContent.text("done")],
             usage: Usage.empty(),
             rawResponse: {},
             messageId: "provider_2",
@@ -258,8 +264,10 @@ describe("@anvia/react useCompletion", () => {
         yield { type: "text_delta", delta: "Hai" };
         yield {
           type: "final",
-          response: {
-            choice: [],
+          result: {
+            output: "",
+            text: "",
+            content: [],
             usage: Usage.empty(),
             rawResponse: {},
             messageId: "provider_1",
@@ -291,8 +299,10 @@ describe("@anvia/react useCompletion", () => {
         yield { type: "reasoning_delta", delta: "Think first." };
         yield {
           type: "final",
-          response: {
-            choice: [],
+          result: {
+            output: "",
+            text: "",
+            content: [],
             usage: Usage.empty(),
             rawResponse: {},
             messageId: "provider_1",

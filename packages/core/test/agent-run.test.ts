@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
   Agent,
@@ -141,6 +141,66 @@ describe("Agent execution", () => {
     } finally {
       random.mockRestore();
     }
+  });
+
+  it("inherits the Agent retry policy when a run does not override it", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("recovered")]) },
+    ]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await expect(agent.generate("hello")).resolves.toMatchObject({
+      status: "completed",
+      output: "recovered",
+    });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("disables inherited Agent retries for a run with retries false", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("unexpected")]) },
+    ]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await expect(agent.generate("hello", { retries: false })).rejects.toBe(error);
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("replaces rather than merges the Agent retry policy for one run", async () => {
+    const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
+    const model = new FlakyQueueModel([
+      { error },
+      { response: response([AssistantContent.text("recovered")]) },
+    ]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      retries: {
+        maxAttempts: 1,
+        initialDelayMs: 0,
+        maxDelayMs: 0,
+        shouldRetry: () => false,
+      },
+    });
+
+    await expect(
+      agent.generate("hello", {
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    ).resolves.toMatchObject({ status: "completed", output: "recovered" });
+    expect(model.requests).toHaveLength(2);
   });
 
   it("stops after the configured completion attempts and reports one logical error", async () => {
@@ -341,6 +401,22 @@ describe("Agent execution", () => {
     await agent.generate("hello");
 
     expect(model.requests[0]?.instructions).toBe("First block.\n\nSecond block.");
+  });
+
+  it("parses and preserves the type of schema-backed Agent output", async () => {
+    const model = new QueueModel([response([AssistantContent.text('{"answer":"typed"}')])]);
+    const agent = new Agent({
+      id: "typed-agent",
+      model,
+      outputSchema: z.object({ answer: z.string() }),
+    });
+
+    const result = await agent.generate("answer");
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") throw new Error("Expected a completed result.");
+    expectTypeOf(result.output).toEqualTypeOf<{ answer: string }>();
+    expect(result.output).toEqual({ answer: "typed" });
+    expect(result.text).toBe('{"answer":"typed"}');
   });
 
   it("executes one tool round-trip", async () => {

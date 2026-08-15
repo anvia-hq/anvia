@@ -4,7 +4,6 @@ import type {
   CompletionTool,
   Document,
   JsonObject,
-  JsonValue,
   Message as MessageType,
   ToolChoice,
   ToolDefinition,
@@ -28,7 +27,7 @@ export type CompletionRequestOptions<Model extends CompletionModel = CompletionM
   maxTokens?: number | undefined;
   toolChoice?: ToolChoice | undefined;
   outputSchema?: JsonObject | undefined;
-  additionalParams?: JsonValue | undefined;
+  providerOptions?: JsonObject | undefined;
 };
 
 export function createCompletionRequest<Model extends CompletionModel>(
@@ -52,7 +51,7 @@ export function createCompletionRequest<Model extends CompletionModel>(
   if (options.maxTokens !== undefined) request.maxTokens = options.maxTokens;
   if (options.toolChoice !== undefined) request.toolChoice = options.toolChoice;
   if (options.outputSchema !== undefined) request.outputSchema = options.outputSchema;
-  if (options.additionalParams !== undefined) request.additionalParams = options.additionalParams;
+  if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
 
   return request;
 }

@@ -5,15 +5,16 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelMetadataOptions,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
   type CompletionSource,
-  type CompletionStreamEvent,
   type DocumentContent,
   type ImageContent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  type ModelCallOptions,
   type ProviderTool,
   type ProviderToolCall,
   type Reasoning,
@@ -86,10 +87,14 @@ export class OpenAIResponsesCompletionModel
 
   async completion(
     request: CompletionRequest<OpenAICompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toOpenAIResponsesParams(this.defaultModel, request);
-    const response = await this.client.responses.create(params as never);
+    const response = await this.client.responses.create(
+      params as never,
+      openAIRequestOptions(options),
+    );
     return withContextUsage(
       fromOpenAIResponse(response),
       this.getModelInfo(request.model ?? this.defaultModel),
@@ -98,10 +103,14 @@ export class OpenAIResponsesCompletionModel
 
   async *streamCompletion(
     request: CompletionRequest<OpenAICompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = { ...toOpenAIResponsesParams(this.defaultModel, request), stream: true };
-    const stream = await this.client.responses.create(params as never);
+    const stream = await this.client.responses.create(
+      params as never,
+      openAIRequestOptions(options),
+    );
     for await (const event of stream as unknown as AsyncIterable<unknown>) {
       const mapped = fromOpenAIStreamEvent(event);
       if (mapped !== undefined) {
@@ -124,9 +133,12 @@ export function toOpenAIResponsesParams(
   request: CompletionRequest<OpenAICompletionModelName>,
 ): ResponsesCreateParams {
   const params: ResponsesCreateParams = {
+    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
     model: request.model ?? defaultModel,
     input: requestMessages(request).flatMap(messageToResponsesInput),
   };
+
+  delete params.tools;
 
   if (request.instructions !== undefined) {
     params.instructions = request.instructions;
@@ -155,18 +167,9 @@ export function toOpenAIResponsesParams(
     };
   }
 
-  if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    Object.assign(params, request.additionalParams);
-  }
-
-  const additionalTools = params.tools;
-  if (additionalTools !== undefined && !Array.isArray(additionalTools)) {
-    throw new TypeError("Responses additionalParams.tools must be an array.");
-  }
   const tools = [
     ...request.tools.map(toolDefinitionToOpenAI),
     ...(request.providerTools ?? []).map(providerToolToOpenAI),
-    ...(additionalTools ?? []),
   ];
   if (tools.length > 0) {
     params.tools = tools;
@@ -175,6 +178,12 @@ export function toOpenAIResponsesParams(
   }
 
   return params;
+}
+
+function openAIRequestOptions(
+  options: ModelCallOptions | undefined,
+): { signal?: AbortSignal | undefined } | undefined {
+  return options?.abortSignal === undefined ? undefined : { signal: options.abortSignal };
 }
 
 function providerRequestSummary(
@@ -203,8 +212,8 @@ function providerRequestSummary(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: toolChoiceSummary(request.toolChoice),
-    additionalParamKeys: isPlainObject(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isPlainObject(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
 }
@@ -302,7 +311,7 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
   return result;
 }
 
-export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | undefined {
+export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEvent | undefined {
   if (!isPlainObject(event) || typeof event.type !== "string") {
     return undefined;
   }
@@ -318,7 +327,7 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
     if (typeof event.delta !== "string") {
       return undefined;
     }
-    const mapped: CompletionStreamEvent = { type: "reasoning_delta", delta: event.delta };
+    const mapped: CompletionModelStreamEvent = { type: "reasoning_delta", delta: event.delta };
     const id = stringFrom(event.item_id);
     if (id !== undefined) {
       mapped.id = id;
@@ -407,7 +416,7 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionStreamEvent | u
   }
 
   if (event.type === "response.failed" && isPlainObject(event.response)) {
-    const mapped: CompletionStreamEvent = {
+    const mapped: CompletionModelStreamEvent = {
       type: "error",
       error: event.response.error ?? event.response,
     };
@@ -816,8 +825,8 @@ function toolCallDelta(
     argumentsDelta?: string | undefined;
     argumentsMode?: "append" | "replace" | undefined;
   },
-): CompletionStreamEvent {
-  const event: CompletionStreamEvent = { type: "tool_call_delta", id };
+): CompletionModelStreamEvent {
+  const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
   if (values.callId !== undefined) event.callId = values.callId;
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;

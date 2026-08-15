@@ -50,13 +50,23 @@ export type AgentRunStartArgs = {
   readonly maxTurns: number;
 };
 
-export type AgentRunEndArgs = {
-  readonly output: string;
+type AgentRunEndArgsBase = {
+  readonly text: string;
   readonly usage: DeepReadonly<Usage>;
   readonly messages: readonly DeepReadonly<Message>[];
   readonly sources?: readonly DeepReadonly<CompletionSource>[] | undefined;
   readonly providerToolCalls?: readonly DeepReadonly<ProviderToolCall>[] | undefined;
 };
+
+export type AgentRunEndArgs =
+  | (AgentRunEndArgsBase & {
+      readonly status: "completed";
+      readonly output: unknown;
+    })
+  | (AgentRunEndArgsBase & {
+      readonly status: "blocked";
+      readonly stage: "input" | "output";
+    });
 
 export type AgentRunErrorArgs = {
   readonly error: unknown;

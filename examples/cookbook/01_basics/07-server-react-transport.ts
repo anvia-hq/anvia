@@ -13,16 +13,20 @@ async function* runEvents(): AsyncIterable<AgentStreamEvent> {
   yield { type: "text_delta", turn: 1, delta: " from Anvia" };
   yield {
     type: "final",
-    runId: "run_123",
-    output: "Hello from Anvia",
-    usage: {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      cachedInputTokens: 0,
-      cacheCreationInputTokens: 0,
+    result: {
+      status: "completed",
+      runId: "run_123",
+      output: "Hello from Anvia",
+      text: "Hello from Anvia",
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      messages: [],
     },
-    messages: [],
   };
 }
 
@@ -36,7 +40,7 @@ for await (const event of fetchEventStream<AgentStreamEvent>("/api/chat", {
     output += event.delta;
   }
   if (event.type === "final") {
-    console.log(event.output);
+    console.log(event.result.text);
   }
 }
 

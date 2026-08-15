@@ -145,7 +145,7 @@ describe("langfuse", () => {
       tools: [{ name: "lookup", description: "Lookup", parameters: { type: "object" } }],
       providerTools: [{ kind: "provider", provider: "test", name: "search" }],
       outputSchema: { type: "object" },
-      additionalParams: { seed: 7 },
+      providerOptions: { seed: 7 },
     };
 
     for (const [captureMode, includesFullFields] of [
@@ -192,7 +192,7 @@ describe("langfuse", () => {
         toolNames: ["lookup"],
         providerToolNames: ["search"],
         hasOutputSchema: true,
-        additionalParamKeys: ["seed"],
+        providerOptionKeys: ["seed"],
       });
       expect("documents" in attributes.input).toBe(includesFullFields);
       expect("tools" in attributes.input).toBe(includesFullFields);
@@ -382,7 +382,7 @@ describe("langfuse", () => {
         chatHistory: [userMessage("hi")],
         documents: [],
         tools: [],
-        additionalParams: {},
+        providerOptions: {},
       },
       providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
       modelInfo: {
@@ -452,7 +452,7 @@ describe("langfuse", () => {
         chatHistory: [userMessage("hi")],
         documents: [],
         tools: [],
-        additionalParams: {},
+        providerOptions: {},
       },
       modelInfo: { provider: "openai", defaultModel: "gpt-4o" },
     });
@@ -797,7 +797,9 @@ describe("langfuse", () => {
       toolCallId: "call-1",
     });
     await runObserver.end({
+      status: "completed",
       output: "Done",
+      text: "Done",
       usage: usage(2, 3),
       messages: [],
     });
@@ -835,7 +837,7 @@ describe("langfuse", () => {
     );
     expect(root.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        output: "Done",
+        output: { status: "completed", output: "Done", text: "Done" },
         metadata: expect.objectContaining({ messages: [] }),
       }),
     );
@@ -887,7 +889,9 @@ describe("langfuse", () => {
     expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run.end({
+      status: "completed",
       output: "done",
+      text: "done",
       usage: usage(1, 1),
       messages: [Message.assistant("done", { metadata })],
     });
@@ -1035,10 +1039,14 @@ describe("langfuse", () => {
         agentName: "Child Agent",
         event: {
           type: "final",
-          runId: "child-run",
-          output: "7",
-          usage: usage(2, 1),
-          messages: [],
+          result: {
+            status: "completed",
+            runId: "child-run",
+            output: "7",
+            text: "7",
+            usage: usage(2, 1),
+            messages: [],
+          },
         },
       },
     });
@@ -2699,7 +2707,9 @@ describe("LangfuseTraceHandle", () => {
     expect(handle?.observationId).toBe(runObserver.trace?.observationId);
 
     await runObserver.end({
+      status: "completed",
       output: "Done",
+      text: "Done",
       usage: usage(1, 2),
       messages: [],
     });
@@ -2885,7 +2895,9 @@ describe("LangfuseTraceHandle", () => {
     expect(handleA?.traceId).toBe("trace-A");
 
     await runA.end({
+      status: "completed",
       output: "Done A",
+      text: "Done A",
       usage: usage(1, 1),
       messages: [],
     });
@@ -2902,7 +2914,9 @@ describe("LangfuseTraceHandle", () => {
     expect(handleB).not.toBe(handleA);
 
     await runB.end({
+      status: "completed",
       output: "Done B",
+      text: "Done B",
       usage: usage(1, 1),
       messages: [],
     });
@@ -2934,7 +2948,7 @@ function generationStartArgs(): AgentGenerationStartArgs {
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
-      additionalParams: {},
+      providerOptions: {},
     },
   };
 }

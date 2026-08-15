@@ -1,6 +1,6 @@
 import {
+  type CompletionModelStreamEvent,
   type CompletionRequest,
-  type CompletionStreamEvent,
   Message,
 } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
@@ -33,7 +33,7 @@ describe("Grok completion models", () => {
     });
   });
 
-  it("combines local, Grok, and legacy raw Responses tools", async () => {
+  it("uses canonical local and Grok tools instead of providerOptions.tools", async () => {
     const calls: unknown[] = [];
     const model = new GrokResponsesCompletionModel(
       {
@@ -52,7 +52,7 @@ describe("Grok completion models", () => {
       documents: [],
       tools: [{ name: "local", description: "Local", parameters: { type: "object" } }],
       providerTools: [tools.webSearch({ allowedDomains: ["x.ai"] })],
-      additionalParams: { tools: [{ type: "code_interpreter" }], max_turns: 5 },
+      providerOptions: { tools: [{ type: "code_interpreter" }], max_turns: 5 },
     });
 
     expect(calls).toEqual([
@@ -67,7 +67,6 @@ describe("Grok completion models", () => {
             parameters: { type: "object" },
           },
           { type: "web_search", filters: { allowed_domains: ["x.ai"] } },
-          { type: "code_interpreter" },
         ],
         max_turns: 5,
       },
@@ -105,7 +104,7 @@ describe("Grok completion models", () => {
       chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
       documents: [],
       tools: [],
-      additionalParams: {
+      providerOptions: {
         reasoning: { effort: "high" },
       },
     });
@@ -342,9 +341,9 @@ async function* streamFrom(events: unknown[]): AsyncIterable<unknown> {
 }
 
 async function collect(
-  events: AsyncIterable<CompletionStreamEvent>,
-): Promise<CompletionStreamEvent[]> {
-  const result: CompletionStreamEvent[] = [];
+  events: AsyncIterable<CompletionModelStreamEvent>,
+): Promise<CompletionModelStreamEvent[]> {
+  const result: CompletionModelStreamEvent[] = [];
   for await (const event of events) {
     result.push(event);
   }

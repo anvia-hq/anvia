@@ -5,13 +5,14 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelMetadataOptions,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type DocumentContent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  type ModelCallOptions,
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
@@ -69,10 +70,14 @@ export class MistralCompletionModel
 
   async completion(
     request: CompletionRequest<MistralCompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toMistralChatParams(this.defaultModel, request);
-    const response = await this.client.chat.complete(params as never);
+    const response = await this.client.chat.complete(
+      params as never,
+      mistralRequestOptions(options) as never,
+    );
     return withContextUsage(
       fromMistralChatResponse(response),
       this.getModelInfo(request.model ?? this.defaultModel),
@@ -81,10 +86,14 @@ export class MistralCompletionModel
 
   async *streamCompletion(
     request: CompletionRequest<MistralCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = toMistralChatParams(this.defaultModel, request);
-    const stream = await this.client.chat.stream(params as never);
+    const stream = await this.client.chat.stream(
+      params as never,
+      mistralRequestOptions(options) as never,
+    );
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       for (const event of fromMistralChatStreamChunk(chunk)) {
         yield event.type === "final"
@@ -106,9 +115,12 @@ export function toMistralChatParams(
   request: CompletionRequest<MistralCompletionModelName>,
 ): MistralChatParams {
   const params: MistralChatParams = {
+    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
     model: request.model ?? defaultModel,
     messages: requestMessages(request).flatMap(messageToMistralMessages),
   };
+
+  delete params.tools;
 
   if (request.temperature !== undefined) {
     params.temperature = request.temperature;
@@ -137,15 +149,13 @@ export function toMistralChatParams(
     };
   }
 
-  if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    const additionalParams = { ...request.additionalParams };
-    // Model and messages define the request identity; keep them aligned with traceRequest.
-    delete additionalParams.model;
-    delete additionalParams.messages;
-    Object.assign(params, additionalParams);
-  }
-
   return params;
+}
+
+function mistralRequestOptions(
+  options: ModelCallOptions | undefined,
+): { signal?: AbortSignal | undefined } | undefined {
+  return options?.abortSignal === undefined ? undefined : { signal: options.abortSignal };
 }
 
 function providerRequestSummary(
@@ -166,8 +176,8 @@ function providerRequestSummary(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: toolChoiceSummary(request.toolChoice),
-    additionalParamKeys: isPlainObject(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isPlainObject(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
 }
@@ -228,12 +238,12 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
   return result;
 }
 
-export function fromMistralChatStreamChunk(chunk: unknown): CompletionStreamEvent[] {
+export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
   if (!isPlainObject(chunk)) {
     return [];
   }
 
-  const events: CompletionStreamEvent[] = [];
+  const events: CompletionModelStreamEvent[] = [];
   const choices = Array.isArray(chunk.choices) ? chunk.choices : [];
   for (const choice of choices) {
     if (!isPlainObject(choice) || !isPlainObject(choice.delta)) {
@@ -481,8 +491,8 @@ function toolCallDelta(
     name?: string | undefined;
     argumentsDelta?: string | undefined;
   },
-): CompletionStreamEvent {
-  const event: CompletionStreamEvent = { type: "tool_call_delta", id };
+): CompletionModelStreamEvent {
+  const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
   if (values.callId !== undefined) event.callId = values.callId;
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;

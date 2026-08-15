@@ -296,16 +296,17 @@ function logsFromStreamEvent(props: {
     ];
   }
   if (event.type === "final") {
+    const result = event.result;
     return [
       runCompletedLog({
         sessionId,
         runId,
         durationMs: Date.now() - props.startedAt,
-        usage: event.usage,
-        output: event.output,
-        messageCount: event.messages.length,
+        usage: result.usage,
+        output: result.text,
+        messageCount: result.messages.length,
       }),
-      memorySavedLog({ sessionId, runId, messageCount: event.messages.length }),
+      memorySavedLog({ sessionId, runId, messageCount: result.messages.length }),
     ];
   }
   if (event.type === "error") {
@@ -488,14 +489,16 @@ function childAgentLog(
     ];
   }
   if (child.type === "final") {
+    const result = child.result;
     const metadata: JsonObject = {
       parentToolName: event.toolName,
       agentId: event.agentId,
       hasAgentName: event.agentName !== undefined,
-      outputBytes: byteLength(child.output),
-      messageCount: child.messages.length,
+      outputBytes: byteLength(result.text),
+      messageCount: result.messages.length,
+      status: result.status,
     };
-    const usage = usageSummary(child.usage);
+    const usage = usageSummary(result.usage);
     if (usage !== undefined) metadata.usage = usage;
     return [
       {

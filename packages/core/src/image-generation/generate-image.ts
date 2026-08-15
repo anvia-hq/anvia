@@ -1,38 +1,62 @@
-import type { JsonValue } from "../completion/types";
-import { type RetryOptions, resolveRetryOptions, runWithRetries } from "../retry";
-import type { ImageGenerationModel, ImageGenerationRequest } from "./types";
+import type { JsonObject } from "../completion/types";
+import { throwIfAborted } from "../internal/abort";
+import type { ModelCallOptions } from "../model-call-options";
+import {
+  type ResolvedRetryOptions,
+  type RetrySetting,
+  resolveRetryOptions,
+  runWithRetries,
+} from "../retry";
+import type { ImageGenerationModel, ImageGenerationRequest, ImageGenerationResult } from "./types";
 
 export type GenerateImageOptions<Model extends ImageGenerationModel = ImageGenerationModel> = {
   model: Model;
+  prompt: string;
   width?: number | undefined;
   height?: number | undefined;
-  additionalParams?: JsonValue | undefined;
-  retries?: RetryOptions | undefined;
+  providerOptions?: JsonObject | undefined;
+  retries?: RetrySetting | undefined;
+  abortSignal?: AbortSignal | undefined;
 };
 
-export function generateImage<Model extends ImageGenerationModel>(
-  prompt: string,
+type RawResponseOf<Model> =
+  Model extends ImageGenerationModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+
+export async function generateImage<Model extends ImageGenerationModel>(
   options: GenerateImageOptions<Model>,
-): Promise<Awaited<ReturnType<Model["imageGeneration"]>>> {
-  assertNonEmptyString(prompt, "Image prompt");
+): Promise<ImageGenerationResult<RawResponseOf<Model>>> {
+  assertNonEmptyString(options.prompt, "Image prompt");
+  throwIfAborted(options.abortSignal);
   const width = options.width ?? 1024;
   const height = options.height ?? 1024;
   assertPositiveInteger(width, "Image width");
   assertPositiveInteger(height, "Image height");
 
-  const request: ImageGenerationRequest = { prompt, width, height };
-  if (options.additionalParams !== undefined) {
-    request.additionalParams = options.additionalParams;
-  }
-  const retries = options.retries === undefined ? undefined : resolveRetryOptions(options.retries);
-  return runWithRetries<Awaited<ReturnType<Model["imageGeneration"]>>>(
-    () =>
-      options.model.imageGeneration(request) as Promise<
-        Awaited<ReturnType<Model["imageGeneration"]>>
-      >,
-    retries,
-    { streaming: false },
+  const request: ImageGenerationRequest = { prompt: options.prompt, width, height };
+  if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
+  const result = await runWithRetries(
+    () => {
+      throwIfAborted(options.abortSignal);
+      return options.model.imageGeneration(
+        request,
+        modelCallOptions(options.abortSignal),
+      ) as Promise<ImageGenerationResult<RawResponseOf<Model>>>;
+    },
+    resolveRetries(options.retries),
+    { streaming: false, abortSignal: options.abortSignal },
   );
+  if (!Array.isArray(result.images) || result.images.length === 0) {
+    throw new Error("The image generation model returned no images.");
+  }
+  return result;
+}
+
+function resolveRetries(setting: RetrySetting | undefined): ResolvedRetryOptions | undefined {
+  return setting === undefined || setting === false ? undefined : resolveRetryOptions(setting);
+}
+
+function modelCallOptions(abortSignal: AbortSignal | undefined): ModelCallOptions | undefined {
+  return abortSignal === undefined ? undefined : { abortSignal };
 }
 
 function assertNonEmptyString(value: string, name: string): void {

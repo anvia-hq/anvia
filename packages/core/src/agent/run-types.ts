@@ -17,26 +17,26 @@ import type {
   AgentTraceInfo,
   AgentTraceOptions,
 } from "../observability/types";
-import type { RetryOptions } from "../retry";
+import type { RetrySetting } from "../retry";
 import type { AgentMiddleware } from "../tool";
 import type { AgentLifecycle } from "./lifecycle";
 
 export type AgentInput = string | MessageType | MessageType[];
 
-export type AgentRunOptions = {
+export type AgentRunOptions<Output = string, RawResponse = unknown> = {
   maxTurns?: number | undefined;
-  retries?: RetryOptions | undefined;
-  lifecycle?: AgentLifecycle | undefined;
+  retries?: RetrySetting | undefined;
+  abortSignal?: AbortSignal | undefined;
+  lifecycle?: AgentLifecycle<Output, RawResponse> | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   toolConcurrency?: number | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;
   trace?: AgentTraceOptions | undefined;
 };
 
-export type AgentResponse = {
-  status: "completed";
+type AgentResultBase = {
   runId: string;
-  output: string;
+  text: string;
   usage: Usage;
   contextUsage?: ContextUsage | undefined;
   messages: MessageType[];
@@ -44,6 +44,16 @@ export type AgentResponse = {
   guardrails?: GuardrailDecisionRecord[] | undefined;
   sources?: CompletionSource[] | undefined;
   providerToolCalls?: ProviderToolCall[] | undefined;
+};
+
+export type AgentResponse<Output = string> = AgentResultBase & {
+  status: "completed";
+  output: Output;
+};
+
+export type AgentBlockedResult = AgentResultBase & {
+  status: "blocked";
+  stage: "input" | "output";
 };
 
 export type AgentApprovalRequiredResult = {
@@ -54,7 +64,10 @@ export type AgentApprovalRequiredResult = {
   messages: MessageType[];
 };
 
-export type AgentResult = AgentResponse | AgentApprovalRequiredResult;
+export type AgentResult<Output = string> =
+  | AgentResponse<Output>
+  | AgentBlockedResult
+  | AgentApprovalRequiredResult;
 
 export type AgentToolApprovalRequest = {
   id: string;
@@ -91,11 +104,6 @@ export type AgentErrorStreamEvent = {
   usage: Usage;
 };
 
-export type AgentStreamOptions = AgentRunOptions & {
-  /** @default true */
-  includeToolCallDeltas?: boolean;
-};
-
 export type AgentToolCallDeltaEvent = {
   type: "tool_call_delta";
   turn: number;
@@ -107,7 +115,7 @@ export type AgentToolCallDeltaEvent = {
   signature?: string;
 };
 
-type AgentChildStreamEventBase<RawResponse = unknown> =
+type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
   | {
       type: "turn_start";
       turn: number;
@@ -171,30 +179,16 @@ type AgentChildStreamEventBase<RawResponse = unknown> =
     }
   | {
       type: "final";
-      runId: string;
-      output: string;
-      usage: Usage;
-      contextUsage?: ContextUsage | undefined;
-      messages: MessageType[];
-      trace?: AgentTraceInfo | undefined;
-      guardrails?: GuardrailDecisionRecord[] | undefined;
-      sources?: CompletionSource[] | undefined;
-      providerToolCalls?: ProviderToolCall[] | undefined;
+      result: AgentResponse<Output> | AgentBlockedResult;
     }
   | AgentApprovalRequiredEvent
   | AgentErrorStreamEvent;
 
-export type AgentChildStreamEventWithoutToolCallDeltas<RawResponse = unknown> =
-  AgentChildStreamEventBase<RawResponse>;
-
-export type AgentChildStreamEvent<RawResponse = unknown> =
-  | AgentChildStreamEventBase<RawResponse>
+export type AgentChildStreamEvent<Output = string, RawResponse = unknown> =
+  | AgentChildStreamEventBase<Output, RawResponse>
   | AgentToolCallDeltaEvent;
 
-export type AgentChildStreamEventWithToolCallDeltas<RawResponse = unknown> =
-  AgentChildStreamEvent<RawResponse>;
-
-type AgentToolStreamEvent<ChildEvent> = {
+type AgentToolStreamEvent = {
   type: "agent_tool_event";
   turn: number;
   toolName: string;
@@ -202,19 +196,12 @@ type AgentToolStreamEvent<ChildEvent> = {
   internalCallId: string;
   agentId: string;
   agentName?: string;
-  event: ChildEvent;
+  event: AgentChildStreamEvent<unknown, unknown>;
 };
 
-export type AgentStreamEventWithoutToolCallDeltas<RawResponse = unknown> =
-  | AgentChildStreamEventWithoutToolCallDeltas<RawResponse>
-  | AgentToolStreamEvent<AgentChildStreamEventWithoutToolCallDeltas<RawResponse>>;
-
-export type AgentStreamEvent<RawResponse = unknown> =
-  | AgentChildStreamEvent<RawResponse>
-  | AgentToolStreamEvent<AgentChildStreamEvent<RawResponse>>;
-
-export type AgentStreamEventWithToolCallDeltas<RawResponse = unknown> =
-  AgentStreamEvent<RawResponse>;
+export type AgentStreamEvent<Output = string, RawResponse = unknown> =
+  | AgentChildStreamEvent<Output, RawResponse>
+  | AgentToolStreamEvent;
 
 export interface AgentStream<Event = AgentStreamEvent> extends AsyncIterable<Event> {
   steer(input: AgentInput): boolean;

@@ -26,7 +26,7 @@ describe("Mistral OCR models", () => {
       tableFormat: "markdown",
       extractHeader: true,
       confidenceScoresGranularity: "page",
-      additionalParams: { imageLimit: 4, ignored: "kept" },
+      providerOptions: { imageLimit: 4, ignored: "kept" },
     });
 
     expect(calls).toEqual([
@@ -125,7 +125,7 @@ describe("Mistral OCR models", () => {
 
     await client.ocrModel("custom-ocr").ocr({
       source: { type: "file_id", fileId: "file-123" },
-      additionalParams: {
+      providerOptions: {
         model: "unsafe-model",
         document: { type: "document_url", documentUrl: "https://example.com/unsafe.pdf" },
         includeImageBase64: true,

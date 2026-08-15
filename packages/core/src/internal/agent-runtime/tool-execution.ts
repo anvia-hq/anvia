@@ -35,6 +35,7 @@ import type {
   ToolOutputMiddlewareResult,
 } from "../../tool/middleware";
 import { isSkillTool } from "../../tool/skill-tool-marker";
+import { throwIfAborted } from "../abort";
 import { mapWithConcurrency } from "../concurrency";
 import type { ToolApprovalRequest } from "./approval-request";
 import { assertToolApprovalRequirement, toolMayRequireApproval } from "./approval-requirement";
@@ -62,7 +63,7 @@ export type AgentToolEventPayload = {
   internalCallId: string;
   agentId: string;
   agentName?: string;
-  event: AgentChildStreamEvent;
+  event: AgentChildStreamEvent<unknown, unknown>;
 };
 
 export type ToolExecutionEventPayload = ToolResultEventPayload | AgentToolEventPayload;
@@ -71,7 +72,6 @@ export type ToolExecutionObservation = {
   turn: number;
   runObservers: ActiveAgentRunObservers;
   toolDefinitions?: ToolDefinition[];
-  includeToolCallDeltas?: boolean;
 };
 
 export type ToolExecutionRunContext = {
@@ -82,16 +82,19 @@ export type ToolExecutionRunContext = {
 
 export type ToolApprovalHandler = (request: ToolApprovalRequest) => Promise<AgentApprovalDecision>;
 
+type ToolExecutionAgent = Pick<Agent, "id" | "getTool" | "callTool" | "middlewares">;
+type ToolExecutionLifecycle = Pick<AgentLifecycle, "onToolStart" | "onToolFinish">;
+
 export class ToolCallExecutor {
   constructor(
-    private readonly agent: Agent,
+    private readonly agent: ToolExecutionAgent,
     private readonly activeHook: AgentHook | undefined,
     private readonly approvalHandler: ToolApprovalHandler,
-    private readonly lifecycle: AgentLifecycle | undefined,
+    private readonly lifecycle: ToolExecutionLifecycle | undefined,
     private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,
     private readonly requestMiddlewares: readonly AgentMiddleware[],
-    private readonly includeToolCallDeltas: boolean,
+    private readonly abortSignal: AbortSignal,
     private readonly cancel: (reason: string) => Error,
   ) {}
 
@@ -110,6 +113,7 @@ export class ToolCallExecutor {
     }
 
     return mapWithConcurrency(toolCalls, this.concurrency, async (toolCall) => {
+      throwIfAborted(this.abortSignal);
       const args = JSON.stringify(toolCall.function.arguments ?? {});
       const internalCallId = globalThis.crypto.randomUUID();
       const hookArgs: ToolHookArgs = {
@@ -328,6 +332,7 @@ export class ToolCallExecutor {
   > {
     try {
       const toolContext: ToolCallContext = {
+        abortSignal: this.abortSignal,
         emitStreamEvent: async (event) => {
           const streamEventArgs: AgentToolStreamEventArgs = {
             turn: observation?.turn ?? 0,
@@ -345,7 +350,6 @@ export class ToolCallExecutor {
           }
         },
       };
-      toolContext.includeToolCallDeltas = this.includeToolCallDeltas;
       return {
         output: await prepared.call(toolContext),
         failed: false,
@@ -524,7 +528,7 @@ export class ToolCallExecutor {
 function createApprovalContext(
   input: unknown,
   hookArgs: ToolHookArgs,
-  agent: Agent,
+  agent: Pick<Agent, "id">,
   run: ToolExecutionRunContext,
 ): ToolApprovalContext {
   const approvalRun: ToolApprovalRunContext = {
@@ -656,7 +660,7 @@ function agentToolEventPayload(
     toolName: toolCall.function.name,
     internalCallId,
     agentId: event.agentId,
-    event: event.event as AgentChildStreamEvent,
+    event: event.event as AgentChildStreamEvent<unknown, unknown>,
   };
   if (toolCall.callId !== undefined) {
     payload.toolCallId = toolCall.callId;

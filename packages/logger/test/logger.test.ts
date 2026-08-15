@@ -155,7 +155,9 @@ describe("createLoggerObserver", () => {
     });
 
     run.end({
+      status: "completed",
       output: "ok",
+      text: "ok",
       usage: {
         inputTokens: 1,
         outputTokens: 1,

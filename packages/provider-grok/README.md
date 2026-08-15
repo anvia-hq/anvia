@@ -35,9 +35,8 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
-const response = await agent.prompt("Summarize Anvia in one sentence.").send();
-
-console.log(response.output);
+const result = await agent.generate("Summarize Anvia in one sentence.");
+if (result.status === "completed") console.log(result.output);
 ```
 
 ## Completion APIs
@@ -59,14 +58,14 @@ const chatClient = new GrokClient({
 });
 ```
 
-Provider-specific xAI parameters can be passed through completion `additionalParams`.
+Provider-specific xAI parameters can be passed through completion `providerOptions`.
 
 ```ts
 const response = await model.completion({
   chatHistory,
   documents: [],
   tools,
-  additionalParams: {
+  providerOptions: {
     reasoning: { effort: "high" },
   },
 });
@@ -87,21 +86,28 @@ const grok = new GrokClient({ apiKey: process.env.XAI_API_KEY });
 const researcher = new Agent({
   id: "researcher",
   model: grok.completionModel(),
-  additionalParams: { max_turns: 5 },
-  tools: [localDatabaseTool, grokTools.webSearch({ allowedDomains: ["x.ai"] }), grokTools.xSearch({ allowedHandles: ["xai"] }), grokTools.codeInterpreter()],
+  providerOptions: { max_turns: 5 },
+  tools: [
+    localDatabaseTool,
+    grokTools.webSearch({ allowedDomains: ["x.ai"] }),
+    grokTools.xSearch({ allowedHandles: ["xai"] }),
+    grokTools.codeInterpreter(),
+  ],
 });
 
-const result = await researcher.prompt("Summarize the latest xAI updates.").send();
+const result = await researcher.generate("Summarize the latest xAI updates.");
 
-console.log(result.output);
-console.log(result.sources);
-console.log(result.providerToolCalls);
+if (result.status === "completed") {
+  console.log(result.output);
+  console.log(result.sources);
+  console.log(result.providerToolCalls);
+}
 ```
 
-The builder partitions tools internally: local tools remain in Anvia's executable `ToolSet`, while
+The Agent partitions tools internally: local tools remain in Anvia's executable tool runtime, while
 Grok tools are sent to xAI and never executed locally. Server tools are supported by the Responses
-adapter, not the Chat Completions adapter. Legacy raw `additionalParams.tools` arrays are merged
-after local and typed provider tools.
+adapter, not the Chat Completions adapter. Canonical local and typed provider tools take precedence
+over a conflicting `providerOptions.tools` value.
 
 Remote MCP authorization and headers are sent to xAI but omitted from Anvia's request trace
 summary.
@@ -109,45 +115,55 @@ summary.
 ## Image Generation
 
 ```ts
+import { generateImage } from "@anvia/core";
 import { GROK_IMAGINE_IMAGE, GrokClient } from "@anvia/grok";
 
 const client = new GrokClient({ apiKey });
 const imageModel = client.imageGenerationModel(GROK_IMAGINE_IMAGE);
 
-const result = await imageModel.imageGeneration({
+const result = await generateImage({
+  model: imageModel,
   prompt: "A compact robot drawing architecture diagrams on a glass wall.",
   width: 1024,
   height: 1024,
 });
 
-console.log(result.mediaType, result.image.byteLength);
+console.log(result.images[0].mediaType, result.images[0].data.byteLength);
 ```
 
 The adapter requests base64 responses by default. If xAI returns image URLs, it fetches those URLs and returns bytes to satisfy Anvia's core image generation contract.
-Exact xAI-supported aspect ratios are preserved; other width/height ratios map to `auto`. An
-explicit `additionalParams.aspect_ratio` takes precedence.
+Exact xAI-supported aspect ratios are preserved; other width/height ratios map to `auto`. The
+canonical `width` and `height` determine the aspect ratio even if `providerOptions.aspect_ratio`
+is present.
 
 ## Batch Speech
 
 ```ts
-const speech = await client.audioGenerationModel().audioGeneration({
+import { generateSpeech, transcribe } from "@anvia/core";
+
+const speech = await generateSpeech({
+  model: client.speechGenerationModel(),
   text: "Hello from Grok.",
   voice: "eve",
   speed: 1,
-  additionalParams: {
+  providerOptions: {
     language: "en",
     output_format: { codec: "mp3", sample_rate: 24_000 },
   },
 });
 
-const transcript = await client.transcriptionModel().transcription({
-  data: speech.audio,
-  filename: "speech.mp3",
+const transcript = await transcribe({
+  model: client.transcriptionModel(),
+  audio: {
+    data: speech.audio.data,
+    filename: "speech.mp3",
+    mediaType: speech.audio.mediaType,
+  },
   language: "en",
 });
 ```
 
-These factories implement Anvia's batch `AudioGenerationModel` and `TranscriptionModel` contracts.
+These factories implement Anvia's batch `SpeechGenerationModel` and `TranscriptionModel` contracts.
 Realtime voice and streaming speech are not included.
 
 ## Model Listing
@@ -169,7 +185,7 @@ speech, file or collection management, batches, stored completions, compaction, 
 - `GrokResponsesCompletionModel`
 - `GrokChatCompletionModel`
 - `GrokImageGenerationModel`
-- `GrokAudioGenerationModel`
+- `GrokSpeechGenerationModel`
 - `GrokTranscriptionModel`
 - typed `tools` factories for xAI server-executed tools
 - model constants such as `GROK_4_5`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`

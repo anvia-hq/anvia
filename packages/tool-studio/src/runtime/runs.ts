@@ -272,7 +272,7 @@ export function createPersistedStreamingSessionTranscript(props: {
         };
         if (event.type === "error") saveInput.error = serializeError(event.error);
         await saveTranscript(saveInput);
-        const generatedMessages = event.type === "final" ? event.messages.slice(1) : [];
+        const generatedMessages = event.type === "final" ? event.result.messages.slice(1) : [];
         if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
           await props.store.append({
             context: { sessionId: props.session.id },
@@ -501,8 +501,8 @@ function acceptTranscriptStreamEvent(
       matched.question = question;
     }
   }
-  if (event.type === "final" && event.trace?.traceId !== undefined) {
-    assignTranscriptTraceId(transcript, event.trace.traceId);
+  if (event.type === "final" && event.result.trace?.traceId !== undefined) {
+    assignTranscriptTraceId(transcript, event.result.trace.traceId);
   }
   if (event.type === "error") {
     appendTranscriptAssistantError(transcript, errorText(event.error));

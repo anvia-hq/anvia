@@ -1,4 +1,4 @@
-import { createCompletionStream, type UIStreamRequest } from "@anvia/core";
+import { streamCompletion, type UIStreamRequest } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { createEventStream } from "@anvia/server";
 import { serve } from "@hono/node-server";
@@ -27,8 +27,9 @@ app.post("/api/completion", async (c) => {
   const body = (await c.req.json()) as UIStreamRequest;
 
   return createEventStream(
-    createCompletionStream(body.messages, {
+    streamCompletion({
       model,
+      messages: body.messages,
       instructions,
     }),
     {

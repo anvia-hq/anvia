@@ -16,10 +16,10 @@ export function contextUsageUpdateFromEvent(event: unknown): ContextUsageUpdate 
 
   if (event.type === "final") {
     const direct = contextUsageValue(event.contextUsage);
-    const response = isRecord(event.response)
-      ? contextUsageValue(event.response.contextUsage)
+    const result = isRecord(event.result)
+      ? contextUsageValue(event.result.contextUsage)
       : undefined;
-    return { contextUsage: direct ?? response };
+    return { contextUsage: direct ?? result };
   }
 
   return undefined;

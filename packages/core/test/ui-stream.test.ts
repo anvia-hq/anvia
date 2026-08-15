@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   AssistantContent,
   type CompletionModelCapabilities,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   coreMessagesToUIMessages,
-  createCompletion,
-  createCompletionStream,
+  generateCompletion,
   Message,
   type StreamingCompletionModel,
+  streamCompletion,
   type UIMessage,
   Usage,
   UserContent,
@@ -33,7 +33,7 @@ class StreamModel implements StreamingCompletionModel {
   readonly capabilities = capabilities;
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly turns: CompletionStreamEvent[][]) {}
+  constructor(private readonly turns: CompletionModelStreamEvent[][]) {}
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
@@ -44,7 +44,7 @@ class StreamModel implements StreamingCompletionModel {
     };
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const turn = this.turns.shift() ?? [];
     for (const event of turn) {
@@ -485,7 +485,7 @@ describe("UI message adapters", () => {
     });
   });
 
-  it("accepts core messages in createCompletionStream options", async () => {
+  it("accepts core messages in streamCompletion options", async () => {
     const model = new StreamModel([
       [
         {
@@ -500,19 +500,21 @@ describe("UI message adapters", () => {
     ]);
 
     await collect(
-      createCompletionStream([Message.user("Hello")], {
+      streamCompletion({
         model,
+        messages: [Message.user("Hello")],
       }),
     );
 
     expect(model.requests[0]?.chatHistory).toEqual([Message.user("Hello")]);
   });
 
-  it("accepts a core message as createCompletion input", async () => {
+  it("accepts a core message in generateCompletion messages", async () => {
     const model = new StreamModel([]);
 
-    const result = await createCompletion(Message.user("Hello"), {
+    const result = await generateCompletion({
       model,
+      messages: [Message.user("Hello")],
     });
 
     expect(result.text).toBe("ok");
@@ -528,20 +530,22 @@ describe("UI message adapters", () => {
     };
 
     expect(() =>
-      createCompletionStream([Message.user("Hi"), uiMessage] as never, {
+      streamCompletion({
         model,
+        messages: [Message.user("Hi"), uiMessage] as never,
       }),
     ).toThrow("input must contain only Message values.");
   });
 
-  it("rejects malformed single message input", () => {
+  it("rejects a malformed messages option", () => {
     const model = new StreamModel([]);
 
     expect(() =>
-      createCompletionStream({ role: "user", content: "Hello" } as never, {
+      streamCompletion({
         model,
+        messages: { role: "user", content: "Hello" } as never,
       }),
-    ).toThrow("input must be a string, Message, or Message[].");
+    ).toThrow("Completion messages must be an array of Message values.");
   });
 });
 

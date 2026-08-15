@@ -35,7 +35,7 @@ export type BuildSupportAgentOptions = {
 
 export function assertCompleted(result: AgentResult): asserts result is AgentResponse {
   if (result.status !== "completed") {
-    throw new Error(`Unexpected approval request for tool "${result.approval.toolName}".`);
+    throw new Error(`Expected a completed Agent result, received ${result.status}.`);
   }
 }
 

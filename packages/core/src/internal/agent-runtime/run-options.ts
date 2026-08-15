@@ -1,4 +1,3 @@
-import type { AgentRunOptions } from "../../agent/run-types";
 import type { AgentHook } from "../../hooks";
 
 const internalAgentRunOptions = Symbol("internalAgentRunOptions");
@@ -8,11 +7,11 @@ export type InternalAgentRunOptions = {
   runId?: string | undefined;
 };
 
-type AgentRunOptionsWithInternal = AgentRunOptions & {
+type AgentRunOptionsWithInternal = {
   [internalAgentRunOptions]?: InternalAgentRunOptions;
 };
 
-export function withInternalAgentRunOptions<T extends AgentRunOptions>(
+export function withInternalAgentRunOptions<T extends object>(
   options: T,
   internal: InternalAgentRunOptions,
 ): T {
@@ -22,8 +21,6 @@ export function withInternalAgentRunOptions<T extends AgentRunOptions>(
   };
 }
 
-export function getInternalAgentRunOptions(
-  options: AgentRunOptions,
-): InternalAgentRunOptions | undefined {
+export function getInternalAgentRunOptions(options: object): InternalAgentRunOptions | undefined {
   return (options as AgentRunOptionsWithInternal)[internalAgentRunOptions];
 }

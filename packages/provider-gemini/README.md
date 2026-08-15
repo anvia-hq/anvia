@@ -34,9 +34,8 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
-const response = await agent.prompt("Summarize Anvia in one sentence.").send();
-
-console.log(response.output);
+const result = await agent.generate("Summarize Anvia in one sentence.");
+if (result.status === "completed") console.log(result.output);
 ```
 
 ## Vertex AI

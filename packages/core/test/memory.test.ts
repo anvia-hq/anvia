@@ -3,12 +3,13 @@ import { z } from "zod";
 import {
   Agent,
   AgentRunCancelledError,
+  type AgentStreamEvent,
   AssistantContent,
   assertCompleted,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type ContextUsage,
   cancelRun,
   createHook,
@@ -70,13 +71,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -299,8 +300,9 @@ describe("agent memory", () => {
     });
 
     await expect(agent.session("session_1").generate("blocked prompt")).resolves.toMatchObject({
-      status: "completed",
-      output: "Input blocked.",
+      status: "blocked",
+      stage: "input",
+      text: "Input blocked.",
     });
 
     expect(guardrailHistory).toEqual(previous);
@@ -575,16 +577,23 @@ describe("agent memory", () => {
     const session = agent.session("session_1");
 
     const runMalformedStream = async () => {
-      for await (const _event of session.stream(
+      const events: AgentStreamEvent[] = [];
+      for await (const event of session.stream(
         "run tools",
         withInternalAgentRunOptions({}, { hook }),
       )) {
-        // exhaust the stream
+        events.push(event);
       }
+      return events;
     };
-    await expect(runMalformedStream()).rejects.toThrow(
-      'Completion returned tool call "tool_1" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
-    );
+    const malformedEvents = await runMalformedStream();
+    expect(malformedEvents.at(-1)).toMatchObject({
+      type: "error",
+      error: {
+        message:
+          'Completion returned tool call "tool_1" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+      },
+    });
 
     expect(probeExecutions).toBe(0);
     expect(commandExecutions).toBe(0);
@@ -696,16 +705,15 @@ describe("agent memory", () => {
       ],
     });
     const session = agent.session(`session-${mode}`);
-    const execution =
-      mode === "buffered"
-        ? session.generate("hello")
-        : (async () => {
-            for await (const _event of session.stream("hello")) {
-              // exhaust the stream
-            }
-          })();
-
-    await expect(execution).rejects.toBe(persistenceError);
+    if (mode === "buffered") {
+      await expect(session.generate("hello")).rejects.toBe(persistenceError);
+    } else {
+      const streamEvents: AgentStreamEvent[] = [];
+      for await (const event of session.stream("hello")) {
+        streamEvents.push(event);
+      }
+      expect(streamEvents.at(-1)).toMatchObject({ type: "error", error: persistenceError });
+    }
     expect(events).toEqual(["memory:append", "lifecycle:error", "observer:error", "memory:error"]);
   });
 

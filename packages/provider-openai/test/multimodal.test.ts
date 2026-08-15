@@ -1,5 +1,5 @@
-import { generateSpeech } from "@anvia/core/audio-generation";
 import { generateImage } from "@anvia/core/image-generation";
+import { generateSpeech } from "@anvia/core/speech-generation";
 import { transcribe } from "@anvia/core/transcription";
 import { describe, expect, it } from "vitest";
 import { OpenAIClient } from "../src/index";
@@ -9,11 +9,12 @@ describe("OpenAI multimodal models", () => {
     const client = mockOpenAIClient();
     const model = new OpenAIClient({ client: client as never }).imageGenerationModel("dall-e-3");
 
-    const response = await generateImage("draw a kite", {
+    const response = await generateImage({
       model,
+      prompt: "draw a kite",
       width: 1024,
       height: 1024,
-      additionalParams: { n: 2 },
+      providerOptions: { n: 2 },
     });
 
     expect(client.images.generateCalls[0]).toEqual({
@@ -23,7 +24,7 @@ describe("OpenAI multimodal models", () => {
       response_format: "b64_json",
       n: 2,
     });
-    expect(response.image).toEqual(new Uint8Array([1, 2, 3]));
+    expect(response.images[0].data).toEqual(new Uint8Array([1, 2, 3]));
     expect(response.images).toEqual([
       { data: new Uint8Array([1, 2, 3]), mediaType: "image/png" },
       { data: new Uint8Array([4, 5, 6]), mediaType: "image/png" },
@@ -34,11 +35,12 @@ describe("OpenAI multimodal models", () => {
     const client = mockOpenAIClient();
     const model = new OpenAIClient({ client: client as never }).imageGenerationModel("gpt-image-2");
 
-    await generateImage("draw a product diagram", {
+    await generateImage({
       model,
+      prompt: "draw a product diagram",
       width: 1024,
       height: 1024,
-      additionalParams: { output_format: "png" },
+      providerOptions: { output_format: "png" },
     });
 
     expect(client.images.generateCalls[0]).toEqual({
@@ -53,7 +55,7 @@ describe("OpenAI multimodal models", () => {
     const client = mockOpenAIClient({ imageResponse: { output_format: "png", data: [] } });
     const model = new OpenAIClient({ client: client as never }).imageGenerationModel();
 
-    await expect(generateImage("x", { model })).rejects.toThrow(
+    await expect(generateImage({ model, prompt: "x" })).rejects.toThrow(
       "OpenAI image generation response contained no base64 images.",
     );
   });
@@ -66,20 +68,21 @@ describe("OpenAI multimodal models", () => {
     });
     const model = new OpenAIClient({ client: client as never }).imageGenerationModel();
 
-    await expect(generateImage("x", { model })).rejects.toThrow(
+    await expect(generateImage({ model, prompt: "x" })).rejects.toThrow(
       "OpenAI image generation response contained image URLs, which are not supported.",
     );
   });
 
   it("maps speech responses to Uint8Array audio", async () => {
     const client = mockOpenAIClient();
-    const model = new OpenAIClient({ client: client as never }).audioGenerationModel("tts-test");
+    const model = new OpenAIClient({ client: client as never }).speechGenerationModel("tts-test");
 
-    const response = await generateSpeech("hello", {
+    const response = await generateSpeech({
       model,
+      text: "hello",
       voice: "alloy",
       speed: 1.5,
-      additionalParams: { response_format: "wav" },
+      providerOptions: { response_format: "wav" },
     });
 
     expect(client.audio.speech.createCalls[0]).toEqual({
@@ -89,21 +92,21 @@ describe("OpenAI multimodal models", () => {
       speed: 1.5,
       response_format: "wav",
     });
-    expect(response.audio).toEqual(new Uint8Array([7, 8, 9]));
-    expect(response.mediaType).toBe("audio/wav");
+    expect(response.audio.data).toEqual(new Uint8Array([7, 8, 9]));
+    expect(response.audio.mediaType).toBe("audio/wav");
   });
 
   it("maps object transcription responses to text", async () => {
     const client = mockOpenAIClient({ transcriptionResponse: { text: "object text" } });
     const model = new OpenAIClient({ client: client as never }).transcriptionModel("whisper-test");
 
-    const response = await transcribe(new Uint8Array([1, 2, 3]), {
+    const response = await transcribe({
       model,
-      filename: "audio.mp3",
+      audio: { data: new Uint8Array([1, 2, 3]), filename: "audio.mp3" },
       language: "en",
       prompt: "exact",
       temperature: 0.1,
-      additionalParams: { response_format: "json" },
+      providerOptions: { response_format: "json" },
     });
 
     expect(client.audio.transcriptions.createCalls[0]).toMatchObject({
@@ -120,9 +123,9 @@ describe("OpenAI multimodal models", () => {
     const client = mockOpenAIClient({ transcriptionResponse: "plain text" });
     const model = new OpenAIClient({ client: client as never }).transcriptionModel();
 
-    const response = await transcribe(new Uint8Array([1]), {
+    const response = await transcribe({
       model,
-      filename: "audio.wav",
+      audio: { data: new Uint8Array([1]), filename: "audio.wav" },
     });
 
     expect(response.text).toBe("plain text");
@@ -133,7 +136,7 @@ describe("OpenAI multimodal models", () => {
     const client = mockOpenAIClient({ imageError: error });
     const model = new OpenAIClient({ client: client as never }).imageGenerationModel();
 
-    await expect(generateImage("x", { model })).rejects.toBe(error);
+    await expect(generateImage({ model, prompt: "x" })).rejects.toBe(error);
   });
 });
 

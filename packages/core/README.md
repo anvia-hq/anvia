@@ -44,122 +44,176 @@ const lookupOrder = createTool({
 
 const agent = new Agent({
   id: "support",
-  model: model,
+  model,
   instructions: "Help customers with order questions.",
   maxTurns: 4,
   tools: [lookupOrder],
 });
 
-const response = await agent.prompt("What is happening with order A123?").send();
-
-console.log(response.output);
+const result = await agent.generate("What is happening with order A123?");
+if (result.status === "completed") console.log(result.output);
 ```
 
 ## Direct Completions
 
-Use `createCompletion` when you want a single provider call without agent turns, memory, or
-tool execution:
+Use `generateCompletion` for one provider call without Agent turns, memory, or local tool
+execution. The model and input are part of one options object:
 
 ```ts
-import { createCompletion } from "@anvia/core";
+import { generateCompletion } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 
 const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
 
-const result = await createCompletion(model, {
-  input: "Summarize Anvia in one sentence.",
+const result = await generateCompletion({
+  model,
+  prompt: "Summarize Anvia in one sentence.",
   instructions: "Answer clearly and concisely.",
 });
 
-console.log(result.text);
+console.log(result.output); // string
 ```
 
-Use `messages` when you already own the transcript. If `input` is also provided, it is appended as
-the final message:
+Use `messages` when the application already owns the transcript. Exactly one of `prompt` or
+`messages` is required:
 
 ```ts
-import { Message, createCompletion } from "@anvia/core";
+import { Message, generateCompletion } from "@anvia/core";
 
-const result = await createCompletion(model, {
+const result = await generateCompletion({
+  model,
   messages: [
     Message.system("You are concise."),
     Message.user("Explain Anvia."),
   ],
   maxTokens: 300,
-  params: {
+  providerOptions: {
     reasoning: { effort: "low" },
   },
 });
 ```
 
-Use `createCompletionStream` to receive raw completion stream events from the model:
+Add `outputSchema` to the same function for typed, schema-validated output:
 
 ```ts
-import { createCompletionStream } from "@anvia/core";
+import { generateCompletion } from "@anvia/core";
+import { z } from "zod";
 
-for await (const event of createCompletionStream(model, {
-  input: "Write a short launch note.",
+const result = await generateCompletion({
+  model,
+  prompt: "Extract: Acme reports a high-priority checkout failure.",
+  outputSchema: z.object({
+    customer: z.string(),
+    priority: z.enum(["low", "medium", "high"]),
+  }),
+});
+
+console.log(result.output.priority); // fully typed
+```
+
+`CompletionResult` consistently contains `output`, the original `text`, normalized `content`,
+`usage`, and `rawResponse`, plus optional message, context, source, and provider-tool metadata.
+
+Use `streamCompletion` for the streaming form:
+
+```ts
+import { streamCompletion } from "@anvia/core";
+
+for await (const event of streamCompletion({
+  model,
+  prompt: "Write a short launch note.",
 })) {
   if (event.type === "text_delta") process.stdout.write(event.delta);
+  if (event.type === "final") console.log(event.result.usage);
+  if (event.type === "error") console.error(event.error);
 }
 ```
 
-React hooks keep `UIMessage[]` state locally, but send core `Message[]` in their request body. Pass
-those messages directly to `createCompletionStream`:
+Tool-call deltas are always emitted when a provider supplies them; there is no opt-in flag. A
+high-level stream emits at most one terminal `error` event and then closes. Provider model adapters
+use the lower-level `CompletionModelStreamEvent`, whose terminal event is `{ type: "final",
+response }`; `streamCompletion` normalizes it to `{ type: "final", result }`.
+
+React hooks send core `Message[]` in `UIStreamRequest`, so an endpoint can pass them directly:
 
 ```ts
-import { createCompletionStream } from "@anvia/core";
+import { streamCompletion } from "@anvia/core";
 import type { UIStreamRequest } from "@anvia/core/ui";
 
 const body = (await request.json()) as UIStreamRequest;
+const events = streamCompletion({ model, messages: body.messages });
+```
 
-const events = createCompletionStream(model, {
-  messages: body.messages,
+## Retries, Provider Options, and Cancellation
+
+Direct completion and media calls accept `retries?: RetryOptions | false`. An omitted or `false`
+value makes one provider attempt; `{}` enables the default retry policy. Only retry-safe provider
+calls are repeated.
+
+```ts
+const controller = new AbortController();
+
+const result = await generateCompletion({
+  model,
+  prompt: "Summarize this incident.",
+  retries: { maxAttempts: 3, initialDelayMs: 100, maxDelayMs: 1_000 },
+  abortSignal: controller.signal,
+  providerOptions: { reasoning: { effort: "medium" } },
 });
 ```
 
-Use `createParsedCompletion` when you want a direct completion to return schema-validated data:
+`providerOptions` contains strict JSON passed to an adapter. Canonical Anvia fields such as model,
+input, temperature, tools, dimensions, text, and voice take precedence over conflicting provider
+keys. Cancellation is forwarded to provider SDK calls and is never retried.
+
+## Agents
+
+Agents own their default retry policy. A run with no `retries` value inherits the Agent setting;
+`false` disables it for that run; an object replaces it for that run. Retries apply to the current
+provider call only, so completed tools and earlier turns are never replayed.
 
 ```ts
-import { createParsedCompletion } from "@anvia/core";
-import { z } from "zod";
-
-const eventSchema = z.object({
-  name: z.string(),
-  date: z.string(),
+const agent = new Agent({
+  id: "support",
+  model,
+  retries: { maxAttempts: 3 },
 });
 
-const event = await createParsedCompletion(model, {
-  schema: eventSchema,
-  input: "Alice and Bob are going to a science fair on Friday.",
+await agent.generate("Try normally.");
+await agent.generate("Do not retry this run.", { retries: false });
+await agent.generate("Use one custom policy.", {
+  retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
 });
-
-console.log(event.data);
 ```
 
-## Prompts and Memory
-
-Use a plain prompt for stateless calls:
+Agent results are discriminated by `status`. Completed results include typed `output` and `text`;
+guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approval can return
+`status: "approval_required"`.
 
 ```ts
-await agent.prompt("Summarize this ticket.").send();
+const result = await agent.generate("Help with this request.");
+
+if (result.status === "completed") console.log(result.output);
+if (result.status === "blocked") console.log(result.stage, result.text);
 ```
 
-Use a message array when you already own the transcript. The last message is the active prompt and earlier messages are request history:
+An Agent with `outputSchema` carries that output type through `generate`, `stream`, `asTool`, and
+Pipeline Agent stages. Agent stream finals use the same result shape:
 
 ```ts
-import { Message } from "@anvia/core";
-
-await agent
-  .prompt([
-    Message.user("My project is named Anvia."),
-    Message.assistant("Noted."),
-    Message.user("What is my project named?"),
-  ])
-  .send();
+for await (const event of agent.stream("Help with this request.")) {
+  if (event.type === "final") {
+    if (event.result.status === "completed") console.log(event.result.output);
+    else console.log(event.result.stage, event.result.text);
+  }
+}
 ```
 
-Configure durable conversation memory on the agent, then run through a session:
+Pass `abortSignal` on a run to cancel the active provider call, tools, and nested Agent tools.
+
+## Memory
+
+Configure durable conversation memory on the Agent, then run through a session:
 
 ```ts
 import { Agent, type MemoryStore, type Message } from "@anvia/core";
@@ -189,8 +243,8 @@ const agent = new Agent({
   memory: { store: memory },
 });
 
-await agent.session("thread_123", { userId: "user_456" }).prompt("Remember my plan.").send();
-await agent.session("thread_123", { userId: "user_456" }).prompt("What is my plan?").send();
+await agent.session("thread_123", { userId: "user_456" }).generate("Remember my plan.");
+await agent.session("thread_123", { userId: "user_456" }).generate("What is my plan?");
 ```
 
 Memory defaults to `savePolicy: "message"`, which saves the user prompt, each completed assistant message, and each completed tool result as soon as they are ready. You can choose `"turn"` or `"run"` at configuration time:
@@ -206,7 +260,8 @@ new Agent({
 ## Structured Extraction
 
 ```ts
-import { ExtractorBuilder } from "@anvia/core/extractor";
+import { Extractor } from "@anvia/core/extractor";
+import { z } from "zod";
 
 const ticketSchema = z.object({
   customer: z.string(),
@@ -214,33 +269,66 @@ const ticketSchema = z.object({
   summary: z.string(),
 });
 
-const extractor = new ExtractorBuilder(model, ticketSchema).retries(1).build();
+const extractor = new Extractor({ model, outputSchema: ticketSchema });
 
 const ticket = await extractor.extract(
   "Acme Co. reports checkout failures. Priority is high.",
+  { retries: { maxAttempts: 2 } },
 );
 ```
 
 ## Pipelines
 
 ```ts
-import { PipelineBuilder } from "@anvia/core/pipeline";
+import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
-const pipeline = new PipelineBuilder(z.string())
+const pipeline = new Pipeline({ id: "support-flow", inputSchema: z.string() })
   .step((input) => `Extract this support ticket:\n\n${input}`)
-  .prompt(agent)
-  .extract(extractor)
-  .build();
+  .agent(agent)
+  .extract(extractor);
 
 const result = await pipeline.run("Customer cannot complete checkout.");
 ```
 
+## Media
+
+Media helpers follow the same one-object API and share `providerOptions`, `retries`, and
+`abortSignal`:
+
+```ts
+import { generateImage, generateSpeech, transcribe } from "@anvia/core";
+
+const image = await generateImage({
+  model: client.imageGenerationModel(),
+  prompt: "A compact robot drawing an architecture diagram.",
+  width: 1024,
+  height: 1024,
+});
+console.log(image.images[0].data);
+
+const speech = await generateSpeech({
+  model: client.speechGenerationModel(),
+  text: "Hello from Anvia.",
+  voice: "alloy",
+});
+
+const transcript = await transcribe({
+  model: client.transcriptionModel(),
+  audio: {
+    data: speech.audio.data,
+    filename: "speech.mp3",
+    mediaType: speech.audio.mediaType,
+  },
+});
+console.log(transcript.text);
+```
+
 ## Public Areas
 
-- `agent`: agent runtime and the compatibility `AgentBuilder`
+- `agent`: typed Agent runtime, run results, approvals, retries, and stream events
 - `tool`: typed tool creation and tool sets
-- `completion`: provider-neutral completion request and response types
+- `completion`: direct completion helpers and provider-neutral model contracts
 - `memory`: durable session memory interfaces and in-memory store
 - `extractor`: schema-first structured extraction
 - `pipeline`: typed sequential and parallel workflows
@@ -252,7 +340,7 @@ const result = await pipeline.run("Customer cannot complete checkout.");
 - `observability`: observer interfaces for runs, generations, and tool calls
 - `evals`: evaluation helpers and reporters
 - `loaders`: document loading utilities
-- `audio-generation`, `image-generation`, `transcription`: provider-neutral media interfaces
+- `speech-generation`, `image-generation`, `transcription`: provider-neutral media interfaces
 
 ## Development
 

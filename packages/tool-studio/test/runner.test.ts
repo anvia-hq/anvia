@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { Agent, createContextIndex } from "@anvia/core/agent";
 import {
   AssistantContent,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type Message as CoreMessage,
   type JsonObject,
   Message,
@@ -139,7 +139,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
 
   constructor(
     private readonly responses: Array<
-      Iterable<CompletionStreamEvent> | AsyncIterable<CompletionStreamEvent>
+      Iterable<CompletionModelStreamEvent> | AsyncIterable<CompletionModelStreamEvent>
     >,
   ) {}
 
@@ -156,7 +156,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
     };
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -169,9 +169,9 @@ class StreamingQueueModel implements StreamingCompletionModel {
 }
 
 async function* streamThenThrow(
-  events: CompletionStreamEvent[],
+  events: CompletionModelStreamEvent[],
   error: unknown,
-): AsyncIterable<CompletionStreamEvent> {
+): AsyncIterable<CompletionModelStreamEvent> {
   yield* events;
   throw error;
 }
@@ -195,7 +195,7 @@ class GatedReasoningModel implements StreamingCompletionModel {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     yield { type: "reasoning_delta", delta: "thinking" };
     await new Promise<void>((resolve) => {
@@ -277,7 +277,7 @@ class FailingStreamingModel implements StreamingCompletionModel {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     yield { type: "text_delta", delta: "partial" };
     throw new Error("stream failed");
@@ -1837,13 +1837,17 @@ describe("Anvia studio", () => {
     expect(executed).toBe(true);
   });
 
-  it("retries transient completion failures for buffered agent runs", async () => {
+  it("inherits configured retries for buffered agent runs", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new FlakyQueueModel([
       { error },
       { response: response([AssistantContent.text("recovered")]) },
     ]);
-    const agent = new Agent({ id: "support", model });
+    const agent = new Agent({
+      id: "support",
+      model,
+      retries: { initialDelayMs: 0, maxDelayMs: 0 },
+    });
     const runner = new Studio([agent]);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
@@ -1924,17 +1928,21 @@ describe("Anvia studio", () => {
       },
       { type: "text_delta", turn: 1, delta: "hello" },
       { type: "turn_end", turn: 1 },
-      { type: "final", output: "hello" },
+      { type: "final", result: expect.objectContaining({ output: "hello" }) },
     ]);
   });
 
-  it("retries transient streaming failures before the first provider event", async () => {
+  it("inherits configured retries for streaming agent runs", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new StreamingQueueModel([
       streamThenThrow([], error),
       [{ type: "text_delta", delta: "recovered" }],
     ]);
-    const agent = new Agent({ id: "support", model });
+    const agent = new Agent({
+      id: "support",
+      model,
+      retries: { initialDelayMs: 0, maxDelayMs: 0 },
+    });
     const runner = new Studio([agent]);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
@@ -1951,7 +1959,10 @@ describe("Anvia studio", () => {
       expect(res.status).toBe(200);
       expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }));
       expect(events).toContainEqual(
-        expect.objectContaining({ type: "final", output: "recovered" }),
+        expect.objectContaining({
+          type: "final",
+          result: expect.objectContaining({ output: "recovered" }),
+        }),
       );
       expect(model.requests).toHaveLength(2);
       expect(model.requests[1]).toBe(model.requests[0]);
@@ -2157,7 +2168,10 @@ describe("Anvia studio", () => {
       }),
     );
     expect(remaining).toContainEqual(
-      expect.objectContaining({ type: "final", runId: approvalRunId }),
+      expect.objectContaining({
+        type: "final",
+        result: expect.objectContaining({ runId: approvalRunId }),
+      }),
     );
   });
 
@@ -2650,7 +2664,9 @@ describe("Anvia studio", () => {
     expect(await readJsonl(res)).toContainEqual(
       expect.objectContaining({
         type: "final",
-        trace: { traceId: "trace_stream", observationId: "obs_1" },
+        result: expect.objectContaining({
+          trace: { traceId: "trace_stream", observationId: "obs_1" },
+        }),
       }),
     );
     expect(observer.starts[0]?.trace).toMatchObject({ name: "stream" });

@@ -3,7 +3,8 @@ import type {
   GeneratedImage,
   ImageGenerationModel,
   ImageGenerationRequest,
-  ImageGenerationResponse,
+  ImageGenerationResult,
+  ModelCallOptions,
 } from "@anvia/core/image-generation";
 import type { GoogleGenAI } from "@google/genai";
 import type { GeminiImageGenerationModelName } from "./models";
@@ -24,23 +25,28 @@ export class GeminiImageGenerationModel
 
   async imageGeneration(
     request: ImageGenerationRequest,
-  ): Promise<ImageGenerationResponse<unknown>> {
+    options?: ModelCallOptions,
+  ): Promise<ImageGenerationResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
+    const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
+    const providerConfig = isPlainObject(providerConfigValue) ? providerConfigValue : {};
+    const providerImageConfig = isPlainObject(providerConfig.imageConfig)
+      ? providerConfig.imageConfig
+      : {};
     const params: Record<string, unknown> = {
+      ...providerTopLevel,
       model: this.defaultModel,
       contents: request.prompt,
       config: {
+        ...providerConfig,
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { aspectRatio: aspectRatio(request.width, request.height) },
+        imageConfig: {
+          ...providerImageConfig,
+          aspectRatio: aspectRatio(request.width, request.height),
+        },
+        ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
       },
     };
-
-    if (isPlainObject(request.additionalParams)) {
-      const { config, ...topLevel } = request.additionalParams;
-      Object.assign(params, topLevel);
-      if (isPlainObject(config)) {
-        params.config = { ...(params.config as Record<string, unknown>), ...config };
-      }
-    }
 
     const response = await this.client.models.generateContent(params as never);
     return nativeImageResponseFromGemini(response);
@@ -59,27 +65,28 @@ export class GeminiImagenGenerationModel
 
   async imageGeneration(
     request: ImageGenerationRequest,
-  ): Promise<ImageGenerationResponse<unknown>> {
+    options?: ModelCallOptions,
+  ): Promise<ImageGenerationResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
+    const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
+    const providerConfig = isPlainObject(providerConfigValue) ? providerConfigValue : {};
     const params: Record<string, unknown> = {
+      ...providerTopLevel,
       model: this.defaultModel,
       prompt: request.prompt,
-      config: { aspectRatio: aspectRatio(request.width, request.height) },
+      config: {
+        ...providerConfig,
+        aspectRatio: aspectRatio(request.width, request.height),
+        ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+      },
     };
-
-    if (isPlainObject(request.additionalParams)) {
-      const { config, ...topLevel } = request.additionalParams;
-      Object.assign(params, topLevel);
-      if (isPlainObject(config)) {
-        params.config = { ...(params.config as Record<string, unknown>), ...config };
-      }
-    }
 
     const response = await this.client.models.generateImages(params as never);
     return imagenResponseFromGemini(response);
   }
 }
 
-export function nativeImageResponseFromGemini(response: unknown): ImageGenerationResponse<unknown> {
+export function nativeImageResponseFromGemini(response: unknown): ImageGenerationResult<unknown> {
   const raw = response as Record<string, unknown>;
   const candidates = Array.isArray(raw.candidates) ? raw.candidates : [];
   const images = candidates.flatMap((candidate): GeneratedImage[] => {
@@ -105,20 +112,17 @@ export function nativeImageResponseFromGemini(response: unknown): ImageGeneratio
     });
   });
 
-  const image = images[0]?.data;
-  if (image === undefined) {
+  if (images.length === 0) {
     throw new Error("Gemini image generation response contained no inline image data.");
   }
 
   return {
-    image,
-    images,
-    mediaType: images[0]?.mediaType,
+    images: images as [GeneratedImage, ...GeneratedImage[]],
     rawResponse: response,
   };
 }
 
-export function imagenResponseFromGemini(response: unknown): ImageGenerationResponse<unknown> {
+export function imagenResponseFromGemini(response: unknown): ImageGenerationResult<unknown> {
   const raw = response as Record<string, unknown>;
   const images = (Array.isArray(raw.generatedImages) ? raw.generatedImages : []).flatMap(
     (item): GeneratedImage[] => {
@@ -138,15 +142,12 @@ export function imagenResponseFromGemini(response: unknown): ImageGenerationResp
     },
   );
 
-  const image = images[0]?.data;
-  if (image === undefined) {
+  if (images.length === 0) {
     throw new Error("Gemini image generation response contained no base64 images.");
   }
 
   return {
-    image,
-    images,
-    mediaType: images[0]?.mediaType,
+    images: images as [GeneratedImage, ...GeneratedImage[]],
     rawResponse: response,
   };
 }

@@ -1,5 +1,4 @@
 export * from "../../src/agent";
-export * from "../../src/audio-generation";
 export * from "../../src/completion";
 export * from "../../src/embeddings";
 export * from "../../src/evals";
@@ -14,6 +13,7 @@ export * from "../../src/model-listing";
 export * from "../../src/observability";
 export * from "../../src/pipeline";
 export * from "../../src/skills";
+export * from "../../src/speech-generation";
 export * from "../../src/streaming";
 export * from "../../src/tool";
 export * from "../../src/transcription";

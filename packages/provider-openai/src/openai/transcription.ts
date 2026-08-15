@@ -1,7 +1,8 @@
 import type {
+  ModelCallOptions,
   TranscriptionModel,
   TranscriptionRequest,
-  TranscriptionResponse,
+  TranscriptionResult,
 } from "@anvia/core/transcription";
 import type { OpenAI } from "openai";
 import { toFile } from "openai";
@@ -20,20 +21,27 @@ export class OpenAITranscriptionModel
     readonly defaultModel: OpenAITranscriptionModelName = WHISPER_1,
   ) {}
 
-  async transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<unknown>> {
+  async transcription(
+    request: TranscriptionRequest,
+    options?: ModelCallOptions,
+  ): Promise<TranscriptionResult<unknown>> {
     const params: Record<string, unknown> = {
+      ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
       model: this.defaultModel,
-      file: await toFile(request.data, request.filename),
+      file: await toFile(
+        request.data,
+        request.filename,
+        request.mediaType === undefined ? undefined : { type: request.mediaType },
+      ),
     };
 
     if (request.language !== undefined) params.language = request.language;
     if (request.prompt !== undefined) params.prompt = request.prompt;
     if (request.temperature !== undefined) params.temperature = request.temperature;
-    if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-      Object.assign(params, request.additionalParams);
-    }
-
-    const response = await this.client.audio.transcriptions.create(params as never);
+    const response = await this.client.audio.transcriptions.create(
+      params as never,
+      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
+    );
     return {
       text: transcriptionText(response),
       rawResponse: response,

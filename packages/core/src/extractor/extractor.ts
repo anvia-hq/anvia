@@ -1,10 +1,10 @@
 import { z } from "zod";
 import {
+  type AssistantContent,
   CompletionCapabilityError,
   type CompletionModel,
-  type CompletionResponse,
-  createCompletion,
-  type JsonValue,
+  generateCompletion,
+  type JsonObject,
   type Message,
   Message as MessageFactory,
   type ToolDefinition,
@@ -12,9 +12,10 @@ import {
 } from "../completion/index";
 import {
   type ResolvedRetryOptions,
-  type RetryOptions,
+  type RetrySetting,
   resolveRetryOptions,
   retryDelayMs,
+  retryOptionsForFailure,
   waitForRetry,
 } from "../retry";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
@@ -33,10 +34,11 @@ export type ExtractorOptions<T, M extends CompletionModel = CompletionModel> = {
 };
 
 export type ExtractOptions = {
-  retries?: RetryOptions | undefined;
+  retries?: RetrySetting | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
-  additionalParams?: JsonValue | undefined;
+  providerOptions?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
 };
 
 export type ExtractionResult<T> = {
@@ -94,41 +96,44 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const result = await createCompletion(prompt, {
+        const result = await generateCompletion({
           model: this.model,
+          messages: [prompt],
           instructions: this.instructions,
           tools: [globalThis.structuredClone(this.submitTool)],
           temperature: options.temperature,
           maxTokens: options.maxTokens,
-          additionalParams: options.additionalParams,
+          providerOptions: options.providerOptions,
           toolChoice: "required",
+          retries: false,
+          abortSignal: options.abortSignal,
         });
-        const response = result.response;
-        usage = Usage.add(usage, response.usage);
-        const data = extractSubmittedData(response, this.outputSchema);
+        usage = Usage.add(usage, result.usage);
+        const data = extractSubmittedData(result.content, this.outputSchema);
         return {
           data,
           usage,
-          messages: [prompt, MessageFactory.assistant(response.choice, response.messageId)],
+          messages: [
+            prompt,
+            MessageFactory.assistant([...result.content], {
+              ...(result.messageId === undefined ? {} : { id: result.messageId }),
+            }),
+          ],
         };
       } catch (error) {
         if (error instanceof CompletionCapabilityError) {
           throw error;
         }
         lastError = error;
-        if (
-          retries === undefined ||
-          attempt >= retries.maxAttempts ||
-          !retries.shouldRetry({
-            error,
-            attempt,
-            maxAttempts: retries.maxAttempts,
-            streaming: false,
-          })
-        ) {
+        const retryOptions = retryOptionsForFailure(retries, {
+          error,
+          attempt,
+          streaming: false,
+        });
+        if (retryOptions === undefined) {
           break;
         }
-        await waitForRetry(retryDelayMs(retries, attempt));
+        await waitForRetry(retryDelayMs(retryOptions, attempt), options.abortSignal);
       }
     }
 
@@ -137,9 +142,9 @@ export class Extractor<T, M extends CompletionModel = CompletionModel> {
 }
 
 function resolveExtractionRetries(
-  options: RetryOptions | undefined,
+  options: RetrySetting | undefined,
 ): ResolvedRetryOptions | undefined {
-  if (options === undefined) {
+  if (options === undefined || options === false) {
     return undefined;
   }
   return resolveRetryOptions({
@@ -148,8 +153,8 @@ function resolveExtractionRetries(
   });
 }
 
-function extractSubmittedData<T>(response: CompletionResponse, schema: ZodSchema<T>): T {
-  const submitted = response.choice
+function extractSubmittedData<T>(content: readonly AssistantContent[], schema: ZodSchema<T>): T {
+  const submitted = content
     .filter((content) => content.type === "tool_call")
     .filter((toolCall) => toolCall.function.name === SUBMIT_TOOL_NAME)
     .at(-1);

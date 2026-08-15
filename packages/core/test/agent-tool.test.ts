@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
 import { getAgentToolState } from "../src/agent/tool-state";
 import {
@@ -121,6 +121,7 @@ function emptyToolIndex(tools: AnyTool[] = [], topK = 1): ToolIndex {
 describe("Agent construction", () => {
   it("normalizes the public options into ready-to-run agent state", () => {
     const model = new QueueModel([]);
+    const outputSchema = z.object({ answer: z.string() });
     const middleware = createMiddleware({});
     const observer = createObserver({
       startRun() {
@@ -153,7 +154,7 @@ describe("Agent construction", () => {
       maxTurns: 4,
       middlewares: [middleware],
       observers: [observer, { observer, failOnObserverError: true }],
-      outputSchema: z.object({ answer: z.string() }),
+      outputSchema,
     });
 
     tools.push(skillTool);
@@ -177,11 +178,7 @@ describe("Agent construction", () => {
     expect(Object.isFrozen(agent.middlewares)).toBe(true);
     expect(Object.isFrozen(agent.observers)).toBe(true);
     expect(Object.isFrozen(agent.guardrails)).toBe(true);
-    expect(agent.outputSchema).toMatchObject({
-      type: "object",
-      properties: { answer: { type: "string" } },
-      required: ["answer"],
-    });
+    expect(agent.outputSchema).toBe(outputSchema);
   });
 
   it("snapshots nested data options while preserving behavioral capabilities", async () => {
@@ -191,7 +188,7 @@ describe("Agent construction", () => {
       text: "Keep answers short.",
       additionalProps: { source: "initial" },
     };
-    const additionalParams = { routing: { tier: "initial" } };
+    const providerOptions = { routing: { tier: "initial" } };
     const toolChoice = { type: "function" as const, name: "provider_search" };
     const providerTool = {
       kind: "provider" as const,
@@ -223,7 +220,7 @@ describe("Agent construction", () => {
       id: "agent",
       model,
       context: [document],
-      additionalParams,
+      providerOptions,
       toolChoice,
       tools: [providerTool],
       observers: [observerRegistration],
@@ -232,7 +229,7 @@ describe("Agent construction", () => {
     });
 
     document.additionalProps.source = "mutated";
-    additionalParams.routing.tier = "mutated";
+    providerOptions.routing.tier = "mutated";
     toolChoice.name = "mutated";
     providerTool.configuration.mode = "mutated";
     observerRegistration.failOnObserverError = true;
@@ -254,7 +251,7 @@ describe("Agent construction", () => {
         additionalProps: { source: "initial" },
       },
     ]);
-    expect(agent.additionalParams).toEqual({ routing: { tier: "initial" } });
+    expect(agent.providerOptions).toEqual({ routing: { tier: "initial" } });
     expect(agent.toolChoice).toEqual({ type: "function", name: "provider_search" });
     expect(agent.observers[0]?.failOnObserverError).toBe(false);
     expect(agent.guardrails[0]?.input).toEqual([inputGuardrail]);
@@ -267,7 +264,7 @@ describe("Agent construction", () => {
       },
     ]);
     expect(Object.isFrozen(agent.context[0])).toBe(true);
-    expect(Object.isFrozen(agent.additionalParams as object)).toBe(true);
+    expect(Object.isFrozen(agent.providerOptions as object)).toBe(true);
     expect(Object.isFrozen(agent.toolChoice as object)).toBe(true);
     expect(Object.isFrozen(agent.observers[0])).toBe(true);
     expect(Object.isFrozen(agent.guardrails[0]?.input)).toBe(true);
@@ -277,40 +274,38 @@ describe("Agent construction", () => {
   });
 
   it("preserves own __proto__ JSON keys without changing the snapshot prototype", () => {
-    const additionalParams = JSON.parse(
-      '{"__proto__":{"injected":true},"safe":true}',
-    ) as JsonObject;
+    const providerOptions = JSON.parse('{"__proto__":{"injected":true},"safe":true}') as JsonObject;
     const agent = new Agent({
       id: "agent",
       model: new QueueModel([]),
-      additionalParams,
+      providerOptions,
     });
 
-    expect(Object.hasOwn(agent.additionalParams as object, "__proto__")).toBe(true);
-    expect(JSON.stringify(agent.additionalParams)).toBe(
+    expect(Object.hasOwn(agent.providerOptions as object, "__proto__")).toBe(true);
+    expect(JSON.stringify(agent.providerOptions)).toBe(
       '{"__proto__":{"injected":true},"safe":true}',
     );
-    expect(Object.getPrototypeOf(agent.additionalParams)).toBe(Object.prototype);
-    expect(
-      (Object.getPrototypeOf(agent.additionalParams) as Record<string, unknown>).injected,
-    ).toBe(undefined);
+    expect(Object.getPrototypeOf(agent.providerOptions)).toBe(Object.prototype);
+    expect((Object.getPrototypeOf(agent.providerOptions) as Record<string, unknown>).injected).toBe(
+      undefined,
+    );
   });
 
   it("copies null-prototype JSON dictionaries instead of retaining mutable aliases", () => {
-    const additionalParams = Object.assign(Object.create(null) as JsonObject, {
+    const providerOptions = Object.assign(Object.create(null) as JsonObject, {
       routing: "initial",
     });
     const agent = new Agent({
       id: "agent",
       model: new QueueModel([]),
-      additionalParams,
+      providerOptions,
     });
 
-    additionalParams.routing = "mutated";
+    providerOptions.routing = "mutated";
 
-    expect(agent.additionalParams).toEqual({ routing: "initial" });
-    expect(agent.additionalParams).not.toBe(additionalParams);
-    expect(Object.isFrozen(agent.additionalParams as object)).toBe(true);
+    expect(agent.providerOptions).toEqual({ routing: "initial" });
+    expect(agent.providerOptions).not.toBe(providerOptions);
+    expect(Object.isFrozen(agent.providerOptions as object)).toBe(true);
   });
 
   it("snapshots tool-index registration metadata", () => {
@@ -568,6 +563,20 @@ describe("Agent.asTool", () => {
       role: "user",
       content: [{ type: "text", text: "do work" }],
     });
+  });
+
+  it("preserves schema-backed Agent output through the tool", async () => {
+    const model = new QueueModel([response([AssistantContent.text('{"answer":"delegated"}')])]);
+    const agent = new Agent({
+      id: "typed-agent",
+      model,
+      outputSchema: z.object({ answer: z.string() }),
+    });
+    const tool = agent.asTool({ name: "ask_typed_agent" });
+
+    const result = await tool.call({ prompt: "do work" });
+    expectTypeOf(result).toEqualTypeOf<{ answer: string }>();
+    expect(result).toEqual({ answer: "delegated" });
   });
 
   it("finalizes a child run when an agent tool cannot expose its pending approval", async () => {

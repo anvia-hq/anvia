@@ -63,7 +63,11 @@ export function runEndAttributes(
   options: OtelTracingOptions = {},
 ): Attributes {
   return compactAttributes({
-    "anvia.run.output": capturedString(args.output, "output", options),
+    "anvia.run.status": args.status,
+    "anvia.run.blocked_stage": args.status === "blocked" ? args.stage : undefined,
+    "anvia.run.text": capturedString(args.text, "output", options),
+    "anvia.run.output":
+      args.status === "completed" ? capturedJson(args.output, "output", options) : undefined,
     "anvia.run.messages": capturedJson(args.messages, "output", options),
     ...usageAttributes(args.usage),
   });
@@ -104,8 +108,8 @@ export function generationStartAttributes(
     "anvia.generation.tool_definitions": fullCapture(args.request.tools, "input", options),
     "anvia.generation.provider_tools": fullCapture(args.request.providerTools, "input", options),
     "anvia.generation.output_schema": fullCapture(args.request.outputSchema, "input", options),
-    "anvia.generation.additional_params": fullCapture(
-      args.request.additionalParams,
+    "anvia.generation.provider_options": fullCapture(
+      args.request.providerOptions,
       "input",
       options,
     ),

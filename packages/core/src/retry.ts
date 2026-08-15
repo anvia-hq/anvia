@@ -1,4 +1,5 @@
 import type { JsonValue } from "./completion/types";
+import { abortError, isAbortError, waitForAbortableDelay } from "./internal/abort";
 
 export type RetryContext = {
   error: unknown;
@@ -14,6 +15,8 @@ export type RetryOptions = {
   maxDelayMs?: number | undefined;
   shouldRetry?: ((context: RetryContext) => boolean) | undefined;
 };
+
+export type RetrySetting = RetryOptions | false;
 
 export type ResolvedRetryOptions = {
   maxAttempts: number;
@@ -95,15 +98,18 @@ export function retryErrorAttributes(error: unknown): Record<string, JsonValue |
   return { errorName, statusCode, errorCode };
 }
 
-export async function waitForRetry(delayMs: number): Promise<void> {
-  if (delayMs === 0) return;
-  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+export async function waitForRetry(
+  delayMs: number,
+  abortSignal?: AbortSignal | undefined,
+): Promise<void> {
+  await waitForAbortableDelay(delayMs, abortSignal);
 }
 
 export function retryOptionsForFailure(
   options: ResolvedRetryOptions | undefined,
   context: Omit<RetryContext, "maxAttempts">,
 ): ResolvedRetryOptions | undefined {
+  if (isAbortError(context.error)) return undefined;
   if (options === undefined || context.attempt >= options.maxAttempts) return undefined;
   return options.shouldRetry({ ...context, maxAttempts: options.maxAttempts })
     ? options
@@ -113,16 +119,23 @@ export function retryOptionsForFailure(
 export async function runWithRetries<T>(
   operation: () => Promise<T>,
   options: ResolvedRetryOptions | undefined,
-  context: { streaming: boolean; turn?: number | undefined },
+  context: {
+    streaming: boolean;
+    turn?: number | undefined;
+    abortSignal?: AbortSignal | undefined;
+  },
 ): Promise<T> {
   let attempt = 1;
   while (true) {
     try {
       return await operation();
     } catch (error) {
+      if (context.abortSignal?.aborted === true) {
+        throw abortError(context.abortSignal.reason);
+      }
       const retryOptions = retryOptionsForFailure(options, { error, attempt, ...context });
       if (retryOptions === undefined) throw error;
-      await waitForRetry(retryDelayMs(retryOptions, attempt));
+      await waitForRetry(retryDelayMs(retryOptions, attempt), context.abortSignal);
       attempt += 1;
     }
   }
@@ -130,7 +143,7 @@ export async function runWithRetries<T>(
 
 function defaultShouldRetry(context: RetryContext): boolean {
   const errors = errorChain(context.error);
-  if (errors.some((error) => stringProperty(error, "name") === "AbortError")) return false;
+  if (isAbortError(context.error)) return false;
 
   const statusCode = firstStatusCode(errors);
   if (statusCode !== undefined) {

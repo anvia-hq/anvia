@@ -32,11 +32,21 @@ export type AgentToolFinishEvent =
   | (AgentToolFinishEventBase & { success: true; output: unknown })
   | (AgentToolFinishEventBase & { success: false; error: unknown });
 
-export type AgentFinishEvent = AgentLifecycleRunEvent & {
-  output: string;
+type AgentFinishEventBase = AgentLifecycleRunEvent & {
+  text: string;
   usage: DeepReadonly<Usage>;
   messages: DeepReadonly<Message[]>;
 };
+
+export type AgentFinishEvent<Output = string> =
+  | (AgentFinishEventBase & {
+      status: "completed";
+      output: DeepReadonly<Output>;
+    })
+  | (AgentFinishEventBase & {
+      status: "blocked";
+      stage: "input" | "output";
+    });
 
 export type AgentErrorEvent = AgentLifecycleRunEvent & {
   error: unknown;
@@ -44,19 +54,19 @@ export type AgentErrorEvent = AgentLifecycleRunEvent & {
   messages: DeepReadonly<Message[]>;
 };
 
-export type AgentLifecycle<RawResponse = unknown> = {
+export type AgentLifecycle<Output = string, RawResponse = unknown> = {
   onStart?(event: AgentStartEvent): MaybePromise<void>;
   onStepFinish?(event: AgentStepFinishEvent<RawResponse>): MaybePromise<void>;
   onToolStart?(event: AgentToolStartEvent): MaybePromise<void>;
   onToolFinish?(event: AgentToolFinishEvent): MaybePromise<void>;
-  onFinish?(event: AgentFinishEvent): MaybePromise<void>;
+  onFinish?(event: AgentFinishEvent<Output>): MaybePromise<void>;
   onError?(event: AgentErrorEvent): MaybePromise<void>;
 };
 
-export function composeAgentLifecycle<RawResponse = unknown>(
-  first: AgentLifecycle<RawResponse> | undefined,
-  second: AgentLifecycle<RawResponse> | undefined,
-): AgentLifecycle<RawResponse> | undefined {
+export function composeAgentLifecycle<Output = string, RawResponse = unknown>(
+  first: AgentLifecycle<Output, RawResponse> | undefined,
+  second: AgentLifecycle<Output, RawResponse> | undefined,
+): AgentLifecycle<Output, RawResponse> | undefined {
   if (first === undefined) return second;
   if (second === undefined) return first;
 

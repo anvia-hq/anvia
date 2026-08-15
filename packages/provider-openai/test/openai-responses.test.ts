@@ -1,7 +1,7 @@
 import {
   AssistantContent,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
-  type CompletionStreamEvent,
   Message,
   ToolContent,
   Usage,
@@ -85,7 +85,7 @@ describe("OpenAI Responses mapping", () => {
       } as never,
       "gpt-5",
     );
-    const events: CompletionStreamEvent[] = [];
+    const events: CompletionModelStreamEvent[] = [];
     for await (const event of streamModel.streamCompletion(request)) {
       events.push(event);
     }
@@ -96,7 +96,7 @@ describe("OpenAI Responses mapping", () => {
     });
   });
 
-  it("merges local, provider, and raw Responses tools without overwriting", () => {
+  it("uses canonical local and provider tools instead of providerOptions.tools", () => {
     const params = toOpenAIResponsesParams("gpt-5", {
       chatHistory: [Message.user("research")],
       documents: [],
@@ -109,7 +109,7 @@ describe("OpenAI Responses mapping", () => {
           configuration: { filters: { allowed_domains: ["example.com"] } },
         },
       ],
-      additionalParams: {
+      providerOptions: {
         tools: [{ type: "code_interpreter" }],
       },
     });
@@ -122,19 +122,18 @@ describe("OpenAI Responses mapping", () => {
         parameters: { type: "object" },
       },
       { type: "web_search", filters: { allowed_domains: ["example.com"] } },
-      { type: "code_interpreter" },
     ]);
   });
 
-  it("rejects non-array raw Responses tools", () => {
-    expect(() =>
+  it("ignores providerOptions.tools when canonical tools are empty", () => {
+    expect(
       toOpenAIResponsesParams("gpt-5", {
         chatHistory: [Message.user("research")],
         documents: [],
         tools: [],
-        additionalParams: { tools: "web_search" },
-      }),
-    ).toThrow("additionalParams.tools must be an array");
+        providerOptions: { tools: "web_search" },
+      }).tools,
+    ).toBeUndefined();
   });
 
   it("maps internal tools and tool outputs to Responses API params", () => {

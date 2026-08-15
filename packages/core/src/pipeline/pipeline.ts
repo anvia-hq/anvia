@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type Agent, cancelAgentApproval } from "../agent/agent";
+import { AgentRunBlockedError } from "../agent/errors";
 import type { CompletionModel, JsonObject } from "../completion";
 import type { Extractor } from "../extractor";
 import { mapWithConcurrency } from "../internal/concurrency";
@@ -167,7 +168,10 @@ export class Pipeline<Input, Output = Input> implements PipelineOp<Input, Awaite
   }
 
   /** Send the current value to an agent as text and continue with the agent output. */
-  agent(agent: Agent<CompletionModel>, metadata?: PipelineStageMetadata): Pipeline<Input, string> {
+  agent<AgentOutput, Model extends CompletionModel>(
+    agent: Agent<AgentOutput, Model>,
+    metadata?: PipelineStageMetadata,
+  ): Pipeline<Input, AgentOutput> {
     const next = appendNode(this.state, "agent", metadata?.name ?? agent.name ?? agent.id, {
       description: metadata?.description ?? agent.description,
       metadata: metadata?.metadata,
@@ -175,7 +179,7 @@ export class Pipeline<Input, Output = Input> implements PipelineOp<Input, Awaite
       agentId: agent.id,
       agentName: agent.name,
     });
-    return this.derive<string>(async (input, context) => {
+    return this.derive<AgentOutput>(async (input, context) => {
       const value = await this.runStep(input, context);
       return runNode(context, next.node, async () => {
         const response = await agent.generate(String(value));
@@ -185,6 +189,9 @@ export class Pipeline<Input, Output = Input> implements PipelineOp<Input, Awaite
             "Pipeline agent stages cannot suspend for tool approval.",
           );
           throw new Error("Pipeline agent stages cannot suspend for tool approval.");
+        }
+        if (response.status === "blocked") {
+          throw new AgentRunBlockedError(response);
         }
         return response.output;
       });

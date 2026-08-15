@@ -18,9 +18,11 @@ export type MemoryPreparation = {
   };
 };
 
+type MemoryAgent = Pick<Agent, "memory">;
+
 export class AgentRunMemory {
   constructor(
-    private readonly agent: Agent,
+    private readonly agent: MemoryAgent,
     private readonly memoryContext: MemoryContext | undefined,
     private readonly initialHistory: MessageType[],
   ) {}

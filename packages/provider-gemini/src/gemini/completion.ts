@@ -5,12 +5,13 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelMetadataOptions,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  type ModelCallOptions,
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolCallArgumentsMode,
@@ -73,9 +74,11 @@ export class GeminiCompletionModel
 
   async completion(
     request: CompletionRequest<GeminiCompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toGeminiGenerateContentParams(this.defaultModel, request);
+    applyAbortSignal(params, options);
     const response = await this.client.models.generateContent(params as never);
     return withContextUsage(
       fromGeminiGenerateContentResponse(response),
@@ -85,9 +88,11 @@ export class GeminiCompletionModel
 
   async *streamCompletion(
     request: CompletionRequest<GeminiCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = toGeminiGenerateContentParams(this.defaultModel, request);
+    applyAbortSignal(params, options);
     const stream = await this.client.models.generateContentStream(params as never);
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       for (const event of fromGeminiGenerateContentStreamChunk(chunk)) {
@@ -110,22 +115,28 @@ export function toGeminiGenerateContentParams(
   request: CompletionRequest<GeminiCompletionModelName>,
 ): GeminiGenerateParams {
   const messages = requestMessages(request);
-  const config = geminiConfig(request, messages);
+  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
+  const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
+  const providerConfig = isPlainObject(providerConfigValue) ? { ...providerConfigValue } : {};
+  delete providerConfig.tools;
+  const config = { ...providerConfig, ...geminiConfig(request, messages) };
   const params: GeminiGenerateParams = {
+    ...providerTopLevel,
     model: request.model ?? defaultModel,
     contents: messagesToGeminiContents(messages),
     config,
   };
 
-  if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    const { config: additionalConfig, ...additionalTopLevel } = request.additionalParams;
-    Object.assign(params, additionalTopLevel);
-    if (isPlainObject(additionalConfig)) {
-      params.config = { ...config, ...additionalConfig };
-    }
-  }
-
   return params;
+}
+
+function applyAbortSignal(
+  params: GeminiGenerateParams,
+  options: ModelCallOptions | undefined,
+): void {
+  if (options?.abortSignal === undefined) return;
+  const config = isPlainObject(params.config) ? params.config : {};
+  params.config = { ...config, abortSignal: options.abortSignal };
 }
 
 function providerRequestSummary(
@@ -149,8 +160,8 @@ function providerRequestSummary(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: toolChoiceSummary(request.toolChoice),
-    additionalParamKeys: isPlainObject(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isPlainObject(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
 }
@@ -463,12 +474,12 @@ export function fromGeminiGenerateContentResponse(response: unknown): Completion
   return result;
 }
 
-export function fromGeminiGenerateContentStreamChunk(chunk: unknown): CompletionStreamEvent[] {
+export function fromGeminiGenerateContentStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
   if (!isPlainObject(chunk)) {
     return [];
   }
 
-  const events: CompletionStreamEvent[] = [];
+  const events: CompletionModelStreamEvent[] = [];
   const directText = typeof chunk.text === "string" ? chunk.text : "";
   if (directText.length > 0 && candidateParts(chunk).length === 0) {
     events.push({ type: "text_delta", delta: directText });
@@ -698,8 +709,8 @@ function toolCallDelta(
     argumentsMode?: ToolCallArgumentsMode | undefined;
     signature?: string | undefined;
   },
-): CompletionStreamEvent {
-  const event: CompletionStreamEvent = { type: "tool_call_delta", id };
+): CompletionModelStreamEvent {
+  const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
   if (values.callId !== undefined) event.callId = values.callId;
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;

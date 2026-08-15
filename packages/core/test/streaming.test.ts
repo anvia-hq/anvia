@@ -6,12 +6,10 @@ import {
   type AgentRunErrorArgs,
   type AgentStream,
   type AgentStreamEvent,
-  type AgentStreamEventWithoutToolCallDeltas,
-  type AgentStreamEventWithToolCallDeltas,
   AssistantContent,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   cancelRun,
   createHook,
   createMiddleware,
@@ -44,7 +42,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
 
   constructor(
     private readonly responses: Array<
-      Iterable<CompletionStreamEvent> | AsyncIterable<CompletionStreamEvent>
+      Iterable<CompletionModelStreamEvent> | AsyncIterable<CompletionModelStreamEvent>
     >,
   ) {}
 
@@ -52,7 +50,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -65,9 +63,9 @@ class StreamingQueueModel implements StreamingCompletionModel {
 }
 
 async function* streamThenThrow(
-  events: CompletionStreamEvent[],
+  events: CompletionModelStreamEvent[],
   error: unknown,
-): AsyncIterable<CompletionStreamEvent> {
+): AsyncIterable<CompletionModelStreamEvent> {
   yield* events;
   throw error;
 }
@@ -84,18 +82,12 @@ const addTool = createTool({
 });
 
 describe("Agent streaming", () => {
-  it("types tool call deltas by default and narrows explicit opt-out streams", () => {
+  it("includes tool call deltas in the stream event type", () => {
     const model = new StreamingQueueModel([]);
     const agent = new Agent({ id: "test-agent", model });
 
     expectTypeOf(agent.stream("hi")).toEqualTypeOf<AgentStream<AgentStreamEvent>>();
-    expectTypeOf(agent.stream("hi", { includeToolCallDeltas: false })).toEqualTypeOf<
-      AgentStream<AgentStreamEventWithoutToolCallDeltas>
-    >();
-    expectTypeOf(agent.stream("hi", { includeToolCallDeltas: true })).toEqualTypeOf<
-      AgentStream<AgentStreamEvent>
-    >();
-    expectTypeOf<AgentStreamEventWithToolCallDeltas>().toEqualTypeOf<AgentStreamEvent>();
+    expectTypeOf<Extract<AgentStreamEvent, { type: "tool_call_delta" }>>().not.toBeNever();
   });
 
   it("streams text deltas and final response", async () => {
@@ -117,7 +109,7 @@ describe("Agent streaming", () => {
       "turn_end",
       "final",
     ]);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "hello" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "hello" } });
     expect(model.requests[0]?.instructions).toBe("system");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hi"));
   });
@@ -127,7 +119,7 @@ describe("Agent streaming", () => {
     let runEnded = false;
     let runError: unknown;
     let generationError: unknown;
-    const providerEvents = (async function* (): AsyncIterable<CompletionStreamEvent> {
+    const providerEvents = (async function* (): AsyncIterable<CompletionModelStreamEvent> {
       try {
         yield { type: "text_delta", delta: "partial" };
         yield { type: "text_delta", delta: "unread" };
@@ -219,7 +211,7 @@ describe("Agent streaming", () => {
       "turn_end",
       "final",
     ]);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "recovered" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "recovered" } });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
   });
@@ -237,7 +229,7 @@ describe("Agent streaming", () => {
     );
 
     expect(events.some((event) => event.type === "error")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "ready" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "ready" } });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -262,8 +254,10 @@ describe("Agent streaming", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      output: "ready",
-      usage: Usage.add(failedUsage, successfulUsage),
+      result: {
+        output: "ready",
+        usage: Usage.add(failedUsage, successfulUsage),
+      },
     });
     expect(model.requests).toHaveLength(2);
   });
@@ -282,7 +276,10 @@ describe("Agent streaming", () => {
 
     const events = await collect(agent.stream("hi"));
 
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "done", usage: finalUsage });
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: { output: "done", usage: finalUsage },
+    });
   });
 
   it("includes authoritative provider failure usage exactly once", async () => {
@@ -295,7 +292,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent).toEqual({ type: "error", error, usage: providerUsage });
-    await expect(iterator.next()).rejects.toBe(error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("uses empty usage when the first provider failure has no authoritative usage", async () => {
@@ -307,7 +304,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent).toEqual({ type: "error", error, usage: Usage.empty() });
-    await expect(iterator.next()).rejects.toBe(error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("retains completed turn usage when a later provider call fails before usage", async () => {
@@ -331,7 +328,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent.usage).toEqual(firstUsage);
-    await expect(iterator.next()).rejects.toBe(error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("shares completed tool-turn usage with the observer and terminal error event", async () => {
@@ -386,7 +383,7 @@ describe("Agent streaming", () => {
 
     expect(errorEvent.usage).toEqual(turnUsage);
     expect(observedError?.usage).toEqual(errorEvent.usage);
-    await expect(iterator.next()).rejects.toBe(errorEvent.error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("applies completion retries through readable agent streams", async () => {
@@ -406,7 +403,7 @@ describe("Agent streaming", () => {
       .map((line) => JSON.parse(line));
 
     expect(events.some((event) => event.type === "error")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "ready" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "ready" } });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -442,7 +439,7 @@ describe("Agent streaming", () => {
     expect(events.findIndex((event) => event.type === "tool_call_delta")).toBeLessThan(
       events.findIndex((event) => event.type === "tool_call"),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
   });
 
   it("does not retry after a provider delta has been observed", async () => {
@@ -464,7 +461,7 @@ describe("Agent streaming", () => {
     });
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", delta: "partial" });
     expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
-    await expect(iterator.next()).rejects.toBe(error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
     expect(model.requests).toHaveLength(1);
   });
 
@@ -482,7 +479,7 @@ describe("Agent streaming", () => {
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
     expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start" });
     expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
-    await expect(iterator.next()).rejects.toBe(error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
     expect(model.requests).toHaveLength(1);
   });
 
@@ -513,7 +510,7 @@ describe("Agent streaming", () => {
       .map((event) => event.delta);
 
     expect(textDeltas).toEqual(["safe"]);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "safe" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "safe" } });
   });
 
   it("retains completed usage when the run end hook cancels before final", async () => {
@@ -549,7 +546,7 @@ describe("Agent streaming", () => {
       "error",
     ]);
     expect(events.at(-1)).toMatchObject({ type: "error", usage: finalUsage });
-    await expect(iterator.next()).rejects.toBeInstanceOf(AgentRunCancelledError);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("retains completed usage when an output guardrail fails", async () => {
@@ -579,7 +576,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent).toEqual({ type: "error", error: guardrailError, usage: finalUsage });
-    await expect(iterator.next()).rejects.toBe(guardrailError);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("retains every completed turn usage when the max-turn limit fails the run", async () => {
@@ -611,7 +608,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent.usage).toEqual(Usage.add(firstUsage, secondUsage));
-    await expect(iterator.next()).rejects.toBe(errorEvent.error);
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
   it("rejects concurrent consumption of the same agent stream", async () => {
@@ -624,7 +621,7 @@ describe("Agent streaming", () => {
     await expect(collect(stream)).rejects.toThrow("Agent stream is already running.");
 
     const rest = await collectIterator(iterator);
-    expect(rest.at(-1)).toMatchObject({ type: "final", output: "done" });
+    expect(rest.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
   });
 
   it("accepts steering before consumption and rejects it after completion", async () => {
@@ -638,7 +635,7 @@ describe("Agent streaming", () => {
     expect(stream.steer("revise")).toBe(true);
     const events = await collect(stream);
 
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "second" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "second" } });
     expect(stream.steer("late")).toBe(false);
     await expect(collect(stream)).rejects.toThrow("Agent stream has already been consumed.");
   });
@@ -648,7 +645,11 @@ describe("Agent streaming", () => {
       id: "test-agent",
       model: new StreamingQueueModel([]),
     }).stream("hi");
-    await expect(collect(errorStream)).rejects.toThrow("No queued response");
+    const errorEvents = await collect(errorStream);
+    expect(errorEvents.at(-1)).toMatchObject({
+      type: "error",
+      error: { message: "No queued response" },
+    });
     expect(errorStream.steer("late")).toBe(false);
 
     const hook = createHook({
@@ -660,7 +661,11 @@ describe("Agent streaming", () => {
       id: "test-agent",
       model: new StreamingQueueModel([]),
     }).stream("hi", withInternalAgentRunOptions({}, { hook }));
-    await expect(collect(cancelledStream)).rejects.toBeInstanceOf(AgentRunCancelledError);
+    const cancelledEvents = await collect(cancelledStream);
+    expect(cancelledEvents.at(-1)).toMatchObject({
+      type: "error",
+      error: expect.any(AgentRunCancelledError),
+    });
     expect(cancelledStream.steer("late")).toBe(false);
   });
 
@@ -708,13 +713,15 @@ describe("Agent streaming", () => {
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(Message.user("revise"));
     expect(rest.at(-1)).toMatchObject({
       type: "final",
-      output: "second",
-      messages: [
-        Message.user("hi"),
-        Message.assistant("first"),
-        Message.user("revise"),
-        Message.assistant("second"),
-      ],
+      result: {
+        output: "second",
+        messages: [
+          Message.user("hi"),
+          Message.assistant("first"),
+          Message.user("revise"),
+          Message.assistant("second"),
+        ],
+      },
     });
   });
 
@@ -749,7 +756,7 @@ describe("Agent streaming", () => {
     toolRelease.resolve(7);
 
     const events = await eventsPromise;
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "done" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]?.chatHistory.slice(-3)).toEqual([
       expect.objectContaining(Message.assistant([toolCall])),
@@ -797,13 +804,15 @@ describe("Agent streaming", () => {
     ]);
     expect(rest.at(-1)).toMatchObject({
       type: "final",
-      messages: [
-        Message.user("start"),
-        Message.assistant("base"),
-        firstSteer,
-        secondSteer,
-        Message.assistant("done"),
-      ],
+      result: {
+        messages: [
+          Message.user("start"),
+          Message.assistant("base"),
+          firstSteer,
+          secondSteer,
+          Message.assistant("done"),
+        ],
+      },
     });
   });
 
@@ -834,11 +843,13 @@ describe("Agent streaming", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      output: "hello",
-      usage: {
-        inputTokens: 2,
-        outputTokens: 1,
-        totalTokens: 3,
+      result: {
+        output: "hello",
+        usage: {
+          inputTokens: 2,
+          outputTokens: 1,
+          totalTokens: 3,
+        },
       },
     });
     const finalEvent = events.at(-1);
@@ -846,7 +857,7 @@ describe("Agent streaming", () => {
     if (finalEvent?.type !== "final") {
       throw new Error("Expected a final event");
     }
-    const assistantMessage = finalEvent.messages.at(-1);
+    const assistantMessage = finalEvent.result.messages.at(-1);
     expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
       model: "test",
@@ -900,7 +911,7 @@ describe("Agent streaming", () => {
     expect(events.findIndex((event) => event.type === "tool_call_delta")).toBeLessThan(
       events.findIndex((event) => event.type === "tool_call"),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -944,13 +955,13 @@ describe("Agent streaming", () => {
     expect(resumed).toContainEqual(
       expect.objectContaining({ type: "tool_result", toolName: "guarded", result: "approved 7" }),
     );
-    expect(resumed.at(-1)).toMatchObject({ type: "final", output: "done" });
+    expect(resumed.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
     expect(() => agent.resume(pending, { approved: true })).toThrow(
       "Approval continuation does not belong to this agent.",
     );
   });
 
-  it("supports explicitly disabling tool call deltas", async () => {
+  it("always emits provider tool call deltas", async () => {
     const model = new StreamingQueueModel([
       [
         {
@@ -964,9 +975,9 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    const events = await collect(agent.stream("add", { includeToolCallDeltas: false }));
+    const events = await collect(agent.stream("add"));
 
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_call_delta" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_call_delta" }));
     expect(events).toContainEqual({
       type: "tool_call",
       turn: 1,
@@ -975,12 +986,12 @@ describe("Agent streaming", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: "tool_result", toolName: "add", result: "7" }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "7" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
   });
 
   it("emits tool call deltas by default before response middleware completes", async () => {
     let providerFinished = false;
-    const firstTurn = (async function* (): AsyncIterable<CompletionStreamEvent> {
+    const firstTurn = (async function* (): AsyncIterable<CompletionModelStreamEvent> {
       yield {
         type: "tool_call_delta",
         id: "tool_1",
@@ -1047,7 +1058,7 @@ describe("Agent streaming", () => {
     expect(remaining).toContainEqual(
       expect.objectContaining({ type: "tool_result", toolName: "add", result: "7" }),
     );
-    expect(remaining.at(-1)).toMatchObject({ type: "final", output: "7" });
+    expect(remaining.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
   });
 
   it("streams transformed tool results from middleware", async () => {
@@ -1223,7 +1234,7 @@ describe("Agent streaming", () => {
     });
 
     const remainingEvents = await collectIterator(iterator);
-    expect(remainingEvents.at(-1)).toMatchObject({ type: "final", output: "done" });
+    expect(remainingEvents.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -1294,10 +1305,10 @@ describe("Agent streaming", () => {
         result: "child done",
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "parent done" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "parent done" } });
   });
 
-  it("suppresses child tool call deltas when the parent stream explicitly opts out", async () => {
+  it("forwards child tool call deltas automatically", async () => {
     const parentModel = new StreamingQueueModel([
       [
         {
@@ -1325,10 +1336,10 @@ describe("Agent streaming", () => {
       tools: [childAgent.asTool({ name: "ask_child", stream: true })],
     });
 
-    const events = await collect(parentAgent.stream("delegate", { includeToolCallDeltas: false }));
+    const events = await collect(parentAgent.stream("delegate"));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
-    expect(childEvents.map((event) => eventType(event.event))).not.toContain("tool_call_delta");
+    expect(childEvents.map((event) => eventType(event.event))).toContain("tool_call_delta");
     expect(childEvents).toContainEqual(
       expect.objectContaining({
         type: "agent_tool_event",
@@ -1425,13 +1436,15 @@ describe("Agent streaming", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      messages: [
-        Message.user("reason"),
-        Message.assistant([
-          AssistantContent.reasoning("Think once."),
-          AssistantContent.text("done"),
-        ]),
-      ],
+      result: {
+        messages: [
+          Message.user("reason"),
+          Message.assistant([
+            AssistantContent.reasoning("Think once."),
+            AssistantContent.text("done"),
+          ]),
+        ],
+      },
     });
   });
 
@@ -1465,30 +1478,32 @@ describe("Agent streaming", () => {
     });
     expect(events.at(-1)).toMatchObject({
       type: "final",
-      messages: [
-        Message.user("reason"),
-        Message.assistant([
-          {
-            type: "reasoning",
-            id: "rs_1",
-            text: "Review complete.",
-            content: [{ type: "summary", text: "Review complete." }],
-          },
-          {
-            type: "reasoning",
-            id: "rs_2",
-            text: "Step",
-            content: [{ type: "text", text: "Step", signature: "sig_1" }],
-          },
-          {
-            type: "reasoning",
-            id: "rs_3",
-            text: "",
-            content: [{ type: "encrypted", data: "opaque" }],
-          },
-          AssistantContent.text("done"),
-        ]),
-      ],
+      result: {
+        messages: [
+          Message.user("reason"),
+          Message.assistant([
+            {
+              type: "reasoning",
+              id: "rs_1",
+              text: "Review complete.",
+              content: [{ type: "summary", text: "Review complete." }],
+            },
+            {
+              type: "reasoning",
+              id: "rs_2",
+              text: "Step",
+              content: [{ type: "text", text: "Step", signature: "sig_1" }],
+            },
+            {
+              type: "reasoning",
+              id: "rs_3",
+              text: "",
+              content: [{ type: "encrypted", data: "opaque" }],
+            },
+            AssistantContent.text("done"),
+          ]),
+        ],
+      },
     });
   });
 
@@ -1547,7 +1562,7 @@ describe("Agent streaming", () => {
   it("converts stream events to JSONL readable streams", async () => {
     async function* events() {
       yield { type: "text_delta", delta: "a" };
-      yield { type: "final", output: "a" };
+      yield { type: "final", result: { output: "a" } };
     }
 
     const readable = toReadableStream(events());
@@ -1560,7 +1575,7 @@ describe("Agent streaming", () => {
         .map((line) => JSON.parse(line)),
     ).toEqual([
       { type: "text_delta", delta: "a" },
-      { type: "final", output: "a" },
+      { type: "final", result: { output: "a" } },
     ]);
   });
 

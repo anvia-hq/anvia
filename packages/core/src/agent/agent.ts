@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { isStreamingCompletionModel } from "../completion/create-completion";
+import { isStreamingCompletionModel } from "../completion/generate-completion";
 import type {
   CompletionModel,
   ContextUsage,
   JsonObject,
-  JsonValue,
   Message as MessageType,
   ProviderTool,
   ToolChoice,
@@ -21,7 +20,8 @@ import {
 import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
-import { toProviderJsonSchema } from "../schema/zod-schema";
+import type { RetrySetting } from "../retry";
+import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/create-tool";
 import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
 import { ToolNotFoundError } from "../tool/errors";
@@ -40,6 +40,7 @@ import type {
   VectorSearchToolOptions,
 } from "../vector-store";
 import { type ContextIndex, isContextIndex } from "./context-index";
+import { AgentRunBlockedError } from "./errors";
 import { normalizeAgentId } from "./ids";
 import type { AgentLifecycle } from "./lifecycle";
 import type {
@@ -51,8 +52,6 @@ import type {
   AgentRunOptions,
   AgentStream,
   AgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas,
-  AgentStreamOptions,
 } from "./run-types";
 import { getAgentToolState, getRegisteredAgentTool, registerAgentToolState } from "./tool-state";
 import type {
@@ -64,7 +63,16 @@ import type {
 
 const DEFAULT_MAX_TURNS = 20;
 
-export class Agent<M extends CompletionModel = CompletionModel, ContextDocument = unknown> {
+type RawResponseOf<Model> =
+  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+
+const providerOutputSchemas = new WeakMap<object, JsonObject>();
+
+export class Agent<
+  Output = string,
+  M extends CompletionModel = CompletionModel,
+  ContextDocument = unknown,
+> {
   readonly id: string;
   readonly name: string | undefined;
   readonly description: string | undefined;
@@ -73,18 +81,19 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
   readonly context: readonly AgentContextInput<ContextDocument>[];
   readonly temperature: number | undefined;
   readonly maxTokens: number | undefined;
-  readonly additionalParams: JsonValue | undefined;
+  readonly providerOptions: JsonObject | undefined;
+  readonly retries: RetrySetting | undefined;
   readonly tools: readonly AnyTool[];
   readonly toolChoice: ToolChoice | undefined;
   readonly defaultMaxTurns: number | undefined;
-  readonly lifecycle: AgentLifecycle | undefined;
-  readonly outputSchema: JsonObject | undefined;
+  readonly lifecycle: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
+  readonly outputSchema: ZodSchema<Output> | undefined;
   readonly observers: readonly AgentObserverRegistration[];
   readonly guardrails: readonly GuardrailPolicy[];
   readonly middlewares: readonly AgentMiddleware[];
   readonly memory: MemoryRegistration | undefined;
 
-  constructor(options: AgentOptions<M, ContextDocument>) {
+  constructor(options: AgentOptions<Output, M, ContextDocument>) {
     const resolved = resolveAgentOptions(options);
     this.id = normalizeAgentId(resolved.id);
     this.name = resolved.name;
@@ -96,7 +105,8 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.context = Object.freeze(context);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
-    this.additionalParams = cloneFrozenPlainData(resolved.additionalParams);
+    this.providerOptions = cloneFrozenPlainData(resolved.providerOptions);
+    this.retries = cloneFrozenPlainData(resolved.retries);
     const staticTools = dedupeTools(resolved.tools ?? []);
     const toolIndexes = (resolved.toolIndexes ?? []).map(snapshotToolIndex);
     assertUniqueIndexedToolNames(toolIndexes);
@@ -121,7 +131,10 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       "maxTurns",
     );
     this.lifecycle = resolved.lifecycle;
-    this.outputSchema = cloneFrozenPlainData(resolved.outputSchema);
+    this.outputSchema = resolved.outputSchema;
+    if (resolved.outputSchema !== undefined) {
+      providerOutputSchemas.set(this, toProviderJsonSchema(resolved.outputSchema));
+    }
     this.observers = Object.freeze(
       (resolved.observers ?? []).map((registration) => Object.freeze({ ...registration })),
     );
@@ -130,52 +143,49 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     this.memory = snapshotMemoryRegistration(resolved.memory);
   }
 
-  generate(input: AgentInput, options: AgentRunOptions = {}): Promise<AgentResult> {
+  generate(
+    input: AgentInput,
+    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
+  ): Promise<AgentResult<Output>> {
     return createGenerateExecution(this, AgentRun.fromAgent(this, input, options)).next();
   }
 
   stream(
     input: AgentInput,
-    options: AgentStreamOptions & { includeToolCallDeltas: false },
-  ): AgentStream<AgentStreamEventWithoutToolCallDeltas>;
-  stream(
-    input: AgentInput,
-    options?: AgentStreamOptions & { includeToolCallDeltas?: true },
-  ): AgentStream<AgentStreamEvent>;
-  stream(input: AgentInput, options: AgentStreamOptions): AgentStream<AgentStreamEvent>;
-  stream(input: AgentInput, options: AgentStreamOptions = {}): AgentStream<AgentStreamEvent> {
-    return createStreamExecution(
-      this,
-      AgentRun.fromAgent(this, input, options),
-      options.includeToolCallDeltas !== false,
-    );
+    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
+  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
+    const run = AgentRun.fromAgent(this, input, options);
+    if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
+      throw new Error("This completion model does not support streaming");
+    }
+    return createStreamExecution(this, run);
   }
 
   resume(
     pending: AgentApprovalRequiredResult,
     decision: AgentApprovalDecision,
-  ): Promise<AgentResult>;
+  ): Promise<AgentResult<Output>>;
   resume(
     pending: AgentApprovalRequiredEvent,
     decision: AgentApprovalDecision,
-  ): AgentStream<AgentStreamEvent>;
+  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>;
   resume(
     pending: AgentApprovalRequiredResult | AgentApprovalRequiredEvent,
     decision: AgentApprovalDecision,
-  ): Promise<AgentResult> | AgentStream<AgentStreamEvent> {
+  ): Promise<AgentResult<Output>> | AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
     assertAgentApprovalDecision(decision);
     const continuation = approvalContinuations.get(pending);
     if (continuation === undefined || continuation.agent !== this) {
       throw new TypeError("Approval continuation does not belong to this agent.");
     }
     approvalContinuations.delete(pending);
-    continuation.run.resolveApproval(decision);
+    continuation.resolve(decision);
     return continuation.mode === "generate"
-      ? continuation.execution.next()
-      : continuation.execution.segment();
+      ? (continuation.resume() as Promise<AgentResult<Output>>)
+      : (continuation.resume() as AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>);
   }
 
-  session(sessionId: string, options: SessionOptions = {}): AgentSession<M> {
+  session(sessionId: string, options: SessionOptions = {}): AgentSession<Output, M> {
     if (this.memory === undefined) {
       throw new Error(`Agent "${this.id}" has no memory store configured.`);
     }
@@ -195,7 +205,7 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
     return new AgentSession(this, context);
   }
 
-  asTool(options: AgentToolOptions): Tool<{ prompt: string }, string> {
+  asTool(options: AgentToolOptions): Tool<{ prompt: string }, Output> {
     const description =
       options.description ?? this.description ?? `Prompt the ${options.name} agent.`;
 
@@ -205,7 +215,6 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
       inputSchema: z.object({
         prompt: z.string().describe("The prompt to send to the agent."),
       }),
-      outputSchema: z.string(),
       execute: async ({ prompt }, context: ToolCallContext) => {
         if (
           options.stream === true &&
@@ -213,10 +222,11 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
           this.model.capabilities.streaming &&
           isStreamingCompletionModel(this.model)
         ) {
-          let output = "";
+          let completed = false;
+          let output!: Output;
           const childStream = this.stream(prompt, {
             maxTurns: options.maxTurns,
-            includeToolCallDeltas: context.includeToolCallDeltas !== false,
+            abortSignal: context.abortSignal,
           });
           for await (const event of childStream) {
             if (event.type === "approval_required") {
@@ -236,13 +246,26 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
               streamEvent.agentName = this.name;
             }
             await context.emitStreamEvent(streamEvent);
-            if (event.type === "final") {
-              output = event.output;
+            if (event.type === "error") {
+              throw event.error;
             }
+            if (event.type === "final") {
+              if (event.result.status === "blocked") {
+                throw new AgentRunBlockedError(event.result);
+              }
+              output = event.result.output;
+              completed = true;
+            }
+          }
+          if (!completed) {
+            throw new Error(`Agent tool "${options.name}" ended without a final result.`);
           }
           return output;
         }
-        const response = await this.generate(prompt, { maxTurns: options.maxTurns });
+        const response = await this.generate(prompt, {
+          maxTurns: options.maxTurns,
+          abortSignal: context.abortSignal,
+        });
         if (response.status === "approval_required") {
           await cancelAgentApproval(
             response,
@@ -251,6 +274,9 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
           throw new Error(
             `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
           );
+        }
+        if (response.status === "blocked") {
+          throw new AgentRunBlockedError(response);
         }
         return response.output;
       },
@@ -277,25 +303,28 @@ export class Agent<M extends CompletionModel = CompletionModel, ContextDocument 
 
 const resolvedAgentOptions = Symbol("resolvedAgentOptions");
 
-type InternalAgentOptions<M extends CompletionModel, ContextDocument> = ResolvedAgentOptions<
-  M,
-  ContextDocument
-> & {
+type InternalAgentOptions<
+  Output,
+  M extends CompletionModel,
+  ContextDocument,
+> = ResolvedAgentOptions<Output, M, ContextDocument> & {
   [resolvedAgentOptions]: true;
 };
 
-export function createResolvedAgent<M extends CompletionModel, ContextDocument = unknown>(
-  options: ResolvedAgentOptions<M, ContextDocument>,
-): Agent<M, ContextDocument> {
+export function createResolvedAgent<
+  Output = string,
+  M extends CompletionModel = CompletionModel,
+  ContextDocument = unknown,
+>(options: ResolvedAgentOptions<Output, M, ContextDocument>): Agent<Output, M, ContextDocument> {
   return new Agent({
     ...options,
     [resolvedAgentOptions]: true,
-  } as unknown as AgentOptions<M, ContextDocument>);
+  } as unknown as AgentOptions<Output, M, ContextDocument>);
 }
 
-export function getResolvedAgentOptions<M extends CompletionModel, ContextDocument>(
-  agent: Agent<M, ContextDocument>,
-): ResolvedAgentOptions<M, ContextDocument> {
+export function getResolvedAgentOptions<Output, M extends CompletionModel, ContextDocument>(
+  agent: Agent<Output, M, ContextDocument>,
+): ResolvedAgentOptions<Output, M, ContextDocument> {
   const toolState = getAgentToolState(agent);
   return {
     id: agent.id,
@@ -306,7 +335,8 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
     context: [...agent.context],
     temperature: agent.temperature,
     maxTokens: agent.maxTokens,
-    additionalParams: agent.additionalParams,
+    providerOptions: agent.providerOptions,
+    retries: agent.retries,
     tools: [...toolState.staticTools],
     providerTools: [...toolState.providerTools],
     toolIndexes: [...toolState.toolIndexes],
@@ -321,11 +351,15 @@ export function getResolvedAgentOptions<M extends CompletionModel, ContextDocume
   };
 }
 
-function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
-  options: AgentOptions<M, ContextDocument>,
-): ResolvedAgentOptions<M, ContextDocument> {
+export function getAgentProviderOutputSchema(agent: object): JsonObject | undefined {
+  return providerOutputSchemas.get(agent);
+}
+
+function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>(
+  options: AgentOptions<Output, M, ContextDocument>,
+): ResolvedAgentOptions<Output, M, ContextDocument> {
   if (isInternalAgentOptions(options)) {
-    return options as unknown as ResolvedAgentOptions<M, ContextDocument>;
+    return options as unknown as ResolvedAgentOptions<Output, M, ContextDocument>;
   }
 
   const toolsByName = new Map<string, AnyTool>();
@@ -368,15 +402,15 @@ function resolveAgentOptions<M extends CompletionModel, ContextDocument>(
     context: [...(options.context ?? [])],
     temperature: options.temperature,
     maxTokens: options.maxTokens,
-    additionalParams: options.additionalParams,
+    providerOptions: options.providerOptions,
+    retries: options.retries,
     tools: [...toolsByName.values()],
     providerTools,
     toolIndexes,
     toolChoice: options.toolChoice,
     defaultMaxTurns: options.maxTurns,
     lifecycle: options.lifecycle,
-    outputSchema:
-      options.outputSchema === undefined ? undefined : toProviderJsonSchema(options.outputSchema),
+    outputSchema: options.outputSchema,
     observers: (options.observers ?? []).map((input) =>
       "observer" in input
         ? { observer: input.observer, failOnObserverError: input.failOnObserverError }
@@ -424,18 +458,18 @@ function assertValidContextIndexes(inputs: readonly AgentContextInput[]): void {
   }
 }
 
-function isInternalAgentOptions<M extends CompletionModel, ContextDocument>(
-  options: AgentOptions<M, ContextDocument>,
+function isInternalAgentOptions<Output, M extends CompletionModel, ContextDocument>(
+  options: AgentOptions<Output, M, ContextDocument>,
 ): boolean {
   return (
-    (options as unknown as Partial<InternalAgentOptions<M, ContextDocument>>)[
+    (options as unknown as Partial<InternalAgentOptions<Output, M, ContextDocument>>)[
       resolvedAgentOptions
     ] === true
   );
 }
 
-function resolveAgentMemory<M extends CompletionModel, ContextDocument>(
-  options: AgentOptions<M, ContextDocument>,
+function resolveAgentMemory<Output, M extends CompletionModel, ContextDocument>(
+  options: AgentOptions<Output, M, ContextDocument>,
 ): MemoryRegistration | undefined {
   if (options.memory === undefined) {
     return undefined;
@@ -450,24 +484,28 @@ function resolveAgentMemory<M extends CompletionModel, ContextDocument>(
   return { store, options: resolvedOptions };
 }
 
-type GenerateExecution = {
-  next(): Promise<AgentResult>;
+type GenerateExecution<Output = unknown> = {
+  next(): Promise<AgentResult<Output>>;
   cancel(reason: string): Promise<void>;
 };
 
-type ApprovalContinuation =
-  | {
-      agent: Agent;
-      run: AgentRun;
-      mode: "generate";
-      execution: GenerateExecution;
-    }
-  | {
-      agent: Agent;
-      run: AgentRun;
-      mode: "stream";
-      execution: StreamExecution;
-    };
+type ApprovalContinuationBase = {
+  agent: object;
+  resolve(decision: AgentApprovalDecision): void;
+  cancel(reason: string): Promise<void>;
+};
+
+type ApprovalContinuation = ApprovalContinuationBase &
+  (
+    | {
+        mode: "generate";
+        resume(): Promise<AgentResult<unknown>>;
+      }
+    | {
+        mode: "stream";
+        resume(): AgentStream<AgentStreamEvent<unknown, unknown>>;
+      }
+  );
 
 const approvalContinuations = new WeakMap<object, ApprovalContinuation>();
 
@@ -480,9 +518,12 @@ function assertAgentApprovalDecision(decision: AgentApprovalDecision): void {
   }
 }
 
-function createGenerateExecution(agent: Agent, run: AgentRun): GenerateExecution {
+function createGenerateExecution<Output, M extends CompletionModel>(
+  agent: Agent<Output, M>,
+  run: AgentRun<Output, M>,
+): GenerateExecution<Output> {
   const completion = run.generate();
-  const execution: GenerateExecution = {
+  const execution: GenerateExecution<Output> = {
     async next() {
       const outcome = await Promise.race([
         completion.then((result) => ({ type: "completed" as const, result })),
@@ -492,7 +533,13 @@ function createGenerateExecution(agent: Agent, run: AgentRun): GenerateExecution
         return outcome.result;
       }
       const pending = run.approvalResult();
-      approvalContinuations.set(pending, { agent, run, mode: "generate", execution });
+      approvalContinuations.set(pending, {
+        agent,
+        mode: "generate",
+        resolve: (decision) => run.resolveApproval(decision),
+        resume: () => execution.next(),
+        cancel: (reason) => execution.cancel(reason),
+      });
       return pending;
     },
     async cancel(reason) {
@@ -503,20 +550,21 @@ function createGenerateExecution(agent: Agent, run: AgentRun): GenerateExecution
   return execution;
 }
 
-class StreamExecution {
-  private readonly iterator: AsyncIterator<AgentStreamEvent>;
-  private nextEvent: Promise<IteratorResult<AgentStreamEvent>> | undefined;
+class StreamExecution<Output, M extends CompletionModel> {
+  private readonly iterator: AsyncIterator<AgentStreamEvent<Output, RawResponseOf<M>>>;
+  private nextEvent:
+    | Promise<IteratorResult<AgentStreamEvent<Output, RawResponseOf<M>>>>
+    | undefined;
   private phase: "active" | "approval" | "terminal" | "cancelled" = "active";
 
   constructor(
-    private readonly agent: Agent,
-    private readonly run: AgentRun,
-    includeToolCallDeltas: boolean,
+    private readonly agent: Agent<Output, M>,
+    private readonly run: AgentRun<Output, M>,
   ) {
-    this.iterator = run.events(includeToolCallDeltas)[Symbol.asyncIterator]();
+    this.iterator = run.events()[Symbol.asyncIterator]();
   }
 
-  segment(): AgentStream<AgentStreamEvent> {
+  segment(): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
     if (this.phase === "approval") {
       this.phase = "active";
     }
@@ -527,11 +575,14 @@ class StreamExecution {
     return this.run.steer(input);
   }
 
-  async *events(): AsyncIterable<AgentStreamEvent> {
+  async *events(): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
     while (true) {
       this.nextEvent ??= this.iterator.next();
       let outcome:
-        | { type: "event"; event: IteratorResult<AgentStreamEvent> }
+        | {
+            type: "event";
+            event: IteratorResult<AgentStreamEvent<Output, RawResponseOf<M>>>;
+          }
         | { type: "approval" };
       try {
         outcome = await Promise.race([
@@ -547,9 +598,10 @@ class StreamExecution {
         const pending = this.run.approvalEvent();
         approvalContinuations.set(pending, {
           agent: this.agent,
-          run: this.run,
           mode: "stream",
-          execution: this,
+          resolve: (decision) => this.run.resolveApproval(decision),
+          resume: () => this.segment(),
+          cancel: (reason) => this.cancel(reason),
         });
         yield pending;
         return;
@@ -581,31 +633,30 @@ class StreamExecution {
   }
 }
 
-function createStreamExecution(
-  agent: Agent,
-  run: AgentRun,
-  includeToolCallDeltas: boolean,
-): AgentStream<AgentStreamEvent> {
-  return new StreamExecution(agent, run, includeToolCallDeltas).segment();
+function createStreamExecution<Output, M extends CompletionModel>(
+  agent: Agent<Output, M>,
+  run: AgentRun<Output, M>,
+): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
+  return new StreamExecution(agent, run).segment();
 }
 
-class DefaultAgentStream<Event extends AgentStreamEvent = AgentStreamEvent>
-  implements AgentStream<Event>
+class DefaultAgentStream<Output, M extends CompletionModel>
+  implements AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>
 {
   private consuming = false;
   private completed = false;
 
-  constructor(private readonly execution: StreamExecution) {}
+  constructor(private readonly execution: StreamExecution<Output, M>) {}
 
   steer(input: AgentInput): boolean {
     return this.execution.steer(input);
   }
 
-  [Symbol.asyncIterator](): AsyncIterator<Event> {
+  [Symbol.asyncIterator](): AsyncIterator<AgentStreamEvent<Output, RawResponseOf<M>>> {
     return this.consume()[Symbol.asyncIterator]();
   }
 
-  private async *consume(): AsyncIterableIterator<Event> {
+  private async *consume(): AsyncIterableIterator<AgentStreamEvent<Output, RawResponseOf<M>>> {
     if (this.completed) {
       throw new Error("Agent stream has already been consumed.");
     }
@@ -615,7 +666,7 @@ class DefaultAgentStream<Event extends AgentStreamEvent = AgentStreamEvent>
     this.consuming = true;
     try {
       for await (const event of this.execution.events()) {
-        yield event as Event;
+        yield event;
       }
     } finally {
       if (this.execution.shouldCancelActiveSegment()) {
@@ -636,12 +687,12 @@ export async function cancelAgentApproval(
     return;
   }
   approvalContinuations.delete(pending);
-  await continuation.execution.cancel(reason);
+  await continuation.cancel(reason);
 }
 
-export class AgentSession<M extends CompletionModel = CompletionModel> {
+export class AgentSession<Output = string, M extends CompletionModel = CompletionModel> {
   constructor(
-    private readonly agent: Agent<M>,
+    private readonly agent: Agent<Output, M>,
     private readonly context: {
       sessionId: string;
       userId?: string | undefined;
@@ -649,7 +700,10 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
     },
   ) {}
 
-  generate(input: string | MessageType, options: AgentRunOptions = {}): Promise<AgentResult> {
+  generate(
+    input: string | MessageType,
+    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
+  ): Promise<AgentResult<Output>> {
     if (Array.isArray(input)) {
       throw new TypeError("AgentSession.generate does not accept Message[] transcripts.");
     }
@@ -662,24 +716,17 @@ export class AgentSession<M extends CompletionModel = CompletionModel> {
 
   stream(
     input: string | MessageType,
-    options: AgentStreamOptions & { includeToolCallDeltas: false },
-  ): AgentStream<AgentStreamEventWithoutToolCallDeltas>;
-  stream(
-    input: string | MessageType,
-    options?: AgentStreamOptions & { includeToolCallDeltas?: true },
-  ): AgentStream<AgentStreamEvent>;
-  stream(input: string | MessageType, options: AgentStreamOptions): AgentStream<AgentStreamEvent>;
-  stream(
-    input: string | MessageType,
-    options: AgentStreamOptions = {},
-  ): AgentStream<AgentStreamEvent> {
+    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
+  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
     if (Array.isArray(input)) {
       throw new TypeError("AgentSession.stream does not accept Message[] transcripts.");
+    }
+    if (!this.agent.model.capabilities.streaming || !isStreamingCompletionModel(this.agent.model)) {
+      throw new Error("This completion model does not support streaming");
     }
     return createStreamExecution(
       this.agent,
       AgentRun.fromAgent(this.agent, input, { ...options, memoryContext: this.context }),
-      options.includeToolCallDeltas !== false,
     );
   }
 

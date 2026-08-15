@@ -1,10 +1,10 @@
 import type { Agent } from "../../agent/agent";
 import { isContextIndex } from "../../agent/context-index";
 import { getAgentToolState } from "../../agent/tool-state";
-import type { Document, ToolDefinition } from "../../completion/index";
+import type { CompletionModel, Document, ToolDefinition } from "../../completion/index";
 
-export async function fetchContextDocuments(
-  agent: Agent,
+export async function fetchContextDocuments<Output, M extends CompletionModel, ContextDocument>(
+  agent: Agent<Output, M, ContextDocument>,
   ragText: string | undefined,
 ): Promise<Document[]> {
   const documents: Document[] = [];
@@ -45,8 +45,8 @@ export async function fetchContextDocuments(
   return documents;
 }
 
-export async function fetchToolDefinitions(
-  agent: Agent,
+export async function fetchToolDefinitions<Output, M extends CompletionModel, ContextDocument>(
+  agent: Agent<Output, M, ContextDocument>,
   ragText: string | undefined,
 ): Promise<ToolDefinition[]> {
   const state = getAgentToolState(agent);

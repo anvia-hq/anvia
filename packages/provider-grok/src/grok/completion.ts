@@ -2,10 +2,11 @@ import type {
   CompletionModelCapabilities,
   CompletionModelInfo,
   CompletionModelMetadataOptions,
+  CompletionModelStreamEvent,
   CompletionRequest,
   CompletionResponse,
-  CompletionStreamEvent,
   JsonObject,
+  ModelCallOptions,
   StreamingCompletionModel,
 } from "@anvia/core/completion";
 import { resolveCompletionModelInfo, withContextUsage } from "@anvia/core/completion";
@@ -52,19 +53,21 @@ export class GrokResponsesCompletionModel
 
   async completion(
     request: CompletionRequest<GrokCompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertGrokProviderTools(request);
     return withContextUsage(
-      await this.delegate.completion(request),
+      await this.delegate.completion(request, options),
       this.getModelInfo(request.model ?? this.defaultModel),
     );
   }
 
   async *streamCompletion(
     request: CompletionRequest<GrokCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertGrokProviderTools(request);
-    for await (const event of this.delegate.streamCompletion(request)) {
+    for await (const event of this.delegate.streamCompletion(request, options)) {
       yield event.type === "final"
         ? {
             ...event,
@@ -116,19 +119,21 @@ export class GrokChatCompletionModel
 
   async completion(
     request: CompletionRequest<GrokCompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertGrokProviderTools(request);
     return withContextUsage(
-      await this.delegate.completion(request),
+      await this.delegate.completion(request, options),
       this.getModelInfo(request.model ?? this.defaultModel),
     );
   }
 
   async *streamCompletion(
     request: CompletionRequest<GrokCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertGrokProviderTools(request);
-    for await (const event of this.delegate.streamCompletion(request)) {
+    for await (const event of this.delegate.streamCompletion(request, options)) {
       yield event.type === "final"
         ? {
             ...event,

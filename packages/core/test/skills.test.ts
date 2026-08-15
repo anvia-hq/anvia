@@ -6,9 +6,9 @@ import {
   Agent,
   AssistantContent,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createHook,
   createMiddleware,
   loadSkills,
@@ -62,13 +62,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -420,7 +420,7 @@ describe("skills", () => {
         result: "# Review\nUse direct feedback.",
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "loaded" });
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "loaded" } });
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("get_skill_instructions");
   });
 });

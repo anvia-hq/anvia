@@ -125,7 +125,7 @@ describe("Gemini completion mapping", () => {
       maxTokens: 128,
       toolChoice: { type: "function", name: "lookup_order" },
       outputSchema: { type: "object", title: "OrderAnswer" },
-      additionalParams: {
+      providerOptions: {
         labels: { surface: "test" },
         config: {
           topP: 0.9,
@@ -139,7 +139,7 @@ describe("Gemini completion mapping", () => {
       labels: { surface: "test" },
       config: {
         systemInstruction: "Use the support policy.\n\nSystem context.",
-        temperature: 0.4,
+        temperature: 0.2,
         maxOutputTokens: 128,
         tools: [
           {

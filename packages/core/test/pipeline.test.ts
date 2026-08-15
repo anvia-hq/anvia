@@ -153,6 +153,21 @@ describe("Pipeline", () => {
     });
   });
 
+  it("preserves schema-backed Agent output through a pipeline stage", async () => {
+    const model = new QueueModel([response([AssistantContent.text('{"answer":"typed"}')])]);
+    const agent = new Agent({
+      id: "typed-agent",
+      model,
+      outputSchema: z.object({ answer: z.string() }),
+    });
+    const pipeline = new Pipeline({ id: "typed-agent-stage", inputSchema: z.string() }).agent(
+      agent,
+    );
+
+    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<string, { answer: string }>>();
+    await expect(pipeline.run("question")).resolves.toEqual({ answer: "typed" });
+  });
+
   it("cancels an agent stage that requires tool approval", async () => {
     let observedError: unknown;
     const guardedTool = createTool({

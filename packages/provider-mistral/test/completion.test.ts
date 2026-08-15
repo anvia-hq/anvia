@@ -133,7 +133,7 @@ describe("Mistral completion mapping", () => {
       maxTokens: 128,
       toolChoice: "required",
       outputSchema: { type: "object", title: "OrderAnswer" },
-      additionalParams: {
+      providerOptions: {
         topP: 0.9,
         temperature: 0.4,
       },
@@ -176,7 +176,7 @@ describe("Mistral completion mapping", () => {
           },
         },
       ],
-      temperature: 0.4,
+      temperature: 0.2,
       maxTokens: 128,
       toolChoice: "any",
       responseFormat: {
@@ -210,7 +210,7 @@ describe("Mistral completion mapping", () => {
       chatHistory: [Message.user("hi")],
       documents: [],
       tools: [],
-      additionalParams: {
+      providerOptions: {
         model: "unsafe-model",
         messages: [{ role: "user", content: "injected" }],
         topP: 0.9,

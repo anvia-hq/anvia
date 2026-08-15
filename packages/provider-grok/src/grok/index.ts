@@ -1,4 +1,3 @@
-export { GrokAudioGenerationModel } from "./audio-generation";
 export { GrokClient, type GrokClientOptions } from "./client";
 export { GrokChatCompletionModel, GrokResponsesCompletionModel } from "./completion";
 export {
@@ -22,6 +21,7 @@ export type {
   KnownGrokCompletionModelName,
   KnownGrokImageGenerationModelName,
 } from "./models";
+export { GrokSpeechGenerationModel } from "./speech-generation";
 export type {
   GrokFileSearchOptions,
   GrokMcpOptions,

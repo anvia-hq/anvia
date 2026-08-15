@@ -1,9 +1,10 @@
-export type { RetryContext, RetryOptions } from "../retry";
+export type { ModelCallOptions } from "../model-call-options";
+export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
 export type { AgentSession } from "./agent";
 export { Agent } from "./agent";
 export type { ContextIndex, CreateContextIndexOptions } from "./context-index";
 export { createContextIndex, isContextIndex } from "./context-index";
-export { AgentRunCancelledError, MaxTurnsError } from "./errors";
+export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./errors";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,
@@ -17,9 +18,8 @@ export type {
   AgentApprovalDecision,
   AgentApprovalRequiredEvent,
   AgentApprovalRequiredResult,
+  AgentBlockedResult,
   AgentChildStreamEvent,
-  AgentChildStreamEventWithoutToolCallDeltas,
-  AgentChildStreamEventWithToolCallDeltas,
   AgentDeltaEvent,
   AgentErrorStreamEvent,
   AgentInput,
@@ -28,9 +28,6 @@ export type {
   AgentRunOptions,
   AgentStream,
   AgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas,
-  AgentStreamEventWithToolCallDeltas,
-  AgentStreamOptions,
   AgentToolApprovalRequest,
   AgentToolCallDeltaEvent,
 } from "./run-types";

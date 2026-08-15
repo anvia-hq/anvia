@@ -45,7 +45,9 @@ export type RunStartHookArgs = {
 };
 
 export type RunEndHookArgs = {
-  output: string;
+  status: "completed";
+  output: unknown;
+  text: string;
   usage: Usage;
   messages: Message[];
   run: RunControl;

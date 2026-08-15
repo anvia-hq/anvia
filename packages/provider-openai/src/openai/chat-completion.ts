@@ -5,14 +5,15 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelMetadataOptions,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type DocumentContent,
   type ImageContent,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
+  type ModelCallOptions,
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
@@ -37,7 +38,7 @@ type ChatCompletionParams = Record<string, unknown>;
 type ChatMessage = Record<string, unknown>;
 
 type ChatCompletionStreamChunkMapping = {
-  events: CompletionStreamEvent[];
+  events: CompletionModelStreamEvent[];
   hasToolCalls: boolean;
   hasFinishReason: boolean;
   finishReason?: unknown;
@@ -103,10 +104,14 @@ export class OpenAIChatCompletionModel
 
   async completion(
     request: CompletionRequest<OpenAICompletionModelName>,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toOpenAIChatCompletionParams(this.defaultModel, request);
-    const response = await this.client.chat.completions.create(params as never);
+    const response = await this.client.chat.completions.create(
+      params as never,
+      openAIRequestOptions(options),
+    );
     return withContextUsage(
       fromOpenAIChatCompletionResponse(response),
       this.getModelInfo(request.model ?? this.defaultModel),
@@ -115,7 +120,8 @@ export class OpenAIChatCompletionModel
 
   async *streamCompletion(
     request: CompletionRequest<OpenAICompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params: ChatCompletionParams = {
       ...toOpenAIChatCompletionParams(this.defaultModel, request),
@@ -123,7 +129,10 @@ export class OpenAIChatCompletionModel
     };
     const streamOptions = isPlainObject(params.stream_options) ? params.stream_options : {};
     params.stream_options = { ...streamOptions, include_usage: true };
-    const stream = await this.client.chat.completions.create(params as never);
+    const stream = await this.client.chat.completions.create(
+      params as never,
+      openAIRequestOptions(options),
+    );
     const streamState = new OpenAIChatCompletionStreamState();
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       const mapping = streamState.mapChunk(chunk);
@@ -148,9 +157,12 @@ export function toOpenAIChatCompletionParams(
   request: CompletionRequest<OpenAICompletionModelName>,
 ): ChatCompletionParams {
   const params: ChatCompletionParams = {
+    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
     model: request.model ?? defaultModel,
     messages: requestMessages(request).flatMap(messageToChatMessages),
   };
+
+  delete params.tools;
 
   if (request.tools.length > 0) {
     params.tools = request.tools.map(toolDefinitionToOpenAIChatCompletion);
@@ -179,11 +191,13 @@ export function toOpenAIChatCompletionParams(
     };
   }
 
-  if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    Object.assign(params, request.additionalParams);
-  }
-
   return params;
+}
+
+function openAIRequestOptions(
+  options: ModelCallOptions | undefined,
+): { signal?: AbortSignal | undefined } | undefined {
+  return options?.abortSignal === undefined ? undefined : { signal: options.abortSignal };
 }
 
 function providerRequestSummary(
@@ -204,8 +218,8 @@ function providerRequestSummary(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: toolChoiceSummary(request.toolChoice),
-    additionalParamKeys: isPlainObject(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isPlainObject(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
 }
@@ -298,7 +312,7 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
   return result;
 }
 
-export function fromOpenAIChatCompletionStreamChunk(chunk: unknown): CompletionStreamEvent[] {
+export function fromOpenAIChatCompletionStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
   return mapOpenAIChatCompletionStreamChunk(chunk).events;
 }
 
@@ -310,7 +324,7 @@ function mapOpenAIChatCompletionStreamChunk(
     return { events: [], hasToolCalls: false, hasFinishReason: false };
   }
 
-  const events: CompletionStreamEvent[] = [];
+  const events: CompletionModelStreamEvent[] = [];
   const choice = primaryStreamChoice(chunk.choices);
   let hasToolCalls = false;
 
@@ -318,7 +332,7 @@ function mapOpenAIChatCompletionStreamChunk(
     const delta = choice.delta;
     const reasoning = stringFrom(delta.reasoning) ?? stringFrom(delta.reasoning_content);
     if (reasoning !== undefined && reasoning.length > 0) {
-      const event: CompletionStreamEvent = { type: "reasoning_delta", delta: reasoning };
+      const event: CompletionModelStreamEvent = { type: "reasoning_delta", delta: reasoning };
       if (reasoningId !== undefined) {
         event.id = reasoningId;
       }
@@ -644,8 +658,8 @@ function toolCallDelta(
     name?: string | undefined;
     argumentsDelta?: string | undefined;
   },
-): CompletionStreamEvent {
-  const event: CompletionStreamEvent = { type: "tool_call_delta", id };
+): CompletionModelStreamEvent {
+  const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
   if (values.callId !== undefined && values.callId.length > 0) event.callId = values.callId;
   if (values.name !== undefined && values.name.length > 0) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;

@@ -8,8 +8,9 @@ describe("Gemini multimodal models", () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
 
-    const response = await generateImage("draw a diagram", {
+    const response = await generateImage({
       model,
+      prompt: "draw a diagram",
       width: 1024,
       height: 768,
     });
@@ -22,26 +23,27 @@ describe("Gemini multimodal models", () => {
         imageConfig: { aspectRatio: "4:3" },
       },
     });
-    expect(response.image).toEqual(new Uint8Array([1, 2, 3]));
-    expect(response.mediaType).toBe("image/png");
+    expect(response.images[0].data).toEqual(new Uint8Array([1, 2, 3]));
+    expect(response.images[0].mediaType).toBe("image/png");
   });
 
-  it("lets caller-provided native Gemini image config override derived aspect ratio", async () => {
+  it("preserves provider image config while canonical dimensions win", async () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).imageGenerationModel();
 
-    await generateImage("draw", {
+    await generateImage({
       model,
+      prompt: "draw",
       width: 1024,
       height: 768,
-      additionalParams: {
+      providerOptions: {
         config: { imageConfig: { aspectRatio: "16:9", imageSize: "2K" } },
       },
     });
 
     expect(client.models.generateContentCalls[0]).toMatchObject({
       config: {
-        imageConfig: { aspectRatio: "16:9", imageSize: "2K" },
+        imageConfig: { aspectRatio: "4:3", imageSize: "2K" },
         responseModalities: ["TEXT", "IMAGE"],
       },
     });
@@ -53,20 +55,21 @@ describe("Gemini multimodal models", () => {
       "imagen-test",
     );
 
-    const response = await generateImage("draw a diagram", {
+    const response = await generateImage({
       model,
+      prompt: "draw a diagram",
       width: 1024,
       height: 768,
-      additionalParams: { config: { aspectRatio: "16:9", numberOfImages: 2 } },
+      providerOptions: { config: { aspectRatio: "16:9", numberOfImages: 2 } },
     });
 
     expect(client.models.generateImagesCalls[0]).toEqual({
       model: "imagen-test",
       prompt: "draw a diagram",
-      config: { aspectRatio: "16:9", numberOfImages: 2 },
+      config: { aspectRatio: "4:3", numberOfImages: 2 },
     });
-    expect(response.image).toEqual(new Uint8Array([4, 5, 6]));
-    expect(response.mediaType).toBe("image/jpeg");
+    expect(response.images[0].data).toEqual(new Uint8Array([4, 5, 6]));
+    expect(response.images[0].mediaType).toBe("image/jpeg");
   });
 
   it("rejects malformed native Gemini image responses", async () => {
@@ -83,7 +86,7 @@ describe("Gemini multimodal models", () => {
     });
     const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
 
-    await expect(generateImage("draw", { model })).rejects.toThrow(
+    await expect(generateImage({ model, prompt: "draw" })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
     );
   });
@@ -105,7 +108,7 @@ describe("Gemini multimodal models", () => {
       "imagen-test",
     );
 
-    await expect(generateImage("draw", { model })).rejects.toThrow(
+    await expect(generateImage({ model, prompt: "draw" })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
     );
   });
@@ -114,12 +117,12 @@ describe("Gemini multimodal models", () => {
     const client = mockGeminiClient();
     const model = new GeminiClient({ client: client as never }).transcriptionModel("gemini-test");
 
-    const response = await transcribe(new Uint8Array([7, 8, 9]), {
+    const response = await transcribe({
       model,
-      filename: "voice.wav",
+      audio: { data: new Uint8Array([7, 8, 9]), filename: "voice.wav" },
       prompt: "Use support terminology.",
       temperature: 0.2,
-      additionalParams: { topP: 0.8 },
+      providerOptions: { topP: 0.8 },
     });
 
     expect(client.models.generateContentCalls[0]).toEqual({

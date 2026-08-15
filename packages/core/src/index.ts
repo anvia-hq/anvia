@@ -2,7 +2,7 @@ export type { AgentSession } from "./agent/agent";
 export { Agent } from "./agent/agent";
 export type { ContextIndex, CreateContextIndexOptions } from "./agent/context-index";
 export { createContextIndex, isContextIndex } from "./agent/context-index";
-export { AgentRunCancelledError, MaxTurnsError } from "./agent/errors";
+export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./agent/errors";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,
@@ -16,9 +16,8 @@ export type {
   AgentApprovalDecision,
   AgentApprovalRequiredEvent,
   AgentApprovalRequiredResult,
+  AgentBlockedResult,
   AgentChildStreamEvent,
-  AgentChildStreamEventWithoutToolCallDeltas,
-  AgentChildStreamEventWithToolCallDeltas,
   AgentDeltaEvent,
   AgentErrorStreamEvent,
   AgentInput,
@@ -27,9 +26,6 @@ export type {
   AgentRunOptions,
   AgentStream,
   AgentStreamEvent,
-  AgentStreamEventWithoutToolCallDeltas,
-  AgentStreamEventWithToolCallDeltas,
-  AgentStreamOptions,
   AgentToolApprovalRequest,
   AgentToolCallDeltaEvent,
 } from "./agent/run-types";
@@ -42,32 +38,25 @@ export type {
   AgentToolOptions,
 } from "./agent/types";
 export type {
-  AudioGenerationModel,
-  AudioGenerationRequest,
-  AudioGenerationResponse,
-  GenerateSpeechOptions,
-} from "./audio-generation";
-export { generateSpeech } from "./audio-generation";
-export type {
   AssistantGenerationMetadata,
   AssistantMessage,
   AssistantMessageOptions,
+  CompletionBaseOptions,
+  CompletionInput,
   CompletionModel,
   CompletionModelInfo,
   CompletionModelMetadataOptions,
+  CompletionModelStreamEvent,
   CompletionRequest,
   CompletionResponse,
+  CompletionResult,
   CompletionSource,
+  CompletionStreamEvent,
   CompletionTool,
   ContextUsage,
-  CreateCompletionBaseOptions,
-  CreateCompletionInput,
-  CreateCompletionOptions,
-  CreateCompletionResult,
-  CreateCompletionStreamOptions,
-  CreateParsedCompletionOptions,
-  CreateParsedCompletionResult,
   Document,
+  GenerateCompletionOptions,
+  GenerateStructuredCompletionOptions,
   ImageContent,
   JsonObject,
   JsonPrimitive,
@@ -76,6 +65,8 @@ export type {
   ModelContextLimits,
   ProviderTool,
   ProviderToolCall,
+  StreamCompletionOptions,
+  StreamStructuredCompletionOptions,
   SystemMessage,
   Text,
   ToolCall,
@@ -90,14 +81,13 @@ export type {
 export {
   AssistantContent,
   calculateContextUsage,
-  createCompletion,
-  createCompletionStream,
-  createParsedCompletion,
+  generateCompletion,
   getAssistantGenerationMetadata,
   isJsonValue,
   isProviderTool,
   Message,
   resolveCompletionModelInfo,
+  streamCompletion,
   ToolContent,
   Usage,
   UserContent,
@@ -130,7 +120,7 @@ export type {
   GenerateImageOptions,
   ImageGenerationModel,
   ImageGenerationRequest,
-  ImageGenerationResponse,
+  ImageGenerationResult,
 } from "./image-generation";
 export { generateImage } from "./image-generation";
 export type {
@@ -157,9 +147,17 @@ export {
   MemoryCompactionConflictError,
   MemoryCompactionError,
 } from "./memory";
-export type { RetryContext, RetryOptions } from "./retry";
+export type { ModelCallOptions } from "./model-call-options";
+export type { RetryContext, RetryOptions, RetrySetting } from "./retry";
 export type { ZodSchema } from "./schema";
 export { loadSkills, SkillValidationError, skill } from "./skills";
+export type {
+  GenerateSpeechOptions,
+  SpeechGenerationModel,
+  SpeechGenerationRequest,
+  SpeechGenerationResult,
+} from "./speech-generation";
+export { generateSpeech } from "./speech-generation";
 export type {
   AnyTool,
   CreateToolOptions,
@@ -186,9 +184,10 @@ export type {
 export { createMiddleware } from "./tool/middleware";
 export type {
   TranscribeOptions,
+  TranscriptionAudio,
   TranscriptionModel,
   TranscriptionRequest,
-  TranscriptionResponse,
+  TranscriptionResult,
 } from "./transcription";
 export { transcribe } from "./transcription";
 export type {

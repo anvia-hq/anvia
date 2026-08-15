@@ -701,7 +701,7 @@ function modelCallMetadata(metadata: Record<string, unknown>): Record<string, un
     maxTokens: metadata.maxTokens,
     toolChoice: metadata.toolChoice,
     hasOutputSchema: metadata.hasOutputSchema,
-    additionalParamKeys: metadata.additionalParamKeys,
+    providerOptionKeys: metadata.providerOptionKeys,
   });
   const group = compactTraceMetadata({
     request: Object.keys(request).length === 0 ? undefined : request,

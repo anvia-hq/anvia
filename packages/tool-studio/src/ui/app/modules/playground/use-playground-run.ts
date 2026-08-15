@@ -364,8 +364,8 @@ export function usePlaygroundRun(props: {
     }
     if (event.type === "final") {
       playgroundRunTerminalRef.current = true;
-      if (event.trace?.traceId !== undefined) {
-        transcript.assignAssistantTraceId(event.trace.traceId);
+      if (event.result.trace?.traceId !== undefined) {
+        transcript.assignAssistantTraceId(event.result.trace.traceId);
       }
       transcript.clearPendingAssistant();
       completeWorkingRun();

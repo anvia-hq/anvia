@@ -42,9 +42,8 @@ const agent = new Agent({
   observers: [tracing],
 });
 
-const response = await agent.prompt("How do I reset my password?").send();
-
-console.log(response.output);
+const result = await agent.generate("How do I reset my password?");
+if (result.status === "completed") console.log(result.output);
 
 await tracing.flush();
 ```
@@ -388,17 +387,16 @@ const prompts = createLangfusePromptClient(tracing);
 const prompt = await prompts.getPrompt("support.system");
 console.log(prompt.prompt, prompt.version);
 
-await agent
-  .prompt("hi")
-  .withTrace({
+await agent.generate("hi", {
+  trace: {
     promptRef: { name: "support.system", version: prompt.version },
-  })
-  .send();
+  },
+});
 ```
 
 `promptRef` is also accepted on `trace.metadata` (keys
 `promptName` and `promptVersion`) for back-compat with users who
-already attach metadata to `withTrace(...)`.
+already attach metadata to Agent run trace options.
 
 ### Prompt client options
 

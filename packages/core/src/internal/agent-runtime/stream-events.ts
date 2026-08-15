@@ -3,7 +3,7 @@ import type {
   AgentStreamEvent,
   AgentToolCallDeltaEvent,
 } from "../../agent/run-types";
-import type { CompletionStreamEvent } from "../../completion/types";
+import type { CompletionModelStreamEvent } from "../../completion/types";
 
 export function addTurn(turn: number, event: AgentDeltaEvent): AgentStreamEvent {
   if (event.type === "text_delta") {
@@ -27,7 +27,7 @@ export function addTurn(turn: number, event: AgentDeltaEvent): AgentStreamEvent 
 
 export function addTurnToToolCallDelta(
   turn: number,
-  event: Extract<CompletionStreamEvent, { type: "tool_call_delta" }>,
+  event: Extract<CompletionModelStreamEvent, { type: "tool_call_delta" }>,
 ): AgentToolCallDeltaEvent {
   const mapped: AgentToolCallDeltaEvent = {
     type: "tool_call_delta",

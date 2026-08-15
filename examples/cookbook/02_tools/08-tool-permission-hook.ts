@@ -74,4 +74,4 @@ while (result.status === "approval_required") {
   });
 }
 
-console.log(result.output);
+console.log(result.text);

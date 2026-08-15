@@ -4,12 +4,12 @@ import {
   ModelListingError,
 } from "@anvia/core/model-listing";
 import OpenAI from "openai";
-import { GrokAudioGenerationModel } from "./audio-generation";
 import { GrokChatCompletionModel, GrokResponsesCompletionModel } from "./completion";
 import { GROK_4_5, GROK_IMAGINE_IMAGE, XAI_BASE_URL } from "./constants";
 import type { GrokHttpOptions } from "./http";
 import { GrokImageGenerationModel } from "./image-generation";
 import type { GrokCompletionModelName, GrokImageGenerationModelName } from "./models";
+import { GrokSpeechGenerationModel } from "./speech-generation";
 import { GrokTranscriptionModel } from "./transcription";
 
 export type GrokClientOptions = {
@@ -62,8 +62,8 @@ export class GrokClient implements ModelListingClient {
     return new GrokImageGenerationModel(this.client, model, this.fetchFn);
   }
 
-  audioGenerationModel(): GrokAudioGenerationModel {
-    return new GrokAudioGenerationModel(this.httpOptions);
+  speechGenerationModel(): GrokSpeechGenerationModel {
+    return new GrokSpeechGenerationModel(this.httpOptions);
   }
 
   transcriptionModel(): GrokTranscriptionModel {

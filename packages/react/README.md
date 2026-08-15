@@ -79,11 +79,11 @@ type EventTransport<TRequest, TEvent> = {
 };
 ```
 
-Default hooks can consume raw `createCompletionStream(...)` events, raw agent stream events, or
+Default hooks can consume `streamCompletion(...)` events, raw Agent stream events, or
 `UIStreamEvent` records. A completion endpoint can return:
 
 ```ts
-createEventStream(createCompletionStream(model, { messages: body.messages }));
+createEventStream(streamCompletion({ model, messages: body.messages }));
 ```
 
 For chat streams that should survive navigation or reload, pair `useChat({ resume: { key } })` with

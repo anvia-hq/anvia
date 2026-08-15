@@ -209,28 +209,32 @@ export function applyAnviaStreamEvent(
   }
 
   if (event.type === "final") {
-    const finalMessages = finalMessagesFromEvent(event);
+    const result = isRecord(event.result) ? event.result : undefined;
+    if (result === undefined) {
+      return undefined;
+    }
+
+    const finalMessages = finalMessagesFromResult(result);
     if (finalMessages !== undefined) {
       const next = replaceCurrentRunMessages(messages, finalMessages);
-      return typeof event.runId === "string"
-        ? setLastAssistantMetadata(next, { runId: event.runId })
+      return typeof result.runId === "string"
+        ? setLastAssistantMetadata(next, { runId: result.runId })
         : next;
     }
 
-    if (isRecord(event.response) && Array.isArray(event.response.choice)) {
-      const finalText = textFromAssistantContent(event.response.choice);
+    if (Array.isArray(result.content)) {
+      const finalText = textFromAssistantContent(result.content);
       const next = finalText.length > 0 ? replaceAssistantText(messages, finalText) : messages;
-      const providerMessageId = event.response.messageId;
+      const providerMessageId = result.messageId;
       return typeof providerMessageId === "string"
         ? setLastAssistantMetadata(next, { providerMessageId })
         : next;
     }
 
-    if (typeof event.output === "string") {
-      const next =
-        event.output.length > 0 ? replaceAssistantText(messages, event.output) : messages;
-      return typeof event.runId === "string"
-        ? setLastAssistantMetadata(next, { runId: event.runId })
+    if (typeof result.text === "string") {
+      const next = result.text.length > 0 ? replaceAssistantText(messages, result.text) : messages;
+      return typeof result.runId === "string"
+        ? setLastAssistantMetadata(next, { runId: result.runId })
         : next;
     }
   }
@@ -323,13 +327,13 @@ export function replaceAssistantText(messages: UIMessage[], text: string): UIMes
   );
 }
 
-function finalMessagesFromEvent(event: Record<string, unknown>): UIMessage[] | undefined {
-  if (!Array.isArray(event.messages) || event.messages.length === 0) {
+function finalMessagesFromResult(result: Record<string, unknown>): UIMessage[] | undefined {
+  if (!Array.isArray(result.messages) || result.messages.length === 0) {
     return undefined;
   }
 
   try {
-    return coreMessagesToUIMessages(event.messages as CoreMessage[]);
+    return coreMessagesToUIMessages(result.messages as CoreMessage[]);
   } catch {
     return undefined;
   }

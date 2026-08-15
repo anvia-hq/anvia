@@ -141,7 +141,14 @@ class StudioRunTraceObserver implements AgentRunObserver {
   async end(args: AgentRunEndArgs): Promise<void> {
     await this.save("success", {
       endedAt: new Date(),
-      output: args.output,
+      output: args.status === "completed" ? traceOutput(args.output) : args.text,
+      result: {
+        status: args.status,
+        text: args.text,
+        ...(args.status === "completed"
+          ? { output: toJsonValue(args.output) }
+          : { stage: args.stage }),
+      },
       usage: args.usage,
       messages: toJsonValue(args.messages),
     });
@@ -161,6 +168,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
     result: {
       endedAt: Date;
       output?: string;
+      result?: JsonObject;
       error?: JsonValue;
       usage: StudioTrace["usage"];
       messages: JsonValue;
@@ -173,6 +181,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
     }
 
     const metadata = traceMetadata(this.props.args, result.messages);
+    if (result.result !== undefined) metadata.result = result.result;
     const trace: StudioTrace = {
       id: this.props.id,
       runId: this.props.args.runId,
@@ -522,8 +531,8 @@ function generationMetadata(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: request.toolChoice,
-    additionalParamKeys: isRecord(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isRecord(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
     hasOutputSchema: request.outputSchema !== undefined,
     firstDeltaMs: endArgs?.firstDeltaMs,
@@ -569,8 +578,8 @@ function completionRequestSummary(request: AgentGenerationStartArgs["request"]):
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: request.toolChoice,
-    additionalParamKeys: isRecord(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isRecord(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
     hasOutputSchema: request.outputSchema !== undefined,
   });
@@ -651,6 +660,17 @@ function parseOrString(value: string): JsonValue {
     return toJsonValue(JSON.parse(value));
   } catch {
     return value;
+  }
+}
+
+function traceOutput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(toJsonValue(value));
+  } catch {
+    return String(value);
   }
 }
 

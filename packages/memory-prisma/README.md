@@ -69,8 +69,7 @@ await agent
     userId: "user_456",
     metadata: { tenantId: "tenant_789" },
   })
-  .prompt("Where is my order?")
-  .send();
+  .generate("Where is my order?");
 ```
 
 `scope` defines the database key for one memory thread. By default the key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory across tenants or workspaces. Scope is storage isolation, not authorization.

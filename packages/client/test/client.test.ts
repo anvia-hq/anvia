@@ -177,7 +177,133 @@ describe("native stream adapters", () => {
     expect(JSON.stringify(events)).not.toContain("database password");
   });
 
-  it("keeps tool results on the provider tool part when only an internal result ID exists", async () => {
+  it("honors output mappers that suppress output or map it to null", async () => {
+    const completion = (): CompletionStreamEvent<{ secret: boolean }>[] => [
+      {
+        type: "final",
+        result: {
+          output: { secret: true },
+          text: "Safe",
+          content: [{ type: "text", text: "Safe" }],
+          usage: Usage.empty(),
+          rawResponse: {},
+        },
+      },
+    ];
+
+    const suppressed = await collect(
+      completionToClientStream(values(completion()), { mapOutput: () => undefined }),
+    );
+    expect(suppressed.find((event) => event.type === "run_end")).not.toHaveProperty("output");
+    expect(JSON.stringify(suppressed)).not.toContain("secret");
+
+    const nulled = await collect(
+      completionToClientStream(values(completion()), { mapOutput: () => null }),
+    );
+    expect(nulled.find((event) => event.type === "run_end")).toMatchObject({ output: null });
+  });
+
+  it("emits final-only sources and provider tool calls without duplicating streamed values", async () => {
+    const sharedSource = { type: "url" as const, url: "https://example.com/a", id: "source_a" };
+    const sharedToolCall = { id: "provider_a", name: "search", status: "completed" };
+    const events = await collect(
+      completionToClientStream(
+        values<CompletionStreamEvent>([
+          { type: "source", source: sharedSource },
+          { type: "provider_tool_call", toolCall: sharedToolCall },
+          {
+            type: "final",
+            result: {
+              output: "done",
+              text: "done",
+              content: [{ type: "text", text: "done" }],
+              usage: Usage.empty(),
+              rawResponse: {},
+              sources: [
+                sharedSource,
+                { type: "url", url: "https://example.com/b", id: "source_b" },
+              ],
+              providerToolCalls: [
+                sharedToolCall,
+                { id: "provider_b", name: "search", status: "completed" },
+              ],
+            },
+          },
+        ]),
+      ),
+    );
+
+    expect(events.filter((event) => event.type === "source")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "provider_tool_call")).toHaveLength(2);
+  });
+
+  it("finalizes anonymous reasoning without restarting or clearing it", async () => {
+    const events = await collect(
+      completionToClientStream(
+        values<CompletionStreamEvent>([
+          { type: "reasoning_delta", delta: "Think", contentType: "summary" },
+          {
+            type: "final",
+            result: {
+              output: "answer",
+              text: "answer",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "Thinking",
+                  content: [{ type: "summary", text: "Thinking" }],
+                },
+                { type: "text", text: "answer" },
+              ],
+              usage: Usage.empty(),
+              rawResponse: {},
+            },
+          },
+        ]),
+      ),
+    );
+    expect(events.filter((event) => event.type === "reasoning_start")).toHaveLength(1);
+
+    const messages = events.reduce<ReturnType<typeof applyClientStreamEvent>>(
+      (current, event) => applyClientStreamEvent(current, event),
+      [],
+    );
+    expect(messages[0]?.parts.find((part) => part.type === "reasoning")).toMatchObject({
+      text: "Thinking",
+      content: [{ type: "summary", text: "Thinking" }],
+    });
+  });
+
+  it("keeps identified and anonymous reasoning parts distinct at finalization", async () => {
+    const events = await collect(
+      completionToClientStream(
+        values<CompletionStreamEvent>([
+          { type: "reasoning_delta", delta: "anonymous" },
+          { type: "reasoning_delta", id: "reason_1", delta: "identified" },
+          {
+            type: "final",
+            result: {
+              output: "answer",
+              text: "answer",
+              content: [
+                { type: "reasoning", id: "reason_1", text: "identified" },
+                { type: "reasoning", text: "anonymous" },
+                { type: "text", text: "answer" },
+              ],
+              usage: Usage.empty(),
+              rawResponse: {},
+            },
+          },
+        ]),
+      ),
+    );
+    const final = events.find((event) => event.type === "message_end");
+    const reasoning = final?.parts?.filter((part) => part.type === "reasoning") ?? [];
+    expect(reasoning.map((part) => part.text)).toEqual(["identified", "anonymous"]);
+    expect(new Set(reasoning.map((part) => part.id)).size).toBe(2);
+  });
+
+  it("keeps tool results on the provider tool part using its explicit ID", async () => {
     const events = await collect(
       agentToClientStream(
         values<AgentStreamEvent>([
@@ -209,6 +335,7 @@ describe("native stream adapters", () => {
             type: "tool_result",
             turn: 1,
             toolName: "weather",
+            toolCallId: "provider_tool_1",
             internalCallId: "internal_tool_1",
             args: '{"city":"Jakarta"}',
             result: "Sunny",
@@ -237,6 +364,69 @@ describe("native stream adapters", () => {
       result: { status: "success", output: "Sunny" },
     });
   });
+
+  it("associates concurrent same-name tool results by provider tool ID", async () => {
+    const first = {
+      type: "tool_call" as const,
+      id: "provider_tool_a",
+      function: { name: "weather", arguments: { city: "Jakarta" } },
+    };
+    const second = {
+      type: "tool_call" as const,
+      id: "provider_tool_b",
+      function: { name: "weather", arguments: { city: "Bandung" } },
+    };
+    const events = await collect(
+      agentToClientStream(
+        values<AgentStreamEvent>([
+          { type: "tool_call", turn: 1, toolCall: first },
+          { type: "tool_call", turn: 1, toolCall: second },
+          {
+            type: "turn_end",
+            turn: 1,
+            response: { choice: [first, second], usage: Usage.empty(), rawResponse: {} },
+          },
+          {
+            type: "tool_result",
+            turn: 1,
+            toolName: "weather",
+            toolCallId: "provider_tool_b",
+            internalCallId: "internal_b",
+            args: '{"city":"Bandung"}',
+            result: "Cloudy",
+          },
+          {
+            type: "tool_result",
+            turn: 1,
+            toolName: "weather",
+            toolCallId: "provider_tool_a",
+            internalCallId: "internal_a",
+            args: '{"city":"Jakarta"}',
+            result: "Sunny",
+          },
+          {
+            type: "final",
+            result: {
+              status: "completed",
+              runId: "native_run",
+              output: "done",
+              text: "done",
+              usage: Usage.empty(),
+              messages: [],
+            },
+          },
+        ]),
+      ),
+    );
+    const calls = events.filter((event) => event.type === "tool_call_end");
+    const results = events.filter((event) => event.type === "tool_result");
+    expect(results.find((event) => event.toolCallId === "provider_tool_b")?.partId).toBe(
+      calls.find((event) => event.toolCallId === "provider_tool_b")?.partId,
+    );
+    expect(results.find((event) => event.toolCallId === "provider_tool_a")?.partId).toBe(
+      calls.find((event) => event.toolCallId === "provider_tool_a")?.partId,
+    );
+  });
 });
 
 describe("protocol and transport", () => {
@@ -244,7 +434,7 @@ describe("protocol and transport", () => {
     const schema = {
       safeParse(value: unknown) {
         return value === "ok"
-          ? ({ success: true, data: value } as const)
+          ? ({ success: true, data: "transformed" } as const)
           : ({ success: false } as const);
       },
     };
@@ -253,13 +443,61 @@ describe("protocol and transport", () => {
         { type: "data", runId: "run_1", name: "notice", data: "ok" },
         { dataSchemas: { notice: schema } },
       ),
-    ).toMatchObject({ name: "notice", data: "ok" });
+    ).toMatchObject({ name: "notice", data: "transformed" });
     expect(() =>
       parseClientStreamEvent(
         { type: "data", runId: "run_1", name: "notice", data: "bad" },
         { dataSchemas: { notice: schema } },
       ),
     ).toThrow('Invalid data event "notice"');
+  });
+
+  it("returns transformed data from framed HTTP transports", async () => {
+    const transport = createHttpClientTransport<ClientStreamRequest, { count: number }>({
+      endpoint: "/api/chat",
+      dataSchemas: {
+        count: {
+          safeParse(value: unknown) {
+            return typeof value === "string" && /^\d+$/.test(value)
+              ? ({ success: true, data: Number(value) } as const)
+              : ({ success: false } as const);
+          },
+        },
+      },
+      fetch: async () =>
+        new Response(
+          [
+            {
+              type: "stream_start",
+              protocol: "anvia.client.v1",
+              streamId: "stream_1",
+              eventId: 0,
+              resumable: false,
+            },
+            {
+              type: "stream_event",
+              streamId: "stream_1",
+              eventId: 1,
+              event: { type: "data", runId: "run_1", name: "count", data: "42" },
+            },
+            { type: "stream_end", streamId: "stream_1", eventId: 1, status: "completed" },
+          ]
+            .map((frame) => JSON.stringify(frame))
+            .join("\n"),
+          {
+            headers: {
+              "content-type": "application/x-ndjson",
+              "x-anvia-stream-protocol": "anvia.client.v1",
+            },
+          },
+        ),
+    });
+
+    const frames = await collect(transport.send({ messages: [] }));
+    expect(frames.find((frame) => frame.type === "stream_event")?.event).toMatchObject({
+      name: "count",
+      data: 42,
+    });
   });
 
   it("rejects undeclared protocol fields instead of forwarding raw payloads", () => {
@@ -354,6 +592,66 @@ describe("protocol and transport", () => {
     await expect(collect(transport.send({ messages: [] }))).rejects.toThrow(
       "more than one stream_start",
     );
+  });
+
+  it("rejects resume responses for another or non-resumable stream", async () => {
+    function transportFor(streamId: string, resumable: boolean) {
+      return createHttpClientTransport({
+        endpoint: "/api/chat",
+        fetch: async () =>
+          new Response(
+            [
+              {
+                type: "stream_start",
+                protocol: "anvia.client.v1",
+                streamId,
+                eventId: 0,
+                resumable,
+              },
+              { type: "stream_end", streamId, eventId: 2, status: "completed" },
+            ]
+              .map((frame) => JSON.stringify(frame))
+              .join("\n"),
+            {
+              headers: {
+                "content-type": "application/x-ndjson",
+                "x-anvia-stream-protocol": "anvia.client.v1",
+              },
+            },
+          ),
+      });
+    }
+    const request: ClientStreamRequest = {
+      messages: [],
+      resume: { streamId: "expected", after: 2 },
+    };
+
+    await expect(collect(transportFor("wrong", true).send(request))).rejects.toThrow(
+      "streamId does not match",
+    );
+    await expect(collect(transportFor("expected", false).send(request))).rejects.toThrow(
+      "must identify a resumable stream",
+    );
+  });
+
+  it("keeps user metadata lossless and stores generated state separately", () => {
+    const afterMessage = applyClientStreamEvent(
+      [{ id: "assistant_1", role: "assistant", parts: [], metadata: "user-metadata" }],
+      {
+        type: "message_end",
+        runId: "run_1",
+        messageId: "assistant_1",
+        usage: Usage.empty(),
+      },
+    );
+    const afterRun = applyClientStreamEvent(afterMessage, {
+      type: "run_end",
+      runId: "run_1",
+      status: "completed",
+    });
+
+    expect(afterRun[0]?.metadata).toBe("user-metadata");
+    expect(afterRun[0]?.generation).toMatchObject({ runId: "run_1", status: "completed" });
   });
 
   it("uses message_end parts as the authoritative guarded result", () => {

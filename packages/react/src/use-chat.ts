@@ -212,7 +212,10 @@ export function useChat<
             ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
           } as TRequest);
 
-        for await (const frame of transport.send(request, { signal: controller.signal })) {
+        for await (const frame of transport.send(request, {
+          signal: controller.signal,
+          ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
+        })) {
           if (abortRef.current !== controller || controller.signal.aborted) return;
           if (frame.type === "stream_start") {
             setStreamId(frame.streamId);

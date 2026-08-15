@@ -4,12 +4,24 @@ import {
   type ClientStream,
   type ClientStreamEvent,
   type ClientStreamRequest,
+  type ClientTransport,
   createDirectClientTransport,
 } from "@anvia/client";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as publicReact from "../src";
-import { useChat, useCompletion } from "../src";
+import { type UseChatOptions, type UseCompletionOptions, useChat, useCompletion } from "../src";
+
+declare const inferredCustomTransport: ClientTransport<{ prompt: string }>;
+
+function CompileCustomRequestInference() {
+  // @ts-expect-error Custom request inference must require a request factory.
+  useChat({ transport: inferredCustomTransport });
+  // @ts-expect-error Completion must enforce the same inferred request contract.
+  useCompletion({ transport: inferredCustomTransport });
+  return null;
+}
+void CompileCustomRequestInference;
 
 describe("public boundary", () => {
   it("does not re-export client protocol or transport ownership", () => {
@@ -17,6 +29,28 @@ describe("public boundary", () => {
     expect(publicReact).not.toHaveProperty("createDirectClientTransport");
     expect(publicReact).not.toHaveProperty("parseClientStreamEvent");
     expect(publicReact).not.toHaveProperty("fetchEventStream");
+  });
+
+  it("requires request factories for custom transport request types", () => {
+    const transport = createDirectClientTransport<{ prompt: string }>(() => events([]));
+
+    // @ts-expect-error A custom request cannot be constructed from Message[] without a factory.
+    const invalidChat: UseChatOptions<{ prompt: string }> = { transport };
+    // @ts-expect-error Completion has the same custom-request requirement.
+    const invalidCompletion: UseCompletionOptions<{ prompt: string }> = { transport };
+    void invalidChat;
+    void invalidCompletion;
+
+    const chat = {
+      transport,
+      createRequest: () => ({ prompt: "chat" }),
+    } satisfies UseChatOptions<{ prompt: string }>;
+    const completion = {
+      transport,
+      createRequest: () => ({ prompt: "completion" }),
+    } satisfies UseCompletionOptions<{ prompt: string }>;
+    expect(chat.createRequest).toBeTypeOf("function");
+    expect(completion.createRequest).toBeTypeOf("function");
   });
 });
 

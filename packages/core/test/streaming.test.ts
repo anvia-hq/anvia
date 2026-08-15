@@ -984,7 +984,12 @@ describe("Agent streaming", () => {
       toolCall: AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }),
     });
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "tool_result", toolName: "add", result: "7" }),
+      expect.objectContaining({
+        type: "tool_result",
+        toolName: "add",
+        toolCallId: "call_1",
+        result: "7",
+      }),
     );
     expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
   });
@@ -1541,7 +1546,8 @@ describe("Agent streaming", () => {
         type: "tool_result",
         turn: 1,
         toolName: "add",
-        toolCallId: "call_1",
+        toolCallId: "tool_0",
+        callId: "call_1",
         args: '{"x":2,"y":5}',
         result: "7",
       }),

@@ -2,9 +2,11 @@ import type { AgentChildStreamEvent, AgentStreamEvent } from "@anvia/core/agent"
 import {
   type AssistantContent,
   type CompletionResponse,
+  type CompletionSource,
   type CompletionStreamEvent,
   isJsonValue,
   type JsonValue,
+  type ProviderToolCall,
   type ToolCall,
   type ToolResultContent,
 } from "@anvia/core/completion";
@@ -83,7 +85,14 @@ type MessageState = {
   textEnded: boolean;
   reasoning: Map<string, ReasoningState>;
   tools: Map<string, ToolState>;
+  sourceFingerprints: Set<string>;
+  providerToolCallFingerprints: Set<string>;
   modelMessageId?: string;
+};
+
+type FinalMessageMetadata = Pick<CompletionResponse, "usage" | "contextUsage"> & {
+  sources?: readonly CompletionSource[];
+  providerToolCalls?: readonly ProviderToolCall[];
 };
 
 type AgentAdapterRuntime = {
@@ -133,18 +142,10 @@ export function completionToClientStream<Output = string, RawResponse = unknown>
               yield* finishToolCall(state, event.toolCall);
               break;
             case "source":
-              yield clientEvent(state, {
-                type: "source",
-                messageId: state.messageId,
-                partId: createClientId("source"),
-                source: event.source,
-              });
+              yield* emitSource(state, event.source);
               break;
             case "provider_tool_call":
-              yield clientEvent(state, {
-                type: "provider_tool_call",
-                toolCall: event.toolCall,
-              });
+              yield* emitProviderToolCall(state, event.toolCall);
               break;
             case "message_id":
               state.modelMessageId = event.id;
@@ -155,6 +156,10 @@ export function completionToClientStream<Output = string, RawResponse = unknown>
               yield* finishMessage(state, result.content, {
                 usage: result.usage,
                 ...(result.contextUsage === undefined ? {} : { contextUsage: result.contextUsage }),
+                ...(result.sources === undefined ? {} : { sources: result.sources }),
+                ...(result.providerToolCalls === undefined
+                  ? {}
+                  : { providerToolCalls: result.providerToolCalls }),
               });
               const output = clientOutput(result.output, options.mapOutput);
               yield clientEvent(state, {
@@ -316,20 +321,14 @@ async function* translateAgentEvent(
     case "source": {
       const state = getAgentMessage(runtime, event.turn, scope);
       yield* startMessage(state);
-      yield clientEvent(state, {
-        type: "source",
-        messageId: state.messageId,
-        partId: createClientId("source"),
-        source: event.source,
-      });
+      yield* emitSource(state, event.source);
       return;
     }
-    case "provider_tool_call":
-      yield scopedEvent(runtime.runId, turn, scope, {
-        type: "provider_tool_call",
-        toolCall: event.toolCall,
-      });
+    case "provider_tool_call": {
+      const state = getAgentMessage(runtime, event.turn, scope);
+      yield* emitProviderToolCall(state, event.toolCall);
       return;
+    }
     case "tool_result": {
       const state = getAgentMessage(runtime, event.turn, scope);
       yield* startMessage(state);
@@ -337,10 +336,10 @@ async function* translateAgentEvent(
         state,
         event.toolName,
         event.toolCallId,
+        event.callId,
         event.internalCallId,
       );
       const output = toolResultOutput(event.result, event.structuredResult);
-      tool.internalCallId = event.internalCallId;
       tool.result = {
         status: "success",
         output,
@@ -368,6 +367,10 @@ async function* translateAgentEvent(
         ...(event.response.contextUsage === undefined
           ? {}
           : { contextUsage: event.response.contextUsage }),
+        ...(event.response.sources === undefined ? {} : { sources: event.response.sources }),
+        ...(event.response.providerToolCalls === undefined
+          ? {}
+          : { providerToolCalls: event.response.providerToolCalls }),
       });
       yield scopedEvent(runtime.runId, event.turn, scope, {
         type: "turn_end",
@@ -469,6 +472,8 @@ function createMessageState(input: {
     textEnded: false,
     reasoning: new Map(),
     tools: new Map(),
+    sourceFingerprints: new Set(),
+    providerToolCallFingerprints: new Set(),
   };
 }
 
@@ -515,6 +520,31 @@ async function* appendText(state: MessageState, delta: string): AsyncIterable<Cl
     partId: state.textPartId,
     delta,
   });
+}
+
+async function* emitSource(
+  state: MessageState,
+  source: CompletionSource,
+): AsyncIterable<ClientStreamEvent> {
+  const fingerprint = valueFingerprint(source);
+  if (state.sourceFingerprints.has(fingerprint)) return;
+  state.sourceFingerprints.add(fingerprint);
+  yield clientEvent(state, {
+    type: "source",
+    messageId: state.messageId,
+    partId: createClientId("source"),
+    source,
+  });
+}
+
+async function* emitProviderToolCall(
+  state: MessageState,
+  toolCall: ProviderToolCall,
+): AsyncIterable<ClientStreamEvent> {
+  const fingerprint = valueFingerprint(toolCall);
+  if (state.providerToolCallFingerprints.has(fingerprint)) return;
+  state.providerToolCallFingerprints.add(fingerprint);
+  yield clientEvent(state, { type: "provider_tool_call", toolCall });
 }
 
 async function* appendReasoning(
@@ -642,7 +672,7 @@ async function* finishToolCall(
 async function* finishMessage(
   state: MessageState,
   content: readonly AssistantContent[],
-  metadata: Pick<CompletionResponse, "usage" | "contextUsage">,
+  metadata: FinalMessageMetadata,
 ): AsyncIterable<ClientStreamEvent> {
   if (state.ended) return;
   const textContent = content.filter(
@@ -674,12 +704,17 @@ async function* finishMessage(
   const finalReasoning = content.filter(
     (part): part is Extract<AssistantContent, { type: "reasoning" }> => part.type === "reasoning",
   );
+  const anonymousReasoning = [...state.reasoning.values()].filter(
+    (reasoning) => reasoning.reasoningId === undefined,
+  );
+  let anonymousIndex = 0;
   for (const [index, reasoning] of finalReasoning.entries()) {
-    const current =
-      (reasoning.id === undefined ? undefined : state.reasoning.get(reasoning.id)) ??
-      [...state.reasoning.values()][index] ??
-      createReasoningState(reasoning.id);
-    if (!state.reasoning.has(reasoning.id ?? `final:${index}`)) {
+    const existing =
+      reasoning.id === undefined
+        ? anonymousReasoning[anonymousIndex++]
+        : state.reasoning.get(reasoning.id);
+    const current = existing ?? createReasoningState(reasoning.id);
+    if (existing === undefined) {
       state.reasoning.set(reasoning.id ?? `final:${index}`, current);
       yield clientEvent(state, {
         type: "reasoning_start",
@@ -695,6 +730,7 @@ async function* finishMessage(
         type: "reasoning_end",
         messageId: state.messageId,
         partId: current.partId,
+        text: reasoning.text,
         ...(reasoning.content === undefined ? {} : { content: reasoning.content }),
       });
     }
@@ -706,6 +742,7 @@ async function* finishMessage(
       type: "reasoning_end",
       messageId: state.messageId,
       partId: reasoning.partId,
+      text: reasoning.text,
     });
   }
 
@@ -720,6 +757,11 @@ async function* finishMessage(
         attachment,
       });
     }
+  }
+
+  for (const source of metadata.sources ?? []) yield* emitSource(state, source);
+  for (const toolCall of metadata.providerToolCalls ?? []) {
+    yield* emitProviderToolCall(state, toolCall);
   }
 
   state.ended = true;
@@ -775,7 +817,10 @@ function contentToUIMessageParts(
   state: MessageState,
 ): UIMessagePart[] {
   let textIndex = 0;
-  let reasoningIndex = 0;
+  let anonymousReasoningIndex = 0;
+  const anonymousReasoning = [...state.reasoning.values()].filter(
+    (reasoning) => reasoning.reasoningId === undefined,
+  );
   return content.map((contentPart) => {
     if (contentPart.type === "text") {
       const part: Extract<UIMessagePart, { type: "text" }> = {
@@ -789,9 +834,9 @@ function contentToUIMessageParts(
     }
     if (contentPart.type === "reasoning") {
       const current =
-        (contentPart.id === undefined ? undefined : state.reasoning.get(contentPart.id)) ??
-        [...state.reasoning.values()][reasoningIndex];
-      reasoningIndex += 1;
+        contentPart.id === undefined
+          ? anonymousReasoning[anonymousReasoningIndex++]
+          : state.reasoning.get(contentPart.id);
       const part: Extract<UIMessagePart, { type: "reasoning" }> = {
         id: current?.partId ?? createClientId("reasoning"),
         type: "reasoning",
@@ -861,23 +906,19 @@ function getToolState(state: MessageState, id: string, name?: string): ToolState
 function getToolResultState(
   state: MessageState,
   toolName: string,
+  toolCallId: string,
   callId: string | undefined,
   internalCallId: string,
 ): ToolState {
-  const tools = [...state.tools.values()];
-  const matchedById =
+  const matchedByToolCallId = state.tools.get(toolCallId);
+  const matchedByCallId =
     callId === undefined
       ? undefined
-      : tools.find((tool) => tool.toolCallId === callId || tool.callId === callId);
-  const matchedByName = [...tools]
-    .reverse()
-    .find((tool) => tool.toolName === toolName && tool.result === undefined);
-  const tool =
-    matchedById ?? matchedByName ?? getToolState(state, callId ?? internalCallId, toolName);
+      : [...state.tools.values()].find((tool) => tool.callId === callId);
+  const tool = matchedByToolCallId ?? matchedByCallId ?? getToolState(state, toolCallId, toolName);
   tool.toolName = toolName;
-  if (callId !== undefined && tool.callId === undefined && tool.toolCallId !== callId) {
-    tool.callId = callId;
-  }
+  if (callId !== undefined) tool.callId = callId;
+  tool.internalCallId = internalCallId;
   return tool;
 }
 
@@ -922,11 +963,24 @@ function clientOutput(
   output: unknown,
   mapper: ClientOutputMapper | undefined,
 ): JsonValue | undefined {
-  const mapped = mapper?.(output) ?? (isJsonValue(output) ? output : undefined);
+  const mapped = mapper === undefined ? (isJsonValue(output) ? output : undefined) : mapper(output);
   if (mapped !== undefined && !isJsonValue(mapped)) {
     throw new TypeError("mapOutput must return a strict JSON value or undefined.");
   }
   return mapped;
+}
+
+function valueFingerprint(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (Array.isArray(value)) return `[${value.map(valueFingerprint).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${valueFingerprint(entry)}`)
+      .join(",")}}`;
+  }
+  return `${typeof value}:${JSON.stringify(value)}`;
 }
 
 function jsonValueOrUndefined(value: unknown): JsonValue | undefined {

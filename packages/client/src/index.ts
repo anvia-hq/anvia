@@ -53,6 +53,7 @@ export type {
   UIAttachment,
   UIError,
   UIMessage,
+  UIMessageGeneration,
   UIMessagePart,
   UIMessageRole,
   UIToolMessagePart,

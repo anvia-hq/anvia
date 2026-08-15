@@ -101,20 +101,25 @@ export type CreateChatRequestArgs = {
 
 export type UseChatStatus = "ready" | "submitted" | "streaming" | "error";
 
-type UseChatCommonOptions<TRequest, TData extends ClientDataMap> = {
+type UseChatCommonOptions<TData extends ClientDataMap> = {
   initialMessages?: UIMessage[];
   resume?: ChatResumeOptions;
-  createRequest?: (args: CreateChatRequestArgs) => TRequest;
   humanInput?: HumanInputOptions;
   suggestions?: ChatSuggestion[];
   onEvent?: (event: ClientStreamEvent<TData>) => void;
   onError?: (error: Error) => void;
 };
 
+type ChatRequestFactoryOptions<TRequest> = [ClientStreamRequest] extends [TRequest]
+  ? { createRequest?: (args: CreateChatRequestArgs) => TRequest }
+  : { createRequest: (args: CreateChatRequestArgs) => TRequest };
+
 export type UseChatOptions<
   TRequest = ClientStreamRequest,
   TData extends ClientDataMap = ClientDataMap,
-> = ClientConnectionOptions<TRequest, TData> & UseChatCommonOptions<TRequest, TData>;
+> = ClientConnectionOptions<TRequest, TData> &
+  UseChatCommonOptions<TData> &
+  ChatRequestFactoryOptions<TRequest>;
 
 export type SetMessages = (
   messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[]),

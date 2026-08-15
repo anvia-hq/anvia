@@ -1,4 +1,4 @@
-import type { Message } from "@anvia/core/completion";
+import type { JsonValue, Message } from "@anvia/core/completion";
 import { isJsonValue } from "@anvia/core/completion";
 import {
   CLIENT_STREAM_PROTOCOL,
@@ -123,8 +123,9 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       requireOptionalStrings(event, ["reasoningId"], value);
       break;
     case "reasoning_end":
-      requireEventKeys(event, ["messageId", "partId", "content"]);
+      requireEventKeys(event, ["messageId", "partId", "text", "content"]);
       requireStrings(event, ["messageId", "partId"], value);
+      requireOptionalStrings(event, ["text"], value);
       if (
         event.content !== undefined &&
         (!Array.isArray(event.content) || !event.content.every(isReasoningContent))
@@ -236,8 +237,10 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       if (event.transient !== undefined && typeof event.transient !== "boolean") {
         invalid("data.transient", value);
       }
-      validateDataEvent(event.name as string, event.data, options.dataSchemas, value);
-      break;
+      return {
+        ...event,
+        data: parseDataEvent(event.name as string, event.data, options.dataSchemas, value),
+      } as ClientStreamEvent<TData>;
     case "message_end":
       requireEventKeys(event, [
         "messageId",
@@ -329,8 +332,8 @@ export function parseClientStreamFrame<TData extends ClientDataMap = ClientDataM
     if (typeof frame.streamId !== "string" || !isPositiveEventId(frame.eventId)) {
       throw new ClientProtocolError("Invalid client stream_event frame.", value);
     }
-    parseClientStreamEvent(frame.event, options);
-    return frame as ClientStreamFrame<TData>;
+    const event = parseClientStreamEvent(frame.event, options);
+    return { ...frame, event } as ClientStreamFrame<TData>;
   }
   if (frame.type === "stream_end") {
     requireOnlyKeys(frame, ["type", "streamId", "eventId", "status"], "stream_end frame");
@@ -357,17 +360,22 @@ export function normalizeClientError(value: unknown): Error {
   return new Error(typeof value === "string" ? value : "An unexpected error occurred.");
 }
 
-function validateDataEvent<TData extends ClientDataMap>(
+function parseDataEvent<TData extends ClientDataMap>(
   name: string,
   data: unknown,
   schemas: ClientDataSchemas<TData> | undefined,
   value: unknown,
-): void {
-  if (schemas === undefined) return;
+): JsonValue {
+  if (schemas === undefined) return data as JsonValue;
   const schema = schemas[name as keyof TData];
-  if (schema === undefined || schema.safeParse(data).success !== true) {
+  if (schema === undefined) {
     throw new ClientProtocolError(`Invalid data event "${name}".`, value);
   }
+  const parsed = schema.safeParse(data);
+  if (parsed.success !== true || !isJsonValue(parsed.data)) {
+    throw new ClientProtocolError(`Invalid data event "${name}".`, value);
+  }
+  return parsed.data;
 }
 
 function isClientStreamError(value: unknown): value is ClientStreamError {

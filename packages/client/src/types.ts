@@ -36,12 +36,21 @@ export type ClientStreamError = {
 
 export type UIError = ClientStreamError;
 
+export type UIMessageGeneration = {
+  runId?: string;
+  status?: "completed" | "blocked" | "approval_required" | "cancelled" | "error";
+  usage?: Usage;
+  contextUsage?: ContextUsage;
+  trace?: { traceId?: string; observationId?: string };
+};
+
 export type UIMessage = {
   id: string;
   role: UIMessageRole;
   parts: UIMessagePart[];
   modelMessageId?: string;
   metadata?: JsonValue;
+  generation?: UIMessageGeneration;
 };
 
 export type UIAttachment = {
@@ -261,6 +270,7 @@ type ClientStandardStreamEvent =
       type: "reasoning_end";
       messageId: string;
       partId: string;
+      text?: string;
       content?: ReasoningContent[];
     }
   | {
@@ -376,16 +386,17 @@ export type ClientStreamFrame<TData extends ClientDataMap = ClientDataMap> =
 export type ClientTransportOptions = {
   signal?: AbortSignal;
   headers?: HeadersInit;
+  resume?: ClientStreamCursor;
 };
 
 export type ClientTransport<
   TRequest = ClientStreamRequest,
   TData extends ClientDataMap = ClientDataMap,
 > = {
-  send(
+  send: (
     request: TRequest,
     options?: ClientTransportOptions,
-  ): AsyncIterable<ClientStreamFrame<TData>>;
+  ) => AsyncIterable<ClientStreamFrame<TData>>;
 };
 
 export type ClientErrorMapper = (error: unknown) => ClientStreamError;

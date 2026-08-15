@@ -32,7 +32,12 @@ The response uses `ClientStreamEvent` records inside an always-framed `anvia.cli
 
 Tool-call start, delta, and end events are automatic when the provider exposes streamed arguments.
 Errors are masked by default. Use `mapError` only at the server adapter boundary when an application
-intentionally exposes a safe error shape. Non-JSON outputs require an explicit `mapOutput`.
+intentionally exposes a safe error shape. Non-JSON outputs require an explicit `mapOutput`; returning
+`undefined` intentionally omits the output, while returning `null` exposes JSON `null`.
+
+`UIMessage.metadata` remains application-owned and round-trips unchanged. Runtime details such as
+run ID, usage, context usage, status, and trace correlation are stored separately in
+`UIMessage.generation`.
 
 Application-specific stream data is explicit and schema-validated:
 

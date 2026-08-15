@@ -12,4 +12,5 @@ adapters, lossless Message/UIMessage conversion, automatic tool-call deltas, mas
 typed data events, HTTP and direct transports, and always-framed resumable streams. Remove Core's UI
 message surface and the ambiguous Server and React event-stream APIs. Require React hooks to use an
 endpoint or canonical transport, expose four-state request lifecycle status, and migrate Studio to
-the same explicit boundary.
+the same explicit boundary. Preserve provider tool identity, final sources, reasoning, transformed
+data, application metadata, and resumable stream identity across that boundary.

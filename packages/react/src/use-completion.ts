@@ -17,18 +17,23 @@ export type UseCompletionRequestArgs = {
   messages: Message[];
 };
 
-type UseCompletionCommonOptions<TRequest, TData extends ClientDataMap> = {
+type UseCompletionCommonOptions<TData extends ClientDataMap> = {
   initialMessages?: UIMessage[];
   initialCompletion?: string;
-  createRequest?: (args: UseCompletionRequestArgs) => TRequest;
   onEvent?: (event: ClientStreamEvent<TData>) => void;
   onError?: (error: Error) => void;
 };
 
+type CompletionRequestFactoryOptions<TRequest> = [ClientStreamRequest] extends [TRequest]
+  ? { createRequest?: (args: UseCompletionRequestArgs) => TRequest }
+  : { createRequest: (args: UseCompletionRequestArgs) => TRequest };
+
 export type UseCompletionOptions<
   TRequest = ClientStreamRequest,
   TData extends ClientDataMap = ClientDataMap,
-> = ClientConnectionOptions<TRequest, TData> & UseCompletionCommonOptions<TRequest, TData>;
+> = ClientConnectionOptions<TRequest, TData> &
+  UseCompletionCommonOptions<TData> &
+  CompletionRequestFactoryOptions<TRequest>;
 
 export type UseCompletionResult<TData extends ClientDataMap = ClientDataMap> = {
   messages: UIMessage[];
@@ -67,15 +72,13 @@ export function useCompletion<
   const chat = useChat<TRequest, TData>({
     ...connection,
     initialMessages,
-    ...(options.createRequest === undefined
-      ? {}
-      : {
-          createRequest: (args) =>
-            options.createRequest?.({
-              uiMessages: args.uiMessages,
-              messages: args.messages,
-            }) as TRequest,
-        }),
+    createRequest: (args) =>
+      options.createRequest === undefined
+        ? ({ messages: args.messages } as TRequest)
+        : options.createRequest({
+            uiMessages: args.uiMessages,
+            messages: args.messages,
+          }),
     ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
     ...(options.onError === undefined ? {} : { onError: options.onError }),
   });

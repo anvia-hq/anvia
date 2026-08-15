@@ -4,6 +4,7 @@ import type {
   ClientDataMap,
   ClientStreamEvent,
   UIMessage,
+  UIMessageGeneration,
   UIMessagePart,
   UIToolMessagePart,
 } from "./types";
@@ -79,11 +80,15 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
       return updatePart(messages, event.messageId, event.partId, (part) => ({
         id: event.partId,
         type: "reasoning",
-        text: part?.type === "reasoning" ? part.text : "",
+        text: event.text ?? (part?.type === "reasoning" ? part.text : ""),
         ...(part?.type === "reasoning" && part.reasoningId !== undefined
           ? { reasoningId: part.reasoningId }
           : {}),
-        ...(event.content === undefined ? {} : { content: event.content }),
+        ...(event.content !== undefined
+          ? { content: event.content }
+          : part?.type === "reasoning" && part.content !== undefined
+            ? { content: part.content }
+            : {}),
       }));
     case "tool_call_start": {
       const part: UIToolMessagePart = {
@@ -183,10 +188,11 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
     case "message_end":
       return messages.map((message) => {
         if (message.id !== event.messageId) return message;
-        const metadata = mergeMetadata(message.metadata, event.metadata, {
+        const metadata = mergeMetadata(message.metadata, event.metadata);
+        const generation = mergeGeneration(message.generation, {
           runId: event.runId,
-          usage: event.usage,
-          contextUsage: event.contextUsage,
+          ...(event.usage === undefined ? {} : { usage: event.usage }),
+          ...(event.contextUsage === undefined ? {} : { contextUsage: event.contextUsage }),
         });
         return {
           ...message,
@@ -195,15 +201,16 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
             : { parts: reconcileFinalParts(message.parts, event.parts) }),
           ...(event.modelMessageId === undefined ? {} : { modelMessageId: event.modelMessageId }),
           ...(metadata === undefined ? {} : { metadata }),
+          generation,
         };
       });
     case "run_end":
-      return updateLastAssistantMetadata(messages, {
+      return updateLastAssistantGeneration(messages, {
         runId: event.runId,
         status: event.status,
-        usage: event.usage,
-        contextUsage: event.contextUsage,
-        trace: event.trace,
+        ...(event.usage === undefined ? {} : { usage: event.usage }),
+        ...(event.contextUsage === undefined ? {} : { contextUsage: event.contextUsage }),
+        ...(event.trace === undefined ? {} : { trace: event.trace }),
       });
     case "error":
       return appendToLastAssistant(messages, {
@@ -308,39 +315,36 @@ function appendToLastAssistant(messages: UIMessage[], part: UIMessagePart): UIMe
   return next;
 }
 
-function updateLastAssistantMetadata(
+function updateLastAssistantGeneration(
   messages: UIMessage[],
-  value: Record<string, unknown>,
+  value: UIMessageGeneration,
 ): UIMessage[] {
   const index = findLastIndex(messages, (message) => message.role === "assistant");
   if (index === -1) return messages;
   const next = [...messages];
   const message = next[index] as UIMessage;
-  const metadata = mergeMetadata(message.metadata, undefined, value);
-  next[index] = metadata === undefined ? message : { ...message, metadata };
+  next[index] = { ...message, generation: mergeGeneration(message.generation, value) };
   return next;
 }
 
 function mergeMetadata(
   current: UIMessage["metadata"],
   provided: UIMessage["metadata"],
-  generation: Record<string, unknown>,
 ): UIMessage["metadata"] {
-  const base = isRecord(current) ? current : {};
-  const explicit = isRecord(provided) ? provided : {};
-  const safeGeneration = Object.fromEntries(
-    Object.entries(generation).filter(([, value]) => value !== undefined && isJsonValue(value)),
-  );
-  const next = {
-    ...base,
-    ...explicit,
-    anvia: {
-      ...(isRecord(base.anvia) ? base.anvia : {}),
-      ...(isRecord(explicit.anvia) ? explicit.anvia : {}),
-      generation: safeGeneration,
-    },
+  if (provided === undefined) return current;
+  if (!isRecord(current) || !isRecord(provided)) return provided;
+  const next = { ...current, ...provided };
+  return isJsonValue(next) ? next : provided;
+}
+
+function mergeGeneration(
+  current: UIMessageGeneration | undefined,
+  provided: UIMessageGeneration,
+): UIMessageGeneration {
+  return {
+    ...current,
+    ...Object.fromEntries(Object.entries(provided).filter(([, value]) => value !== undefined)),
   };
-  return isJsonValue(next) ? next : (provided ?? current);
 }
 
 function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {

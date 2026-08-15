@@ -7,6 +7,7 @@ import {
   type ClientDataMap,
   type ClientDataSchemas,
   type ClientStream,
+  type ClientStreamCursor,
   type ClientStreamFrame,
   type ClientStreamRequest,
   type ClientTransport,
@@ -45,9 +46,8 @@ export function createHttpClientTransport<
 
   return {
     async *send(request, transportOptions) {
-      const resume = (request as { resume?: { after?: unknown } }).resume;
-      const after = typeof resume?.after === "number" ? resume.after : 0;
-      yield* validateFrameSequence(transport.send(request, transportOptions), after);
+      const resume = transportOptions?.resume ?? resumeCursorFromRequest(request);
+      yield* validateFrameSequence(transport.send(request, transportOptions), resume);
     },
   };
 }
@@ -68,8 +68,8 @@ export function createDirectClientTransport<
 ): ClientTransport<TRequest, TData> {
   return {
     async *send(request, transportOptions) {
-      const resumableRequest = request as { resume?: unknown };
-      if (resumableRequest.resume !== undefined) {
+      const resume = transportOptions?.resume ?? resumeCursorFromRequest(request);
+      if (resume !== undefined) {
         throw new ClientProtocolError("Direct client transports do not support resume cursors.");
       }
       const streamId = createClientId("stream");
@@ -119,10 +119,10 @@ export function createDirectClientTransport<
 
 async function* validateFrameSequence<TData extends ClientDataMap>(
   frames: AsyncIterable<ClientStreamFrame<TData>>,
-  after: number,
+  resume: ClientStreamCursor | undefined,
 ): AsyncIterable<ClientStreamFrame<TData>> {
   let streamId: string | undefined;
-  let lastEventId = after;
+  let lastEventId = resume?.after ?? 0;
   let ended = false;
   for await (const frame of frames) {
     if (ended) throw new ClientProtocolError("Received a frame after stream_end.", frame);
@@ -131,6 +131,12 @@ async function* validateFrameSequence<TData extends ClientDataMap>(
         throw new ClientProtocolError("The first client stream frame must be stream_start.", frame);
       }
       streamId = frame.streamId;
+      if (resume !== undefined && frame.streamId !== resume.streamId) {
+        throw new ClientProtocolError("Resume response streamId does not match the cursor.", frame);
+      }
+      if (resume !== undefined && !frame.resumable) {
+        throw new ClientProtocolError("Resume response must identify a resumable stream.", frame);
+      }
     } else if (frame.type === "stream_start") {
       throw new ClientProtocolError("Received more than one stream_start frame.", frame);
     } else if (frame.streamId !== streamId) {
@@ -152,4 +158,17 @@ async function* validateFrameSequence<TData extends ClientDataMap>(
   if (streamId === undefined || !ended) {
     throw new ClientProtocolError("Client stream ended without a complete frame sequence.");
   }
+}
+
+function resumeCursorFromRequest(value: unknown): ClientStreamCursor | undefined {
+  if (typeof value !== "object" || value === null || !("resume" in value)) return undefined;
+  const resume = value.resume;
+  if (typeof resume !== "object" || resume === null) return undefined;
+  if (!("streamId" in resume) || !("after" in resume)) return undefined;
+  return typeof resume.streamId === "string" &&
+    typeof resume.after === "number" &&
+    Number.isSafeInteger(resume.after) &&
+    resume.after >= 0
+    ? { streamId: resume.streamId, after: resume.after }
+    : undefined;
 }

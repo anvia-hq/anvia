@@ -160,7 +160,8 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
       type: "tool_result";
       turn: number;
       toolName: string;
-      toolCallId?: string;
+      toolCallId: string;
+      callId?: string;
       internalCallId: string;
       args: string;
       result: string;

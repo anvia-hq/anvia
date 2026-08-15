@@ -49,7 +49,8 @@ const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
 export type ToolResultEventPayload = {
   type: "tool_result";
   toolName: string;
-  toolCallId?: string;
+  toolCallId: string;
+  callId?: string;
   internalCallId: string;
   args: string;
   result: string;
@@ -296,14 +297,13 @@ export class ToolCallExecutor {
         const resultPayload: ToolResultEventPayload = {
           type: "tool_result",
           toolName: toolCall.function.name,
+          toolCallId: toolCall.id,
           internalCallId,
           args: effectiveArgs,
           result,
           structuredResult,
+          ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
         };
-        if (toolCall.callId !== undefined) {
-          resultPayload.toolCallId = toolCall.callId;
-        }
         onResult?.(resultPayload);
         return ToolContent.toolResult(toolCall.id, output, {
           callId: toolCall.callId,

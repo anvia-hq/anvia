@@ -1,5 +1,6 @@
 import { embedDocuments } from "@anvia/core/embeddings";
-import { MilvusVectorStore } from "@anvia/milvus";
+import { retrieveDocuments } from "@anvia/core/vector-store";
+import { MilvusVectorClient } from "@anvia/milvus";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
 type MarketNote = {
@@ -22,20 +23,27 @@ const notes: MarketNote[] = [
   },
 ];
 
-const embedded = await embedDocuments(embeddingModel, notes, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: notes,
   id: (note) => note.id,
   content: (note) => `${note.sector}: ${note.text}`,
 });
 
-const store = await MilvusVectorStore.connect<MarketNote>({
+const client = new MilvusVectorClient();
+const store = client.vectorStore<MarketNote>({
   collectionName: "anvia_market_notes",
-  vectorSize: 384,
+  dimensions: 384,
 });
-await store.upsertDocuments(embedded);
+await store.ensure();
+await store.upsert({ documents: embedded });
 
-const results = await store.index(embeddingModel).search({
+const results = await retrieveDocuments({
+  store,
+  model: embeddingModel,
   query: "technology demand",
   topK: 2,
 });
 
 console.log(results);
+await client.close();

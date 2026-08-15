@@ -1,5 +1,5 @@
 import { embedDocuments } from "@anvia/core/embeddings";
-import { InMemoryVectorStore, vectorFilter } from "@anvia/core/vector-store";
+import { InMemoryVectorStore, retrieveDocuments, vectorFilter } from "@anvia/core/vector-store";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
 type Report = {
@@ -16,16 +16,21 @@ const reports: Report[] = [
   { id: "r3", text: "earnings risk remains elevated", desk: "markets", priority: 5 },
 ];
 
-const embedded = await embedDocuments(model, reports, {
+const { documents: embedded } = await embedDocuments({
+  model,
+  documents: reports,
   id: (report) => report.id,
   content: (report) => report.text,
   metadata: (report) => ({ desk: report.desk, priority: report.priority }),
 });
 
-const store = InMemoryVectorStore.fromDocuments(embedded, {
+const store = InMemoryVectorStore.fromDocuments({
+  documents: embedded,
   index: { type: "lsh", numTables: 8, numHyperplanes: 1, seed: 11 },
 });
-const results = await store.index(model).search({
+const results = await retrieveDocuments({
+  store,
+  model,
   query: "earnings risk remains elevated",
   topK: 3,
   filter: vectorFilter.and(vectorFilter.eq("desk", "markets"), vectorFilter.gt("priority", 2)),

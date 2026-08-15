@@ -1,12 +1,14 @@
+export { QdrantVectorClient } from "./client.js";
 export { filterToQdrantFilter } from "./filters.js";
-export { QdrantVectorIndex } from "./search-index.js";
-export { QdrantVectorStore } from "./store.js";
+export { QdrantHybridVectorStore, QdrantVectorStore } from "./store.js";
 export type {
   QdrantClientLike,
+  QdrantDenseVectorStoreOptions,
   QdrantDistance,
   QdrantFusion,
-  QdrantHybridIndexOptions,
-  QdrantIndexOptions,
+  QdrantHybridVectorStoreOptions,
   QdrantMutationOptions,
-  QdrantVectorStoreConnectOptions,
+  QdrantVectorClientOptions,
+  QdrantVectorStoreBaseOptions,
+  QdrantVectorStoreOptions,
 } from "./types.js";

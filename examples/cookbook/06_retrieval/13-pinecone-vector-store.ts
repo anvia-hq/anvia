@@ -1,6 +1,6 @@
 import { embedDocuments } from "@anvia/core/embeddings";
-import { vectorFilter } from "@anvia/core/vector-store";
-import { PineconeVectorStore } from "@anvia/pinecone";
+import { retrieveDocuments, vectorFilter } from "@anvia/core/vector-store";
+import { PineconeVectorClient } from "@anvia/pinecone";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
 type MarketNote = {
@@ -25,26 +25,33 @@ const notes: MarketNote[] = [
   },
 ];
 
-const embedded = await embedDocuments(embeddingModel, notes, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: notes,
   id: (note) => note.id,
   content: (note) => note.text,
   metadata: (note) => ({ sector: note.sector }),
 });
 
-const store = await PineconeVectorStore.connect<MarketNote>({
+const client = new PineconeVectorClient({ apiKey: requireEnv("PINECONE_API_KEY") });
+const store = client.vectorStore<MarketNote>({
   indexName: requireEnv("PINECONE_INDEX_NAME"),
   namespace: process.env.PINECONE_NAMESPACE ?? "anvia-cookbook",
-  createIfMissing: false,
+  dimensions: 384,
 });
-await store.upsertDocuments(embedded);
+await store.validate();
+await store.upsert({ documents: embedded });
 
-const results = await store.index(embeddingModel).search({
+const results = await retrieveDocuments({
+  store,
+  model: embeddingModel,
   query: "technology demand",
   topK: 2,
   filter: vectorFilter.eq("sector", "technology"),
 });
 
 console.log(results);
+await client.close();
 
 function requireEnv(name: string): string {
   const value = process.env[name];

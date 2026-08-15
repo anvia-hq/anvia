@@ -1,8 +1,9 @@
+export { ChromaVectorClient } from "./client.js";
 export { filterToChromaWhere } from "./filters.js";
-export { ChromaVectorIndex } from "./search-index.js";
 export { ChromaVectorStore } from "./store.js";
 export type {
   ChromaClientLike,
   ChromaCollectionLike,
-  ChromaVectorStoreConnectOptions,
+  ChromaVectorClientOptions,
+  ChromaVectorStoreOptions,
 } from "./types.js";

@@ -1,4 +1,9 @@
-import type { SparseEmbedding, SparseEmbeddingModel, SparseVector } from "@anvia/core/embeddings";
+import type {
+  ModelCallOptions,
+  SparseEmbedding,
+  SparseEmbeddingModel,
+  SparseVector,
+} from "@anvia/core/embeddings";
 import { SparseEmbeddingModel as FastEmbedSparseModel, SparseTextEmbedding } from "fastembed";
 import { parseSparseBatch, parseSparseVector } from "./helpers.js";
 import type {
@@ -31,13 +36,15 @@ export class FastEmbedSparseEmbeddingModel implements SparseEmbeddingModel {
     return new FastEmbedSparseEmbeddingModel(runtime, { ...options, model });
   }
 
-  async embedTexts(texts: string[]): Promise<SparseEmbedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<SparseEmbedding[]> {
+    throwIfAborted(options?.abortSignal);
     if (texts.length === 0) {
       return [];
     }
 
     const vectors: SparseVector[] = [];
     for await (const batch of this.runtime.passageEmbed(texts, this.maxBatchSize)) {
+      throwIfAborted(options?.abortSignal);
       vectors.push(...parseSparseBatch(batch, vectors.length));
     }
 
@@ -53,9 +60,18 @@ export class FastEmbedSparseEmbeddingModel implements SparseEmbeddingModel {
     }));
   }
 
-  async embedQuery(query: string): Promise<SparseEmbedding> {
+  async embedQuery(query: string, options?: ModelCallOptions): Promise<SparseEmbedding> {
+    throwIfAborted(options?.abortSignal);
     const vector = parseSparseVector(await this.runtime.queryEmbed(query), 0);
     return { document: query, vector };
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    const error = new Error("The operation was aborted.");
+    error.name = "AbortError";
+    throw error;
   }
 }
 

@@ -1,8 +1,6 @@
 # @anvia/transformers
 
-Transformers.js embedding model adapter for Anvia.
-
-Use this package when you want local embedding generation through `@huggingface/transformers`, especially for development or lightweight RAG workflows.
+Local Transformers.js embedding model adapter for Anvia.
 
 ## Installation
 
@@ -10,78 +8,41 @@ Use this package when you want local embedding generation through `@huggingface/
 pnpm add @anvia/transformers @anvia/core @huggingface/transformers
 ```
 
-In this monorepo, the package is available through the workspace:
-
-```sh
-pnpm --filter @anvia/transformers build
-```
-
 ## Usage
 
 ```ts
 import { embedDocuments } from "@anvia/core/embeddings";
-import { InMemoryVectorStore } from "@anvia/core/vector-store";
+import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
-const embeddingModel = await createTransformersEmbeddingModel();
-
-const documents = await embedDocuments(
-  embeddingModel,
-  [
-    {
-      id: "password-reset",
-      title: "Password reset policy",
-      body: "Password reset links expire after 30 minutes.",
-    },
-    {
-      id: "priority-support",
-      title: "Priority support",
-      body: "Enterprise customers receive priority support.",
-    },
-  ],
-  {
-    id: (document) => document.id,
-    content: (document) => `${document.title}\n${document.body}`,
-  },
-);
-
-const store = InMemoryVectorStore.fromDocuments(documents);
-const index = store.index(embeddingModel);
-
-const results = await index.search({
-  query: "How long does a password reset link last?",
-  topK: 3,
+const model = await createTransformersEmbeddingModel();
+const { documents } = await embedDocuments({
+  model,
+  documents: [{ id: "password-reset", text: "Reset links expire after 30 minutes." }],
+  id: (document) => document.id,
+  content: (document) => document.text,
 });
 
-console.log(results);
+const store = InMemoryVectorStore.fromDocuments({ documents });
+const results = await retrieveDocuments({
+  store,
+  model,
+  query: "How long does a reset link last?",
+  topK: 3,
+});
 ```
 
-## Default Model
-
-The default embedding model is:
-
-```ts
-Xenova/all-MiniLM-L6-v2
-```
-
-You can pass another feature-extraction model:
+The default model is `Xenova/all-MiniLM-L6-v2`. Embedding helpers use object arguments, return
+named results, and accept `retries` and `abortSignal`.
 
 ```ts
-const embeddingModel = await createTransformersEmbeddingModel({
+const model = await createTransformersEmbeddingModel({
   model: "Xenova/all-MiniLM-L6-v2",
   pooling: "mean",
   normalize: true,
   maxBatchSize: 16,
 });
 ```
-
-## Exports
-
-- `TransformersEmbeddingModel`
-- `createTransformersEmbeddingModel`
-- `DEFAULT_TRANSFORMERS_EMBEDDING_MODEL`
-- `TransformersEmbeddingModelOptions`
-- `TransformersPooling`
 
 ## Development
 

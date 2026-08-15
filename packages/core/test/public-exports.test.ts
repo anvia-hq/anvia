@@ -4,8 +4,7 @@ import type {
   AgentOptions,
   AgentToolInput,
   AgentToolOptions,
-  ContextIndex,
-  CreateContextIndexOptions,
+  CreateVectorContextOptions,
   AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
   AgentRunOptions as PublicAgentRunOptions,
   AgentSession as PublicAgentSessionType,
@@ -14,6 +13,7 @@ import type {
   Agent as PublicAgentType,
   RetryContext as PublicRetryContext,
   RetryOptions as PublicRetryOptions,
+  VectorContext,
 } from "../src/agent";
 import * as publicAgent from "../src/agent";
 import * as completion from "../src/completion";
@@ -63,8 +63,8 @@ describe("public exports", () => {
     expectTypeOf<PublicAgentType>().not.toBeNever();
     expectTypeOf<PublicAgentSessionType>().not.toBeNever();
     expectTypeOf<AgentContextInput>().not.toBeNever();
-    expectTypeOf<ContextIndex>().not.toBeNever();
-    expectTypeOf<CreateContextIndexOptions>().not.toBeNever();
+    expectTypeOf<VectorContext>().not.toBeNever();
+    expectTypeOf<CreateVectorContextOptions>().not.toBeNever();
     expectTypeOf<AgentToolInput>().not.toBeNever();
     expectTypeOf<AgentToolOptions>().not.toBeNever();
     expectTypeOf<RootAgentSessionType>().toEqualTypeOf<PublicAgentSessionType>();
@@ -76,11 +76,11 @@ describe("public exports", () => {
     expect("AgentBuilder" in publicAgent).toBe(false);
   });
 
-  it("exposes context index helpers from the public entrypoints", () => {
-    expect("createContextIndex" in publicCore).toBe(true);
-    expect("createContextIndex" in publicAgent).toBe(true);
-    expect("isContextIndex" in publicCore).toBe(true);
-    expect("isContextIndex" in publicAgent).toBe(true);
+  it("exposes vector context helpers from the public entrypoints", () => {
+    expect("createVectorContext" in publicCore).toBe(true);
+    expect("createVectorContext" in publicAgent).toBe(true);
+    expect("isVectorContext" in publicCore).toBe(true);
+    expect("isVectorContext" in publicAgent).toBe(true);
   });
 
   it("exposes middleware helpers from public entrypoints", () => {
@@ -176,6 +176,8 @@ describe("public exports", () => {
     expect(completion).not.toHaveProperty("createCompletionStream");
     expect(completion).toHaveProperty("Message");
     expect(embeddings).toHaveProperty("embedText");
+    expect(embeddings).toHaveProperty("embedDocuments");
+    expect(embeddings).not.toHaveProperty("embedHybridDocuments");
     expect(evals).toHaveProperty("runEvalSuite");
     expect(evals).toHaveProperty("EvalOutcome");
     expect(evals).toHaveProperty("defaultEvalTraceSelector");
@@ -218,6 +220,26 @@ describe("public exports", () => {
     expect(transcription).not.toHaveProperty("transcriptionRequest");
     expect(transcription).not.toHaveProperty("TranscriptionRequestBuilder");
     expect(vectorStore).toHaveProperty("InMemoryVectorStore");
+    expect(vectorStore).toHaveProperty("retrieveDocuments");
+    expect(vectorStore).toHaveProperty("createVectorSearchTool");
+    expect(vectorStore).not.toHaveProperty("VectorSearchIndex");
+    expect(publicAgent).not.toHaveProperty("createContextIndex");
+    expect(publicAgent).not.toHaveProperty("isContextIndex");
+  });
+
+  it("rejects removed positional embedding signatures at compile time", () => {
+    const removedSignatures = () => {
+      const model = {
+        async embedTexts(texts: string[]) {
+          return texts.map((document) => ({ document, vector: [1] }));
+        },
+      };
+      // @ts-expect-error Embedding helpers accept one object argument in RC2.
+      void embeddings.embedText(model, "text");
+      // @ts-expect-error Document embedding accepts one object argument in RC2.
+      void embeddings.embedDocuments(model, ["text"], { content: (text: string) => text });
+    };
+    expect(removedSignatures).toBeTypeOf("function");
   });
 
   it("exposes direct pipelines without builder, build, or prompt aliases", () => {

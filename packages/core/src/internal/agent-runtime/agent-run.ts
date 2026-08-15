@@ -792,8 +792,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     turn: number,
   ): Promise<CompletionRequestFor<M>> {
     const ragText = extractRagText(prompt);
-    const documents = await fetchContextDocuments(this.agent, ragText);
-    const toolDefinitions = await fetchToolDefinitions(this.agent, ragText);
+    const abortSignal = this.abortController.signal;
+    const documents = await fetchContextDocuments(this.agent, ragText, abortSignal);
+    const toolDefinitions = await fetchToolDefinitions(this.agent, ragText, abortSignal);
     const request = createCompletionRequest([...history, prompt], {
       model: this.agent.model,
       instructions: this.agent.instructions,

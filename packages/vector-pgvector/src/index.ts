@@ -1,9 +1,10 @@
+export { PgVectorClient } from "./client.js";
 export { filterToPgVectorWhere } from "./filters.js";
-export { PgVectorIndex } from "./search-index.js";
 export { PgVectorStore } from "./store.js";
 export type {
   PgClientLike,
+  PgVectorClientOptions,
   PgVectorDistance,
-  PgVectorStoreConnectOptions,
+  PgVectorStoreOptions,
   PgVectorWhere,
 } from "./types.js";

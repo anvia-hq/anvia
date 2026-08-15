@@ -1,4 +1,4 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type { Mistral } from "@mistralai/mistralai";
 import type { MistralEmbeddingModelName } from "./models";
 
@@ -20,16 +20,16 @@ export class MistralEmbeddingModel implements EmbeddingModel {
     this.maxBatchSize = options.maxBatchSize ?? 1024;
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     const embeddings: Embedding[] = [];
     for (let index = 0; index < texts.length; index += this.maxBatchSize) {
       const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch)));
+      embeddings.push(...(await this.embedBatch(batch, options)));
     }
     return embeddings;
   }
 
-  private async embedBatch(texts: string[]): Promise<Embedding[]> {
+  private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     if (texts.length === 0) {
       return [];
     }
@@ -39,10 +39,13 @@ export class MistralEmbeddingModel implements EmbeddingModel {
       inputs: texts,
     };
     if (this.dimensions !== undefined) {
-      params.dimensions = this.dimensions;
+      params.outputDimension = this.dimensions;
     }
 
-    const response = await this.client.embeddings.create(params as never);
+    const response = await this.client.embeddings.create(
+      params as never,
+      options?.abortSignal === undefined ? undefined : ({ signal: options.abortSignal } as never),
+    );
     const data = dataFromResponse(response, texts.length);
     if (data.length !== texts.length) {
       throw new Error(

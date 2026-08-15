@@ -13,10 +13,7 @@ import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
-import {
-  assertFiniteSearchThreshold,
-  assertPositiveSearchLimit,
-} from "../internal/vector-search-options";
+import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
 import { resolveMemoryOptions } from "../memory/options";
 import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
@@ -33,13 +30,7 @@ import type {
   ToolCallContext,
   ToolCallStreamEvent,
 } from "../tool/tool";
-import type {
-  VectorInspectRequest,
-  VectorSearchRequest,
-  VectorSearchResult,
-  VectorSearchToolOptions,
-} from "../vector-store";
-import { type ContextIndex, isContextIndex } from "./context-index";
+import type { VectorInspectRequest, VectorSearchResult } from "../vector-store";
 import { AgentRunBlockedError } from "./errors";
 import { normalizeAgentId } from "./ids";
 import type { AgentLifecycle } from "./lifecycle";
@@ -60,6 +51,7 @@ import type {
   AgentToolOptions,
   ResolvedAgentOptions,
 } from "./types";
+import { isVectorContext, type VectorContext } from "./vector-context";
 
 const DEFAULT_MAX_TURNS = 20;
 
@@ -101,7 +93,7 @@ export class Agent<
     this.model = resolved.model;
     this.instructions = resolved.instructions;
     const context = (resolved.context ?? []).map(snapshotContextInput);
-    assertValidContextIndexes(context);
+    assertValidVectorContexts(context);
     this.context = Object.freeze(context);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
@@ -371,9 +363,7 @@ function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>
     } else if (isToolIndex(tool)) {
       toolIndexes.push(tool);
     } else if ((tool as { kind?: unknown }).kind === "tool-index") {
-      throw new TypeError(
-        "Invalid tool index: search, searchIds, asTool, tools, and a numeric topK are required.",
-      );
+      throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
     } else {
       toolsByName.set(tool.name, tool);
     }
@@ -427,12 +417,10 @@ function assertUniqueIndexedToolNames(indexes: readonly ToolIndex[]): void {
   const owners = new Map<string, number>();
   for (const [indexPosition, index] of indexes.entries()) {
     if (!isToolIndex(index)) {
-      throw new TypeError(
-        "Invalid tool index: search, searchIds, asTool, tools, and a numeric topK are required.",
-      );
+      throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
     }
     assertPositiveSearchLimit(index.topK);
-    assertFiniteSearchThreshold(index.threshold);
+    assertFiniteMinScore(index.minScore);
     for (const tool of index.tools) {
       const existingPosition = owners.get(tool.name);
       if (existingPosition !== undefined) {
@@ -450,11 +438,11 @@ function assertUniqueIndexedToolNames(indexes: readonly ToolIndex[]): void {
   }
 }
 
-function assertValidContextIndexes(inputs: readonly AgentContextInput[]): void {
+function assertValidVectorContexts(inputs: readonly AgentContextInput[]): void {
   for (const input of inputs) {
-    if (!isContextIndex(input)) continue;
+    if (!isVectorContext(input)) continue;
     assertPositiveSearchLimit(input.topK);
-    assertFiniteSearchThreshold(input.threshold);
+    assertFiniteMinScore(input.minScore);
   }
 }
 
@@ -763,7 +751,7 @@ export class AgentSession<Output = string, M extends CompletionModel = Completio
 }
 
 function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {
-  if (!isContextIndex(input)) {
+  if (!isVectorContext(input)) {
     return Object.freeze({
       id: input.id,
       text: input.text,
@@ -773,16 +761,27 @@ function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput
     });
   }
   const format = input.format;
-  return Object.freeze<ContextIndex<T>>({
-    kind: "context-index",
-    index: input.index,
+  const shared = {
+    kind: "vector-context" as const,
+    store: input.store,
     topK: input.topK,
-    ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
+    ...(input.minScore === undefined ? {} : { minScore: input.minScore }),
     ...(input.filter === undefined ? {} : { filter: cloneFrozenPlainData(input.filter) }),
+    ...(input.retries === undefined ? {} : { retries: cloneFrozenPlainData(input.retries) }),
     ...(format === undefined
       ? {}
       : { format: (result: VectorSearchResult<T>) => format.call(input, result) }),
-  });
+  };
+  return Object.freeze<VectorContext<T>>(
+    "models" in input && input.models !== undefined
+      ? {
+          ...shared,
+          store: input.store,
+          models: input.models,
+          ...(input.fusion === undefined ? {} : { fusion: input.fusion }),
+        }
+      : { ...shared, store: input.store, model: input.model },
+  );
 }
 
 function snapshotProviderTool(tool: ProviderTool): ProviderTool {
@@ -800,11 +799,10 @@ function snapshotToolIndex(index: ToolIndex): ToolIndex {
     kind: "tool-index" as const,
     tools: Object.freeze([...index.tools]),
     topK: index.topK,
-    ...(index.threshold === undefined ? {} : { threshold: index.threshold }),
+    ...(index.minScore === undefined ? {} : { minScore: index.minScore }),
     ...(index.filter === undefined ? {} : { filter: cloneFrozenPlainData(index.filter) }),
-    search: (request: VectorSearchRequest) => index.search(request),
-    searchIds: (request: VectorSearchRequest) => index.searchIds(request),
-    asTool: (options: VectorSearchToolOptions) => index.asTool(options),
+    search: (options: { query: string; abortSignal?: AbortSignal | undefined }) =>
+      index.search(options),
     ...(inspect === undefined
       ? {}
       : { inspect: (request: VectorInspectRequest) => inspect.call(index, request) }),

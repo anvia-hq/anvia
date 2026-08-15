@@ -1,4 +1,4 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type { GoogleGenAI } from "@google/genai";
 import type { GeminiEmbeddingModelName } from "./models";
 
@@ -37,16 +37,16 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
     this.title = options.title;
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     const embeddings: Embedding[] = [];
     for (let index = 0; index < texts.length; index += this.maxBatchSize) {
       const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch)));
+      embeddings.push(...(await this.embedBatch(batch, options)));
     }
     return embeddings;
   }
 
-  private async embedBatch(texts: string[]): Promise<Embedding[]> {
+  private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     if (texts.length === 0) {
       return [];
     }
@@ -54,7 +54,10 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
     const response = await this.client.models.embedContent({
       model: this.model,
       contents: texts,
-      config: this.embeddingConfig(),
+      config: {
+        ...this.embeddingConfig(),
+        ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
+      },
     } as never);
     const rawEmbeddings = embeddingsFromResponse(response);
     if (rawEmbeddings.length !== texts.length) {

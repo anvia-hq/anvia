@@ -1,5 +1,6 @@
 import { embedDocuments } from "@anvia/core/embeddings";
-import { QdrantVectorStore } from "@anvia/qdrant";
+import { retrieveDocuments } from "@anvia/core/vector-store";
+import { QdrantVectorClient } from "@anvia/qdrant";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
 type MarketNote = {
@@ -22,21 +23,28 @@ const notes: MarketNote[] = [
   },
 ];
 
-const embedded = await embedDocuments(embeddingModel, notes, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: notes,
   id: (note) => note.id,
   content: (note) => note.text,
   metadata: (note) => ({ sector: note.sector }),
 });
 
-const store = await QdrantVectorStore.connect<MarketNote>({
+const client = new QdrantVectorClient();
+const store = client.vectorStore<MarketNote>({
   collectionName: "anvia_market_notes",
-  vectorSize: 384,
+  dimensions: 384,
 });
-await store.upsertDocuments(embedded);
+await store.ensure();
+await store.upsert({ documents: embedded });
 
-const results = await store.index(embeddingModel).search({
+const results = await retrieveDocuments({
+  store,
+  model: embeddingModel,
   query: "technology demand",
   topK: 2,
 });
 
 console.log(results);
+await client.close();

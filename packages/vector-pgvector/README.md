@@ -1,8 +1,6 @@
 # @anvia/pgvector
 
-Postgres pgvector store adapter for Anvia.
-
-Use this package when you want to store Anvia embedded documents in Postgres with the pgvector extension and query them through Anvia's vector search interfaces.
+Postgres pgvector client and store adapter for Anvia.
 
 ## Installation
 
@@ -10,96 +8,48 @@ Use this package when you want to store Anvia embedded documents in Postgres wit
 pnpm add @anvia/pgvector @anvia/core pg pgvector
 ```
 
-In this monorepo, the package is available through the workspace:
-
-```sh
-pnpm --filter @anvia/pgvector build
-```
-
 ## Usage
 
 ```ts
 import { embedDocuments } from "@anvia/core/embeddings";
+import { retrieveDocuments } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
-import { PgVectorStore } from "@anvia/pgvector";
+import { PgVectorClient } from "@anvia/pgvector";
 
-const openai = new OpenAIClient({
-  apiKey,
-});
-
-const embeddings = openai.embeddingModel("text-embedding-3-small");
-
-const documents = await embedDocuments(
-  embeddings,
-  [
-    {
-      id: "password-reset",
-      title: "Password reset policy",
-      body: "Password reset links expire after 30 minutes.",
-      product: "support",
-    },
-    {
-      id: "priority-support",
-      title: "Priority support",
-      body: "Enterprise customers receive priority support.",
-      product: "support",
-    },
-  ],
-  {
-    id: (document) => document.id,
-    content: (document) => `${document.title}\n${document.body}`,
-    metadata: (document) => ({
-      product: document.product,
-      title: document.title,
-    }),
-  },
-);
-
-const store = await PgVectorStore.connect({
+const embeddings = new OpenAIClient().embeddingModel("text-embedding-3-small");
+const pgvector = new PgVectorClient({ connectionString: process.env.DATABASE_URL });
+const store = pgvector.vectorStore<{ id: string; text: string }>({
   tableName: "support_docs",
-  vectorSize: 1536,
+  dimensions: 1536,
+  metric: "cosine",
 });
 
-await store.upsertDocuments(documents);
+await store.ensure();
 
-const index = store.index(embeddings);
-const results = await index.search({
-  query: "How long does a password reset link last?",
+const { documents } = await embedDocuments({
+  model: embeddings,
+  documents: [{ id: "password-reset", text: "Reset links expire after 30 minutes." }],
+  id: (document) => document.id,
+  content: (document) => document.text,
+});
+await store.upsert({ documents });
+
+const results = await retrieveDocuments({
+  store,
+  model: embeddings,
+  query: "How long does a reset link last?",
   topK: 3,
 });
 
-console.log(results);
+await pgvector.close();
 ```
 
-## Postgres
+Constructing a client or store performs no I/O. `ensure()` creates or validates the extension and
+table; `validate()` only validates existing resources. Search accepts raw vectors, while
+`retrieveDocuments()` explicitly composes a store with an embedding model.
 
-By default, `PgVectorStore.connect` creates a `pg.Pool` from `connectionString` or the normal Postgres environment variables supported by `pg`. You can also pass a custom `pg` client or pool:
-
-```ts
-import pg from "pg";
-
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const store = await PgVectorStore.connect({
-  client: pool,
-  tableName: "support_docs",
-  vectorSize: 1536,
-  createIfMissing: true,
-});
-```
-
-pgvector requires vector dimensions before creating a table, so `vectorSize` is required.
-
-`connect(...)` is async by design. It verifies or creates the pgvector extension and backing table before returning a store, so configuration and connection errors fail early instead of surfacing later from `upsertDocuments(...)` or `search(...)`. Constructors stay synchronous and side-effect free.
-
-## Exports
-
-- `PgVectorStore`
-- `PgVectorIndex`
-- `filterToPgVectorWhere`
-- `PgVectorStoreConnectOptions`
+Pass `client` to `PgVectorClient` to inject a pool or compatible client. Injected clients remain
+caller-owned and are not closed by `close()`.
 
 ## Development
 

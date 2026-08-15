@@ -695,7 +695,7 @@ export type StudioKnowledgeSourceSummary = {
   count: number;
   registrationIndex?: number;
   topK?: number;
-  threshold?: number;
+  minScore?: number;
   inspectable?: boolean;
   itemCount?: number;
 };

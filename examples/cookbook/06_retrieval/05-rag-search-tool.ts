@@ -1,6 +1,7 @@
-import { ChromaVectorStore } from "@anvia/chroma";
+import { ChromaVectorClient } from "@anvia/chroma";
 import { Agent } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
+import { createVectorSearchTool } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
@@ -25,16 +26,23 @@ const runbooks: Runbook[] = [
   },
 ];
 
-const embedded = await embedDocuments(embeddingModel, runbooks, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: runbooks,
   id: (runbook) => runbook.id,
   content: (runbook) => runbook.text,
 });
-const store = await ChromaVectorStore.connect<Runbook>({
+const vectorClient = new ChromaVectorClient();
+const store = vectorClient.vectorStore<Runbook>({
   collectionName: "anvia_runbooks",
+  dimensions: 384,
 });
-await store.upsertDocuments(embedded);
+await store.ensure();
+await store.upsert({ documents: embedded });
 
-const searchRunbooks = store.index(embeddingModel).asTool({
+const searchRunbooks = createVectorSearchTool({
+  store,
+  model: embeddingModel,
   name: "search_runbooks",
   description: "Search incident runbooks for relevant operational guidance.",
   topK: 2,
@@ -53,3 +61,4 @@ const response = await agent.generate("The queue is backing up. What should I ch
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);
+await vectorClient.close();

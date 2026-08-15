@@ -9,22 +9,21 @@ import {
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
-  type ContextIndex,
-  createContextIndex,
   createMiddleware,
   createObserver,
   createTool,
+  createVectorContext,
   defineGuardrailPolicy,
   defineInputGuardrail,
+  type EmbeddingModel,
   isToolIndex,
   type JsonObject,
   MaxTurnsError,
-  type Tool,
   type ToolIndex,
-  type ToolSearchDocument,
   Usage,
-  type VectorSearchIndex,
+  type VectorContext,
   type VectorSearchResult,
+  type VectorStore,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -73,48 +72,31 @@ const addTool = createTool({
   execute: ({ x, y }) => x + y,
 });
 
-const searchTool: Tool<{ query: string; topK?: number }, unknown> = {
-  name: "search",
-  definition() {
-    return {
-      name: "search",
-      description: "Search documents",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-          topK: { type: "number" },
-        },
-        required: ["query"],
-        additionalProperties: false,
-      },
-    };
-  },
-  call() {
-    return [];
+const embeddingModel: EmbeddingModel = {
+  async embedTexts(texts) {
+    return texts.map((document) => ({ document, vector: [1] }));
   },
 };
 
-function emptyIndex<T>(): VectorSearchIndex<T> {
+function emptyStore<T>(): VectorStore<T> {
   return {
+    async ensure() {},
+    async validate() {},
+    async upsert() {},
     async search() {
       return [];
-    },
-    async searchIds() {
-      return [];
-    },
-    asTool() {
-      return searchTool;
     },
   };
 }
 
 function emptyToolIndex(tools: AnyTool[] = [], topK = 1): ToolIndex {
   return {
-    ...emptyIndex<ToolSearchDocument>(),
     kind: "tool-index",
     tools,
     topK,
+    async search() {
+      return [];
+    },
   };
 }
 
@@ -128,7 +110,7 @@ describe("Agent construction", () => {
         return { end() {} };
       },
     });
-    const dynamicContextIndex = emptyIndex<unknown>();
+    const dynamicContextStore = emptyStore<unknown>();
     const indexedTool = { ...addTool, name: "indexed_add" };
     const toolIndex = emptyToolIndex([indexedTool], 3);
     const skillTool = { ...addTool, name: "skill_add" };
@@ -141,7 +123,15 @@ describe("Agent construction", () => {
       model,
       name: "Support",
       instructions: "Help customers.",
-      context: [...context, createContextIndex(dynamicContextIndex, { topK: 2, threshold: 0.5 })],
+      context: [
+        ...context,
+        createVectorContext({
+          store: dynamicContextStore,
+          model: embeddingModel,
+          topK: 2,
+          minScore: 0.5,
+        }),
+      ],
       tools: [...tools, toolIndex],
       mcpServers: [{ name: "math", tools: [mcpTool], async close() {} }],
       skills: {
@@ -164,7 +154,12 @@ describe("Agent construction", () => {
     expect(agent.instructions).toBe("Help customers.\n\nUse the loaded skills.");
     expect(agent.context).toEqual([
       { id: "policy", text: "Keep answers short." },
-      createContextIndex(dynamicContextIndex, { topK: 2, threshold: 0.5 }),
+      createVectorContext({
+        store: dynamicContextStore,
+        model: embeddingModel,
+        topK: 2,
+        minScore: 0.5,
+      }),
     ]);
     expect(agent.tools.map((tool) => tool.name)).toEqual([
       "add",
@@ -323,10 +318,11 @@ describe("Agent construction", () => {
     expect(Object.isFrozen(registered?.tools)).toBe(true);
   });
 
-  it("preserves class-based context-index getters and format methods", () => {
-    class ClassContextIndex implements ContextIndex<string> {
-      readonly kind = "context-index" as const;
-      readonly index = emptyIndex<string>();
+  it("preserves class-based vector-context getters and format methods", () => {
+    class ClassVectorContext {
+      readonly kind = "vector-context" as const;
+      readonly store = emptyStore<string>();
+      readonly model = embeddingModel;
 
       get topK(): number {
         return 2;
@@ -340,9 +336,9 @@ describe("Agent construction", () => {
     const agent = new Agent({
       id: "agent",
       model: new QueueModel([]),
-      context: [new ClassContextIndex()],
+      context: [new ClassVectorContext()],
     });
-    const registered = agent.context[0] as ContextIndex<string>;
+    const registered = agent.context[0] as VectorContext<string>;
 
     expect(registered.topK).toBe(2);
     expect(
@@ -411,24 +407,21 @@ describe("Agent construction", () => {
 
   it("validates structurally supplied retrieval registrations", () => {
     const contextIndex = {
-      ...createContextIndex(emptyIndex<string>(), { topK: 1 }),
+      ...createVectorContext({ store: emptyStore<string>(), model: embeddingModel, topK: 1 }),
       topK: Number.NaN,
     };
-    const toolIndex = { ...emptyToolIndex([addTool]), threshold: Number.POSITIVE_INFINITY };
+    const toolIndex = { ...emptyToolIndex([addTool]), minScore: Number.POSITIVE_INFINITY };
 
     expect(
       () => new Agent({ id: "agent", model: new QueueModel([]), context: [contextIndex] }),
     ).toThrow("topK must be a positive safe integer");
     expect(() => new Agent({ id: "agent", model: new QueueModel([]), tools: [toolIndex] })).toThrow(
-      "threshold must be a finite number",
+      "minScore must be a finite number",
     );
     const malformedToolIndex = {
       kind: "tool-index",
       tools: [],
       topK: 1,
-      async search() {
-        return [];
-      },
     } as unknown as ToolIndex;
     expect(isToolIndex(malformedToolIndex)).toBe(false);
     expect(
@@ -451,7 +444,6 @@ describe("Agent construction", () => {
       },
     };
     const index: ToolIndex = {
-      ...emptyIndex<ToolSearchDocument>(),
       kind: "tool-index",
       tools: [dynamicTool],
       topK: 1,
@@ -487,7 +479,11 @@ describe("Agent construction", () => {
   });
 
   it("registers documents and context indexes through Agent options", () => {
-    const index = createContextIndex(emptyIndex<string>(), { topK: 2 });
+    const index = createVectorContext({
+      store: emptyStore<string>(),
+      model: embeddingModel,
+      topK: 2,
+    });
     const agent = new Agent({
       id: "agent",
       model: new QueueModel([]),

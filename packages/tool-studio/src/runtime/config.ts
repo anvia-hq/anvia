@@ -9,7 +9,7 @@ import type {
   StudioPipeline,
   StudioPipelineConfig,
 } from "../types";
-import { contextIndexes, staticContextDocuments } from "./agent-context";
+import { staticContextDocuments, vectorContexts } from "./agent-context";
 import { evalConfig } from "./eval-config";
 import { serializeUnknown } from "./json";
 import { agentHasKnowledge } from "./knowledge";
@@ -44,7 +44,7 @@ export function agentConfig(agent: StudioAgent): StudioAgentConfig {
 export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSummary {
   const tools = agentToolItems(agent);
   const staticContext = staticContextDocuments(agent.agent);
-  const indexedContext = contextIndexes(agent.agent);
+  const indexedContext = vectorContexts(agent.agent);
   const name = agent.name ?? agent.agent.name;
   const description = agent.description ?? agent.agent.description;
   const summary: StudioAgentRuntimeSummary = {

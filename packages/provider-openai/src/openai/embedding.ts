@@ -1,4 +1,4 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type OpenAI from "openai";
 import type { OpenAIEmbeddingModelName } from "./models";
 
@@ -23,16 +23,16 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
     this.user = options.user;
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     const embeddings: Embedding[] = [];
     for (let index = 0; index < texts.length; index += this.maxBatchSize) {
       const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch)));
+      embeddings.push(...(await this.embedBatch(batch, options)));
     }
     return embeddings;
   }
 
-  private async embedBatch(texts: string[]): Promise<Embedding[]> {
+  private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     if (texts.length === 0) {
       return [];
     }
@@ -48,7 +48,10 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       params.user = this.user;
     }
 
-    const response = await this.client.embeddings.create(params as never);
+    const response = await this.client.embeddings.create(
+      params as never,
+      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
+    );
     const data = embeddingDataFromResponse(response, texts.length);
     if (data.length !== texts.length) {
       throw new Error(

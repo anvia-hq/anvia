@@ -397,9 +397,9 @@ export function semanticSimilarity<
       if (typeof expected !== "string") {
         return EvalOutcome.invalid("Semantic similarity expected value must be a string.");
       }
-      const [actualEmbedding, expectedEmbedding] = await Promise.all([
-        embedText(options.model, actual),
-        embedText(options.model, expected),
+      const [{ embedding: actualEmbedding }, { embedding: expectedEmbedding }] = await Promise.all([
+        embedText({ model: options.model, text: actual }),
+        embedText({ model: options.model, text: expected }),
       ]);
       const score = cosineSimilarity(actualEmbedding.vector, expectedEmbedding.vector);
       return score >= options.threshold

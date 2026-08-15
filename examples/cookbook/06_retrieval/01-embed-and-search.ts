@@ -1,5 +1,5 @@
 import { embedDocuments } from "@anvia/core/embeddings";
-import { InMemoryVectorStore } from "@anvia/core/vector-store";
+import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
 import { createTransformersEmbeddingModel } from "@anvia/transformers";
 
 type KnowledgeNote = {
@@ -25,14 +25,18 @@ const notes: KnowledgeNote[] = [
 ];
 
 const embeddingModel = await createTransformersEmbeddingModel();
-const embedded = await embedDocuments(embeddingModel, notes, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: notes,
   id: (note) => note.id,
   content: (note) => `${note.title}\n${note.body}`,
   metadata: (note) => ({ topic: note.topic }),
 });
 
-const store = InMemoryVectorStore.fromDocuments(embedded);
-const results = await store.index(embeddingModel).search({
+const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
+const results = await retrieveDocuments({
+  store,
+  model: embeddingModel,
   query: "market risk",
   topK: 1,
 });

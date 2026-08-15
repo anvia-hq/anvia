@@ -1,4 +1,4 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import { pipeline as transformersPipeline } from "@huggingface/transformers";
 import { parseVectors } from "./helpers.js";
 import type {
@@ -38,7 +38,8 @@ export class TransformersEmbeddingModel implements EmbeddingModel {
     return new TransformersEmbeddingModel(extractor, { ...options, model });
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
+    throwIfAborted(options?.abortSignal);
     if (texts.length === 0) {
       return [];
     }
@@ -47,12 +48,21 @@ export class TransformersEmbeddingModel implements EmbeddingModel {
       pooling: this.pooling,
       normalize: this.normalize,
     });
+    throwIfAborted(options?.abortSignal);
     const vectors = parseVectors(output.tolist(), texts.length);
 
     return texts.map((document, index) => ({
       document,
       vector: vectors[index] as number[],
     }));
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    const error = new Error("The operation was aborted.");
+    error.name = "AbortError";
+    throw error;
   }
 }
 

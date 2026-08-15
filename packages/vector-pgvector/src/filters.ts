@@ -18,6 +18,9 @@ function buildFilterSql(filter: VectorFilter, state: { nextIndex: number }): str
   switch (filter.type) {
     case "eq": {
       const keyIndex = state.nextIndex++;
+      if (filter.value === null) {
+        return `(metadata ? $${keyIndex} AND metadata -> $${keyIndex} = 'null'::jsonb)`;
+      }
       const valueIndex = state.nextIndex++;
       return `(metadata ->> $${keyIndex}) = $${valueIndex}`;
     }
@@ -53,7 +56,9 @@ function buildFilterSql(filter: VectorFilter, state: { nextIndex: number }): str
 function stateValues(filter: VectorFilter): unknown[] {
   switch (filter.type) {
     case "eq":
-      return [filter.key, serializeMetadataValue(filter.value)];
+      return filter.value === null
+        ? [filter.key]
+        : [filter.key, serializeMetadataValue(filter.value)];
     case "gt":
     case "lt":
       assertNumericFilterValue(filter.value, filter.type);

@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import type { EmbeddedDocument, VectorMetadata } from "@anvia/core/embeddings";
 import type { VectorSearchResult } from "@anvia/core/vector-store";
-import { documentColumn, documentIdColumn, reservedColumnPrefix, vectorColumn } from "./types.js";
+import type { LanceDBVectorStoreOptions } from "./types.js";
+import {
+  documentColumn,
+  documentIdColumn,
+  metadataColumn,
+  reservedColumnPrefix,
+  rowIdColumn,
+  vectorColumn,
+} from "./types.js";
 
 export function assertNoReservedMetadata(metadata: VectorMetadata | undefined): void {
   for (const key of Object.keys(metadata ?? {})) {
@@ -45,28 +53,29 @@ export function lanceRows<T, Metadata extends VectorMetadata>(
     const logicalId =
       document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`;
     const row: Record<string, unknown> = {
-      _rowid: rowId(logicalId),
+      [rowIdColumn]: rowId(logicalId),
       [documentIdColumn]: document.id,
       [documentColumn]: serializeDocument(document.document),
+      [metadataColumn]: JSON.stringify(document.metadata ?? {}),
       [vectorColumn]: embedding.vector,
     };
-    Object.assign(row, document.metadata);
     return row;
   });
 }
 
 export function parseQueryResults<T, Metadata extends VectorMetadata>(
   response: unknown[],
-  threshold: number | undefined,
+  minScore: number | undefined,
+  metric: LanceDBVectorStoreOptions["metric"],
 ): Array<VectorSearchResult<T, Metadata>> {
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
 
   for (const row of response) {
     const record = row as Record<string, unknown>;
     const distance = typeof record._distance === "number" ? record._distance : 0;
-    const score = 1 - distance;
+    const score = metric === undefined || metric === "cosine" ? 1 - distance : -distance;
 
-    if (threshold !== undefined && score < threshold) {
+    if (minScore !== undefined && score < minScore) {
       continue;
     }
 
@@ -101,14 +110,8 @@ export async function defaultLanceDBConnection(
 function metadataFromColumns<Metadata extends VectorMetadata>(
   record: Record<string, unknown>,
 ): Metadata | undefined {
-  const metadata = Object.fromEntries(
-    Object.entries(record).filter(
-      ([key]) =>
-        !key.startsWith(reservedColumnPrefix) &&
-        key !== vectorColumn &&
-        key !== "_rowid" &&
-        key !== "_distance",
-    ),
-  ) as Metadata;
+  const raw = record[metadataColumn];
+  if (raw === null || raw === undefined) return undefined;
+  const metadata = (typeof raw === "string" ? JSON.parse(raw) : raw) as Metadata;
   return Object.keys(metadata).length === 0 ? undefined : metadata;
 }

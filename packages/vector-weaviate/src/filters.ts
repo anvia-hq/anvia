@@ -9,35 +9,32 @@ export function filterToWeaviateWhere(filter: VectorFilter | undefined): unknown
     case "eq":
       return {
         operator: "Equal",
-        path: [filter.key],
-        valueString: typeof filter.value === "string" ? filter.value : undefined,
-        valueInt: typeof filter.value === "number" ? filter.value : undefined,
-        valueBoolean: typeof filter.value === "boolean" ? filter.value : undefined,
-        valueNumber: typeof filter.value === "number" ? filter.value : undefined,
+        target: { property: filter.key },
+        value: filter.value,
       };
     case "gt":
       return {
         operator: "GreaterThan",
-        path: [filter.key],
-        valueNumber: typeof filter.value === "number" ? filter.value : undefined,
-        valueString: typeof filter.value === "string" ? filter.value : undefined,
+        target: { property: filter.key },
+        value: filter.value,
       };
     case "lt":
       return {
         operator: "LessThan",
-        path: [filter.key],
-        valueNumber: typeof filter.value === "number" ? filter.value : undefined,
-        valueString: typeof filter.value === "string" ? filter.value : undefined,
+        target: { property: filter.key },
+        value: filter.value,
       };
     case "and":
       return {
         operator: "And",
-        operands: filter.filters.map(filterToWeaviateWhere),
+        filters: filter.filters.map(filterToWeaviateWhere),
+        value: null,
       };
     case "or":
       return {
         operator: "Or",
-        operands: filter.filters.map(filterToWeaviateWhere),
+        filters: filter.filters.map(filterToWeaviateWhere),
+        value: null,
       };
   }
 }

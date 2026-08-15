@@ -1,5 +1,5 @@
 import { embedDocuments } from "@anvia/core/embeddings";
-import { InMemoryVectorStore } from "@anvia/core/vector-store";
+import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
 import { MistralClient } from "@anvia/mistral";
 
 type KnowledgeDoc = {
@@ -36,13 +36,15 @@ const docs: KnowledgeDoc[] = [
   },
 ];
 
-const embedded = await embedDocuments(embeddingModel, docs, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: docs,
   id: (doc) => doc.id,
   content: (doc) => `${doc.title}\n${doc.text}`,
   metadata: (doc) => ({ topic: doc.topic }),
 });
 
-const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddingModel);
+const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
 const queries = [
   "Why are queries slow and the connection pool exhausted?",
   "What happens to stocks when yields move higher?",
@@ -50,7 +52,7 @@ const queries = [
 ];
 
 for (const query of queries) {
-  const results = await index.search({ query, topK: 2 });
+  const results = await retrieveDocuments({ store, model: embeddingModel, query, topK: 2 });
   console.log(`\nQuery: ${query}`);
   for (const result of results) {
     console.log(`- ${result.id} score=${result.score.toFixed(3)} topic=${result.metadata?.topic}`);

@@ -1,4 +1,4 @@
-import { Agent, createContextIndex } from "@anvia/core/agent";
+import { Agent, createVectorContext } from "@anvia/core/agent";
 import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { createTool, createToolIndex } from "@anvia/core/tool";
@@ -83,15 +83,19 @@ const lookupCustomer = createTool({
 });
 
 const embeddings = new KeywordEmbeddingModel();
-const embeddedNotes = await embedDocuments(embeddings, notes, {
+const { documents: embeddedNotes } = await embedDocuments({
+  model: embeddings,
+  documents: notes,
   id: (note) => note.id,
   content: (note) => note.text,
   metadata: (note) => ({ area: note.area }),
 });
-const knowledgeIndex = InMemoryVectorStore.fromDocuments(embeddedNotes).index(embeddings);
-const toolIndex = await createToolIndex(embeddings, [getTicket, lookupCustomer], {
+const knowledgeStore = InMemoryVectorStore.fromDocuments({ documents: embeddedNotes });
+const toolIndex = await createToolIndex({
+  model: embeddings,
+  tools: [getTicket, lookupCustomer],
   topK: 1,
-  threshold: 0.75,
+  minScore: 0.75,
 });
 
 const model = client.completionModel("gpt-5.6-luna");
@@ -110,9 +114,11 @@ const agent = new Agent({
       id: "studio-knowledge-scope",
       text: "Studio Knowledge is an inspector surface. It shows static context, dynamic context, dynamic tools, and trace evidence; it does not edit documents.",
     },
-    createContextIndex(knowledgeIndex, {
+    createVectorContext({
+      store: knowledgeStore,
+      model: embeddings,
       topK: 2,
-      threshold: 0.55,
+      minScore: 0.55,
       format: (result) => ({
         id: result.id,
         text: result.document.text,

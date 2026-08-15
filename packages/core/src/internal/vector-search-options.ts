@@ -5,9 +5,9 @@ export function assertPositiveSearchLimit(value: number, name = "topK"): number 
   return value;
 }
 
-export function assertFiniteSearchThreshold(
+export function assertFiniteMinScore(
   value: number | undefined,
-  name = "threshold",
+  name = "minScore",
 ): number | undefined {
   if (value !== undefined && !Number.isFinite(value)) {
     throw new RangeError(`${name} must be a finite number.`);

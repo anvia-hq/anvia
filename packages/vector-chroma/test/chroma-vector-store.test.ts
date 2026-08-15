@@ -1,160 +1,110 @@
-import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
-import { vectorFilter } from "@anvia/core/vector-store";
-import { describe, expect, it } from "vitest";
-import { ChromaVectorStore, filterToChromaWhere } from "../src/index";
+import { describe, expect, it, vi } from "vitest";
+import * as publicApi from "../src/index.js";
+import {
+  type ChromaClientLike,
+  type ChromaCollectionLike,
+  ChromaVectorClient,
+} from "../src/index.js";
 
-class MockEmbeddingModel implements EmbeddingModel {
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
-    return texts.map((document) => ({
-      document,
-      vector: document.toLowerCase().includes("cat") ? [1, 0] : [0, 1],
-    }));
-  }
+function fixture() {
+  const collection: ChromaCollectionLike = {
+    delete: vi.fn(async () => undefined),
+    upsert: vi.fn(async () => undefined),
+    query: vi.fn(async () => ({
+      ids: [["doc"]],
+      documents: [[JSON.stringify({ text: "cat" })]],
+      metadatas: [[{ source: "test", __anvia_document_id: "doc" }]],
+      distances: [[0.1]],
+    })),
+  };
+  const client: ChromaClientLike = {
+    getCollection: vi.fn(async () => collection),
+    createCollection: vi.fn(async () => collection),
+    getOrCreateCollection: vi.fn(async () => collection),
+  };
+  return { client, collection };
 }
 
-class MockCollection {
-  readonly upserts: unknown[] = [];
-  readonly queries: unknown[] = [];
+describe("ChromaVectorClient", () => {
+  it("exports the client without legacy index or connect APIs", () => {
+    expect(publicApi).toHaveProperty("ChromaVectorClient");
+    expect(publicApi).not.toHaveProperty("ChromaVectorIndex");
+    expect(publicApi.ChromaVectorStore).not.toHaveProperty("connect");
+    expect(publicApi.ChromaVectorStore.prototype).not.toHaveProperty("index");
+    expect(publicApi.ChromaVectorStore.prototype).not.toHaveProperty("asTool");
+  });
+  it("constructs side-effect-free handles and provisions explicitly", async () => {
+    const { client } = fixture();
+    const owner = new ChromaVectorClient({ client });
+    const store = owner.vectorStore<{ text: string }>({ collectionName: "docs", dimensions: 2 });
+    expect(client.getOrCreateCollection).not.toHaveBeenCalled();
+    await store.ensure();
+    expect(client.getOrCreateCollection).toHaveBeenCalledOnce();
+  });
 
-  async upsert(options: unknown): Promise<void> {
-    this.upserts.push(options);
-  }
-
-  async query(options: unknown): Promise<unknown> {
-    this.queries.push(options);
-    return {
-      ids: [["doc1", "doc2"]],
-      documents: [[JSON.stringify({ title: "Cat guide" }), "plain dog note"]],
-      metadatas: [[{ kind: "animal" }, null]],
-      distances: [[0.1, 0.8]],
-    };
-  }
-}
-
-describe("ChromaVectorStore", () => {
-  it("connects, upserts precomputed embeddings, and queries with Anvia embeddings", async () => {
-    const collection = new MockCollection();
-    const client = {
-      async getOrCreateCollection(options: unknown) {
-        expect(options).toMatchObject({
-          name: "docs",
-          metadata: { "hnsw:space": "cosine" },
-          embeddingFunction: null,
-        });
-        return collection;
-      },
-      async getCollection() {
-        return collection;
-      },
-      async createCollection() {
-        return collection;
-      },
-    };
-    const model = new MockEmbeddingModel();
-    const store = await ChromaVectorStore.connect<{ title: string }>({
-      client,
+  it("replaces documents and searches with raw vectors", async () => {
+    const { client, collection } = fixture();
+    const store = new ChromaVectorClient({ client }).vectorStore<{ text: string }>({
       collectionName: "docs",
+      dimensions: 2,
     });
-    const embedded = await embedDocuments(model, [{ id: "doc1", title: "Cat guide" }], {
-      id: (doc) => doc.id,
-      content: (doc) => doc.title,
-      metadata: () => ({ kind: "animal" }),
+    await store.upsert({
+      documents: [
+        { id: "doc", document: { text: "cat" }, embeddings: [{ document: "cat", vector: [1, 0] }] },
+      ],
     });
-
-    await store.upsertDocuments(embedded);
-    const results = await store.index(model).search({
-      query: "cat",
-      topK: 2,
-      threshold: 0.5,
-      filter: vectorFilter.eq("kind", "animal"),
-    });
-
-    expect(collection.upserts[0]).toMatchObject({
-      ids: ["doc1"],
-      metadatas: [{ kind: "animal" }],
-      embeddings: [[1, 0]],
-    });
-    expect(collection.queries[0]).toMatchObject({
-      queryEmbeddings: [[1, 0]],
-      nResults: 2,
-      where: { kind: { $eq: "animal" } },
-    });
-    expect(results).toEqual([
-      {
-        id: "doc1",
-        score: 0.9,
-        document: { title: "Cat guide" },
-        metadata: { kind: "animal" },
-      },
+    expect(collection.delete).toHaveBeenCalledBefore(collection.upsert as never);
+    await expect(store.search({ vector: [1, 0], topK: 1 })).resolves.toMatchObject([
+      { id: "doc", score: 0.9, metadata: { source: "test" } },
     ]);
+    expect(collection.query).toHaveBeenCalledWith(
+      expect.objectContaining({ queryEmbeddings: [[1, 0]] }),
+    );
   });
 
-  it("translates compound filters", () => {
-    expect(
-      filterToChromaWhere(vectorFilter.and(vectorFilter.gt("rank", 2), vectorFilter.lt("rank", 5))),
-    ).toEqual({
-      $and: [{ rank: { $gt: 2 } }, { rank: { $lt: 5 } }],
+  it("expands physical candidates until topK logical documents are available", async () => {
+    const query = vi.fn(async (options: Record<string, unknown>) => {
+      const candidates = [
+        {
+          id: "a#embedding:0",
+          document: "A",
+          metadata: { __anvia_document_id: "a" },
+          distance: 0.1,
+        },
+        {
+          id: "a#embedding:1",
+          document: "A",
+          metadata: { __anvia_document_id: "a" },
+          distance: 0.2,
+        },
+        { id: "b", document: "B", metadata: { __anvia_document_id: "b" }, distance: 0.3 },
+        { id: "c", document: "C", metadata: { __anvia_document_id: "c" }, distance: 0.4 },
+      ].slice(0, Number(options.nResults));
+      return {
+        ids: [candidates.map((candidate) => candidate.id)],
+        documents: [candidates.map((candidate) => candidate.document)],
+        metadatas: [candidates.map((candidate) => candidate.metadata)],
+        distances: [candidates.map((candidate) => candidate.distance)],
+      };
     });
-  });
-
-  it("omits Chroma metadatas when documents do not provide metadata", async () => {
-    const collection = new MockCollection();
-    const client = {
-      async getOrCreateCollection() {
-        return collection;
-      },
-      async getCollection() {
-        return collection;
-      },
-      async createCollection() {
-        return collection;
-      },
+    const collection: ChromaCollectionLike = {
+      delete: vi.fn(async () => undefined),
+      upsert: vi.fn(async () => undefined),
+      query,
     };
-    const model = new MockEmbeddingModel();
-    const store = await ChromaVectorStore.connect<{ title: string }>({
-      client,
-      collectionName: "docs",
-    });
-    const embedded = await embedDocuments(model, [{ id: "doc1", title: "Cat guide" }], {
-      id: (doc) => doc.id,
-      content: (doc) => doc.title,
-    });
-
-    await store.upsertDocuments(embedded);
-
-    expect(collection.upserts[0]).toMatchObject({
-      ids: ["doc1"],
-      embeddings: [[1, 0]],
-    });
-    expect(collection.upserts[0]).not.toHaveProperty("metadatas");
-  });
-
-  it("omits result metadata when Chroma returns null metadata", async () => {
-    const collection = new MockCollection();
-    const client = {
-      async getOrCreateCollection() {
-        return collection;
-      },
-      async getCollection() {
-        return collection;
-      },
-      async createCollection() {
-        return collection;
-      },
+    const client: ChromaClientLike = {
+      getCollection: vi.fn(async () => collection),
+      createCollection: vi.fn(async () => collection),
     };
-    const model = new MockEmbeddingModel();
-    const store = await ChromaVectorStore.connect<string>({
-      client,
+    const store = new ChromaVectorClient({ client }).vectorStore<string>({
       collectionName: "docs",
+      dimensions: 2,
     });
 
-    const results = await store.index(model).search({ query: "cat", topK: 2 });
-
-    expect(results[1]).toEqual({
-      id: "doc2",
-      score: 0.19999999999999996,
-      document: "plain dog note",
-    });
-    expect(results[1]).not.toHaveProperty("metadata");
+    await expect(store.search({ vector: [1, 0], topK: 2 })).resolves.toMatchObject([
+      { id: "a" },
+      { id: "b" },
+    ]);
+    expect(query.mock.calls.map(([options]) => options.nResults)).toEqual([2, 4]);
   });
 });

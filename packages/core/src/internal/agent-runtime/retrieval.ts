@@ -1,45 +1,54 @@
 import type { Agent } from "../../agent/agent";
-import { isContextIndex } from "../../agent/context-index";
 import { getAgentToolState } from "../../agent/tool-state";
+import { isVectorContext } from "../../agent/vector-context";
 import type { CompletionModel, Document, ToolDefinition } from "../../completion/index";
+import { retrieveDocuments } from "../../vector-store";
 
 export async function fetchContextDocuments<Output, M extends CompletionModel, ContextDocument>(
   agent: Agent<Output, M, ContextDocument>,
   ragText: string | undefined,
+  abortSignal?: AbortSignal | undefined,
 ): Promise<Document[]> {
   const documents: Document[] = [];
   for (const input of agent.context) {
-    if (!isContextIndex(input)) {
+    if (!isVectorContext(input)) {
       documents.push(input);
       continue;
     }
-    if (ragText === undefined || ragText.length === 0) {
-      continue;
-    }
-    const results = await input.index.search({
+    if (ragText === undefined || ragText.length === 0) continue;
+    const request = {
       query: ragText,
       topK: input.topK,
-      threshold: input.threshold,
+      minScore: input.minScore,
       filter: input.filter,
-    });
+      retries: input.retries,
+      abortSignal,
+    };
+    const results =
+      "models" in input && input.models !== undefined
+        ? await retrieveDocuments({
+            ...request,
+            store: input.store,
+            models: input.models,
+            fusion: input.fusion,
+          })
+        : await retrieveDocuments({ ...request, store: input.store, model: input.model });
     for (const result of results) {
       const formatted = input.format?.(result);
       if (formatted !== undefined) {
         documents.push(formatted);
-      } else {
-        const metadata = formatMetadata(result.metadata);
-        const document: Document = {
-          id: result.id,
-          text:
-            typeof result.document === "string"
-              ? result.document
-              : JSON.stringify(result.document, null, 2),
-        };
-        if (metadata !== undefined) {
-          document.additionalProps = metadata;
-        }
-        documents.push(document);
+        continue;
       }
+      const metadata = formatMetadata(result.metadata);
+      const document: Document = {
+        id: result.id,
+        text:
+          typeof result.document === "string"
+            ? result.document
+            : JSON.stringify(result.document, null, 2),
+      };
+      if (metadata !== undefined) document.additionalProps = metadata;
+      documents.push(document);
     }
   }
   return documents;
@@ -48,6 +57,7 @@ export async function fetchContextDocuments<Output, M extends CompletionModel, C
 export async function fetchToolDefinitions<Output, M extends CompletionModel, ContextDocument>(
   agent: Agent<Output, M, ContextDocument>,
   ragText: string | undefined,
+  abortSignal?: AbortSignal | undefined,
 ): Promise<ToolDefinition[]> {
   const state = getAgentToolState(agent);
   const staticDefinitions = await Promise.all(
@@ -60,21 +70,12 @@ export async function fetchToolDefinitions<Output, M extends CompletionModel, Co
   const definitions = [...staticDefinitions];
   const names = new Set(staticDefinitions.map((definition) => definition.name));
   for (const index of state.toolIndexes) {
-    const results = await index.search({
-      query: ragText,
-      topK: index.topK,
-      threshold: index.threshold,
-      filter: index.filter,
-    });
+    const results = await index.search({ query: ragText, abortSignal });
     for (const result of results) {
       const toolName = result.document.toolName;
-      if (names.has(toolName)) {
-        continue;
-      }
+      if (names.has(toolName)) continue;
       const tool = index.tools.find((candidate) => candidate.name === toolName);
-      if (tool === undefined) {
-        continue;
-      }
+      if (tool === undefined) continue;
       names.add(toolName);
       definitions.push(await tool.definition(ragText));
     }
@@ -85,9 +86,6 @@ export async function fetchToolDefinitions<Output, M extends CompletionModel, Co
 function formatMetadata(
   metadata: Record<string, unknown> | undefined,
 ): Record<string, string> | undefined {
-  if (metadata === undefined) {
-    return undefined;
-  }
-
+  if (metadata === undefined) return undefined;
   return Object.fromEntries(Object.entries(metadata).map(([key, value]) => [key, String(value)]));
 }

@@ -75,9 +75,11 @@ const lookupRunbook = createTool({
 });
 
 const embeddings = new KeywordEmbeddingModel();
-const toolIndex = await createToolIndex(embeddings, [issueRefund, updateAddress, lookupRunbook], {
+const toolIndex = await createToolIndex({
+  model: embeddings,
+  tools: [issueRefund, updateAddress, lookupRunbook],
   topK: 1,
-  threshold: 0.9,
+  minScore: 0.9,
 });
 const model = new InspectingModel();
 

@@ -8,7 +8,7 @@ import {
   PdfFileLoader,
   pdfPageLoaderToDocuments,
 } from "@anvia/core/loaders";
-import { InMemoryVectorStore } from "@anvia/core/vector-store";
+import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
 
 class KeywordEmbeddingModel implements EmbeddingModel {
   readonly dimensions = 4;
@@ -41,7 +41,9 @@ const pdfDocuments = await pdfPageLoaderToDocuments(
 
 const documents = [...textDocuments, ...pdfDocuments];
 const embeddingModel = new KeywordEmbeddingModel();
-const embedded = await embedDocuments(embeddingModel, documents, {
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents,
   id: (document) => document.id,
   content: (document) => document.text,
   metadata: (document) => ({
@@ -50,8 +52,10 @@ const embedded = await embedDocuments(embeddingModel, documents, {
   }),
 });
 
-const store = InMemoryVectorStore.fromDocuments(embedded);
-const results = await store.index(embeddingModel).search({
+const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
+const results = await retrieveDocuments({
+  store,
+  model: embeddingModel,
   query: "pdf page",
   topK: 2,
 });

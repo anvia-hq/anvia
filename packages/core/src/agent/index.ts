@@ -2,8 +2,6 @@ export type { ModelCallOptions } from "../model-call-options";
 export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
 export type { AgentSession } from "./agent";
 export { Agent } from "./agent";
-export type { ContextIndex, CreateContextIndexOptions } from "./context-index";
-export { createContextIndex, isContextIndex } from "./context-index";
 export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./errors";
 export type {
   AgentErrorEvent,
@@ -39,3 +37,10 @@ export type {
   AgentToolInput,
   AgentToolOptions,
 } from "./types";
+export type {
+  CreateHybridVectorContextOptions,
+  CreateVectorContextOptions,
+  VectorContext,
+  VectorContextBaseOptions,
+} from "./vector-context";
+export { createVectorContext, isVectorContext } from "./vector-context";

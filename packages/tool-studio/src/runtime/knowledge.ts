@@ -15,12 +15,12 @@ import type {
   StudioTrace,
   StudioTraceStore,
 } from "../types";
-import { contextIndexes, staticContextDocuments } from "./agent-context";
+import { staticContextDocuments, vectorContexts } from "./agent-context";
 import { errorResponse } from "./http";
 import { compactJsonObject, toJsonValue } from "./json";
 import { optionalQueryString, parseLimit } from "./query";
 
-type InspectableIndex = {
+type InspectableStore = {
   inspect?: (request: { limit: number; cursor?: string | undefined; filter?: unknown }) => Promise<{
     items: Array<{ id: string; document: unknown; metadata?: Record<string, unknown> }>;
     nextCursor?: string | undefined;
@@ -103,7 +103,7 @@ async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnow
 async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSourceSummary[]> {
   const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
   const staticContext = staticContextDocuments(agent.agent);
-  const indexedContext = contextIndexes(agent.agent);
+  const indexedContext = vectorContexts(agent.agent);
   const sources: StudioKnowledgeSourceSummary[] = [
     {
       sourceId: staticSourceId(),
@@ -116,20 +116,20 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
   ];
 
   const dynamicContextSources = await Promise.all(
-    indexedContext.map(async (contextIndex, index) => {
-      const inspect = inspectFn(contextIndex.index);
-      const count = await inspectableCount(inspect, contextIndex.filter);
+    indexedContext.map(async (vectorContext, index) => {
+      const inspect = inspectFn(vectorContext.store);
+      const count = await inspectableCount(inspect, vectorContext.filter);
       const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicContextSourceId(index),
         kind: "dynamic_context",
         label: `Dynamic context ${index + 1}`,
         count: 1,
         registrationIndex: index,
-        topK: contextIndex.topK,
+        topK: vectorContext.topK,
         inspectable: inspect !== undefined,
       };
-      if (contextIndex.threshold !== undefined) {
-        source.threshold = contextIndex.threshold;
+      if (vectorContext.minScore !== undefined) {
+        source.minScore = vectorContext.minScore;
       }
       if (count !== undefined) source.itemCount = count;
       return source;
@@ -149,8 +149,8 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
         topK: toolIndex.topK,
         inspectable: inspect !== undefined,
       };
-      if (toolIndex.threshold !== undefined) {
-        source.threshold = toolIndex.threshold;
+      if (toolIndex.minScore !== undefined) {
+        source.minScore = toolIndex.minScore;
       }
       if (count !== undefined) source.itemCount = count;
       return source;
@@ -161,7 +161,7 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
 }
 
 async function inspectableCount(
-  inspect: InspectableIndex["inspect"] | undefined,
+  inspect: InspectableStore["inspect"] | undefined,
   filter?: unknown,
 ): Promise<number | undefined> {
   if (inspect === undefined) {
@@ -180,20 +180,20 @@ async function knowledgeItemsPage(
     return staticKnowledgeItemsPage(agent, request);
   }
 
-  const dynamicContextIndex = dynamicSourceIndex(sourceId, "dynamic_context");
-  if (dynamicContextIndex !== undefined) {
-    const contextIndex = contextIndexes(agent.agent)[dynamicContextIndex];
-    if (contextIndex === undefined) {
+  const vectorContextIndex = dynamicSourceIndex(sourceId, "dynamic_context");
+  if (vectorContextIndex !== undefined) {
+    const vectorContext = vectorContexts(agent.agent)[vectorContextIndex];
+    if (vectorContext === undefined) {
       return undefined;
     }
-    const inspect = inspectFn(contextIndex.index);
+    const inspect = inspectFn(vectorContext.store);
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_context");
     }
     const page = await inspect({
       limit: request.limit,
       cursor: request.cursor,
-      filter: contextIndex.filter,
+      filter: vectorContext.filter,
     });
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
@@ -237,13 +237,13 @@ async function knowledgeItemsPage(
   return undefined;
 }
 
-function inspectFn(index: unknown): InspectableIndex["inspect"] | undefined {
-  if (!isRecord(index) || typeof index.inspect !== "function") {
+function inspectFn(store: unknown): InspectableStore["inspect"] | undefined {
+  if (!isRecord(store) || typeof store.inspect !== "function") {
     return undefined;
   }
-  const inspect = index.inspect;
+  const inspect = store.inspect;
   return (request) =>
-    inspect.call(index, request) as ReturnType<NonNullable<InspectableIndex["inspect"]>>;
+    inspect.call(store, request) as ReturnType<NonNullable<InspectableStore["inspect"]>>;
 }
 
 function staticKnowledgeItemsPage(

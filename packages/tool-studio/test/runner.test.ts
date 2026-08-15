@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, createContextIndex } from "@anvia/core/agent";
+import { Agent, createVectorContext } from "@anvia/core/agent";
 import {
   AssistantContent,
   type CompletionModelStreamEvent,
@@ -32,12 +32,7 @@ import type {
 import type { AgentObserver, AgentRunObserver, AgentRunStartArgs } from "@anvia/core/observability";
 import { Pipeline } from "@anvia/core/pipeline";
 import { createToolIndex, type Tool } from "@anvia/core/tool";
-import {
-  InMemoryVectorStore,
-  type VectorSearchIndex,
-  type VectorSearchRequest,
-  type VectorSearchToolOptions,
-} from "@anvia/core/vector-store";
+import { InMemoryVectorStore, type VectorStore } from "@anvia/core/vector-store";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
@@ -1188,21 +1183,21 @@ describe("Anvia studio", () => {
 
   it("preserves dynamic context when Studio wraps agents for traces", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const embedded = await embedDocuments(
-      embeddings,
-      [{ id: "refund-policy", text: "Refund policy is 30 days." }],
-      {
-        id: (document) => document.id,
-        content: (document) => document.text,
-      },
-    );
-    const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddings);
+    const { documents: embedded } = await embedDocuments({
+      model: embeddings,
+      documents: [{ id: "refund-policy", text: "Refund policy is 30 days." }],
+      id: (document) => document.id,
+      content: (document) => document.text,
+    });
+    const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
     const agent = new Agent({
       id: "support",
       model,
       context: [
-        createContextIndex(index, {
+        createVectorContext({
+          store,
+          model: embeddings,
           topK: 1,
           format: (result) => ({ id: result.id, text: result.document.text }),
         }),
@@ -1238,7 +1233,11 @@ describe("Anvia studio", () => {
 
   it("preserves dynamic tools when Studio wraps agents for traces", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
+    const index = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
     const agent = new Agent({ id: "support", model, tools: [index] });
     const runner = new Studio([agent]);
@@ -1301,7 +1300,11 @@ describe("Anvia studio", () => {
 
   it("exposes tool metadata for registered agents", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
+    const index = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
     const refundTool = createRefundTool(() => "ok");
     const agent = new Agent({
       id: "support",
@@ -1611,30 +1614,35 @@ describe("Anvia studio", () => {
 
   it("exposes inspectable dynamic knowledge items and unsupported source states", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const embedded = await embedDocuments(
-      embeddings,
-      [
+    const { documents: embedded } = await embedDocuments({
+      model: embeddings,
+      documents: [
         { id: "refund-policy", text: "Refund policy is 30 days." },
         { id: "shipping-policy", text: "Shipping updates go to operations." },
       ],
-      {
-        id: (document) => document.id,
-        content: (document) => document.text,
+      id: (document) => document.id,
+      content: (document) => document.text,
+    });
+    const inspectableStore = InMemoryVectorStore.fromDocuments({ documents: embedded });
+    const unsupportedStore: VectorStore<{ text: string }> = {
+      async ensure() {},
+      async validate() {},
+      async upsert() {},
+      async search() {
+        return [];
       },
-    );
-    const inspectableIndex = InMemoryVectorStore.fromDocuments(embedded).index(embeddings);
-    const unsupportedIndex: VectorSearchIndex<{ text: string }> = {
-      search: async (_request: VectorSearchRequest) => [],
-      searchIds: async (_request: VectorSearchRequest) => [],
-      asTool: (_options: VectorSearchToolOptions) => lookupPolicyTool,
     };
-    const toolIndex = await createToolIndex(embeddings, [lookupPolicyTool], { topK: 1 });
+    const toolIndex = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
     const agent = new Agent({
       id: "support",
       model: new QueueModel([]),
       context: [
-        createContextIndex(inspectableIndex, { topK: 1 }),
-        createContextIndex(unsupportedIndex, { topK: 1 }),
+        createVectorContext({ store: inspectableStore, model: embeddings, topK: 1 }),
+        createVectorContext({ store: unsupportedStore, model: embeddings, topK: 1 }),
       ],
       tools: [toolIndex],
     });

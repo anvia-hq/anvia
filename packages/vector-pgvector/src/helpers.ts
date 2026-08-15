@@ -70,14 +70,14 @@ export function parseSearchRows<T, Metadata extends VectorMetadata>(
     metadata: Metadata | null;
     distance: number | string;
   }>,
-  threshold: number | undefined,
+  minScore: number | undefined,
   distanceStrategy: PgVectorDistance,
 ): Array<VectorSearchResult<T, Metadata>> {
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
 
   for (const row of rows) {
     const score = scoreFromDistance(Number(row.distance), distanceStrategy);
-    if (threshold !== undefined && score < threshold) {
+    if (minScore !== undefined && score < minScore) {
       continue;
     }
     const result: VectorSearchResult<T, Metadata> = {
@@ -95,10 +95,6 @@ export function parseSearchRows<T, Metadata extends VectorMetadata>(
   }
 
   return [...byId.values()];
-}
-
-export function normalizedTopK(topK: number): number {
-  return Math.max(0, Math.trunc(topK));
 }
 
 export function quoteQualifiedIdentifier(identifier: string): string {

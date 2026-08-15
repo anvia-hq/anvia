@@ -73,7 +73,7 @@ describe("TransformersEmbeddingModel", () => {
     pipelineMock.mockResolvedValueOnce(extractor);
 
     const model = await createTransformersEmbeddingModel();
-    const embeddings = await embedTexts(model, ["market note"]);
+    const { embeddings } = await embedTexts({ model, texts: ["market note"] });
 
     expect(pipelineMock).toHaveBeenCalledWith(
       "feature-extraction",

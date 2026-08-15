@@ -1,8 +1,9 @@
+export { MilvusVectorClient } from "./client.js";
 export { filterToMilvusExpr } from "./filters.js";
-export { MilvusVectorIndex } from "./search-index.js";
 export { MilvusVectorStore } from "./store.js";
 export type {
   MilvusClientLike,
   MilvusMetric,
-  MilvusVectorStoreConnectOptions,
+  MilvusVectorClientOptions,
+  MilvusVectorStoreOptions,
 } from "./types.js";

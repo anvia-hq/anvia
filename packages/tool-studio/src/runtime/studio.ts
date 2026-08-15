@@ -23,7 +23,7 @@ import {
   resolveStudioUiOptions,
   studioUiEntryPath,
 } from "../ui/routes";
-import { contextIndexes, staticContextDocuments } from "./agent-context";
+import { staticContextDocuments, vectorContexts } from "./agent-context";
 import { registerAgentRunRoute } from "./agent-runs";
 import { cloneAgent } from "./agent-utils";
 import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
@@ -290,7 +290,7 @@ function uniqueAgentId(baseId: string, ids: Set<string>): string {
 function agentMetadata(agent: Agent): JsonObject {
   const metadata: JsonObject = {
     staticContextCount: staticContextDocuments(agent).length,
-    dynamicContextCount: contextIndexes(agent).length,
+    dynamicContextCount: vectorContexts(agent).length,
     dynamicToolCount: getAgentToolState(agent).toolIndexes.length,
     hasLifecycle: agent.lifecycle !== undefined,
     hasOutputSchema: agent.outputSchema !== undefined,

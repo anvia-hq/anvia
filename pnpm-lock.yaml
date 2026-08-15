@@ -1029,6 +1029,9 @@ importers:
       '@lancedb/lancedb':
         specifier: ^0.33.0
         version: 0.33.0(apache-arrow@18.1.0)
+      apache-arrow:
+        specifier: 18.1.0
+        version: 18.1.0
     devDependencies:
       '@anvia/core':
         specifier: workspace:*

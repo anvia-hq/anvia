@@ -1,7 +1,5 @@
 export type { AgentSession } from "./agent/agent";
 export { Agent } from "./agent/agent";
-export type { ContextIndex, CreateContextIndexOptions } from "./agent/context-index";
-export { createContextIndex, isContextIndex } from "./agent/context-index";
 export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./agent/errors";
 export type {
   AgentErrorEvent,
@@ -37,6 +35,13 @@ export type {
   AgentToolInput,
   AgentToolOptions,
 } from "./agent/types";
+export type {
+  CreateHybridVectorContextOptions,
+  CreateVectorContextOptions,
+  VectorContext,
+  VectorContextBaseOptions,
+} from "./agent/vector-context";
+export { createVectorContext, isVectorContext } from "./agent/vector-context";
 export type {
   AssistantGenerationMetadata,
   AssistantMessage,

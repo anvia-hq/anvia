@@ -1,143 +1,95 @@
-# `@anvia/qdrant`
+# @anvia/qdrant
 
-Qdrant adapter for Anvia vector stores.
+Qdrant vector client and dense/hybrid store adapter for Anvia.
 
-## Install
+## Installation
 
-```bash
+```sh
 pnpm add @anvia/qdrant @anvia/core @qdrant/js-client-rest
 ```
 
-## Usage
+## Dense usage
 
 ```ts
 import { embedDocuments } from "@anvia/core/embeddings";
+import { retrieveDocuments } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
-import { QdrantVectorStore } from "@anvia/qdrant";
+import { QdrantVectorClient } from "@anvia/qdrant";
 
-const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
-const embeddings = openai.embeddingModel("text-embedding-3-small");
-
-const documents = await embedDocuments(
-  embeddings,
-  [{ id: "1", text: "Anvia is a TypeScript AI toolkit." }],
-  {
-    id: (document) => document.id,
-    content: (document) => document.text,
-  },
-);
-
-const store = await QdrantVectorStore.connect({
+const embeddings = new OpenAIClient().embeddingModel("text-embedding-3-small");
+const qdrant = new QdrantVectorClient({
+  url: process.env.QDRANT_URL,
+  apiKey: process.env.QDRANT_API_KEY,
+});
+const store = qdrant.vectorStore<{ id: string; text: string }>({
   collectionName: "docs",
-  vectorSize: 1536,
-  clientOptions: {
-    url: process.env.QDRANT_URL!,
-    apiKey: process.env.QDRANT_API_KEY!,
-  },
+  dimensions: 1536,
+  metric: "cosine",
 });
 
-await store.upsertDocuments(documents);
+await store.ensure();
 
-const results = await store.index(embeddings).search({
+const { documents } = await embedDocuments({
+  model: embeddings,
+  documents: [{ id: "1", text: "Anvia is a TypeScript AI toolkit." }],
+  id: (document) => document.id,
+  content: (document) => document.text,
+});
+await store.upsert({ documents, providerOptions: { wait: true } });
+
+const results = await retrieveDocuments({
+  store,
+  model: embeddings,
   query: "What is Anvia?",
   topK: 5,
 });
+
+await qdrant.close();
 ```
 
-`upsertDocuments(...)` replaces every point previously stored for the same logical document IDs,
-including stale points left when a document changes from multiple embeddings to fewer embeddings.
-Mutations wait for Qdrant to apply them by default. You can override Qdrant's mutation controls when
-needed. The official Qdrant client performs replacement as one ordered batch. Custom clients without
-`batchUpdate(...)` fall back to sequential deletion and insertion; that fallback is not atomic, so a
-failed insertion can leave the previous document removed. Require a `batchUpdate(...)`-capable
-client to avoid this two-request failure window.
+Constructing a client or store performs no I/O. `ensure()` creates or validates the collection;
+`validate()` only validates it. `upsert()` replaces all points previously stored for each incoming
+document ID, preventing stale chunks. Raw `store.search()` accepts vectors and never embeds text.
+
+## Hybrid usage
+
+`mode: "hybrid"` returns a hybrid-capable store. Dense stores do not expose `searchHybrid()`.
 
 ```ts
-await store.upsertDocuments(documents, {
-  wait: false,
-  ordering: "strong",
-  timeout: 30,
-});
-```
-
-## Document management
-
-Document operations use Anvia's logical document IDs. A deletion therefore removes every Qdrant
-point created for a multi-embedding document.
-
-```ts
-await store.deleteDocuments(["1", "2"]);
-
-const storedDocuments = await store.getDocuments(["1", "2"]);
-
-const index = store.index(embeddings);
-const firstPage = await index.inspect({ limit: 50 });
-const nextPage = firstPage.nextCursor
-  ? await index.inspect({ limit: 50, cursor: firstPage.nextCursor })
-  : undefined;
-```
-
-For advanced Qdrant operations, construct and retain the native client instead of routing collection
-administration through the Anvia adapter:
-
-```ts
-import { QdrantClient } from "@qdrant/js-client-rest";
-
-const client = new QdrantClient({
-  url: process.env.QDRANT_URL!,
-  apiKey: process.env.QDRANT_API_KEY!,
-});
-const store = await QdrantVectorStore.connect({
-  client,
-  collectionName: "docs",
-  vectorSize: 1536,
-});
-
-await client.createPayloadIndex("docs", {
-  field_name: "category",
-  field_schema: "keyword",
-  wait: true,
-});
-```
-
-## Hybrid search
-
-Also install a sparse embedding model. For local SPLADE++:
-
-```bash
-pnpm add @anvia/fastembed fastembed
-```
-
-```ts
-import { embedHybridDocuments } from "@anvia/core/embeddings";
+import { embedDocuments } from "@anvia/core/embeddings";
+import { retrieveDocuments } from "@anvia/core/vector-store";
 import {
   createFastEmbedEmbeddingModel,
   createFastEmbedSparseEmbeddingModel,
 } from "@anvia/fastembed";
-import { QdrantVectorStore } from "@anvia/qdrant";
+import { QdrantVectorClient } from "@anvia/qdrant";
 
 const dense = await createFastEmbedEmbeddingModel();
 const sparse = await createFastEmbedSparseEmbeddingModel();
-
-const store = await QdrantVectorStore.connect({
+const qdrant = new QdrantVectorClient({ url: process.env.QDRANT_URL });
+const store = qdrant.vectorStore<{ id: string; text: string }>({
   collectionName: "docs_hybrid",
-  vectorSize: 384,
-  hybrid: true,
+  dimensions: 384,
+  mode: "hybrid",
 });
 
-await store.upsertDocuments(
-  await embedHybridDocuments(
-    { dense, sparse },
-    [{ id: "1", text: "Anvia is a TypeScript AI toolkit." }],
-    {
-      id: (document) => document.id,
-      content: (document) => document.text,
-    },
-  ),
-);
+await store.ensure();
+const { documents } = await embedDocuments({
+  models: { dense, sparse },
+  documents: [{ id: "1", text: "Anvia is a TypeScript AI toolkit." }],
+  id: (document) => document.id,
+  content: (document) => document.text,
+});
+await store.upsert({ documents });
 
-const results = await store.index({ dense, sparse, fusion: "rrf" }).search({
+const results = await retrieveDocuments({
+  store,
+  models: { dense, sparse },
+  fusion: "rrf",
   query: "What is Anvia?",
   topK: 5,
 });
 ```
+
+Pass `client` to `QdrantVectorClient` to inject the native SDK client. Injected clients remain
+caller-owned.

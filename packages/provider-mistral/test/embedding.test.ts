@@ -33,8 +33,8 @@ describe("Mistral embedding models", () => {
       .embedTexts(["a", "bb", "ccc"]);
 
     expect(calls).toEqual([
-      { model: "mistral-embed-test", inputs: ["a", "bb"], dimensions: 8 },
-      { model: "mistral-embed-test", inputs: ["ccc"], dimensions: 8 },
+      { model: "mistral-embed-test", inputs: ["a", "bb"], outputDimension: 8 },
+      { model: "mistral-embed-test", inputs: ["ccc"], outputDimension: 8 },
     ]);
     expect(embeddings).toEqual([
       { document: "a", vector: [1, 0] },

@@ -83,7 +83,7 @@ describe("FastEmbedEmbeddingModel", () => {
     initMock.mockResolvedValueOnce(runtime);
 
     const model = await createFastEmbedEmbeddingModel();
-    const embeddings = await embedTexts(model, ["market note"]);
+    const { embeddings } = await embedTexts({ model, texts: ["market note"] });
 
     expect(initMock).toHaveBeenCalledWith({
       model: DEFAULT_FASTEMBED_EMBEDDING_MODEL,

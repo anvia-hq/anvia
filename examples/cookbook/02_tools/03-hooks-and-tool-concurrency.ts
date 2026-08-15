@@ -51,10 +51,10 @@ const agent = new Agent({
   tools: [addTool, multiplyTool],
 });
 
-const response = await agent.generate(
-  "Calculate 3 + 9 and 7 * 6. Use both tools before answering.",
-  { toolConcurrency: 2 },
-);
+const response = await agent.generate({
+  prompt: "Calculate 3 + 9 and 7 * 6. Use both tools before answering.",
+  toolConcurrency: 2,
+});
 
 if (response.status === "completed") {
   console.log(response.output);

@@ -8,7 +8,14 @@ import type {
   StreamingCompletionModel,
   ToolResultContent,
   Usage,
+  UserMessage,
 } from "@anvia/core/completion";
+import type {
+  MemoryAppendOptions,
+  MemoryErrorOptions,
+  MemoryScope,
+  MemoryStore,
+} from "@anvia/core/memory";
 import type { ModelList } from "@anvia/core/model-listing";
 import type { Pipeline, PipelineGraph } from "@anvia/core/pipeline";
 import type { Hono } from "hono";
@@ -552,32 +559,10 @@ export type StudioSessionLogListOptions = {
   after?: number;
 };
 
-export type StudioMemoryContext = {
-  sessionId: string;
-  userId?: string | undefined;
-  metadata?: JsonObject | undefined;
-};
-
-export type StudioMemoryAppendInput = {
-  context: StudioMemoryContext;
-  runId: string;
-  turn: number;
-  messages: Message[];
-};
-
-export type StudioMemoryErrorInput = {
-  context: StudioMemoryContext;
-  runId: string;
-  error: unknown;
-  messages: Message[];
-};
-
-export type StudioMemoryStore = {
-  load(context: StudioMemoryContext): Promise<Message[]>;
-  append(input: StudioMemoryAppendInput): Promise<void>;
-  clear(context: StudioMemoryContext): Promise<void>;
-  recordError?(input: StudioMemoryErrorInput): Promise<void>;
-};
+export type StudioMemoryScope = MemoryScope;
+export type StudioMemoryAppendOptions = MemoryAppendOptions;
+export type StudioMemoryErrorOptions = MemoryErrorOptions;
+export type StudioMemoryStore = MemoryStore;
 
 export type StudioSessionStore = StudioMemoryStore & {
   readonly kind?: string;
@@ -1160,7 +1145,7 @@ export type StudioPipelineRunResponse = {
 };
 
 export type AgentRunRequest = {
-  message: string | Message;
+  message: string | UserMessage;
   history?: Message[];
   sessionId?: string;
   stream?: boolean;

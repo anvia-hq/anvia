@@ -1,4 +1,3 @@
-export type { AgentSession } from "./agent/agent";
 export { Agent } from "./agent/agent";
 export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./agent/errors";
 export type {
@@ -19,9 +18,13 @@ export type {
   AgentDeltaEvent,
   AgentErrorStreamEvent,
   AgentInput,
+  AgentMemoryCompactionEvent,
+  AgentPrompt,
   AgentResponse,
   AgentResult,
   AgentRunOptions,
+  AgentRunSettings,
+  AgentSteerInput,
   AgentStream,
   AgentStreamEvent,
   AgentToolApprovalRequest,
@@ -29,6 +32,7 @@ export type {
 } from "./agent/run-types";
 export type {
   AgentContextInput,
+  AgentMemory,
   AgentMemoryOptions,
   AgentObserverInput,
   AgentOptions,
@@ -129,26 +133,38 @@ export type {
 } from "./image-generation";
 export { generateImage } from "./image-generation";
 export type {
-  MemoryCompactionCommitInput,
-  MemoryCompactionCommitResult,
+  CreateSummaryMemoryCompactorOptions,
+  MemoryAppendOptions,
+  MemoryClearOptions,
+  MemoryCompactionCapability,
+  MemoryCompactionConflictRetryOptions,
+  MemoryCompactionInfo,
+  MemoryCompactionMessage,
+  MemoryCompactionMetadata,
   MemoryCompactionOptions,
+  MemoryCompactionReplacePrefixOptions,
+  MemoryCompactionReplacePrefixResult,
   MemoryCompactionSnapshot,
-  MemoryCompactionStore,
+  MemoryCompactionSnapshotOptions,
   MemoryCompactor,
   MemoryCompactorInput,
   MemoryCompactorResult,
   MemoryConversation,
+  MemoryConversationGetOptions,
   MemoryConversationListOptions,
   MemoryConversationMessage,
   MemoryConversationSummary,
+  MemoryErrorOptions,
   MemoryInspector,
+  MemoryLoadOptions,
+  MemoryOptions,
+  MemorySavePolicy,
+  MemoryScope,
   MemoryStore,
-  ResolvedMemoryCompactionOptions,
-  SummaryMemoryCompactorOptions,
 } from "./memory";
 export {
   createSummaryMemoryCompactor,
-  isMemoryCompactionSummary,
+  isMemoryCompactionMessage,
   MemoryCompactionConflictError,
   MemoryCompactionError,
 } from "./memory";

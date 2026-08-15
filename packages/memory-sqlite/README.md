@@ -15,3 +15,7 @@ The package creates the Anvia memory tables by default and stores ordered
 
 Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
 ordered message records directly from these tables.
+
+The store exposes `compaction.snapshot({ scope })` and atomic
+`compaction.replacePrefix({ ... })`. Compaction messages remain visible as ordinary ordered system
+messages; this adapter never chooses retention, calls a model, or retries mutations.

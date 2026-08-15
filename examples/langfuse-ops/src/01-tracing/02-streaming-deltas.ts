@@ -11,7 +11,8 @@ async function main(): Promise<void> {
     const client = buildOpenAIClient();
     const agent = buildSupportAgent(client.completionModel(defaultModel()), { tracing });
 
-    const stream = agent.stream("Give me a one-paragraph summary of ticket TICKET-1001.", {
+    const stream = agent.stream({
+      prompt: "Give me a one-paragraph summary of ticket TICKET-1001.",
       trace: { name: "streaming-trace", tags: ["tracing:02", "streaming"] },
     });
 

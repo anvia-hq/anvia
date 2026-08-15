@@ -89,7 +89,7 @@ const agent = new Agent({
   tools: [toolIndex],
 });
 
-await agent.generate("Refund order A-100.");
+await agent.generate({ prompt: "Refund order A-100." });
 
 const selected = model.requests[0]?.tools.map((tool) => tool.name) ?? [];
 console.log("selected tools:", selected.join(", "));

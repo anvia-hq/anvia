@@ -50,7 +50,7 @@ const agent = new Agent({
   tools: [lookupOrder],
 });
 
-const result = await agent.generate("What is happening with order A123?");
+const result = await agent.generate({ prompt: "What is happening with order A123?" });
 if (result.status === "completed") console.log(result.output);
 ```
 
@@ -186,9 +186,10 @@ const agent = new Agent({
   retries: { maxAttempts: 3 },
 });
 
-await agent.generate("Try normally.");
-await agent.generate("Do not retry this run.", { retries: false });
-await agent.generate("Use one custom policy.", {
+await agent.generate({ prompt: "Try normally." });
+await agent.generate({ prompt: "Do not retry this run.", retries: false });
+await agent.generate({
+  prompt: "Use one custom policy.",
   retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
 });
 ```
@@ -198,7 +199,7 @@ guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approval 
 `status: "approval_required"`.
 
 ```ts
-const result = await agent.generate("Help with this request.");
+const result = await agent.generate({ prompt: "Help with this request." });
 
 if (result.status === "completed") console.log(result.output);
 if (result.status === "blocked") console.log(result.stage, result.text);
@@ -208,7 +209,7 @@ An Agent with `outputSchema` carries that output type through `generate`, `strea
 Pipeline Agent stages. Agent stream finals use the same result shape:
 
 ```ts
-for await (const event of agent.stream("Help with this request.")) {
+for await (const event of agent.stream({ prompt: "Help with this request." })) {
   if (event.type === "final") {
     if (event.result.status === "completed") console.log(event.result.output);
     else console.log(event.result.stage, event.result.text);
@@ -224,22 +225,22 @@ Configure durable conversation memory on the Agent, then run through a session:
 
 ```ts
 import { Agent, type MemoryStore, type Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryScope } from "@anvia/core/memory";
 
 class AppMemoryStore implements MemoryStore {
   private readonly sessions = new Map<string, Message[]>();
 
-  async load(context: MemoryContext): Promise<Message[]> {
-    return [...(this.sessions.get(context.sessionId) ?? [])];
+  async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
+    return [...(this.sessions.get(scope.sessionId) ?? [])];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
-    const current = this.sessions.get(input.context.sessionId) ?? [];
-    this.sessions.set(input.context.sessionId, [...current, ...input.messages]);
+  async append(input: MemoryAppendOptions): Promise<void> {
+    const current = this.sessions.get(input.scope.sessionId) ?? [];
+    this.sessions.set(input.scope.sessionId, [...current, ...input.messages]);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
-    this.sessions.delete(context.sessionId);
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    this.sessions.delete(scope.sessionId);
   }
 }
 
@@ -250,8 +251,9 @@ const agent = new Agent({
   memory: { store: memory },
 });
 
-await agent.session("thread_123", { userId: "user_456" }).generate("Remember my plan.");
-await agent.session("thread_123", { userId: "user_456" }).generate("What is my plan?");
+const session = { sessionId: "thread_123", userId: "user_456" };
+await agent.generate({ prompt: "Remember my plan.", session });
+await agent.generate({ prompt: "What is my plan?", session });
 ```
 
 Memory defaults to `savePolicy: "message"`, which saves the user prompt, each completed assistant message, and each completed tool result as soon as they are ready. You can choose `"turn"` or `"run"` at configuration time:
@@ -263,6 +265,47 @@ new Agent({
   memory: { store: memory, savePolicy: "turn" },
 });
 ```
+
+Without `session`, the same Agent is stateless. Pass `{ messages }` when the caller already owns a
+complete transcript; transcripts cannot be combined with persisted sessions.
+
+Compaction is an explicit Agent policy over a store capability. The adapter persists the summary as
+an ordinary system message with `metadata.anvia.memoryCompaction`, so `load()` and inspectors expose
+exactly what future runs receive:
+
+```ts
+import { createSummaryMemoryCompactor } from "@anvia/core/memory";
+
+const compactor = createSummaryMemoryCompactor({
+  model: summaryModel,
+  maxTokens: 1024,
+  retries: { maxAttempts: 2 },
+});
+
+const agent = new Agent({
+  id: "support",
+  model,
+  memory: {
+    store: memory,
+    savePolicy: "message",
+    compaction: {
+      trigger: { afterMessages: 50 },
+      retention: { recentUserTurns: 4 },
+      compactor,
+      conflictRetries: false,
+    },
+  },
+});
+
+for await (const event of agent.stream({ prompt: "What did we decide?", session })) {
+  if (event.type === "memory_compaction") {
+    console.log(event.compactedMessageCount, event.usage);
+  }
+}
+```
+
+The trigger is a threshold, not a hard storage limit. Summary-provider retries belong to the
+compactor; full snapshot-to-replacement conflict retries are separately opt-in.
 
 ## Structured Extraction
 

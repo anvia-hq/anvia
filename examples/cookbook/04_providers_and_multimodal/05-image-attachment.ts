@@ -14,8 +14,8 @@ const agent = new Agent({
 });
 
 // Multimodal prompts combine text with image content parts.
-const response = await agent.generate(
-  Message.user([
+const response = await agent.generate({
+  prompt: Message.user([
     UserContent.text("What is shown in this image?"),
     UserContent.imageUrl(
       "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
@@ -24,7 +24,7 @@ const response = await agent.generate(
       },
     ),
   ]),
-);
+});
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

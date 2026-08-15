@@ -452,7 +452,7 @@ describe("Anthropic Messages mapping", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.stream("say hello"));
+    const events = await collect(agent.stream({ prompt: "say hello" }));
 
     expect(events).toContainEqual({
       type: "text_delta",
@@ -762,7 +762,7 @@ describe("Anthropic Messages mapping", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
 
-    const events = await collect(agent.stream("write"));
+    const events = await collect(agent.stream({ prompt: "write" }));
 
     expect(events).toContainEqual({
       type: "tool_call",
@@ -802,7 +802,7 @@ describe("Anthropic Messages mapping", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
 
-    const events = await collect(agent.stream("write"));
+    const events = await collect(agent.stream({ prompt: "write" }));
 
     expect(events).toContainEqual({
       type: "tool_call",

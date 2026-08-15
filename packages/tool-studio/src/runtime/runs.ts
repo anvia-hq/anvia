@@ -382,7 +382,7 @@ export function createPersistedStreamingSessionTranscript(props: {
         const generatedMessages = event.type === "final" ? event.result.messages.slice(1) : [];
         if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
           await props.store.append({
-            context: { sessionId: props.session.id },
+            scope: { sessionId: props.session.id },
             runId: props.runId,
             turn: 1,
             messages: generatedMessages,
@@ -941,9 +941,12 @@ function parseLegacyRunRequestBody(
   c: Context,
   body: Record<string, unknown>,
 ): AgentRunRequest | { error: Response } {
-  if (!isMessageInput(body.message)) {
+  if (
+    !isMessageInput(body.message) ||
+    (typeof body.message !== "string" && body.message.role !== "user")
+  ) {
     return {
-      error: errorResponse(c, 400, "bad_request", "Request body requires a string or Message"),
+      error: errorResponse(c, 400, "bad_request", "Request body requires a string or UserMessage"),
     };
   }
 
@@ -982,6 +985,11 @@ function parseUiRunRequestBody(
   if (message === undefined) {
     return {
       error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
+    };
+  }
+  if (message.role !== "user") {
+    return {
+      error: errorResponse(c, 400, "bad_request", "The final message must be user-authored"),
     };
   }
 

@@ -182,7 +182,7 @@ export class Pipeline<Input, Output = Input> implements PipelineOp<Input, Awaite
     return this.derive<AgentOutput>(async (input, context) => {
       const value = await this.runStep(input, context);
       return runNode(context, next.node, async () => {
-        const response = await agent.generate(String(value));
+        const response = await agent.generate({ prompt: String(value) });
         if (response.status === "approval_required") {
           await cancelAgentApproval(
             response,

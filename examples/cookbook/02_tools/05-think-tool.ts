@@ -31,9 +31,9 @@ const agent = new Agent({
   tools: [thinkTool, addTool],
 });
 
-for await (const event of agent.stream(
-  "Think through the steps, then calculate 17 + 25 and answer briefly.",
-)) {
+for await (const event of agent.stream({
+  prompt: "Think through the steps, then calculate 17 + 25 and answer briefly.",
+})) {
   if (event.type === "tool_call") {
     console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
   }

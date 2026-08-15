@@ -16,7 +16,8 @@ async function main(): Promise<void> {
     // Before any run: handle is undefined.
     console.log("[tracing:03] pre-run handle:", tracing.getCurrentTrace());
 
-    const response = await agent.generate("Summarize ticket TICKET-1001.", {
+    const response = await agent.generate({
+      prompt: "Summarize ticket TICKET-1001.",
       trace: { name: "trace-handle-demo", tags: ["tracing:03"] },
       lifecycle: {
         onStart() {

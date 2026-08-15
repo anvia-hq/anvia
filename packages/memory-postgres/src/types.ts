@@ -1,4 +1,4 @@
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryErrorOptions, MemoryScope } from "@anvia/core/memory";
 
 export type PostgresMemoryErrorMode = "store" | "ignore";
 export type PostgresMemoryLockMode = "advisory" | "none";
@@ -39,12 +39,12 @@ export type PostgresMemoryStoreOptions = PostgresMemorySchemaOptions & {
   client?: PostgresMemoryClientLike | undefined;
   connectionString?: string | undefined;
   createIfMissing?: boolean | undefined;
-  scope?: PostgresMemoryScopeOptions | ((context: MemoryContext) => string) | undefined;
+  scope?: PostgresMemoryScopeOptions | ((context: MemoryScope) => string) | undefined;
   errors?: PostgresMemoryErrorMode | undefined;
   validateMessages?: boolean | undefined;
   lock?: PostgresMemoryLockMode | undefined;
 };
 
-export type PostgresMemoryAppendInput = MemoryAppendInput;
-export type PostgresMemoryContext = MemoryContext;
-export type PostgresMemoryErrorInput = MemoryErrorInput;
+export type PostgresMemoryAppendOptions = MemoryAppendOptions;
+export type PostgresMemoryScope = MemoryScope;
+export type PostgresMemoryErrorOptions = MemoryErrorOptions;

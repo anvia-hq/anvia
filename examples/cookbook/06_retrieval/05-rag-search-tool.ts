@@ -57,7 +57,7 @@ const agent = new Agent({
   tools: [searchRunbooks],
 });
 
-const response = await agent.generate("The queue is backing up. What should I check?");
+const response = await agent.generate({ prompt: "The queue is backing up. What should I check?" });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

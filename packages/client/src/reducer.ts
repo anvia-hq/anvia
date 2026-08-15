@@ -211,6 +211,9 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
         ...(event.usage === undefined ? {} : { usage: event.usage }),
         ...(event.contextUsage === undefined ? {} : { contextUsage: event.contextUsage }),
         ...(event.trace === undefined ? {} : { trace: event.trace }),
+        ...(event.memoryCompaction === undefined
+          ? {}
+          : { memoryCompaction: event.memoryCompaction }),
       });
     case "error":
       return appendToLastAssistant(messages, {

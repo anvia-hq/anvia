@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Message } from "@anvia/core";
+import type { MemoryCompactionMessage, Message } from "@anvia/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteMemoryScopeKey, createSqliteMemoryStore } from "../src/index.js";
 import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
@@ -16,6 +16,19 @@ const assistantMessage: Message = {
   role: "assistant",
   content: [{ type: "text", text: "stored" }],
 };
+
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
+    metadata: {
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
+    },
+  };
+}
 
 const richMessages: Message[] = [
   { role: "system", content: "System instructions", metadata: { source: "system" } },
@@ -148,7 +161,7 @@ describe("SqliteMemoryStore", () => {
     const store = createSqliteMemoryStore();
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -179,88 +192,93 @@ describe("SqliteMemoryStore", () => {
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
 
-    expect(await store.load(context)).toEqual([userMessage, assistantMessage, userMessage]);
-    expect(await store.load({ sessionId: "thread-1", userId: "user-2" })).toEqual([]);
+    expect(await store.load({ scope: context })).toEqual([
+      userMessage,
+      assistantMessage,
+      userMessage,
+    ]);
+    expect(await store.load({ scope: { sessionId: "thread-1", userId: "user-2" } })).toEqual([]);
     expect(
       sqliteDatabase(store)
         .prepare("SELECT position FROM anvia_memory_messages ORDER BY position ASC")
         .all(),
     ).toEqual([{ position: 0 }, { position: 1 }, { position: 2 }]);
 
-    await store.clear(context);
-    expect(await store.load(context)).toEqual([]);
+    await store.clear({ scope: context });
+    expect(await store.load({ scope: context })).toEqual([]);
   });
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
     const store = createSqliteMemoryStore();
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
-    const stale = await store.compaction.load(context);
+    const stale = await store.compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [assistantMessage],
     });
-    const summary: Extract<Message, { role: "system" }> = {
-      role: "system",
-      content: "Earlier conversation summary",
-    };
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await store.compaction.load(context);
+    const current = await store.compaction.snapshot({ scope: context });
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
-    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
+      userMessage,
+      assistantMessage,
+    ]);
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector.getConversation(conversation.ref);
+        : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -270,7 +288,7 @@ describe("SqliteMemoryStore", () => {
   it("inspects persisted conversations by opaque row reference", async () => {
     const store = createSqliteMemoryStore();
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -280,7 +298,7 @@ describe("SqliteMemoryStore", () => {
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context: { sessionId: "thread-2", userId: "user-2" },
+      scope: { sessionId: "thread-2", userId: "user-2" },
       runId: "run-2",
       turn: 0,
       messages: [userMessage],
@@ -302,7 +320,9 @@ describe("SqliteMemoryStore", () => {
       }),
     ]);
 
-    const conversation = await store.inspector.getConversation(conversations[0]?.ref ?? "");
+    const conversation = await store.inspector.getConversation({
+      ref: conversations[0]?.ref ?? "",
+    });
     expect(conversation).toMatchObject({
       sessionId: "thread-1",
       messages: [
@@ -310,16 +330,16 @@ describe("SqliteMemoryStore", () => {
         { position: 1, runId: "run-1", turn: 2, message: assistantMessage },
       ],
     });
-    await expect(store.inspector.getConversation("missing")).resolves.toBeUndefined();
+    await expect(store.inspector.getConversation({ ref: "missing" })).resolves.toBeUndefined();
   });
 
   it("round-trips every supported message content shape", async () => {
     const store = createSqliteMemoryStore();
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("persists messages when reopened from the same file path", async () => {
@@ -327,13 +347,15 @@ describe("SqliteMemoryStore", () => {
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await createSqliteMemoryStore({ path }).append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
 
-    await expect(createSqliteMemoryStore({ path }).load(context)).resolves.toEqual([userMessage]);
+    await expect(createSqliteMemoryStore({ path }).load({ scope: context })).resolves.toEqual([
+      userMessage,
+    ]);
   });
 
   it("stores failed-run diagnostics when enabled", async () => {
@@ -341,7 +363,7 @@ describe("SqliteMemoryStore", () => {
 
     await expect(
       store.recordError({
-        context: { sessionId: "thread-1" },
+        scope: { sessionId: "thread-1" },
         runId: "run-1",
         error: new Error("failed"),
         messages: [userMessage],
@@ -353,13 +375,13 @@ describe("SqliteMemoryStore", () => {
     const store = createSqliteMemoryStore();
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -388,7 +410,7 @@ describe("SqliteMemoryStore", () => {
     const store = createSqliteMemoryStore({ errors: "ignore" });
 
     await store.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -404,7 +426,7 @@ describe("SqliteMemoryStore", () => {
     const context = { sessionId: "thread-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -415,7 +437,7 @@ describe("SqliteMemoryStore", () => {
         $messageJson: JSON.stringify({ role: "bad", content: [] }),
       });
 
-    await expect(store.load(context)).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
   });
 
   it("can bypass stored message validation", async () => {
@@ -424,7 +446,7 @@ describe("SqliteMemoryStore", () => {
     const malformed = { role: "bad", content: [] };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -433,7 +455,7 @@ describe("SqliteMemoryStore", () => {
       .prepare("UPDATE anvia_memory_messages SET message_json = $messageJson")
       .run({ $messageJson: JSON.stringify(malformed) });
 
-    await expect(store.load(context)).resolves.toEqual([malformed]);
+    await expect(store.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("uses custom scope functions", async () => {
@@ -442,17 +464,19 @@ describe("SqliteMemoryStore", () => {
     });
 
     await store.append({
-      context: { sessionId: "thread-1", userId: "user-1", metadata: { tenantId: "tenant-1" } },
+      scope: { sessionId: "thread-1", userId: "user-1", metadata: { tenantId: "tenant-1" } },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
 
     await expect(
-      store.load({ sessionId: "different-thread", metadata: { tenantId: "tenant-1" } }),
+      store.load({
+        scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
+      }),
     ).resolves.toEqual([userMessage]);
     await expect(
-      store.load({ sessionId: "thread-1", metadata: { tenantId: "tenant-2" } }),
+      store.load({ scope: { sessionId: "thread-1", metadata: { tenantId: "tenant-2" } } }),
     ).resolves.toEqual([]);
   });
 
@@ -462,7 +486,7 @@ describe("SqliteMemoryStore", () => {
 
     const store = createSqliteMemoryStore({ path, createIfMissing: false });
 
-    await expect(store.load({ sessionId: "thread-1" })).rejects.toThrow("no such table");
+    await expect(store.load({ scope: { sessionId: "thread-1" } })).rejects.toThrow("no such table");
   });
 
   it("creates stable scope keys from metadata paths", () => {

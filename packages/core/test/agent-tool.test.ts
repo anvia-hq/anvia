@@ -237,7 +237,7 @@ describe("Agent construction", () => {
       }),
     );
 
-    await agent.generate("hello");
+    await agent.generate({ prompt: "hello" });
 
     expect(agent.context).toEqual([
       {
@@ -264,7 +264,7 @@ describe("Agent construction", () => {
     expect(Object.isFrozen(agent.observers[0])).toBe(true);
     expect(Object.isFrozen(agent.guardrails[0]?.input)).toBe(true);
     expect(Object.isFrozen(agent.memory)).toBe(true);
-    expect(Object.isFrozen(agent.memory?.options)).toBe(true);
+    expect(Object.isFrozen(agent.memory?.compaction)).toBe(true);
     expect(getAgentToolState(agent)).not.toHaveProperty("toolsByName");
   });
 
@@ -388,10 +388,10 @@ describe("Agent construction", () => {
     expect(() => new Agent({ id: "agent", model, maxTurns: Number.NaN })).toThrow(
       "maxTurns must be a nonnegative safe integer",
     );
-    expect(() => agent.generate("hello", { toolConcurrency: Number.NaN })).toThrow(
+    expect(() => agent.generate({ prompt: "hello", toolConcurrency: Number.NaN })).toThrow(
       "toolConcurrency must be a positive safe integer",
     );
-    expect(() => agent.stream("hello", { toolConcurrency: 0 })).toThrow(
+    expect(() => agent.stream({ prompt: "hello", toolConcurrency: 0 })).toThrow(
       "toolConcurrency must be a positive safe integer",
     );
   });
@@ -468,7 +468,7 @@ describe("Agent construction", () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
     const agent = new Agent({ id: "agent", model, tools: [index] });
 
-    await agent.generate("hello");
+    await agent.generate({ prompt: "hello" });
 
     expect(model.requests[0]?.tools).toEqual([
       expect.objectContaining({

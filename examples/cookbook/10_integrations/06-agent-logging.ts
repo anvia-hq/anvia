@@ -48,18 +48,16 @@ const agent = new Agent({
   ],
 });
 
-const response = await agent.generate(
-  "Summarize ticket TICKET-1001 for the product engineering team.",
-  {
-    trace: {
-      name: "support-ticket-logging",
-      userId: "cookbook-user",
-      sessionId: "cookbook-session",
-      metadata: { ticketId: "TICKET-1001", example: "integrations:06" },
-      tags: ["cookbook", "logging"],
-    },
+const response = await agent.generate({
+  prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
+  trace: {
+    name: "support-ticket-logging",
+    userId: "cookbook-user",
+    sessionId: "cookbook-session",
+    metadata: { ticketId: "TICKET-1001", example: "integrations:06" },
+    tags: ["cookbook", "logging"],
   },
-);
+});
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

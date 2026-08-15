@@ -358,10 +358,10 @@ export function reasoningDisplayText(reasoning: Reasoning | ReasoningContent[]):
 }
 
 export const Message = {
-  system(content: string, options: MessageOptions = {}): Message {
+  system(content: string, options: MessageOptions = {}): SystemMessage {
     return { role: "system", content, ...messageMetadata(options) };
   },
-  user(content: string | UserContent[], options: MessageOptions = {}): Message {
+  user(content: string | UserContent[], options: MessageOptions = {}): UserMessage {
     return {
       role: "user",
       content: typeof content === "string" ? [UserContent.text(content)] : content,
@@ -371,7 +371,7 @@ export const Message = {
   assistant(
     content: string | AssistantContent[],
     idOrOptions?: string | AssistantMessageOptions,
-  ): Message {
+  ): AssistantMessage {
     const normalized = typeof content === "string" ? [AssistantContent.text(content)] : content;
     const options = typeof idOrOptions === "string" ? { id: idOrOptions } : (idOrOptions ?? {});
     const metadata = messageMetadata(options).metadata;
@@ -384,14 +384,14 @@ export const Message = {
     }
     return message;
   },
-  tool(content: ToolContent | ToolContent[], options: MessageOptions = {}): Message {
+  tool(content: ToolContent | ToolContent[], options: MessageOptions = {}): ToolMessage {
     return {
       role: "tool",
       content: Array.isArray(content) ? content : [content],
       ...messageMetadata(options),
     };
   },
-  toolResult(id: string, output: unknown, options: ToolResultMessageOptions = {}): Message {
+  toolResult(id: string, output: unknown, options: ToolResultMessageOptions = {}): ToolMessage {
     const content = isToolResultContentArray(output) ? output : serializeToolResultOutput(output);
     return Message.tool(
       ToolContent.toolResult(id, content, {

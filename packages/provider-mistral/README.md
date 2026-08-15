@@ -31,7 +31,7 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
-const result = await agent.generate("What should I check before launch?");
+const result = await agent.generate({ prompt: "What should I check before launch?" });
 if (result.status === "completed") console.log(result.output);
 ```
 

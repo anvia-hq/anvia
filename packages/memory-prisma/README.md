@@ -64,12 +64,14 @@ const agent = new Agent({
   memory: { store: memory, savePolicy: "turn" },
 });
 
-await agent
-  .session("thread_123", {
+await agent.generate({
+  prompt: "Where is my order?",
+  session: {
+    sessionId: "thread_123",
     userId: "user_456",
     metadata: { tenantId: "tenant_789" },
-  })
-  .generate("Where is my order?");
+  },
+});
 ```
 
 `scope` defines the database key for one memory thread. By default the key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory across tenants or workspaces. Scope is storage isolation, not authorization.
@@ -77,6 +79,11 @@ await agent
 The store also exposes core's optional read-only memory inspector. When this agent is registered
 with `@anvia/studio`, existing Prisma conversations appear automatically on the Memory page. Studio
 does not copy the messages or require another schema migration.
+
+When the messages delegate supports `deleteMany`, the store also exposes
+`compaction.snapshot({ scope })` and atomic `compaction.replacePrefix({ ... })`. Compaction messages
+remain visible as ordinary ordered system messages. With narrower custom delegates the capability
+is absent, rather than pretending replacement is atomic.
 
 ## Custom delegates
 

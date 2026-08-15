@@ -16,7 +16,7 @@ const researcher = new Agent({
   ],
 });
 
-const response = await researcher.generate("What are the latest xAI product updates?");
+const response = await researcher.generate({ prompt: "What are the latest xAI product updates?" });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

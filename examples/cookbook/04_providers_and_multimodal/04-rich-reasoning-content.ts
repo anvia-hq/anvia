@@ -50,7 +50,7 @@ let activeReasoningContentType: ReasoningContentType | undefined;
 let wroteReasoning = false;
 let wroteText = false;
 
-for await (const event of agent.stream(prompt)) {
+for await (const event of agent.stream({ prompt })) {
   if (event.type === "reasoning_delta") {
     writeReasoning(event.contentType, event.delta);
   }

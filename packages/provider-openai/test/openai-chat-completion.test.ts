@@ -289,7 +289,7 @@ describe("OpenAI chat-completions client path", () => {
     const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
     const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.stream("introduce yourself"));
+    const events = await collect(agent.stream({ prompt: "introduce yourself" }));
     const turnEnd = events.find((event) => event.type === "turn_end");
 
     expect(turnEnd?.type).toBe("turn_end");
@@ -473,7 +473,7 @@ describe("OpenAI chat-completions client path", () => {
       tools: [recordingTool("ExecCommand", calls)],
     });
 
-    const events = await collect(agent.stream("run pwd"));
+    const events = await collect(agent.stream({ prompt: "run pwd" }));
 
     expect(events).toContainEqual({
       type: "tool_call",
@@ -509,7 +509,7 @@ describe("OpenAI chat-completions client path", () => {
       tools: [recordingTool("ExecCommand", execCalls), recordingTool("ReadFile", readCalls)],
     });
 
-    const events = await collect(agent.stream("run tools"));
+    const events = await collect(agent.stream({ prompt: "run tools" }));
 
     expect(events.flatMap((event) => (event.type === "tool_call" ? [event.toolCall] : []))).toEqual(
       [
@@ -540,7 +540,7 @@ describe("OpenAI chat-completions client path", () => {
       tools: [recordingTool("ExecCommand", calls), recordingTool("ReadFile", calls)],
     });
 
-    const events = await collect(agent.stream("run tools"));
+    const events = await collect(agent.stream({ prompt: "run tools" }));
     expect(events.at(-1)).toMatchObject({
       type: "error",
       error: { message: INVALID_TOOL_INDEX_ERROR },
@@ -697,7 +697,7 @@ describe("OpenAI chat-completions client path", () => {
       tools: [recordingTool("ExecCommand", calls)],
     });
 
-    const events = await collect(agent.stream("run pwd"));
+    const events = await collect(agent.stream({ prompt: "run pwd" }));
     expect(events.at(-1)).toMatchObject({
       type: "error",
       error: {

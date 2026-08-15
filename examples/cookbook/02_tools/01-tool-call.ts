@@ -29,7 +29,7 @@ const agent = new Agent({
   tools: [addTool],
 });
 
-const response = await agent.generate("What is 12 + 30? Use the add tool.");
+const response = await agent.generate({ prompt: "What is 12 + 30? Use the add tool." });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

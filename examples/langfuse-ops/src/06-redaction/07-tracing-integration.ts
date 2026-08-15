@@ -22,10 +22,10 @@ async function main(): Promise<void> {
       observers: [tracing],
     });
 
-    const response = await agent.generate(
-      "My email is alice@example.com. What is your refund policy?",
-      { trace: { name: "redaction-tracing-demo", tags: ["redaction:07"] } },
-    );
+    const response = await agent.generate({
+      prompt: "My email is alice@example.com. What is your refund policy?",
+      trace: { name: "redaction-tracing-demo", tags: ["redaction:07"] },
+    });
     assertCompleted(response);
 
     console.log("[redaction:07] output:", response.output);

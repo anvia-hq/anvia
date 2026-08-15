@@ -1,4 +1,4 @@
-import type { Message } from "@anvia/core";
+import type { MemoryCompactionMessage, Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import {
   agentMemoryErrors,
@@ -19,6 +19,19 @@ const assistantMessage: Message = {
   role: "assistant",
   content: [{ type: "text", text: "stored" }],
 };
+
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
+    metadata: {
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
+    },
+  };
+}
 
 const richMessages: Message[] = [
   { role: "system", content: "System instructions", metadata: { source: "system" } },
@@ -144,7 +157,7 @@ describe("Drizzle memory public API", () => {
     const store = createDrizzleMemoryStore(new FakeDrizzleDb());
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -182,24 +195,28 @@ describe("Drizzle memory public API", () => {
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
 
-    expect(await store.load(context)).toEqual([userMessage, assistantMessage, userMessage]);
-    expect(await store.load({ sessionId: "thread-1", userId: "user-2" })).toEqual([]);
+    expect(await store.load({ scope: context })).toEqual([
+      userMessage,
+      assistantMessage,
+      userMessage,
+    ]);
+    expect(await store.load({ scope: { sessionId: "thread-1", userId: "user-2" } })).toEqual([]);
     expect(db.events).toEqual(["transaction", "lock", "transaction", "lock"]);
 
-    await store.clear(context);
-    expect(await store.load(context)).toEqual([]);
+    await store.clear({ scope: context });
+    expect(await store.load({ scope: context })).toEqual([]);
   });
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
@@ -207,60 +224,61 @@ describe("Drizzle memory public API", () => {
     const store = createDrizzleMemoryStore(db);
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
-    const stale = await store.compaction.load(context);
+    const stale = await store.compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [assistantMessage],
     });
-    const summary: Extract<Message, { role: "system" }> = {
-      role: "system",
-      content: "Earlier conversation summary",
-    };
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await store.compaction.load(context);
+    const current = await store.compaction.snapshot({ scope: context });
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
-    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
+      userMessage,
+      assistantMessage,
+    ]);
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector.getConversation(conversation.ref);
+        : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -270,7 +288,7 @@ describe("Drizzle memory public API", () => {
   it("inspects persisted conversations with ordered message records", async () => {
     const store = createDrizzleMemoryStore(new FakeDrizzleDb());
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -295,7 +313,7 @@ describe("Drizzle memory public API", () => {
         messageCount: 2,
       },
     ]);
-    await expect(store.inspector.getConversation("session-1")).resolves.toMatchObject({
+    await expect(store.inspector.getConversation({ ref: "session-1" })).resolves.toMatchObject({
       messages: [
         { position: 0, runId: "run-1", turn: 5, message: userMessage },
         { position: 1, runId: "run-1", turn: 5, message: assistantMessage },
@@ -307,9 +325,9 @@ describe("Drizzle memory public API", () => {
     const store = createDrizzleMemoryStore(new FakeDrizzleDb());
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("does not open a transaction for empty appends", async () => {
@@ -317,14 +335,14 @@ describe("Drizzle memory public API", () => {
     const store = createDrizzleMemoryStore(db);
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [],
     });
 
     expect(db.events).toEqual([]);
-    expect(await store.load({ sessionId: "thread-1" })).toEqual([]);
+    expect(await store.load({ scope: { sessionId: "thread-1" } })).toEqual([]);
   });
 
   it("stores and can ignore failed-run diagnostics", async () => {
@@ -332,7 +350,7 @@ describe("Drizzle memory public API", () => {
     const store = createDrizzleMemoryStore(db);
 
     await store.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -351,7 +369,7 @@ describe("Drizzle memory public API", () => {
     const ignoringStore = createDrizzleMemoryStore(ignoringDb, { errors: "ignore" });
 
     await ignoringStore.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -366,13 +384,13 @@ describe("Drizzle memory public API", () => {
     const store = createDrizzleMemoryStore(db);
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -394,7 +412,7 @@ describe("Drizzle memory public API", () => {
 
     await expect(
       lockingStore.append({
-        context: { sessionId: "thread-1" },
+        scope: { sessionId: "thread-1" },
         runId: "run-1",
         turn: 0,
         messages: [userMessage],
@@ -406,13 +424,13 @@ describe("Drizzle memory public API", () => {
       lock: "none",
     });
     await unlockedStore.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
 
-    expect(await unlockedStore.load({ sessionId: "thread-1" })).toEqual([userMessage]);
+    expect(await unlockedStore.load({ scope: { sessionId: "thread-1" } })).toEqual([userMessage]);
     expect(unlockedDb.events).toEqual([]);
   });
 
@@ -423,17 +441,17 @@ describe("Drizzle memory public API", () => {
     const malformed = { role: "bad", content: [] };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
     db.replaceFirstMessage(malformed);
 
-    await expect(store.load(context)).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
 
     const unsafeStore = createDrizzleMemoryStore(db, { validateMessages: false });
-    await expect(unsafeStore.load(context)).resolves.toEqual([malformed]);
+    await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("uses custom scope functions", async () => {
@@ -443,7 +461,7 @@ describe("Drizzle memory public API", () => {
     });
 
     await store.append({
-      context: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
+      scope: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -451,7 +469,9 @@ describe("Drizzle memory public API", () => {
 
     expect(db.scopeKeys()).toEqual(["tenant-1"]);
     await expect(
-      store.load({ sessionId: "different-thread", metadata: { tenantId: "tenant-1" } }),
+      store.load({
+        scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
+      }),
     ).resolves.toEqual([userMessage]);
   });
 
@@ -489,7 +509,7 @@ describe("Drizzle memory public API", () => {
   it("fails clearly when the database object is not Drizzle-like", async () => {
     const store = createDrizzleMemoryStore({});
 
-    await expect(store.load({ sessionId: "thread-1" })).rejects.toThrow(
+    await expect(store.load({ scope: { sessionId: "thread-1" } })).rejects.toThrow(
       "DrizzleMemoryStore expected db.select to be a function.",
     );
   });

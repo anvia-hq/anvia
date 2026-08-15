@@ -22,18 +22,16 @@ async function main(): Promise<void> {
       tools: [getTicket],
     });
 
-    const response = await agent.generate(
-      "Summarize ticket TICKET-1001 for the product engineering team.",
-      {
-        trace: {
-          name: "quickstart-support-ticket",
-          userId: "quickstart-user",
-          sessionId: "quickstart-session",
-          metadata: { example: "00-quickstart" },
-          tags: ["langfuse-ops", "quickstart"],
-        },
+    const response = await agent.generate({
+      prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
+      trace: {
+        name: "quickstart-support-ticket",
+        userId: "quickstart-user",
+        sessionId: "quickstart-session",
+        metadata: { example: "00-quickstart" },
+        tags: ["langfuse-ops", "quickstart"],
       },
-    );
+    });
     assertCompleted(response);
 
     console.log("[quickstart] agent output:", response.output);

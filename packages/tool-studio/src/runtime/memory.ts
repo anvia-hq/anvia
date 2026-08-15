@@ -319,7 +319,7 @@ function agentMemorySource(
         .slice(0, options.limit);
     },
     async getConversation(conversationRef) {
-      const conversation = await inspector.getConversation(conversationRef);
+      const conversation = await inspector.getConversation({ ref: conversationRef });
       return conversation === undefined
         ? undefined
         : inspectorConversationDetail(conversation, summary.agentIds);

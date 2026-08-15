@@ -4,11 +4,11 @@ export {
   SqliteMemoryStore,
 } from "./store.js";
 export type {
-  SqliteMemoryAppendInput,
-  SqliteMemoryContext,
-  SqliteMemoryErrorInput,
+  SqliteMemoryAppendOptions,
   SqliteMemoryErrorMode,
+  SqliteMemoryErrorOptions,
   SqliteMemoryMessageRow,
+  SqliteMemoryScope,
   SqliteMemoryScopeOptions,
   SqliteMemorySessionRow,
   SqliteMemoryStoreOptions,

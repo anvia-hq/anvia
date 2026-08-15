@@ -10,8 +10,10 @@ import type {
   ToolCallArgumentsMode,
   ToolResultContent,
   Usage,
+  UserMessage,
 } from "../completion/index";
 import type { GuardrailDecisionRecord, GuardrailPolicyInput } from "../guardrails";
+import type { MemoryCompactionInfo, MemoryScope } from "../memory";
 import type {
   AgentGenerationModelInfo,
   AgentTraceInfo,
@@ -21,9 +23,25 @@ import type { RetrySetting } from "../retry";
 import type { AgentMiddleware } from "../tool";
 import type { AgentLifecycle } from "./lifecycle";
 
-export type AgentInput = string | MessageType | MessageType[];
+export type AgentPrompt = string | UserMessage;
 
-export type AgentRunOptions<Output = string, RawResponse = unknown> = {
+export type AgentInput =
+  | {
+      prompt: AgentPrompt;
+      messages?: never;
+      session?: MemoryScope | undefined;
+    }
+  | {
+      messages: readonly MessageType[];
+      prompt?: never;
+      session?: never;
+    };
+
+export type AgentSteerInput =
+  | { prompt: AgentPrompt; messages?: never }
+  | { messages: readonly UserMessage[]; prompt?: never };
+
+export type AgentRunSettings<Output = string, RawResponse = unknown> = {
   maxTurns?: number | undefined;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
@@ -33,6 +51,9 @@ export type AgentRunOptions<Output = string, RawResponse = unknown> = {
   middlewares?: readonly AgentMiddleware[] | undefined;
   trace?: AgentTraceOptions | undefined;
 };
+
+export type AgentRunOptions<Output = string, RawResponse = unknown> = AgentInput &
+  AgentRunSettings<Output, RawResponse>;
 
 type AgentResultBase = {
   runId: string;
@@ -44,6 +65,7 @@ type AgentResultBase = {
   guardrails?: GuardrailDecisionRecord[] | undefined;
   sources?: CompletionSource[] | undefined;
   providerToolCalls?: ProviderToolCall[] | undefined;
+  memoryCompaction?: MemoryCompactionInfo | undefined;
 };
 
 export type AgentResponse<Output = string> = AgentResultBase & {
@@ -62,6 +84,7 @@ export type AgentApprovalRequiredResult = {
   approval: AgentToolApprovalRequest;
   usage: Usage;
   messages: MessageType[];
+  memoryCompaction?: MemoryCompactionInfo | undefined;
 };
 
 export type AgentResult<Output = string> =
@@ -113,6 +136,10 @@ export type AgentToolCallDeltaEvent = {
   argumentsDelta?: string;
   argumentsMode?: ToolCallArgumentsMode;
   signature?: string;
+};
+
+export type AgentMemoryCompactionEvent = MemoryCompactionInfo & {
+  type: "memory_compaction";
 };
 
 type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
@@ -178,6 +205,7 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
       turn?: number | undefined;
       decision: GuardrailDecisionRecord;
     }
+  | AgentMemoryCompactionEvent
   | {
       type: "final";
       result: AgentResponse<Output> | AgentBlockedResult;
@@ -205,5 +233,5 @@ export type AgentStreamEvent<Output = string, RawResponse = unknown> =
   | AgentToolStreamEvent;
 
 export interface AgentStream<Event = AgentStreamEvent> extends AsyncIterable<Event> {
-  steer(input: AgentInput): boolean;
+  steer(input: AgentSteerInput): boolean;
 }

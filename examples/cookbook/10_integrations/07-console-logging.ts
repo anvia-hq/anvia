@@ -50,7 +50,8 @@ const agent = new Agent({
   ],
 });
 
-const response = await agent.generate("Summarize ticket TICKET-2002 for the search team.", {
+const response = await agent.generate({
+  prompt: "Summarize ticket TICKET-2002 for the search team.",
   trace: {
     name: "support-ticket-console-logging",
     userId: "cookbook-user",

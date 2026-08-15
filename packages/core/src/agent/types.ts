@@ -7,7 +7,13 @@ import type {
 } from "../completion/index";
 import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
 import type { McpServer } from "../mcp";
-import type { MemoryOptions, MemoryRegistration, MemoryStore } from "../memory/types";
+import type {
+  MemoryCompactionConflictRetryOptions,
+  MemoryCompactor,
+  MemoryOptions,
+  MemorySavePolicy,
+  MemoryStore,
+} from "../memory/types";
 import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
 import type { RetrySetting } from "../retry";
 import type { ZodSchema } from "../schema";
@@ -58,6 +64,19 @@ export type AgentMemoryOptions = MemoryOptions & {
   store: MemoryStore;
 };
 
+export type AgentMemory = {
+  store: MemoryStore;
+  savePolicy: MemorySavePolicy;
+  compaction?:
+    | {
+        trigger: { afterMessages: number };
+        retention: { recentUserTurns: number };
+        compactor: MemoryCompactor;
+        conflictRetries: false | MemoryCompactionConflictRetryOptions;
+      }
+    | undefined;
+};
+
 export type ResolvedAgentOptions<
   Output = string,
   M extends CompletionModel = CompletionModel,
@@ -83,7 +102,7 @@ export type ResolvedAgentOptions<
   observers?: readonly AgentObserverRegistration[] | undefined;
   guardrails?: readonly GuardrailPolicy[] | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;
-  memory?: MemoryRegistration | undefined;
+  memory?: AgentMemory | undefined;
 };
 
 export type AgentToolOptions = {

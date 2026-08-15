@@ -31,7 +31,7 @@ const prompt = enableMathTools
   ? "What is 18 + 24? Use the add tool."
   : "Are arithmetic tools available in this run?";
 
-const response = await agent.generate(prompt);
+const response = await agent.generate({ prompt });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log("math tools enabled:", enableMathTools);

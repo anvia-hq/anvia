@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue, Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryErrorOptions, MemoryScope } from "@anvia/core/memory";
 
 export type PrismaMemoryErrorMode = "store" | "ignore";
 
@@ -13,7 +13,7 @@ export type PrismaMemoryTransactionOptions = {
 };
 
 export type PrismaMemoryStoreOptions = {
-  scope?: PrismaMemoryScopeOptions | ((context: MemoryContext) => string) | undefined;
+  scope?: PrismaMemoryScopeOptions | ((context: MemoryScope) => string) | undefined;
   errors?: PrismaMemoryErrorMode | undefined;
   validateMessages?: boolean | undefined;
   transaction?: PrismaMemoryTransactionOptions | undefined;
@@ -95,6 +95,6 @@ export type PrismaMemoryErrorData = {
   messages: Message[];
 };
 
-export type PrismaMemoryAppendInput = MemoryAppendInput;
-export type PrismaMemoryContext = MemoryContext;
-export type PrismaMemoryErrorInput = MemoryErrorInput;
+export type PrismaMemoryAppendOptions = MemoryAppendOptions;
+export type PrismaMemoryScope = MemoryScope;
+export type PrismaMemoryErrorOptions = MemoryErrorOptions;

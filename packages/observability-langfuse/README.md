@@ -42,7 +42,7 @@ const agent = new Agent({
   observers: [tracing],
 });
 
-const result = await agent.generate("How do I reset my password?");
+const result = await agent.generate({ prompt: "How do I reset my password?" });
 if (result.status === "completed") console.log(result.output);
 
 await tracing.flush();
@@ -387,7 +387,8 @@ const prompts = createLangfusePromptClient(tracing);
 const prompt = await prompts.getPrompt("support.system");
 console.log(prompt.prompt, prompt.version);
 
-await agent.generate("hi", {
+await agent.generate({
+  prompt: "hi",
   trace: {
     promptRef: { name: "support.system", version: prompt.version },
   },

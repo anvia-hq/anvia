@@ -1,21 +1,18 @@
 import type { Agent } from "../../agent/agent";
+import type { AgentMemory } from "../../agent/types";
 import { type Message as MessageType, Usage } from "../../completion/index";
 import {
   createMemoryCompactionSummary,
   cumulativeCompactedMessageCount,
 } from "../../memory/compaction";
 import { MemoryCompactionConflictError, MemoryCompactionError } from "../../memory/errors";
-import type { MemoryContext, MemoryRegistration, MemorySavePolicy } from "../../memory/types";
+import type { MemoryCompactionInfo, MemorySavePolicy, MemoryScope } from "../../memory/types";
+import { throwIfAborted } from "../abort";
 
 export type MemoryPreparation = {
   history: MessageType[];
   usage: ReturnType<typeof Usage.empty>;
-  compaction?: {
-    originalMessageCount: number;
-    compactedMessageCount: number;
-    retainedMessageCount: number;
-    conflictRetries: number;
-  };
+  compaction?: MemoryCompactionInfo | undefined;
 };
 
 type MemoryAgent = Pick<Agent, "memory">;
@@ -23,28 +20,37 @@ type MemoryAgent = Pick<Agent, "memory">;
 export class AgentRunMemory {
   constructor(
     private readonly agent: MemoryAgent,
-    private readonly memoryContext: MemoryContext | undefined,
+    private readonly memoryScope: MemoryScope | undefined,
     private readonly initialHistory: MessageType[],
   ) {}
 
   memoryPolicy(): MemorySavePolicy | undefined {
-    return this.memory()?.options.savePolicy;
+    return this.memory()?.savePolicy;
   }
 
   pendingTurnMessages(newMessages: MessageType[]): MessageType[] {
     return this.memoryPolicy() === "turn" ? [...newMessages] : [];
   }
 
-  async prepareHistory(runId: string, incomingMessageCount: number): Promise<MemoryPreparation> {
+  async prepareHistory(
+    runId: string,
+    incomingMessageCount: number,
+    abortSignal?: AbortSignal | undefined,
+  ): Promise<MemoryPreparation> {
     const memory = this.memory();
-    if (memory === undefined || this.memoryContext === undefined) {
+    if (memory === undefined || this.memoryScope === undefined) {
       return {
         history: this.initialHistory,
         usage: Usage.empty(),
       };
     }
 
-    const preparation = await this.prepareStoredHistory(memory, runId, incomingMessageCount);
+    const preparation = await this.prepareStoredHistory(
+      memory,
+      runId,
+      incomingMessageCount,
+      abortSignal,
+    );
     const memoryHistory = preparation.history;
     const chatHistory = [...memoryHistory, ...this.initialHistory];
     return {
@@ -57,15 +63,15 @@ export class AgentRunMemory {
     const memory = this.memory();
     if (
       memory === undefined ||
-      this.memoryContext === undefined ||
-      memory.options.savePolicy !== "message" ||
+      this.memoryScope === undefined ||
+      memory.savePolicy !== "message" ||
       messages.length === 0
     ) {
       return;
     }
 
     await memory.store.append({
-      context: this.memoryContext,
+      scope: this.memoryScope,
       runId,
       turn: 1,
       messages,
@@ -79,17 +85,17 @@ export class AgentRunMemory {
     pendingTurnMessages: MessageType[],
   ): Promise<void> {
     const memory = this.memory();
-    if (memory === undefined || this.memoryContext === undefined || messages.length === 0) {
+    if (memory === undefined || this.memoryScope === undefined || messages.length === 0) {
       return;
     }
-    if (memory.options.savePolicy === "message") {
+    if (memory.savePolicy === "message") {
       await memory.store.append({
-        context: this.memoryContext,
+        scope: this.memoryScope,
         runId,
         turn,
         messages,
       });
-    } else if (memory.options.savePolicy === "turn") {
+    } else if (memory.savePolicy === "turn") {
       pendingTurnMessages.push(...messages);
     }
   }
@@ -102,14 +108,14 @@ export class AgentRunMemory {
     const memory = this.memory();
     if (
       memory === undefined ||
-      this.memoryContext === undefined ||
-      memory.options.savePolicy !== "turn" ||
+      this.memoryScope === undefined ||
+      memory.savePolicy !== "turn" ||
       pendingTurnMessages.length === 0
     ) {
       return;
     }
     await memory.store.append({
-      context: this.memoryContext,
+      scope: this.memoryScope,
       runId,
       turn,
       messages: [...pendingTurnMessages],
@@ -125,15 +131,11 @@ export class AgentRunMemory {
   ): Promise<void> {
     await this.commitCompletedTurn(runId, turn, pendingTurnMessages);
     const memory = this.memory();
-    if (
-      memory === undefined ||
-      this.memoryContext === undefined ||
-      memory.options.savePolicy !== "run"
-    ) {
+    if (memory === undefined || this.memoryScope === undefined || memory.savePolicy !== "run") {
       return;
     }
     await memory.store.append({
-      context: this.memoryContext,
+      scope: this.memoryScope,
       runId,
       turn,
       messages: [...newMessages],
@@ -142,48 +144,51 @@ export class AgentRunMemory {
 
   async recordError(runId: string, error: unknown, newMessages: MessageType[]): Promise<void> {
     const memory = this.memory();
-    if (memory === undefined || this.memoryContext === undefined) {
+    if (memory === undefined || this.memoryScope === undefined) {
       return;
     }
     await memory.store.recordError?.({
-      context: this.memoryContext,
+      scope: this.memoryScope,
       runId,
       error,
       messages: [...newMessages],
     });
   }
 
-  private memory(): MemoryRegistration | undefined {
-    return this.memoryContext === undefined ? undefined : this.agent.memory;
+  private memory(): AgentMemory | undefined {
+    return this.memoryScope === undefined ? undefined : this.agent.memory;
   }
 
   private async prepareStoredHistory(
-    memory: MemoryRegistration,
+    memory: AgentMemory,
     runId: string,
     incomingMessageCount: number,
+    abortSignal?: AbortSignal | undefined,
   ): Promise<MemoryPreparation> {
-    const context = this.memoryContext;
-    if (context === undefined) {
+    const scope = this.memoryScope;
+    if (scope === undefined) {
       return { history: [], usage: Usage.empty() };
     }
-    const options = memory.options.compaction;
+    const options = memory.compaction;
     const capability = memory.store.compaction;
     if (options === undefined || capability === undefined) {
       return {
-        history: await memory.store.load(context),
+        history: await memory.store.load({ scope }),
         usage: Usage.empty(),
       };
     }
 
     let usage = Usage.empty();
-    let conflictRetries = 0;
-    for (let attempt = 0; attempt <= options.conflictRetries; attempt += 1) {
-      const snapshot = await capability.load(context);
+    const maxAttempts = options.conflictRetries === false ? 1 : options.conflictRetries.maxAttempts;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      throwIfAborted(abortSignal);
+      const snapshot = await capability.snapshot({ scope });
+      throwIfAborted(abortSignal);
       const compactedMessageCount = compactedPrefixLength(
         snapshot.messages,
         incomingMessageCount,
-        options.maxMessages,
-        options.keepRecentUserTurns,
+        options.trigger.afterMessages,
+        options.retention.recentUserTurns,
       );
       if (compactedMessageCount === 0) {
         return { history: snapshot.messages, usage };
@@ -193,8 +198,9 @@ export class AgentRunMemory {
       let result: Awaited<ReturnType<typeof options.compactor>>;
       try {
         result = await options.compactor({
-          context,
+          scope,
           messages: prefix,
+          abortSignal,
         });
       } catch (error) {
         throw remappedCompactorError(error, usage);
@@ -212,22 +218,23 @@ export class AgentRunMemory {
         summaryText,
         cumulativeCompactedMessageCount(prefix),
       );
-      let commit: Awaited<ReturnType<typeof capability.commit>>;
+      throwIfAborted(abortSignal);
+      let replacement: Awaited<ReturnType<typeof capability.replacePrefix>>;
       try {
-        commit = await capability.commit({
-          context,
+        replacement = await capability.replacePrefix({
+          scope,
           revision: snapshot.revision,
-          compactedMessageCount,
-          summary,
-          runId: `memory-compaction:${runId}:${attempt + 1}`,
+          messageCount: compactedMessageCount,
+          replacement: summary,
+          runId: `memory-compaction:${runId}:${attempt}`,
         });
       } catch (error) {
-        throw new MemoryCompactionError("Memory compaction store commit failed.", {
+        throw new MemoryCompactionError("Memory compaction prefix replacement failed.", {
           cause: error,
           usage,
         });
       }
-      if (commit === "committed") {
+      if (replacement.status === "committed") {
         const retained = snapshot.messages.slice(compactedMessageCount);
         return {
           history: [summary, ...retained],
@@ -236,35 +243,36 @@ export class AgentRunMemory {
             originalMessageCount: snapshot.messages.length,
             compactedMessageCount,
             retainedMessageCount: retained.length,
-            conflictRetries,
+            attempts: attempt,
+            usage,
           },
         };
       }
-      conflictRetries += 1;
+      throwIfAborted(abortSignal);
     }
 
-    throw new MemoryCompactionConflictError(options.conflictRetries + 1, usage);
+    throw new MemoryCompactionConflictError(maxAttempts, usage);
   }
 }
 
 function compactedPrefixLength(
   messages: MessageType[],
   incomingMessageCount: number,
-  maxMessages: number,
-  keepRecentUserTurns: number,
+  afterMessages: number,
+  recentUserTurns: number,
 ): number {
-  if (messages.length + incomingMessageCount <= maxMessages) {
+  if (messages.length + incomingMessageCount <= afterMessages) {
     return 0;
   }
   const userMessageIndexes = messages.flatMap((message, index) =>
     message.role === "user" ? [index] : [],
   );
   // Keep the recent user-led tail intact. If there are not enough user messages to retain a
-  // complete tail, skip compaction even when the transcript already exceeds maxMessages.
-  if (userMessageIndexes.length <= keepRecentUserTurns) {
+  // complete tail, skip compaction even when the transcript already exceeds the trigger threshold.
+  if (userMessageIndexes.length <= recentUserTurns) {
     return 0;
   }
-  return userMessageIndexes[userMessageIndexes.length - keepRecentUserTurns] ?? 0;
+  return userMessageIndexes[userMessageIndexes.length - recentUserTurns] ?? 0;
 }
 
 function remappedCompactorError(error: unknown, usage: ReturnType<typeof Usage.empty>): Error {

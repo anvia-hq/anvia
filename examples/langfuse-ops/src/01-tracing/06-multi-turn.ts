@@ -3,7 +3,7 @@
 
 import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
-import type { MemoryAppendInput, MemoryContext, MemoryStore } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryScope, MemoryStore } from "@anvia/core/memory";
 import { assertCompleted, getTicket } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
@@ -11,17 +11,17 @@ import { createTracing } from "../_support/tracing.js";
 class LocalMemoryStore implements MemoryStore {
   private readonly sessions = new Map<string, Message[]>();
 
-  async load(context: MemoryContext): Promise<Message[]> {
-    return [...(this.sessions.get(context.sessionId) ?? [])];
+  async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
+    return [...(this.sessions.get(scope.sessionId) ?? [])];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
-    const current = this.sessions.get(input.context.sessionId) ?? [];
-    this.sessions.set(input.context.sessionId, [...current, ...input.messages]);
+  async append(input: MemoryAppendOptions): Promise<void> {
+    const current = this.sessions.get(input.scope.sessionId) ?? [];
+    this.sessions.set(input.scope.sessionId, [...current, ...input.messages]);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
-    this.sessions.delete(context.sessionId);
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    this.sessions.delete(scope.sessionId);
   }
 }
 
@@ -38,16 +38,22 @@ async function main(): Promise<void> {
       tools: [getTicket],
       observers: [tracing],
     });
-    const session = agent.session("langfuse-ops-multi-turn", { userId: "langfuse-ops-user" });
+    const session = {
+      sessionId: "langfuse-ops-multi-turn",
+      userId: "langfuse-ops-user",
+    };
 
-    const first = await session.generate(
-      "What ticket is TICKET-1001 about? Give a one-line summary.",
-      { trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] } },
-    );
+    const first = await agent.generate({
+      prompt: "What ticket is TICKET-1001 about? Give a one-line summary.",
+      session,
+      trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] },
+    });
     assertCompleted(first);
     console.log("[tracing:06] turn 1:", first.output);
 
-    const second = await session.generate("Now rewrite the summary in two sentences.", {
+    const second = await agent.generate({
+      prompt: "Now rewrite the summary in two sentences.",
+      session,
       trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-2"] },
     });
     assertCompleted(second);

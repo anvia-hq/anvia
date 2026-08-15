@@ -22,11 +22,12 @@ import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core
 import { type EvalMetric, EvalOutcome } from "@anvia/core/evals";
 import { connectMcp, type McpClient } from "@anvia/core/mcp";
 import type {
-  MemoryAppendInput,
-  MemoryContext,
+  MemoryAppendOptions,
+  MemoryCompactionMessage,
   MemoryConversation,
-  MemoryErrorInput,
+  MemoryErrorOptions,
   MemoryInspector,
+  MemoryScope,
   MemoryStore,
 } from "@anvia/core/memory";
 import type { AgentObserver, AgentRunObserver, AgentRunStartArgs } from "@anvia/core/observability";
@@ -201,25 +202,25 @@ class GatedReasoningModel implements StreamingCompletionModel {
 }
 
 class RecordingMemoryStore implements MemoryStore {
-  readonly appendCalls: MemoryAppendInput[] = [];
-  readonly errorCalls: MemoryErrorInput[] = [];
+  readonly appendCalls: MemoryAppendOptions[] = [];
+  readonly errorCalls: MemoryErrorOptions[] = [];
   private readonly sessions = new Map<string, CoreMessage[]>();
 
-  async load(context: MemoryContext): Promise<CoreMessage[]> {
-    return [...(this.sessions.get(context.sessionId) ?? [])];
+  async load({ scope }: { scope: MemoryScope }): Promise<CoreMessage[]> {
+    return [...(this.sessions.get(scope.sessionId) ?? [])];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     this.appendCalls.push({ ...input, messages: [...input.messages] });
-    const current = this.sessions.get(input.context.sessionId) ?? [];
-    this.sessions.set(input.context.sessionId, [...current, ...input.messages]);
+    const current = this.sessions.get(input.scope.sessionId) ?? [];
+    this.sessions.set(input.scope.sessionId, [...current, ...input.messages]);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
-    this.sessions.delete(context.sessionId);
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    this.sessions.delete(scope.sessionId);
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
     this.errorCalls.push({ ...input, messages: [...input.messages] });
   }
 }
@@ -237,21 +238,21 @@ class InspectableMemoryStore implements MemoryStore {
           )
           .slice(0, options.limit)
           .map(({ messages: _messages, ...conversation }) => conversation),
-      getConversation: async (ref) => this.conversations.find((item) => item.ref === ref),
+      getConversation: async ({ ref }) => this.conversations.find((item) => item.ref === ref),
     };
   }
 
-  async load(context: MemoryContext): Promise<CoreMessage[]> {
+  async load({ scope }: { scope: MemoryScope }): Promise<CoreMessage[]> {
     return (
       this.conversations
-        .find((conversation) => conversation.sessionId === context.sessionId)
+        .find((conversation) => conversation.sessionId === scope.sessionId)
         ?.messages.map((record) => record.message) ?? []
     );
   }
 
-  async append(_input: MemoryAppendInput): Promise<void> {}
+  async append(_input: MemoryAppendOptions): Promise<void> {}
 
-  async clear(_context: MemoryContext): Promise<void> {}
+  async clear(_options: { scope: MemoryScope }): Promise<void> {}
 }
 
 class FailingStreamingModel implements StreamingCompletionModel {
@@ -2978,6 +2979,190 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("streams, logs, and persists explicit memory compaction events", async () => {
+    const store = createInMemoryStudioStore();
+    store.createSession({ id: "compaction-session", agentId: "support" });
+    await store.append({
+      scope: { sessionId: "compaction-session" },
+      runId: "seed",
+      turn: 1,
+      messages: [
+        Message.user("first"),
+        Message.assistant("first answer"),
+        Message.user("recent"),
+        Message.assistant("recent answer"),
+      ],
+    });
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterMessages: 4 },
+          retention: { recentUserTurns: 1 },
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+    const runner = new Studio([agent], { stores: { sessions: store } });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "next",
+          sessionId: "compaction-session",
+          stream: true,
+        }),
+      }),
+    );
+    const events = await readJsonl(run);
+    const compactionIndex = events.findIndex(
+      (event) =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "memory_compaction",
+    );
+    const firstTurnIndex = events.findIndex(
+      (event) =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "turn_start",
+    );
+
+    expect(compactionIndex).toBeGreaterThanOrEqual(0);
+    expect(firstTurnIndex).toBeGreaterThan(compactionIndex);
+    expect(events[compactionIndex]).toMatchObject({
+      type: "memory_compaction",
+      originalMessageCount: 4,
+      compactedMessageCount: 2,
+      retainedMessageCount: 2,
+      attempts: 1,
+      usage: Usage.empty(),
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "data",
+        name: "studio.session_log",
+        data: expect.objectContaining({ event: "memory.compacted" }),
+      }),
+    );
+
+    await expect(store.load({ scope: { sessionId: "compaction-session" } })).resolves.toEqual([
+      expect.objectContaining({
+        role: "system",
+        content: "Earlier discussion.",
+        metadata: {
+          anvia: {
+            memoryCompaction: { version: 1, compactedMessageCount: 2 },
+          },
+        },
+      }),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+      Message.user("next"),
+      expect.objectContaining(Message.assistant("done")),
+    ]);
+    const logs = await runner.fetch(
+      new Request("http://runner.test/sessions/compaction-session/logs"),
+    );
+    await expect(logs.json()).resolves.toMatchObject({
+      logs: expect.arrayContaining([
+        expect.objectContaining({
+          event: "memory.compacted",
+          metadata: expect.objectContaining({
+            originalMessageCount: 4,
+            compactedMessageCount: 2,
+            retainedMessageCount: 2,
+            attempts: 1,
+          }),
+        }),
+      ]),
+    });
+  });
+
+  it("preserves buffered failure transcripts and logs after memory compaction", async () => {
+    const store = createInMemoryStudioStore();
+    store.createSession({ id: "failed-compaction-session", agentId: "support" });
+    await store.append({
+      scope: { sessionId: "failed-compaction-session" },
+      runId: "seed",
+      turn: 1,
+      messages: [
+        Message.user("first"),
+        Message.assistant("first answer"),
+        Message.user("recent"),
+        Message.assistant("recent answer"),
+      ],
+    });
+    const model = new QueueModel([]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterMessages: 4 },
+          retention: { recentUserTurns: 1 },
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+    const runner = new Studio([agent], { stores: { sessions: store } });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "next",
+          sessionId: "failed-compaction-session",
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(500);
+    expect(model.requests).toHaveLength(1);
+    await expect(
+      store.load({ scope: { sessionId: "failed-compaction-session" } }),
+    ).resolves.toEqual([
+      expect.objectContaining({ role: "system", content: "Earlier discussion." }),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+      Message.user("next"),
+    ]);
+
+    const loaded = await runner.fetch(
+      new Request("http://runner.test/sessions/failed-compaction-session"),
+    );
+    await expect(loaded.json()).resolves.toMatchObject({
+      transcript: [
+        { kind: "message", role: "user", text: "next" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: expect.any(Number),
+        },
+      ],
+    });
+
+    const logsResponse = await runner.fetch(
+      new Request("http://runner.test/sessions/failed-compaction-session/logs"),
+    );
+    const { logs } = (await logsResponse.json()) as { logs: Array<{ event: string }> };
+    const compactionLogs = logs.filter((log) => log.event === "memory.compacted");
+    expect(compactionLogs).toHaveLength(1);
+    expect(logs.findIndex((log) => log.event === "run.failed")).toBeGreaterThan(
+      logs.findIndex((log) => log.event === "memory.compacted"),
+    );
+  });
+
   it("exposes stored sessions through memory explorer routes", async () => {
     const model = new QueueModel([response([AssistantContent.text("Ticket is blocked")])]);
     const agent = new Agent({ id: "support", model });
@@ -3974,17 +4159,67 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("isolates in-memory messages and compaction snapshots from caller mutation", async () => {
+    const store = createInMemoryStudioStore();
+    store.createSession({ id: "session_1", agentId: "support" });
+    const original = Message.user("original");
+    await store.append({
+      scope: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: [original],
+    });
+    const originalText = original.content[0];
+    if (originalText?.type !== "text") {
+      throw new Error("Expected text message");
+    }
+    originalText.text = "mutated after append";
+
+    const snapshot = await store.compaction?.snapshot({ scope: { sessionId: "session_1" } });
+    if (snapshot === undefined || store.compaction === undefined) {
+      throw new Error("Expected in-memory compaction capability");
+    }
+    const snapshotMessage = snapshot.messages[0];
+    const snapshotText = snapshotMessage?.role === "user" ? snapshotMessage.content[0] : undefined;
+    if (snapshotText?.type !== "text") {
+      throw new Error("Expected text snapshot message");
+    }
+    snapshotText.text = "mutated snapshot";
+
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user("original"),
+    ]);
+    const replacement = Message.system("Earlier discussion.", {
+      metadata: {
+        anvia: {
+          memoryCompaction: { version: 1, compactedMessageCount: 1 },
+        },
+      },
+    }) as MemoryCompactionMessage;
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "session_1" },
+        revision: snapshot.revision,
+        messageCount: 1,
+        replacement,
+        runId: "compaction_1",
+      }),
+    ).resolves.toEqual({ status: "committed" });
+  });
+
   it("uses the SQLite session store as a core memory store", async () => {
     const store = createSqliteSessionStore({ path: ":memory:" });
     store.createSession({ id: "session_1", agentId: "support" });
 
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi")],
     });
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([Message.user("hi")]);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user("hi"),
+    ]);
 
     await store.saveSessionRunTranscript({
       id: "session_1",
@@ -4019,7 +4254,7 @@ describe("Anvia studio", () => {
     ]);
 
     await store.recordError?.({
-      context: { sessionId: "session_1", metadata: { studioRunId: "run_2" } },
+      scope: { sessionId: "session_1", metadata: { studioRunId: "run_2" } },
       runId: "core_run_2",
       error: new Error("failed"),
       messages: [Message.user("failed")],
@@ -4036,11 +4271,64 @@ describe("Anvia studio", () => {
       { entryId: 2, kind: "message", role: "user", text: "failed" },
     ]);
 
-    await store.clear({ sessionId: "session_1" });
+    await store.clear({ scope: { sessionId: "session_1" } });
     expect(await store.getSession("session_1")).toMatchObject({
       messageCount: 0,
       messages: [],
       transcript: [],
+    });
+  });
+
+  it("atomically replaces SQLite memory prefixes and exposes compaction messages", async () => {
+    const store = createSqliteSessionStore({ path: ":memory:" });
+    store.createSession({ id: "session_1", agentId: "support" });
+    const retained = [Message.user("recent"), Message.assistant("recent answer")];
+    await store.append({
+      scope: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: [Message.user("old"), Message.assistant("old answer"), ...retained],
+    });
+    const snapshot = await store.compaction?.snapshot({
+      scope: { sessionId: "session_1" },
+    });
+    expect(snapshot).toBeDefined();
+    if (snapshot === undefined || store.compaction === undefined) {
+      throw new Error("Expected SQLite compaction capability");
+    }
+    const replacement = Message.system("Earlier discussion.", {
+      metadata: {
+        anvia: {
+          memoryCompaction: { version: 1, compactedMessageCount: 2 },
+        },
+      },
+    }) as MemoryCompactionMessage;
+
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "session_1" },
+        revision: snapshot.revision,
+        messageCount: 2,
+        replacement,
+        runId: "compaction_1",
+      }),
+    ).resolves.toEqual({ status: "committed" });
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "session_1" },
+        revision: snapshot.revision,
+        messageCount: 1,
+        replacement,
+        runId: "stale",
+      }),
+    ).resolves.toEqual({ status: "conflict" });
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      replacement,
+      ...retained,
+    ]);
+    expect(await store.getSession("session_1")).toMatchObject({
+      messageCount: 3,
+      messages: [replacement, ...retained],
     });
   });
 
@@ -4054,13 +4342,13 @@ describe("Anvia studio", () => {
 
     expect(() =>
       store.append({
-        context: { sessionId: "session_1" },
+        scope: { sessionId: "session_1" },
         runId: "run_1",
         turn: 1,
         messages: [invalidMessage],
       }),
     ).toThrow("Studio message metadata must be a strict JSON value");
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([]);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([]);
   });
 
   it("persists session messages and parts in normalized SQLite tables", async () => {
@@ -4119,13 +4407,13 @@ describe("Anvia studio", () => {
     ];
 
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: messages.slice(0, 2),
     });
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 2,
       messages: messages.slice(2),
@@ -4150,7 +4438,7 @@ describe("Anvia studio", () => {
     db.close();
 
     const reloaded = createSqliteSessionStore({ path });
-    await expect(reloaded.load({ sessionId: "session_1" })).resolves.toEqual(messages);
+    await expect(reloaded.load({ scope: { sessionId: "session_1" } })).resolves.toEqual(messages);
     expect(await reloaded.getSession("session_1")).toMatchObject({
       id: "session_1",
       messageCount: 4,
@@ -4204,15 +4492,17 @@ describe("Anvia studio", () => {
     db.close();
 
     const store = createSqliteSessionStore({ path });
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([Message.user("legacy")]);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user("legacy"),
+    ]);
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("new", { metadata })],
     });
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
       Message.user("legacy"),
       Message.user("new", { metadata }),
     ]);

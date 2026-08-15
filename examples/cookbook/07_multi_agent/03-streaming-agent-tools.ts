@@ -47,7 +47,7 @@ const prompt = [
   "Prepare an incident brief for support and engineering.",
 ].join(" ");
 
-for await (const event of coordinator.stream(prompt, { toolConcurrency: 2 })) {
+for await (const event of coordinator.stream({ prompt, toolConcurrency: 2 })) {
   renderEvent(event);
 }
 

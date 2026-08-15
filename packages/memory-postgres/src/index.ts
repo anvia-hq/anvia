@@ -5,15 +5,15 @@ export {
   PostgresMemoryStore,
 } from "./store.js";
 export type {
-  PostgresMemoryAppendInput,
+  PostgresMemoryAppendOptions,
   PostgresMemoryClientLike,
-  PostgresMemoryContext,
-  PostgresMemoryErrorInput,
   PostgresMemoryErrorMode,
+  PostgresMemoryErrorOptions,
   PostgresMemoryLockMode,
   PostgresMemoryPoolLike,
   PostgresMemoryQueryResult,
   PostgresMemorySchemaOptions,
+  PostgresMemoryScope,
   PostgresMemoryScopeOptions,
   PostgresMemoryStoreOptions,
   PostgresMemoryTableNames,

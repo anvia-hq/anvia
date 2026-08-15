@@ -114,7 +114,7 @@ describe("Agent execution", () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
     const agent = new Agent({ id: "test-agent", model, instructions: "system" });
 
-    const result = await agent.generate("hello");
+    const result = await agent.generate({ prompt: "hello" });
     assertCompleted(result);
 
     expect(result.output).toBe("done");
@@ -132,7 +132,7 @@ describe("Agent execution", () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
     try {
-      const result = await agent.generate("hello", { retries: {} });
+      const result = await agent.generate({ prompt: "hello", retries: {} });
       assertCompleted(result);
 
       expect(result.output).toBe("recovered");
@@ -155,7 +155,7 @@ describe("Agent execution", () => {
       retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
     });
 
-    await expect(agent.generate("hello")).resolves.toMatchObject({
+    await expect(agent.generate({ prompt: "hello" })).resolves.toMatchObject({
       status: "completed",
       output: "recovered",
     });
@@ -174,7 +174,7 @@ describe("Agent execution", () => {
       retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
     });
 
-    await expect(agent.generate("hello", { retries: false })).rejects.toBe(error);
+    await expect(agent.generate({ prompt: "hello", retries: false })).rejects.toBe(error);
     expect(model.requests).toHaveLength(1);
   });
 
@@ -196,7 +196,8 @@ describe("Agent execution", () => {
     });
 
     await expect(
-      agent.generate("hello", {
+      agent.generate({
+        prompt: "hello",
         retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
       }),
     ).resolves.toMatchObject({ status: "completed", output: "recovered" });
@@ -222,10 +223,10 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate(
-        "hello",
-        withInternalAgentRunOptions({ retries: { initialDelayMs: 0, maxDelayMs: 0 } }, { hook }),
-      ),
+      agent.generate({
+        prompt: "hello",
+        ...withInternalAgentRunOptions({ retries: { initialDelayMs: 0, maxDelayMs: 0 } }, { hook }),
+      }),
     ).rejects.toBe(errors[2]);
 
     expect(model.requests).toHaveLength(3);
@@ -241,7 +242,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     ).rejects.toBe(error);
 
     expect(model.requests).toHaveLength(1);
@@ -257,7 +258,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     ).resolves.toMatchObject({ output: "recovered" });
 
     expect(model.requests).toHaveLength(2);
@@ -272,7 +273,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     ).rejects.toBe(error);
 
     expect(model.requests).toHaveLength(1);
@@ -287,7 +288,8 @@ describe("Agent execution", () => {
     const contexts: unknown[] = [];
     const agent = new Agent({ id: "test-agent", model });
 
-    const result = await agent.generate("hello", {
+    const result = await agent.generate({
+      prompt: "hello",
       retries: {
         maxAttempts: 2,
         initialDelayMs: 0,
@@ -318,14 +320,21 @@ describe("Agent execution", () => {
       model: new QueueModel([response([AssistantContent.text("unused")])]),
     });
 
-    expect(() => agent.generate("hello", { retries: { maxAttempts: 0 } })).toThrow(RangeError);
-    expect(() => agent.generate("hello", { retries: { maxAttempts: 1.5 } })).toThrow(RangeError);
-    expect(() => agent.generate("hello", { retries: { initialDelayMs: -1 } })).toThrow(RangeError);
+    expect(() => agent.generate({ prompt: "hello", retries: { maxAttempts: 0 } })).toThrow(
+      RangeError,
+    );
+    expect(() => agent.generate({ prompt: "hello", retries: { maxAttempts: 1.5 } })).toThrow(
+      RangeError,
+    );
+    expect(() => agent.generate({ prompt: "hello", retries: { initialDelayMs: -1 } })).toThrow(
+      RangeError,
+    );
     expect(() =>
-      agent.generate("hello", { retries: { initialDelayMs: 200, maxDelayMs: 100 } }),
+      agent.generate({ prompt: "hello", retries: { initialDelayMs: 200, maxDelayMs: 100 } }),
     ).toThrow(RangeError);
     expect(() =>
-      agent.generate("hello", {
+      agent.generate({
+        prompt: "hello",
         retries: { shouldRetry: true as unknown as () => boolean },
       }),
     ).toThrow(TypeError);
@@ -375,10 +384,10 @@ describe("Agent execution", () => {
       ],
     });
 
-    const result = await agent.generate(
-      "add",
-      withInternalAgentRunOptions({ retries: { initialDelayMs: 0, maxDelayMs: 0 } }, { hook }),
-    );
+    const result = await agent.generate({
+      prompt: "add",
+      ...withInternalAgentRunOptions({ retries: { initialDelayMs: 0, maxDelayMs: 0 } }, { hook }),
+    });
     assertCompleted(result);
 
     expect(result.output).toBe("7");
@@ -398,7 +407,7 @@ describe("Agent execution", () => {
       instructions: "First block.\n\nSecond block.",
     });
 
-    await agent.generate("hello");
+    await agent.generate({ prompt: "hello" });
 
     expect(model.requests[0]?.instructions).toBe("First block.\n\nSecond block.");
   });
@@ -411,7 +420,7 @@ describe("Agent execution", () => {
       outputSchema: z.object({ answer: z.string() }),
     });
 
-    const result = await agent.generate("answer");
+    const result = await agent.generate({ prompt: "answer" });
     expect(result.status).toBe("completed");
     if (result.status !== "completed") throw new Error("Expected a completed result.");
     expectTypeOf(result.output).toEqualTypeOf<{ answer: string }>();
@@ -426,7 +435,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    const result = await agent.generate("add");
+    const result = await agent.generate({ prompt: "add" });
     assertCompleted(result);
 
     expect(result.output).toBe("7");
@@ -452,7 +461,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
-    await expect(agent.generate("run a command")).rejects.toThrow(
+    await expect(agent.generate({ prompt: "run a command" })).rejects.toThrow(
       'Completion returned tool call "tool_0" with an empty function name; this indicates invalid provider output or provider mapping.',
     );
     expect(model.requests).toHaveLength(1);
@@ -468,7 +477,9 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    await expect(agent.generate("add twice", { toolConcurrency: 2 })).resolves.toMatchObject({
+    await expect(
+      agent.generate({ prompt: "add twice", toolConcurrency: 2 }),
+    ).resolves.toMatchObject({
       output: "ok",
     });
     const finalToolMessage = model.requests[1]?.chatHistory.at(-1);
@@ -505,7 +516,10 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [first, second] });
 
     await expect(
-      agent.generate("run both", withInternalAgentRunOptions({ toolConcurrency: 2 }, { hook })),
+      agent.generate({
+        prompt: "run both",
+        ...withInternalAgentRunOptions({ toolConcurrency: 2 }, { hook }),
+      }),
     ).resolves.toMatchObject({ output: "done" });
     expect(maxActive).toBe(1);
   });
@@ -513,13 +527,13 @@ describe("Agent execution", () => {
   it("validates run limits before starting an agent run", () => {
     const agent = new Agent({ id: "test-agent", model: new QueueModel([]) });
 
-    expect(() => agent.generate("hi", { maxTurns: -1 })).toThrow(
+    expect(() => agent.generate({ prompt: "hi", maxTurns: -1 })).toThrow(
       "maxTurns must be a nonnegative safe integer",
     );
-    expect(() => agent.generate("hi", { toolConcurrency: 0 })).toThrow(
+    expect(() => agent.generate({ prompt: "hi", toolConcurrency: 0 })).toThrow(
       "toolConcurrency must be a positive safe integer",
     );
-    expect(() => agent.stream("hi", { toolConcurrency: Number.POSITIVE_INFINITY })).toThrow(
+    expect(() => agent.stream({ prompt: "hi", toolConcurrency: Number.POSITIVE_INFINITY })).toThrow(
       "toolConcurrency must be a positive safe integer",
     );
   });
@@ -531,7 +545,10 @@ describe("Agent execution", () => {
     });
 
     await expect(
-      agent.generate("hi", withInternalAgentRunOptions({}, { runId: "external-run-id" })),
+      agent.generate({
+        prompt: "hi",
+        ...withInternalAgentRunOptions({}, { runId: "external-run-id" }),
+      }),
     ).resolves.toMatchObject({ runId: "external-run-id", output: "done" });
   });
 
@@ -560,7 +577,7 @@ describe("Agent execution", () => {
     });
 
     await expect(
-      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "add", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual(["add:fc_1:7", "hook:stored:7"]);
@@ -601,7 +618,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [screenshotTool] });
 
     await expect(
-      agent.generate("screenshot", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "screenshot", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual(['{"coordMap":"0,0,100,100,100,100"}\n[image:image/png]:2']);
@@ -650,7 +667,9 @@ describe("Agent execution", () => {
       ],
     });
 
-    await expect(agent.generate("screenshot")).resolves.toMatchObject({ output: "done" });
+    await expect(agent.generate({ prompt: "screenshot" })).resolves.toMatchObject({
+      output: "done",
+    });
 
     expect(seen).toEqual(["screen\n[image:image/png]:2:2"]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -696,7 +715,9 @@ describe("Agent execution", () => {
       middlewares: [keep, agentAppend],
     });
 
-    await expect(agent.generate("add", { middlewares: [requestAppend] })).resolves.toMatchObject({
+    await expect(
+      agent.generate({ prompt: "add", middlewares: [requestAppend] }),
+    ).resolves.toMatchObject({
       output: "done",
     });
 
@@ -736,7 +757,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     await expect(
-      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "add", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "7" });
 
     expect(events).toEqual([
@@ -769,7 +790,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "hello", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual([
@@ -820,7 +841,7 @@ describe("Agent execution", () => {
     });
 
     await expect(
-      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "hello", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "changed" });
 
     expect(model.requests[0]?.instructions).toBe("middleware instructions");
@@ -851,7 +872,7 @@ describe("Agent execution", () => {
       ],
     });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({ output: "done" });
+    await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({ output: "done" });
 
     expect(events).toEqual(['input:{"x":1,"y":1}:{"x":1,"y":1}', 'output:7:7:{"x":2,"y":5}']);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -885,7 +906,8 @@ describe("Agent execution", () => {
     });
 
     await expect(
-      agent.generate("add", {
+      agent.generate({
+        prompt: "add",
         middlewares: [
           ...[
             createMiddleware({
@@ -928,7 +950,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     await expect(
-      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "add", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "7" });
 
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -956,7 +978,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
     await expect(
-      agent.generate("add", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "add", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "skipped" });
 
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -995,7 +1017,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [blockedTool] });
 
     await expect(
-      agent.generate("run blocked", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "run blocked", ...withInternalAgentRunOptions({}, { hook }) }),
     ).rejects.toMatchObject({
       name: "AgentRunCancelledError",
       reason: "blocked",
@@ -1028,7 +1050,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     await expect(
-      agent.generate("run guarded", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "run guarded", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({
       status: "approval_required",
       approval: { toolName: "guarded", reason: "Guarded action." },
@@ -1060,7 +1082,10 @@ describe("Agent execution", () => {
     });
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    const pending = await agent.generate("run guarded", withInternalAgentRunOptions({}, { hook }));
+    const pending = await agent.generate({
+      prompt: "run guarded",
+      ...withInternalAgentRunOptions({}, { hook }),
+    });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
       output: "done",
@@ -1091,7 +1116,10 @@ describe("Agent execution", () => {
     });
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    const pending = await agent.generate("run guarded", withInternalAgentRunOptions({}, { hook }));
+    const pending = await agent.generate({
+      prompt: "run guarded",
+      ...withInternalAgentRunOptions({}, { hook }),
+    });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     await expect(agent.resume(pending, { approved: false })).resolves.toMatchObject({
       output: "denied",
@@ -1134,7 +1162,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     await expect(
-      agent.generate("run guarded", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "run guarded", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "done" });
     expect(executed).toBe(true);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -1174,7 +1202,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     await expect(
-      agent.generate("run guarded", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "run guarded", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "denied" });
     expect(executed).toBe(false);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -1209,7 +1237,7 @@ describe("Agent execution", () => {
     const requests: unknown[] = [];
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     requests.push(getAgentApprovalRequestDetails(pending.approval));
     await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
@@ -1269,7 +1297,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const sequenceBeforeRun = sequence;
 
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     expect(pending.approval.input).toEqual(approvalInput);
     expect(sequence).toBe(sequenceBeforeRun + 1);
@@ -1302,7 +1330,7 @@ describe("Agent execution", () => {
     const model = new QueueModel([toolResponse, response([AssistantContent.text("done")])]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     pending.usage.totalTokens = 999;
     const pendingUser = pending.messages[0];
@@ -1334,7 +1362,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [numberTool] });
 
-    await expect(agent.generate("run tool")).resolves.toMatchObject({
+    await expect(agent.generate({ prompt: "run tool" })).resolves.toMatchObject({
       status: "completed",
       output: "recovered",
     });
@@ -1360,7 +1388,7 @@ describe("Agent execution", () => {
     const model = new QueueModel([response([AssistantContent.toolCall("call_1", "guarded", {})])]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).rejects.toThrow(
+    await expect(agent.generate({ prompt: "run guarded" })).rejects.toThrow(
       'Tool "requiresApproval" must be a boolean',
     );
   });
@@ -1396,7 +1424,7 @@ describe("Agent execution", () => {
       ],
     });
 
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     approvalRequests.push(getAgentApprovalRequestDetails(pending.approval));
     await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
@@ -1433,7 +1461,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     await expect(agent.resume(pending, { approved: false })).resolves.toMatchObject({
       output: "denied",
@@ -1470,7 +1498,9 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    await expect(agent.generate("run guarded")).resolves.toMatchObject({ output: "done" });
+    await expect(agent.generate({ prompt: "run guarded" })).resolves.toMatchObject({
+      output: "done",
+    });
     expect(executed).toBe(true);
   });
 
@@ -1492,7 +1522,7 @@ describe("Agent execution", () => {
       response([AssistantContent.text("done")]),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     expect(pending).toMatchObject({
       status: "approval_required",
       approval: { toolName: "guarded", input: {} },
@@ -1523,7 +1553,7 @@ describe("Agent execution", () => {
       response([AssistantContent.text("denied")]),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
 
     const result = await agent.resume(pending, { approved: false, reason: "Not allowed." });
@@ -1551,7 +1581,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "hello", ...withInternalAgentRunOptions({}, { hook }) }),
     ).rejects.toBeInstanceOf(AgentRunCancelledError);
   });
 
@@ -1569,7 +1599,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(
-      agent.generate("hello", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "hello", ...withInternalAgentRunOptions({}, { hook }) }),
     ).rejects.toThrow("No queued response");
 
     expect(events).toEqual(["completion_error:No queued response", "run_error:No queued response"]);
@@ -1598,7 +1628,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [failingTool] });
 
     await expect(
-      agent.generate("fail", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "fail", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "handled" });
 
     expect(events).toEqual(["fail:tool failed"]);
@@ -1638,7 +1668,9 @@ describe("Agent execution", () => {
       },
     });
 
-    await agent.generate("hello", {
+    await agent.generate({
+      prompt: "hello",
+
       lifecycle: {
         onStart() {
           events.push("run:start");
@@ -1674,7 +1706,9 @@ describe("Agent execution", () => {
       },
     });
 
-    const result = await agent.generate("hello", {
+    const result = await agent.generate({
+      prompt: "hello",
+
       lifecycle: {
         onStart(event) {
           observed.push(
@@ -1713,7 +1747,7 @@ describe("Agent execution", () => {
       },
     });
 
-    await expect(agent.generate("hello")).rejects.toThrow("provider failed");
+    await expect(agent.generate({ prompt: "hello" })).rejects.toThrow("provider failed");
     expect(failure.message).toBe("provider failed");
   });
 
@@ -1744,7 +1778,7 @@ describe("Agent execution", () => {
       },
     });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({
+    await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({
       status: "completed",
       output: "7",
     });
@@ -1773,7 +1807,7 @@ describe("Agent execution", () => {
       },
     });
 
-    await expect(agent.generate("hello")).rejects.toBe(failure);
+    await expect(agent.generate({ prompt: "hello" })).rejects.toBe(failure);
     expect(observedErrors).toEqual([failure]);
   });
 
@@ -1784,7 +1818,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
 
-    await expect(agent.generate("loop")).rejects.toBeInstanceOf(MaxTurnsError);
+    await expect(agent.generate({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
   });
 
   it("converts Zod output schemas into completion request JSON Schema", async () => {
@@ -1795,7 +1829,7 @@ describe("Agent execution", () => {
       outputSchema: z.object({ title: z.string() }).meta({ title: "summary_response" }),
     });
 
-    await agent.generate("summarize");
+    await agent.generate({ prompt: "summarize" });
 
     expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",

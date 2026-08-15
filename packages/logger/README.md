@@ -39,7 +39,7 @@ const agent = new Agent({
   observers: [createLoggerObserver(logger)],
 });
 
-const result = await agent.generate("How do I reset my password?");
+const result = await agent.generate({ prompt: "How do I reset my password?" });
 if (result.status === "completed") console.log(result.output);
 ```
 

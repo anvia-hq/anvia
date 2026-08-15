@@ -35,7 +35,7 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
-const result = await agent.generate("Summarize Anvia in one sentence.");
+const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
 if (result.status === "completed") console.log(result.output);
 ```
 

@@ -15,7 +15,7 @@ const agent = new Agent({
   instructions: "You are a concise assistant. Answer in two sentences or less.",
 });
 
-const response = await agent.generate("Explain what an agent framework does.");
+const response = await agent.generate({ prompt: "Explain what an agent framework does." });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

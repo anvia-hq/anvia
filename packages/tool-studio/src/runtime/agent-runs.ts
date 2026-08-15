@@ -3,11 +3,15 @@ import type {
   AgentBlockedResult,
   AgentResponse,
   AgentResult,
-  AgentRunOptions,
+  AgentRunSettings,
   AgentStream,
 } from "@anvia/core/agent";
-import { type Message as CoreMessage, type JsonObject, Message } from "@anvia/core/completion";
-import { type Agent, withInternalAgentRunOptions } from "@anvia/core/internal/agent";
+import type { Message as CoreMessage, JsonObject, UserMessage } from "@anvia/core/completion";
+import {
+  type Agent,
+  type InternalAgentRunOptions,
+  withInternalAgentRunOptions,
+} from "@anvia/core/internal/agent";
 import type { Context, Hono } from "hono";
 import type {
   AgentRunRequest,
@@ -44,6 +48,7 @@ import {
 } from "./runs";
 import {
   appendSessionLog,
+  memoryCompactedLog,
   memoryLoadedLog,
   memorySavedLog,
   runCancelledLog,
@@ -64,8 +69,8 @@ type AgentRunRouteProps = {
 
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
 type RunExecution = {
-  generate(options: AgentRunOptions): Promise<AgentResult>;
-  stream(options: AgentRunOptions): AgentStream;
+  generate(options: AgentRunSettings): Promise<AgentResult>;
+  stream(options: AgentRunSettings): AgentStream;
 };
 
 type PreparedAgentRun = {
@@ -74,7 +79,9 @@ type PreparedAgentRun = {
   body: AgentRunRequest;
   memoryMetadata: JsonObject;
   execution: RunExecution;
-  options: AgentRunOptions;
+  failureMessages: readonly CoreMessage[] | undefined;
+  memoryCompactionLogged: boolean;
+  options: AgentRunSettings;
   runAgent: Agent;
   runId: string;
   runStartedAt: number;
@@ -155,7 +162,7 @@ async function prepareAgentRun(
     !usesStoreAsAgentMemory(runAgent, sessionStore);
   if (shouldPersistSessionMessages) {
     await sessionStore.append({
-      context: { sessionId: session.id, metadata: memoryMetadata },
+      scope: { sessionId: session.id, metadata: memoryMetadata },
       runId,
       turn: 1,
       messages: [promptMessage],
@@ -177,6 +184,8 @@ async function prepareAgentRun(
     body,
     memoryMetadata,
     execution,
+    failureMessages: undefined,
+    memoryCompactionLogged: false,
     options: createRunOptions(body, agentId, session, c.req.raw.signal),
     runAgent,
     runId,
@@ -311,27 +320,43 @@ function createRunExecution(props: {
   agentId: string;
   body: AgentRunRequest;
   memoryMetadata: JsonObject;
-  promptMessage: CoreMessage;
+  promptMessage: UserMessage;
   runAgent: Agent;
   session: StudioSession | undefined;
 }): RunExecution {
-  if (props.session !== undefined && props.runAgent.memory !== undefined) {
-    const session = props.runAgent.session(props.session.id, { metadata: props.memoryMetadata });
+  const session = props.session;
+  if (session !== undefined && props.runAgent.memory !== undefined) {
     return {
-      generate: (options) => session.generate(props.body.message, options),
-      stream: (options) => session.stream(props.body.message, options),
+      generate: (options) =>
+        props.runAgent.generate({
+          prompt: props.body.message,
+          session: { sessionId: session.id, metadata: props.memoryMetadata },
+          ...options,
+        }),
+      stream: (options) =>
+        props.runAgent.stream({
+          prompt: props.body.message,
+          session: { sessionId: session.id, metadata: props.memoryMetadata },
+          ...options,
+        }),
     };
   }
 
-  const input =
-    props.session !== undefined
-      ? [...props.session.messages, props.promptMessage]
-      : props.body.history !== undefined
-        ? [...props.body.history, props.promptMessage]
-        : props.body.message;
+  const transcript =
+    session !== undefined
+      ? [...session.messages, props.promptMessage]
+      : props.body.history === undefined
+        ? undefined
+        : [...props.body.history, props.promptMessage];
   return {
-    generate: (options) => props.runAgent.generate(input, options),
-    stream: (options) => props.runAgent.stream(input, options),
+    generate: (options) =>
+      transcript === undefined
+        ? props.runAgent.generate({ prompt: props.body.message, ...options })
+        : props.runAgent.generate({ messages: transcript, ...options }),
+    stream: (options) =>
+      transcript === undefined
+        ? props.runAgent.stream({ prompt: props.body.message, ...options })
+        : props.runAgent.stream({ messages: transcript, ...options }),
   };
 }
 
@@ -340,8 +365,8 @@ function createRunOptions(
   agentId: string,
   session: StudioSession | undefined,
   abortSignal: AbortSignal,
-): AgentRunOptions {
-  const options: AgentRunOptions = { abortSignal };
+): AgentRunSettings {
+  const options: AgentRunSettings = { abortSignal };
   if (body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
   if (body.toolConcurrency !== undefined) options.toolConcurrency = body.toolConcurrency;
   if (body.trace !== undefined) {
@@ -454,7 +479,7 @@ async function handleBufferedAgentRun(
 async function startBufferedSessionRun(
   run: PreparedAgentRun,
   props: AgentRunRouteProps,
-): Promise<AgentRunOptions> {
+): Promise<AgentRunSettings> {
   if (run.session !== undefined) {
     await appendSessionLog(run.sessionStore, runStartedLog(run.session, run.runId));
     await appendSessionLog(run.sessionStore, memoryLoadedLog(run.session, run.runId));
@@ -466,7 +491,29 @@ async function startBufferedSessionRun(
   if (run.session !== undefined) questionContext.sessionId = run.session.id;
   if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
   const effectiveHook = props.questionRuntime.createHook(questionContext);
-  return withInternalAgentRunOptions({ ...run.options }, { hook: effectiveHook, runId: run.runId });
+  const internalOptions: InternalAgentRunOptions = {
+    hook: effectiveHook,
+    onFailure: ({ messages }) => {
+      run.failureMessages = structuredClone(messages);
+    },
+    runId: run.runId,
+  };
+  if (run.session !== undefined && run.sessionStore !== undefined) {
+    const sessionId = run.session.id;
+    const sessionStore = run.sessionStore;
+    internalOptions.onMemoryCompaction = async (compaction) => {
+      await appendSessionLog(
+        sessionStore,
+        memoryCompactedLog({
+          sessionId,
+          runId: run.runId,
+          ...compaction,
+        }),
+      );
+      run.memoryCompactionLogged = true;
+    };
+  }
+  return withInternalAgentRunOptions({ ...run.options }, internalOptions);
 }
 
 function createApprovalContext(
@@ -516,7 +563,7 @@ async function completeBufferedSessionRun(
     const generatedMessages = response.messages.slice(1);
     if (generatedMessages.length > 0) {
       await run.sessionStore.append({
-        context: { sessionId: run.session.id, metadata: run.memoryMetadata },
+        scope: { sessionId: run.session.id, metadata: run.memoryMetadata },
         runId: run.runId,
         turn: 1,
         messages: generatedMessages,
@@ -533,6 +580,17 @@ async function completeBufferedSessionRun(
     transcript,
     status: "success",
   });
+  if (response.memoryCompaction !== undefined && !run.memoryCompactionLogged) {
+    await appendSessionLog(
+      run.sessionStore,
+      memoryCompactedLog({
+        sessionId: run.session.id,
+        runId: run.runId,
+        ...response.memoryCompaction,
+      }),
+    );
+    run.memoryCompactionLogged = true;
+  }
   await appendSessionLog(
     run.sessionStore,
     runCompletedLog({
@@ -559,12 +617,9 @@ async function failBufferedSessionRun(run: PreparedAgentRun, error: unknown): Pr
     return;
   }
 
-  const messages = await run.sessionStore.load({
-    sessionId: run.session.id,
-    metadata: run.memoryMetadata,
-  });
   const durationMs = Date.now() - run.runStartedAt;
-  const transcript = transcriptFromMessages(messages.slice(run.session.messageCount));
+  const messages = run.failureMessages ?? [normalizePromptMessage(run.body.message)];
+  const transcript = transcriptFromMessages([...messages]);
   assignTranscriptRunDuration(transcript, durationMs);
   await run.sessionStore.saveSessionRunTranscript({
     id: run.session.id,
@@ -580,8 +635,10 @@ async function failBufferedSessionRun(run: PreparedAgentRun, error: unknown): Pr
   );
 }
 
-function normalizePromptMessage(message: string | CoreMessage): CoreMessage {
-  return typeof message === "string" ? Message.user(message) : message;
+function normalizePromptMessage(message: string | UserMessage): UserMessage {
+  return typeof message === "string"
+    ? { role: "user", content: [{ type: "text", text: message }] }
+    : message;
 }
 
 function usesStoreAsAgentMemory(agent: Agent, store: StudioSessionStore): boolean {

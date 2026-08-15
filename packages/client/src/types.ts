@@ -11,6 +11,7 @@ import type {
   Usage,
 } from "@anvia/core/completion";
 import type { GuardrailDecisionRecord } from "@anvia/core/guardrails";
+import type { MemoryCompactionInfo } from "@anvia/core/memory";
 
 export const CLIENT_STREAM_PROTOCOL = "anvia.client.v1" as const;
 
@@ -42,6 +43,7 @@ export type UIMessageGeneration = {
   usage?: Usage;
   contextUsage?: ContextUsage;
   trace?: { traceId?: string; observationId?: string };
+  memoryCompaction?: MemoryCompactionInfo;
 };
 
 export type UIMessage = {
@@ -327,6 +329,7 @@ type ClientStandardStreamEvent =
   | { type: "tool_approval"; approval: ToolApproval }
   | { type: "tool_question"; question: ToolQuestion }
   | { type: "guardrail_decision"; decision: GuardrailDecisionRecord }
+  | ({ type: "memory_compaction" } & MemoryCompactionInfo)
   | {
       type: "message_end";
       messageId: string;
@@ -351,6 +354,7 @@ type ClientStandardStreamEvent =
       usage?: Usage;
       contextUsage?: ContextUsage;
       trace?: { traceId?: string; observationId?: string };
+      memoryCompaction?: MemoryCompactionInfo;
       metadata?: JsonValue;
     }
   | { type: "error"; error: ClientStreamError; usage?: Usage };

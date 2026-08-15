@@ -1,6 +1,5 @@
 export type { ModelCallOptions } from "../model-call-options";
 export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
-export type { AgentSession } from "./agent";
 export { Agent } from "./agent";
 export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./errors";
 export type {
@@ -21,9 +20,13 @@ export type {
   AgentDeltaEvent,
   AgentErrorStreamEvent,
   AgentInput,
+  AgentMemoryCompactionEvent,
+  AgentPrompt,
   AgentResponse,
   AgentResult,
   AgentRunOptions,
+  AgentRunSettings,
+  AgentSteerInput,
   AgentStream,
   AgentStreamEvent,
   AgentToolApprovalRequest,
@@ -31,6 +34,7 @@ export type {
 } from "./run-types";
 export type {
   AgentContextInput,
+  AgentMemory,
   AgentMemoryOptions,
   AgentObserverInput,
   AgentOptions,

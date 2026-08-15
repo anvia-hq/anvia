@@ -15,7 +15,8 @@ async function main(): Promise<void> {
       tools: [getTicket],
     });
 
-    const response = await agent.generate("Look up ticket TICKET-1001 and summarize the issue.", {
+    const response = await agent.generate({
+      prompt: "Look up ticket TICKET-1001 and summarize the issue.",
       trace: { name: "tool-observations-demo", tags: ["tracing:04"] },
     });
     assertCompleted(response);

@@ -14,7 +14,9 @@ const agent = new Agent({
 });
 
 // Streaming yields normalized events; text_delta contains the visible answer text.
-for await (const event of agent.stream("Write a short haiku about TypeScript agents.")) {
+for await (const event of agent.stream({
+  prompt: "Write a short haiku about TypeScript agents.",
+})) {
   if (event.type === "text_delta") {
     process.stdout.write(event.delta);
   }

@@ -1,16 +1,16 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
 import type {
-  MemoryAppendInput,
-  MemoryCompactionCommitInput,
-  MemoryCompactionCommitResult,
+  MemoryAppendOptions,
+  MemoryCompactionCapability,
+  MemoryCompactionReplacePrefixOptions,
+  MemoryCompactionReplacePrefixResult,
   MemoryCompactionSnapshot,
-  MemoryCompactionStore,
-  MemoryContext,
   MemoryConversation,
   MemoryConversationListOptions,
   MemoryConversationSummary,
-  MemoryErrorInput,
+  MemoryErrorOptions,
   MemoryInspector,
+  MemoryScope,
 } from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
@@ -61,7 +61,7 @@ export function createPrismaMemoryStore(
 }
 
 export function createPrismaMemoryScopeKey(
-  context: MemoryContext,
+  context: MemoryScope,
   options: PrismaMemoryScopeOptions = {},
 ): string {
   const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
@@ -82,7 +82,7 @@ export function createPrismaMemoryScopeKey(
 export class PrismaMemoryStore implements MemoryStore {
   readonly kind = "prisma";
   readonly inspector: MemoryInspector | undefined;
-  readonly compaction: MemoryCompactionStore | undefined;
+  readonly compaction: MemoryCompactionCapability | undefined;
 
   private constructor(
     private readonly delegates: PrismaMemoryDelegates,
@@ -94,14 +94,14 @@ export class PrismaMemoryStore implements MemoryStore {
     this.inspector = hasInspectionDelegates(delegates)
       ? {
           listConversations: (options) => this.listConversations(options),
-          getConversation: (ref) => this.getConversation(ref),
+          getConversation: ({ ref }) => this.getConversation(ref),
         }
       : undefined;
     this.compaction =
       typeof delegates.messages.deleteMany === "function"
         ? {
-            load: (context) => this.loadCompactionSnapshot(context),
-            commit: (input) => this.commitCompaction(input),
+            snapshot: ({ scope }) => this.loadCompactionSnapshot(scope),
+            replacePrefix: (options) => this.replaceCompactionPrefix(options),
           }
         : undefined;
   }
@@ -117,9 +117,9 @@ export class PrismaMemoryStore implements MemoryStore {
     return new PrismaMemoryStore(delegates, resolveOptions(options));
   }
 
-  async load(context: MemoryContext): Promise<Message[]> {
+  async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
     const rows = await this.delegates.messages.findMany({
-      where: { memorySession: { scopeKey: this.scopeKey(context) } },
+      where: { memorySession: { scopeKey: this.scopeKey(scope) } },
       orderBy: { position: "asc" },
       select: { message: true },
     });
@@ -129,14 +129,14 @@ export class PrismaMemoryStore implements MemoryStore {
     );
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     if (input.messages.length === 0) {
       return;
     }
     this.validateInputMessages(input.messages);
 
     await this.delegates.transaction(async (tx) => {
-      const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+      const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
       const last = await tx.messages.findFirst({
         where: { memorySessionId: session.id },
         orderBy: { position: "desc" },
@@ -157,13 +157,13 @@ export class PrismaMemoryStore implements MemoryStore {
     }, this.options.transaction);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
     await this.delegates.sessions.deleteMany({
-      where: { scopeKey: this.scopeKey(context) },
+      where: { scopeKey: this.scopeKey(scope) },
     });
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
     if (this.options.errors === "ignore") {
       return;
     }
@@ -179,7 +179,7 @@ export class PrismaMemoryStore implements MemoryStore {
         throw new Error("PrismaMemoryStore transaction did not provide an errors delegate.");
       }
 
-      const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+      const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
       await tx.errors.create({
         data: {
           memorySessionId: session.id,
@@ -191,7 +191,7 @@ export class PrismaMemoryStore implements MemoryStore {
     }, this.options.transaction);
   }
 
-  private async loadCompactionSnapshot(context: MemoryContext): Promise<MemoryCompactionSnapshot> {
+  private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
     const rows = (await this.delegates.messages.findMany({
       where: { memorySession: { scopeKey: this.scopeKey(context) } },
       orderBy: { position: "asc" },
@@ -205,28 +205,25 @@ export class PrismaMemoryStore implements MemoryStore {
     };
   }
 
-  private async commitCompaction(
-    input: MemoryCompactionCommitInput,
-  ): Promise<MemoryCompactionCommitResult> {
-    this.validateInputMessages([input.summary]);
-    assertCompactedMessageCount(input.compactedMessageCount);
+  private async replaceCompactionPrefix(
+    input: MemoryCompactionReplacePrefixOptions,
+  ): Promise<MemoryCompactionReplacePrefixResult> {
+    this.validateInputMessages([input.replacement]);
+    assertCompactionMessageCount(input.messageCount);
 
     try {
       return await this.delegates.transaction(async (tx) => {
         const rows = (await tx.messages.findMany({
-          where: { memorySession: { scopeKey: this.scopeKey(input.context) } },
+          where: { memorySession: { scopeKey: this.scopeKey(input.scope) } },
           orderBy: { position: "asc" },
           select: { id: true, memorySessionId: true, position: true, message: true },
         })) as PrismaCompactionMessageRow[];
-        if (
-          compactionRevision(rows) !== input.revision ||
-          input.compactedMessageCount > rows.length
-        ) {
-          return "conflict";
+        if (compactionRevision(rows) !== input.revision || input.messageCount > rows.length) {
+          return { status: "conflict" };
         }
-        const boundary = rows[input.compactedMessageCount - 1];
+        const boundary = rows[input.messageCount - 1];
         if (boundary === undefined) {
-          return "conflict";
+          return { status: "conflict" };
         }
         if (tx.messages.deleteMany === undefined) {
           throw new Error(
@@ -236,15 +233,15 @@ export class PrismaMemoryStore implements MemoryStore {
         const deleted = await tx.messages.deleteMany({
           where: {
             id: {
-              in: rows.slice(0, input.compactedMessageCount).map((row) => row.id),
+              in: rows.slice(0, input.messageCount).map((row) => row.id),
             },
           },
         });
-        if (deleted.count !== input.compactedMessageCount) {
+        if (deleted.count !== input.messageCount) {
           // Throw so Prisma rolls back the deleteMany before mapping to "conflict".
           throw new MemoryCompactionConflictAbort();
         }
-        const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+        const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
         await tx.messages.createMany({
           data: [
             {
@@ -252,16 +249,16 @@ export class PrismaMemoryStore implements MemoryStore {
               runId: input.runId,
               turn: 0,
               position: boundary.position,
-              role: input.summary.role,
-              message: input.summary,
+              role: input.replacement.role,
+              message: input.replacement,
             },
           ],
         });
-        return "committed";
+        return { status: "committed" };
       }, compactionTransactionOptions(this.options.transaction));
     } catch (error) {
       if (error instanceof MemoryCompactionConflictAbort) {
-        return "conflict";
+        return { status: "conflict" };
       }
       throw error;
     }
@@ -317,7 +314,7 @@ export class PrismaMemoryStore implements MemoryStore {
     };
   }
 
-  private scopeKey(context: MemoryContext): string {
+  private scopeKey(context: MemoryScope): string {
     if (typeof this.options.scope === "function") {
       return this.options.scope(context);
     }
@@ -344,7 +341,7 @@ function resolveOptions(options: PrismaMemoryStoreOptions): PrismaMemoryStore["o
 
 async function upsertSession(
   delegates: PrismaMemoryDelegates,
-  context: MemoryContext,
+  context: MemoryScope,
   scopeKey: string,
 ): Promise<{ id: string }> {
   return delegates.sessions.upsert({
@@ -357,10 +354,7 @@ async function upsertSession(
   });
 }
 
-function sessionCreateData(
-  context: MemoryContext,
-  scopeKey: string,
-): PrismaMemorySessionCreateData {
+function sessionCreateData(context: MemoryScope, scopeKey: string): PrismaMemorySessionCreateData {
   const data: PrismaMemorySessionCreateData = {
     scopeKey,
     sessionId: context.sessionId,
@@ -372,7 +366,7 @@ function sessionCreateData(
   return data;
 }
 
-function metadata(context: MemoryContext): JsonObject {
+function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
 }
 
@@ -503,9 +497,9 @@ class MemoryCompactionConflictAbort extends Error {
   }
 }
 
-function assertCompactedMessageCount(value: number): void {
+function assertCompactionMessageCount(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("compactedMessageCount must be a positive integer.");
+    throw new RangeError("messageCount must be a positive integer.");
   }
 }
 

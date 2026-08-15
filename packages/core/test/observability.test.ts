@@ -176,7 +176,8 @@ describe("agent observability", () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
     const agent = new Agent({ id: "test-agent", model, observers: [observer] });
 
-    const result = await agent.generate("hello", {
+    const result = await agent.generate({
+      prompt: "hello",
       trace: {
         name: "test-run",
         userId: "user_1",
@@ -249,7 +250,7 @@ describe("agent observability", () => {
     const agent = new Agent({ id: "test-agent", model, observers: [observer] });
 
     await expect(
-      agent.generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     ).resolves.toMatchObject({ output: "recovered" });
 
     expect(eventTypes(observer)).toEqual([
@@ -288,7 +289,7 @@ describe("agent observability", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, observers: [observer], tools: [addTool] });
 
-    await expect(agent.generate("add")).resolves.toMatchObject({ output: "7" });
+    await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({ output: "7" });
 
     expect(eventTypes(observer)).toEqual([
       "run_start",
@@ -343,7 +344,7 @@ describe("agent observability", () => {
       tools: [failingTool],
     });
 
-    await expect(agent.generate("fail")).resolves.toMatchObject({ output: "handled" });
+    await expect(agent.generate({ prompt: "fail" })).resolves.toMatchObject({ output: "handled" });
 
     expect(eventTypes(observer)).toEqual([
       "run_start",
@@ -391,7 +392,7 @@ describe("agent observability", () => {
       observers: [observer],
     });
 
-    const pending = await agent.generate("run guarded");
+    const pending = await agent.generate({ prompt: "run guarded" });
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     await agent.resume(pending, { approved: true, reason: "Reviewed" });
 
@@ -437,7 +438,7 @@ describe("agent observability", () => {
       tools: [addTool],
     });
 
-    await agent.generate("add", withInternalAgentRunOptions({}, { hook }));
+    await agent.generate({ prompt: "add", ...withInternalAgentRunOptions({}, { hook }) });
 
     expect(observer.events).toContainEqual(
       expect.objectContaining({
@@ -461,7 +462,7 @@ describe("agent observability", () => {
       maxTurns: 0,
     });
 
-    await expect(agent.generate("loop")).rejects.toThrow("Reached max turn limit");
+    await expect(agent.generate({ prompt: "loop" })).rejects.toThrow("Reached max turn limit");
 
     expect(eventTypes(observer).at(-1)).toBe("run_error");
   });
@@ -484,7 +485,7 @@ describe("agent observability", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, observers: [observer], tools: [addTool] });
 
-    const events = await collect(agent.stream("add"));
+    const events = await collect(agent.stream({ prompt: "add" }));
 
     expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "hello" } });
     expect(eventTypes(observer)).toEqual([
@@ -539,7 +540,7 @@ describe("agent observability", () => {
         id: "test-agent",
         model: new QueueModel([response([AssistantContent.text("ok")])]),
         observers: [observer],
-      }).generate("hello"),
+      }).generate({ prompt: "hello" }),
     ).resolves.toMatchObject({ output: "ok" });
 
     await expect(
@@ -547,7 +548,7 @@ describe("agent observability", () => {
         id: "test-agent",
         model: new QueueModel([response([AssistantContent.text("ok")])]),
         observers: [observer],
-      }).generate("hello", { trace: { failOnObserverError: true } }),
+      }).generate({ prompt: "hello", trace: { failOnObserverError: true } }),
     ).rejects.toThrow("observer failed");
   });
 
@@ -573,7 +574,7 @@ describe("agent observability", () => {
       ],
     ]);
     const agent = new Agent({ id: "test-agent", model, observers: [observer] });
-    await collect(agent.stream("hi"));
+    await collect(agent.stream({ prompt: "hi" }));
 
     expect(updates).toEqual([
       { turn: 1, delta: { type: "text_delta", delta: "he" } },
@@ -598,7 +599,7 @@ describe("agent observability", () => {
     };
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
     const agent = new Agent({ id: "test-agent", model, observers: [observer] });
-    await agent.generate("hi");
+    await agent.generate({ prompt: "hi" });
     expect(updates).toEqual([]);
   });
 
@@ -615,7 +616,7 @@ describe("agent observability", () => {
     };
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hi" }]]);
     const agent = new Agent({ id: "test-agent", model, observers: [observer] });
-    await expect(collect(agent.stream("hi"))).resolves.toBeDefined();
+    await expect(collect(agent.stream({ prompt: "hi" }))).resolves.toBeDefined();
   });
 
   it.each([
@@ -676,7 +677,7 @@ describe("agent observability", () => {
     });
     const runOptions = hook === undefined ? {} : withInternalAgentRunOptions({}, { hook });
 
-    await expect(agent.generate("add", runOptions)).rejects.toThrow("failed");
+    await expect(agent.generate({ prompt: "add", ...runOptions })).rejects.toThrow("failed");
 
     expect(
       eventTypes(observer).filter((type) => type === "tool_end" || type === "tool_error"),
@@ -730,9 +731,9 @@ describe("agent observability", () => {
 
     await expect(
       agent.generate(
-        "hello",
         withInternalAgentRunOptions(
           {
+            prompt: "hello",
             lifecycle: {
               onError() {
                 cleanupCalls.push("lifecycle");

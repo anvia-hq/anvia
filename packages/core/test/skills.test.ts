@@ -271,7 +271,7 @@ describe("skills", () => {
     });
 
     await expect(
-      agent.generate("review", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "review", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "loaded" });
 
     expect(model.requests[0]?.instructions).toEqual(
@@ -319,7 +319,7 @@ describe("skills", () => {
     });
 
     await expect(
-      agent.generate("review", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "review", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
@@ -370,7 +370,7 @@ describe("skills", () => {
     });
 
     await expect(
-      agent.generate("review", withInternalAgentRunOptions({}, { hook })),
+      agent.generate({ prompt: "review", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
@@ -411,7 +411,7 @@ describe("skills", () => {
       maxTurns: 1,
     });
 
-    const events = await collect(agent.stream("review"));
+    const events = await collect(agent.stream({ prompt: "review" }));
 
     expect(events).toContainEqual(
       expect.objectContaining({

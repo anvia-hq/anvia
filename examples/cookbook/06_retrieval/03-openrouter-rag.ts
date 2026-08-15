@@ -41,7 +41,7 @@ const agent = new Agent({
   context: [createVectorContext({ store, model: embeddingModel, topK: 1 })],
 });
 
-const response = await agent.generate("What should I do for a security incident?");
+const response = await agent.generate({ prompt: "What should I do for a security incident?" });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

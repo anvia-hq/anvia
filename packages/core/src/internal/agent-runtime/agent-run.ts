@@ -14,6 +14,8 @@ import type {
   AgentInput,
   AgentResponse,
   AgentRunOptions,
+  AgentRunSettings,
+  AgentSteerInput,
   AgentStreamEvent,
 } from "../../agent/run-types";
 import { getAgentToolState } from "../../agent/tool-state";
@@ -47,7 +49,7 @@ import {
 import type { AgentHook } from "../../hooks";
 import { runControl } from "../../hooks";
 import { MemoryCompactionError } from "../../memory/errors";
-import type { MemoryContext } from "../../memory/types";
+import type { MemoryCompactionInfo, MemoryScope } from "../../memory/types";
 import type { ModelCallOptions } from "../../model-call-options";
 import {
   type ActiveAgentRunObservers,
@@ -78,7 +80,7 @@ import type { ToolApprovalRequest } from "./approval-request";
 import { toolMayRequireApproval } from "./approval-requirement";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
-import { getInternalAgentRunOptions } from "./run-options";
+import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
@@ -90,8 +92,8 @@ import {
   type ToolResultEventPayload,
 } from "./tool-execution";
 
-type AgentRunCreateOptions<Output, RawResponse> = AgentRunOptions<Output, RawResponse> & {
-  memoryContext?: MemoryContext | undefined;
+type AgentRunCreateOptions<Output, RawResponse> = AgentRunSettings<Output, RawResponse> & {
+  memoryScope?: MemoryScope | undefined;
 };
 
 type PendingApproval = {
@@ -151,7 +153,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private readonly steeringMessages: MessageType[] = [];
   private runState: "idle" | "running" | "completed" | "errored" | "cancelled" = "idle";
   private readonly memoryRecorder: AgentRunMemory;
-  private readonly memoryContext: MemoryContext | undefined;
+  private readonly memoryScope: MemoryScope | undefined;
+  private readonly onInternalFailure: InternalAgentRunOptions["onFailure"];
+  private readonly onInternalMemoryCompaction: InternalAgentRunOptions["onMemoryCompaction"];
+  private memoryCompaction: MemoryCompactionInfo | undefined;
   private pendingApproval: PendingApproval | undefined;
   private approvalSignal = deferredSignal();
   private activeRunId: string | undefined;
@@ -176,6 +181,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     );
     const internalOptions = getInternalAgentRunOptions(options);
     this.activeHook = internalOptions?.hook;
+    this.onInternalFailure = internalOptions?.onFailure;
+    this.onInternalMemoryCompaction = internalOptions?.onMemoryCompaction;
     this.requestedRunId = normalizeRequestedRunId(internalOptions?.runId);
     this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
       | AgentLifecycle<Output, unknown>
@@ -200,21 +207,26 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         ? undefined
         : resolveRetryOptions(retrySetting);
     this.requestMiddlewares = [...(options.middlewares ?? [])];
-    this.memoryContext = options.memoryContext;
-    this.memoryRecorder = new AgentRunMemory(agent, options.memoryContext, initialHistory);
+    this.memoryScope = options.memoryScope;
+    this.memoryRecorder = new AgentRunMemory(agent, options.memoryScope, initialHistory);
     this.linkExternalAbortSignal(options.abortSignal);
   }
 
   static fromAgent<Output, M extends CompletionModel>(
     agent: Agent<Output, M>,
-    input: AgentInput,
-    options: AgentRunCreateOptions<Output, RawResponseOf<M>> = {},
+    options: AgentRunOptions<Output, RawResponseOf<M>>,
   ): AgentRun<Output, M> {
-    const normalized = normalizeAgentInput(input);
-    return new AgentRun(agent, normalized.prompt, normalized.history, options);
+    const normalized = normalizeAgentInput(options);
+    if (normalized.scope !== undefined && agent.memory === undefined) {
+      throw new TypeError(`Agent "${agent.id}" cannot use a session without a memory store.`);
+    }
+    return new AgentRun(agent, normalized.prompt, normalized.history, {
+      ...options,
+      memoryScope: normalized.scope,
+    });
   }
 
-  steer(input: string | MessageType | MessageType[]): boolean {
+  steer(input: AgentSteerInput): boolean {
     if (this.isTerminal() || this.cancellationError !== undefined) {
       return false;
     }
@@ -280,11 +292,18 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
     try {
       this.throwIfCancelled();
-      const memoryPreparation = await this.memoryRecorder.prepareHistory(runId, newMessages.length);
+      const memoryPreparation = await this.memoryRecorder.prepareHistory(
+        runId,
+        newMessages.length,
+        this.abortController.signal,
+      );
       this.chatHistory = memoryPreparation.history;
       usage = Usage.add(usage, memoryPreparation.usage);
+      this.memoryCompaction = memoryPreparation.compaction;
+      await this.notifyInternalMemoryCompaction(memoryPreparation.compaction);
       runObservers = await this.startRunObservers(runId);
       await this.recordMemoryCompaction(memoryPreparation, runObservers);
+      this.throwIfCancelled();
       await this.activeLifecycle?.onStart?.({
         runId,
         input: lifecycleSnapshot(this.promptMessage),
@@ -312,6 +331,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           messages: [this.promptMessage, Message.assistant(text)],
           trace: runObservers.trace,
           guardrails: [...this.guardrailDecisions],
+          ...this.memoryCompactionResult(),
         };
         await this.runLifecycleFinish(result);
         await runObservers.end(result);
@@ -478,11 +498,21 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
     try {
       this.throwIfCancelled();
-      const memoryPreparation = await this.memoryRecorder.prepareHistory(runId, newMessages.length);
+      const memoryPreparation = await this.memoryRecorder.prepareHistory(
+        runId,
+        newMessages.length,
+        this.abortController.signal,
+      );
       this.chatHistory = memoryPreparation.history;
       usage = Usage.add(usage, memoryPreparation.usage);
+      this.memoryCompaction = memoryPreparation.compaction;
+      await this.notifyInternalMemoryCompaction(memoryPreparation.compaction);
       runObservers = await this.startRunObservers(runId);
       await this.recordMemoryCompaction(memoryPreparation, runObservers);
+      if (memoryPreparation.compaction !== undefined) {
+        yield { type: "memory_compaction", ...memoryPreparation.compaction };
+      }
+      this.throwIfCancelled();
       await this.activeLifecycle?.onStart?.({
         runId,
         input: lifecycleSnapshot(this.promptMessage),
@@ -511,6 +541,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           messages: [this.promptMessage, Message.assistant(text)],
           trace: runObservers.trace,
           guardrails: [...this.guardrailDecisions],
+          ...this.memoryCompactionResult(),
         };
         await this.runLifecycleFinish(result);
         await runObservers.end(result);
@@ -1059,8 +1090,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       this.activeLifecycle,
       {
         runId,
-        sessionId: this.memoryContext?.sessionId,
-        metadata: this.memoryContext?.metadata,
+        sessionId: this.memoryScope?.sessionId,
+        metadata: this.memoryScope?.metadata,
       },
       this.concurrency,
       this.requestMiddlewares,
@@ -1138,6 +1169,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       approval,
       usage: lifecycleSnapshot(this.currentUsage),
       messages: lifecycleSnapshot(this.currentMessages),
+      ...this.memoryCompactionResult(),
     };
   }
 
@@ -1153,6 +1185,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       text: result.text,
       usage: lifecycleSnapshot(result.usage),
       messages: lifecycleSnapshot(result.messages),
+      ...(result.memoryCompaction === undefined
+        ? {}
+        : { memoryCompaction: lifecycleSnapshot(result.memoryCompaction) }),
     };
     const event =
       result.status === "completed"
@@ -1197,6 +1232,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   ): Promise<unknown> {
     const reportedError = await this.resolveReportedRunError(error, runId, usage, messages);
     await settleFailureCleanup([
+      () =>
+        this.onInternalFailure?.({
+          error: reportedError,
+          messages: lifecycleSnapshot(messages),
+        }),
       () =>
         runObservers?.error({
           error: reportedError,
@@ -1278,6 +1318,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       trace: runObservers.trace,
       guardrails: [...this.guardrailDecisions],
       ...generationArtifacts(messages),
+      ...this.memoryCompactionResult(),
     };
     if (blocked) {
       return { ...common, status: "blocked", stage: "output" };
@@ -1299,6 +1340,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       throw new Error("Agent expected the model response to be valid JSON.", { cause: error });
     }
     return schema.parse(json);
+  }
+
+  private memoryCompactionResult(): {
+    memoryCompaction?: MemoryCompactionInfo | undefined;
+  } {
+    return this.memoryCompaction === undefined
+      ? {}
+      : { memoryCompaction: lifecycleSnapshot(this.memoryCompaction) };
   }
 
   private async recordGuardrailDecision(
@@ -1327,12 +1376,21 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         originalMessageCount: compaction.originalMessageCount,
         compactedMessageCount: compaction.compactedMessageCount,
         retainedMessageCount: compaction.retainedMessageCount,
-        conflictRetries: compaction.conflictRetries,
-        inputTokens: preparation.usage.inputTokens,
-        outputTokens: preparation.usage.outputTokens,
-        totalTokens: preparation.usage.totalTokens,
+        attempts: compaction.attempts,
+        inputTokens: compaction.usage.inputTokens,
+        outputTokens: compaction.usage.outputTokens,
+        totalTokens: compaction.usage.totalTokens,
       },
     });
+  }
+
+  private async notifyInternalMemoryCompaction(
+    compaction: MemoryCompactionInfo | undefined,
+  ): Promise<void> {
+    if (compaction === undefined) {
+      return;
+    }
+    await this.onInternalMemoryCompaction?.(lifecycleSnapshot(compaction));
   }
 
   private guardrailRunContext(runId: string): GuardrailRunContext {
@@ -1340,10 +1398,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       agentId: this.agent.id,
       runId,
     };
-    if (this.memoryContext !== undefined) {
-      context.sessionId = this.memoryContext.sessionId;
-      if (this.memoryContext.metadata !== undefined) {
-        context.metadata = this.memoryContext.metadata;
+    if (this.memoryScope !== undefined) {
+      context.sessionId = this.memoryScope.sessionId;
+      if (this.memoryScope.metadata !== undefined) {
+        context.metadata = this.memoryScope.metadata;
       }
     }
     return context;
@@ -1630,34 +1688,91 @@ function abortReason(reason: unknown): string {
   return "External abort signal.";
 }
 
-function normalizeAgentInput(prompt: AgentInput): {
+function normalizeAgentInput(input: AgentInput): {
   prompt: MessageType;
   history: MessageType[];
+  scope?: MemoryScope | undefined;
 } {
-  if (typeof prompt === "string") {
-    return { prompt: Message.user(prompt), history: [] };
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new TypeError("Agent runs require one options object with prompt or messages.");
   }
-  if (!Array.isArray(prompt)) {
-    return { prompt, history: [] };
+  const hasPrompt = "prompt" in input && input.prompt !== undefined;
+  const hasMessages = "messages" in input && input.messages !== undefined;
+  if (hasPrompt === hasMessages) {
+    throw new TypeError("Agent runs require exactly one of prompt or messages.");
   }
-  if (prompt.length === 0) {
+  if (hasPrompt) {
+    const prompt = input.prompt;
+    if (
+      typeof prompt !== "string" &&
+      (typeof prompt !== "object" || prompt === null || prompt.role !== "user")
+    ) {
+      throw new TypeError("Agent prompt must be text or a user message.");
+    }
+    return {
+      prompt: typeof prompt === "string" ? Message.user(prompt) : prompt,
+      history: [],
+      ...(input.session === undefined ? {} : { scope: normalizeMemoryScope(input.session) }),
+    };
+  }
+  if (input.session !== undefined) {
+    throw new TypeError("Agent messages cannot be combined with a persisted session.");
+  }
+  const messages = input.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
     throw new TypeError("Agent input transcript must contain at least one message.");
   }
-  const activePrompt = prompt.at(-1);
+  const activePrompt = messages.at(-1);
   if (activePrompt === undefined) {
     throw new TypeError("Agent input transcript must contain at least one message.");
   }
   return {
     prompt: activePrompt,
-    history: prompt.slice(0, -1),
+    history: messages.slice(0, -1),
   };
 }
 
-function normalizeSteeringInput(input: string | MessageType | MessageType[]): MessageType[] {
-  if (typeof input === "string") {
-    return [Message.user(input)];
+function normalizeSteeringInput(input: AgentSteerInput): MessageType[] {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new TypeError("Agent steering requires one options object with prompt or messages.");
   }
-  return Array.isArray(input) ? [...input] : [input];
+  const hasPrompt = "prompt" in input && input.prompt !== undefined;
+  const hasMessages = "messages" in input && input.messages !== undefined;
+  if (hasPrompt === hasMessages) {
+    throw new TypeError("Agent steering requires exactly one of prompt or messages.");
+  }
+  if (hasPrompt) {
+    const prompt = input.prompt;
+    if (
+      typeof prompt !== "string" &&
+      (typeof prompt !== "object" || prompt === null || prompt.role !== "user")
+    ) {
+      throw new TypeError("Agent steering prompt must be text or a user message.");
+    }
+    return [typeof prompt === "string" ? Message.user(prompt) : prompt];
+  }
+  const messages = input.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new TypeError("Agent steering messages must contain at least one user message.");
+  }
+  if (messages.some((message) => message.role !== "user")) {
+    throw new TypeError("Agent steering messages must all be user messages.");
+  }
+  return [...messages];
+}
+
+function normalizeMemoryScope(scope: MemoryScope): MemoryScope {
+  if (typeof scope !== "object" || scope === null) {
+    throw new TypeError("Agent session must be an object.");
+  }
+  if (typeof scope.sessionId !== "string" || scope.sessionId.trim().length === 0) {
+    throw new TypeError("Agent sessionId must be a non-empty string.");
+  }
+  return lifecycleSnapshot({
+    sessionId: scope.sessionId.trim(),
+    ...(scope.userId === undefined ? {} : { userId: scope.userId }),
+    ...(scope.metadata === undefined ? {} : { metadata: scope.metadata }),
+  });
 }
 
 function normalizeRequestedRunId(runId: string | undefined): string | undefined {

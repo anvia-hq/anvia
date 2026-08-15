@@ -172,7 +172,7 @@ describe("provider-executed tools", () => {
     });
     const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
 
-    const result = await agent.generate("research");
+    const result = await agent.generate({ prompt: "research" });
     assertCompleted(result);
 
     expect(agent.getTool("local")).toBe(localTool);
@@ -195,7 +195,7 @@ describe("provider-executed tools", () => {
     });
     const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
 
-    await agent.generate("research");
+    await agent.generate({ prompt: "research" });
 
     expect(agent.tools).toEqual([localTool]);
     expect(model.requests[0]?.providerTools).toEqual([searchTool]);
@@ -219,7 +219,7 @@ describe("provider-executed tools", () => {
     const agent = new Agent({ id: "researcher", model, tools: [searchTool] });
 
     const events = [];
-    for await (const event of agent.stream("research")) {
+    for await (const event of agent.stream({ prompt: "research" })) {
       events.push(event);
     }
 

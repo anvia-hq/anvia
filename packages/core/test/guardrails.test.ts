@@ -123,7 +123,7 @@ describe("guardrails", () => {
       guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
     });
 
-    const result = await agent.generate("hello secret");
+    const result = await agent.generate({ prompt: "hello secret" });
     assertCompleted(result);
 
     expect(result.output).toBe("done");
@@ -150,7 +150,7 @@ describe("guardrails", () => {
       guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
     });
 
-    const result = await agent.generate("blocked");
+    const result = await agent.generate({ prompt: "blocked" });
 
     expect(result).toMatchObject({ status: "blocked", stage: "input", text: "Input blocked." });
     if (result.status !== "blocked") throw new Error("Expected a blocked result.");
@@ -188,7 +188,7 @@ describe("guardrails", () => {
       guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
     });
 
-    const result = await agent.generate("blocked");
+    const result = await agent.generate({ prompt: "blocked" });
 
     expect(result).toMatchObject({ status: "blocked", stage: "input", text: "Input blocked." });
     if (result.status !== "blocked") throw new Error("Expected a blocked result.");
@@ -231,7 +231,7 @@ describe("guardrails", () => {
     });
 
     const events: AgentStreamEvent[] = [];
-    for await (const event of agent.stream("blocked")) {
+    for await (const event of agent.stream({ prompt: "blocked" })) {
       events.push(event);
     }
 
@@ -264,13 +264,15 @@ describe("guardrails", () => {
       guardrails: defineGuardrailPolicy({ id: "policy", input: [redactInput] }),
     });
 
-    await agent.generate(
-      Message.user([
-        { type: "text", text: "secret secret" },
-        { type: "document", source: { type: "text", text: "secret doc" } },
-      ]),
-    );
-    await agent.generate("secret");
+    await agent.generate({
+      messages: [
+        Message.user([
+          { type: "text", text: "secret secret" },
+          { type: "document", source: { type: "text", text: "secret doc" } },
+        ]),
+      ],
+    });
+    await agent.generate({ prompt: "secret" });
 
     expect(model.requests[0]?.chatHistory[0]).toEqual(
       Message.user("[redacted] [redacted]\n[redacted] doc"),
@@ -295,7 +297,7 @@ describe("guardrails", () => {
       guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
     });
 
-    const result = await agent.generate("hello");
+    const result = await agent.generate({ prompt: "hello" });
     assertCompleted(result);
 
     expect(result.output).toBe("[redacted] token");
@@ -334,7 +336,7 @@ describe("guardrails", () => {
     });
 
     const events: AgentStreamEvent[] = [];
-    for await (const event of agent.stream("hello")) {
+    for await (const event of agent.stream({ prompt: "hello" })) {
       events.push(event);
     }
 
@@ -368,7 +370,7 @@ describe("guardrails", () => {
         { type: "final", response: response([AssistantContent.text("secret second")]) },
       ],
     ]);
-    let steer: ((input: string) => boolean) | undefined;
+    let steer: ((input: { prompt: string }) => boolean) | undefined;
     const outputGuardrail = defineOutputGuardrail({
       id: "stream-final-only",
       check(ctx, { rewrite }) {
@@ -382,7 +384,7 @@ describe("guardrails", () => {
     const hook = createHook({
       onTurnEnd({ turn }) {
         if (turn === 1) {
-          expect(steer?.("revise")).toBe(true);
+          expect(steer?.({ prompt: "revise" })).toBe(true);
         }
       },
     });
@@ -391,7 +393,7 @@ describe("guardrails", () => {
       model,
       guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
     });
-    const stream = agent.stream("hello", withInternalAgentRunOptions({}, { hook }));
+    const stream = agent.stream({ prompt: "hello", ...withInternalAgentRunOptions({}, { hook }) });
     steer = stream.steer.bind(stream);
 
     const events: AgentStreamEvent[] = [];

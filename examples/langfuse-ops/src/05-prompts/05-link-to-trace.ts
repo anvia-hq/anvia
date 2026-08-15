@@ -19,7 +19,8 @@ async function main(): Promise<void> {
 
     // The trace option exposes AgentTraceOptions, so prompt linkage is provided
     // through metadata on this code path.
-    const response = await agent.generate("Summarize ticket TICKET-1001.", {
+    const response = await agent.generate({
+      prompt: "Summarize ticket TICKET-1001.",
       trace: {
         name: "prompt-link-demo",
         tags: ["prompts:05"],
@@ -30,7 +31,8 @@ async function main(): Promise<void> {
     console.log("[prompts:05] output (metadata):", response.output);
 
     // Repeat with a second trace to show the same prompt metadata on another run.
-    const response2 = await agent.generate("Summarize ticket TICKET-1001.", {
+    const response2 = await agent.generate({
+      prompt: "Summarize ticket TICKET-1001.",
       trace: {
         name: "prompt-link-repeat",
         tags: ["prompts:05", "repeat"],

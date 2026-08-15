@@ -1,5 +1,4 @@
 export { defaultAnswerQuestion, defaultDecideApproval } from "./human-input";
-export type { InitialMessagesFromMemoryOptions } from "./memory";
 export { initialMessagesFromMemory } from "./memory";
 export type { SmoothStreamItemAdapter, StreamSmoothingLifecycle } from "./stream-smoothing";
 export type {

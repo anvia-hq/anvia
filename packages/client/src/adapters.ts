@@ -279,6 +279,16 @@ async function* translateAgentEvent(
 
   const turn = "turn" in event && typeof event.turn === "number" ? event.turn : undefined;
   switch (event.type) {
+    case "memory_compaction":
+      yield scopedEvent(runtime.runId, turn, scope, {
+        type: "memory_compaction",
+        originalMessageCount: event.originalMessageCount,
+        compactedMessageCount: event.compactedMessageCount,
+        retainedMessageCount: event.retainedMessageCount,
+        attempts: event.attempts,
+        usage: event.usage,
+      });
+      return;
     case "turn_start":
       yield scopedEvent(runtime.runId, turn, scope, { type: "turn_start" });
       return;
@@ -406,6 +416,9 @@ async function* translateAgentEvent(
         type: "run_end",
         status: "approval_required",
         usage: event.usage,
+        ...(event.memoryCompaction === undefined
+          ? {}
+          : { memoryCompaction: event.memoryCompaction }),
         metadata: { nativeRunId: event.runId },
       });
       return;
@@ -424,6 +437,9 @@ async function* translateAgentEvent(
         usage: result.usage,
         ...(result.contextUsage === undefined ? {} : { contextUsage: result.contextUsage }),
         ...(result.trace === undefined ? {} : { trace: clientTrace(result.trace) }),
+        ...(result.memoryCompaction === undefined
+          ? {}
+          : { memoryCompaction: result.memoryCompaction }),
         metadata: { nativeRunId: result.runId },
       });
       return;

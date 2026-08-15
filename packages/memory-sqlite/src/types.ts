@@ -1,5 +1,5 @@
 import type { JsonValue } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryErrorOptions, MemoryScope } from "@anvia/core/memory";
 
 export type SqliteMemoryErrorMode = "store" | "ignore";
 
@@ -10,7 +10,7 @@ export type SqliteMemoryScopeOptions = {
 
 export type SqliteMemoryStoreOptions = {
   path?: string | undefined;
-  scope?: SqliteMemoryScopeOptions | ((context: MemoryContext) => string) | undefined;
+  scope?: SqliteMemoryScopeOptions | ((context: MemoryScope) => string) | undefined;
   errors?: SqliteMemoryErrorMode | undefined;
   validateMessages?: boolean | undefined;
   createIfMissing?: boolean | undefined;
@@ -39,6 +39,6 @@ export type SqliteMemoryErrorRow = {
   created_at: string;
 };
 
-export type SqliteMemoryAppendInput = MemoryAppendInput;
-export type SqliteMemoryContext = MemoryContext;
-export type SqliteMemoryErrorInput = MemoryErrorInput;
+export type SqliteMemoryAppendOptions = MemoryAppendOptions;
+export type SqliteMemoryScope = MemoryScope;
+export type SqliteMemoryErrorOptions = MemoryErrorOptions;

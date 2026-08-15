@@ -19,10 +19,10 @@ import {
   defineGuardrailPolicy,
   defineInputGuardrail,
   getAssistantGenerationMetadata,
-  type MemoryAppendInput,
-  type MemoryContext,
-  type MemoryErrorInput,
+  type MemoryAppendOptions,
+  type MemoryErrorOptions,
   type MemorySavePolicy,
+  type MemoryScope,
   type MemoryStore,
   Message,
   type Message as MessageType,
@@ -88,9 +88,9 @@ class StreamingQueueModel implements StreamingCompletionModel {
 }
 
 class RecordingMemoryStore implements MemoryStore {
-  readonly appendCalls: MemoryAppendInput[] = [];
-  readonly errorCalls: MemoryErrorInput[] = [];
-  readonly loadCalls: MemoryContext[] = [];
+  readonly appendCalls: MemoryAppendOptions[] = [];
+  readonly errorCalls: MemoryErrorOptions[] = [];
+  readonly loadCalls: MemoryScope[] = [];
   private readonly sessions = new Map<string, MessageType[]>();
 
   constructor(initial: Record<string, MessageType[]> = {}) {
@@ -99,22 +99,22 @@ class RecordingMemoryStore implements MemoryStore {
     }
   }
 
-  async load(context: MemoryContext): Promise<MessageType[]> {
-    this.loadCalls.push({ ...context });
-    return [...(this.sessions.get(context.sessionId) ?? [])];
+  async load({ scope }: { scope: MemoryScope }): Promise<MessageType[]> {
+    this.loadCalls.push({ ...scope });
+    return [...(this.sessions.get(scope.sessionId) ?? [])];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     this.appendCalls.push({ ...input, messages: [...input.messages] });
-    const current = this.sessions.get(input.context.sessionId) ?? [];
-    this.sessions.set(input.context.sessionId, [...current, ...input.messages]);
+    const current = this.sessions.get(input.scope.sessionId) ?? [];
+    this.sessions.set(input.scope.sessionId, [...current, ...input.messages]);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
-    this.sessions.delete(context.sessionId);
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    this.sessions.delete(scope.sessionId);
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
     this.errorCalls.push({ ...input, messages: [...input.messages] });
   }
 }
@@ -153,7 +153,7 @@ describe("agent memory", () => {
       Message.user("What is my project named?"),
     ];
 
-    await agent.generate(transcript);
+    await agent.generate({ messages: transcript });
 
     expect(model.requests[0]?.chatHistory).toEqual(transcript);
   });
@@ -162,7 +162,30 @@ describe("agent memory", () => {
     const model = new QueueModel([]);
     const agent = new Agent({ id: "test-agent", model });
 
-    expect(() => agent.generate([])).toThrow("at least one message");
+    expect(() => agent.generate({ messages: [] })).toThrow("at least one message");
+  });
+
+  it("stays stateless when a memory-enabled agent receives no session", async () => {
+    const store = new RecordingMemoryStore({
+      session_1: [Message.user("stored"), Message.assistant("stored answer")],
+    });
+    const model = new QueueModel([response([AssistantContent.text("fresh")])]);
+    const agent = new Agent({ id: "test-agent", model, memory: { store } });
+
+    await agent.generate({ prompt: "new stateless prompt" });
+
+    expect(model.requests[0]?.chatHistory).toEqual([Message.user("new stateless prompt")]);
+    expect(store.loadCalls).toHaveLength(0);
+    expect(store.appendCalls).toHaveLength(0);
+  });
+
+  it("throws synchronously when a session is supplied to an agent without memory", () => {
+    const model = new QueueModel([]);
+    const agent = new Agent({ id: "test-agent", model });
+
+    expect(() =>
+      agent.generate({ prompt: "stateful prompt", session: { sessionId: "session_1" } }),
+    ).toThrow('Agent "test-agent" cannot use a session without a memory store.');
   });
 
   it("loads session messages before running", async () => {
@@ -171,13 +194,34 @@ describe("agent memory", () => {
     const model = new QueueModel([response([AssistantContent.text("Anvia")])]);
     const agent = new Agent({ id: "test-agent", model, memory: { store } });
 
-    await agent.session("session_1").generate("What is my project named?");
+    await agent.generate({
+      prompt: "What is my project named?",
+      session: { sessionId: "session_1" },
+    });
 
     expect(model.requests[0]?.chatHistory).toEqual([
       ...previous,
       Message.user("What is my project named?"),
     ]);
     expect(store.loadCalls).toHaveLength(1);
+  });
+
+  it("accepts a stateful multimodal user prompt without flattening it to text", async () => {
+    const store = new RecordingMemoryStore();
+    const model = new QueueModel([response([AssistantContent.text("described")])]);
+    const agent = new Agent({ id: "test-agent", model, memory: { store } });
+    const prompt = Message.user([
+      { type: "text", text: "Describe this image" },
+      {
+        type: "image",
+        source: { type: "url", url: "https://example.test/image.png" },
+      },
+    ]);
+
+    await agent.generate({ prompt, session: { sessionId: "session_1" } });
+
+    expect(model.requests[0]?.chatHistory).toEqual([prompt]);
+    expect(store.appendCalls[0]?.messages).toEqual([prompt]);
   });
 
   it("exposes stored history to lifecycle, observers, and input guardrails before a buffered run", async () => {
@@ -218,7 +262,7 @@ describe("agent memory", () => {
       }),
     });
 
-    await agent.session("session_1").generate("next");
+    await agent.generate({ prompt: "next", session: { sessionId: "session_1" } });
 
     expect(lifecycleHistory).toEqual(previous);
     expect(observerHistory).toEqual(previous);
@@ -265,7 +309,10 @@ describe("agent memory", () => {
       }),
     });
 
-    for await (const _event of agent.session("session_1").stream("next")) {
+    for await (const _event of agent.stream({
+      prompt: "next",
+      session: { sessionId: "session_1" },
+    })) {
       // exhaust the stream
     }
 
@@ -299,7 +346,9 @@ describe("agent memory", () => {
       }),
     });
 
-    await expect(agent.session("session_1").generate("blocked prompt")).resolves.toMatchObject({
+    await expect(
+      agent.generate({ prompt: "blocked prompt", session: { sessionId: "session_1" } }),
+    ).resolves.toMatchObject({
       status: "blocked",
       stage: "input",
       text: "Input blocked.",
@@ -309,7 +358,7 @@ describe("agent memory", () => {
     expect(store.loadCalls).toHaveLength(1);
     expect(store.appendCalls).toHaveLength(0);
     expect(model.requests).toHaveLength(0);
-    await expect(agent.session("session_1").messages()).resolves.toEqual(previous);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual(previous);
     expect(store.loadCalls).toHaveLength(2);
   });
 
@@ -332,9 +381,11 @@ describe("agent memory", () => {
     const agent = new Agent({ id: "test-agent", model, memory: { store } });
 
     await expect(
-      agent
-        .session("session_1")
-        .generate("hello", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.generate({
+        prompt: "hello",
+        session: { sessionId: "session_1" },
+        retries: { initialDelayMs: 0, maxDelayMs: 0 },
+      }),
     ).resolves.toMatchObject({ output: "recovered" });
 
     expect(attempts).toBe(2);
@@ -352,14 +403,14 @@ describe("agent memory", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, memory: { store }, tools: [addTool] });
 
-    await agent.session("session_1").generate("add");
+    await agent.generate({ prompt: "add", session: { sessionId: "session_1" } });
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
       ["assistant", "tool"],
       ["assistant"],
     ]);
-    await expect(agent.session("session_1").messages()).resolves.toHaveLength(4);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toHaveLength(4);
   });
 
   it("does not persist an orphaned assistant tool call while approval is pending", async () => {
@@ -381,14 +432,13 @@ describe("agent memory", () => {
       tools: [guardedTool],
       memory: { store },
     });
-    const session = agent.session("session_1");
-
-    const pending = await session.generate("run guarded");
+    const scope = { sessionId: "session_1" };
+    const pending = await agent.generate({ prompt: "run guarded", session: scope });
     expect(pending.status).toBe("approval_required");
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
     ]);
-    await expect(session.messages()).resolves.toEqual([Message.user("run guarded")]);
+    await expect(store.load({ scope })).resolves.toEqual([Message.user("run guarded")]);
     if (pending.status !== "approval_required") throw new Error("Expected approval");
 
     await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
@@ -440,7 +490,10 @@ describe("agent memory", () => {
       tools: [addTool],
     });
 
-    const result = await agent.session("session-generation-metadata").generate("add");
+    const result = await agent.generate({
+      prompt: "add",
+      session: { sessionId: "session-generation-metadata" },
+    });
     const resultMetadata = result.messages
       .filter((message) => message.role === "assistant")
       .map(getAssistantGenerationMetadata);
@@ -487,18 +540,25 @@ describe("agent memory", () => {
       }),
     ]);
     const agent = new Agent({ id: "test-agent", model, memory: { store } });
-    const session = agent.session("context-usage");
-
-    const result = await session.generate("hello");
+    const scope = { sessionId: "context-usage" };
+    const result = await agent.generate({ prompt: "hello", session: scope });
     assertCompleted(result);
 
     expect(result.contextUsage).toEqual(contextUsage);
-    await expect(session.contextUsage()).resolves.toEqual(contextUsage);
+    const persistedKnownContext = (await store.load({ scope })).at(-1);
+    expect(persistedKnownContext).toBeDefined();
+    if (persistedKnownContext === undefined) throw new Error("Expected persisted response");
+    expect(getAssistantGenerationMetadata(persistedKnownContext)?.contextUsage).toEqual(
+      contextUsage,
+    );
 
-    const unknownResult = await session.generate("switch model");
+    const unknownResult = await agent.generate({ prompt: "switch model", session: scope });
     assertCompleted(unknownResult);
     expect(unknownResult.contextUsage).toBeUndefined();
-    await expect(session.contextUsage()).resolves.toBeUndefined();
+    const persistedUnknownContext = (await store.load({ scope })).at(-1);
+    expect(persistedUnknownContext).toBeDefined();
+    if (persistedUnknownContext === undefined) throw new Error("Expected persisted response");
+    expect(getAssistantGenerationMetadata(persistedUnknownContext)?.contextUsage).toBeUndefined();
   });
 
   it("records failed runs after preserving completed messages", async () => {
@@ -508,7 +568,9 @@ describe("agent memory", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, memory: { store }, tools: [addTool] });
 
-    await expect(agent.session("session_1").generate("add")).rejects.toThrow("No queued response");
+    await expect(
+      agent.generate({ prompt: "add", session: { sessionId: "session_1" } }),
+    ).rejects.toThrow("No queued response");
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
@@ -574,13 +636,12 @@ describe("agent memory", () => {
       memory: { store },
       tools: [probeTool, execCommandTool],
     });
-    const session = agent.session("session_1");
+    const scope = { sessionId: "session_1" };
 
     const runMalformedStream = async () => {
       const events: AgentStreamEvent[] = [];
-      for await (const event of session.stream(
-        "run tools",
-        withInternalAgentRunOptions({}, { hook }),
+      for await (const event of agent.stream(
+        withInternalAgentRunOptions({ prompt: "run tools", session: scope }, { hook }),
       )) {
         events.push(event);
       }
@@ -605,9 +666,9 @@ describe("agent memory", () => {
     ]);
     expect(store.errorCalls).toHaveLength(1);
     expect(store.errorCalls[0]?.messages).toEqual([Message.user("run tools")]);
-    await expect(session.messages()).resolves.toEqual([Message.user("run tools")]);
+    await expect(store.load({ scope })).resolves.toEqual([Message.user("run tools")]);
 
-    for await (const _event of session.stream("continue")) {
+    for await (const _event of agent.stream({ prompt: "continue", session: scope })) {
       // exhaust the stream
     }
 
@@ -630,7 +691,7 @@ describe("agent memory", () => {
       tools: [addTool],
     });
 
-    await agent.session("session_1").generate("add");
+    await agent.generate({ prompt: "add", session: { sessionId: "session_1" } });
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user", "assistant", "tool"],
@@ -647,7 +708,7 @@ describe("agent memory", () => {
       memory: { store, savePolicy: "run" },
     });
 
-    await agent.session("session_1").generate("hello");
+    await agent.generate({ prompt: "hello", session: { sessionId: "session_1" } });
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user", "assistant"],
@@ -704,12 +765,14 @@ describe("agent memory", () => {
         }),
       ],
     });
-    const session = agent.session(`session-${mode}`);
+    const scope = { sessionId: `session-${mode}` };
     if (mode === "buffered") {
-      await expect(session.generate("hello")).rejects.toBe(persistenceError);
+      await expect(agent.generate({ prompt: "hello", session: scope })).rejects.toBe(
+        persistenceError,
+      );
     } else {
       const streamEvents: AgentStreamEvent[] = [];
-      for await (const event of session.stream("hello")) {
+      for await (const event of agent.stream({ prompt: "hello", session: scope })) {
         streamEvents.push(event);
       }
       expect(streamEvents.at(-1)).toMatchObject({ type: "error", error: persistenceError });
@@ -732,7 +795,12 @@ describe("agent memory", () => {
     });
 
     await expect(
-      agent.session("session_1").generate("hello", withInternalAgentRunOptions({}, { hook })),
+      agent.generate(
+        withInternalAgentRunOptions(
+          { prompt: "hello", session: { sessionId: "session_1" } },
+          { hook },
+        ),
+      ),
     ).rejects.toBeInstanceOf(AgentRunCancelledError);
 
     expect(store.appendCalls).toHaveLength(0);
@@ -764,7 +832,10 @@ describe("agent memory", () => {
       tools: [childAgent.asTool({ name: "ask_child", stream: true })],
     });
 
-    for await (const _event of parentAgent.session("session_1").stream("delegate")) {
+    for await (const _event of parentAgent.stream({
+      prompt: "delegate",
+      session: { sessionId: "session_1" },
+    })) {
       // exhaust stream
     }
 
@@ -773,17 +844,20 @@ describe("agent memory", () => {
       ["assistant", "tool"],
       ["assistant"],
     ]);
-    await expect(parentAgent.session("session_1").messages()).resolves.toHaveLength(4);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toHaveLength(4);
   });
 
-  it("rejects transcript input for session runs", () => {
+  it("rejects transcript input combined with a session", () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([]);
     const agent = new Agent({ id: "test-agent", model, memory: { store } });
-    const generate = agent.session("session_1").generate as unknown as (
-      input: MessageType[],
-    ) => unknown;
+    const generate = agent.generate as unknown as (input: {
+      messages: MessageType[];
+      session: MemoryScope;
+    }) => unknown;
 
-    expect(() => generate([Message.user("hello")])).toThrow("does not accept Message[]");
+    expect(() =>
+      generate({ messages: [Message.user("hello")], session: { sessionId: "session_1" } }),
+    ).toThrow("cannot be combined");
   });
 });

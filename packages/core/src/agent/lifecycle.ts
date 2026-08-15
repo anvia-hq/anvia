@@ -1,5 +1,6 @@
 import type { CompletionResponse, Message, Usage } from "../completion";
 import type { DeepReadonly, MaybePromise } from "../internal/type-utils";
+import type { MemoryCompactionInfo } from "../memory";
 
 export type AgentLifecycleRunEvent = {
   runId: string;
@@ -36,6 +37,7 @@ type AgentFinishEventBase = AgentLifecycleRunEvent & {
   text: string;
   usage: DeepReadonly<Usage>;
   messages: DeepReadonly<Message[]>;
+  memoryCompaction?: DeepReadonly<MemoryCompactionInfo> | undefined;
 };
 
 export type AgentFinishEvent<Output = string> =

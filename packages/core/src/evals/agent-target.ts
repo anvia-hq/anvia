@@ -39,7 +39,9 @@ export function agentEvalTarget<Input, AgentOutput, Output, Expected>(
 ): EvalTarget<Input, Output | AgentResponse<AgentOutput>, Expected> {
   return async (input, testCase) => {
     const prompt = options.prompt?.(input, testCase) ?? String(input);
-    const response = await agent.generate(prompt);
+    const response = await agent.generate(
+      typeof prompt === "string" ? { prompt } : { messages: [prompt] },
+    );
     if (response.status === "approval_required") {
       await cancelAgentApproval(response, "Agent eval targets cannot suspend for tool approval.");
       throw new Error("Agent eval targets cannot suspend for tool approval.");

@@ -7,6 +7,7 @@ import {
   type ClientTransport,
   createDirectClientTransport,
 } from "@anvia/client";
+import type { MemoryCompactionMessage } from "@anvia/core/memory";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as publicReact from "../src";
@@ -24,6 +25,19 @@ function CompileCustomRequestInference() {
 void CompileCustomRequestInference;
 
 describe("public boundary", () => {
+  it("does not hide explicit memory compaction messages during hydration", () => {
+    const compaction: MemoryCompactionMessage = {
+      role: "system",
+      content: "Earlier conversation summary",
+      metadata: {
+        anvia: { memoryCompaction: { version: 1, compactedMessageCount: 8 } },
+      },
+    };
+    expect(publicReact.initialMessagesFromMemory([compaction])).toMatchObject([
+      { role: "system", metadata: compaction.metadata },
+    ]);
+  });
+
   it("does not re-export client protocol or transport ownership", () => {
     expect(publicReact).not.toHaveProperty("createHttpClientTransport");
     expect(publicReact).not.toHaveProperty("createDirectClientTransport");
@@ -55,6 +69,45 @@ describe("public boundary", () => {
 });
 
 describe("useChat", () => {
+  it("exposes memory compaction through events and onEvent without creating a message", async () => {
+    const onEvent = vi.fn();
+    const transport = createDirectClientTransport((_request: ClientStreamRequest) =>
+      events([
+        { type: "run_start", runId: "run_1", source: "agent" },
+        {
+          type: "memory_compaction",
+          runId: "run_1",
+          originalMessageCount: 12,
+          compactedMessageCount: 8,
+          retainedMessageCount: 4,
+          attempts: 1,
+          usage: {
+            inputTokens: 20,
+            outputTokens: 5,
+            totalTokens: 25,
+            cachedInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          },
+        },
+        { type: "run_end", runId: "run_1", status: "completed", text: "done" },
+      ]),
+    );
+    const { result } = renderHook(() => useChat({ transport, onEvent }));
+
+    await act(async () => result.current.sendMessage("Hi"));
+
+    expect(result.current.events.map((event) => event.type)).toEqual([
+      "run_start",
+      "memory_compaction",
+      "run_end",
+    ]);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "memory_compaction", compactedMessageCount: 8 }),
+    );
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0]?.role).toBe("user");
+  });
+
   it("sends core messages and reduces the canonical framed stream", async () => {
     const requests: ClientStreamRequest[] = [];
     const transport = createDirectClientTransport((request: ClientStreamRequest) => {

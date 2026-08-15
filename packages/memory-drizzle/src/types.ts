@@ -1,4 +1,4 @@
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryErrorOptions, MemoryScope } from "@anvia/core/memory";
 import type { drizzleMemorySchema } from "./schema.js";
 
 export type DrizzleMemoryErrorMode = "store" | "ignore";
@@ -14,12 +14,12 @@ export type DrizzleMemoryScopeOptions = {
 
 export type DrizzleMemoryStoreOptions = {
   schema?: DrizzleMemorySchema | undefined;
-  scope?: DrizzleMemoryScopeOptions | ((context: MemoryContext) => string) | undefined;
+  scope?: DrizzleMemoryScopeOptions | ((context: MemoryScope) => string) | undefined;
   errors?: DrizzleMemoryErrorMode | undefined;
   validateMessages?: boolean | undefined;
   lock?: DrizzleMemoryLockMode | undefined;
 };
 
-export type DrizzleMemoryAppendInput = MemoryAppendInput;
-export type DrizzleMemoryContext = MemoryContext;
-export type DrizzleMemoryErrorInput = MemoryErrorInput;
+export type DrizzleMemoryAppendOptions = MemoryAppendOptions;
+export type DrizzleMemoryScope = MemoryScope;
+export type DrizzleMemoryErrorOptions = MemoryErrorOptions;

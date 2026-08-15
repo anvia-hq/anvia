@@ -7,7 +7,6 @@ import type {
   CreateVectorContextOptions,
   AgentErrorStreamEvent as PublicAgentErrorStreamEvent,
   AgentRunOptions as PublicAgentRunOptions,
-  AgentSession as PublicAgentSessionType,
   AgentStreamEvent as PublicAgentStreamEvent,
   AgentToolCallDeltaEvent as PublicAgentToolCallDeltaEvent,
   Agent as PublicAgentType,
@@ -29,7 +28,6 @@ import * as imageGeneration from "../src/image-generation";
 import type {
   AgentErrorStreamEvent as RootAgentErrorStreamEvent,
   AgentRunOptions as RootAgentRunOptions,
-  AgentSession as RootAgentSessionType,
   AgentStreamEvent as RootAgentStreamEvent,
   AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
   AgentToolOptions as RootAgentToolOptions,
@@ -57,18 +55,50 @@ import * as tool from "../src/tool";
 import * as transcription from "../src/transcription";
 import * as vectorStore from "../src/vector-store";
 
+// @ts-expect-error AgentSession was removed in favor of Agent.generate/stream session options.
+type RemovedPublicAgentSession = import("../src/agent").AgentSession;
+// @ts-expect-error AgentSession was removed from the root API.
+type RemovedRootAgentSession = import("../src/index").AgentSession;
+// @ts-expect-error MemoryContext was replaced by MemoryScope.
+type RemovedMemoryContext = import("../src/memory").MemoryContext;
+// @ts-expect-error MemoryAppendInput was replaced by MemoryAppendOptions.
+type RemovedMemoryAppendInput = import("../src/memory").MemoryAppendInput;
+// @ts-expect-error MemoryErrorInput was replaced by MemoryErrorOptions.
+type RemovedMemoryErrorInput = import("../src/memory").MemoryErrorInput;
+// @ts-expect-error MemoryCompactionStore was replaced by MemoryCompactionCapability.
+type RemovedMemoryCompactionStore = import("../src/memory").MemoryCompactionStore;
+// @ts-expect-error MemoryCompactionCommitInput was replaced by prefix replacement options.
+type RemovedMemoryCompactionCommitInput = import("../src/memory").MemoryCompactionCommitInput;
+// @ts-expect-error SummaryMemoryCompactorOptions was replaced by object-only creator options.
+type RemovedSummaryMemoryCompactorOptions = import("../src/memory").SummaryMemoryCompactorOptions;
+// @ts-expect-error MemoryRegistration was removed from the public memory API.
+type RemovedMemoryRegistration = import("../src/memory").MemoryRegistration;
+// @ts-expect-error ResolvedMemoryOptions was removed from the public memory API.
+type RemovedResolvedMemoryOptions = import("../src/memory").ResolvedMemoryOptions;
+// @ts-expect-error SessionOptions was replaced by MemoryScope on Agent inputs.
+type RemovedSessionOptions = import("../src/memory").SessionOptions;
+
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
     expectTypeOf<AgentOptions>().not.toBeNever();
     expectTypeOf<PublicAgentType>().not.toBeNever();
-    expectTypeOf<PublicAgentSessionType>().not.toBeNever();
+    expectTypeOf<RemovedPublicAgentSession>().toBeAny();
     expectTypeOf<AgentContextInput>().not.toBeNever();
     expectTypeOf<VectorContext>().not.toBeNever();
     expectTypeOf<CreateVectorContextOptions>().not.toBeNever();
     expectTypeOf<AgentToolInput>().not.toBeNever();
     expectTypeOf<AgentToolOptions>().not.toBeNever();
-    expectTypeOf<RootAgentSessionType>().toEqualTypeOf<PublicAgentSessionType>();
+    expectTypeOf<RemovedRootAgentSession>().toBeAny();
     expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
+    expectTypeOf<Parameters<PublicAgentType["generate"]>["length"]>().toEqualTypeOf<1>();
+    expectTypeOf<Parameters<PublicAgentType["stream"]>["length"]>().toEqualTypeOf<1>();
+    const agent = null as unknown as PublicAgentType;
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      // @ts-expect-error Agent.generate no longer accepts a positional prompt.
+      agent.generate("hello");
+      // @ts-expect-error Agent.stream no longer accepts a positional prompt.
+      agent.stream("hello");
+    }
   });
 
   it("does not expose the removed AgentBuilder", () => {
@@ -92,10 +122,11 @@ describe("public exports", () => {
     expect("createToolMiddleware" in tool).toBe(false);
   });
 
-  it("exposes runtime Agent but keeps AgentSession type-only", () => {
+  it("exposes runtime Agent without the removed AgentSession surface", () => {
     expect("Agent" in publicCore).toBe(true);
     expect("Agent" in publicAgent).toBe(true);
     expect("AgentSession" in publicAgent).toBe(false);
+    expect(publicAgent.Agent.prototype).not.toHaveProperty("session");
   });
 
   it("exposes only the internal Agent integration contract", () => {
@@ -274,11 +305,34 @@ describe("public exports", () => {
 
   it("exposes memory compaction helpers from root and memory entrypoints", () => {
     expect(publicCore).toHaveProperty("createSummaryMemoryCompactor");
-    expect(publicCore).toHaveProperty("isMemoryCompactionSummary");
+    expect(publicCore).toHaveProperty("isMemoryCompactionMessage");
     expect(publicCore).toHaveProperty("MemoryCompactionError");
     expect(publicCore).toHaveProperty("MemoryCompactionConflictError");
     expect(memory).toHaveProperty("createSummaryMemoryCompactor");
-    expect(memory).toHaveProperty("isMemoryCompactionSummary");
+    expect(memory).toHaveProperty("isMemoryCompactionMessage");
+    expectTypeOf<RemovedMemoryContext>().toBeAny();
+    expectTypeOf<RemovedMemoryAppendInput>().toBeAny();
+    expectTypeOf<RemovedMemoryErrorInput>().toBeAny();
+    expectTypeOf<RemovedMemoryCompactionStore>().toBeAny();
+    expectTypeOf<RemovedMemoryCompactionCommitInput>().toBeAny();
+    expectTypeOf<RemovedSummaryMemoryCompactorOptions>().toBeAny();
+    expectTypeOf<RemovedMemoryRegistration>().toBeAny();
+    expectTypeOf<RemovedResolvedMemoryOptions>().toBeAny();
+    expectTypeOf<RemovedSessionOptions>().toBeAny();
+    expectTypeOf<
+      Parameters<typeof memory.createSummaryMemoryCompactor>["length"]
+    >().toEqualTypeOf<1>();
+
+    const capability = null as unknown as import("../src/memory").MemoryCompactionCapability;
+    const model = null as unknown as import("../src/completion").CompletionModel;
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      // @ts-expect-error Old compaction snapshot method was removed.
+      capability.load({ sessionId: "session_1" });
+      // @ts-expect-error Old compaction commit method was removed.
+      capability.commit({});
+      // @ts-expect-error Summary compactor construction is object-only.
+      memory.createSummaryMemoryCompactor(model);
+    }
   });
 
   it("exposes guardrail helpers from the root entrypoint", () => {

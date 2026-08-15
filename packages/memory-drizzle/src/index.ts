@@ -10,13 +10,13 @@ export {
   DrizzleMemoryStore,
 } from "./store.js";
 export type {
-  DrizzleMemoryAppendInput,
-  DrizzleMemoryContext,
+  DrizzleMemoryAppendOptions,
   DrizzleMemoryDatabaseLike,
-  DrizzleMemoryErrorInput,
   DrizzleMemoryErrorMode,
+  DrizzleMemoryErrorOptions,
   DrizzleMemoryLockMode,
   DrizzleMemorySchema,
+  DrizzleMemoryScope,
   DrizzleMemoryScopeOptions,
   DrizzleMemoryStoreOptions,
 } from "./types.js";

@@ -1,22 +1,48 @@
-import { assertNonnegativeInteger, assertPositiveInteger } from "./assert";
-import type { MemoryOptions, ResolvedMemoryOptions } from "./types";
+import { assertPositiveInteger } from "./assert";
+import type {
+  MemoryCompactionConflictRetryOptions,
+  MemoryCompactor,
+  MemoryOptions,
+  MemorySavePolicy,
+} from "./types";
+
+type ResolvedMemoryOptions = {
+  savePolicy: MemorySavePolicy;
+  compaction?:
+    | {
+        trigger: { afterMessages: number };
+        retention: { recentUserTurns: number };
+        compactor: MemoryCompactor;
+        conflictRetries: false | MemoryCompactionConflictRetryOptions;
+      }
+    | undefined;
+};
 
 export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemoryOptions {
   const resolved: ResolvedMemoryOptions = {
     savePolicy: options.savePolicy ?? "message",
   };
   if (options.compaction !== undefined) {
-    assertPositiveInteger(options.compaction.maxMessages, "compaction.maxMessages");
-    const keepRecentUserTurns = options.compaction.keepRecentUserTurns ?? 4;
-    const conflictRetries = options.compaction.conflictRetries ?? 1;
-    assertPositiveInteger(keepRecentUserTurns, "compaction.keepRecentUserTurns");
-    assertNonnegativeInteger(conflictRetries, "compaction.conflictRetries");
+    assertPositiveInteger(
+      options.compaction.trigger.afterMessages,
+      "compaction.trigger.afterMessages",
+    );
+    const recentUserTurns = options.compaction.retention?.recentUserTurns ?? 4;
+    assertPositiveInteger(recentUserTurns, "compaction.retention.recentUserTurns");
     if (typeof options.compaction.compactor !== "function") {
       throw new TypeError("compaction.compactor must be a function.");
     }
+    const conflictRetries = options.compaction.conflictRetries ?? false;
+    if (conflictRetries !== false) {
+      assertPositiveInteger(conflictRetries.maxAttempts, "compaction.conflictRetries.maxAttempts");
+    }
     resolved.compaction = {
-      maxMessages: options.compaction.maxMessages,
-      keepRecentUserTurns,
+      trigger: {
+        afterMessages: options.compaction.trigger.afterMessages,
+      },
+      retention: {
+        recentUserTurns,
+      },
       compactor: options.compaction.compactor,
       conflictRetries,
     };

@@ -1,21 +1,13 @@
 import { z } from "zod";
 import { isStreamingCompletionModel } from "../completion/generate-completion";
-import type {
-  CompletionModel,
-  ContextUsage,
-  JsonObject,
-  Message as MessageType,
-  ProviderTool,
-  ToolChoice,
-} from "../completion/index";
-import { getAssistantGenerationMetadata, isProviderTool } from "../completion/types";
+import type { CompletionModel, JsonObject, ProviderTool, ToolChoice } from "../completion/index";
+import { isProviderTool } from "../completion/types";
 import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
 import { resolveMemoryOptions } from "../memory/options";
-import type { MemoryContext, MemoryRegistration, SessionOptions } from "../memory/types";
 import type { AgentObserverRegistration } from "../observability";
 import type { RetrySetting } from "../retry";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
@@ -38,15 +30,16 @@ import type {
   AgentApprovalDecision,
   AgentApprovalRequiredEvent,
   AgentApprovalRequiredResult,
-  AgentInput,
   AgentResult,
   AgentRunOptions,
+  AgentSteerInput,
   AgentStream,
   AgentStreamEvent,
 } from "./run-types";
 import { getAgentToolState, getRegisteredAgentTool, registerAgentToolState } from "./tool-state";
 import type {
   AgentContextInput,
+  AgentMemory,
   AgentOptions,
   AgentToolOptions,
   ResolvedAgentOptions,
@@ -83,7 +76,7 @@ export class Agent<
   readonly observers: readonly AgentObserverRegistration[];
   readonly guardrails: readonly GuardrailPolicy[];
   readonly middlewares: readonly AgentMiddleware[];
-  readonly memory: MemoryRegistration | undefined;
+  readonly memory: AgentMemory | undefined;
 
   constructor(options: AgentOptions<Output, M, ContextDocument>) {
     const resolved = resolveAgentOptions(options);
@@ -132,21 +125,17 @@ export class Agent<
     );
     this.guardrails = Object.freeze((resolved.guardrails ?? []).map(snapshotGuardrailPolicy));
     this.middlewares = Object.freeze([...(resolved.middlewares ?? [])]);
-    this.memory = snapshotMemoryRegistration(resolved.memory);
+    this.memory = snapshotAgentMemory(resolved.memory);
   }
 
-  generate(
-    input: AgentInput,
-    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
-  ): Promise<AgentResult<Output>> {
-    return createGenerateExecution(this, AgentRun.fromAgent(this, input, options)).next();
+  generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentResult<Output>> {
+    return createGenerateExecution(this, AgentRun.fromAgent(this, options)).next();
   }
 
   stream(
-    input: AgentInput,
-    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
+    options: AgentRunOptions<Output, RawResponseOf<M>>,
   ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    const run = AgentRun.fromAgent(this, input, options);
+    const run = AgentRun.fromAgent(this, options);
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
       throw new Error("This completion model does not support streaming");
     }
@@ -177,26 +166,6 @@ export class Agent<
       : (continuation.resume() as AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>);
   }
 
-  session(sessionId: string, options: SessionOptions = {}): AgentSession<Output, M> {
-    if (this.memory === undefined) {
-      throw new Error(`Agent "${this.id}" has no memory store configured.`);
-    }
-    const normalized = sessionId.trim();
-    if (normalized.length === 0) {
-      throw new TypeError("Session id must be a non-empty string.");
-    }
-    const context: MemoryContext = {
-      sessionId: normalized,
-    };
-    if (options.userId !== undefined) {
-      context.userId = options.userId;
-    }
-    if (options.metadata !== undefined) {
-      context.metadata = cloneFrozenPlainData(options.metadata);
-    }
-    return new AgentSession(this, context);
-  }
-
   asTool(options: AgentToolOptions): Tool<{ prompt: string }, Output> {
     const description =
       options.description ?? this.description ?? `Prompt the ${options.name} agent.`;
@@ -216,7 +185,8 @@ export class Agent<
         ) {
           let completed = false;
           let output!: Output;
-          const childStream = this.stream(prompt, {
+          const childStream = this.stream({
+            prompt,
             maxTurns: options.maxTurns,
             abortSignal: context.abortSignal,
           });
@@ -254,7 +224,8 @@ export class Agent<
           }
           return output;
         }
-        const response = await this.generate(prompt, {
+        const response = await this.generate({
+          prompt,
           maxTurns: options.maxTurns,
           abortSignal: context.abortSignal,
         });
@@ -458,7 +429,7 @@ function isInternalAgentOptions<Output, M extends CompletionModel, ContextDocume
 
 function resolveAgentMemory<Output, M extends CompletionModel, ContextDocument>(
   options: AgentOptions<Output, M, ContextDocument>,
-): MemoryRegistration | undefined {
+): AgentMemory | undefined {
   if (options.memory === undefined) {
     return undefined;
   }
@@ -469,7 +440,7 @@ function resolveAgentMemory<Output, M extends CompletionModel, ContextDocument>(
       "Memory compaction requires a store with the optional compaction capability.",
     );
   }
-  return { store, options: resolvedOptions };
+  return { store, ...resolvedOptions };
 }
 
 type GenerateExecution<Output = unknown> = {
@@ -559,7 +530,7 @@ class StreamExecution<Output, M extends CompletionModel> {
     return new DefaultAgentStream(this);
   }
 
-  steer(input: AgentInput): boolean {
+  steer(input: AgentSteerInput): boolean {
     return this.run.steer(input);
   }
 
@@ -636,7 +607,7 @@ class DefaultAgentStream<Output, M extends CompletionModel>
 
   constructor(private readonly execution: StreamExecution<Output, M>) {}
 
-  steer(input: AgentInput): boolean {
+  steer(input: AgentSteerInput): boolean {
     return this.execution.steer(input);
   }
 
@@ -676,78 +647,6 @@ export async function cancelAgentApproval(
   }
   approvalContinuations.delete(pending);
   await continuation.cancel(reason);
-}
-
-export class AgentSession<Output = string, M extends CompletionModel = CompletionModel> {
-  constructor(
-    private readonly agent: Agent<Output, M>,
-    private readonly context: {
-      sessionId: string;
-      userId?: string | undefined;
-      metadata?: JsonObject | undefined;
-    },
-  ) {}
-
-  generate(
-    input: string | MessageType,
-    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
-  ): Promise<AgentResult<Output>> {
-    if (Array.isArray(input)) {
-      throw new TypeError("AgentSession.generate does not accept Message[] transcripts.");
-    }
-    const run = AgentRun.fromAgent(this.agent, input, {
-      ...options,
-      memoryContext: this.context,
-    });
-    return createGenerateExecution(this.agent, run).next();
-  }
-
-  stream(
-    input: string | MessageType,
-    options: AgentRunOptions<Output, RawResponseOf<M>> = {},
-  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    if (Array.isArray(input)) {
-      throw new TypeError("AgentSession.stream does not accept Message[] transcripts.");
-    }
-    if (!this.agent.model.capabilities.streaming || !isStreamingCompletionModel(this.agent.model)) {
-      throw new Error("This completion model does not support streaming");
-    }
-    return createStreamExecution(
-      this.agent,
-      AgentRun.fromAgent(this.agent, input, { ...options, memoryContext: this.context }),
-    );
-  }
-
-  async messages(): Promise<MessageType[]> {
-    const memory = this.agent.memory;
-    if (memory === undefined) {
-      throw new Error(`Agent "${this.agent.id}" has no memory store configured.`);
-    }
-    return memory.store.load(this.context);
-  }
-
-  async contextUsage(): Promise<ContextUsage | undefined> {
-    const messages = await this.messages();
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message === undefined) {
-        continue;
-      }
-      const generation = getAssistantGenerationMetadata(message);
-      if (generation !== undefined) {
-        return generation.contextUsage;
-      }
-    }
-    return undefined;
-  }
-
-  async clear(): Promise<void> {
-    const memory = this.agent.memory;
-    if (memory === undefined) {
-      throw new Error(`Agent "${this.agent.id}" has no memory store configured.`);
-    }
-    await memory.store.clear(this.context);
-  }
 }
 
 function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {
@@ -817,22 +716,26 @@ function snapshotGuardrailPolicy(policy: GuardrailPolicy): GuardrailPolicy {
   }) as GuardrailPolicy;
 }
 
-function snapshotMemoryRegistration(
-  memory: MemoryRegistration | undefined,
-): MemoryRegistration | undefined {
+function snapshotAgentMemory(memory: AgentMemory | undefined): AgentMemory | undefined {
   if (memory === undefined) {
     return undefined;
   }
   const compaction =
-    memory.options.compaction === undefined
+    memory.compaction === undefined
       ? undefined
-      : Object.freeze({ ...memory.options.compaction });
+      : Object.freeze({
+          ...memory.compaction,
+          trigger: Object.freeze({ ...memory.compaction.trigger }),
+          retention: Object.freeze({ ...memory.compaction.retention }),
+          conflictRetries:
+            memory.compaction.conflictRetries === false
+              ? false
+              : Object.freeze({ ...memory.compaction.conflictRetries }),
+        });
   return Object.freeze({
     store: memory.store,
-    options: Object.freeze({
-      ...memory.options,
-      ...(compaction === undefined ? {} : { compaction }),
-    }),
+    savePolicy: memory.savePolicy,
+    ...(compaction === undefined ? {} : { compaction }),
   });
 }
 

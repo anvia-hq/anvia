@@ -190,6 +190,34 @@ export function memorySavedLog(props: {
   };
 }
 
+export function memoryCompactedLog(props: {
+  sessionId: string;
+  runId: string;
+  originalMessageCount: number;
+  compactedMessageCount: number;
+  retainedMessageCount: number;
+  attempts: number;
+  usage: unknown;
+}): StudioSessionLogAppendInput {
+  const metadata: JsonObject = {
+    originalMessageCount: props.originalMessageCount,
+    compactedMessageCount: props.compactedMessageCount,
+    retainedMessageCount: props.retainedMessageCount,
+    attempts: props.attempts,
+  };
+  const usage = usageSummary(props.usage);
+  if (usage !== undefined) metadata.usage = usage;
+  return {
+    sessionId: props.sessionId,
+    runId: props.runId,
+    level: "info",
+    category: "memory",
+    event: "memory.compacted",
+    message: "Session memory compacted",
+    metadata,
+  };
+}
+
 export function runFailedLog(
   sessionId: string,
   runId: string,
@@ -217,6 +245,9 @@ function logsFromStreamEvent(props: {
   startedAt: number;
 }): StudioSessionLogAppendInput[] {
   const { event, sessionId, runId } = props;
+  if (event.type === "memory_compaction") {
+    return [memoryCompactedLog({ sessionId, runId, ...event })];
+  }
   if (event.type === "turn_start") {
     return [
       {

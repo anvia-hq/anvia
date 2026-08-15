@@ -96,6 +96,21 @@ describe("client stream responses", () => {
     const initial = createClientStreamResponse(
       clientEvents([
         { type: "run_start", runId: "run_1", source: "completion" },
+        {
+          type: "memory_compaction",
+          runId: "run_1",
+          originalMessageCount: 12,
+          compactedMessageCount: 8,
+          retainedMessageCount: 4,
+          attempts: 1,
+          usage: {
+            inputTokens: 20,
+            outputTokens: 5,
+            totalTokens: 25,
+            cachedInputTokens: 0,
+            cacheCreationInputTokens: 0,
+          },
+        },
         { type: "run_end", runId: "run_1", status: "completed" },
       ]),
       { resumable: { streamId: "stream_1", store } },
@@ -105,11 +120,16 @@ describe("client stream responses", () => {
     const resumed = resumeClientStreamResponse({ streamId: "stream_1", after: 1, store });
     const frames = (await jsonl(resumed)) as ClientStreamFrame[];
     expect(frames[0]).toMatchObject({ type: "stream_start", resumable: true });
-    expect(frames[1]).toMatchObject({ type: "stream_event", eventId: 2 });
-    expect(frames[2]).toEqual({
+    expect(frames[1]).toMatchObject({
+      type: "stream_event",
+      eventId: 2,
+      event: { type: "memory_compaction", compactedMessageCount: 8 },
+    });
+    expect(frames[2]).toMatchObject({ type: "stream_event", eventId: 3 });
+    expect(frames[3]).toEqual({
       type: "stream_end",
       streamId: "stream_1",
-      eventId: 2,
+      eventId: 3,
       status: "completed",
     });
   });

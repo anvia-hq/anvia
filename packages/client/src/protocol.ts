@@ -268,6 +268,16 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       }
       validateUsageAndContext(event, value);
       break;
+    case "memory_compaction":
+      requireEventKeys(event, [
+        "originalMessageCount",
+        "compactedMessageCount",
+        "retainedMessageCount",
+        "attempts",
+        "usage",
+      ]);
+      validateMemoryCompactionInfo(event, value);
+      break;
     case "run_end":
       requireEventKeys(event, [
         "status",
@@ -276,6 +286,7 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
         "usage",
         "contextUsage",
         "trace",
+        "memoryCompaction",
         "metadata",
       ]);
       requireOneOf(
@@ -287,6 +298,21 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       requireOptionalStrings(event, ["text"], value);
       validateUsageAndContext(event, value);
       if (event.trace !== undefined && !isTrace(event.trace)) invalid("run_end.trace", value);
+      if (event.memoryCompaction !== undefined) {
+        if (!isRecord(event.memoryCompaction)) invalid("run_end.memoryCompaction", value);
+        requireOnlyKeys(
+          event.memoryCompaction,
+          [
+            "originalMessageCount",
+            "compactedMessageCount",
+            "retainedMessageCount",
+            "attempts",
+            "usage",
+          ],
+          "run_end.memoryCompaction",
+        );
+        validateMemoryCompactionInfo(event.memoryCompaction, value);
+      }
       break;
     case "error":
       requireEventKeys(event, ["error", "usage"]);
@@ -854,6 +880,14 @@ function validateUsageAndContext(event: Record<string, unknown>, original: unkno
   if (event.contextUsage !== undefined && !isContextUsage(event.contextUsage)) {
     invalid(`${String(event.type)}.contextUsage`, original);
   }
+}
+
+function validateMemoryCompactionInfo(value: Record<string, unknown>, original: unknown): void {
+  for (const field of ["originalMessageCount", "compactedMessageCount", "retainedMessageCount"]) {
+    if (!isEventId(value[field])) invalid(`memory_compaction.${field}`, original);
+  }
+  if (!isPositiveEventId(value.attempts)) invalid("memory_compaction.attempts", original);
+  if (!isUsage(value.usage)) invalid("memory_compaction.usage", original);
 }
 
 function isTrace(value: unknown): boolean {

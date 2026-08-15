@@ -62,9 +62,10 @@ const agent = new Agent({
   tools: [getServiceStatusTool, readPayrollTool, deleteAccountTool],
 });
 
-let result = await agent.generate(
-  "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
-);
+let result = await agent.generate({
+  prompt:
+    "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
+});
 
 while (result.status === "approval_required") {
   console.log("approval required:", result.approval.toolName, result.approval.reason);

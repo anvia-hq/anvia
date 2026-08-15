@@ -142,7 +142,7 @@ describe("model call cancellation", () => {
     });
 
     await expect(
-      agent.generate("hello", { abortSignal: controller.signal }),
+      agent.generate({ prompt: "hello", abortSignal: controller.signal }),
     ).rejects.toBeInstanceOf(AgentRunCancelledError);
     expect(calls).toBe(1);
     expect(providerSignals).toHaveLength(1);
@@ -180,7 +180,7 @@ describe("model call cancellation", () => {
     ]);
     const agent = new Agent({ id: "tool-agent", model, tools: [tool] });
 
-    const pending = agent.generate("wait", { abortSignal: controller.signal });
+    const pending = agent.generate({ prompt: "wait", abortSignal: controller.signal });
     await ready;
     controller.abort("caller stopped");
 

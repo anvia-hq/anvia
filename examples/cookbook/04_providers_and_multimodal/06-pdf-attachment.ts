@@ -14,8 +14,8 @@ const agent = new Agent({
 });
 
 // Document content parts include a URL, MIME type, and optional filename.
-const response = await agent.generate(
-  Message.user([
+const response = await agent.generate({
+  prompt: Message.user([
     UserContent.text("Summarize this PDF."),
     UserContent.documentUrl(
       "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
@@ -23,7 +23,7 @@ const response = await agent.generate(
       { filename: "dummy.pdf" },
     ),
   ]),
-);
+});
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

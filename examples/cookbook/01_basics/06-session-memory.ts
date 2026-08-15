@@ -1,22 +1,22 @@
 import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
-import type { MemoryAppendInput, MemoryContext, MemoryStore } from "@anvia/core/memory";
+import type { MemoryAppendOptions, MemoryScope, MemoryStore } from "@anvia/core/memory";
 import { OpenAIClient } from "@anvia/openai";
 
 class LocalMemoryStore implements MemoryStore {
   private readonly sessions = new Map<string, Message[]>();
 
-  async load(context: MemoryContext): Promise<Message[]> {
-    return [...(this.sessions.get(context.sessionId) ?? [])];
+  async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
+    return [...(this.sessions.get(scope.sessionId) ?? [])];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
-    const current = this.sessions.get(input.context.sessionId) ?? [];
-    this.sessions.set(input.context.sessionId, [...current, ...input.messages]);
+  async append(input: MemoryAppendOptions): Promise<void> {
+    const current = this.sessions.get(input.scope.sessionId) ?? [];
+    this.sessions.set(input.scope.sessionId, [...current, ...input.messages]);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
-    this.sessions.delete(context.sessionId);
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    this.sessions.delete(scope.sessionId);
   }
 }
 
@@ -34,10 +34,10 @@ const agent = new Agent({
   memory: { store: memory },
 });
 
-const session = agent.session("demo-session", { userId: "cookbook-user" });
+const session = { sessionId: "demo-session", userId: "cookbook-user" };
 
-await session.generate("Remember that my project is named Anvia.");
-const response = await session.generate("What is my project named?");
+await agent.generate({ prompt: "Remember that my project is named Anvia.", session });
+const response = await agent.generate({ prompt: "What is my project named?", session });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

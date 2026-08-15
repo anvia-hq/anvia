@@ -60,6 +60,58 @@ describe("message boundary", () => {
 });
 
 describe("native stream adapters", () => {
+  it("preserves explicit memory compaction events and terminal metadata", async () => {
+    const memoryCompaction = {
+      originalMessageCount: 12,
+      compactedMessageCount: 8,
+      retainedMessageCount: 4,
+      attempts: 1,
+      usage: {
+        inputTokens: 20,
+        outputTokens: 5,
+        totalTokens: 25,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+    };
+    const events = await collect(
+      agentToClientStream(
+        values<AgentStreamEvent>([
+          { type: "memory_compaction", ...memoryCompaction },
+          {
+            type: "final",
+            result: {
+              status: "completed",
+              runId: "native_run",
+              text: "done",
+              output: "done",
+              usage: Usage.empty(),
+              messages: [],
+              memoryCompaction,
+            },
+          },
+        ]),
+        { runId: "client_run" },
+      ),
+    );
+
+    expect(events.find((event) => event.type === "memory_compaction")).toEqual({
+      type: "memory_compaction",
+      runId: "client_run",
+      ...memoryCompaction,
+    });
+    expect(events.find((event) => event.type === "run_end")).toMatchObject({
+      status: "completed",
+      memoryCompaction,
+    });
+    expect(
+      events.reduce<ReturnType<typeof applyClientStreamEvent>>(
+        (messages, event) => applyClientStreamEvent(messages, event),
+        [],
+      ),
+    ).toEqual([]);
+  });
+
   it("always exposes tool-call deltas without an include option", async () => {
     const stream = completionToClientStream(
       values<CompletionStreamEvent>([
@@ -430,6 +482,31 @@ describe("native stream adapters", () => {
 });
 
 describe("protocol and transport", () => {
+  it("validates memory compaction as a canonical client event", () => {
+    expect(
+      parseClientStreamEvent({
+        type: "memory_compaction",
+        runId: "run_1",
+        originalMessageCount: 12,
+        compactedMessageCount: 8,
+        retainedMessageCount: 4,
+        attempts: 1,
+        usage: Usage.empty(),
+      }),
+    ).toMatchObject({ type: "memory_compaction", compactedMessageCount: 8 });
+    expect(() =>
+      parseClientStreamEvent({
+        type: "memory_compaction",
+        runId: "run_1",
+        originalMessageCount: 12,
+        compactedMessageCount: 8,
+        retainedMessageCount: 4,
+        attempts: 0,
+        usage: Usage.empty(),
+      }),
+    ).toThrow("memory_compaction.attempts");
+  });
+
   it("validates named data events with the provided runtime schema", () => {
     const schema = {
       safeParse(value: unknown) {

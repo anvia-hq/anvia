@@ -1,16 +1,16 @@
 import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
 import type {
-  MemoryAppendInput,
-  MemoryCompactionCommitInput,
-  MemoryCompactionCommitResult,
+  MemoryAppendOptions,
+  MemoryCompactionCapability,
+  MemoryCompactionReplacePrefixOptions,
+  MemoryCompactionReplacePrefixResult,
   MemoryCompactionSnapshot,
-  MemoryCompactionStore,
-  MemoryContext,
   MemoryConversation,
   MemoryConversationListOptions,
   MemoryConversationSummary,
-  MemoryErrorInput,
+  MemoryErrorOptions,
   MemoryInspector,
+  MemoryScope,
 } from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
@@ -82,7 +82,7 @@ export async function createPostgresMemoryStore(
 }
 
 export function createPostgresMemoryScopeKey(
-  context: MemoryContext,
+  context: MemoryScope,
   options: PostgresMemoryScopeOptions = {},
 ): string {
   const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
@@ -142,11 +142,11 @@ export class PostgresMemoryStore implements MemoryStore {
   readonly kind = "postgres";
   readonly inspector: MemoryInspector = {
     listConversations: (options) => this.listConversations(options),
-    getConversation: (ref) => this.getConversation(ref),
+    getConversation: ({ ref }) => this.getConversation(ref),
   };
-  readonly compaction: MemoryCompactionStore = {
-    load: (context) => this.loadCompactionSnapshot(context),
-    commit: (input) => this.commitCompaction(input),
+  readonly compaction: MemoryCompactionCapability = {
+    snapshot: ({ scope }) => this.loadCompactionSnapshot(scope),
+    replacePrefix: (options) => this.replaceCompactionPrefix(options),
   };
 
   private constructor(
@@ -167,33 +167,33 @@ export class PostgresMemoryStore implements MemoryStore {
     return new PostgresMemoryStore(client, tables, resolved);
   }
 
-  async load(context: MemoryContext): Promise<Message[]> {
+  async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
     const result = await this.client.query(
       `SELECT m.message
        FROM ${this.tables.messages} m
        INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
        WHERE s.scope_key = $1
        ORDER BY m.position ASC`,
-      [this.scopeKey(context)],
+      [this.scopeKey(scope)],
     );
 
     return result.rows.map((row) => this.messageFromValue((row as MessageRow).message));
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     if (input.messages.length === 0) {
       return;
     }
     this.validateInputMessages(input.messages);
 
-    const scopeKey = this.scopeKey(input.context);
+    const scopeKey = this.scopeKey(input.scope);
 
     await this.transaction(async (tx) => {
       if (this.options.lock === "advisory") {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
       }
 
-      const session = await this.upsertSession(tx, input.context, scopeKey);
+      const session = await this.upsertSession(tx, input.scope, scopeKey);
       const last = await tx.query(
         `SELECT position
          FROM ${this.tables.messages}
@@ -207,26 +207,26 @@ export class PostgresMemoryStore implements MemoryStore {
     });
   }
 
-  async clear(context: MemoryContext): Promise<void> {
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
     await this.client.query(`DELETE FROM ${this.tables.sessions} WHERE scope_key = $1`, [
-      this.scopeKey(context),
+      this.scopeKey(scope),
     ]);
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
     if (this.options.errors === "ignore") {
       return;
     }
     this.validateInputMessages(input.messages);
 
-    const scopeKey = this.scopeKey(input.context);
+    const scopeKey = this.scopeKey(input.scope);
 
     await this.transaction(async (tx) => {
       if (this.options.lock === "advisory") {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
       }
 
-      const session = await this.upsertSession(tx, input.context, scopeKey);
+      const session = await this.upsertSession(tx, input.scope, scopeKey);
       await tx.query(
         `INSERT INTO ${this.tables.errors} (
           memory_session_id,
@@ -244,7 +244,7 @@ export class PostgresMemoryStore implements MemoryStore {
     });
   }
 
-  private async loadCompactionSnapshot(context: MemoryContext): Promise<MemoryCompactionSnapshot> {
+  private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
     const result = await this.client.query(
       `SELECT m.id, m.position, m.message
        FROM ${this.tables.messages} m
@@ -260,12 +260,12 @@ export class PostgresMemoryStore implements MemoryStore {
     };
   }
 
-  private async commitCompaction(
-    input: MemoryCompactionCommitInput,
-  ): Promise<MemoryCompactionCommitResult> {
-    this.validateInputMessages([input.summary]);
-    assertCompactedMessageCount(input.compactedMessageCount);
-    const scopeKey = this.scopeKey(input.context);
+  private async replaceCompactionPrefix(
+    input: MemoryCompactionReplacePrefixOptions,
+  ): Promise<MemoryCompactionReplacePrefixResult> {
+    this.validateInputMessages([input.replacement]);
+    assertCompactionMessageCount(input.messageCount);
+    const scopeKey = this.scopeKey(input.scope);
 
     return this.transaction(async (tx) => {
       if (this.options.lock === "advisory") {
@@ -280,18 +280,15 @@ export class PostgresMemoryStore implements MemoryStore {
         [scopeKey],
       );
       const rows = result.rows as CompactionMessageRow[];
-      if (
-        compactionRevision(rows) !== input.revision ||
-        input.compactedMessageCount > rows.length
-      ) {
-        return "conflict";
+      if (compactionRevision(rows) !== input.revision || input.messageCount > rows.length) {
+        return { status: "conflict" };
       }
-      const boundary = rows[input.compactedMessageCount - 1];
+      const boundary = rows[input.messageCount - 1];
       if (boundary === undefined) {
-        return "conflict";
+        return { status: "conflict" };
       }
-      const session = await this.upsertSession(tx, input.context, scopeKey);
-      const compactedRows = rows.slice(0, input.compactedMessageCount);
+      const session = await this.upsertSession(tx, input.scope, scopeKey);
+      const compactedRows = rows.slice(0, input.messageCount);
       await tx.query(`DELETE FROM ${this.tables.messages} WHERE id = ANY($1::uuid[])`, [
         compactedRows.map((row) => row.id),
       ]);
@@ -299,14 +296,14 @@ export class PostgresMemoryStore implements MemoryStore {
         tx,
         session.id,
         {
-          context: input.context,
+          scope: input.scope,
           runId: input.runId,
           turn: 0,
-          messages: [input.summary],
+          messages: [input.replacement],
         },
         Number(boundary.position),
       );
-      return "committed";
+      return { status: "committed" };
     });
   }
 
@@ -418,7 +415,7 @@ export class PostgresMemoryStore implements MemoryStore {
 
   private async upsertSession(
     client: PostgresMemoryClientLike,
-    context: MemoryContext,
+    context: MemoryScope,
     scopeKey: string,
   ): Promise<SessionRow> {
     const result = await client.query(
@@ -446,7 +443,7 @@ export class PostgresMemoryStore implements MemoryStore {
   private async insertMessages(
     client: PostgresMemoryClientLike,
     memorySessionId: string,
-    input: MemoryAppendInput,
+    input: MemoryAppendOptions,
     start: number,
   ): Promise<void> {
     const values = input.messages.flatMap((message, index) => [
@@ -490,7 +487,7 @@ export class PostgresMemoryStore implements MemoryStore {
     }
   }
 
-  private scopeKey(context: MemoryContext): string {
+  private scopeKey(context: MemoryScope): string {
     if (typeof this.options.scope === "function") {
       return this.options.scope(context);
     }
@@ -512,9 +509,9 @@ function compactionRevision(rows: CompactionMessageRow[]): string {
   return JSON.stringify(rows.map((row) => row.id));
 }
 
-function assertCompactedMessageCount(value: number): void {
+function assertCompactionMessageCount(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("compactedMessageCount must be a positive integer.");
+    throw new RangeError("messageCount must be a positive integer.");
   }
 }
 
@@ -569,7 +566,7 @@ async function defaultPgClient(
   return new pg.Pool(connectionString === undefined ? {} : { connectionString });
 }
 
-function metadata(context: MemoryContext): JsonObject {
+function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
 }
 

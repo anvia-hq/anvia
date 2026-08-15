@@ -1,4 +1,4 @@
-import type { Message } from "@anvia/core";
+import type { MemoryCompactionMessage, Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import type {
   PostgresMemoryClientLike,
@@ -21,6 +21,19 @@ const assistantMessage: Message = {
   role: "assistant",
   content: [{ type: "text", text: "stored" }],
 };
+
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
+    metadata: {
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
+    },
+  };
+}
 
 const richMessages: Message[] = [
   { role: "system", content: "System instructions", metadata: { source: "system" } },
@@ -404,7 +417,7 @@ describe("PostgresMemoryStore", () => {
     });
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -436,23 +449,27 @@ describe("PostgresMemoryStore", () => {
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
 
-    expect(await store.load(context)).toEqual([userMessage, assistantMessage, userMessage]);
-    expect(await store.load({ sessionId: "thread-1", userId: "user-2" })).toEqual([]);
+    expect(await store.load({ scope: context })).toEqual([
+      userMessage,
+      assistantMessage,
+      userMessage,
+    ]);
+    expect(await store.load({ scope: { sessionId: "thread-1", userId: "user-2" } })).toEqual([]);
 
-    await store.clear(context);
-    expect(await store.load(context)).toEqual([]);
+    await store.clear({ scope: context });
+    expect(await store.load({ scope: context })).toEqual([]);
     expect(client.queries.some((query) => query.includes("pg_advisory_xact_lock"))).toBe(true);
     expect(client.queries.filter((query) => query === "BEGIN")).toHaveLength(2);
     expect(client.queries.filter((query) => query === "COMMIT")).toHaveLength(2);
@@ -463,60 +480,61 @@ describe("PostgresMemoryStore", () => {
     const store = await createPostgresMemoryStore({ client, createIfMissing: false });
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
-    const stale = await store.compaction.load(context);
+    const stale = await store.compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [assistantMessage],
     });
-    const summary: Extract<Message, { role: "system" }> = {
-      role: "system",
-      content: "Earlier conversation summary",
-    };
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await store.compaction.load(context);
+    const current = await store.compaction.snapshot({ scope: context });
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
-    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
+      userMessage,
+      assistantMessage,
+    ]);
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector.getConversation(conversation.ref);
+        : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -527,7 +545,7 @@ describe("PostgresMemoryStore", () => {
     const client = new FakePgClient();
     const store = await createPostgresMemoryStore({ client, createIfMissing: false });
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -552,7 +570,7 @@ describe("PostgresMemoryStore", () => {
         messageCount: 2,
       },
     ]);
-    await expect(store.inspector.getConversation("session-1")).resolves.toMatchObject({
+    await expect(store.inspector.getConversation({ ref: "session-1" })).resolves.toMatchObject({
       messages: [
         { position: 0, runId: "run-1", turn: 4, message: userMessage },
         { position: 1, runId: "run-1", turn: 4, message: assistantMessage },
@@ -565,9 +583,9 @@ describe("PostgresMemoryStore", () => {
     const store = await createPostgresMemoryStore({ client, createIfMissing: false });
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("does not open a transaction for empty appends", async () => {
@@ -575,7 +593,7 @@ describe("PostgresMemoryStore", () => {
     const store = await createPostgresMemoryStore({ client, createIfMissing: false });
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [],
@@ -600,7 +618,7 @@ describe("PostgresMemoryStore", () => {
 
     await expect(
       store.append({
-        context: { sessionId: "thread-1" },
+        scope: { sessionId: "thread-1" },
         runId: "run-1",
         turn: 0,
         messages: [userMessage],
@@ -616,7 +634,7 @@ describe("PostgresMemoryStore", () => {
     const store = await createPostgresMemoryStore({ client: pool, createIfMissing: false });
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -633,7 +651,7 @@ describe("PostgresMemoryStore", () => {
     const store = await createPostgresMemoryStore({ client, createIfMissing: false });
 
     await store.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -655,7 +673,7 @@ describe("PostgresMemoryStore", () => {
     });
 
     await ignoringStore.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -670,13 +688,13 @@ describe("PostgresMemoryStore", () => {
     const store = await createPostgresMemoryStore({ client, createIfMissing: false });
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -703,7 +721,7 @@ describe("PostgresMemoryStore", () => {
     });
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -721,7 +739,7 @@ describe("PostgresMemoryStore", () => {
     });
 
     await store.append({
-      context: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
+      scope: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -729,7 +747,9 @@ describe("PostgresMemoryStore", () => {
 
     expect(client.scopeKeys()).toEqual(["tenant-1"]);
     await expect(
-      store.load({ sessionId: "different-thread", metadata: { tenantId: "tenant-1" } }),
+      store.load({
+        scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
+      }),
     ).resolves.toEqual([userMessage]);
   });
 
@@ -740,21 +760,21 @@ describe("PostgresMemoryStore", () => {
     const malformed = { role: "bad", content: [] };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
     client.replaceFirstMessage(malformed);
 
-    await expect(store.load(context)).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
 
     const unsafeStore = await createPostgresMemoryStore({
       client,
       createIfMissing: false,
       validateMessages: false,
     });
-    await expect(unsafeStore.load(context)).resolves.toEqual([malformed]);
+    await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("creates quoted schema SQL and rejects invalid identifiers", () => {

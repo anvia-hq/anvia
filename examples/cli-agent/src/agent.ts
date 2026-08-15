@@ -49,7 +49,7 @@ export async function streamAssistantResponse({
 
   const transcript = [...toAnviaHistory(history), Message.user(prompt)];
 
-  for await (const event of agent.stream(transcript, { maxTurns: MAX_TURNS })) {
+  for await (const event of agent.stream({ messages: transcript, maxTurns: MAX_TURNS })) {
     if (event.type === "text_delta") {
       onDelta(event.delta);
     }

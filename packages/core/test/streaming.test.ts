@@ -23,6 +23,7 @@ import {
   ToolOutput,
   toReadableStream,
   Usage,
+  type UserMessage,
   withInternalAgentRunOptions,
 } from "./helpers/imports";
 
@@ -86,7 +87,7 @@ describe("Agent streaming", () => {
     const model = new StreamingQueueModel([]);
     const agent = new Agent({ id: "test-agent", model });
 
-    expectTypeOf(agent.stream("hi")).toEqualTypeOf<AgentStream<AgentStreamEvent>>();
+    expectTypeOf(agent.stream({ prompt: "hi" })).toEqualTypeOf<AgentStream<AgentStreamEvent>>();
     expectTypeOf<Extract<AgentStreamEvent, { type: "tool_call_delta" }>>().not.toBeNever();
   });
 
@@ -99,7 +100,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, instructions: "system" });
 
-    const events = await collect(agent.stream("hi"));
+    const events = await collect(agent.stream({ prompt: "hi" }));
 
     expect(events.map((event) => event.type)).toEqual([
       "turn_start",
@@ -152,7 +153,7 @@ describe("Agent streaming", () => {
       model: new StreamingQueueModel([providerEvents]),
       observers: [observer],
     });
-    const stream = agent.stream("hi");
+    const stream = agent.stream({ prompt: "hi" });
 
     for await (const event of stream) {
       if (event.type === "text_delta") break;
@@ -167,7 +168,7 @@ describe("Agent streaming", () => {
       message: (runError as Error).message,
       reason: (runError as AgentRunCancelledError).reason,
     });
-    expect(stream.steer("too late")).toBe(false);
+    expect(stream.steer({ prompt: "too late" })).toBe(false);
   });
 
   it("measures first-delta latency from before generation_start is emitted", async () => {
@@ -176,7 +177,7 @@ describe("Agent streaming", () => {
     try {
       const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
       const agent = new Agent({ id: "test-agent", model });
-      const iterator = agent.stream("hi")[Symbol.asyncIterator]();
+      const iterator = agent.stream({ prompt: "hi" })[Symbol.asyncIterator]();
 
       expect((await iterator.next()).value).toMatchObject({ type: "turn_start" });
       expect((await iterator.next()).value).toMatchObject({ type: "generation_start" });
@@ -201,7 +202,7 @@ describe("Agent streaming", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(
-      agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     );
 
     expect(events.map((event) => event.type)).toEqual([
@@ -225,7 +226,7 @@ describe("Agent streaming", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(
-      agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     );
 
     expect(events.some((event) => event.type === "error")).toBe(false);
@@ -249,7 +250,7 @@ describe("Agent streaming", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     const events = await collect(
-      agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      agent.stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
     );
 
     expect(events.at(-1)).toMatchObject({
@@ -274,7 +275,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.stream("hi"));
+    const events = await collect(agent.stream({ prompt: "hi" }));
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
@@ -287,7 +288,7 @@ describe("Agent streaming", () => {
     const providerUsage = usage(7, 2);
     const model = new StreamingQueueModel([[{ type: "error", error, usage: providerUsage }]]);
     const agent = new Agent({ id: "test-agent", model });
-    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
+    const iterator = agent.stream({ prompt: "hi" })[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -299,7 +300,7 @@ describe("Agent streaming", () => {
     const error = new Error("provider failed before usage");
     const model = new StreamingQueueModel([[{ type: "error", error }]]);
     const agent = new Agent({ id: "test-agent", model });
-    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
+    const iterator = agent.stream({ prompt: "hi" })[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -323,7 +324,7 @@ describe("Agent streaming", () => {
       [{ type: "error", error }],
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
-    const iterator = agent.stream("add")[Symbol.asyncIterator]();
+    const iterator = agent.stream({ prompt: "add" })[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -376,7 +377,7 @@ describe("Agent streaming", () => {
       tools: [failingTool],
     });
     const iterator = agent
-      .stream("fail", withInternalAgentRunOptions({}, { hook }))
+      .stream({ prompt: "fail", ...withInternalAgentRunOptions({}, { hook }) })
       [Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -395,7 +396,9 @@ describe("Agent streaming", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     const text = await readAll(
-      toReadableStream(agent.stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })),
+      toReadableStream(
+        agent.stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+      ),
     );
     const events = text
       .trim()
@@ -422,7 +425,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    const text = await readAll(toReadableStream(agent.stream("add")));
+    const text = await readAll(toReadableStream(agent.stream({ prompt: "add" })));
     const events = text
       .trim()
       .split("\n")
@@ -450,7 +453,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
     const iterator = agent
-      .stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })
+      .stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } })
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
@@ -473,7 +476,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
     const iterator = agent
-      .stream("hi", { retries: { initialDelayMs: 0, maxDelayMs: 0 } })
+      .stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } })
       [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
@@ -502,7 +505,7 @@ describe("Agent streaming", () => {
       ],
     });
 
-    const events = await collect(agent.stream("hi"));
+    const events = await collect(agent.stream({ prompt: "hi" }));
     const textDeltas = events
       .filter((event): event is Extract<AgentStreamEvent, { type: "text_delta" }> => {
         return event.type === "text_delta";
@@ -528,7 +531,7 @@ describe("Agent streaming", () => {
     });
     const agent = new Agent({ id: "test-agent", model });
     const iterator = agent
-      .stream("hi", withInternalAgentRunOptions({}, { hook }))
+      .stream({ prompt: "hi", ...withInternalAgentRunOptions({}, { hook }) })
       [Symbol.asyncIterator]();
     const events: AgentStreamEvent[] = [];
 
@@ -571,7 +574,7 @@ describe("Agent streaming", () => {
       model,
       guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
     });
-    const iterator = agent.stream("hi")[Symbol.asyncIterator]();
+    const iterator = agent.stream({ prompt: "hi" })[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -603,7 +606,7 @@ describe("Agent streaming", () => {
       ],
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
-    const iterator = agent.stream("loop")[Symbol.asyncIterator]();
+    const iterator = agent.stream({ prompt: "loop" })[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
 
@@ -614,7 +617,7 @@ describe("Agent streaming", () => {
   it("rejects concurrent consumption of the same agent stream", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
     const agent = new Agent({ id: "test-agent", model });
-    const stream = agent.stream("hi");
+    const stream = agent.stream({ prompt: "hi" });
     const iterator = stream[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
@@ -630,13 +633,13 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "second" }],
     ]);
     const agent = new Agent({ id: "test-agent", model });
-    const stream = agent.stream("hi");
+    const stream = agent.stream({ prompt: "hi" });
 
-    expect(stream.steer("revise")).toBe(true);
+    expect(stream.steer({ prompt: "revise" })).toBe(true);
     const events = await collect(stream);
 
     expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "second" } });
-    expect(stream.steer("late")).toBe(false);
+    expect(stream.steer({ prompt: "late" })).toBe(false);
     await expect(collect(stream)).rejects.toThrow("Agent stream has already been consumed.");
   });
 
@@ -644,13 +647,13 @@ describe("Agent streaming", () => {
     const errorStream = new Agent({
       id: "test-agent",
       model: new StreamingQueueModel([]),
-    }).stream("hi");
+    }).stream({ prompt: "hi" });
     const errorEvents = await collect(errorStream);
     expect(errorEvents.at(-1)).toMatchObject({
       type: "error",
       error: { message: "No queued response" },
     });
-    expect(errorStream.steer("late")).toBe(false);
+    expect(errorStream.steer({ prompt: "late" })).toBe(false);
 
     const hook = createHook({
       onRunStart() {
@@ -660,13 +663,13 @@ describe("Agent streaming", () => {
     const cancelledStream = new Agent({
       id: "test-agent",
       model: new StreamingQueueModel([]),
-    }).stream("hi", withInternalAgentRunOptions({}, { hook }));
+    }).stream({ prompt: "hi", ...withInternalAgentRunOptions({}, { hook }) });
     const cancelledEvents = await collect(cancelledStream);
     expect(cancelledEvents.at(-1)).toMatchObject({
       type: "error",
       error: expect.any(AgentRunCancelledError),
     });
-    expect(cancelledStream.steer("late")).toBe(false);
+    expect(cancelledStream.steer({ prompt: "late" })).toBe(false);
   });
 
   it("continues when steering arrives before a no-tool response finalizes", async () => {
@@ -675,7 +678,7 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "second" }],
     ]);
     const agent = new Agent({ id: "test-agent", model });
-    const stream = agent.stream("hi");
+    const stream = agent.stream({ prompt: "hi" });
     const iterator = stream[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({
@@ -694,7 +697,7 @@ describe("Agent streaming", () => {
     });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
-    expect(stream.steer("revise")).toBe(true);
+    expect(stream.steer({ prompt: "revise" })).toBe(true);
 
     const rest = await collectIterator(iterator);
     expect(rest.map((event) => event.type)).toEqual([
@@ -748,11 +751,11 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "done" }],
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [slowAddTool] });
-    const stream = agent.stream("add");
+    const stream = agent.stream({ prompt: "add" });
     const eventsPromise = collect(stream);
 
     await toolStarted.promise;
-    expect(stream.steer("also explain")).toBe(true);
+    expect(stream.steer({ prompt: "also explain" })).toBe(true);
     toolRelease.resolve(7);
 
     const events = await eventsPromise;
@@ -778,18 +781,18 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "done" }],
     ]);
     const agent = new Agent({ id: "test-agent", model });
-    const stream = agent.stream("start");
+    const stream = agent.stream({ prompt: "start" });
     const iterator = stream[Symbol.asyncIterator]();
-    const firstSteer = Message.user("first steer");
-    const secondSteer = Message.user("second steer");
+    const firstSteer = Message.user("first steer") as UserMessage;
+    const secondSteer = Message.user("second steer") as UserMessage;
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
-    expect(stream.steer(firstSteer)).toBe(true);
-    expect(stream.steer([secondSteer])).toBe(true);
+    expect(stream.steer({ prompt: firstSteer })).toBe(true);
+    expect(stream.steer({ messages: [secondSteer] })).toBe(true);
 
     const rest = await collectIterator(iterator);
     expect(rest[0]).toMatchObject({
@@ -839,7 +842,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.stream("hi"));
+    const events = await collect(agent.stream({ prompt: "hi" }));
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
@@ -885,7 +888,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    const events = await collect(agent.stream("add"));
+    const events = await collect(agent.stream({ prompt: "add" }));
 
     expect(events).toContainEqual({
       type: "tool_call_delta",
@@ -941,7 +944,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
-    const firstSegment = await collect(agent.stream("run guarded"));
+    const firstSegment = await collect(agent.stream({ prompt: "run guarded" }));
     const pending = firstSegment.at(-1);
     expect(pending).toMatchObject({
       type: "approval_required",
@@ -975,7 +978,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    const events = await collect(agent.stream("add"));
+    const events = await collect(agent.stream({ prompt: "add" }));
 
     expect(events).toContainEqual(expect.objectContaining({ type: "tool_call_delta" }));
     expect(events).toContainEqual({
@@ -1024,7 +1027,7 @@ describe("Agent streaming", () => {
         }),
       ],
     });
-    const iterator = agent.stream("add")[Symbol.asyncIterator]();
+    const iterator = agent.stream({ prompt: "add" })[Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start", turn: 1 });
@@ -1091,7 +1094,7 @@ describe("Agent streaming", () => {
       ],
     });
 
-    const events = await collect(agent.stream("add"));
+    const events = await collect(agent.stream({ prompt: "add" }));
 
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -1135,7 +1138,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [screenshotTool] });
 
-    const events = await collect(agent.stream("screenshot"));
+    const events = await collect(agent.stream({ prompt: "screenshot" }));
 
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -1199,7 +1202,9 @@ describe("Agent streaming", () => {
       [{ type: "text_delta", delta: "done" }],
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [slowTool, fastTool] });
-    const iterator = agent.stream("call both", { toolConcurrency: 2 })[Symbol.asyncIterator]();
+    const iterator = agent
+      .stream({ prompt: "call both", toolConcurrency: 2 })
+      [Symbol.asyncIterator]();
 
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
     expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start" });
@@ -1281,7 +1286,7 @@ describe("Agent streaming", () => {
       tools: [childAgent.asTool({ name: "ask_child", stream: true })],
     });
 
-    const events = await collect(parentAgent.stream("delegate"));
+    const events = await collect(parentAgent.stream({ prompt: "delegate" }));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
     expect(childEvents.map((event) => event.event.type)).toEqual([
@@ -1341,7 +1346,7 @@ describe("Agent streaming", () => {
       tools: [childAgent.asTool({ name: "ask_child", stream: true })],
     });
 
-    const events = await collect(parentAgent.stream("delegate"));
+    const events = await collect(parentAgent.stream({ prompt: "delegate" }));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
     expect(childEvents.map((event) => eventType(event.event))).toContain("tool_call_delta");
@@ -1401,7 +1406,7 @@ describe("Agent streaming", () => {
       tools: [childAgent.asTool({ name: "ask_child", stream: true })],
     });
 
-    const events = await collect(parentAgent.stream("delegate"));
+    const events = await collect(parentAgent.stream({ prompt: "delegate" }));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
     expect(childEvents).toContainEqual(
@@ -1437,7 +1442,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.stream("reason"));
+    const events = await collect(agent.stream({ prompt: "reason" }));
 
     expect(events.at(-1)).toMatchObject({
       type: "final",
@@ -1472,7 +1477,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.stream("reason"));
+    const events = await collect(agent.stream({ prompt: "reason" }));
 
     expect(events).toContainEqual({
       type: "reasoning_delta",
@@ -1531,7 +1536,7 @@ describe("Agent streaming", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
-    const events = await collect(agent.stream("add"));
+    const events = await collect(agent.stream({ prompt: "add" }));
 
     expect(events).toContainEqual({
       type: "tool_call",

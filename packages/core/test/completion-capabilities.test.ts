@@ -154,7 +154,9 @@ describe("completion model capabilities", () => {
     const agent = new Agent({ id: "agent", model });
 
     await expect(
-      agent.generate(Message.user([UserContent.imageUrl("https://example.com/a.png")])),
+      agent.generate({
+        messages: [Message.user([UserContent.imageUrl("https://example.com/a.png")])],
+      }),
     ).rejects.toThrow("test:test-model does not support image input.");
     expect(model.requests).toHaveLength(0);
   });
@@ -163,7 +165,9 @@ describe("completion model capabilities", () => {
     const model = new StreamingQueueModel({ streaming: false });
     const agent = new Agent({ id: "agent", model });
 
-    expect(() => agent.stream("hello")).toThrow("This completion model does not support streaming");
+    expect(() => agent.stream({ prompt: "hello" })).toThrow(
+      "This completion model does not support streaming",
+    );
     expect(model.requests).toHaveLength(0);
   });
 });

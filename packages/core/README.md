@@ -374,6 +374,49 @@ const transcript = await transcribe({
 console.log(transcript.text);
 ```
 
+## MCP
+
+MCP clients own connections. Agents receive immutable server registrations and never own or close
+the underlying transport:
+
+```ts
+import { Agent } from "@anvia/core/agent";
+import { McpClient, McpClientGroup } from "@anvia/core/mcp";
+
+const filesystem = new McpClient({
+  name: "filesystem",
+  transport: {
+    type: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
+  },
+});
+const github = new McpClient({
+  name: "github",
+  transport: {
+    type: "streamableHttp",
+    url: "https://mcp.example.com/mcp",
+    requestInit: { headers: { authorization: `Bearer ${process.env.MCP_TOKEN}` } },
+  },
+  tools: { prefix: "github_" },
+});
+
+const mcp = await McpClientGroup.connect({ clients: [filesystem, github] });
+const agent = new Agent({ id: "assistant", model, mcpServers: mcp.servers });
+
+try {
+  await agent.generate({ prompt: "Find the issue and update it." });
+} finally {
+  await mcp.close();
+}
+```
+
+Construction performs no I/O. `connect()` discovers every tool page once and returns a frozen
+registration snapshot. Reconnect and rebuild the Agent to adopt changed remote tools. Built-in
+Streamable HTTP connections enforce Anvia URL safety and do not accept a custom `fetch`; use the
+explicit caller-owned `custom` transport only when you intentionally own that security boundary.
+MCP server instructions remain inspectable metadata and are not added to Agent instructions.
+
 ## Public Areas
 
 - `agent`: typed Agent runtime, run results, approvals, retries, and stream events
@@ -385,7 +428,7 @@ console.log(transcript.text);
 - `embeddings`: embedding helpers and document embedding utilities
 - `vector-store`: in-memory vector search and vector search tools
 - `streaming`: normalized stream helpers
-- `mcp`: MCP server connection helpers
+- `mcp`: lifecycle-owning MCP clients, groups, and immutable Agent registrations
 - `skills`: local skill loading
 - `observability`: observer interfaces for runs, generations, and tool calls
 - `evals`: evaluation helpers and reporters

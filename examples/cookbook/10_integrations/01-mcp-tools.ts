@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { connectMcp, mcp } from "@anvia/core/mcp";
+import { McpClient } from "@anvia/core/mcp";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -7,13 +7,15 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const counterMcp = await connectMcp(
-  mcp.stdio({
-    name: "counter",
+const counterMcp = new McpClient({
+  name: "counter",
+  transport: {
+    type: "stdio",
     command: "tsx",
     args: ["10_integrations/_support/mcp-counter-server.ts"],
-  }),
-);
+  },
+});
+const counterServer = await counterMcp.connect();
 
 try {
   const agentModel = client.completionModel("gpt-5.5");
@@ -21,7 +23,7 @@ try {
     id: "agent",
     model: agentModel,
     instructions: "Use MCP tools for arithmetic and counter updates.",
-    mcpServers: [counterMcp],
+    mcpServers: [counterServer],
     maxTurns: 3,
   });
 

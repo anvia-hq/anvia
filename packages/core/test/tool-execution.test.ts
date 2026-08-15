@@ -296,7 +296,7 @@ describe("Agent tool execution", () => {
     );
   });
 
-  it("deduplicates tool arrays by name", async () => {
+  it("rejects repeated tool registrations", () => {
     const echoTool = createTool({
       name: "echo",
       description: "Echo",
@@ -305,16 +305,12 @@ describe("Agent tool execution", () => {
       execute: ({ value }) => value,
     });
 
-    const agent = agentWithTools([addTool, addTool, echoTool]);
-
-    await expect(agent.callTool("echo", JSON.stringify({ value: "ok" }))).resolves.toBe("ok");
-    await expect(Promise.all(agent.tools.map((tool) => tool.definition("")))).resolves.toEqual([
-      expect.objectContaining({ name: "add" }),
-      expect.objectContaining({ name: "echo" }),
-    ]);
+    expect(() => agentWithTools([addTool, addTool, echoTool])).toThrow(
+      'Duplicate local tool name "add"',
+    );
   });
 
-  it("replaces duplicate tool names with the latest tool", async () => {
+  it("rejects distinct tools with the same name", () => {
     const replacement = createTool({
       name: "add",
       description: "Replace add",
@@ -322,11 +318,6 @@ describe("Agent tool execution", () => {
       outputSchema: z.number(),
       execute: ({ x, y }) => x * y,
     });
-    const agent = agentWithTools([addTool, replacement]);
-
-    await expect(agent.callTool("add", JSON.stringify({ x: 2, y: 5 }))).resolves.toBe("10");
-    await expect(Promise.all(agent.tools.map((tool) => tool.definition("")))).resolves.toEqual([
-      expect.objectContaining({ name: "add", description: "Replace add" }),
-    ]);
+    expect(() => agentWithTools([addTool, replacement])).toThrow('Duplicate local tool name "add"');
   });
 });

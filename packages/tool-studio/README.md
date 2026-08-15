@@ -124,6 +124,10 @@ Studio exposes:
 - Status dashboard for storage adapters, record counts, and enabled capabilities
 - Knowledge tabs for static context, dynamic context, dynamic tools, and retrieval log
 
+Studio reads MCP provenance directly from `Agent.mcpServers`. Prefixes configured by an
+`McpClient` remain visible in both the MCP inspector and direct tool runner, while the remote tool
+name stays available on the typed MCP registration.
+
 ## Session Storage
 
 Studio uses an in-memory store by default. Sessions, traces, and pipeline run history are available while the process is running, but they do not create local files unless you pass an explicit SQLite store. If you omit the port, Studio uses `RUNNER_PORT` and then falls back to `4021`.

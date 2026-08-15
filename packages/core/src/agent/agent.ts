@@ -1,12 +1,19 @@
 import { z } from "zod";
 import { isStreamingCompletionModel } from "../completion/generate-completion";
-import type { CompletionModel, JsonObject, ProviderTool, ToolChoice } from "../completion/index";
+import type {
+  CompletionModel,
+  JsonObject,
+  JsonValue,
+  ProviderTool,
+  ToolChoice,
+} from "../completion/index";
 import { isProviderTool } from "../completion/types";
 import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
+import { isMcpTool, type McpServer } from "../mcp";
 import { resolveMemoryOptions } from "../memory/options";
 import type { AgentObserverRegistration } from "../observability";
 import type { RetrySetting } from "../retry";
@@ -68,6 +75,7 @@ export class Agent<
   readonly maxTokens: number | undefined;
   readonly providerOptions: JsonObject | undefined;
   readonly retries: RetrySetting | undefined;
+  readonly mcpServers: readonly McpServer[];
   readonly tools: readonly AnyTool[];
   readonly toolChoice: ToolChoice | undefined;
   readonly defaultMaxTurns: number | undefined;
@@ -92,21 +100,28 @@ export class Agent<
     this.maxTokens = resolved.maxTokens;
     this.providerOptions = cloneFrozenPlainData(resolved.providerOptions);
     this.retries = cloneFrozenPlainData(resolved.retries);
-    const staticTools = dedupeTools(resolved.tools ?? []);
+    assertUniqueMcpServerNames(resolved.mcpServers ?? []);
+    this.mcpServers = Object.freeze((resolved.mcpServers ?? []).map(snapshotMcpServer));
+    const configuredTools = [...(resolved.tools ?? [])];
+    const staticTools = [...configuredTools, ...this.mcpServers.flatMap((server) => server.tools)];
     const toolIndexes = (resolved.toolIndexes ?? []).map(snapshotToolIndex);
-    assertUniqueIndexedToolNames(toolIndexes);
+    const providerTools = (resolved.providerTools ?? []).map(snapshotProviderTool);
+    assertUniqueAgentToolNames({
+      staticTools,
+      providerTools,
+      toolIndexes,
+    });
     const toolsByName = new Map(staticTools.map((tool) => [tool.name, tool]));
     for (const index of toolIndexes) {
       for (const tool of index.tools) {
-        if (!toolsByName.has(tool.name)) {
-          toolsByName.set(tool.name, tool);
-        }
+        toolsByName.set(tool.name, tool);
       }
     }
     this.tools = Object.freeze([...toolsByName.values()]);
     const publicToolState = Object.freeze({
+      configuredTools: Object.freeze(configuredTools),
       staticTools: Object.freeze(staticTools),
-      providerTools: Object.freeze((resolved.providerTools ?? []).map(snapshotProviderTool)),
+      providerTools: Object.freeze(providerTools),
       toolIndexes: Object.freeze(toolIndexes),
     });
     registerAgentToolState(this, publicToolState, toolsByName);
@@ -300,7 +315,8 @@ export function getResolvedAgentOptions<Output, M extends CompletionModel, Conte
     maxTokens: agent.maxTokens,
     providerOptions: agent.providerOptions,
     retries: agent.retries,
-    tools: [...toolState.staticTools],
+    tools: [...toolState.configuredTools],
+    mcpServers: [...agent.mcpServers],
     providerTools: [...toolState.providerTools],
     toolIndexes: [...toolState.toolIndexes],
     toolChoice: agent.toolChoice,
@@ -335,18 +351,22 @@ function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>
       toolIndexes.push(tool);
     } else if ((tool as { kind?: unknown }).kind === "tool-index") {
       throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
+    } else if (isMcpTool(tool)) {
+      throw new TypeError(
+        `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not Agent.tools.`,
+      );
     } else {
-      toolsByName.set(tool.name, tool);
-    }
-  }
-  for (const server of options.mcpServers ?? []) {
-    for (const tool of server.tools) {
-      toolsByName.set(tool.name, tool);
+      addUniqueTool(toolsByName, tool, "local tool");
     }
   }
   if (options.skills !== undefined) {
     for (const tool of options.skills.tools) {
-      toolsByName.set(tool.name, tool);
+      if (isMcpTool(tool)) {
+        throw new TypeError(
+          `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not Agent.skills.`,
+        );
+      }
+      addUniqueTool(toolsByName, tool, "skill tool");
     }
   }
   const memory = resolveAgentMemory(options);
@@ -366,6 +386,7 @@ function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>
     providerOptions: options.providerOptions,
     retries: options.retries,
     tools: [...toolsByName.values()],
+    mcpServers: [...(options.mcpServers ?? [])],
     providerTools,
     toolIndexes,
     toolChoice: options.toolChoice,
@@ -384,29 +405,50 @@ function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>
   };
 }
 
-function assertUniqueIndexedToolNames(indexes: readonly ToolIndex[]): void {
-  const owners = new Map<string, number>();
-  for (const [indexPosition, index] of indexes.entries()) {
+function assertUniqueAgentToolNames(options: {
+  staticTools: readonly AnyTool[];
+  providerTools: readonly ProviderTool[];
+  toolIndexes: readonly ToolIndex[];
+}): void {
+  const owners = new Map<string, string>();
+  for (const tool of options.staticTools) {
+    registerToolOwner(owners, tool.name, isMcpTool(tool) ? "MCP tool" : "local or skill tool");
+  }
+  for (const tool of options.providerTools) {
+    registerToolOwner(owners, tool.name, "provider tool");
+  }
+  for (const [indexPosition, index] of options.toolIndexes.entries()) {
     if (!isToolIndex(index)) {
       throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
     }
     assertPositiveSearchLimit(index.topK);
     assertFiniteMinScore(index.minScore);
     for (const tool of index.tools) {
-      const existingPosition = owners.get(tool.name);
-      if (existingPosition !== undefined) {
-        if (existingPosition === indexPosition) {
-          throw new TypeError(
-            `Tool "${tool.name}" is registered more than once by tool index ${indexPosition + 1}. Tool names must be unique within each index.`,
-          );
-        }
+      if (isMcpTool(tool)) {
         throw new TypeError(
-          `Tool "${tool.name}" is registered by multiple tool indexes (${existingPosition + 1} and ${indexPosition + 1}). Tool names must be unique across indexes.`,
+          `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not a tool index.`,
         );
       }
-      owners.set(tool.name, indexPosition);
+      registerToolOwner(owners, tool.name, `tool index ${indexPosition + 1}`);
     }
   }
+}
+
+function registerToolOwner(owners: Map<string, string>, name: string, owner: string): void {
+  const existing = owners.get(name);
+  if (existing !== undefined) {
+    throw new TypeError(
+      `Tool name collision for "${name}" between ${existing} and ${owner}. Tool names must be unique across every Agent tool source.`,
+    );
+  }
+  owners.set(name, owner);
+}
+
+function addUniqueTool(tools: Map<string, AnyTool>, tool: AnyTool, source: string): void {
+  if (tools.has(tool.name)) {
+    throw new TypeError(`Duplicate ${source} name "${tool.name}".`);
+  }
+  tools.set(tool.name, tool);
 }
 
 function assertValidVectorContexts(inputs: readonly AgentContextInput[]): void {
@@ -692,6 +734,61 @@ function snapshotProviderTool(tool: ProviderTool): ProviderTool {
   });
 }
 
+function snapshotMcpServer(server: McpServer): McpServer {
+  if (server.name.trim() === "") {
+    throw new TypeError("MCP server name must not be empty.");
+  }
+  for (const tool of server.tools) {
+    if (!isMcpTool(tool)) {
+      throw new TypeError(`MCP server "${server.name}" contains an invalid MCP tool.`);
+    }
+    if (tool.mcp.serverName !== server.name) {
+      throw new TypeError(
+        `MCP tool "${tool.name}" belongs to server "${tool.mcp.serverName}", not "${server.name}".`,
+      );
+    }
+  }
+  const tools = server.tools.map(snapshotMcpTool);
+  return Object.freeze({
+    name: server.name,
+    tools: Object.freeze(tools),
+    ...(server.serverInfo === undefined
+      ? {}
+      : { serverInfo: cloneFrozenPlainData(server.serverInfo) }),
+    ...(server.capabilities === undefined
+      ? {}
+      : { capabilities: cloneFrozenPlainData(server.capabilities) }),
+    ...(server.instructions === undefined ? {} : { instructions: server.instructions }),
+  });
+}
+
+function snapshotMcpTool(tool: McpServer["tools"][number]): McpServer["tools"][number] {
+  if (Object.isFrozen(tool) && Object.isFrozen(tool.mcp)) {
+    return tool;
+  }
+  const parseInput = tool.parseInput;
+  return Object.freeze({
+    name: tool.name,
+    mcp: Object.freeze({ ...tool.mcp }),
+    ...(tool.requiresApproval === undefined ? {} : { requiresApproval: tool.requiresApproval }),
+    definition: (prompt: string) => tool.definition(prompt),
+    call: (args: unknown, context?: ToolCallContext) => tool.call(args, context),
+    ...(parseInput === undefined
+      ? {}
+      : { parseInput: (args: JsonValue) => parseInput.call(tool, args) }),
+  });
+}
+
+function assertUniqueMcpServerNames(servers: readonly McpServer[]): void {
+  const names = new Set<string>();
+  for (const server of servers) {
+    if (names.has(server.name)) {
+      throw new TypeError(`Duplicate MCP server name "${server.name}".`);
+    }
+    names.add(server.name);
+  }
+}
+
 function snapshotToolIndex(index: ToolIndex): ToolIndex {
   const inspect = index.inspect;
   return Object.freeze({
@@ -754,12 +851,4 @@ function cloneFrozenPlainData<T>(value: T): T {
     Object.entries(value).map(([key, item]) => [key, cloneFrozenPlainData(item)]),
   );
   return Object.freeze(clone) as T;
-}
-
-function dedupeTools(tools: readonly AnyTool[]): AnyTool[] {
-  const byName = new Map<string, AnyTool>();
-  for (const tool of tools) {
-    byName.set(tool.name, tool);
-  }
-  return [...byName.values()];
 }

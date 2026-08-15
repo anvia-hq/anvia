@@ -20,7 +20,7 @@ import {
 } from "@anvia/core/completion";
 import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
 import { type EvalMetric, EvalOutcome } from "@anvia/core/evals";
-import { connectMcp, type McpClient } from "@anvia/core/mcp";
+import type { McpServer, McpTool } from "@anvia/core/mcp";
 import type {
   MemoryAppendOptions,
   MemoryCompactionMessage,
@@ -1483,33 +1483,28 @@ describe("Anvia studio", () => {
   });
 
   it("exposes MCP server metadata for registered agents", async () => {
-    const mcpClient: McpClient = {
-      async listTools() {
+    const mcpTool: McpTool = {
+      name: "github_lookup_policy",
+      mcp: { serverName: "policies", remoteName: "lookup_policy" },
+      definition() {
         return {
-          tools: [
-            {
-              name: "lookup_policy",
-              description: "Look up policy documents",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  query: { type: "string" },
-                },
-                required: ["query"],
-              },
-            },
-          ],
+          name: "github_lookup_policy",
+          description: "Look up policy documents",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
         };
       },
-      async callTool() {
-        return { content: [{ type: "text", text: "policy" }] };
+      async call() {
+        return [{ type: "text", text: "policy" }];
       },
-      async close() {},
     };
-    const mcpServer = await connectMcp({
+    const mcpServer: McpServer = {
       name: "policies",
-      connect: async () => mcpClient,
-    });
+      tools: [mcpTool],
+    };
     const agent = new Agent({
       id: "support",
       model: new QueueModel([]),
@@ -1530,7 +1525,7 @@ describe("Anvia studio", () => {
           toolCount: 1,
           tools: [
             {
-              name: "lookup_policy",
+              name: "github_lookup_policy",
               description: "Look up policy documents",
               source: "static",
               approval: { required: false },
@@ -1554,11 +1549,25 @@ describe("Anvia studio", () => {
       tools: [
         expect.objectContaining({
           agentId: "support",
-          name: "lookup_policy",
+          name: "github_lookup_policy",
           source: "static",
           mcpServerName: "policies",
         }),
       ],
+    });
+
+    const toolRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/tools/github_lookup_policy/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ args: { query: "refunds" } }),
+      }),
+    );
+    expect(toolRun.status).toBe(200);
+    await expect(toolRun.json()).resolves.toMatchObject({
+      toolName: "github_lookup_policy",
+      status: "success",
+      result: [{ type: "text", text: "policy" }],
     });
   });
 

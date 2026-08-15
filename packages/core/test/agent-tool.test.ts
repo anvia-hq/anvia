@@ -114,7 +114,11 @@ describe("Agent construction", () => {
     const indexedTool = { ...addTool, name: "indexed_add" };
     const toolIndex = emptyToolIndex([indexedTool], 3);
     const skillTool = { ...addTool, name: "skill_add" };
-    const mcpTool = { ...addTool, name: "mcp_add" };
+    const mcpTool = {
+      ...addTool,
+      name: "mcp_add",
+      mcp: { serverName: "math", remoteName: "add" },
+    };
     const tools = [addTool];
     const context = [{ id: "policy", text: "Keep answers short." }];
 
@@ -133,7 +137,7 @@ describe("Agent construction", () => {
         }),
       ],
       tools: [...tools, toolIndex],
-      mcpServers: [{ name: "math", tools: [mcpTool], async close() {} }],
+      mcpServers: [{ name: "math", tools: [mcpTool] }],
       skills: {
         skills: [],
         tools: [skillTool],
@@ -163,8 +167,8 @@ describe("Agent construction", () => {
     ]);
     expect(agent.tools.map((tool) => tool.name)).toEqual([
       "add",
-      "mcp_add",
       "skill_add",
+      "mcp_add",
       "indexed_add",
     ]);
     expect(agent.defaultMaxTurns).toBe(4);
@@ -402,7 +406,7 @@ describe("Agent construction", () => {
 
     expect(
       () => new Agent({ id: "agent", model: new QueueModel([]), tools: [first, second] }),
-    ).toThrow('Tool "shared" is registered by multiple tool indexes');
+    ).toThrow('Tool name collision for "shared" between tool index 1 and tool index 2');
   });
 
   it("validates structurally supplied retrieval registrations", () => {

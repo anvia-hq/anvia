@@ -16,7 +16,7 @@ import { agentHasKnowledge } from "./knowledge";
 import { createStudioModelRegistry, studioModelsConfig } from "./models";
 import type { ResolvedStores, StudioRuntimeOptions } from "./options";
 import {
-  agentHasMcpTools,
+  agentHasMcpServers,
   agentToolItems,
   mcpServerName,
   toolRequiresApproval,
@@ -148,7 +148,7 @@ export function capabilityConfig(
   if (agents.some((agent) => agent.agent.tools.length > 0)) {
     capabilities.tools = { enabled: true };
   }
-  if (agents.some(agentHasMcpTools)) {
+  if (agents.some(agentHasMcpServers)) {
     capabilities.mcps = { enabled: true };
   }
   if (sandboxCount > 0) {

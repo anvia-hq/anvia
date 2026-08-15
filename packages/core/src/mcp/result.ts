@@ -1,5 +1,32 @@
+import type { ToolResultContent } from "../completion/index";
 import { isRecord } from "../internal/record";
-import type { McpToolCallContent, McpToolCallResult } from "./types";
+
+type McpResultContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+  | { type: "audio"; data: string; mimeType: string }
+  | {
+      type: "resource";
+      resource:
+        | { uri: string; text: string; mimeType?: string | undefined }
+        | { uri: string; blob: string; mimeType?: string | undefined };
+    }
+  | {
+      type: "resource_link";
+      uri: string;
+      name: string;
+      mimeType?: string | undefined;
+    };
+
+export type McpToolCallResult =
+  | {
+      content: McpResultContent[];
+      structuredContent?: Record<string, unknown> | undefined;
+      isError?: boolean | undefined;
+    }
+  | {
+      toolResult: unknown;
+    };
 
 export function createCallToolParams(
   name: string,
@@ -16,19 +43,23 @@ export function createCallToolParams(
   return { name, arguments: args };
 }
 
-export function mapMcpToolResult(result: McpToolCallResult): string {
+export function mapMcpToolResult(result: McpToolCallResult): ToolResultContent[] {
   if ("toolResult" in result) {
-    return serializeMcpValue(result.toolResult);
+    return [{ type: "text", text: serializeMcpValue(result.toolResult) }];
   }
 
   if (result.isError === true) {
     throw new Error(mcpErrorMessage(result.content));
   }
 
-  return result.content.map(mapMcpContent).join("");
+  const content = result.content.map(mapMcpContent);
+  if (content.length === 0 && result.structuredContent !== undefined) {
+    content.push({ type: "text", text: serializeMcpValue(result.structuredContent) });
+  }
+  return content;
 }
 
-function mcpErrorMessage(content: McpToolCallContent[]): string {
+function mcpErrorMessage(content: McpResultContent[]): string {
   const text = content
     .map((item) => (item.type === "text" ? item.text : undefined))
     .filter((item): item is string => item !== undefined)
@@ -37,26 +68,36 @@ function mcpErrorMessage(content: McpToolCallContent[]): string {
   return text === "" ? "MCP tool returned an error" : text;
 }
 
-function mapMcpContent(content: McpToolCallContent): string {
+function mapMcpContent(content: McpResultContent): ToolResultContent {
   if (content.type === "text") {
-    return content.text;
+    return { type: "text", text: content.text };
   }
 
   if (content.type === "image") {
-    return `data:${content.mimeType};base64,${content.data}`;
+    return { type: "image", data: content.data, mediaType: content.mimeType };
   }
 
   if (content.type === "resource") {
-    const mimeType =
-      content.resource.mimeType === undefined ? "" : `data:${content.resource.mimeType};`;
-    if ("text" in content.resource) {
-      return `${mimeType}${content.resource.uri}:${content.resource.text}`;
-    }
-
-    return `${mimeType}${content.resource.uri}:${content.resource.blob}`;
+    return { type: "text", text: serializeResource(content.resource) };
   }
 
-  throw new Error(`Unsupported MCP tool result content: ${serializeMcpValue(content)}`);
+  if (content.type === "audio") {
+    throw new Error(`Unsupported MCP tool result content type: audio (${content.mimeType})`);
+  }
+
+  throw new Error(`Unsupported MCP tool result content type: resource_link (${content.uri})`);
+}
+
+function serializeResource(
+  resource:
+    | { uri: string; text: string; mimeType?: string | undefined }
+    | { uri: string; blob: string; mimeType?: string | undefined },
+): string {
+  const mediaType =
+    resource.mimeType ?? ("text" in resource ? "text/plain" : "application/octet-stream");
+  const encoding = "text" in resource ? "text" : "base64";
+  const data = "text" in resource ? resource.text : resource.blob;
+  return `MCP resource (${resource.uri}; ${mediaType}; ${encoding})\n${data}`;
 }
 
 function serializeMcpValue(value: unknown): string {

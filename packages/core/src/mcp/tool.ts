@@ -1,34 +1,68 @@
-import type { ToolDefinition } from "../completion/index";
-import type { Tool } from "../tool/index";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { JsonObject, ToolDefinition } from "../completion/index";
 import { createCallToolParams, mapMcpToolResult } from "./result";
-import type { McpClient, McpToolDefinition } from "./types";
+import type { McpTool } from "./types";
 
-const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
+type SdkMcpToolDefinition = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
 
-export function createMcpTool(
-  definition: McpToolDefinition,
-  client: McpClient,
-  serverName?: string,
-): Tool {
-  const tool: Tool = {
-    name: definition.name,
+export function createMcpTool(options: {
+  definition: SdkMcpToolDefinition;
+  client: Client;
+  serverName: string;
+  prefix?: string | undefined;
+}): McpTool {
+  const { definition, client, serverName, prefix = "" } = options;
+  const exposedName = `${prefix}${definition.name}`;
+  const provenance = Object.freeze({
+    serverName,
+    remoteName: definition.name,
+  });
+  const toolDefinition = Object.freeze<ToolDefinition>({
+    name: exposedName,
+    description: definition.description ?? "",
+    parameters: deepFreeze(structuredClone(definition.inputSchema)) as unknown as JsonObject,
+  });
+  const tool: McpTool = {
+    name: exposedName,
+    mcp: provenance,
     definition(): ToolDefinition {
-      return {
-        name: definition.name,
-        description: definition.description ?? "",
-        parameters: definition.inputSchema,
-      };
+      return toolDefinition;
     },
-    async call(args): Promise<string> {
-      const result = await client.callTool(createCallToolParams(definition.name, args));
+    async call(args, context) {
+      const result = await client.callTool(
+        createCallToolParams(definition.name, args),
+        undefined,
+        context?.abortSignal === undefined ? {} : { signal: context.abortSignal },
+      );
       return mapMcpToolResult(result);
     },
   };
-  if (serverName !== undefined) {
-    Object.defineProperty(tool, MCP_TOOL_METADATA_KEY, {
-      value: { serverName },
-      enumerable: false,
-    });
+  return Object.freeze(tool);
+}
+
+export function isMcpTool(tool: unknown): tool is McpTool {
+  if (typeof tool !== "object" || tool === null || !("mcp" in tool)) {
+    return false;
   }
-  return tool;
+  const mcp = tool.mcp;
+  return (
+    typeof mcp === "object" &&
+    mcp !== null &&
+    "serverName" in mcp &&
+    typeof mcp.serverName === "string" &&
+    mcp.serverName.length > 0 &&
+    "remoteName" in mcp &&
+    typeof mcp.remoteName === "string" &&
+    mcp.remoteName.length > 0
+  );
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const child of Object.values(value)) {
+    deepFreeze(child);
+  }
+  return Object.freeze(value);
 }

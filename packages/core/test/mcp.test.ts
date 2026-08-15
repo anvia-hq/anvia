@@ -7,15 +7,16 @@ import {
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  connectMcp,
   createHook,
   createMiddleware,
+  createResolvedAgent,
   createTool,
-  type McpClient,
-  type McpConnection,
+  getResolvedAgentOptions,
   type McpServer,
+  type McpTool,
   Message,
   type StreamingCompletionModel,
+  type ToolIndex,
   Usage,
   withInternalAgentRunOptions,
 } from "./helpers/imports";
@@ -31,6 +32,7 @@ class QueueModel implements CompletionModel {
     documentInput: true,
     outputSchema: true,
     reasoning: true,
+    providerTools: true,
   };
   readonly requests: CompletionRequest[] = [];
 
@@ -39,9 +41,7 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
-    if (response === undefined) {
-      throw new Error("No queued response");
-    }
+    if (response === undefined) throw new Error("No queued response");
     return response;
   }
 }
@@ -69,248 +69,29 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
-    if (response === undefined) {
-      throw new Error("No queued response");
-    }
+    if (response === undefined) throw new Error("No queued response");
     yield* response;
   }
 }
 
 function response(choice: CompletionResponse["choice"]): CompletionResponse {
-  return {
-    choice,
-    usage: Usage.empty(),
-    rawResponse: {},
-  };
+  return { choice, usage: Usage.empty(), rawResponse: {} };
 }
 
-describe("MCP tools", () => {
-  it("connects once and maps MCP tool definitions", async () => {
-    const client = fakeMcpClient({
-      tools: [
-        {
-          name: "add",
-          description: "Add numbers",
-          inputSchema: {
-            type: "object",
-            properties: { x: { type: "number" }, y: { type: "number" } },
-            required: ["x", "y"],
-          },
-        },
-      ],
-      result: { content: [{ type: "text", text: "7" }] },
-    });
-    const server = await connectMcp(fakeConnection("math", client));
-
-    expect(client.listToolsCalls).toBe(1);
-    expect(server.name).toBe("math");
-    expect(await server.tools[0]?.definition("")).toEqual({
-      name: "add",
-      description: "Add numbers",
-      parameters: {
-        type: "object",
-        properties: { x: { type: "number" }, y: { type: "number" } },
-        required: ["x", "y"],
-      },
-    });
-  });
-
-  it("closes the MCP client when listing tools fails", async () => {
-    const client = fakeMcpClient({
-      tools: [],
-      result: { content: [{ type: "text", text: "unused" }] },
-      listToolsError: new Error("list failed"),
-    });
-
-    await expect(connectMcp(fakeConnection("broken", client))).rejects.toThrow("list failed");
-
-    expect(client.connectCalls).toBe(1);
-    expect(client.listToolsCalls).toBe(1);
-    expect(client.closeCalls).toBe(1);
-  });
-
-  it("preserves the list tools error when MCP close also fails", async () => {
-    const client = fakeMcpClient({
-      tools: [],
-      result: { content: [{ type: "text", text: "unused" }] },
-      listToolsError: new Error("list failed"),
-      closeError: new Error("close failed"),
-    });
-
-    await expect(connectMcp(fakeConnection("broken", client))).rejects.toThrow("list failed");
-
-    expect(client.closeCalls).toBe(1);
-  });
-
-  it("forwards MCP tool calls with JSON object arguments", async () => {
-    const client = fakeMcpClient({
-      tools: [
-        {
-          name: "add",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { content: [{ type: "text", text: "7" }] },
-    });
-    const server = await connectMcp(fakeConnection("math", client));
-
-    await expect(server.tools[0]?.call({ x: 2, y: 5 })).resolves.toBe("7");
-    expect(client.callToolCalls).toEqual([{ name: "add", arguments: { x: 2, y: 5 } }]);
-  });
-
-  it("omits null MCP arguments and rejects non-object arguments", async () => {
-    const client = fakeMcpClient({
-      tools: [
-        {
-          name: "ping",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { content: [{ type: "text", text: "pong" }] },
-    });
-    const server = await connectMcp(fakeConnection("ping", client));
-
-    await expect(server.tools[0]?.call(null)).resolves.toBe("pong");
-    expect(client.callToolCalls).toEqual([{ name: "ping" }]);
-    await expect(server.tools[0]?.call("bad")).rejects.toThrow(
-      "MCP tool arguments must be a JSON object",
-    );
-  });
-
-  it("maps direct MCP toolResult payloads", async () => {
-    const stringClient = fakeMcpClient({
-      tools: [
-        {
-          name: "string_result",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { toolResult: "done", content: [] },
-    });
-    const objectClient = fakeMcpClient({
-      tools: [
-        {
-          name: "object_result",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { toolResult: { ok: true }, content: [] },
-    });
-    const undefinedClient = fakeMcpClient({
-      tools: [
-        {
-          name: "undefined_result",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { toolResult: undefined, content: [] },
-    });
-
-    await expect(
-      (await connectMcp(fakeConnection("string", stringClient))).tools[0]?.call({}),
-    ).resolves.toBe("done");
-    await expect(
-      (await connectMcp(fakeConnection("object", objectClient))).tools[0]?.call({}),
-    ).resolves.toBe('{"ok":true}');
-    await expect(
-      (await connectMcp(fakeConnection("undefined", undefinedClient))).tools[0]?.call({}),
-    ).resolves.toBe("undefined");
-  });
-
-  it("maps image and resource MCP tool results", async () => {
-    const client = fakeMcpClient({
-      tools: [
-        {
-          name: "read",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: {
-        content: [
-          { type: "image", mimeType: "image/png", data: "abc123" },
-          {
-            type: "resource",
-            resource: {
-              uri: "file:///tmp/report.txt",
-              mimeType: "text/plain",
-              text: "hello",
-            },
-          },
-          {
-            type: "resource",
-            resource: {
-              uri: "file:///tmp/blob.bin",
-              blob: "ZGF0YQ==",
-            },
-          },
-        ],
-      },
-    });
-    const server = await connectMcp(fakeConnection("files", client));
-
-    await expect(server.tools[0]?.call({})).resolves.toBe(
-      "data:image/png;base64,abc123data:text/plain;file:///tmp/report.txt:hellofile:///tmp/blob.bin:ZGF0YQ==",
-    );
-  });
-
-  it("throws for MCP error results and unsupported content", async () => {
-    const errorClient = fakeMcpClient({
-      tools: [
-        {
-          name: "fail",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { isError: true, content: [{ type: "text", text: "denied" }] },
-    });
-    const errorServer = await connectMcp(fakeConnection("errors", errorClient));
-
-    await expect(errorServer.tools[0]?.call({})).rejects.toThrow("denied");
-
-    const fallbackErrorClient = fakeMcpClient({
-      tools: [
-        {
-          name: "fallback_fail",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: { isError: true, content: [{ type: "image", mimeType: "image/png", data: "abc" }] },
-    });
-    const fallbackErrorServer = await connectMcp(
-      fakeConnection("fallback-errors", fallbackErrorClient),
-    );
-
-    await expect(fallbackErrorServer.tools[0]?.call({})).rejects.toThrow(
-      "MCP tool returned an error",
-    );
-
-    const unsupportedClient = fakeMcpClient({
-      tools: [
-        {
-          name: "audio",
-          inputSchema: { type: "object", properties: {}, required: [] },
-        },
-      ],
-      result: {
-        content: [{ type: "audio", data: "abc", mimeType: "audio/wav" } as never],
-      },
-    });
-    const unsupportedServer = await connectMcp(fakeConnection("audio", unsupportedClient));
-
-    await expect(unsupportedServer.tools[0]?.call({})).rejects.toThrow(
-      "Unsupported MCP tool result content",
-    );
-  });
-
-  it("registers MCP tools with send", async () => {
+describe("Agent MCP registrations", () => {
+  it("registers immutable MCP snapshots and executes their tools", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new Agent({ id: "test-agent", model, mcpServers: [fakeMcpServer()] });
+    const server = fakeMcpServer();
+    const agent = new Agent({ id: "test-agent", model, mcpServers: [server] });
 
     await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({ output: "7" });
 
+    expect(Object.isFrozen(agent.mcpServers)).toBe(true);
+    expect(Object.isFrozen(agent.mcpServers[0])).toBe(true);
+    expect(Object.isFrozen(agent.mcpServers[0]?.tools)).toBe(true);
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("mcp_add");
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -324,7 +105,26 @@ describe("MCP tools", () => {
     );
   });
 
-  it("applies tool result middleware to MCP tools", async () => {
+  it("preserves MCP registrations through resolved Agent cloning", () => {
+    const agent = new Agent({
+      id: "source",
+      model: new QueueModel([]),
+      mcpServers: [fakeMcpServer("Server metadata that is not an instruction")],
+      instructions: "Application instructions only",
+    });
+    const clone = createResolvedAgent({
+      ...getResolvedAgentOptions(agent),
+      id: "clone",
+    });
+
+    expect(clone.mcpServers).toHaveLength(1);
+    expect(clone.mcpServers[0]?.instructions).toBe("Server metadata that is not an instruction");
+    expect(clone.instructions).toBe("Application instructions only");
+    expect(clone.getTool("mcp_add")).toBeDefined();
+    expect(clone.tools.filter((tool) => tool.name === "mcp_add")).toHaveLength(1);
+  });
+
+  it("applies middleware to MCP tool results", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
       response([AssistantContent.text("done")]),
@@ -343,7 +143,6 @@ describe("MCP tools", () => {
     });
 
     await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({ output: "done" });
-
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -356,7 +155,7 @@ describe("MCP tools", () => {
     );
   });
 
-  it("registers MCP tools with stream and preserves hooks", async () => {
+  it("preserves hooks while streaming MCP tool execution", async () => {
     const model = new StreamingQueueModel([
       [
         {
@@ -387,79 +186,130 @@ describe("MCP tools", () => {
     expect(streamEvents.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
     expect(events).toEqual(['call:mcp_add:{"x":2,"y":5}', "result:mcp_add:7"]);
   });
+
+  it("preserves MCP tool approval requirements", async () => {
+    let executed = false;
+    const base = createTool({
+      name: "mcp_guarded",
+      description: "Guarded MCP action",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute() {
+        executed = true;
+        return "approved";
+      },
+    });
+    const tool: McpTool = {
+      ...base,
+      mcp: { serverName: "guarded", remoteName: "guarded" },
+    };
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "mcp_guarded", {})]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new Agent({
+      id: "approval",
+      model,
+      mcpServers: [{ name: "guarded", tools: [tool] }],
+    });
+
+    const pending = await agent.generate({ prompt: "run guarded" });
+    expect(pending).toMatchObject({
+      status: "approval_required",
+      approval: { toolName: "mcp_guarded" },
+    });
+    expect(executed).toBe(false);
+    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+      output: "done",
+    });
+    expect(executed).toBe(true);
+  });
+
+  it("rejects collisions across local, MCP, skill, provider, and indexed tools", () => {
+    const local = createNamedTool("shared");
+    const mcp = fakeMcpServer(undefined, "shared");
+    const provider = { kind: "provider" as const, provider: "test", name: "shared" };
+    const index: ToolIndex = {
+      kind: "tool-index",
+      tools: [createNamedTool("shared")],
+      topK: 1,
+      async search() {
+        return [];
+      },
+    };
+    const model = new QueueModel([]);
+
+    expect(() => new Agent({ id: "local-mcp", model, tools: [local], mcpServers: [mcp] })).toThrow(
+      'Tool name collision for "shared"',
+    );
+    expect(
+      () => new Agent({ id: "mcp-provider", model, tools: [provider], mcpServers: [mcp] }),
+    ).toThrow('Tool name collision for "shared"');
+    expect(() => new Agent({ id: "mcp-index", model, tools: [index], mcpServers: [mcp] })).toThrow(
+      'Tool name collision for "shared"',
+    );
+    expect(
+      () =>
+        new Agent({
+          id: "local-skill",
+          model,
+          tools: [local],
+          skills: { skills: [], tools: [createNamedTool("shared")], instructions: "" },
+        }),
+    ).toThrow('Duplicate skill tool name "shared"');
+  });
+
+  it("requires MCP tools to enter through mcpServers and rejects duplicate servers", () => {
+    const model = new QueueModel([]);
+    const server = fakeMcpServer();
+    const mcpTool = server.tools[0];
+    if (mcpTool === undefined) throw new Error("Expected MCP fixture tool");
+
+    expect(() => new Agent({ id: "wrong-boundary", model, tools: [mcpTool] })).toThrow(
+      "must be registered through Agent.mcpServers",
+    );
+    expect(
+      () =>
+        new Agent({
+          id: "duplicate-servers",
+          model,
+          mcpServers: [server, { name: server.name, tools: [] }],
+        }),
+    ).toThrow('Duplicate MCP server name "math"');
+  });
 });
 
-function fakeConnection(name: string, client: FakeMcpClient): McpConnection {
-  return {
-    name,
-    async connect(): Promise<McpClient> {
-      client.connectCalls += 1;
-      return client;
-    },
-  };
-}
-
-function fakeMcpServer(): McpServer {
-  return {
+function fakeMcpServer(instructions?: string, toolName = "mcp_add"): McpServer {
+  const base = createTool({
+    name: toolName,
+    description: "Add numbers from MCP",
+    inputSchema: z.object({ x: z.number(), y: z.number() }),
+    outputSchema: z.number(),
+    execute: ({ x, y }) => x + y,
+  });
+  const tool: McpTool = Object.freeze({
+    ...base,
+    mcp: Object.freeze({ serverName: "math", remoteName: "add" }),
+  });
+  return Object.freeze({
     name: "math",
-    tools: [
-      createTool({
-        name: "mcp_add",
-        description: "Add numbers from MCP",
-        inputSchema: z.object({
-          x: z.number(),
-          y: z.number(),
-        }),
-        outputSchema: z.number(),
-        execute: ({ x, y }) => x + y,
-      }),
-    ],
-    async close() {},
-  };
+    tools: Object.freeze([tool]),
+    ...(instructions === undefined ? {} : { instructions }),
+  });
 }
 
-type FakeMcpClient = McpClient & {
-  connectCalls: number;
-  listToolsCalls: number;
-  callToolCalls: { name: string; arguments?: Record<string, unknown> }[];
-  closeCalls: number;
-};
-
-function fakeMcpClient(options: {
-  tools: Awaited<ReturnType<McpClient["listTools"]>>["tools"];
-  result: Awaited<ReturnType<McpClient["callTool"]>>;
-  listToolsError?: Error | undefined;
-  closeError?: Error | undefined;
-}): FakeMcpClient {
-  return {
-    connectCalls: 0,
-    listToolsCalls: 0,
-    callToolCalls: [],
-    closeCalls: 0,
-    async listTools() {
-      this.listToolsCalls += 1;
-      if (options.listToolsError !== undefined) {
-        throw options.listToolsError;
-      }
-      return { tools: options.tools };
-    },
-    async callTool(params) {
-      this.callToolCalls.push(params);
-      return options.result;
-    },
-    async close() {
-      this.closeCalls += 1;
-      if (options.closeError !== undefined) {
-        throw options.closeError;
-      }
-    },
-  };
+function createNamedTool(name: string) {
+  return createTool({
+    name,
+    description: name,
+    inputSchema: z.object({}),
+    execute: () => name,
+  });
 }
 
 async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
-  for await (const event of events) {
-    result.push(event);
-  }
+  for await (const event of events) result.push(event);
   return result;
 }

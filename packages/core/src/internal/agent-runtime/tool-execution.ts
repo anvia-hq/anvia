@@ -12,6 +12,7 @@ import type {
 import { ToolContent } from "../../completion";
 import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
 import { runControl, toolCallControl } from "../../hooks";
+import { isMcpTool } from "../../mcp";
 import type { ActiveAgentRunObservers, ActiveToolObservers } from "../../observability/group";
 import type {
   AgentToolEndArgs,
@@ -43,8 +44,6 @@ import {
   type PreparedToolCall,
   prepareToolCall as prepareRegisteredToolCall,
 } from "./prepared-tool-call";
-
-const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
 
 export type ToolResultEventPayload = {
   type: "tool_result";
@@ -582,16 +581,12 @@ function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
   if (tool === undefined) {
     return undefined;
   }
-  const metadata = (tool as { [MCP_TOOL_METADATA_KEY]?: unknown })[MCP_TOOL_METADATA_KEY];
-  const mcpMetadata =
-    typeof metadata === "object" && metadata !== null
-      ? (metadata as { serverName?: unknown })
-      : undefined;
   const result: JsonObject = {
     approvalRequired: toolMayRequireApproval(tool.requiresApproval),
   };
-  if (typeof mcpMetadata?.serverName === "string" && mcpMetadata.serverName.length > 0) {
-    result.mcpServerName = mcpMetadata.serverName;
+  if (isMcpTool(tool)) {
+    result.mcpServerName = tool.mcp.serverName;
+    result.mcpRemoteName = tool.mcp.remoteName;
   }
   return result;
 }

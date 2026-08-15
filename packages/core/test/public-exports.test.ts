@@ -77,6 +77,14 @@ type RemovedMemoryRegistration = import("../src/memory").MemoryRegistration;
 type RemovedResolvedMemoryOptions = import("../src/memory").ResolvedMemoryOptions;
 // @ts-expect-error SessionOptions was replaced by MemoryScope on Agent inputs.
 type RemovedSessionOptions = import("../src/memory").SessionOptions;
+// @ts-expect-error McpConnection was removed in favor of McpClient lifecycle ownership.
+type RemovedMcpConnection = import("../src/mcp").McpConnection;
+// @ts-expect-error McpSseOptions was removed with the legacy SSE transport.
+type RemovedMcpSseOptions = import("../src/mcp").McpSseOptions;
+// @ts-expect-error connectMcp was removed in favor of McpClient.connect.
+type RemovedConnectMcp = typeof import("../src/mcp").connectMcp;
+// @ts-expect-error The MCP factory namespace was removed in favor of constructors.
+type RemovedMcpFactory = typeof import("../src/mcp").mcp;
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
@@ -239,7 +247,11 @@ describe("public exports", () => {
     expect(imageGeneration).not.toHaveProperty("imageGenerationRequest");
     expect(imageGeneration).not.toHaveProperty("ImageGenerationRequestBuilder");
     expect(loaders).toHaveProperty("FileLoader");
-    expect(mcp).toHaveProperty("connectMcp");
+    expect(mcp).toHaveProperty("McpClient");
+    expect(mcp).toHaveProperty("McpClientGroup");
+    expect(mcp).toHaveProperty("isMcpTool");
+    expect(mcp).not.toHaveProperty("connectMcp");
+    expect(mcp).not.toHaveProperty("mcp");
     expect(modelListing).toHaveProperty("ModelListingError");
     expect(observability).toHaveProperty("createObserver");
     expect(pipeline).toHaveProperty("Pipeline");
@@ -250,6 +262,25 @@ describe("public exports", () => {
     expect(transcription).toHaveProperty("transcribe");
     expect(transcription).not.toHaveProperty("transcriptionRequest");
     expect(transcription).not.toHaveProperty("TranscriptionRequestBuilder");
+    expectTypeOf<RemovedMcpConnection>().toBeAny();
+    expectTypeOf<RemovedMcpSseOptions>().toBeAny();
+    expectTypeOf<RemovedConnectMcp>().toBeAny();
+    expectTypeOf<RemovedMcpFactory>().toBeAny();
+
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      new mcp.McpClient({
+        name: "http",
+        transport: {
+          type: "streamableHttp",
+          url: "https://example.com/mcp",
+          // @ts-expect-error Built-in HTTP intentionally forbids custom fetch.
+          fetch: globalThis.fetch,
+        },
+      });
+      const server = null as unknown as mcp.McpServer;
+      // @ts-expect-error McpServer is a registration snapshot and does not own lifecycle.
+      server.close();
+    }
     expect(vectorStore).toHaveProperty("InMemoryVectorStore");
     expect(vectorStore).toHaveProperty("retrieveDocuments");
     expect(vectorStore).toHaveProperty("createVectorSearchTool");

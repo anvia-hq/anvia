@@ -3,6 +3,7 @@ import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AnyTool } from "../tool/tool";
 
 export type AgentToolState = {
+  configuredTools: readonly AnyTool[];
   staticTools: readonly AnyTool[];
   providerTools: readonly ProviderTool[];
   toolIndexes: readonly ToolIndex[];

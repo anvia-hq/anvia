@@ -93,6 +93,7 @@ export type ResolvedAgentOptions<
   providerOptions?: JsonObject | undefined;
   retries?: RetrySetting | undefined;
   tools?: readonly AnyTool[] | undefined;
+  mcpServers?: readonly McpServer[] | undefined;
   providerTools?: readonly ProviderTool[] | undefined;
   toolIndexes?: readonly ToolIndex[] | undefined;
   toolChoice?: ToolChoice | undefined;

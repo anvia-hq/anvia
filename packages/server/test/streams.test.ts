@@ -1,617 +1,159 @@
-import type { UIStreamEvent } from "@anvia/core/ui";
+import type { ClientStream, ClientStreamEvent, ClientStreamFrame } from "@anvia/client";
 import { describe, expect, it } from "vitest";
-
+import * as publicServer from "../src";
 import {
-  createEventStream,
-  createJsonlStream,
+  createClientStreamResponse,
+  createEventStreamResponse,
   createMemoryResumableStreamStore,
-  createResumableStream,
-  createSseStream,
-  createUIStreamResponse,
-  type ResumableStreamStore,
-  resumeStreamEvents,
+  resumeClientStreamResponse,
+  resumeEventStreamResponse,
 } from "../src";
 
-describe("@anvia/server streams", () => {
-  it("serializes async iterables as jsonl", async () => {
-    const text = await readText(createJsonlStream(events([{ type: "one" }, { type: "two" }])));
-
-    expect(text).toBe('{"type":"one"}\n{"type":"two"}\n');
-  });
-
-  it("serializes async iterables as server-sent events", async () => {
-    const text = await readText(
-      createSseStream(events([{ type: "one", value: "hello\nworld" }]), {
-        eventName: (event) => event.type,
-      }),
-    );
-
-    expect(text).toBe('event: one\ndata: {"type":"one","value":"hello\\nworld"}\n\n');
-  });
-
-  it("creates event stream responses with default jsonl headers", async () => {
-    const response = createEventStream(events([{ type: "one" }]));
-
-    expect(response.headers.get("content-type")).toBe("application/x-ndjson; charset=utf-8");
-    expect(response.headers.get("cache-control")).toBe("no-cache, no-transform");
-    expect(response.headers.get("connection")).toBe("keep-alive");
-    expect(response.headers.get("x-accel-buffering")).toBe("no");
-    expect(await response.text()).toBe('{"type":"one"}\n');
-  });
-
-  it("streams event responses before the upstream iterable completes", async () => {
-    let releaseSecondEvent!: () => void;
-    const secondEventReady = new Promise<void>((resolve) => {
-      releaseSecondEvent = resolve;
-    });
-    const response = createEventStream(
-      (async function* () {
-        yield { type: "one" };
-        await secondEventReady;
-        yield { type: "two" };
-      })(),
-    );
-    if (response.body === null) {
-      throw new Error("Expected event stream response body");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    const first = await reader.read();
-
-    expect(first.done).toBe(false);
-    expect(decoder.decode(first.value)).toBe('{"type":"one"}\n');
-
-    releaseSecondEvent();
-    const second = await reader.read();
-
-    expect(second.done).toBe(false);
-    expect(decoder.decode(second.value)).toBe('{"type":"two"}\n');
-    expect(await reader.read()).toEqual({ done: true, value: undefined });
-  });
-
-  it("creates event stream responses with custom response init", async () => {
-    const response = createEventStream(events([{ type: "one" }]), {
-      headers: {
-        "cache-control": "private",
-        "content-type": "application/custom",
-        "x-custom": "yes",
-      },
-      status: 202,
-      statusText: "Accepted",
-    });
-
-    expect(response.status).toBe(202);
-    expect(response.statusText).toBe("Accepted");
-    expect(response.headers.get("cache-control")).toBe("private");
-    expect(response.headers.get("content-type")).toBe("application/custom");
-    expect(response.headers.get("x-custom")).toBe("yes");
-    expect(response.headers.get("connection")).toBe("keep-alive");
-    expect(response.headers.get("x-accel-buffering")).toBe("no");
-  });
-
-  it("creates event stream responses with sse headers", async () => {
-    const response = createEventStream(events([{ type: "one" }]), { format: "sse" });
-
-    expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
-    expect(await response.text()).toBe('data: {"type":"one"}\n\n');
-  });
-
-  it("creates resumable event stream responses", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    const response = createEventStream(events([{ type: "one" }, { type: "two" }]), {
-      resumable: {
-        id: "run_1",
-        store,
-      },
-    });
-
-    const parsed = parseJsonl(await response.text());
-
-    expect(parsed).toEqual([
-      { type: "stream_start", streamId: "run_1", eventId: 0 },
-      { type: "stream_event", streamId: "run_1", eventId: 1, event: { type: "one" } },
-      { type: "stream_event", streamId: "run_1", eventId: 2, event: { type: "two" } },
-      { type: "stream_end", streamId: "run_1", eventId: 2, status: "completed" },
-    ]);
-    await expect(store.status({ streamId: "run_1" })).resolves.toMatchObject({
-      status: "completed",
-      lastEventId: 2,
-    });
-  });
-
-  it("resumes stored events and tails live resumable stream events", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    await store.open({ streamId: "run_1" });
-    await store.append({ streamId: "run_1", event: { type: "one" } });
-
-    const iterator = resumeStreamEvents({
-      id: "run_1",
-      after: 0,
-      store,
-    })[Symbol.asyncIterator]();
-
-    await expect(nextValue(iterator)).resolves.toEqual({
-      type: "stream_start",
-      streamId: "run_1",
-      eventId: 0,
-    });
-    await expect(nextValue(iterator)).resolves.toEqual({
-      type: "stream_event",
-      streamId: "run_1",
-      eventId: 1,
-      event: { type: "one" },
-    });
-
-    const nextEvent = nextValue(iterator);
-    await store.append({ streamId: "run_1", event: { type: "two" } });
-    await expect(nextEvent).resolves.toEqual({
-      type: "stream_event",
-      streamId: "run_1",
-      eventId: 2,
-      event: { type: "two" },
-    });
-
-    const endEvent = nextValue(iterator);
-    await store.close({ streamId: "run_1", status: "completed" });
-    await expect(endEvent).resolves.toEqual({
-      type: "stream_end",
-      streamId: "run_1",
-      eventId: 2,
-      status: "completed",
-    });
-  });
-
-  it("resumes through createEventStream without double-wrapping envelopes", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    await store.open({ streamId: "run_1" });
-    await store.append({ streamId: "run_1", event: { type: "one" } });
-    await store.append({ streamId: "run_1", event: { type: "two" } });
-
-    const response = createEventStream({
-      resume: {
-        streamId: "run_1",
-        after: 1,
-        store,
-      },
-    });
-    const reader = response.body?.getReader();
-    if (reader === undefined) {
-      throw new Error("Expected response body");
-    }
-    const decoder = new TextDecoder();
-
-    const first = await reader.read();
-    expect(first.done).toBe(false);
-    expect(JSON.parse(decoder.decode(first.value))).toEqual({
-      type: "stream_start",
-      streamId: "run_1",
-      eventId: 0,
-    });
-
-    const second = await reader.read();
-    expect(second.done).toBe(false);
-    expect(JSON.parse(decoder.decode(second.value))).toEqual({
-      type: "stream_event",
-      streamId: "run_1",
-      eventId: 2,
-      event: { type: "two" },
-    });
-
-    const endRead = reader.read();
-    await store.close({ streamId: "run_1", status: "completed" });
-    const end = await endRead;
-    expect(end.done).toBe(false);
-    expect(JSON.parse(decoder.decode(end.value))).toEqual({
-      type: "stream_end",
-      streamId: "run_1",
-      eventId: 2,
-      status: "completed",
-    });
-    expect(await reader.read()).toEqual({ done: true, value: undefined });
-  });
-
-  it("resumes UI stream responses through createUIStreamResponse", async () => {
-    const store = createMemoryResumableStreamStore<UIStreamEvent>();
-    await store.open({ streamId: "run_1" });
-    await store.append({
-      streamId: "run_1",
-      event: {
-        type: "text_delta",
-        messageId: "assistant_1",
-        partId: "assistant_1_text",
-        delta: "hi",
-      },
-    });
-    await store.close({ streamId: "run_1", status: "completed" });
-
-    const response = createUIStreamResponse({
-      resume: {
-        streamId: "run_1",
-        after: 0,
-        store,
-      },
-    });
-
-    expect(parseJsonl(await response.text())).toEqual([
-      { type: "stream_start", streamId: "run_1", eventId: 0 },
-      {
-        type: "stream_event",
-        streamId: "run_1",
-        eventId: 1,
-        event: {
-          type: "text_delta",
-          messageId: "assistant_1",
-          partId: "assistant_1_text",
-          delta: "hi",
-        },
-      },
-      { type: "stream_end", streamId: "run_1", eventId: 1, status: "completed" },
-    ]);
-  });
-
-  it("omits the resume cursor when none is supplied", async () => {
-    let subscribeInput: unknown;
-    const store: ResumableStreamStore<{ type: string }> = {
-      async open() {
-        return { status: "running", lastEventId: 0 };
-      },
-      async append(input) {
-        return {
-          streamId: input.streamId,
-          eventId: 1,
-          event: input.event,
-          createdAt: new Date(),
-        };
-      },
-      subscribe(input) {
-        subscribeInput = input;
-        return events([]);
-      },
-      async status() {
-        return { status: "completed", lastEventId: 0 };
-      },
-      async close() {
-        return { status: "completed", lastEventId: 0 };
-      },
-    };
-
-    await collect(resumeStreamEvents({ id: "run_1", store }));
-
-    expect(subscribeInput).toStrictEqual({ streamId: "run_1" });
-    expect(subscribeInput).not.toHaveProperty("after");
-  });
-
-  it("stores and emits resumable stream errors", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    const response = createEventStream(failingEvents<{ type: string }>(new Error("nope")), {
-      resumable: {
-        id: "run_1",
-        store,
-      },
-    });
-
-    const parsed = parseJsonl(await response.text());
-
-    expect(parsed).toMatchObject([
-      { type: "stream_start", streamId: "run_1", eventId: 0 },
-      {
-        type: "stream_event",
-        streamId: "run_1",
-        eventId: 1,
-        event: { type: "error", error: { name: "Error", message: "nope" } },
-      },
-      { type: "stream_end", streamId: "run_1", eventId: 1, status: "error" },
-    ]);
-  });
-
-  it("keeps storing resumable events after response cancellation", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    let continueEvents!: () => void;
-    const response = createEventStream(
-      (async function* () {
-        yield { type: "one" };
-        await new Promise<void>((resolve) => {
-          continueEvents = resolve;
-        });
-        yield { type: "two" };
-      })(),
-      {
-        resumable: {
-          id: "run_1",
-          store,
-        },
-      },
-    );
-    const reader = response.body?.getReader();
-    if (reader === undefined) {
-      throw new Error("Expected response body");
-    }
-
-    await reader.read();
-    await reader.read();
-    await reader.cancel();
-    continueEvents();
-
-    await waitFor(async () => {
-      const state = await store.status({ streamId: "run_1" });
-      return state.status === "completed" && state.lastEventId === 2;
-    });
-  });
-
-  it("enforces resumable store lifecycle boundaries", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-
-    await expect(store.status({ streamId: "missing" })).resolves.toEqual({
-      status: "missing",
-      lastEventId: 0,
-    });
-    await expect(store.append({ streamId: "missing", event: { type: "one" } })).rejects.toThrow(
-      'Resumable stream "missing" is not open',
-    );
-    await expect(store.close({ streamId: "missing", status: "error" })).resolves.toEqual({
-      status: "error",
-      lastEventId: 0,
-    });
-
-    await store.open({ streamId: "run_1" });
-    await store.append({ streamId: "run_1", event: { type: "one" } });
-    await store.close({ streamId: "run_1", status: "completed" });
-
-    await expect(store.append({ streamId: "run_1", event: { type: "two" } })).rejects.toThrow(
-      'Resumable stream "run_1" is already completed',
-    );
-  });
-
-  it("honors resume cursors for stored events and concurrent subscribers", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    await store.open({ streamId: "run_1" });
-    await store.append({ streamId: "run_1", event: { type: "one" } });
-
-    const first = store.subscribe({ streamId: "run_1", after: 1 })[Symbol.asyncIterator]();
-    const second = store.subscribe({ streamId: "run_1", after: 0 })[Symbol.asyncIterator]();
-    await expect(nextValue(second)).resolves.toMatchObject({
-      streamId: "run_1",
-      eventId: 1,
-      event: { type: "one" },
-    });
-
-    const firstLive = nextValue(first);
-    const secondLive = nextValue(second);
-    await store.append({ streamId: "run_1", event: { type: "two" } });
-
-    const expected = {
-      streamId: "run_1",
-      eventId: 2,
-      event: { type: "two" },
-    };
-    await expect(firstLive).resolves.toMatchObject(expected);
-    await expect(secondLive).resolves.toMatchObject(expected);
-
-    await first.return?.();
-    const secondEnd = second.next();
-    await store.close({ streamId: "run_1", status: "completed" });
-    await expect(secondEnd).resolves.toEqual({ value: undefined, done: true });
-  });
-
-  it("reopening a stream resets records and closes existing subscribers", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    await store.open({ streamId: "run_1" });
-    await store.append({ streamId: "run_1", event: { type: "old" } });
-    const oldSubscriber = store.subscribe({ streamId: "run_1", after: 1 })[Symbol.asyncIterator]();
-    const oldNext = oldSubscriber.next();
-
-    await store.open({ streamId: "run_1" });
-    await expect(oldNext).resolves.toEqual({ value: undefined, done: true });
-    await expect(store.status({ streamId: "run_1" })).resolves.toEqual({
-      status: "running",
-      lastEventId: 0,
-    });
-
-    await expect(
-      store.append({ streamId: "run_1", event: { type: "new" } }),
-    ).resolves.toMatchObject({ eventId: 1, event: { type: "new" } });
-  });
-
-  it("drains a resumable source only once for multiple consumers", async () => {
-    const store = createMemoryResumableStreamStore<{ type: string }>();
-    let sourceStarts = 0;
-    const stream = createResumableStream(
-      (async function* () {
-        sourceStarts += 1;
-        yield { type: "one" };
-        yield { type: "two" };
-      })(),
-      { id: "run_1", store },
-    );
-
-    const [first, second] = await Promise.all([collect(stream), collect(stream)]);
-
-    expect(sourceStarts).toBe(1);
-    expect(first).toEqual(second);
-    expect(first).toEqual([
-      { type: "stream_start", streamId: "run_1", eventId: 0 },
-      { type: "stream_event", streamId: "run_1", eventId: 1, event: { type: "one" } },
-      { type: "stream_event", streamId: "run_1", eventId: 2, event: { type: "two" } },
-      { type: "stream_end", streamId: "run_1", eventId: 2, status: "completed" },
-    ]);
-  });
-
-  it("creates UI stream responses with text deltas", async () => {
-    const response = createUIStreamResponse(
-      events([
-        {
-          type: "text_delta",
-          messageId: "msg_1",
-          partId: "part_1",
-          delta: "Hello",
-        },
-      ]),
-    );
-
-    expect(response.headers.get("content-type")).toBe("application/x-ndjson; charset=utf-8");
-    expect(await response.text()).toBe(
-      '{"type":"text_delta","messageId":"msg_1","partId":"part_1","delta":"Hello"}\n',
-    );
-  });
-
-  it("preserves context usage in UI message-end events", async () => {
-    const event: UIStreamEvent = {
-      type: "message_end",
-      messageId: "msg_1",
-      contextUsage: {
-        model: { id: "gpt-5", context: { contextWindow: 400_000 } },
-        usedTokens: 100_000,
-        remainingTokens: 300_000,
-        usedPercent: 25,
-        remainingPercent: 75,
-      },
-    };
-    const response = createUIStreamResponse(events([event]));
-
-    expect(parseJsonl(await response.text())).toEqual([event]);
-  });
-
-  it("supports custom jsonl serializers", async () => {
-    const text = await readText(
-      createJsonlStream(events([{ type: "one" }]), {
-        serialize: (event) => `custom:${"type" in event ? event.type : "unknown"}`,
-      }),
-    );
-
-    expect(text).toBe("custom:one\n");
-  });
-
-  it("supports sse retry and custom serializers", async () => {
-    const text = await readText(
-      createSseStream(events([{ type: "one", value: "hello\nworld" }]), {
-        retry: 1500,
-        eventName: "message",
-        serialize: (event) => JSON.stringify(event, null, 2),
-      }),
-    );
-
-    expect(text).toBe(
-      'retry: 1500\n\nevent: message\ndata: {\ndata:   "type": "one",\ndata:   "value": "hello\\nworld"\ndata: }\n\n',
-    );
-  });
-
-  it("rejects invalid sse retry values and event names", () => {
-    expect(() => createSseStream(events([{ type: "one" }]), { retry: -1 })).toThrow(
-      "SSE retry must be a finite non-negative integer",
-    );
-    expect(() => createSseStream(events([{ type: "one" }]), { retry: 1.5 })).toThrow(
-      "SSE retry must be a finite non-negative integer",
-    );
-    expect(() =>
-      createSseStream(events([{ type: "one" }]), {
-        eventName: "bad\nevent",
-      }),
-    ).toThrow("SSE event names must not contain null bytes or line breaks");
-  });
-
-  it("emits an error event when iteration fails", async () => {
-    const text = await readText(
-      createJsonlStream(
-        (async function* () {
-          yield { type: "one" };
-          throw new Error("stream failed");
-        })(),
-      ),
-    );
-
-    expect(text).toContain('{"type":"one"}\n');
-    expect(text).toContain('"type":"error"');
-    expect(text).toContain('"message":"stream failed"');
-    expect(text).not.toContain('"stack"');
-  });
-
-  it("serializes non-error thrown values in error events", async () => {
-    const text = await readText(
-      createSseStream<{ type: string }>(failingEvents("plain failure"), {
-        eventName: (event) => event.type,
-      }),
-    );
-
-    expect(text).toBe('event: error\ndata: {"type":"error","error":"plain failure"}\n\n');
-  });
-
-  it.each(["jsonl", "sse"] as const)("cancels %s async iterators", async (format) => {
-    let canceled = false;
-    const source = {
-      [Symbol.asyncIterator]() {
-        return {
-          async next() {
-            return { done: false, value: { type: "one" } };
-          },
-          async return() {
-            canceled = true;
-            return { done: true, value: undefined };
-          },
-        };
-      },
-    };
-    const stream = format === "jsonl" ? createJsonlStream(source) : createSseStream(source);
-
-    await stream.cancel();
-
-    expect(canceled).toBe(true);
+describe("public boundary", () => {
+  it("does not retain ambiguous response aliases", () => {
+    expect(publicServer).not.toHaveProperty("createEventStream");
+    expect(publicServer).not.toHaveProperty("createUIStreamResponse");
+    expect(publicServer).not.toHaveProperty("resumeEventStream");
   });
 });
 
-async function* events<T>(items: T[]): AsyncIterable<T> {
-  for (const item of items) {
-    yield item;
-  }
+describe("generic event responses", () => {
+  it("encodes JSONL without pretending generic events are client messages", async () => {
+    const response = createEventStreamResponse(values([{ kind: "one" }, { kind: "two" }]));
+    expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+    expect(await jsonl(response)).toEqual([{ kind: "one" }, { kind: "two" }]);
+  });
+
+  it("uses a separate explicit resume function", async () => {
+    const store = createMemoryResumableStreamStore<{ kind: string }>();
+    const initial = createEventStreamResponse(values([{ kind: "one" }, { kind: "two" }]), {
+      resumable: { id: "generic_1", store },
+    });
+    await initial.text();
+    const resumed = resumeEventStreamResponse({
+      streamId: "generic_1",
+      after: 1,
+      store,
+    });
+    expect(await jsonl(resumed)).toEqual([
+      { type: "stream_start", streamId: "generic_1", eventId: 0 },
+      { type: "stream_event", streamId: "generic_1", eventId: 2, event: { kind: "two" } },
+      { type: "stream_end", streamId: "generic_1", eventId: 2, status: "completed" },
+    ]);
+  });
+});
+
+describe("client stream responses", () => {
+  it("always emits protocol frames and the protocol response header", async () => {
+    const response = createClientStreamResponse(
+      clientEvents([
+        { type: "run_start", runId: "run_1", source: "completion" },
+        { type: "run_end", runId: "run_1", status: "completed", text: "Done" },
+      ]),
+      { streamId: "stream_1" },
+    );
+    expect(response.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v1");
+    const frames = (await jsonl(response)) as ClientStreamFrame[];
+    expect(frames.map((frame) => frame.type)).toEqual([
+      "stream_start",
+      "stream_event",
+      "stream_event",
+      "stream_end",
+    ]);
+    expect(frames[0]).toMatchObject({
+      protocol: "anvia.client.v1",
+      streamId: "stream_1",
+      resumable: false,
+    });
+  });
+
+  it("does not serialize a thrown server error", async () => {
+    const response = createClientStreamResponse(failingClientStream(new Error("database secret")), {
+      streamId: "stream_1",
+    });
+    const body = await response.text();
+    expect(body).not.toContain("database secret");
+    expect(body).not.toContain("Error");
+    expect(
+      body
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as unknown),
+    ).toEqual([
+      {
+        type: "stream_start",
+        protocol: "anvia.client.v1",
+        streamId: "stream_1",
+        eventId: 0,
+        resumable: false,
+      },
+      { type: "stream_end", streamId: "stream_1", eventId: 0, status: "error" },
+    ]);
+  });
+
+  it("persists canonical events and resumes with original event IDs", async () => {
+    const store = createMemoryResumableStreamStore<ClientStreamEvent>();
+    const initial = createClientStreamResponse(
+      clientEvents([
+        { type: "run_start", runId: "run_1", source: "completion" },
+        { type: "run_end", runId: "run_1", status: "completed" },
+      ]),
+      { resumable: { streamId: "stream_1", store } },
+    );
+    await initial.text();
+
+    const resumed = resumeClientStreamResponse({ streamId: "stream_1", after: 1, store });
+    const frames = (await jsonl(resumed)) as ClientStreamFrame[];
+    expect(frames[0]).toMatchObject({ type: "stream_start", resumable: true });
+    expect(frames[1]).toMatchObject({ type: "stream_event", eventId: 2 });
+    expect(frames[2]).toEqual({
+      type: "stream_end",
+      streamId: "stream_1",
+      eventId: 2,
+      status: "completed",
+    });
+  });
+
+  it("supports SSE while preserving the exact same frames", async () => {
+    const response = createClientStreamResponse(
+      clientEvents([{ type: "run_end", runId: "run_1", status: "completed" }]),
+      { streamId: "stream_1", format: "sse" },
+    );
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const text = await response.text();
+    expect(text).toContain('"protocol":"anvia.client.v1"');
+    expect(text).toContain('"type":"stream_end"');
+  });
+});
+
+function values<T>(items: T[]): AsyncIterable<T> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield* items;
+    },
+  };
 }
 
-async function readText(stream: ReadableStream<Uint8Array>): Promise<string> {
-  return new Response(stream).text();
+function clientEvents(items: ClientStreamEvent[]): ClientStream {
+  return values(items);
 }
 
-function parseJsonl(text: string): unknown[] {
-  return text
-    .trim()
-    .split(/\r?\n/)
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as unknown);
-}
-
-async function nextValue<T>(iterator: AsyncIterator<T>): Promise<T> {
-  const next = await iterator.next();
-  if (next.done === true) {
-    throw new Error("Expected iterator value");
-  }
-  return next.value;
-}
-
-async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
-  const values: T[] = [];
-  for await (const value of iterable) {
-    values.push(value);
-  }
-  return values;
-}
-
-async function waitFor(predicate: () => Promise<boolean>): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (await predicate()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-
-  throw new Error("Timed out waiting for condition");
-}
-
-function failingEvents<TEvent = unknown>(error: unknown): AsyncIterable<TEvent> {
+function failingClientStream(error: unknown): ClientStream {
   return {
     [Symbol.asyncIterator]() {
       return {
-        async next() {
+        async next(): Promise<IteratorResult<ClientStreamEvent>> {
           throw error;
         },
       };
     },
   };
+}
+
+async function jsonl(response: Response): Promise<unknown[]> {
+  return (await response.text())
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as unknown);
 }

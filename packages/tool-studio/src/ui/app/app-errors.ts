@@ -1,4 +1,4 @@
-import { EventStreamHttpError } from "@anvia/react";
+import { EventStreamHttpError } from "@anvia/client/transport";
 import { errorMessage } from "./modules/shared/format";
 
 export async function responseErrorMessage(response: Response, label: string): Promise<string> {

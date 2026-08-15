@@ -1,5 +1,10 @@
+import {
+  type AgentClientStreamContext,
+  type ClientStreamEvent,
+  customAgentEventsToClientStream,
+} from "@anvia/client";
 import type { AgentStreamEvent } from "@anvia/core/agent";
-import type { Message } from "@anvia/core/completion";
+import { isJsonValue, type JsonValue, type Message } from "@anvia/core/completion";
 import type { Context } from "hono";
 import type {
   AgentRunRequest,
@@ -14,7 +19,7 @@ import type {
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
 import { formatJson } from "./json";
-import { streamStudioJsonl } from "./streams";
+import { streamStudioClient } from "./streams";
 import {
   isAgentTraceOptions,
   isJsonObject,
@@ -120,9 +125,111 @@ export async function* mergeRunAndApprovalEvents(
 export function streamAgentRunEvents(
   _c: Context,
   events: AsyncIterable<AgentRunStreamEvent>,
-  options: { onCancel?: () => void | Promise<void> } = {},
+  options: { runId: string; onCancel?: () => void | Promise<void> },
 ): Response {
-  return streamStudioJsonl(withAgentRunCancellation(events, options.onCancel));
+  return streamStudioClient(
+    customAgentEventsToClientStream<AgentRunStreamEvent>(
+      withAgentRunCancellation(events, options.onCancel),
+      {
+        runId: options.runId,
+        mapCustomEvent: studioEventToClientEvent,
+      },
+    ),
+  );
+}
+
+function studioEventToClientEvent(
+  event: AgentRunStreamEvent,
+  context: AgentClientStreamContext,
+): ClientStreamEvent | undefined {
+  if (event.type === "tool_approval_request" || event.type === "tool_approval_result") {
+    return {
+      type: "tool_approval",
+      runId: context.runId,
+      ...(context.turn === undefined ? {} : { turn: context.turn }),
+      ...(context.scope === undefined ? {} : { scope: context.scope }),
+      approval: {
+        id: event.approval.id,
+        runId: event.approval.runId,
+        agentId: event.approval.agentId,
+        ...(event.approval.sessionId === undefined ? {} : { sessionId: event.approval.sessionId }),
+        toolName: event.approval.toolName,
+        ...(event.approval.callId === undefined ? {} : { callId: event.approval.callId }),
+        internalCallId: event.approval.internalCallId,
+        input: parseJsonOrString(event.approval.args),
+        status: event.approval.status,
+        requestedAt: event.approval.requestedAt,
+        ...(event.approval.resolvedAt === undefined
+          ? {}
+          : { resolvedAt: event.approval.resolvedAt }),
+        ...(event.approval.reason === undefined ? {} : { reason: event.approval.reason }),
+      },
+    };
+  }
+  if (event.type === "tool_question_request" || event.type === "tool_question_result") {
+    return {
+      type: "tool_question",
+      runId: context.runId,
+      ...(context.turn === undefined ? {} : { turn: context.turn }),
+      ...(context.scope === undefined ? {} : { scope: context.scope }),
+      question: {
+        id: event.question.id,
+        runId: event.question.runId,
+        agentId: event.question.agentId,
+        ...(event.question.sessionId === undefined ? {} : { sessionId: event.question.sessionId }),
+        toolName: event.question.toolName,
+        ...(event.question.callId === undefined ? {} : { callId: event.question.callId }),
+        internalCallId: event.question.internalCallId,
+        input: parseJsonOrString(event.question.args),
+        questions: event.question.questions,
+        status: event.question.status,
+        requestedAt: event.question.requestedAt,
+        ...(event.question.answeredAt === undefined
+          ? {}
+          : { answeredAt: event.question.answeredAt }),
+        ...(event.question.cancelledAt === undefined
+          ? {}
+          : { cancelledAt: event.question.cancelledAt }),
+        ...(event.question.answers === undefined ? {} : { answers: event.question.answers }),
+      },
+    };
+  }
+  if (event.type === "session_log" && isJsonValue(event.log)) {
+    return {
+      type: "data",
+      runId: context.runId,
+      name: "studio.session_log",
+      data: event.log,
+      transient: true,
+    };
+  }
+  if (event.type === "pipeline_log" && isJsonValue(event.log)) {
+    return {
+      type: "data",
+      runId: context.runId,
+      name: "studio.pipeline_log",
+      data: event.log,
+      transient: true,
+    };
+  }
+  if (event.type === "pipeline_final" && isJsonValue(event.output)) {
+    return {
+      type: "data",
+      runId: context.runId,
+      name: "studio.pipeline_final",
+      data: event.output,
+    };
+  }
+  return undefined;
+}
+
+function parseJsonOrString(value: string): JsonValue {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isJsonValue(parsed) ? parsed : value;
+  } catch {
+    return value;
+  }
 }
 
 function withAgentRunCancellation(

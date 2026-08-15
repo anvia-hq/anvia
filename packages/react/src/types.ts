@@ -1,37 +1,41 @@
-import type { ContextUsage, Message } from "@anvia/core/completion";
 import type {
+  ClientDataMap,
+  ClientDataSchemas,
+  ClientStreamCursor,
+  ClientStreamEvent,
+  ClientStreamRequest,
+  ClientTransport,
   CreateUIAttachment,
+  ToolApproval,
+  ToolQuestion,
+  ToolQuestionAnswer,
   UIMessage,
-  UIStreamEvent,
-  UIStreamRequest,
-  UIStreamResume,
-} from "@anvia/core/ui";
+} from "@anvia/client";
+import type { ContextUsage, Message } from "@anvia/core/completion";
 
-export type {
-  CreateUIAttachment,
-  UIAttachment,
-  UIError,
-  UIMessage,
-  UIMessagePart,
-  UIMessageRole,
-  UIStreamEvent,
-  UIStreamRequest,
-  UIStreamResume,
-} from "@anvia/core/ui";
+export type ClientConnectionOptions<TRequest, TData extends ClientDataMap> =
+  | {
+      endpoint: string | URL | ((request: TRequest) => string | URL);
+      transport?: never;
+      format?: "auto" | "jsonl" | "sse";
+      fetch?: typeof fetch;
+      headers?: HeadersInit | ((request: TRequest) => HeadersInit | Promise<HeadersInit>);
+      body?: (
+        request: TRequest,
+      ) => BodyInit | null | undefined | Promise<BodyInit | null | undefined>;
+      dataSchemas?: ClientDataSchemas<TData>;
+    }
+  | {
+      transport: ClientTransport<TRequest, TData>;
+      endpoint?: never;
+      format?: never;
+      fetch?: never;
+      headers?: never;
+      body?: never;
+      dataSchemas?: never;
+    };
 
-export type EventStreamFormat = "jsonl" | "sse";
-
-export type TransportOptions = {
-  signal?: AbortSignal;
-  headers?: HeadersInit;
-};
-
-export type EventTransport<TRequest, TEvent> = {
-  send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
-};
-
-export type ChatResumeCursor = UIStreamResume;
-
+export type ChatResumeCursor = ClientStreamCursor;
 export type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
 
 export type ChatResumeOptions = {
@@ -47,79 +51,6 @@ export type ChatResumeState = {
   messages: UIMessage[];
 };
 
-export type ResumableStreamEnvelope<TEvent> =
-  | {
-      type: "stream_start";
-      streamId: string;
-      eventId: 0;
-    }
-  | {
-      type: "stream_event";
-      streamId: string;
-      eventId: number;
-      event: TEvent;
-    }
-  | {
-      type: "stream_end";
-      streamId: string;
-      eventId: number;
-      status: "running" | "completed" | "error" | "missing";
-    };
-
-export type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out" | "cancelled";
-
-export type ToolApproval = {
-  id: string;
-  runId?: string;
-  agentId?: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId?: string;
-  args?: string;
-  status: ToolApprovalStatus;
-  requestedAt?: string;
-  resolvedAt?: string;
-  reason?: string;
-};
-
-export type ToolQuestionStatus = "pending" | "answered" | "cancelled";
-
-export type ToolQuestionChoice = {
-  label: string;
-  value: string;
-};
-
-export type ToolQuestionPrompt = {
-  id: string;
-  question: string;
-  choices: ToolQuestionChoice[];
-};
-
-export type ToolQuestionAnswer = {
-  questionId: string;
-  answer: string;
-  choice?: string;
-  custom?: boolean;
-};
-
-export type ToolQuestion = {
-  id: string;
-  runId?: string;
-  agentId?: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId?: string;
-  args?: string;
-  questions: ToolQuestionPrompt[];
-  status: ToolQuestionStatus;
-  requestedAt?: string;
-  answeredAt?: string;
-  cancelledAt?: string;
-  answers?: ToolQuestionAnswer[];
-};
-
 export type ToolApprovalDecisionInput = {
   approvalId: string;
   approved: boolean;
@@ -133,24 +64,16 @@ export type ToolQuestionAnswerInput = {
   question?: ToolQuestion;
 };
 
-export type HumanInputOptions<TEvent = unknown> = {
+export type HumanInputOptions = {
   endpoint?: string | URL;
   fetch?: typeof fetch;
-  eventToApproval?: (event: TEvent) => ToolApproval | undefined;
-  eventToQuestion?: (event: TEvent) => ToolQuestion | undefined;
   decideApproval?: (decision: ToolApprovalDecisionInput) => Promise<ToolApproval | undefined>;
   answerQuestion?: (answer: ToolQuestionAnswerInput) => Promise<ToolQuestion | undefined>;
 };
 
 export type HumanInputState = {
-  approvals: {
-    all: ToolApproval[];
-    pending: ToolApproval[];
-  };
-  questions: {
-    all: ToolQuestion[];
-    pending: ToolQuestion[];
-  };
+  approvals: { all: ToolApproval[]; pending: ToolApproval[] };
+  questions: { all: ToolQuestion[]; pending: ToolQuestion[] };
 };
 
 export type ChatSuggestion = {
@@ -171,39 +94,37 @@ export type SendMessageInput =
     };
 
 export type CreateChatRequestArgs = {
-  messages: UIMessage[];
   uiMessages: UIMessage[];
-  coreMessages: Message[];
-  resume?: ChatResumeCursor | undefined;
+  messages: Message[];
+  resume?: ChatResumeCursor;
 };
 
-export type UseChatStatus = "idle" | "streaming" | "error";
+export type UseChatStatus = "ready" | "submitted" | "streaming" | "error";
 
-export type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
-  transport?: EventTransport<TRequest, TEvent>;
-  endpoint?: string | URL;
-  format?: EventStreamFormat;
+type UseChatCommonOptions<TRequest, TData extends ClientDataMap> = {
   initialMessages?: UIMessage[];
   resume?: ChatResumeOptions;
   createRequest?: (args: CreateChatRequestArgs) => TRequest;
-  eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
-  eventToDelta?: (event: TEvent) => string | undefined;
-  eventToFinal?: (event: TEvent) => string | undefined;
-  humanInput?: HumanInputOptions<TEvent>;
+  humanInput?: HumanInputOptions;
   suggestions?: ChatSuggestion[];
-  onEvent?: (event: TEvent) => void;
-  onError?: (error: unknown) => void;
+  onEvent?: (event: ClientStreamEvent<TData>) => void;
+  onError?: (error: Error) => void;
 };
+
+export type UseChatOptions<
+  TRequest = ClientStreamRequest,
+  TData extends ClientDataMap = ClientDataMap,
+> = ClientConnectionOptions<TRequest, TData> & UseChatCommonOptions<TRequest, TData>;
 
 export type SetMessages = (
   messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[]),
 ) => void;
 
-export type UseChatResult<TEvent = UIStreamEvent> = {
+export type UseChatResult<TData extends ClientDataMap = ClientDataMap> = {
   messages: UIMessage[];
-  events: TEvent[];
+  events: ClientStreamEvent<TData>[];
   contextUsage: ContextUsage | undefined;
-  suggestions?: ChatSuggestion[];
+  suggestions: ChatSuggestion[];
   setMessages: SetMessages;
   sendMessage(input: SendMessageInput): Promise<void>;
   send(input?: string): Promise<void>;
@@ -211,9 +132,9 @@ export type UseChatResult<TEvent = UIStreamEvent> = {
   stop(): void;
   reset(messages?: UIMessage[]): void;
   status: UseChatStatus;
-  error: unknown;
+  error: Error | undefined;
   text: string;
-  streamId?: string | undefined;
+  streamId: string | undefined;
   isResuming: boolean;
   resume(): Promise<void>;
   humanInput: HumanInputState;

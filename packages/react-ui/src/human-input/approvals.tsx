@@ -1,7 +1,8 @@
-import type { ToolApproval } from "@anvia/react";
+import type { ToolApproval } from "@anvia/client";
 import { type ChangeEvent, forwardRef, type MouseEvent, type ReactNode, useCallback } from "react";
 
 import { InternalApprovalProvider, useApproval, useChatContext, useHumanInput } from "../contexts";
+import { stringifyValue } from "../format";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type ApprovalChildren = ReactNode | ((approval: ToolApproval) => ReactNode);
@@ -198,7 +199,9 @@ function defaultApprovalContent(approval: ToolApproval): ReactNode {
   return (
     <>
       <div data-anvia-approval-tool="">{approval.toolName}</div>
-      {approval.args !== undefined ? <pre data-anvia-approval-args="">{approval.args}</pre> : null}
+      {approval.input !== undefined ? (
+        <pre data-anvia-approval-args="">{stringifyValue(approval.input)}</pre>
+      ) : null}
       <HumanInputApprovalReason />
       <HumanInputApprove />
       <HumanInputReject />

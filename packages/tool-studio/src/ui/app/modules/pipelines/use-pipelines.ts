@@ -1,4 +1,4 @@
-import { createFetchTransport, EventStreamHttpError } from "@anvia/react";
+import { createFetchEventTransport, EventStreamHttpError } from "@anvia/client/transport";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   StudioConfig,
@@ -17,7 +17,7 @@ type PipelineRunStreamRequest = {
   body: Record<string, unknown>;
 };
 
-const pipelineRunStreamTransport = createFetchTransport<PipelineRunStreamRequest, unknown>({
+const pipelineRunStreamTransport = createFetchEventTransport<PipelineRunStreamRequest, unknown>({
   endpoint: (request) => request.endpoint,
   method: "POST",
   format: "jsonl",

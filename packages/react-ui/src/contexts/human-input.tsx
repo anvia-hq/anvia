@@ -3,7 +3,7 @@ import type {
   ToolQuestion,
   ToolQuestionAnswer,
   ToolQuestionPrompt,
-} from "@anvia/react";
+} from "@anvia/client";
 import {
   createContext,
   createElement,

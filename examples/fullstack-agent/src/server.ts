@@ -1,6 +1,7 @@
-import { streamCompletion, type UIStreamRequest } from "@anvia/core";
+import { completionToClientStream, parseClientStreamRequest } from "@anvia/client";
+import { streamCompletion } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
-import { createEventStream } from "@anvia/server";
+import { createClientStreamResponse } from "@anvia/server";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -24,14 +25,17 @@ app.use("/api/*", cors());
 app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.post("/api/completion", async (c) => {
-  const body = (await c.req.json()) as UIStreamRequest;
+  const body = parseClientStreamRequest(await c.req.json());
 
-  return createEventStream(
-    streamCompletion({
-      model,
-      messages: body.messages,
-      instructions,
-    }),
+  return createClientStreamResponse(
+    completionToClientStream(
+      streamCompletion({
+        model,
+        messages: body.messages,
+        instructions,
+      }),
+      body.metadata === undefined ? {} : { metadata: body.metadata },
+    ),
     {
       format: "jsonl",
     },

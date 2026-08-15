@@ -1,27 +1,43 @@
 # @anvia/server
 
-Server-side stream helpers for Anvia applications.
+Server response helpers for the Anvia client protocol and explicitly generic event streams.
+
+## Client protocol responses
+
+Adapt native runtime events at the server boundary, then frame them for the client:
 
 ```ts
-import { createUIStreamResponse } from "@anvia/server";
+import { completionToClientStream, parseClientStreamRequest } from "@anvia/client";
+import { streamCompletion } from "@anvia/core";
+import { createClientStreamResponse } from "@anvia/server";
 
-return createUIStreamResponse(uiEvents, {
-  format: "jsonl",
-});
+const body = parseClientStreamRequest(await request.json());
+const events = completionToClientStream(
+  streamCompletion({ model, messages: body.messages }),
+);
+
+return createClientStreamResponse(events); // JSONL by default
 ```
 
-## Exports
+`createClientStreamResponse(events, options)` always emits `stream_start`, ordered
+`stream_event` frames, and `stream_end`, and sets
+`x-anvia-stream-protocol: anvia.client.v1`. Use `format: "sse"` for SSE framing.
 
-- `createEventStream(events, options)` returns a streaming `Response`.
-- `createEventStream({ resume })` continues a previously started resumable stream.
-- `createUIStreamResponse(events, options)` returns a streaming `Response` for `UIStreamEvent` values.
-- `createUIStreamResponse({ resume })` continues a resumable UI stream.
-- `createJsonlStream(events, options)` returns a JSONL `ReadableStream<Uint8Array>`.
-- `createSseStream(events, options)` returns a Server-Sent Event `ReadableStream<Uint8Array>`.
-- `createResumableStream(events, options)` wraps events in resumable stream envelopes.
-- `resumeStreamEvents(options)` replays and tails events from a `ResumableStreamStore`.
-- `createMemoryResumableStreamStore()` creates a single-process, non-durable resumable stream store.
+For resumable streams, pass `{ resumable: { streamId, store } }` when creating the response and
+call `resumeClientStreamResponse({ streamId, after, store })` for a resume request.
 
-JSONL is the default transport format. Use `format: "sse"` when you need `text/event-stream` compatibility.
-Pass `resumable: { id, store }` to `createEventStream` when clients need to recover streams after
-navigation or reload. Continue those streams with `createEventStream({ resume: { streamId, after, store } })`.
+## Generic event responses
+
+`createEventStreamResponse(events, options)` and `resumeEventStreamResponse(options)` are separate,
+generic helpers. They serialize the event type supplied by the application and do not claim that it
+is the Anvia client protocol.
+
+The lower-level exports are:
+
+- `createJsonlStream(events, options)`
+- `createSseStream(events, options)`
+- `createResumableStream(events, options)`
+- `resumeStreamEvents(options)`
+- `createMemoryResumableStreamStore()`
+
+There are no compatibility aliases for the removed ambiguous response APIs.

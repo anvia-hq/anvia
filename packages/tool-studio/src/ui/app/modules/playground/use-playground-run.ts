@@ -1,12 +1,12 @@
-import {
-  createChatTransport,
-  type ToolApproval,
-  type ToolQuestion,
-  type ToolQuestionAnswer,
-  useChat,
-} from "@anvia/react";
+import type {
+  ClientStreamEvent,
+  ToolApproval,
+  ToolQuestion,
+  ToolQuestionAnswer,
+} from "@anvia/client";
+import { useChat } from "@anvia/react";
 import { type RefObject, useRef } from "react";
-import type { AgentRunStreamEvent, StudioConfig, StudioTraceSummary } from "../../../../types";
+import type { StudioConfig, StudioSessionLogEntry, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
   enrichTranscriptWithTraceIds,
@@ -85,21 +85,15 @@ export function usePlaygroundRun(props: {
   const playgroundRunStartedAtRef = useRef<number | undefined>(undefined);
   const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
 
-  const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
-    transport: createChatTransport<StudioAgentRunRequest, AgentRunStreamEvent>({
-      endpoint: (request) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
-      method: "POST",
-      format: "jsonl",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: (request) => {
-        const { agentId: _agentId, ...body } = request;
-        return JSON.stringify(body);
-      },
-      mapEvent: (event) => event as AgentRunStreamEvent,
-    }),
-    createRequest: ({ coreMessages }) => {
+  const playgroundChat = useChat<StudioAgentRunRequest>({
+    endpoint: (request) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
+    format: "jsonl",
+    headers: { "content-type": "application/json" },
+    body: (request) => {
+      const { agentId: _agentId, ...body } = request;
+      return JSON.stringify(body);
+    },
+    createRequest: ({ messages: coreMessages }) => {
       const context = playgroundRunRequestRef.current;
       if (context === undefined) {
         throw new Error("Missing playground run request");
@@ -110,17 +104,7 @@ export function usePlaygroundRun(props: {
       }
       return runRequestFromContext(context, message);
     },
-    eventToDelta: () => undefined,
-    eventToFinal: () => undefined,
     humanInput: {
-      eventToApproval: (event) =>
-        event.type === "tool_approval_request" || event.type === "tool_approval_result"
-          ? event.approval
-          : undefined,
-      eventToQuestion: (event) =>
-        event.type === "tool_question_request" || event.type === "tool_question_result"
-          ? event.question
-          : undefined,
       decideApproval: async (input) => {
         const response = await fetch(
           `/approvals/${encodeURIComponent(input.approvalId)}/decision`,
@@ -181,6 +165,7 @@ export function usePlaygroundRun(props: {
       (trimmed.length === 0 && promptAttachments.length === 0) ||
       agentId.length === 0 ||
       runState === "running" ||
+      playgroundChat.status === "submitted" ||
       playgroundChat.status === "streaming"
     ) {
       return;
@@ -284,7 +269,10 @@ export function usePlaygroundRun(props: {
   }
 
   function stopPrompt() {
-    if (playgroundChat.status !== "streaming" || playgroundRunTerminalRef.current) {
+    if (
+      (playgroundChat.status !== "submitted" && playgroundChat.status !== "streaming") ||
+      playgroundRunTerminalRef.current
+    ) {
       return;
     }
     playgroundRunStoppedRef.current = true;
@@ -310,62 +298,61 @@ export function usePlaygroundRun(props: {
       .catch((answerError) => onError(errorMessage(answerError)));
   }
 
-  function acceptStreamEvent(event: AgentRunStreamEvent): boolean {
+  function acceptStreamEvent(event: ClientStreamEvent): boolean {
+    if (event.scope?.parentToolCallId !== undefined) {
+      transcript.appendAgentToolEvent(event);
+      return true;
+    }
     if (event.type === "text_delta") {
       transcript.appendAssistantText(event.delta);
       return true;
     }
     if (event.type === "reasoning_delta") {
-      transcript.appendReasoningText(event.delta, event.id);
+      transcript.appendReasoningText(event.delta, event.partId);
       return true;
     }
-    if (event.type === "tool_call") {
+    if (event.type === "tool_call_end") {
       transcript.appendToolCall(
-        event.toolCall.function.name,
-        formatToolValue(event.toolCall.function.arguments),
-        event.toolCall.callId ?? event.toolCall.id,
+        event.toolName,
+        formatToolValue(event.input),
+        event.callId ?? event.toolCallId,
       );
       return true;
     }
     if (event.type === "tool_result") {
       const result: Parameters<typeof transcript.appendToolResult>[0] = {
         toolName: event.toolName,
-        callId: event.toolCallId,
-        args: event.args,
-        result: event.result,
+        callId: event.callId ?? event.toolCallId,
+        args: formatToolValue(event.input),
+        result:
+          event.result.status === "success"
+            ? formatToolValue(event.result.output)
+            : event.result.error.message,
       };
-      if (event.structuredResult !== undefined) result.structuredResult = event.structuredResult;
+      if (event.result.status === "success" && event.result.content !== undefined) {
+        result.structuredResult = event.result.content;
+      }
       transcript.appendToolResult(result);
       return true;
     }
-    if (event.type === "agent_tool_event") {
-      transcript.appendAgentToolEvent(event);
+    if (event.type === "tool_approval") {
+      const update = transcriptApprovalUpdate(event.approval);
+      if (update !== undefined) transcript.updateToolApproval(update);
       return true;
     }
-    if (event.type === "tool_approval_request") {
-      transcript.updateToolApproval(event.approval);
+    if (event.type === "tool_question") {
+      const update = transcriptQuestionUpdate(event.question);
+      if (update !== undefined) transcript.updateToolQuestion(update);
       return true;
     }
-    if (event.type === "tool_approval_result") {
-      transcript.updateToolApproval(event.approval);
+    if (event.type === "data" && event.name === "studio.session_log") {
+      sessions.appendSessionLogEntry(event.data as unknown as StudioSessionLogEntry);
       return true;
     }
-    if (event.type === "tool_question_request") {
-      transcript.updateToolQuestion(event.question);
-      return true;
-    }
-    if (event.type === "tool_question_result") {
-      transcript.updateToolQuestion(event.question);
-      return true;
-    }
-    if (event.type === "session_log") {
-      sessions.appendSessionLogEntry(event.log);
-      return true;
-    }
-    if (event.type === "final") {
+    if (event.type === "run_end") {
       playgroundRunTerminalRef.current = true;
-      if (event.result.trace?.traceId !== undefined) {
-        transcript.assignAssistantTraceId(event.result.trace.traceId);
+      if (event.trace?.traceId !== undefined) {
+        transcript.assignAssistantTraceId(event.trace.traceId);
       }
       transcript.clearPendingAssistant();
       completeWorkingRun();
@@ -402,7 +389,7 @@ export function usePlaygroundRun(props: {
   return {
     answeringQuestions: new Set(playgroundChat.answeringQuestions),
     decidingApprovals: new Set(playgroundChat.decidingApprovals),
-    isStreaming: playgroundChat.status === "streaming",
+    isStreaming: playgroundChat.status === "submitted" || playgroundChat.status === "streaming",
     answerToolQuestion,
     decideToolApproval,
     runPrompt,

@@ -162,6 +162,7 @@
   },
   "dependencies": {
     "@anvia/anthropic": "workspace:*",
+    "@anvia/client": "workspace:*",
     "@anvia/chroma": "workspace:*",
     "@anvia/core": "workspace:*",
     "@anvia/fastembed": "workspace:*",

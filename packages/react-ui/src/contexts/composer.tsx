@@ -1,4 +1,4 @@
-import type { CreateUIAttachment, UIAttachment } from "@anvia/react";
+import type { CreateUIAttachment, UIAttachment } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 import type { ChatController } from "./chat";
 

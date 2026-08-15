@@ -7,6 +7,7 @@
     "fullstack-agent": "0.1.45",
     "langfuse-ops": "0.1.44",
     "peer-core-compat": "0.1.62",
+    "@anvia/client": "1.0.0-rc.1",
     "@anvia/core": "0.26.0",
     "@anvia/fastembed": "0.3.0",
     "@anvia/transformers": "0.2.11",

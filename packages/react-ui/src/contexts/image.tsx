@@ -1,4 +1,4 @@
-import type { UIAttachment } from "@anvia/react";
+import type { UIAttachment } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type ImageContextValue = {

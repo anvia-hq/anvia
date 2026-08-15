@@ -56,7 +56,7 @@ describe("Completion primitives", () => {
             complete,
             input,
             setInput,
-            status: "idle",
+            status: "ready",
             stop,
           })}
         >

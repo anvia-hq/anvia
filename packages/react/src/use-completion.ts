@@ -1,46 +1,36 @@
-import type { ContextUsage, Message } from "@anvia/core/completion";
 import {
+  type ClientDataMap,
+  type ClientStreamEvent,
+  type ClientStreamRequest,
+  createClientId,
   type UIMessage,
-  type UIStreamEvent,
-  type UIStreamRequest,
-  uiMessagesToCoreMessages,
-} from "@anvia/core/ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
-import { createFetchTransport } from "./transport";
-import type { EventStreamFormat, EventTransport } from "./types";
-import {
-  appendAssistantDelta,
-  applyAnviaStreamEvent,
-  applyUIStreamEvent,
-  assistantText,
-  createUserMessage,
-  replaceAssistantText,
-} from "./ui-messages";
+} from "@anvia/client";
+import type { ContextUsage, Message } from "@anvia/core/completion";
+import { useCallback, useMemo, useState } from "react";
+import type { ClientConnectionOptions, UseChatStatus } from "./types";
+import { useChat } from "./use-chat";
 
-export type UseCompletionStatus = "idle" | "streaming" | "error";
+export type UseCompletionStatus = UseChatStatus;
 
 export type UseCompletionRequestArgs = {
-  messages: UIMessage[];
   uiMessages: UIMessage[];
-  coreMessages: Message[];
+  messages: Message[];
 };
 
-export type UseCompletionOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
-  transport?: EventTransport<TRequest, TEvent>;
-  endpoint?: string | URL;
-  format?: EventStreamFormat;
+type UseCompletionCommonOptions<TRequest, TData extends ClientDataMap> = {
   initialMessages?: UIMessage[];
   initialCompletion?: string;
   createRequest?: (args: UseCompletionRequestArgs) => TRequest;
-  eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
-  eventToDelta?: (event: TEvent) => string | undefined;
-  eventToFinal?: (event: TEvent) => string | undefined;
-  onEvent?: (event: TEvent) => void;
-  onError?: (error: unknown) => void;
+  onEvent?: (event: ClientStreamEvent<TData>) => void;
+  onError?: (error: Error) => void;
 };
 
-export type UseCompletionResult<TEvent = UIStreamEvent> = {
+export type UseCompletionOptions<
+  TRequest = ClientStreamRequest,
+  TData extends ClientDataMap = ClientDataMap,
+> = ClientConnectionOptions<TRequest, TData> & UseCompletionCommonOptions<TRequest, TData>;
+
+export type UseCompletionResult<TData extends ClientDataMap = ClientDataMap> = {
   messages: UIMessage[];
   completion: string;
   input: string;
@@ -49,252 +39,91 @@ export type UseCompletionResult<TEvent = UIStreamEvent> = {
   stop(): void;
   reset(messagesOrCompletion?: UIMessage[] | string): void;
   status: UseCompletionStatus;
-  error: unknown;
-  events: TEvent[];
+  error: Error | undefined;
+  events: ClientStreamEvent<TData>[];
   contextUsage: ContextUsage | undefined;
 };
 
-export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
-  options: UseCompletionOptions<TRequest, TEvent> = {},
-): UseCompletionResult<TEvent> {
+export function useCompletion<
+  TRequest = ClientStreamRequest,
+  TData extends ClientDataMap = ClientDataMap,
+>(options: UseCompletionOptions<TRequest, TData>): UseCompletionResult<TData> {
+  const [input, setInput] = useState("");
   const initialMessages = useMemo(
-    () =>
-      options.initialMessages ??
-      (options.initialCompletion === undefined
-        ? []
-        : [
-            {
-              id: "initial_assistant",
-              role: "assistant" as const,
-              parts: [
-                {
-                  id: "initial_assistant_text",
-                  type: "text" as const,
-                  text: options.initialCompletion,
-                },
-              ],
-            },
-          ]),
+    () => options.initialMessages ?? initialCompletionMessage(options.initialCompletion),
     [options.initialCompletion, options.initialMessages],
   );
-  const [messages, setMessagesState] = useState<UIMessage[]>(() => [...initialMessages]);
-  const [input, setInput] = useState("");
-  const [events, setEvents] = useState<TEvent[]>([]);
-  const [contextUsage, setContextUsage] = useState<ContextUsage | undefined>(() =>
-    contextUsageFromMessages(initialMessages),
-  );
-  const [status, setStatus] = useState<UseCompletionStatus>("idle");
-  const [error, setError] = useState<unknown>();
-  const abortRef = useRef<AbortController | undefined>(undefined);
-  const messagesRef = useRef(messages);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
-
-  const transport = useMemo(() => {
-    if (options.transport !== undefined) {
-      return options.transport;
-    }
-    if (options.endpoint === undefined) {
-      return undefined;
-    }
-
-    return createFetchTransport<UIStreamRequest, UIStreamEvent>({
-      endpoint: options.endpoint,
-      format: options.format ?? "jsonl",
-    }) as EventTransport<TRequest, TEvent>;
-  }, [options.transport, options.endpoint, options.format]);
-
-  const setMessages = useCallback((nextMessages: UIMessage[]) => {
-    messagesRef.current = nextMessages;
-    setMessagesState(nextMessages);
-  }, []);
-
-  const applyEvent = useCallback(
-    (event: TEvent) => {
-      const mappedUIEvent = options.eventToUIEvent?.(event);
-      const contextUpdate = contextUsageUpdateFromEvent(mappedUIEvent ?? event);
-      if (contextUpdate !== undefined) {
-        setContextUsage(contextUpdate.contextUsage);
-      }
-      if (mappedUIEvent !== undefined) {
-        setMessagesState((current) => {
-          const next = applyUIStreamEvent(current, mappedUIEvent);
-          messagesRef.current = next;
-          return next;
-        });
-        return;
-      }
-
-      const hasCustomEventMapper =
-        options.eventToUIEvent !== undefined ||
-        options.eventToDelta !== undefined ||
-        options.eventToFinal !== undefined;
-
-      if (!hasCustomEventMapper) {
-        let handled = false;
-        setMessagesState((current) => {
-          const next = applyAnviaStreamEvent(current, event);
-          if (next === undefined) {
-            return current;
-          }
-          handled = true;
-          messagesRef.current = next;
-          return next;
-        });
-        if (handled) {
-          return;
-        }
-      }
-
-      const delta = options.eventToDelta?.(event);
-      if (delta !== undefined && delta.length > 0) {
-        setMessagesState((current) => {
-          const next = appendAssistantDelta(current, delta);
-          messagesRef.current = next;
-          return next;
-        });
-      }
-
-      const final = options.eventToFinal?.(event);
-      if (final !== undefined) {
-        setMessagesState((current) => {
-          const next = replaceAssistantText(current, final);
-          messagesRef.current = next;
-          return next;
-        });
-      }
-    },
-    [options],
-  );
+  const connection =
+    options.transport !== undefined
+      ? { transport: options.transport }
+      : {
+          endpoint: options.endpoint,
+          ...(options.format === undefined ? {} : { format: options.format }),
+          ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+          ...(options.headers === undefined ? {} : { headers: options.headers }),
+          ...(options.body === undefined ? {} : { body: options.body }),
+          ...(options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas }),
+        };
+  const chat = useChat<TRequest, TData>({
+    ...connection,
+    initialMessages,
+    ...(options.createRequest === undefined
+      ? {}
+      : {
+          createRequest: (args) =>
+            options.createRequest?.({
+              uiMessages: args.uiMessages,
+              messages: args.messages,
+            }) as TRequest,
+        }),
+    ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
+    ...(options.onError === undefined ? {} : { onError: options.onError }),
+  });
 
   const complete = useCallback(
-    async (nextInput?: string) => {
-      if (transport === undefined) {
-        throw new Error("useCompletion requires either transport or endpoint");
-      }
-
-      const prompt = nextInput ?? input;
-      const userMessage = createUserMessage(prompt);
-      if (userMessage === undefined) {
-        return;
-      }
-      const previousAbortController = abortRef.current;
-      previousAbortController?.abort();
-      const currentMessages = messagesRef.current;
-      const baseMessages =
-        previousAbortController !== undefined && currentMessages.at(-1)?.role === "assistant"
-          ? currentMessages.slice(0, -1)
-          : currentMessages;
-      const nextMessages = [...baseMessages, userMessage];
-
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-
-      const createRequest =
-        options.createRequest ??
-        ((args: UseCompletionRequestArgs) =>
-          ({ messages: args.coreMessages, stream: true }) as TRequest);
-
-      setMessages(nextMessages);
+    async (prompt?: string) => {
+      const value = prompt ?? input;
       setInput("");
-      setEvents([]);
-      setError(undefined);
-      setStatus("streaming");
-
-      try {
-        const coreMessages = uiMessagesToCoreMessages(nextMessages);
-        const request = createRequest({
-          messages: nextMessages,
-          uiMessages: nextMessages,
-          coreMessages,
-        });
-
-        for await (const event of transport.send(request, { signal: abortController.signal })) {
-          setEvents((current) => [...current, event]);
-          options.onEvent?.(event);
-          applyEvent(event);
-        }
-
-        if (!abortController.signal.aborted) {
-          setStatus("idle");
-        }
-      } catch (caught) {
-        if (isAbortError(caught)) {
-          if (abortRef.current === abortController) {
-            setStatus("idle");
-          }
-          return;
-        }
-
-        setError(caught);
-        setStatus("error");
-        options.onError?.(caught);
-      } finally {
-        if (abortRef.current === abortController) {
-          abortRef.current = undefined;
-        }
-      }
+      await chat.sendMessage(value);
     },
-    [applyEvent, input, options, setMessages, transport],
+    [chat.sendMessage, input],
   );
-
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = undefined;
-    setStatus("idle");
-  }, []);
 
   const reset = useCallback(
     (messagesOrCompletion?: UIMessage[] | string) => {
-      abortRef.current?.abort();
-      abortRef.current = undefined;
-      if (Array.isArray(messagesOrCompletion)) {
-        setMessages(messagesOrCompletion);
-        setContextUsage(contextUsageFromMessages(messagesOrCompletion));
-      } else if (typeof messagesOrCompletion === "string") {
-        setMessages([
-          {
-            id: "reset_assistant",
-            role: "assistant",
-            parts: [{ id: "reset_assistant_text", type: "text", text: messagesOrCompletion }],
-          },
-        ]);
-        setContextUsage(undefined);
-      } else {
-        setMessages([]);
-        setContextUsage(undefined);
-      }
-      setEvents([]);
-      setError(undefined);
       setInput("");
-      setStatus("idle");
+      if (Array.isArray(messagesOrCompletion)) {
+        chat.reset(messagesOrCompletion);
+      } else {
+        chat.reset(initialCompletionMessage(messagesOrCompletion));
+      }
     },
-    [setMessages],
+    [chat.reset],
   );
 
   return {
-    messages,
-    completion: assistantText(messages),
+    messages: chat.messages,
+    completion: chat.text,
     input,
     setInput,
     complete,
-    stop,
+    stop: chat.stop,
     reset,
-    status,
-    error,
-    events,
-    contextUsage,
+    status: chat.status,
+    error: chat.error,
+    events: chat.events,
+    contextUsage: chat.contextUsage,
   };
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+function initialCompletionMessage(completion: string | undefined): UIMessage[] {
+  if (completion === undefined) return [];
+  const id = createClientId("initial_assistant");
+  return [
+    {
+      id,
+      role: "assistant",
+      parts: [{ id: `${id}_text`, type: "text", text: completion }],
+    },
+  ];
 }

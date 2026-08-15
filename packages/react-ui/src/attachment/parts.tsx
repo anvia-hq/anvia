@@ -1,4 +1,4 @@
-import type { UIAttachment } from "@anvia/react";
+import type { UIAttachment } from "@anvia/client";
 import { forwardRef, type MouseEvent, type ReactNode, useCallback } from "react";
 
 import { useAttachment } from "../contexts";

@@ -1,10 +1,5 @@
-import type {
-  ToolApproval,
-  ToolQuestion,
-  UIMessage,
-  UseChatResult,
-  UseCompletionResult,
-} from "@anvia/react";
+import type { ToolApproval, ToolQuestion, UIMessage } from "@anvia/client";
+import type { UseChatResult, UseCompletionResult } from "@anvia/react";
 import { vi } from "vitest";
 
 export function textMessage(id: string, role: UIMessage["role"], text: string): UIMessage {
@@ -15,9 +10,7 @@ export function textMessage(id: string, role: UIMessage["role"], text: string): 
   };
 }
 
-export function createChatController(
-  overrides: Partial<UseChatResult<unknown>> = {},
-): UseChatResult<unknown> {
+export function createChatController(overrides: Partial<UseChatResult> = {}): UseChatResult {
   return {
     messages: [],
     events: [],
@@ -29,9 +22,10 @@ export function createChatController(
     regenerate: vi.fn(async () => {}),
     stop: vi.fn(),
     reset: vi.fn(),
-    status: "idle",
+    status: "ready",
     error: undefined,
     text: "",
+    streamId: undefined,
     isResuming: false,
     resume: vi.fn(async () => {}),
     humanInput: {
@@ -48,8 +42,8 @@ export function createChatController(
 }
 
 export function createCompletionController(
-  overrides: Partial<UseCompletionResult<unknown>> = {},
-): UseCompletionResult<unknown> {
+  overrides: Partial<UseCompletionResult> = {},
+): UseCompletionResult {
   return {
     messages: [],
     completion: "",
@@ -58,7 +52,7 @@ export function createCompletionController(
     complete: vi.fn(async () => {}),
     stop: vi.fn(),
     reset: vi.fn(),
-    status: "idle",
+    status: "ready",
     error: undefined,
     events: [],
     contextUsage: undefined,

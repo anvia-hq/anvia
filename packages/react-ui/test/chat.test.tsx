@@ -1,11 +1,12 @@
-import {
-  type EventTransport,
-  type SendMessageInput,
-  type UIAttachment,
-  type UIStreamEvent,
-  type UIStreamRequest,
-  useChat,
-} from "@anvia/react";
+import type {
+  ClientStreamEvent,
+  ClientStreamFrame,
+  ClientStreamRequest,
+  ClientTransport,
+  UIAttachment,
+} from "@anvia/client";
+import { CLIENT_STREAM_PROTOCOL } from "@anvia/client";
+import { type SendMessageInput, useChat } from "@anvia/react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { StrictMode, useEffect, useMemo, useState } from "react";
@@ -176,15 +177,35 @@ describe("Chat primitives", () => {
   it("clears the default textarea composer while the chat stream is still pending", async () => {
     const streamStarted = createDeferred();
     const streamCompletion = createDeferred();
-    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+    const transport: ClientTransport<ClientStreamRequest> = {
       send: vi.fn(async function* () {
         streamStarted.resolve();
+        yield {
+          type: "stream_start",
+          protocol: CLIENT_STREAM_PROTOCOL,
+          streamId: "stream_1",
+          eventId: 0,
+          resumable: false,
+        } satisfies ClientStreamFrame;
         await streamCompletion.promise;
-        const event: UIStreamEvent = {
+        const event: ClientStreamEvent = {
           type: "message_start",
-          message: { id: "assistant_1", role: "assistant", parts: [] },
+          runId: "run_1",
+          messageId: "assistant_1",
+          role: "assistant",
         };
-        yield event;
+        yield {
+          type: "stream_event",
+          streamId: "stream_1",
+          eventId: 1,
+          event,
+        } satisfies ClientStreamFrame;
+        yield {
+          type: "stream_end",
+          streamId: "stream_1",
+          eventId: 1,
+          status: "completed",
+        } satisfies ClientStreamFrame;
       }),
     };
 

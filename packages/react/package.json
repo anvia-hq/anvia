@@ -1,7 +1,7 @@
 {
   "name": "@anvia/react",
   "version": "1.0.0-rc.1",
-  "description": "React hooks and client transports for Anvia applications.",
+  "description": "React hooks for the explicit Anvia client stream protocol.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
   "license": "MIT",
@@ -32,10 +32,12 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
+    "@anvia/client": "workspace:*",
     "@anvia/core": "workspace:*",
     "react": ">=18"
   },
   "devDependencies": {
+    "@anvia/client": "workspace:*",
     "@anvia/core": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.9.1",

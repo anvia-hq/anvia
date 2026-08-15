@@ -1,4 +1,4 @@
-import type { UIMessagePart } from "@anvia/react";
+import type { UIMessagePart } from "@anvia/client";
 import type { ComposerEntity } from "./contexts/composer";
 
 export type MessageTextSegment = {

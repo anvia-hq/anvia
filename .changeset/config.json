@@ -6,6 +6,7 @@
     [
       "@anvia/anthropic",
       "@anvia/chroma",
+      "@anvia/client",
       "@anvia/core",
       "@anvia/fastembed",
       "@anvia/gemini",

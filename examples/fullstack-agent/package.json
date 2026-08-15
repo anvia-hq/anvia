@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "pnpm --filter @anvia/core build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/server build && pnpm --filter @anvia/react build && pnpm --filter @anvia/react-ui build",
+    "predev": "pnpm --filter @anvia/core build && pnpm --filter @anvia/client build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/server build && pnpm --filter @anvia/react build && pnpm --filter @anvia/react-ui build",
     "dev": "tsx -r dotenv/config src/dev.ts dotenv_config_path=../../.env",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anvia/client": "workspace:*",
     "@anvia/core": "workspace:*",
     "@anvia/openai": "workspace:*",
     "@anvia/react": "workspace:*",

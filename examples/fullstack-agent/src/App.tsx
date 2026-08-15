@@ -37,7 +37,7 @@ export function App() {
           <span
             className={[
               "rounded-full border px-2 py-1 font-bold text-[0.74rem] leading-none",
-              chat.status === "streaming"
+              chat.status === "streaming" || chat.status === "submitted"
                 ? "border-[#cfe0d8] bg-[#eef7f3] text-[#2f6f5f]"
                 : chat.status === "error"
                   ? "border-[#f0cbc8] bg-[#fff3f2] text-[#9a322b]"
@@ -145,7 +145,7 @@ export function App() {
                   placeholder="Message Fullstack Completion"
                   rows={1}
                 />
-                {chat.status === "streaming" ? (
+                {chat.status === "streaming" || chat.status === "submitted" ? (
                   <Composer.Stop className={iconButtonClassName}>
                     <Square aria-hidden="true" fill="currentColor" size={14} />
                     <span className="sr-only">Stop</span>
@@ -166,6 +166,9 @@ export function App() {
 }
 
 function statusLabel(status: UseChatStatus): string {
+  if (status === "submitted") {
+    return "Submitted";
+  }
   if (status === "streaming") {
     return "Streaming";
   }

@@ -1,4 +1,4 @@
-import type { UIMessage, UIMessagePart } from "@anvia/react";
+import type { UIMessage, UIMessagePart } from "@anvia/client";
 
 export function messageText(message: UIMessage): string {
   return message.parts

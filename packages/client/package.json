@@ -1,0 +1,48 @@
+{
+  "name": "@anvia/client",
+  "version": "1.0.0-rc.1",
+  "description": "Framework-neutral client protocol, transports, and UI message state for Anvia.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/client"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "import": "./dist/transport/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/transport/index.ts --format esm --dts --sourcemap --clean",
+    "coverage": "vitest run --coverage",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anvia/core": "workspace:*",
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "workspace:*"
+  }
+}

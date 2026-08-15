@@ -1,4 +1,5 @@
-import type { ChatSuggestion, UIMessage, UseChatStatus } from "@anvia/react";
+import type { UIMessage } from "@anvia/client";
+import type { ChatSuggestion, UseChatStatus } from "@anvia/react";
 import {
   Fragment,
   forwardRef,
@@ -182,7 +183,7 @@ const ThreadStatus = forwardRef<HTMLDivElement, ThreadStatusProps>(function Thre
 const ThreadLoading = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadLoading(props, ref) {
     const chat = useChatContext();
-    if (chat.status !== "streaming") {
+    if (chat.status !== "submitted" && chat.status !== "streaming") {
       return null;
     }
 
@@ -301,7 +302,8 @@ const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
     const chat = useChatContext();
     const suggestionPrompt = prompt ?? suggestion?.prompt ?? "";
     const disabled =
-      props.disabled ?? (suggestionPrompt.length === 0 || chat.status === "streaming");
+      props.disabled ??
+      (suggestionPrompt.length === 0 || chat.status === "submitted" || chat.status === "streaming");
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {

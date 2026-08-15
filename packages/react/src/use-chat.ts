@@ -1,64 +1,54 @@
 import {
+  applyClientStreamEvent,
+  assistantText,
+  type ClientDataMap,
+  ClientProtocolError,
+  type ClientStreamCursor,
+  type ClientStreamEvent,
+  type ClientStreamRequest,
+  type ClientTransport,
+  createHttpClientTransport,
+  normalizeClientError,
+  type ToolApproval,
+  type ToolQuestion,
+  type ToolQuestionAnswer,
   type UIMessage,
-  type UIStreamEvent,
-  type UIStreamRequest,
-  uiMessagesToCoreMessages,
-} from "@anvia/core/ui";
+  uiMessagesToMessages,
+} from "@anvia/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
-import {
-  defaultAnswerQuestion,
-  defaultDecideApproval,
-  defaultEventToApproval,
-  defaultEventToQuestion,
-  upsertById,
-} from "./human-input";
-import {
-  clearChatResumeState,
-  isResumableStreamEnvelope,
-  loadChatResumeState,
-  saveChatResumeState,
-} from "./resume";
-import { createChatTransport } from "./transport";
+import { defaultAnswerQuestion, defaultDecideApproval, upsertById } from "./human-input";
+import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";
 import type {
-  ChatResumeCursor,
   CreateChatRequestArgs,
-  EventTransport,
   SendMessageInput,
-  ToolApproval,
   ToolApprovalDecisionInput,
-  ToolQuestion,
-  ToolQuestionAnswer,
   ToolQuestionAnswerInput,
   UseChatOptions,
   UseChatResult,
 } from "./types";
-import {
-  appendAssistantDelta,
-  applyAnviaStreamEvent,
-  applyUIStreamEvent,
-  assistantText,
-  createUserMessage,
-  replaceAssistantText,
-} from "./ui-messages";
+import { createUserMessage } from "./ui-messages";
 
-export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
-  options: UseChatOptions<TRequest, TEvent> = {},
-): UseChatResult<TEvent> {
-  const [messages, setMessagesState] = useState(() => [...(options.initialMessages ?? [])]);
-  const [events, setEvents] = useState<TEvent[]>([]);
+export function useChat<
+  TRequest = ClientStreamRequest,
+  TData extends ClientDataMap = ClientDataMap,
+>(options: UseChatOptions<TRequest, TData>): UseChatResult<TData> {
+  const [messages, setMessagesState] = useState<UIMessage[]>(() => [
+    ...(options.initialMessages ?? []),
+  ]);
+  const [events, setEvents] = useState<ClientStreamEvent<TData>[]>([]);
   const [contextUsage, setContextUsage] = useState(() =>
     contextUsageFromMessages(options.initialMessages ?? []),
   );
-  const [status, setStatus] = useState<UseChatResult<TEvent>["status"]>("idle");
-  const [error, setError] = useState<unknown>();
+  const [status, setStatus] = useState<UseChatResult<TData>["status"]>("ready");
+  const [error, setError] = useState<Error>();
   const [approvals, setApprovals] = useState<ToolApproval[]>([]);
   const [questions, setQuestions] = useState<ToolQuestion[]>([]);
   const [decidingApprovals, setDecidingApprovals] = useState<Set<string>>(() => new Set());
   const [answeringQuestions, setAnsweringQuestions] = useState<Set<string>>(() => new Set());
-  const [streamId, setStreamIdState] = useState<string | undefined>();
+  const [streamId, setStreamIdState] = useState<string>();
   const [isResuming, setIsResuming] = useState(false);
-  const abortRef = useRef<AbortController | undefined>(undefined);
+
   const messagesRef = useRef(messages);
   const approvalsRef = useRef(approvals);
   const questionsRef = useRef(questions);
@@ -66,81 +56,70 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   const answeringQuestionsRef = useRef(answeringQuestions);
   const streamIdRef = useRef<string | undefined>(undefined);
   const lastEventIdRef = useRef(0);
+  const abortRef = useRef<AbortController | undefined>(undefined);
   const autoResumeStartedRef = useRef(false);
   const humanInputVersionRef = useRef(0);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
-
   useEffect(() => {
     approvalsRef.current = approvals;
   }, [approvals]);
-
   useEffect(() => {
     questionsRef.current = questions;
   }, [questions]);
-
   useEffect(() => {
-    decidingApprovalsRef.current = decidingApprovals;
-  }, [decidingApprovals]);
-
-  useEffect(() => {
-    answeringQuestionsRef.current = answeringQuestions;
-  }, [answeringQuestions]);
-
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
+    return () => abortRef.current?.abort();
   }, []);
 
-  const transport = useMemo(() => {
-    if (options.transport !== undefined) {
-      return options.transport;
-    }
-    if (options.endpoint === undefined) {
-      return undefined;
-    }
-
-    return createChatTransport<UIStreamRequest, UIStreamEvent>({
+  const transport = useMemo<ClientTransport<TRequest, TData>>(() => {
+    if (options.transport !== undefined) return options.transport;
+    return createHttpClientTransport<TRequest, TData>({
       endpoint: options.endpoint,
-      format: options.format ?? "jsonl",
-    }) as EventTransport<TRequest, TEvent>;
-  }, [options.transport, options.endpoint, options.format]);
+      ...(options.format === undefined ? {} : { format: options.format }),
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+      ...(options.headers === undefined ? {} : { headers: options.headers }),
+      ...(options.body === undefined ? {} : { body: options.body }),
+      ...(options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas }),
+    });
+  }, [
+    options.body,
+    options.dataSchemas,
+    options.endpoint,
+    options.fetch,
+    options.format,
+    options.headers,
+    options.transport,
+  ]);
 
-  const updateMessages = useCallback<UseChatResult<TEvent>["setMessages"]>((nextMessages) => {
-    const next =
-      typeof nextMessages === "function" ? nextMessages(messagesRef.current) : nextMessages;
-    messagesRef.current = next;
-    setMessagesState(next);
+  const updateMessages = useCallback<UseChatResult<TData>["setMessages"]>((next) => {
+    const value = typeof next === "function" ? next(messagesRef.current) : next;
+    messagesRef.current = value;
+    setMessagesState(value);
   }, []);
 
-  const setMessages = useCallback<UseChatResult<TEvent>["setMessages"]>(
-    (nextMessages) => {
+  const setMessages = useCallback<UseChatResult<TData>["setMessages"]>(
+    (next) => {
       updateMessages((current) => {
-        const next = typeof nextMessages === "function" ? nextMessages(current) : nextMessages;
-        setContextUsage(contextUsageFromMessages(next));
-        return next;
+        const value = typeof next === "function" ? next(current) : next;
+        setContextUsage(contextUsageFromMessages(value));
+        return value;
       });
     },
     [updateMessages],
   );
 
-  const setStreamId = useCallback((nextStreamId: string | undefined) => {
-    streamIdRef.current = nextStreamId;
-    setStreamIdState(nextStreamId);
+  const setStreamId = useCallback((value: string | undefined) => {
+    streamIdRef.current = value;
+    setStreamIdState(value);
   }, []);
 
   const persistResumeState = useCallback(() => {
-    const currentStreamId = streamIdRef.current;
-    if (currentStreamId === undefined) {
-      return;
-    }
-
+    if (streamIdRef.current === undefined) return;
     saveChatResumeState(options.resume, {
       version: 1,
-      streamId: currentStreamId,
+      streamId: streamIdRef.current,
       lastEventId: lastEventIdRef.current,
       messages: messagesRef.current,
     });
@@ -181,92 +160,28 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   }, []);
 
   const applyEvent = useCallback(
-    (event: TEvent) => {
-      const mappedUIEvent = options.eventToUIEvent?.(event);
-      const contextUpdate = contextUsageUpdateFromEvent(mappedUIEvent ?? event);
-      if (contextUpdate !== undefined) {
-        setContextUsage(contextUpdate.contextUsage);
-      }
-      if (mappedUIEvent !== undefined) {
-        updateMessages((current) => applyUIStreamEvent(current, mappedUIEvent));
-        return;
-      }
-
-      const hasCustomEventMapper =
-        options.eventToUIEvent !== undefined ||
-        options.eventToDelta !== undefined ||
-        options.eventToFinal !== undefined;
-
-      if (!hasCustomEventMapper) {
-        let handled = false;
-        updateMessages((current) => {
-          const next = applyAnviaStreamEvent(current, event);
-          if (next === undefined) {
-            return current;
-          }
-          handled = true;
-          return next;
-        });
-        if (handled) {
-          return;
-        }
-      }
-
-      const delta = options.eventToDelta?.(event);
-      if (delta !== undefined && delta.length > 0) {
-        updateMessages((current) => appendAssistantDelta(current, delta));
-      }
-
-      const final = options.eventToFinal?.(event);
-      if (final !== undefined) {
-        updateMessages((current) => replaceAssistantText(current, final));
-      }
+    (event: ClientStreamEvent<TData>): Error | undefined => {
+      setEvents((current) => [...current, event]);
+      options.onEvent?.(event);
+      const nextContextUsage = contextUsageUpdateFromEvent(event);
+      if (nextContextUsage !== undefined) setContextUsage(nextContextUsage);
+      if (event.type === "tool_approval") updateApproval(event.approval);
+      if (event.type === "tool_question") updateQuestion(event.question);
+      updateMessages((current) => applyClientStreamEvent(current, event));
+      if (event.type !== "error") return undefined;
+      const nextError = normalizeClientError(event.error);
+      setError(nextError);
+      options.onError?.(nextError);
+      return nextError;
     },
-    [options, updateMessages],
-  );
-
-  const applyHumanInputEvent = useCallback(
-    (event: TEvent) => {
-      const humanInputOptions = options.humanInput;
-      if (humanInputOptions === undefined) {
-        return;
-      }
-
-      const eventToApproval = humanInputOptions.eventToApproval ?? defaultEventToApproval<TEvent>;
-      const approval = eventToApproval(event);
-      if (approval !== undefined) {
-        updateApproval(approval);
-      }
-
-      const eventToQuestion = humanInputOptions.eventToQuestion ?? defaultEventToQuestion<TEvent>;
-      const question = eventToQuestion(event);
-      if (question !== undefined) {
-        updateQuestion(question);
-      }
-    },
-    [options.humanInput, updateApproval, updateQuestion],
+    [options, updateApproval, updateMessages, updateQuestion],
   );
 
   const sendMessages = useCallback(
     async (nextMessages: UIMessage[], runOptions: SendMessagesRunOptions = {}) => {
-      if (transport === undefined) {
-        throw new Error("useChat requires either transport or endpoint");
-      }
-
       abortRef.current?.abort();
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-
-      const createRequest =
-        options.createRequest ??
-        ((args: CreateChatRequestArgs) => {
-          const request: UIStreamRequest = {
-            messages: args.coreMessages,
-            stream: true,
-          };
-          if (args.resume !== undefined) request.resume = args.resume;
-          return request as TRequest;
-        });
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       if (runOptions.resume === undefined) {
         clearResumeState();
@@ -274,83 +189,69 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
         lastEventIdRef.current = runOptions.resume.after;
         setStreamId(runOptions.resume.streamId);
       }
-
       updateMessages(nextMessages);
       setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
       clearHumanInput();
-      setStatus("streaming");
+      setStatus("submitted");
       setIsResuming(runOptions.isResuming === true);
 
+      let streamError: Error | undefined;
       try {
-        const coreMessages = uiMessagesToCoreMessages(nextMessages);
-        const request = createRequest({
-          messages: nextMessages,
+        const coreMessages = uiMessagesToMessages(nextMessages);
+        const args: CreateChatRequestArgs = {
           uiMessages: nextMessages,
-          coreMessages,
-          resume: runOptions.resume,
-        });
+          messages: coreMessages,
+          ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
+        };
+        const request =
+          options.createRequest?.(args) ??
+          ({
+            messages: coreMessages,
+            ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
+          } as TRequest);
 
-        for await (const rawEvent of transport.send(request, { signal: abortController.signal })) {
-          if (abortRef.current !== abortController || abortController.signal.aborted) {
-            return;
+        for await (const frame of transport.send(request, { signal: controller.signal })) {
+          if (abortRef.current !== controller || controller.signal.aborted) return;
+          if (frame.type === "stream_start") {
+            setStreamId(frame.streamId);
+            persistResumeState();
+            continue;
           }
-          if (isResumableStreamEnvelope<TEvent>(rawEvent)) {
-            if (rawEvent.type === "stream_start") {
-              setStreamId(rawEvent.streamId);
-              persistResumeState();
-              continue;
-            }
-
-            if (rawEvent.type === "stream_end") {
-              lastEventIdRef.current = rawEvent.eventId;
-              clearResumeState();
-              continue;
-            }
-
-            lastEventIdRef.current = rawEvent.eventId;
-            const event = rawEvent.event;
-            setEvents((current) => [...current, event]);
-            applyHumanInputEvent(event);
-            options.onEvent?.(event);
-            if (abortRef.current !== abortController || abortController.signal.aborted) {
-              return;
-            }
-            applyEvent(event);
+          if (frame.type === "stream_event") {
+            lastEventIdRef.current = frame.eventId;
+            if (streamError === undefined) setStatus("streaming");
+            streamError = applyEvent(frame.event) ?? streamError;
+            if (streamError !== undefined) setStatus("error");
             persistResumeState();
             continue;
           }
 
-          const event = rawEvent;
-          setEvents((current) => [...current, event]);
-          applyHumanInputEvent(event);
-          options.onEvent?.(event);
-          if (abortRef.current !== abortController || abortController.signal.aborted) {
-            return;
+          lastEventIdRef.current = frame.eventId;
+          clearResumeState();
+          if (frame.status !== "completed") {
+            throw new ClientProtocolError(
+              `Client stream ended with status ${frame.status}.`,
+              frame,
+            );
           }
-          applyEvent(event);
         }
-
-        if (abortRef.current === abortController && !abortController.signal.aborted) {
-          setStatus("idle");
+        if (abortRef.current === controller && !controller.signal.aborted) {
+          setStatus(streamError === undefined ? "ready" : "error");
         }
       } catch (caught) {
         if (isAbortError(caught)) {
-          if (abortRef.current === abortController) {
-            setStatus("idle");
-          }
+          if (abortRef.current === controller) setStatus("ready");
           return;
         }
-        if (abortRef.current !== abortController) {
-          return;
-        }
-
-        setError(caught);
+        if (abortRef.current !== controller) return;
+        const nextError = normalizeClientError(caught);
+        setError(nextError);
         setStatus("error");
-        options.onError?.(caught);
+        options.onError?.(nextError);
       } finally {
-        if (abortRef.current === abortController) {
+        if (abortRef.current === controller) {
           abortRef.current = undefined;
           setIsResuming(false);
         }
@@ -358,37 +259,27 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     },
     [
       applyEvent,
-      applyHumanInputEvent,
       clearHumanInput,
       clearResumeState,
       options,
       persistResumeState,
-      updateMessages,
       setStreamId,
       transport,
+      updateMessages,
     ],
   );
 
   const resume = useCallback(async () => {
-    const resumeState = loadChatResumeState(options.resume);
-    if (resumeState === undefined) {
-      return;
-    }
-
-    await sendMessages(resumeState.messages, {
-      resume: {
-        streamId: resumeState.streamId,
-        after: resumeState.lastEventId,
-      },
+    const saved = loadChatResumeState(options.resume);
+    if (saved === undefined) return;
+    await sendMessages(saved.messages, {
+      resume: { streamId: saved.streamId, after: saved.lastEventId },
       isResuming: true,
     });
   }, [options.resume, sendMessages]);
 
   useEffect(() => {
-    if (options.resume?.auto === false || autoResumeStartedRef.current) {
-      return;
-    }
-
+    if (options.resume?.auto === false || autoResumeStartedRef.current) return;
     autoResumeStartedRef.current = true;
     void resume();
   }, [options.resume?.auto, resume]);
@@ -396,73 +287,54 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
   const sendMessage = useCallback(
     async (input: SendMessageInput) => {
       const message = createUserMessage(input);
-      if (message === undefined) {
-        return;
-      }
-      const currentMessages = messagesRef.current;
-      const baseMessages =
-        abortRef.current !== undefined && currentMessages.at(-1)?.role === "assistant"
-          ? currentMessages.slice(0, -1)
-          : currentMessages;
-      await sendMessages([...baseMessages, message]);
+      if (message === undefined) return;
+      const current = messagesRef.current;
+      const base =
+        abortRef.current !== undefined && current.at(-1)?.role === "assistant"
+          ? current.slice(0, -1)
+          : current;
+      await sendMessages([...base, message]);
     },
     [sendMessages],
   );
 
-  const send = useCallback(
-    async (input = "") => {
-      await sendMessage(input);
-    },
-    [sendMessage],
-  );
-
   const regenerate = useCallback(async () => {
-    const lastUserIndex = findLastUserIndex(messagesRef.current);
-    if (lastUserIndex === -1) {
-      return;
-    }
-    await sendMessages(messagesRef.current.slice(0, lastUserIndex + 1));
+    const lastUser = findLastUserIndex(messagesRef.current);
+    if (lastUser !== -1) await sendMessages(messagesRef.current.slice(0, lastUser + 1));
   }, [sendMessages]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = undefined;
     clearResumeState();
-    setStatus("idle");
+    setStatus("ready");
     setIsResuming(false);
   }, [clearResumeState]);
 
   const decideToolApproval = useCallback(
     async (approvalId: string, approved: boolean, reason?: string) => {
-      const humanInputOptions = options.humanInput;
-      if (humanInputOptions === undefined) {
-        throw new Error("useChat humanInput is not configured");
-      }
-      if (decidingApprovalsRef.current.has(approvalId)) {
-        return;
-      }
-
-      const humanInputVersion = humanInputVersionRef.current;
-      const nextDeciding = new Set(decidingApprovalsRef.current).add(approvalId);
-      decidingApprovalsRef.current = nextDeciding;
-      setDecidingApprovals(nextDeciding);
+      if (options.humanInput === undefined) throw new Error("useChat humanInput is not configured");
+      if (decidingApprovalsRef.current.has(approvalId)) return;
+      const version = humanInputVersionRef.current;
+      const pending = new Set(decidingApprovalsRef.current).add(approvalId);
+      decidingApprovalsRef.current = pending;
+      setDecidingApprovals(pending);
       try {
         const approval = approvalsRef.current.find((item) => item.id === approvalId);
         const input: ToolApprovalDecisionInput = {
           approvalId,
           approved,
+          ...(reason === undefined ? {} : { reason }),
+          ...(approval === undefined ? {} : { approval }),
         };
-        if (reason !== undefined) input.reason = reason;
-        if (approval !== undefined) input.approval = approval;
         const result =
-          humanInputOptions.decideApproval === undefined
-            ? await defaultDecideApproval(input, humanInputOptions)
-            : await humanInputOptions.decideApproval(input);
-        if (result !== undefined && humanInputVersionRef.current === humanInputVersion) {
+          options.humanInput.decideApproval === undefined
+            ? await defaultDecideApproval(input, options.humanInput)
+            : await options.humanInput.decideApproval(input);
+        if (result !== undefined && humanInputVersionRef.current === version)
           updateApproval(result);
-        }
       } finally {
-        if (humanInputVersionRef.current === humanInputVersion) {
+        if (humanInputVersionRef.current === version) {
           const next = new Set(decidingApprovalsRef.current);
           next.delete(approvalId);
           decidingApprovalsRef.current = next;
@@ -473,50 +345,29 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     [options.humanInput, updateApproval],
   );
 
-  const approveTool = useCallback(
-    async (approvalId: string, reason?: string) => {
-      await decideToolApproval(approvalId, true, reason);
-    },
-    [decideToolApproval],
-  );
-
-  const rejectTool = useCallback(
-    async (approvalId: string, reason?: string) => {
-      await decideToolApproval(approvalId, false, reason);
-    },
-    [decideToolApproval],
-  );
-
   const answerToolQuestion = useCallback(
     async (questionId: string, answers: ToolQuestionAnswer[]) => {
-      const humanInputOptions = options.humanInput;
-      if (humanInputOptions === undefined) {
-        throw new Error("useChat humanInput is not configured");
-      }
-      if (answeringQuestionsRef.current.has(questionId)) {
-        return;
-      }
-
-      const humanInputVersion = humanInputVersionRef.current;
-      const nextAnswering = new Set(answeringQuestionsRef.current).add(questionId);
-      answeringQuestionsRef.current = nextAnswering;
-      setAnsweringQuestions(nextAnswering);
+      if (options.humanInput === undefined) throw new Error("useChat humanInput is not configured");
+      if (answeringQuestionsRef.current.has(questionId)) return;
+      const version = humanInputVersionRef.current;
+      const pending = new Set(answeringQuestionsRef.current).add(questionId);
+      answeringQuestionsRef.current = pending;
+      setAnsweringQuestions(pending);
       try {
         const question = questionsRef.current.find((item) => item.id === questionId);
         const input: ToolQuestionAnswerInput = {
           questionId,
           answers,
+          ...(question === undefined ? {} : { question }),
         };
-        if (question !== undefined) input.question = question;
         const result =
-          humanInputOptions.answerQuestion === undefined
-            ? await defaultAnswerQuestion(input, humanInputOptions)
-            : await humanInputOptions.answerQuestion(input);
-        if (result !== undefined && humanInputVersionRef.current === humanInputVersion) {
+          options.humanInput.answerQuestion === undefined
+            ? await defaultAnswerQuestion(input, options.humanInput)
+            : await options.humanInput.answerQuestion(input);
+        if (result !== undefined && humanInputVersionRef.current === version)
           updateQuestion(result);
-        }
       } finally {
-        if (humanInputVersionRef.current === humanInputVersion) {
+        if (humanInputVersionRef.current === version) {
           const next = new Set(answeringQuestionsRef.current);
           next.delete(questionId);
           answeringQuestionsRef.current = next;
@@ -537,7 +388,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
       setEvents([]);
       clearHumanInput();
       setError(undefined);
-      setStatus("idle");
+      setStatus("ready");
       setIsResuming(false);
     },
     [clearHumanInput, clearResumeState, updateMessages],
@@ -550,7 +401,7 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     suggestions: options.suggestions ?? [],
     setMessages,
     sendMessage,
-    send,
+    send: async (input = "") => sendMessage(input),
     regenerate,
     stop,
     reset,
@@ -561,37 +412,28 @@ export function useChat<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
     isResuming,
     resume,
     humanInput: {
-      approvals: {
-        all: approvals,
-        pending: approvals.filter((approval) => approval.status === "pending"),
-      },
-      questions: {
-        all: questions,
-        pending: questions.filter((question) => question.status === "pending"),
-      },
+      approvals: { all: approvals, pending: approvals.filter((item) => item.status === "pending") },
+      questions: { all: questions, pending: questions.filter((item) => item.status === "pending") },
     },
     decidingApprovals: new Set(decidingApprovals),
     answeringQuestions: new Set(answeringQuestions),
-    approveTool,
-    rejectTool,
+    approveTool: async (approvalId, reason) => decideToolApproval(approvalId, true, reason),
+    rejectTool: async (approvalId, reason) => decideToolApproval(approvalId, false, reason),
     answerToolQuestion,
   };
 }
 
-type SendMessagesRunOptions = {
-  resume?: ChatResumeCursor;
-  isResuming?: boolean;
-};
+type SendMessagesRunOptions = { resume?: ClientStreamCursor; isResuming?: boolean };
 
 function findLastUserIndex(messages: UIMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "user") {
-      return index;
-    }
+    if (messages[index]?.role === "user") return index;
   }
   return -1;
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+  return (
+    typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
+  );
 }

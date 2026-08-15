@@ -134,15 +134,22 @@ high-level stream emits at most one terminal `error` event and then closes. Prov
 use the lower-level `CompletionModelStreamEvent`, whose terminal event is `{ type: "final",
 response }`; `streamCompletion` normalizes it to `{ type: "final", result }`.
 
-React hooks send core `Message[]` in `UIStreamRequest`, so an endpoint can pass them directly:
+Client requests carry core `Message[]`, so an endpoint can validate and pass them directly:
 
 ```ts
+import { completionToClientStream, parseClientStreamRequest } from "@anvia/client";
 import { streamCompletion } from "@anvia/core";
-import type { UIStreamRequest } from "@anvia/core/ui";
+import { createClientStreamResponse } from "@anvia/server";
 
-const body = (await request.json()) as UIStreamRequest;
-const events = streamCompletion({ model, messages: body.messages });
+const body = parseClientStreamRequest(await request.json());
+const events = completionToClientStream(
+  streamCompletion({ model, messages: body.messages }),
+);
+return createClientStreamResponse(events);
 ```
+
+Core does not own UI messages, HTTP transports, or the public wire protocol. Those boundaries live
+in `@anvia/client`, `@anvia/server`, and framework packages such as `@anvia/react`.
 
 ## Retries, Provider Options, and Cancellation
 

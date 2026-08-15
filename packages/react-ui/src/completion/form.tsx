@@ -21,8 +21,9 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
   ref,
 ) {
   const completion = useCompletionContext();
-  const canSubmit = completion.input.trim().length > 0 && completion.status !== "streaming";
-  const canStop = completion.status === "streaming";
+  const active = completion.status === "submitted" || completion.status === "streaming";
+  const canSubmit = completion.input.trim().length > 0 && !active;
+  const canStop = active;
 
   const submit = useCallback(async () => {
     if (!canSubmit) {
@@ -116,7 +117,7 @@ const CompletionInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea
       {
         ...props,
         "aria-label": props["aria-label"] ?? "Prompt",
-        disabled: props.disabled ?? input.status === "streaming",
+        disabled: props.disabled ?? (input.status === "submitted" || input.status === "streaming"),
         onChange: handleChange,
         onKeyDown: handleKeyDown,
         value: input.input,

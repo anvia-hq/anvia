@@ -1,30 +1,34 @@
+import type { ClientDataMap } from "@anvia/client";
 import type { UseCompletionResult } from "@anvia/react";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
-export type CompletionController<TEvent = unknown> = UseCompletionResult<TEvent>;
+export type CompletionController<TData extends ClientDataMap = ClientDataMap> =
+  UseCompletionResult<TData>;
 
-export type CompletionProviderProps<TEvent = unknown> = {
-  controller: CompletionController<TEvent>;
+export type CompletionProviderProps<TData extends ClientDataMap = ClientDataMap> = {
+  controller: CompletionController<TData>;
   children?: ReactNode;
 };
 
 const CompletionContext = createContext<CompletionController | undefined>(undefined);
 
-export function CompletionProvider<TEvent = unknown>({
+export function CompletionProvider<TData extends ClientDataMap = ClientDataMap>({
   controller,
   children,
-}: CompletionProviderProps<TEvent>): ReactElement {
+}: CompletionProviderProps<TData>): ReactElement {
   return createElement(
     CompletionContext.Provider,
-    { value: controller as CompletionController },
+    { value: controller as unknown as CompletionController },
     children,
   );
 }
 
-export function useCompletionContext<TEvent = unknown>(): CompletionController<TEvent> {
+export function useCompletionContext<
+  TData extends ClientDataMap = ClientDataMap,
+>(): CompletionController<TData> {
   const value = useContext(CompletionContext);
   if (value === undefined) {
     throw new Error("Anvia completion primitives must be used inside CompletionProvider.");
   }
-  return value as CompletionController<TEvent>;
+  return value as unknown as CompletionController<TData>;
 }

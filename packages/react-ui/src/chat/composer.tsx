@@ -1,4 +1,4 @@
-import type { CreateUIAttachment, UIAttachment } from "@anvia/react";
+import type { ClientDataMap, CreateUIAttachment, UIAttachment } from "@anvia/client";
 import type { Editor, Extensions, JSONContent } from "@tiptap/core";
 import { mergeAttributes } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
@@ -67,17 +67,17 @@ type ComposerRootProps = PrimitiveProps<"form"> & {
   triggers?: ComposerTriggerDefinition[];
 };
 
-export type ComposerSubmitMessageArgs<TEvent = unknown> = {
+export type ComposerSubmitMessageArgs<TData extends ClientDataMap = ClientDataMap> = {
   input: string;
   attachments: UIAttachment[];
   entities: ComposerEntity[];
-  chat: ChatController<TEvent>;
+  chat: ChatController<TData>;
   quote?: ComposerQuote | undefined;
   clear(): void;
 };
 
-export type ComposerSubmitMessage<TEvent = unknown> = (
-  args: ComposerSubmitMessageArgs<TEvent>,
+export type ComposerSubmitMessage<TData extends ClientDataMap = ClientDataMap> = (
+  args: ComposerSubmitMessageArgs<TData>,
 ) => Promise<void> | void;
 
 const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function ComposerRoot(
@@ -138,8 +138,9 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   const quoteControlled = quoteProp !== undefined;
   const hasMessageContent =
     input.trim().length > 0 || attachments.length > 0 || entities.length > 0 || quote !== undefined;
-  const canSubmit = hasMessageContent && chat.status !== "streaming";
-  const canStop = chat.status === "streaming";
+  const active = chat.status === "submitted" || chat.status === "streaming";
+  const canSubmit = hasMessageContent && !active;
+  const canStop = active;
 
   const setInput = useCallback(
     (nextInput: string) => {
@@ -227,6 +228,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         attachments.length === 0 &&
         entities.length === 0 &&
         quote === undefined) ||
+      chat.status === "submitted" ||
       chat.status === "streaming"
     ) {
       return;
@@ -464,7 +466,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     {
       extensions,
       content: plainTextToComposerContent(composer.input),
-      editable: composer.status !== "streaming",
+      editable: composer.status !== "submitted" && composer.status !== "streaming",
       editorProps: {
         attributes: {
           "aria-label": props["aria-label"] ?? "Message",
@@ -491,7 +493,11 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     [extensions],
   );
   const ariaDisabled = props["aria-disabled"] === true || props["aria-disabled"] === "true";
-  const composerDisabled = disabled === true || ariaDisabled || composer.status === "streaming";
+  const composerDisabled =
+    disabled === true ||
+    ariaDisabled ||
+    composer.status === "submitted" ||
+    composer.status === "streaming";
   const inputStyle = useMemo<CSSProperties | undefined>(() => {
     if (!autoResize) {
       return style;
@@ -646,7 +652,8 @@ const ComposerTextareaInput = forwardRef<HTMLTextAreaElement, ComposerTextareaIn
       {
         ...props,
         "aria-label": props["aria-label"] ?? "Message",
-        disabled: props.disabled ?? composer.status === "streaming",
+        disabled:
+          props.disabled ?? (composer.status === "submitted" || composer.status === "streaming"),
         onChange: handleChange,
         onKeyDown: handleKeyDown,
         rows: autoResize ? minRows : rows,
@@ -1468,7 +1475,8 @@ type ComposerAttachmentInputProps = PrimitiveProps<"input">;
 const ComposerAttachmentInput = forwardRef<HTMLInputElement, ComposerAttachmentInputProps>(
   function ComposerAttachmentInput({ onChange, ...props }, ref) {
     const composer = useComposer();
-    const disabled = props.disabled ?? composer.status === "streaming";
+    const disabled =
+      props.disabled ?? (composer.status === "submitted" || composer.status === "streaming");
 
     const handleChange = useCallback(
       async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1506,7 +1514,8 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
   function ComposerAddAttachment({ accept, multiple = false, onClick, ...props }, ref) {
     const composer = useComposer();
     const inputRef = useRef<HTMLInputElement | null>(null);
-    const disabled = props.disabled ?? composer.status === "streaming";
+    const disabled =
+      props.disabled ?? (composer.status === "submitted" || composer.status === "streaming");
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -1558,7 +1567,8 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
   ) {
     const composer = useComposer();
     const [dragging, setDragging] = useState(false);
-    const disabled = disabledProp || composer.status === "streaming";
+    const disabled =
+      disabledProp || composer.status === "submitted" || composer.status === "streaming";
 
     const handleDragOver = useCallback(
       (event: DragEvent<HTMLDivElement>) => {

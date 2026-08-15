@@ -408,6 +408,7 @@ function handleStreamingAgentRun(
   }
 
   return streamAgentRunEvents(c, stream, {
+    runId: run.runId,
     onCancel: async () => {
       props.approvalRuntime.cancelRun(run.runId);
       props.questionRuntime.cancelRun(run.runId);

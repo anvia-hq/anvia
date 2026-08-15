@@ -1,4 +1,5 @@
-import { Message, uiMessagesToCoreMessages } from "@anvia/core";
+import { uiMessagesToMessages } from "@anvia/client";
+import { Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
 import { userUIMessageWithAttachments } from "../src/ui/app/app-helpers";
 import {
@@ -103,7 +104,7 @@ describe("Studio UI helpers", () => {
     ]);
 
     expect(message.role).toBe("user");
-    expect(uiMessagesToCoreMessages([message])).toEqual([
+    expect(uiMessagesToMessages([message])).toEqual([
       Message.user([
         { type: "text", text: "Describe" },
         {

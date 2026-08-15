@@ -1,4 +1,4 @@
-import type { UIMessage } from "@anvia/react";
+import type { UIMessage } from "@anvia/client";
 import { forwardRef, type ReactNode } from "react";
 
 import { useMessage } from "../contexts";

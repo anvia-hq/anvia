@@ -1,5 +1,13 @@
+export type {
+  CreateClientStreamResponseOptions,
+  ResumeClientStreamResponseOptions,
+} from "./client-response";
+export {
+  createClientStreamResponse,
+  resumeClientStreamResponse,
+} from "./client-response";
 export { createJsonlStream } from "./jsonl";
-export { createEventStream, createUIStreamResponse } from "./response";
+export { createEventStreamResponse, resumeEventStreamResponse } from "./response";
 export {
   createMemoryResumableStreamStore,
   createResumableStream,
@@ -7,8 +15,7 @@ export {
 } from "./resumable";
 export { createSseStream } from "./sse";
 export type {
-  CreateEventStreamOptions,
-  CreateEventStreamResumeOptions,
+  CreateEventStreamResponseOptions,
   CreateResumableStreamOptions,
   EventStreamErrorEvent,
   EventStreamFormat,
@@ -24,6 +31,7 @@ export type {
   ResumableStreamStatusInput,
   ResumableStreamStore,
   ResumableStreamSubscribeInput,
+  ResumeEventStreamResponseOptions,
   ResumeStreamEventsOptions,
   SseStreamOptions,
 } from "./types";

@@ -1,9 +1,5 @@
-import type {
-  ChatResumeOptions,
-  ChatResumeState,
-  ResumableStreamEnvelope,
-  UIMessage,
-} from "./types";
+import type { UIMessage } from "@anvia/client";
+import type { ChatResumeOptions, ChatResumeState } from "./types";
 
 const storageKeyPrefix = "anvia:chat-resume:";
 
@@ -12,23 +8,11 @@ export function loadChatResumeState(
 ): ChatResumeState | undefined {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
-  if (storage === undefined || key === undefined) {
-    return undefined;
-  }
-
-  let raw: string | null;
+  if (storage === undefined || key === undefined) return undefined;
   try {
-    raw = storage.getItem(key);
-  } catch {
-    return undefined;
-  }
-
-  if (raw === null) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
+    const raw = storage.getItem(key);
+    if (raw === null) return undefined;
+    const parsed: unknown = JSON.parse(raw);
     return isChatResumeState(parsed) ? parsed : undefined;
   } catch {
     return undefined;
@@ -41,83 +25,35 @@ export function saveChatResumeState(
 ): void {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
-  if (storage === undefined || key === undefined) {
-    return;
-  }
-
+  if (storage === undefined || key === undefined) return;
   try {
     storage.setItem(key, JSON.stringify(state));
   } catch {
-    // Resume state is an optimization; storage failures should not break streaming.
+    // Resume persistence is optional and must not interrupt a live stream.
   }
 }
 
 export function clearChatResumeState(options: ChatResumeOptions | undefined): void {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
-  if (storage === undefined || key === undefined) {
-    return;
-  }
-
+  if (storage === undefined || key === undefined) return;
   try {
     storage.removeItem(key);
   } catch {
-    // Resume state is an optimization; storage failures should not break streaming.
+    // Resume persistence is optional.
   }
-}
-
-export function isResumableStreamEnvelope<TEvent>(
-  value: unknown,
-): value is ResumableStreamEnvelope<TEvent> {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value.type === "stream_start" && typeof value.streamId === "string" && value.eventId === 0) {
-    return true;
-  }
-
-  if (
-    value.type === "stream_event" &&
-    typeof value.streamId === "string" &&
-    typeof value.eventId === "number" &&
-    "event" in value
-  ) {
-    return true;
-  }
-
-  return (
-    value.type === "stream_end" &&
-    typeof value.streamId === "string" &&
-    typeof value.eventId === "number" &&
-    typeof value.status === "string"
-  );
 }
 
 function resumeStorageKey(options: ChatResumeOptions | undefined): string | undefined {
-  if (options === undefined) {
-    return undefined;
-  }
-
-  return `${storageKeyPrefix}${options.key}`;
+  return options === undefined ? undefined : `${storageKeyPrefix}${options.key}`;
 }
 
 function resolveResumeStorage(options: ChatResumeOptions | undefined): Storage | undefined {
-  if (options === undefined) {
-    return undefined;
-  }
-
-  if (typeof options.storage === "object") {
-    return options.storage;
-  }
-
-  const storageName = options.storage ?? "sessionStorage";
-  if (typeof globalThis.window === "undefined") {
-    return undefined;
-  }
-
+  if (options === undefined) return undefined;
+  if (typeof options.storage === "object") return options.storage;
+  if (typeof globalThis.window === "undefined") return undefined;
   try {
-    return storageName === "localStorage" ? window.localStorage : window.sessionStorage;
+    return options.storage === "localStorage" ? window.localStorage : window.sessionStorage;
   } catch {
     return undefined;
   }
@@ -129,7 +65,7 @@ function isChatResumeState(value: unknown): value is ChatResumeState {
     value.version === 1 &&
     typeof value.streamId === "string" &&
     typeof value.lastEventId === "number" &&
-    Number.isFinite(value.lastEventId) &&
+    Number.isSafeInteger(value.lastEventId) &&
     value.lastEventId >= 0 &&
     Array.isArray(value.messages) &&
     value.messages.every(isUIMessage)
@@ -140,11 +76,11 @@ function isUIMessage(value: unknown): value is UIMessage {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
-    typeof value.role === "string" &&
+    ["system", "user", "assistant", "tool"].includes(value.role as string) &&
     Array.isArray(value.parts)
   );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

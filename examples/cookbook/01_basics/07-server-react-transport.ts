@@ -1,6 +1,7 @@
+import { agentToClientStream, createHttpClientTransport } from "@anvia/client";
 import type { AgentStreamEvent } from "@anvia/core/agent";
-import { fetchEventStream } from "@anvia/react";
-import { createEventStream } from "@anvia/server";
+import { Message } from "@anvia/core/completion";
+import { createClientStreamResponse } from "@anvia/server";
 
 async function* runEvents(): AsyncIterable<AgentStreamEvent> {
   yield {
@@ -30,17 +31,24 @@ async function* runEvents(): AsyncIterable<AgentStreamEvent> {
   };
 }
 
-const response = createEventStream(runEvents(), { format: "jsonl" });
+const response = createClientStreamResponse(
+  agentToClientStream(runEvents(), { runId: "run_123" }),
+  { format: "jsonl", streamId: "stream_123" },
+);
+const transport = createHttpClientTransport({
+  endpoint: "/api/chat",
+  fetch: async () => response,
+});
 
 let output = "";
-for await (const event of fetchEventStream<AgentStreamEvent>("/api/chat", {
-  fetch: async () => response,
-})) {
+for await (const frame of transport.send({ messages: [Message.user("Hello")] })) {
+  if (frame.type !== "stream_event") continue;
+  const event = frame.event;
   if (event.type === "text_delta") {
     output += event.delta;
   }
-  if (event.type === "final") {
-    console.log(event.result.text);
+  if (event.type === "run_end") {
+    console.log(event.text);
   }
 }
 

@@ -190,18 +190,3 @@ export type {
   TranscriptionResult,
 } from "./transcription";
 export { transcribe } from "./transcription";
-export type {
-  CreateUIAttachment,
-  UIAttachment,
-  UIError,
-  UIMessage,
-  UIMessagePart,
-  UIMessageRole,
-  UIStreamEvent,
-  UIStreamRequest,
-  UIStreamResume,
-} from "./ui";
-export {
-  coreMessagesToUIMessages,
-  uiMessagesToCoreMessages,
-} from "./ui";

@@ -1,4 +1,4 @@
-import type { UIMessage } from "@anvia/react";
+import type { UIMessage } from "@anvia/client";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { type ComponentProps, type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

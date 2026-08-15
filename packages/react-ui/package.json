@@ -90,11 +90,13 @@
     "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
+    "@anvia/client": "workspace:*",
     "@anvia/react": "workspace:*",
     "react": ">=18",
     "react-dom": ">=18"
   },
   "devDependencies": {
+    "@anvia/client": "workspace:*",
     "@anvia/react": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.9.1",

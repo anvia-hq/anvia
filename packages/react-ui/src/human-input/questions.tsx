@@ -1,4 +1,4 @@
-import type { ToolQuestion, ToolQuestionAnswer, ToolQuestionPrompt } from "@anvia/react";
+import type { ToolQuestion, ToolQuestionAnswer, ToolQuestionPrompt } from "@anvia/client";
 import {
   type ChangeEvent,
   forwardRef,
@@ -18,6 +18,7 @@ import {
   useQuestion,
   useQuestionPrompt,
 } from "../contexts";
+import { stringifyValue } from "../format";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
 import type { HumanInputFilter } from "./approvals";
 
@@ -263,7 +264,9 @@ function defaultQuestionContent(question: ToolQuestion): ReactNode {
   return (
     <>
       <div data-anvia-question-tool="">{question.toolName}</div>
-      {question.args !== undefined ? <pre data-anvia-question-args="">{question.args}</pre> : null}
+      {question.input !== undefined ? (
+        <pre data-anvia-question-args="">{stringifyValue(question.input)}</pre>
+      ) : null}
       {question.questions.map((prompt) => (
         <HumanInputQuestionPrompt key={prompt.id} promptId={prompt.id} />
       ))}

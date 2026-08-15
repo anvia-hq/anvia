@@ -1919,16 +1919,26 @@ describe("Anvia studio", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
-    expect(await readJsonl(res)).toMatchObject([
-      { type: "turn_start", turn: 1 },
-      {
+    expect(res.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v1");
+    expect(await readJsonl(res)).toEqual([
+      expect.objectContaining({ type: "run_start", source: "agent" }),
+      expect.objectContaining({ type: "turn_start", turn: 1 }),
+      expect.objectContaining({
         type: "generation_start",
         turn: 1,
-        modelInfo: { provider: "test", defaultModel: "test" },
-      },
-      { type: "text_delta", turn: 1, delta: "hello" },
-      { type: "turn_end", turn: 1 },
-      { type: "final", result: expect.objectContaining({ output: "hello" }) },
+        model: { provider: "test", id: "test" },
+      }),
+      expect.objectContaining({ type: "message_start", turn: 1, role: "assistant" }),
+      expect.objectContaining({ type: "text_start", turn: 1 }),
+      expect.objectContaining({ type: "text_delta", turn: 1, delta: "hello" }),
+      expect.objectContaining({ type: "text_end", turn: 1, text: "hello" }),
+      expect.objectContaining({ type: "message_end", turn: 1 }),
+      expect.objectContaining({ type: "turn_end", turn: 1 }),
+      expect.objectContaining({
+        type: "run_end",
+        status: "completed",
+        output: "hello",
+      }),
     ]);
   });
 
@@ -1960,8 +1970,9 @@ describe("Anvia studio", () => {
       expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }));
       expect(events).toContainEqual(
         expect.objectContaining({
-          type: "final",
-          result: expect.objectContaining({ output: "recovered" }),
+          type: "run_end",
+          status: "completed",
+          output: "recovered",
         }),
       );
       expect(model.requests).toHaveLength(2);
@@ -2099,7 +2110,10 @@ describe("Anvia studio", () => {
     while (approvalId.length === 0) {
       const event = await withTimeout(reader.read(), 1_000);
       eventsBeforeApproval.push(event);
-      if ((event as { type?: string }).type === "tool_approval_request") {
+      if (
+        (event as { type?: string }).type === "tool_approval" &&
+        (event as { approval?: { status?: string } }).approval?.status === "pending"
+      ) {
         const approval = (event as { approval: { id: string; runId: string } }).approval;
         approvalId = approval.id;
         approvalRunId = approval.runId;
@@ -2107,7 +2121,7 @@ describe("Anvia studio", () => {
     }
 
     expect(eventsBeforeApproval).toContainEqual(
-      expect.objectContaining({ type: "tool_call", toolCall: expect.any(Object) }),
+      expect.objectContaining({ type: "tool_call_end", toolName: "issue_refund" }),
     );
     expect(eventsBeforeApproval).not.toContainEqual(
       expect.objectContaining({ type: "approval_required" }),
@@ -2157,20 +2171,21 @@ describe("Anvia studio", () => {
     expect(executed).toBe(true);
     expect(remaining).toContainEqual(
       expect.objectContaining({
-        type: "tool_approval_result",
+        type: "tool_approval",
         approval: expect.objectContaining({ id: approvalId, status: "approved" }),
       }),
     );
     expect(remaining).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "Refunded 25 for ORD-1",
+        result: { status: "success", output: "Refunded 25 for ORD-1" },
       }),
     );
     expect(remaining).toContainEqual(
       expect.objectContaining({
-        type: "final",
-        result: expect.objectContaining({ runId: approvalRunId }),
+        type: "run_end",
+        runId: approvalRunId,
+        status: "completed",
       }),
     );
   });
@@ -2204,7 +2219,10 @@ describe("Anvia studio", () => {
     let approvalId = "";
     while (approvalId.length === 0) {
       const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_approval_request") {
+      if (
+        (event as { type?: string }).type === "tool_approval" &&
+        (event as { approval?: { status?: string } }).approval?.status === "pending"
+      ) {
         approvalId = (event as { approval: { id: string } }).approval.id;
       }
     }
@@ -2269,7 +2287,10 @@ describe("Anvia studio", () => {
     let approvalId = "";
     while (approvalId.length === 0) {
       const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_approval_request") {
+      if (
+        (event as { type?: string }).type === "tool_approval" &&
+        (event as { approval?: { status?: string } }).approval?.status === "pending"
+      ) {
         approvalId = (event as { approval: { id: string } }).approval.id;
       }
     }
@@ -2288,7 +2309,7 @@ describe("Anvia studio", () => {
     expect(remaining).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "Rejected in Anvia Studio.",
+        result: { status: "success", output: "Rejected in Anvia Studio." },
       }),
     );
 
@@ -2361,7 +2382,10 @@ describe("Anvia studio", () => {
     let questionId = "";
     while (questionId.length === 0) {
       const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_question_request") {
+      if (
+        (event as { type?: string }).type === "tool_question" &&
+        (event as { question?: { status?: string } }).question?.status === "pending"
+      ) {
         questionId = (event as { question: { id: string } }).question.id;
       }
     }
@@ -2395,19 +2419,22 @@ describe("Anvia studio", () => {
     const remaining = await readRemainingJsonl(reader);
     expect(remaining).toContainEqual(
       expect.objectContaining({
-        type: "tool_question_result",
+        type: "tool_question",
         question: expect.objectContaining({ id: questionId, status: "answered" }),
       }),
     );
     expect(remaining).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: JSON.stringify({
-          answers: [
-            { questionId: "priority", answer: "High", choice: "High" },
-            { questionId: "notes", answer: "Customer is blocked.", custom: true },
-          ],
-        }),
+        result: {
+          status: "success",
+          output: {
+            answers: [
+              { questionId: "priority", answer: "High", choice: "High" },
+              { questionId: "notes", answer: "Customer is blocked.", custom: true },
+            ],
+          },
+        },
       }),
     );
 
@@ -2472,7 +2499,10 @@ describe("Anvia studio", () => {
     let questionId = "";
     while (questionId.length === 0) {
       const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_question_request") {
+      if (
+        (event as { type?: string }).type === "tool_question" &&
+        (event as { question?: { status?: string } }).question?.status === "pending"
+      ) {
         questionId = (event as { question: { id: string } }).question.id;
       }
     }
@@ -2549,11 +2579,19 @@ describe("Anvia studio", () => {
 
     expect(res.status).toBe(200);
     const events = await readJsonl(res);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_question_request" }));
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "tool_question",
+        question: expect.objectContaining({ status: "pending" }),
+      }),
+    );
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "ask_question requires every question to include text and at least one choice.",
+        result: {
+          status: "success",
+          output: "ask_question requires every question to include text and at least one choice.",
+        },
       }),
     );
   });
@@ -2591,11 +2629,16 @@ describe("Anvia studio", () => {
 
     expect(res.status).toBe(200);
     const events = await readJsonl(res);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_approval_request" }));
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "tool_approval",
+        approval: expect.objectContaining({ status: "pending" }),
+      }),
+    );
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "Refunded 25 for ORD-1",
+        result: { status: "success", output: "Refunded 25 for ORD-1" },
       }),
     );
     expect(executed).toBe(true);
@@ -2642,7 +2685,7 @@ describe("Anvia studio", () => {
     });
     model.releaseText?.();
     await expect(readRemainingJsonl(reader)).resolves.toContainEqual(
-      expect.objectContaining({ type: "final" }),
+      expect.objectContaining({ type: "run_end", status: "completed" }),
     );
   });
 
@@ -2663,10 +2706,9 @@ describe("Anvia studio", () => {
     expect(res.status).toBe(200);
     expect(await readJsonl(res)).toContainEqual(
       expect.objectContaining({
-        type: "final",
-        result: expect.objectContaining({
-          trace: { traceId: "trace_stream", observationId: "obs_1" },
-        }),
+        type: "run_end",
+        status: "completed",
+        trace: { traceId: "trace_stream", observationId: "obs_1" },
       }),
     );
     expect(observer.starts[0]?.trace).toMatchObject({ name: "stream" });
@@ -3183,7 +3225,9 @@ describe("Anvia studio", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(await readJsonl(res)).toContainEqual(expect.objectContaining({ type: "final" }));
+    expect(await readJsonl(res)).toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
+    );
 
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
     await expect(loaded.json()).resolves.toMatchObject({
@@ -3304,29 +3348,37 @@ describe("Anvia studio", () => {
     expect(run.status).toBe(200);
     const events = await readJsonl(run);
     const streamedLogs = events.filter(
-      (event): event is { type: "session_log"; log: { event: string; sequence: number } } =>
+      (
+        event,
+      ): event is {
+        type: "data";
+        name: "studio.session_log";
+        data: { event: string; sequence: number };
+      } =>
         typeof event === "object" &&
         event !== null &&
         "type" in event &&
-        event.type === "session_log",
+        event.type === "data" &&
+        "name" in event &&
+        event.name === "studio.session_log",
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "run.started" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "run.started" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "memory.loaded" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "memory.loaded" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "prompt.prepared" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "prompt.prepared" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "run.completed" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "run.completed" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "memory.saved" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "memory.saved" }) }),
     );
     expect(streamedLogs).not.toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "run.cancelled" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "run.cancelled" }) }),
     );
 
     const firstPage = await runner.fetch(
@@ -3410,7 +3462,12 @@ describe("Anvia studio", () => {
 
     expect(res.status).toBe(200);
     const events = await readJsonl(res);
-    expect(events).toContainEqual(expect.objectContaining({ type: "agent_tool_event" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "run_start",
+        scope: expect.objectContaining({ agentId: "child", parentToolName: "ask_child" }),
+      }),
+    );
 
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
     await expect(loaded.json()).resolves.toMatchObject({
@@ -3714,7 +3771,9 @@ describe("Anvia studio", () => {
       }),
     );
     expect(run.status).toBe(200);
-    expect(await readJsonl(run)).toContainEqual(expect.objectContaining({ type: "final" }));
+    expect(await readJsonl(run)).toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
+    );
 
     const traces = (await (
       await runner.fetch(new Request(`http://runner.test/sessions/${session.id}/traces`))
@@ -3884,7 +3943,7 @@ describe("Anvia studio", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "error",
-        error: expect.objectContaining({ message: "stream failed" }),
+        error: { message: "An unexpected error occurred." },
       }),
     );
     expect(model.requests).toHaveLength(1);
@@ -4522,7 +4581,11 @@ async function readJsonl(response: Response): Promise<unknown[]> {
     .trim()
     .split("\n")
     .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line) as unknown)
+    .flatMap((value) => {
+      const unwrapped = unwrapClientFrame(value);
+      return unwrapped.kind === "event" ? [unwrapped.value] : [];
+    });
 }
 
 function createJsonlReader(response: Response): {
@@ -4543,29 +4606,50 @@ function createJsonlReader(response: Response): {
       await reader.cancel();
     },
     async read(): Promise<unknown> {
-      while (events.length === 0) {
-        const next = await reader.read();
-        if (next.done) {
-          buffer += decoder.decode();
-          if (buffer.trim().length > 0) {
-            events.push(JSON.parse(buffer));
-            buffer = "";
-            break;
+      while (true) {
+        while (events.length === 0) {
+          const next = await reader.read();
+          if (next.done) {
+            buffer += decoder.decode();
+            if (buffer.trim().length > 0) {
+              events.push(JSON.parse(buffer) as unknown);
+              buffer = "";
+              break;
+            }
+            throw new Error("Stream ended before another JSONL event");
           }
+          buffer += decoder.decode(next.value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.trim().length > 0) {
+              events.push(JSON.parse(line) as unknown);
+            }
+          }
+        }
+        const value = events.shift();
+        const unwrapped = unwrapClientFrame(value);
+        if (unwrapped.kind === "event") return unwrapped.value;
+        if (unwrapped.kind === "end") {
           throw new Error("Stream ended before another JSONL event");
         }
-        buffer += decoder.decode(next.value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (line.trim().length > 0) {
-            events.push(JSON.parse(line));
-          }
-        }
       }
-      return events.shift();
     },
   };
+}
+
+function unwrapClientFrame(
+  value: unknown,
+): { kind: "event"; value: unknown } | { kind: "skip" } | { kind: "end" } {
+  if (typeof value !== "object" || value === null || !("type" in value)) {
+    return { kind: "event", value };
+  }
+  if (value.type === "stream_event" && "event" in value) {
+    return { kind: "event", value: value.event };
+  }
+  if (value.type === "stream_start") return { kind: "skip" };
+  if (value.type === "stream_end") return { kind: "end" };
+  return { kind: "event", value };
 }
 
 function isTraceObservabilityEvent(event: unknown): boolean {

@@ -87,7 +87,8 @@ const MessageRegenerate = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
       .find((item) => item.role === "assistant");
     const disabled =
       props.disabled ??
-      (chat.status === "streaming" ||
+      (chat.status === "submitted" ||
+        chat.status === "streaming" ||
         message.role !== "assistant" ||
         latestAssistantMessage?.id !== message.id);
 

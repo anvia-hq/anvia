@@ -1,91 +1,71 @@
 # @anvia/react
 
-React hooks and client transports for Anvia applications.
+React controllers for the explicit `@anvia/client` stream protocol.
 
 ```tsx
+import type { UIMessage } from "@anvia/client";
 import { useChat } from "@anvia/react";
-import { useState } from "react";
 
 export function Chat() {
   const chat = useChat({ endpoint: "/api/chat" });
-  const [input, setInput] = useState("");
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void chat.sendMessage(input);
-        setInput("");
+        void chat.sendMessage("Hello");
       }}
     >
-      <div>
-        {chat.messages.map((message) => (
-          <p key={message.id}>
-            {message.parts
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join("")}
-          </p>
-        ))}
-      </div>
-      <input value={input} onChange={(event) => setInput(event.target.value)} />
-      <button disabled={chat.status === "streaming"}>Send</button>
+      {chat.messages.map((message: UIMessage) => (
+        <div key={message.id}>
+          {message.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("")}
+        </div>
+      ))}
+      <button disabled={chat.status === "submitted" || chat.status === "streaming"}>Send</button>
     </form>
   );
 }
 ```
 
-## Exports
-
-- `readJsonlStream(stream)` parses newline-delimited JSON streams.
-- `readSseStream(stream)` parses Server-Sent Events with JSON `data:` payloads.
-- `fetchEventStream(url, options)` fetches JSONL or SSE streams as `AsyncIterable`.
-- `createFetchTransport(options)` creates an `EventTransport`; it defaults to POST JSON and omits implicit bodies for GET/HEAD.
-- `createChatTransport(options)` creates the default fetch-backed chat transport.
-- `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`, including optional human-input approval/question state and opt-in stream resume.
-- `useCompletion(options)` appends completion turns into `UIMessage[]` state and exposes derived `completion` text.
-- `useSmoothStreamText(content, lifecycle)` buffers and paces an append-only display string without changing stream events or message state.
-- `useSmoothStreamItems(items, { adapter, ...lifecycle })` applies the same pacing to mixed text/tool item lists while preserving semantic ordering.
-
-Both smoothing hooks require `{ isStreaming, resetKey }`. Keep the lifecycle mounted when the
-source stops so buffered text can drain; change `resetKey` when switching conversations or loading
-history. Use `flushImmediately` for terminal errors.
-
-Default hook requests use one shared wire shape:
+`useChat` and `useCompletion` require exactly one connection boundary:
 
 ```ts
-type UIStreamRequest = {
+useChat({ endpoint: "/api/chat" });
+
+useChat({
+  transport: createDirectClientTransport(async (request) => handleChat(request)),
+});
+```
+
+Import transports, protocol types, `UIMessage`, and conversion helpers from `@anvia/client`.
+`@anvia/react` deliberately does not re-export them.
+
+Both hooks:
+
+- consume only framed `ClientStreamFrame` values;
+- expose `ready | submitted | streaming | error` status;
+- keep `UIMessage[]` locally and send core `Message[]` in `ClientStreamRequest`;
+- accept a custom `createRequest({ uiMessages, messages, resume })` for endpoint-specific request
+  types;
+- expose canonical events through `onEvent` and the returned `events` array;
+- support optional resumable streams and tool approval/question state.
+
+The default request is:
+
+```ts
+type ClientStreamRequest = {
   messages: Message[];
-  stream: true;
   metadata?: JsonValue;
-  resume?: {
-    streamId: string;
-    after: number;
-  };
+  resume?: { streamId: string; after: number };
 };
 ```
 
-Hooks convert their local `UIMessage[]` state into core messages before sending. Custom
-`createRequest` callbacks receive `{ messages, uiMessages, coreMessages, resume? }`, where
-`messages` and `uiMessages` are UI-shaped for compatibility, `coreMessages` is the default wire
-payload, and `resume` is the optional continue-stream cursor (`ChatResumeCursor` /
-`UIStreamResume`) that must be forwarded on resumable routes.
+For resumable chat, pair `useChat({ endpoint, resume: { key } })` with
+`createClientStreamResponse(..., { resumable })` and `resumeClientStreamResponse(...)` on the
+server.
 
-The shared boundary is:
-
-```ts
-type EventTransport<TRequest, TEvent> = {
-  send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
-};
-```
-
-Default hooks can consume `streamCompletion(...)` events, raw Agent stream events, or
-`UIStreamEvent` records. A completion endpoint can return:
-
-```ts
-createEventStream(streamCompletion({ model, messages: body.messages }));
-```
-
-For chat streams that should survive navigation or reload, pair `useChat({ resume: { key } })` with
-an endpoint that returns `createEventStream(events, { resumable: { id, store } })` and continues with
-`createEventStream({ resume: { streamId, after, store } })` when the request body includes `resume`.
+`useSmoothStreamText` and `useSmoothStreamItems` only smooth presentation. They do not change
+protocol events or message state.

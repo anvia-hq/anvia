@@ -1,4 +1,5 @@
-import { createEventStream } from "@anvia/server";
+import type { ClientDataMap, ClientStream } from "@anvia/client";
+import { createClientStreamResponse, createEventStreamResponse } from "@anvia/server";
 import { serializeError } from "./errors";
 
 type StudioStreamErrorEvent = {
@@ -15,7 +16,16 @@ const studioJsonlHeaders: HeadersInit = {
 };
 
 export function streamStudioJsonl<TEvent>(events: AsyncIterable<TEvent>): Response {
-  return createEventStream(withStudioStreamErrors(events), {
+  return createEventStreamResponse(withStudioStreamErrors(events), {
+    format: "jsonl",
+    headers: studioJsonlHeaders,
+  });
+}
+
+export function streamStudioClient<TData extends ClientDataMap>(
+  events: ClientStream<TData>,
+): Response {
+  return createClientStreamResponse(events, {
     format: "jsonl",
     headers: studioJsonlHeaders,
   });

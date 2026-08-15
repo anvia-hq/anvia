@@ -1,4 +1,4 @@
-import type { UIMessage, UIMessagePart } from "@anvia/react";
+import type { UIMessage, UIMessagePart } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type MessageContextValue = {

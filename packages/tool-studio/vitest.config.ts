@@ -4,6 +4,9 @@ export default defineConfig({
   resolve: {
     dedupe: ["react", "react-dom"],
     alias: {
+      "@anvia/client/transport": new URL("../client/src/transport/index.ts", import.meta.url)
+        .pathname,
+      "@anvia/client": new URL("../client/src/index.ts", import.meta.url).pathname,
       "@anvia/react-ui/stream": new URL("../react-ui/src/stream/index.ts", import.meta.url)
         .pathname,
       "@anvia/react": new URL("../react/src/index.ts", import.meta.url).pathname,
@@ -21,7 +24,6 @@ export default defineConfig({
         .pathname,
       "@anvia/core/pipeline": new URL("../core/src/pipeline/index.ts", import.meta.url).pathname,
       "@anvia/core/tool": new URL("../core/src/tool/index.ts", import.meta.url).pathname,
-      "@anvia/core/ui": new URL("../core/src/ui/index.ts", import.meta.url).pathname,
       "@anvia/core/vector-store": new URL("../core/src/vector-store/index.ts", import.meta.url)
         .pathname,
       "@anvia/core": new URL("../core/src/index.ts", import.meta.url).pathname,

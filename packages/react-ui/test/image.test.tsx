@@ -1,4 +1,4 @@
-import type { UIAttachment, UIMessage } from "@anvia/react";
+import type { UIAttachment, UIMessage } from "@anvia/client";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -17,7 +17,6 @@ export * from "../../src/speech-generation";
 export * from "../../src/streaming";
 export * from "../../src/tool";
 export * from "../../src/transcription";
-export * from "../../src/ui";
 export * from "../../src/vector-store";
 
 import type { AgentResponse, AgentResult } from "../../src/agent";

@@ -1,5 +1,5 @@
-import type { JsonValue, Message, UserContent } from "@anvia/core/completion";
-import type { UIMessage } from "@anvia/core/ui";
+import type { UIMessage } from "@anvia/client";
+import type { Message, UserContent } from "@anvia/core/completion";
 import type {
   StudioModelSummary,
   StudioPipelineLogEntry,
@@ -192,16 +192,20 @@ export function userUIMessageWithAttachments(
   return {
     id: createPromptId("msg"),
     role: "user",
-    parts: userContentWithAttachments(text, attachments).map((content) =>
-      content.type === "text"
-        ? { id: createPromptId("part"), type: "text", text: content.text }
-        : {
-            id: createPromptId("part"),
-            type: "data",
-            name: content.type,
-            data: content as JsonValue,
-          },
-    ),
+    parts: [
+      ...(text.length === 0 ? [] : [{ id: createPromptId("part"), type: "text" as const, text }]),
+      ...attachments.map((attachment) => ({
+        id: createPromptId("part"),
+        type: "attachment" as const,
+        attachment: {
+          id: attachment.id,
+          type: attachment.kind,
+          name: attachment.name,
+          mediaType: attachment.mediaType,
+          data: attachment.data,
+        },
+      })),
+    ],
   };
 }
 

@@ -32,6 +32,10 @@ import type { AnthropicCompletionModelId } from "./models";
 type AnthropicCreateParams = Record<string, unknown>;
 type AnthropicMessage = Record<string, unknown>;
 type AnthropicContentBlock = Record<string, unknown>;
+type AnthropicMessageCreate = (
+  params: AnthropicCreateParams,
+  options: ReturnType<typeof anthropicRequestOptions>,
+) => Promise<unknown>;
 
 const DEFAULT_MAX_TOKENS = 1024;
 
@@ -46,7 +50,6 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
     outputSchema: false,
     reasoning: true,
   };
-
   constructor(
     private readonly client: Anthropic | AnthropicVertex,
     readonly modelId: AnthropicCompletionModelId,
@@ -76,11 +79,17 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
     const params = toAnthropicMessagesParams(this.modelId, request);
-    const response = await this.client.messages.create(
-      params as never,
-      anthropicRequestOptions(options),
-    );
+    const response = await this.createMessage(params, anthropicRequestOptions(options));
     return withContextUsage(fromAnthropicMessage(response), this.modelInfo());
+  }
+
+  private createMessage(
+    params: AnthropicCreateParams,
+    options: ReturnType<typeof anthropicRequestOptions>,
+  ): Promise<unknown> {
+    const messages = this.client.messages;
+    const create = messages.create as unknown as AnthropicMessageCreate;
+    return create.call(messages, params, options);
   }
 
   async *streamCompletion(
@@ -89,10 +98,7 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
   ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
     const params = { ...toAnthropicMessagesParams(this.modelId, request), stream: true };
-    const stream = await this.client.messages.create(
-      params as never,
-      anthropicRequestOptions(options),
-    );
+    const stream = await this.createMessage(params, anthropicRequestOptions(options));
     const toolIdsByIndex = new Map<number, string>();
     const blocksWithInitialToolInput = new Set<number>();
     const streamUsage = Usage.empty();

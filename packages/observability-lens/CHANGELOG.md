@@ -1,5 +1,30 @@
 # @anvia/lens
 
+## 1.0.0-rc.2
+
+### Patch Changes
+
+- 640dd3c: Redesign observability around named Agent observers, explicit primary trace provenance, and
+  object-only eval targets and reporter error policies. Add owned, lazy, asynchronously disposable
+  Langfuse and Lens clients; make OpenTelemetry and logger observers lifecycle-free registrations;
+  and preserve observer identity through client streams and Studio traces.
+  Eval trace resolution now preserves observer provenance, and reporters reject traces owned by a
+  different backend unless explicitly mapped. Langfuse clients use isolated tracer providers, and
+  strict observer startup/terminal dispatch cleans up partial starts without duplicate terminal calls.
+- Updated dependencies [9ae0893]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [1f6db5c]
+- Updated dependencies [5476f98]
+- Updated dependencies [640dd3c]
+- Updated dependencies [593c725]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+- Updated dependencies [927f81b]
+- Updated dependencies [809d3b0]
+- Updated dependencies [b363c93]
+  - @anvia/core@1.0.0-rc.2
+  - @anvia/otel@1.0.0-rc.2
+
 ## 1.0.0-rc.1
 
 ### Patch Changes

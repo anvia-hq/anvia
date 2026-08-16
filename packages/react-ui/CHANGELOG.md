@@ -1,5 +1,30 @@
 # @anvia/react-ui
 
+## 1.0.0-rc.2
+
+### Patch Changes
+
+- 9ae0893: Add a framework-neutral, runtime-validated client stream protocol with explicit completion and Agent
+  adapters, lossless Message/UIMessage conversion, automatic tool-call deltas, masked client errors,
+  typed data events, HTTP and direct transports, and always-framed resumable streams. Remove Core's UI
+  message surface and the ambiguous Server and React event-stream APIs. Require React hooks to use an
+  endpoint or canonical transport, expose four-state request lifecycle status, and migrate Studio to
+  the same explicit boundary. Preserve provider tool identity, final sources, reasoning, transformed
+  data, application metadata, and resumable stream identity across that boundary.
+- 3d2fd23: Replace message factories with strict JSON-safe structural messages, add canonical Core and UI
+  parsers, move custom data validation to typed transports, and adopt the `anvia.client.v2` framed
+  protocol. Make Client and Server calls object-only, make React transport-only with standalone
+  completion state, and require canonical structural message requests in Studio.
+- b363c93: Update upstream runtime dependencies and preserve compatibility with the latest Anthropic SDKs.
+- Updated dependencies [9ae0893]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [640dd3c]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+- Updated dependencies [809d3b0]
+  - @anvia/client@1.0.0-rc.2
+  - @anvia/react@1.0.0-rc.2
+
 ## 1.0.0-rc.1
 
 ### Patch Changes

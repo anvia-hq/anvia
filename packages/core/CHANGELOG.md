@@ -1,5 +1,59 @@
 # @anvia/core
 
+## 1.0.0-rc.2
+
+### Patch Changes
+
+- 9ae0893: Add a framework-neutral, runtime-validated client stream protocol with explicit completion and Agent
+  adapters, lossless Message/UIMessage conversion, automatic tool-call deltas, masked client errors,
+  typed data events, HTTP and direct transports, and always-framed resumable streams. Remove Core's UI
+  message surface and the ambiguous Server and React event-stream APIs. Require React hooks to use an
+  endpoint or canonical transport, expose four-state request lifecycle status, and migrate Studio to
+  the same explicit boundary. Preserve provider tool identity, final sources, reasoning, transformed
+  data, application metadata, and resumable stream identity across that boundary.
+- c7f4bbc: Move durable memory selection onto the object-only Agent generate and stream boundaries, remove
+  AgentSession and positional execution signatures, and distinguish stateful prompts from stateless
+  transcripts. Replace implicit compaction summaries with explicit MemoryScope, store capability,
+  typed compaction-message, result metadata, and stream-event contracts. Persist compaction messages
+  atomically in every memory adapter and carry compaction events through Client, React, resumable
+  server streams, and Studio logs without creating synthetic chat messages.
+- 1f6db5c: Replace MCP connection factories with lifecycle-owning `McpClient` and `McpClientGroup` classes,
+  immutable Agent `mcpServers` registrations, typed tool provenance, fixed paginated discovery, and
+  explicit transport and result boundaries. Studio now consumes Agent registrations directly.
+- 5476f98: Redesign durable memory adapter construction, provisioning, validation, scope keys, and native
+  connection ownership around explicit application lifecycle boundaries.
+- 640dd3c: Redesign observability around named Agent observers, explicit primary trace provenance, and
+  object-only eval targets and reporter error policies. Add owned, lazy, asynchronously disposable
+  Langfuse and Lens clients; make OpenTelemetry and logger observers lifecycle-free registrations;
+  and preserve observer identity through client streams and Studio traces.
+  Eval trace resolution now preserves observer provenance, and reporters reject traces owned by a
+  different backend unless explicitly mapped. Langfuse clients use isolated tracer providers, and
+  strict observer startup/terminal dispatch cleans up partial starts without duplicate terminal calls.
+- 593c725: Replace the stateful Extractor class with object-only tool-based extraction and detailed completion
+  results. Redesign Pipeline stages and execution around stable stage IDs, explicit input mappers,
+  named run results, settled batches, abort propagation, and hierarchical graph and event paths.
+- a4bf9d2: Bind provider and local-model handles to explicit model IDs, make remote provider factories
+  object-only, and introduce honest local loading and ownership boundaries.
+- 3d2fd23: Replace message factories with strict JSON-safe structural messages, add canonical Core and UI
+  parsers, move custom data validation to typed transports, and adopt the `anvia.client.v2` framed
+  protocol. Make Client and Server calls object-only, make React transport-only with standalone
+  completion state, and require canonical structural message requests in Studio.
+- 927f81b: Replace model-bound vector indexes and positional embedding helpers with explicit vector clients,
+  raw-vector stores, object-argument embedding helpers, retrieval composition, vector search tools,
+  and agent vector contexts. Add lazy provider clients for all vector adapters, explicit resource
+  lifecycle methods, replacement upserts, dense and hybrid retrieval, abort propagation, and opt-in
+  retries. Normalize provider scores so larger values are consistently better, return `topK` logical
+  documents even when documents have multiple chunks, and require explicit Redis metadata indexing
+  for filtered search.
+- 809d3b0: Finalize the 1.0 generation API around `generateCompletion`, `streamCompletion`, `generateImage`,
+  `generateSpeech`, and `transcribe`, with one options object, `prompt` or `messages` completion
+  input, schema-backed typed output, normalized result shapes, `providerOptions`, shared retries, and
+  end-to-end cancellation. Move Agent retry defaults to Agent construction with explicit per-run
+  inherit, disable, and replace behavior; make tool-call deltas automatic; nest stream terminal data
+  under `final.result`; expose blocked and typed Agent results consistently through tools, pipelines,
+  observers, React, and Studio; and rename audio-generation contracts to speech-generation.
+- b363c93: Update upstream runtime dependencies and preserve compatibility with the latest Anthropic SDKs.
+
 ## 1.0.0-rc.1
 
 ### Patch Changes

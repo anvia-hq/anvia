@@ -1,5 +1,22 @@
 # @anvia/sandbox
 
+## 1.0.0-rc.2
+
+### Patch Changes
+
+- Updated dependencies [9ae0893]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [1f6db5c]
+- Updated dependencies [5476f98]
+- Updated dependencies [640dd3c]
+- Updated dependencies [593c725]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+- Updated dependencies [927f81b]
+- Updated dependencies [809d3b0]
+- Updated dependencies [b363c93]
+  - @anvia/core@1.0.0-rc.2
+
 ## 1.0.0-rc.1
 
 ### Patch Changes

@@ -38,5 +38,20 @@
     "@anvia/redis": "0.2.7",
     "@anvia/weaviate": "0.2.5"
   },
-  "changesets": ["anvia-v1-release-train", "public-rc-ready", "tidy-agent-builder-registration"]
+  "changesets": [
+    "anvia-v1-release-train",
+    "explicit-client-stream-boundary",
+    "public-rc-ready",
+    "redesign-agent-memory-compaction",
+    "redesign-mcp-clients",
+    "redesign-memory-adapter-lifecycle",
+    "redesign-observability-lifecycle",
+    "redesign-pipeline-extractor-boundaries",
+    "redesign-provider-model-construction",
+    "redesign-type-safe-message-boundaries",
+    "redesign-vector-clients",
+    "tidy-agent-builder-registration",
+    "unify-generation-public-api",
+    "update-upstream-runtime-dependencies"
+  ]
 }

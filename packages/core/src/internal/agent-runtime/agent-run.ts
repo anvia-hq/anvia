@@ -1410,11 +1410,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   }
 
   private async startRunObservers(runId: string): Promise<ActiveAgentRunObservers> {
-    const failOnObserverError =
-      this.traceOptions?.failOnObserverError === true ||
-      this.agent.observers.some((registration) => registration.failOnObserverError === true);
+    const observability = this.agent.observability;
     return startAgentRunObservers(
-      this.agent.observers,
+      observability?.observers ?? {},
       {
         runId,
         agentName: this.agent.name,
@@ -1426,7 +1424,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         history: this.chatHistory,
         maxTurns: this.maxTurnCount,
       },
-      failOnObserverError,
+      {
+        primaryTrace: observability?.primaryTrace,
+        errorPolicy: observability?.errorPolicy ?? "ignore",
+      },
     );
   }
 

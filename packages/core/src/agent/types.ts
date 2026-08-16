@@ -14,7 +14,7 @@ import type {
   MemorySavePolicy,
   MemoryStore,
 } from "../memory/types";
-import type { AgentObserver, AgentObserverRegistration, ObserveOptions } from "../observability";
+import type { AgentObservabilityOptions } from "../observability";
 import type { RetrySetting } from "../retry";
 import type { ZodSchema } from "../schema";
 import type { SkillSet } from "../skills";
@@ -52,13 +52,11 @@ export type AgentOptions<
   maxTurns?: number | undefined;
   lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
   outputSchema?: ZodSchema<Output> | undefined;
-  observers?: readonly AgentObserverInput[] | undefined;
+  observability?: AgentObservabilityOptions | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;
   memory?: AgentMemoryOptions | undefined;
 };
-
-export type AgentObserverInput = AgentObserver | (ObserveOptions & { observer: AgentObserver });
 
 export type AgentMemoryOptions = MemoryOptions & {
   store: MemoryStore;
@@ -100,7 +98,7 @@ export type ResolvedAgentOptions<
   defaultMaxTurns?: number | undefined;
   lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
   outputSchema?: ZodSchema<Output> | undefined;
-  observers?: readonly AgentObserverRegistration[] | undefined;
+  observability?: AgentObservabilityOptions | undefined;
   guardrails?: readonly GuardrailPolicy[] | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;
   memory?: AgentMemory | undefined;

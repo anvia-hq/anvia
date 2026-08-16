@@ -5,7 +5,6 @@ import type {
   CompletionResponse,
   CompletionSource,
   JsonObject,
-  JsonValue,
   Message,
   ProviderToolCall,
   ToolCallPart,
@@ -17,19 +16,21 @@ import type { DeepReadonly } from "../internal/type-utils";
 import type { ToolCallStreamEvent } from "../tool";
 
 export type AgentTraceInfo = {
+  readonly observer: string;
   readonly traceId?: string | undefined;
   readonly observationId?: string | undefined;
 };
+
+export type AgentObserverTraceInfo = Omit<AgentTraceInfo, "observer">;
 
 export type AgentTraceOptions = {
   readonly name?: string | undefined;
   readonly userId?: string | undefined;
   readonly sessionId?: string | undefined;
-  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
+  readonly metadata?: DeepReadonly<JsonObject> | undefined;
   readonly tags?: readonly string[] | undefined;
   readonly version?: string | undefined;
   readonly traceId?: string | undefined;
-  readonly failOnObserverError?: boolean | undefined;
   readonly promptRef?: AgentRunPromptRef | undefined;
 };
 
@@ -105,9 +106,9 @@ export type AgentGenerationUpdateArgs = {
 
 export type AgentRunEventArgs = {
   readonly name: string;
-  readonly attributes?: Readonly<Record<string, DeepReadonly<JsonValue> | undefined>> | undefined;
+  readonly attributes?: DeepReadonly<JsonObject> | undefined;
   readonly level?: "DEFAULT" | "WARNING" | "ERROR" | undefined;
-  readonly timestamp?: Date | string | undefined;
+  readonly timestamp?: string | undefined;
 };
 
 export type AgentToolStartArgs = {
@@ -148,7 +149,7 @@ export interface AgentToolObserver {
 }
 
 export interface AgentRunObserver {
-  readonly trace?: AgentTraceInfo | undefined;
+  readonly trace?: AgentObserverTraceInfo | undefined;
   startGeneration?(
     args: AgentGenerationStartArgs,
   ): AgentGenerationObserver | undefined | Promise<AgentGenerationObserver | undefined>;
@@ -164,19 +165,14 @@ export interface AgentObserver {
   startRun(
     args: AgentRunStartArgs,
   ): AgentRunObserver | undefined | Promise<AgentRunObserver | undefined>;
-  flush?(): void | Promise<void>;
-  shutdown?(): void | Promise<void>;
 }
 
-export type AgentObserverRegistration = {
-  readonly observer: AgentObserver;
-  readonly failOnObserverError?: boolean | undefined;
-};
+export type AgentObserverMap = Readonly<Record<string, AgentObserver>>;
 
-export type ObserveOptions = {
-  readonly failOnObserverError?: boolean | undefined;
-};
+export type AgentObserverErrorPolicy = "ignore" | "throw";
 
-export function createObserver(observer: AgentObserver): AgentObserver {
-  return observer;
-}
+export type AgentObservabilityOptions<Observers extends AgentObserverMap = AgentObserverMap> = {
+  readonly observers: Observers;
+  readonly primaryTrace?: Extract<keyof Observers, string> | undefined;
+  readonly errorPolicy?: AgentObserverErrorPolicy | undefined;
+};

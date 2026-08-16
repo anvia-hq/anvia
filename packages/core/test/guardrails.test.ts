@@ -186,7 +186,7 @@ describe("guardrails", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
       guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
     });
 
@@ -194,7 +194,7 @@ describe("guardrails", () => {
 
     expect(result).toMatchObject({ status: "blocked", stage: "input", text: "Input blocked." });
     if (result.status !== "blocked") throw new Error("Expected a blocked result.");
-    expect(result.trace).toEqual(trace);
+    expect(result.trace).toEqual({ observer: "test", ...trace });
     expect(observedEvents).toMatchObject([
       {
         name: "guardrail.decision",
@@ -222,13 +222,16 @@ describe("guardrails", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [
-        createObserver({
-          startRun() {
-            return { trace, end() {} };
-          },
-        }),
-      ],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun() {
+              return { trace, end() {} };
+            },
+          }),
+        },
+        primaryTrace: "test",
+      },
       guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
     });
 

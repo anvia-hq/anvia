@@ -1,7 +1,8 @@
-import type { JsonValue, Usage } from "../completion";
+import type { JsonObject, Usage } from "../completion";
 import type { EvalOutcome } from "./outcome";
 
-export type EvalMetadata = Record<string, JsonValue | undefined>;
+export type EvalMetadata = JsonObject;
+export type EvalReporterErrorPolicy = "collect" | "throw";
 
 export type EvalRunOptions = {
   id?: string | undefined;
@@ -34,6 +35,7 @@ export type EvalTurn = {
 };
 
 export type EvalTraceRef = {
+  observer?: string | undefined;
   traceId: string;
   observationId?: string | undefined;
   responseId?: string | undefined;
@@ -281,7 +283,7 @@ export type RunEvalSuiteOptions<
   reporters?:
     | readonly EvalReporter<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>[]
     | undefined;
-  failOnReporterError?: boolean | undefined;
+  reporterErrorPolicy?: EvalReporterErrorPolicy | undefined;
   targetUsage?:
     | EvalTargetUsageSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>
     | undefined;

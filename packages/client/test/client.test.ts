@@ -114,6 +114,11 @@ describe("native stream adapters", () => {
               output: "done",
               usage: Usage.empty(),
               messages: [],
+              trace: {
+                observer: "langfuse",
+                traceId: "trace_1",
+                observationId: "observation_1",
+              },
               memoryCompaction,
             },
           },
@@ -129,6 +134,11 @@ describe("native stream adapters", () => {
     });
     expect(events.find((event) => event.type === "run_end")).toMatchObject({
       status: "completed",
+      trace: {
+        observer: "langfuse",
+        traceId: "trace_1",
+        observationId: "observation_1",
+      },
       memoryCompaction,
     });
     expect(
@@ -766,6 +776,35 @@ describe("protocol and transport", () => {
         rawResponse: { secret: true },
       }),
     ).toThrow('run_end event has unknown field "rawResponse"');
+  });
+
+  it("preserves explicit observer provenance and rejects ambiguous traces", () => {
+    expect(
+      parseClientStreamEvent({
+        type: "run_end",
+        runId: "run_1",
+        status: "completed",
+        trace: {
+          observer: "langfuse",
+          traceId: "trace_1",
+          observationId: "observation_1",
+        },
+      }),
+    ).toMatchObject({
+      trace: {
+        observer: "langfuse",
+        traceId: "trace_1",
+        observationId: "observation_1",
+      },
+    });
+    expect(() =>
+      parseClientStreamEvent({
+        type: "run_end",
+        runId: "run_1",
+        status: "completed",
+        trace: { traceId: "trace_1" },
+      }),
+    ).toThrow("run_end.trace");
   });
 
   it("frames direct streams even though no HTTP boundary is involved", async () => {

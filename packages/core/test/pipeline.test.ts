@@ -287,18 +287,20 @@ describe("Pipeline", () => {
       id: "approval-agent",
       model: new QueueModel([response([AssistantContent.toolCall("call_1", "guarded", {})])]),
       tools: [guardedTool],
-      observers: [
-        createObserver({
-          startRun() {
-            return {
-              end() {},
-              error({ error }) {
-                observedError = error;
-              },
-            };
-          },
-        }),
-      ],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun() {
+              return {
+                end() {},
+                error({ error }) {
+                  observedError = error;
+                },
+              };
+            },
+          }),
+        },
+      },
     });
     const pipeline = new Pipeline({ id: "approval-pipeline", inputSchema: z.string() }).agent({
       id: "guarded-agent",

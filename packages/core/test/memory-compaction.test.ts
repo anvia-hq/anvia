@@ -174,16 +174,18 @@ describe("memory compaction", () => {
     const agent = new Agent({
       id: "test",
       model: mainModel,
-      observers: [
-        {
-          startRun: () => ({
-            event: ({ name }) => {
-              events.push(name);
-            },
-            end: () => {},
-          }),
+      observability: {
+        observers: {
+          test: {
+            startRun: () => ({
+              event: ({ name }) => {
+                events.push(name);
+              },
+              end: () => {},
+            }),
+          },
         },
-      ],
+      },
       memory: {
         store,
         compaction: {
@@ -765,17 +767,19 @@ describe("memory compaction", () => {
     const agent = new Agent({
       id: "test",
       model: mainModel,
-      observers: [
-        {
-          startRun: () => ({
-            event: ({ name }) => {
-              observerEvents.push(name);
-            },
-            end: () => {},
-            error: () => {},
-          }),
+      observability: {
+        observers: {
+          test: {
+            startRun: () => ({
+              event: ({ name }) => {
+                observerEvents.push(name);
+              },
+              end: () => {},
+              error: () => {},
+            }),
+          },
         },
-      ],
+      },
       memory: {
         store,
         compaction: {

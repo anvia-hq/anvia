@@ -28,6 +28,7 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
   const publishInvalid = options.publishInvalid ?? true;
   const includeMetadata = options.includeMetadata ?? true;
   const includePayloads = options.includePayloads ?? false;
+  const traceObserver = options.traceObserver ?? "otel";
 
   return {
     onRunStart(args) {
@@ -35,17 +36,23 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
     },
     report(args) {
       if (args.outcome.outcome === "invalid" && !publishInvalid) return;
-      const traceRef =
+      const resolvedTraceRef =
         args.trace ??
         resolveEvalTraceRef({
           output: args.output,
           input: args.case.input,
           metadata: args.case.metadata,
         });
+      const traceRef =
+        resolvedTraceRef?.observer === undefined || resolvedTraceRef.observer === traceObserver
+          ? resolvedTraceRef
+          : undefined;
       const eventContext = contextFromTraceRef(traceRef);
       if (eventContext === undefined && onMissingTrace !== "emit") {
         if (onMissingTrace === "throw") {
-          throw new Error("OpenTelemetry eval reporter requires a valid traceId and observationId");
+          throw new Error(
+            `OpenTelemetry eval reporter requires a valid traceId and observationId from observer ${JSON.stringify(traceObserver)}`,
+          );
         }
         if (onMissingTrace === "warn") {
           console.warn(
@@ -101,6 +108,9 @@ function emitEvaluation<Input, Output, Score, Expected>(
   }
   if (traceRef?.responseId !== undefined) {
     attributes["gen_ai.response.id"] = traceRef.responseId;
+  }
+  if (traceRef?.observer !== undefined) {
+    attributes["anvia.eval.target.observer"] = traceRef.observer;
   }
   if (traceRef?.traceId !== undefined) {
     attributes["anvia.eval.target.trace_id"] = traceRef.traceId;

@@ -969,7 +969,9 @@ function validateMemoryCompactionInfo(value: Record<string, unknown>, original: 
 function isTrace(value: unknown): boolean {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["traceId", "observationId"]) &&
+    hasOnlyKeys(value, ["observer", "traceId", "observationId"]) &&
+    typeof value.observer === "string" &&
+    value.observer.trim().length > 0 &&
     (value.traceId === undefined || typeof value.traceId === "string") &&
     (value.observationId === undefined || typeof value.observationId === "string")
   );

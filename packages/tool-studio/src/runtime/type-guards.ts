@@ -24,15 +24,21 @@ export function isAgentTraceOptions(value: unknown): value is AgentTraceOptions 
   if (!isObject(value)) {
     return false;
   }
+  if (
+    !Object.keys(value).every((key) =>
+      ["name", "userId", "sessionId", "metadata", "tags", "version", "traceId"].includes(key),
+    )
+  ) {
+    return false;
+  }
   return (
     optionalString(value.name) &&
     optionalString(value.userId) &&
     optionalString(value.sessionId) &&
     optionalString(value.version) &&
     optionalString(value.traceId) &&
-    optionalBoolean(value.failOnObserverError) &&
     optionalStringArray(value.tags) &&
-    optionalObject(value.metadata)
+    (value.metadata === undefined || isJsonObject(value.metadata))
   );
 }
 
@@ -48,16 +54,8 @@ function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
 }
 
-function optionalBoolean(value: unknown): boolean {
-  return value === undefined || typeof value === "boolean";
-}
-
 function optionalStringArray(value: unknown): boolean {
   return (
     value === undefined || (Array.isArray(value) && value.every((item) => typeof item === "string"))
   );
-}
-
-function optionalObject(value: unknown): boolean {
-  return value === undefined || isObject(value);
 }

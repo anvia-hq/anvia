@@ -57,7 +57,7 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     mcpToolCount: tools.filter((item) => mcpServerName(item.tool) !== undefined).length,
     staticContextCount: staticContext.length,
     dynamicContextCount: indexedContext.length,
-    observerCount: agent.agent.observers.length,
+    observerCount: Object.keys(agent.agent.observability?.observers ?? {}).length,
     hasMemory: agent.agent.memory !== undefined,
     hasLifecycle: agent.agent.lifecycle !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,

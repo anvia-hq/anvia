@@ -15,7 +15,7 @@ import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-vali
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
 import { isMcpTool, type McpServer } from "../mcp";
 import { resolveMemoryOptions } from "../memory/options";
-import type { AgentObserverRegistration } from "../observability";
+import type { AgentObservabilityOptions, AgentObserverMap } from "../observability";
 import type { RetrySetting } from "../retry";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import { createTool } from "../tool/create-tool";
@@ -81,7 +81,7 @@ export class Agent<
   readonly defaultMaxTurns: number | undefined;
   readonly lifecycle: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
   readonly outputSchema: ZodSchema<Output> | undefined;
-  readonly observers: readonly AgentObserverRegistration[];
+  readonly observability: AgentObservabilityOptions | undefined;
   readonly guardrails: readonly GuardrailPolicy[];
   readonly middlewares: readonly AgentMiddleware[];
   readonly memory: AgentMemory | undefined;
@@ -135,9 +135,7 @@ export class Agent<
     if (resolved.outputSchema !== undefined) {
       providerOutputSchemas.set(this, toProviderJsonSchema(resolved.outputSchema));
     }
-    this.observers = Object.freeze(
-      (resolved.observers ?? []).map((registration) => Object.freeze({ ...registration })),
-    );
+    this.observability = snapshotAgentObservability(resolved.observability);
     this.guardrails = Object.freeze((resolved.guardrails ?? []).map(snapshotGuardrailPolicy));
     this.middlewares = Object.freeze([...(resolved.middlewares ?? [])]);
     this.memory = snapshotAgentMemory(resolved.memory);
@@ -323,7 +321,7 @@ export function getResolvedAgentOptions<Output, M extends CompletionModel, Conte
     defaultMaxTurns: agent.defaultMaxTurns,
     lifecycle: agent.lifecycle,
     outputSchema: agent.outputSchema,
-    observers: [...agent.observers],
+    observability: agent.observability,
     guardrails: [...agent.guardrails],
     middlewares: [...agent.middlewares],
     memory: agent.memory,
@@ -393,11 +391,7 @@ function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>
     defaultMaxTurns: options.maxTurns,
     lifecycle: options.lifecycle,
     outputSchema: options.outputSchema,
-    observers: (options.observers ?? []).map((input) =>
-      "observer" in input
-        ? { observer: input.observer, failOnObserverError: input.failOnObserverError }
-        : { observer: input },
-    ),
+    observability: options.observability,
     guardrails:
       options.guardrails === undefined ? [] : appendGuardrailPolicies([], options.guardrails),
     middlewares: [...(options.middlewares ?? [])],
@@ -457,6 +451,42 @@ function assertValidVectorContexts(inputs: readonly AgentContextInput[]): void {
     assertPositiveSearchLimit(input.topK);
     assertFiniteMinScore(input.minScore);
   }
+}
+
+function snapshotAgentObservability(
+  observability: AgentObservabilityOptions | undefined,
+): AgentObservabilityOptions | undefined {
+  if (observability === undefined) return undefined;
+  const observers: Record<string, AgentObserverMap[string]> = {};
+  for (const [name, observer] of Object.entries(observability.observers)) {
+    if (name.trim().length === 0) {
+      throw new TypeError("Agent observer names must not be empty.");
+    }
+    if (
+      typeof observer !== "object" ||
+      observer === null ||
+      typeof observer.startRun !== "function"
+    ) {
+      throw new TypeError(`Agent observer "${name}" must implement startRun().`);
+    }
+    observers[name] = observer;
+  }
+  if (observability.primaryTrace !== undefined && !(observability.primaryTrace in observers)) {
+    throw new TypeError(
+      `Agent primaryTrace "${observability.primaryTrace}" must name a configured observer.`,
+    );
+  }
+  const errorPolicy = observability.errorPolicy ?? "ignore";
+  if (errorPolicy !== "ignore" && errorPolicy !== "throw") {
+    throw new TypeError('Agent observability.errorPolicy must be "ignore" or "throw".');
+  }
+  return Object.freeze({
+    observers: Object.freeze(observers),
+    ...(observability.primaryTrace === undefined
+      ? {}
+      : { primaryTrace: observability.primaryTrace }),
+    errorPolicy,
+  });
 }
 
 function isInternalAgentOptions<Output, M extends CompletionModel, ContextDocument>(

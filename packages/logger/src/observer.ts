@@ -24,12 +24,12 @@ export type LoggerObserverOptions = {
 };
 
 export function createLoggerObserver(
-  logger: Logger,
-  options: LoggerObserverOptions = {},
+  options: LoggerObserverOptions & { logger: Logger },
 ): AgentObserver {
+  const { logger, ...observerOptions } = options;
   return {
     startRun(args) {
-      return new LoggerRunObserver(logger, options, args);
+      return new LoggerRunObserver(logger, observerOptions, args);
     },
   };
 }

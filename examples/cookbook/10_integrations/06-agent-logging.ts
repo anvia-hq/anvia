@@ -41,11 +41,14 @@ const agent = new Agent({
   instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
   maxTurns: 2,
   tools: [lookupTicket],
-  observers: [
-    createLoggerObserver(logger, {
-      includeToolResult: true,
-    }),
-  ],
+  observability: {
+    observers: {
+      logger: createLoggerObserver({
+        logger,
+        includeToolResult: true,
+      }),
+    },
+  },
 });
 
 const response = await agent.generate({

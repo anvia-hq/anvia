@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   type AgentEvalTargetOptions,
+  agentEvalTarget,
   answerRelevancy,
   type CompletionModel,
   contains,
@@ -116,13 +117,26 @@ describe("eval type safety", () => {
 
   it("preserves Expected in agent target callbacks", () => {
     const options: AgentEvalTargetOptions<string, string, string, { answer: string }> = {
-      output: (_response, testCase) => {
+      agent: {
+        generate: async () => null as never,
+      },
+      request: ({ input }) => ({ prompt: input }),
+      output: ({ testCase }) => {
         expectTypeOf(testCase.expected).toEqualTypeOf<{ answer: string } | undefined>();
         return testCase.expected?.answer ?? "";
       },
     };
 
     expect(options.output).toBeTypeOf("function");
+
+    agentEvalTarget<string, string, number>({
+      agent: {
+        generate: async () => null as never,
+      },
+      request: ({ input }) => ({ prompt: input }),
+      // @ts-expect-error custom eval outputs require an explicit output mapper.
+      output: undefined,
+    });
   });
 
   it("requires implicit context fields while allowing explicit selectors", () => {

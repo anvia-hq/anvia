@@ -1,8 +1,26 @@
 import { cancelAgentApproval } from "../agent/agent";
 import { AgentRunBlockedError } from "../agent/errors";
-import type { AgentInput, AgentResponse, AgentResult } from "../agent/run-types";
-import type { Message } from "../completion";
+import type {
+  AgentApprovalRequiredResult,
+  AgentResponse,
+  AgentResult,
+  AgentRunOptions,
+} from "../agent/run-types";
 import type { EvalCase, EvalTarget } from "./types";
+
+type EvaluableAgent<Output> = {
+  generate(input: AgentRunOptions<Output>): Promise<AgentResult<Output>>;
+};
+
+type IsAny<Value> = 0 extends 1 & Value ? true : false;
+type IsExactly<Left, Right> =
+  IsAny<Left> extends true
+    ? false
+    : [Left] extends [Right]
+      ? [Right] extends [Left]
+        ? true
+        : false
+      : false;
 
 export type AgentEvalTargetOptions<
   Input,
@@ -10,45 +28,50 @@ export type AgentEvalTargetOptions<
   Output = AgentResponse<AgentOutput>,
   Expected = unknown,
 > = {
-  prompt?: ((input: Input, testCase: EvalCase<Input, Expected>) => string | Message) | undefined;
-  output?:
-    | ((response: AgentResponse<AgentOutput>, testCase: EvalCase<Input, Expected>) => Output)
-    | undefined;
-};
+  agent: EvaluableAgent<AgentOutput>;
+  request(args: {
+    input: Input;
+    testCase: EvalCase<Input, Expected>;
+  }): AgentRunOptions<AgentOutput> | Promise<AgentRunOptions<AgentOutput>>;
+} & (IsExactly<Output, AgentResponse<AgentOutput>> extends true
+  ? {
+      output?(args: {
+        response: AgentResponse<AgentOutput>;
+        testCase: EvalCase<Input, Expected>;
+      }): Output | Promise<Output>;
+    }
+  : {
+      output(args: {
+        response: AgentResponse<AgentOutput>;
+        testCase: EvalCase<Input, Expected>;
+      }): Output | Promise<Output>;
+    });
 
-type EvaluableAgent<Output> = {
-  generate(input: AgentInput): Promise<AgentResult<Output>>;
-};
+export class AgentEvalApprovalError extends Error {
+  constructor(readonly result: AgentApprovalRequiredResult) {
+    super("Agent eval targets cannot suspend for tool approval.");
+    this.name = "AgentEvalApprovalError";
+  }
+}
 
-export function agentEvalTarget<Input, AgentOutput = string, Expected = unknown>(
-  agent: EvaluableAgent<AgentOutput>,
-  options?: AgentEvalTargetOptions<Input, AgentOutput, AgentResponse<AgentOutput>, Expected>,
-): EvalTarget<Input, AgentResponse<AgentOutput>, Expected>;
-export function agentEvalTarget<Input, AgentOutput, Output, Expected = unknown>(
-  agent: EvaluableAgent<AgentOutput>,
+export function agentEvalTarget<
+  Input,
+  AgentOutput = string,
+  Output = AgentResponse<AgentOutput>,
+  Expected = unknown,
+>(
   options: AgentEvalTargetOptions<Input, AgentOutput, Output, Expected>,
-): EvalTarget<Input, Output, Expected>;
-export function agentEvalTarget<Input, AgentOutput, Output, Expected>(
-  agent: EvaluableAgent<AgentOutput>,
-  options: AgentEvalTargetOptions<
-    Input,
-    AgentOutput,
-    Output | AgentResponse<AgentOutput>,
-    Expected
-  > = {},
-): EvalTarget<Input, Output | AgentResponse<AgentOutput>, Expected> {
+): EvalTarget<Input, Output, Expected> {
   return async (input, testCase) => {
-    const prompt = options.prompt?.(input, testCase) ?? String(input);
-    const response = await agent.generate(
-      typeof prompt === "string" ? { prompt } : { messages: [prompt] },
-    );
+    const request = await options.request({ input, testCase });
+    const response = await options.agent.generate(request);
     if (response.status === "approval_required") {
       await cancelAgentApproval(response, "Agent eval targets cannot suspend for tool approval.");
-      throw new Error("Agent eval targets cannot suspend for tool approval.");
+      throw new AgentEvalApprovalError(response);
     }
-    if (response.status === "blocked") {
-      throw new AgentRunBlockedError(response);
-    }
-    return options.output === undefined ? response : options.output(response, testCase);
+    if (response.status === "blocked") throw new AgentRunBlockedError(response);
+    return options.output === undefined
+      ? (response as Output)
+      : await options.output({ response, testCase });
   };
 }

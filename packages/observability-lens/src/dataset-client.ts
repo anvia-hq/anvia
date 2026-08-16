@@ -1,12 +1,11 @@
 import type { JsonValue } from "@anvia/core/completion";
-import { getResolvedLensConfig } from "./tracing.js";
+import type { ResolvedLensConfig } from "./config.js";
 import type {
   LensDataset,
   LensDatasetClient,
   LensDatasetClientOptions,
   LensDatasetGetOptions,
   LensDatasetItem,
-  LensTracing,
 } from "./types.js";
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -25,13 +24,9 @@ export class LensDatasetError extends Error {
 }
 
 export function createLensDatasetClient(
-  tracing: LensTracing,
+  tracingConfig: ResolvedLensConfig,
   options: LensDatasetClientOptions = {},
 ): LensDatasetClient {
-  const tracingConfig = getResolvedLensConfig(tracing);
-  if (tracingConfig === undefined) {
-    throw new TypeError("createLensDatasetClient requires a tracing instance from lens.create()");
-  }
   const baseUrl = (options.baseUrl ?? tracingConfig.baseUrl).replace(/\/+$/, "");
   const publicKey = options.publicKey ?? tracingConfig.publicKey;
   const secretKey = options.secretKey ?? tracingConfig.secretKey;
@@ -46,10 +41,8 @@ export function createLensDatasetClient(
   const authorization = `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`;
 
   return {
-    async getDataset<Input = unknown, Expected = unknown>(
-      name: string,
-      getOptions: LensDatasetGetOptions = {},
-    ) {
+    async getDataset<Input = unknown, Expected = unknown>(getOptions: LensDatasetGetOptions) {
+      const { name } = getOptions;
       const normalizedName = name.trim();
       if (normalizedName.length === 0) throw new TypeError("Anvia Lens dataset name is required");
       const items: LensDatasetItem<Input, Expected>[] = [];

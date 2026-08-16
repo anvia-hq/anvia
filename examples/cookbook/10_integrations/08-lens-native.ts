@@ -6,7 +6,7 @@ import {
   Usage,
 } from "@anvia/core";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
-import { lens } from "@anvia/lens";
+import { LensClient } from "@anvia/lens";
 
 class StaticSupportModel implements CompletionModel {
   readonly provider = "smoke";
@@ -30,45 +30,47 @@ class StaticSupportModel implements CompletionModel {
   }
 }
 
-const evals = lens.evals({ includePayloads: true, serviceName: "lens-native-smoke" });
+await using lens = new LensClient({ serviceName: "lens-native-smoke" });
 const agent = new Agent({
   id: "lens-native-smoke",
   model: new StaticSupportModel(),
   name: "Lens Native Smoke",
   instructions: "Answer support questions from the supplied policy.",
-  observers: [evals.observer],
+  observability: {
+    observers: { lens: lens.observer() },
+    primaryTrace: "lens",
+  },
 });
 
-try {
-  const suite = await runEvalSuite({
-    name: "lens-native-smoke",
-    run: { datasetName: "lens-smoke", datasetVersion: "v3" },
-    cases: [
-      {
-        id: "refund-window",
-        input: "How long are refunds available?",
-        expected: "30 days",
-      },
-    ],
-    target: agentEvalTarget(agent),
-    metrics: [contains({ name: "refund-policy-correctness" })],
-    reporters: [evals.reporter],
-    failOnReporterError: true,
-  });
-  const result = suite.results[0];
-  console.log(
-    JSON.stringify(
-      {
-        suite: suite.name,
-        runId: suite.run.id,
-        caseId: result?.case.id,
-        outcome: result?.metrics[0]?.outcome.outcome,
-        trace: result?.output?.trace,
-      },
-      null,
-      2,
-    ),
-  );
-} finally {
-  await evals.shutdown();
-}
+const suite = await runEvalSuite({
+  name: "lens-native-smoke",
+  run: { datasetName: "lens-smoke", datasetVersion: "v3" },
+  cases: [
+    {
+      id: "refund-window",
+      input: "How long are refunds available?",
+      expected: "30 days",
+    },
+  ],
+  target: agentEvalTarget<string>({
+    agent,
+    request: ({ input }) => ({ prompt: input }),
+  }),
+  metrics: [contains({ name: "refund-policy-correctness" })],
+  reporters: [lens.evalReporter({ includePayloads: true })],
+  reporterErrorPolicy: "throw",
+});
+const result = suite.results[0];
+console.log(
+  JSON.stringify(
+    {
+      suite: suite.name,
+      runId: suite.run.id,
+      caseId: result?.case.id,
+      outcome: result?.metrics[0]?.outcome.outcome,
+      trace: result?.output?.trace,
+    },
+    null,
+    2,
+  ),
+);

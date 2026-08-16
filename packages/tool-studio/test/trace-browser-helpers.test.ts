@@ -95,7 +95,11 @@ describe("trace browser helper behavior", () => {
 
   it("creates compact trace and observation metadata groups", () => {
     const subject = trace({
-      trace: { traceId: "external_trace", observationId: "root_observation" },
+      trace: {
+        observer: "external",
+        traceId: "external_trace",
+        observationId: "root_observation",
+      },
       durationMs: 100,
       endedAt: "2026-06-20T12:00:01.000Z",
       metadata: { messages: [{}, {}], custom: true },

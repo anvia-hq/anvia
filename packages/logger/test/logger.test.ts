@@ -74,7 +74,8 @@ describe("createPinoLogger", () => {
 describe("createLoggerObserver", () => {
   it("logs agent run, generation, and tool lifecycle events", async () => {
     const logger = new RecordingLogger();
-    const observer = createLoggerObserver(logger, {
+    const observer = createLoggerObserver({
+      logger,
       includeToolResult: true,
     });
 

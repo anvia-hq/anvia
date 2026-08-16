@@ -36,7 +36,10 @@ const cases = [
 const result = await runEvalSuite({
   name: "support-agent-target",
   cases,
-  target: agentEvalTarget<string>(agent),
+  target: agentEvalTarget<string>({
+    agent,
+    request: ({ input }) => ({ prompt: input }),
+  }),
   metrics: [
     contains<string, AgentResponse, string>({
       actual: ({ output }) => output.output,

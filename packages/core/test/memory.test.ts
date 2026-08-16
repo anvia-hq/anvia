@@ -262,14 +262,16 @@ describe("agent memory", () => {
           lifecycleHistory = history;
         },
       },
-      observers: [
-        createObserver({
-          startRun({ history }) {
-            observerHistory = history;
-            return { end() {} };
-          },
-        }),
-      ],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun({ history }) {
+              observerHistory = history;
+              return { end() {} };
+            },
+          }),
+        },
+      },
       guardrails: defineGuardrailPolicy({
         id: "history-policy",
         input: [
@@ -309,14 +311,16 @@ describe("agent memory", () => {
           lifecycleHistory = history;
         },
       },
-      observers: [
-        createObserver({
-          startRun({ history }) {
-            observerHistory = history;
-            return { end() {} };
-          },
-        }),
-      ],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun({ history }) {
+              observerHistory = history;
+              return { end() {} };
+            },
+          }),
+        },
+      },
       guardrails: defineGuardrailPolicy({
         id: "history-policy",
         input: [
@@ -772,20 +776,22 @@ describe("agent memory", () => {
           events.push("lifecycle:error");
         },
       },
-      observers: [
-        createObserver({
-          startRun() {
-            return {
-              end() {
-                events.push("observer:end");
-              },
-              error() {
-                events.push("observer:error");
-              },
-            };
-          },
-        }),
-      ],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun() {
+              return {
+                end() {
+                  events.push("observer:end");
+                },
+                error() {
+                  events.push("observer:error");
+                },
+              };
+            },
+          }),
+        },
+      },
     });
     const scope = { sessionId: `session-${mode}` };
     if (mode === "buffered") {

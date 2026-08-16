@@ -1,34 +1,39 @@
-import type { LangfuseRedactionOptions, LangfuseScoreArgs, LangfuseTracing } from "@anvia/langfuse";
-import { langfuse } from "@anvia/langfuse";
+import { LangfuseClient, type LangfuseScoreArgs } from "@anvia/langfuse";
 import { getLangfuseEnv } from "./env.js";
 
 export type CreateTracingOptions = {
   name?: string;
-  redactInputs?: boolean;
-  redactOutputs?: boolean | "deep";
-  redaction?: LangfuseRedactionOptions;
   scoreBatchSize?: number;
   scoreFlushIntervalMs?: number;
-  scoreMaxRetries?: number;
+  scoreMaxAttempts?: number;
 };
 
-export function createTracing(options: CreateTracingOptions = {}): LangfuseTracing {
+export function createTracing(options: CreateTracingOptions = {}): LangfuseClient {
   const env = getLangfuseEnv();
-  return langfuse.create({
+  const hasScoreOptions =
+    options.scoreBatchSize !== undefined ||
+    options.scoreFlushIntervalMs !== undefined ||
+    options.scoreMaxAttempts !== undefined;
+  return new LangfuseClient({
     publicKey: env.publicKey,
     secretKey: env.secretKey,
     baseUrl: env.baseUrl,
     environment: env.environment,
     release: env.release,
     serviceName: options.name ?? env.serviceName ?? "langfuse-ops",
-    ...(options.redactInputs !== undefined ? { redactInputs: options.redactInputs } : {}),
-    ...(options.redactOutputs !== undefined ? { redactOutputs: options.redactOutputs } : {}),
-    ...(options.redaction !== undefined ? { redaction: options.redaction } : {}),
-    ...(options.scoreBatchSize !== undefined ? { scoreBatchSize: options.scoreBatchSize } : {}),
-    ...(options.scoreFlushIntervalMs !== undefined
-      ? { scoreFlushIntervalMs: options.scoreFlushIntervalMs }
+    ...(hasScoreOptions
+      ? {
+          scores: {
+            ...(options.scoreBatchSize !== undefined ? { batchSize: options.scoreBatchSize } : {}),
+            ...(options.scoreFlushIntervalMs !== undefined
+              ? { flushIntervalMs: options.scoreFlushIntervalMs }
+              : {}),
+            ...(options.scoreMaxAttempts !== undefined
+              ? { retries: { maxAttempts: options.scoreMaxAttempts } }
+              : {}),
+          },
+        }
       : {}),
-    ...(options.scoreMaxRetries !== undefined ? { scoreMaxRetries: options.scoreMaxRetries } : {}),
   });
 }
 

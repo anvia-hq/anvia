@@ -1061,10 +1061,12 @@ function jsonValueOrUndefined(value: unknown): JsonValue | undefined {
 }
 
 function clientTrace(trace: {
+  readonly observer: string;
   readonly traceId?: string | undefined;
   readonly observationId?: string | undefined;
-}): { traceId?: string; observationId?: string } {
+}): { observer: string; traceId?: string; observationId?: string } {
   return {
+    observer: trace.observer,
     ...(trace.traceId === undefined ? {} : { traceId: trace.traceId }),
     ...(trace.observationId === undefined ? {} : { observationId: trace.observationId }),
   };

@@ -224,7 +224,10 @@ describe("evals", () => {
   it("wraps agents as eval targets and preserves prompt trace output", async () => {
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
     const agent = new Agent({ id: "agent", model });
-    const target = agentEvalTarget<string>(agent);
+    const target = agentEvalTarget<string>({
+      agent,
+      request: ({ input }) => ({ prompt: input }),
+    });
 
     const output = await target("hello", { id: "case", input: "hello" });
 
@@ -313,9 +316,9 @@ describe("evals", () => {
             },
           },
         ],
-        failOnReporterError: true,
+        reporterErrorPolicy: "throw",
       }),
-    ).rejects.toThrow("publish failed");
+    ).rejects.toMatchObject({ name: "EvalReporterDispatchError", phase: "report" });
     expect(statuses).toEqual(["failed"]);
   });
 
@@ -357,10 +360,13 @@ describe("evals", () => {
         },
       ],
       concurrency: 2,
-      failOnReporterError: true,
+      reporterErrorPolicy: "throw",
     });
 
-    await expect(suite).rejects.toThrow("publish failed");
+    await expect(suite).rejects.toMatchObject({
+      name: "EvalReporterDispatchError",
+      phase: "report",
+    });
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(events).toEqual(["active-start", "failure", "active-end", "run-end"]);
   });
@@ -368,10 +374,20 @@ describe("evals", () => {
   it("resolves default and selected trace references for reporters", async () => {
     expect(
       resolveEvalTraceRef({
-        output: { trace: { traceId: "output-trace", observationId: "output-observation" } },
+        output: {
+          trace: {
+            observer: "langfuse",
+            traceId: "output-trace",
+            observationId: "output-observation",
+          },
+        },
         input: { trace: { traceId: "input-trace" } },
       }),
-    ).toEqual({ traceId: "output-trace", observationId: "output-observation" });
+    ).toEqual({
+      observer: "langfuse",
+      traceId: "output-trace",
+      observationId: "output-observation",
+    });
 
     const traces: unknown[] = [];
     await runEvalSuite({
@@ -418,7 +434,7 @@ describe("evals", () => {
     ]);
   });
 
-  it("throws trace selector errors without reporters when failOnReporterError is enabled", async () => {
+  it("throws trace selector errors without reporters when reporter errors are strict", async () => {
     await expect(
       runEvalSuite({
         name: "trace-selector-error-strict",
@@ -428,9 +444,9 @@ describe("evals", () => {
         trace: () => {
           throw new Error("strict trace selection failed");
         },
-        failOnReporterError: true,
+        reporterErrorPolicy: "throw",
       }),
-    ).rejects.toThrow("strict trace selection failed");
+    ).rejects.toMatchObject({ name: "EvalReporterDispatchError", phase: "report" });
   });
 
   it("supports custom metrics that return invalid outcomes", async () => {

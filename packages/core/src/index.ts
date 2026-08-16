@@ -34,7 +34,6 @@ export type {
   AgentContextInput,
   AgentMemory,
   AgentMemoryOptions,
-  AgentObserverInput,
   AgentOptions,
   AgentToolInput,
   AgentToolOptions,

@@ -294,7 +294,7 @@ function agentMetadata(agent: Agent): JsonObject {
     dynamicToolCount: getAgentToolState(agent).toolIndexes.length,
     hasLifecycle: agent.lifecycle !== undefined,
     hasOutputSchema: agent.outputSchema !== undefined,
-    observerCount: agent.observers.length,
+    observerCount: Object.keys(agent.observability?.observers ?? {}).length,
     approvalToolCount: agent.tools.filter(toolRequiresApproval).length,
   };
   if (agent.defaultMaxTurns !== undefined) metadata.defaultMaxTurns = agent.defaultMaxTurns;
@@ -443,23 +443,29 @@ function withStudioTraceObserver(
   studioAgent: StudioAgent,
   traceStore: StudioTraceStore | undefined,
 ): StudioAgent {
-  if (traceStore === undefined || hasStudioTraceObserver(studioAgent.agent)) {
-    return studioAgent;
+  if (traceStore === undefined) return studioAgent;
+  const existing = studioAgent.agent.observability;
+  const studioObserver = existing?.observers.studio;
+  if (studioObserver !== undefined && !(studioObserver instanceof StudioTraceObserver)) {
+    throw new TypeError('Studio reserves the observer name "studio" for local trace persistence.');
+  }
+  for (const [name, observer] of Object.entries(existing?.observers ?? {})) {
+    if (observer instanceof StudioTraceObserver && name !== "studio") {
+      throw new TypeError('StudioTraceObserver must be registered with the name "studio".');
+    }
   }
 
   return {
     ...studioAgent,
     agent: cloneAgent(studioAgent.agent, {
-      observers: [
-        ...studioAgent.agent.observers,
-        { observer: new StudioTraceObserver({ store: traceStore }) },
-      ],
+      observability: {
+        observers: {
+          ...(existing?.observers ?? {}),
+          studio: studioObserver ?? new StudioTraceObserver({ store: traceStore }),
+        },
+        primaryTrace: "studio",
+        errorPolicy: existing?.errorPolicy ?? "ignore",
+      },
     }),
   };
-}
-
-function hasStudioTraceObserver(agent: Agent): boolean {
-  return agent.observers.some(
-    (registration) => registration.observer instanceof StudioTraceObserver,
-  );
 }

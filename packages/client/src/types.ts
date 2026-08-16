@@ -47,7 +47,7 @@ export type UIMessageGeneration = {
   status?: "completed" | "blocked" | "approval_required" | "cancelled" | "error";
   usage?: Usage;
   contextUsage?: ContextUsage;
-  trace?: { traceId?: string; observationId?: string };
+  trace?: { observer: string; traceId?: string; observationId?: string };
   memoryCompaction?: MemoryCompactionInfo;
 };
 
@@ -368,7 +368,7 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
       output?: JsonValue;
       usage?: Usage;
       contextUsage?: ContextUsage;
-      trace?: { traceId?: string; observationId?: string };
+      trace?: { observer: string; traceId?: string; observationId?: string };
       memoryCompaction?: MemoryCompactionInfo;
       metadata?: Metadata;
     }

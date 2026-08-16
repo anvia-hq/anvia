@@ -151,7 +151,7 @@ describe("Agent streaming", () => {
     const agent = new Agent({
       id: "test-agent",
       model: new StreamingQueueModel([providerEvents]),
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
     });
     const stream = agent.stream({ prompt: "hi" });
 
@@ -373,7 +373,7 @@ describe("Agent streaming", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
       tools: [failingTool],
     });
     const iterator = agent

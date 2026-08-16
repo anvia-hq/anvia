@@ -1,13 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLensDatasetClient, LensDatasetError, lens } from "../src/index";
-import type { LensTracing } from "../src/types";
+import { LensClient, LensDatasetError } from "../src/index";
 
-let tracing: LensTracing | undefined;
+let lens: LensClient | undefined;
 
 afterEach(async () => {
   vi.unstubAllGlobals();
-  await tracing?.shutdown();
-  tracing = undefined;
+  await lens?.close();
+  lens = undefined;
 });
 
 describe("Lens dataset client", () => {
@@ -33,11 +32,10 @@ describe("Lens dataset client", () => {
         }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    tracing = createTracing();
-    const dataset = await createLensDatasetClient(tracing, { pageSize: 1 }).getDataset(
-      "support/cases",
-      { version: "v2" },
-    );
+    lens = createClient();
+    const dataset = await lens
+      .datasetClient({ pageSize: 1 })
+      .getDataset({ name: "support/cases", version: "v2" });
 
     expect(dataset).toEqual({
       name: "support/cases",
@@ -68,16 +66,16 @@ describe("Lens dataset client", () => {
         .mockResolvedValueOnce(response({ error: { code: "not_found", message: "Missing" } }, 404))
         .mockResolvedValueOnce(response({ name: "bad", items: [], meta: { totalPages: 1 } })),
     );
-    tracing = createTracing();
-    const client = createLensDatasetClient(tracing);
+    lens = createClient();
+    const client = lens.datasetClient();
 
-    await expect(client.getDataset("missing")).rejects.toMatchObject({
+    await expect(client.getDataset({ name: "missing" })).rejects.toMatchObject({
       name: "LensDatasetError",
       status: 404,
       code: "not_found",
       message: "Missing",
     });
-    const invalid = client.getDataset("bad");
+    const invalid = client.getDataset({ name: "bad" });
     await expect(invalid).rejects.toBeInstanceOf(LensDatasetError);
     await expect(invalid).rejects.toMatchObject({ code: "invalid_response" });
   });
@@ -104,10 +102,10 @@ describe("Lens dataset client", () => {
           }),
         ),
     );
-    tracing = createTracing();
+    lens = createClient();
 
     await expect(
-      createLensDatasetClient(tracing, { pageSize: 1 }).getDataset("changing"),
+      lens.datasetClient({ pageSize: 1 }).getDataset({ name: "changing" }),
     ).rejects.toMatchObject({
       code: "invalid_response",
       message: "Lens returned inconsistent dataset pagination",
@@ -126,10 +124,10 @@ describe("Lens dataset client", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    tracing = createTracing();
+    lens = createClient();
 
     await expect(
-      createLensDatasetClient(tracing, { pageSize: 1 }).getDataset("too-large"),
+      lens.datasetClient({ pageSize: 1 }).getDataset({ name: "too-large" }),
     ).rejects.toMatchObject({
       code: "pagination_limit",
       message: "Lens dataset exceeds the pagination limit",
@@ -137,19 +135,16 @@ describe("Lens dataset client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(100);
   });
 
-  it("validates client options and tracing ownership", async () => {
-    tracing = createTracing();
-    expect(() => createLensDatasetClient(tracing as never, { pageSize: 0 })).toThrow(
+  it("validates client options", async () => {
+    lens = createClient();
+    expect(() => lens?.datasetClient({ pageSize: 0 })).toThrow(
       "pageSize must be an integer between 1 and 100",
-    );
-    expect(() => createLensDatasetClient({} as LensTracing)).toThrow(
-      "requires a tracing instance from lens.create()",
     );
   });
 });
 
-function createTracing(): LensTracing {
-  return lens.create({
+function createClient(): LensClient {
+  return new LensClient({
     baseUrl: "https://lens.example",
     publicKey: "pk",
     secretKey: "sk",

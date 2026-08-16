@@ -187,7 +187,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
       runId: this.props.args.runId,
       sessionId,
       status,
-      trace: this.trace,
+      trace: { observer: "studio", ...this.trace },
       startedAt: this.startedAt.toISOString(),
       endedAt: result.endedAt.toISOString(),
       durationMs: durationMs(this.startedAt, result.endedAt),

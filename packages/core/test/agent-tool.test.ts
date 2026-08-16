@@ -147,7 +147,11 @@ describe("Agent construction", () => {
       maxTokens: 500,
       maxTurns: 4,
       middlewares: [middleware],
-      observers: [observer, { observer, failOnObserverError: true }],
+      observability: {
+        observers: { test: observer },
+        primaryTrace: "test",
+        errorPolicy: "throw",
+      },
       outputSchema,
     });
 
@@ -173,9 +177,14 @@ describe("Agent construction", () => {
     ]);
     expect(agent.defaultMaxTurns).toBe(4);
     expect(agent.middlewares).toEqual([middleware]);
-    expect(agent.observers).toEqual([{ observer }, { observer, failOnObserverError: true }]);
+    expect(agent.observability).toEqual({
+      observers: { test: observer },
+      primaryTrace: "test",
+      errorPolicy: "throw",
+    });
     expect(Object.isFrozen(agent.middlewares)).toBe(true);
-    expect(Object.isFrozen(agent.observers)).toBe(true);
+    expect(Object.isFrozen(agent.observability)).toBe(true);
+    expect(Object.isFrozen(agent.observability?.observers)).toBe(true);
     expect(Object.isFrozen(agent.guardrails)).toBe(true);
     expect(agent.outputSchema).toBe(outputSchema);
   });
@@ -200,7 +209,11 @@ describe("Agent construction", () => {
         return { end() {} };
       },
     });
-    const observerRegistration = { observer, failOnObserverError: false };
+    const observability = {
+      observers: { test: observer },
+      primaryTrace: "test",
+      errorPolicy: "ignore" as "ignore" | "throw",
+    };
     const inputGuardrail = defineInputGuardrail({
       id: "initial",
       check() {
@@ -222,7 +235,7 @@ describe("Agent construction", () => {
       providerOptions,
       toolChoice,
       tools: [providerTool],
-      observers: [observerRegistration],
+      observability,
       guardrails: policy,
       memory: { store: memoryStore },
     });
@@ -231,7 +244,7 @@ describe("Agent construction", () => {
     providerOptions.routing.tier = "mutated";
     toolChoice.name = "mutated";
     providerTool.configuration.mode = "mutated";
-    observerRegistration.failOnObserverError = true;
+    observability.errorPolicy = "throw";
     policy.input.push(
       defineInputGuardrail({
         id: "late",
@@ -252,7 +265,7 @@ describe("Agent construction", () => {
     ]);
     expect(agent.providerOptions).toEqual({ routing: { tier: "initial" } });
     expect(agent.toolChoice).toEqual({ type: "function", name: "provider_search" });
-    expect(agent.observers[0]?.failOnObserverError).toBe(false);
+    expect(agent.observability?.errorPolicy).toBe("ignore");
     expect(agent.guardrails[0]?.input).toEqual([inputGuardrail]);
     expect(model.requests[0]?.providerTools).toEqual([
       {
@@ -265,7 +278,8 @@ describe("Agent construction", () => {
     expect(Object.isFrozen(agent.context[0])).toBe(true);
     expect(Object.isFrozen(agent.providerOptions as object)).toBe(true);
     expect(Object.isFrozen(agent.toolChoice as object)).toBe(true);
-    expect(Object.isFrozen(agent.observers[0])).toBe(true);
+    expect(Object.isFrozen(agent.observability)).toBe(true);
+    expect(Object.isFrozen(agent.observability?.observers)).toBe(true);
     expect(Object.isFrozen(agent.guardrails[0]?.input)).toBe(true);
     expect(Object.isFrozen(agent.memory)).toBe(true);
     expect(Object.isFrozen(agent.memory?.compaction)).toBe(true);
@@ -592,18 +606,20 @@ describe("Agent.asTool", () => {
       id: "child",
       model: new QueueModel([response([AssistantContent.toolCall("call_1", "guarded", {})])]),
       tools: [guardedTool],
-      observers: [
-        createObserver({
-          startRun() {
-            return {
-              end() {},
-              error({ error }) {
-                observedError = error;
-              },
-            };
-          },
-        }),
-      ],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun() {
+              return {
+                end() {},
+                error({ error }) {
+                  observedError = error;
+                },
+              };
+            },
+          }),
+        },
+      },
     });
 
     await expect(agent.asTool({ name: "ask_child" }).call({ prompt: "run" })).rejects.toThrow(

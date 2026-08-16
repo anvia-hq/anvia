@@ -1,7 +1,7 @@
 import type { CompletionModel } from "@anvia/core";
 import { Agent, type AgentResponse, type AgentResult } from "@anvia/core/agent";
 import { type AnyTool, createTool } from "@anvia/core/tool";
-import type { LangfuseTracing } from "@anvia/langfuse";
+import type { LangfuseClient, LangfuseObserverOptions } from "@anvia/langfuse";
 import { z } from "zod";
 
 // Same tool as cookbook 10_integrations/03-langfuse-tracing.ts so the
@@ -28,7 +28,8 @@ export const getTicket = createTool({
 });
 
 export type BuildSupportAgentOptions = {
-  tracing?: LangfuseTracing;
+  tracing?: LangfuseClient;
+  observerOptions?: LangfuseObserverOptions;
   tools?: AnyTool[];
   instructions?: string;
 };
@@ -49,6 +50,15 @@ export function buildSupportAgent(model: CompletionModel, options: BuildSupportA
       "Use tools when useful. Answer with a short engineering-focused summary.",
     tools,
     maxTurns: 2,
-    observers: options.tracing === undefined ? [] : [options.tracing],
+    ...(options.tracing === undefined
+      ? {}
+      : {
+          observability: {
+            observers: {
+              langfuse: options.tracing.observer(options.observerOptions),
+            },
+            primaryTrace: "langfuse",
+          },
+        }),
   });
 }

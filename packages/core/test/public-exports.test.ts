@@ -254,7 +254,7 @@ describe("public exports", () => {
     expect(mcp).not.toHaveProperty("connectMcp");
     expect(mcp).not.toHaveProperty("mcp");
     expect(modelListing).toHaveProperty("ModelListingError");
-    expect(observability).toHaveProperty("createObserver");
+    expect(observability).not.toHaveProperty("createObserver");
     expect(pipeline).toHaveProperty("Pipeline");
     expect(pipeline).not.toHaveProperty("PipelineBuilder");
     expect(skills).toHaveProperty("loadSkills");

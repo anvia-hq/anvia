@@ -4,45 +4,40 @@
 // Langfuse eval reporter.
 
 import { agentEvalTarget, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
-import { createLangfuseEvalReporter } from "@anvia/langfuse";
 import { getStaticModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
-  const tracing = createTracing({ name: "langfuse-ops-eval-reporter-02" });
-  try {
-    const model = getStaticModel("placeholder");
-    const { Agent } = await import("@anvia/core/agent");
-    const agent = new Agent({
-      id: "invalid-agent",
-      model: model,
-      instructions: "invalid",
-    });
+  await using tracing = createTracing({ name: "langfuse-ops-eval-reporter-02" });
+  const model = getStaticModel("placeholder");
+  const { Agent } = await import("@anvia/core/agent");
+  const agent = new Agent({
+    id: "invalid-agent",
+    model: model,
+    instructions: "invalid",
+  });
 
-    const reporter = createLangfuseEvalReporter(tracing, { publishInvalid: true });
-    const result = await runEvalSuite({
-      name: "invalid-suite",
-      cases: [
-        {
-          id: "invalid-case",
-          input: "anything",
-          expected: "something else",
-          metadata: { traceId: "00000000-0000-0000-0000-000000000012" },
-        },
-      ],
-      target: agentEvalTarget(agent),
-      metrics: [
-        {
-          name: "manual-invalid",
-          evaluate: () => EvalOutcome.invalid("intentionally invalid"),
-        },
-      ],
-      reporters: [reporter],
-    });
-    console.log("[eval-reporter:02] outcome:", result.results[0]?.metrics[0]?.outcome);
-  } finally {
-    await tracing.shutdown();
-  }
+  const reporter = tracing.evalReporter({ publishInvalid: true });
+  const result = await runEvalSuite({
+    name: "invalid-suite",
+    cases: [
+      {
+        id: "invalid-case",
+        input: "anything",
+        expected: "something else",
+        metadata: { traceId: "00000000-0000-0000-0000-000000000012" },
+      },
+    ],
+    target: agentEvalTarget<string>({ agent: agent, request: ({ input }) => ({ prompt: input }) }),
+    metrics: [
+      {
+        name: "manual-invalid",
+        evaluate: () => EvalOutcome.invalid("intentionally invalid"),
+      },
+    ],
+    reporters: [reporter],
+  });
+  console.log("[eval-reporter:02] outcome:", result.results[0]?.metrics[0]?.outcome);
 }
 
 main().catch((error: unknown) => {

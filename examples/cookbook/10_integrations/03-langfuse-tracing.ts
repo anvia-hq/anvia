@@ -1,6 +1,6 @@
 import { Agent } from "@anvia/core/agent";
 import { createTool } from "@anvia/core/tool";
-import { langfuse } from "@anvia/langfuse";
+import { LangfuseClient } from "@anvia/langfuse";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -8,7 +8,7 @@ const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
   apiKey: process.env.OPENAI_API_KEY,
 });
-const tracing = langfuse.create({
+await using tracing = new LangfuseClient({
   publicKey: process.env.LANGFUSE_PUBLIC_KEY,
   secretKey: process.env.LANGFUSE_SECRET_KEY,
   baseUrl: process.env.LANGFUSE_BASE_URL,
@@ -44,24 +44,23 @@ const agent = new Agent({
   instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
   maxTurns: 2,
   tools: [getTicket],
-  observers: [tracing],
+  observability: {
+    observers: { langfuse: tracing.observer() },
+    primaryTrace: "langfuse",
+  },
 });
 
-try {
-  const response = await agent.generate({
-    prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
-    trace: {
-      name: "support-ticket-summary",
-      userId: "cookbook-user",
-      sessionId: "cookbook-session",
-      metadata: { ticketId: "TICKET-1001", example: "integrations:03" },
-      tags: ["cookbook", "anvia"],
-    },
-  });
+const response = await agent.generate({
+  prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
+  trace: {
+    name: "support-ticket-summary",
+    userId: "cookbook-user",
+    sessionId: "cookbook-session",
+    metadata: { ticketId: "TICKET-1001", example: "integrations:03" },
+    tags: ["cookbook", "anvia"],
+  },
+});
 
-  if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
-  console.log(response.output);
-  console.log("trace:", response.trace?.traceId ?? "(not available)");
-} finally {
-  await tracing.shutdown();
-}
+if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
+console.log(response.output);
+console.log("trace:", response.trace);

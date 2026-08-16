@@ -1,5 +1,4 @@
 import type { JsonValue } from "@anvia/core/completion";
-import type { AgentObserver } from "@anvia/core/observability";
 
 export type LangfuseRedactionMode = boolean | "deep";
 export type LangfuseCaptureMode = "safe" | "full";
@@ -14,7 +13,7 @@ export type RedactorPattern = {
   regex: RegExp;
 };
 
-export type LangfuseTracingOptions = {
+export type LangfuseClientOptions = {
   publicKey?: string | undefined;
   secretKey?: string | undefined;
   baseUrl?: string | undefined;
@@ -22,9 +21,16 @@ export type LangfuseTracingOptions = {
   release?: string | undefined;
   serviceName?: string | undefined;
   timeoutMs?: number | undefined;
-  scoreBatchSize?: number | undefined;
-  scoreFlushIntervalMs?: number | undefined;
-  scoreMaxRetries?: number | undefined;
+  scores?:
+    | {
+        batchSize?: number | undefined;
+        flushIntervalMs?: number | undefined;
+        retries?: { maxAttempts: number } | undefined;
+      }
+    | undefined;
+};
+
+export type LangfuseObserverOptions = {
   captureMode?: LangfuseCaptureMode | undefined;
   captureMaxBytes?: number | undefined;
   redactInputs?: LangfuseRedactionMode | undefined;
@@ -48,25 +54,13 @@ export type LangfuseScoreArgs = {
   timestamp?: Date | string | undefined;
 };
 
-export type LangfuseTraceHandle = {
-  readonly traceId: string;
-  readonly observationId: string;
-  addAttributes(attributes: Record<string, JsonValue | undefined>): void;
-  addEvent(name: string, attributes?: Record<string, JsonValue | undefined>): void;
-};
-
-export type LangfuseTracing = AgentObserver & {
-  flush(): Promise<void>;
-  shutdown(): Promise<void>;
+export type LangfuseScorer = {
   score(args: LangfuseScoreArgs): Promise<void>;
-  flushScores(): Promise<void>;
-  scoreQueueDepth(): number;
-  getCurrentTrace(): LangfuseTraceHandle | undefined;
 };
 
 export type LangfuseEvalReporterOptions = {
+  traceObserver?: string | undefined;
   publishInvalid?: boolean | undefined;
-  strict?: boolean | undefined;
   onMissingTrace?: "ignore" | "warn" | "throw" | undefined;
   truncateInputAt?: number | undefined;
   includeMessages?: boolean | undefined;
@@ -129,11 +123,11 @@ export type LangfuseDatasetClient = {
     description?: string | undefined;
     metadata?: Record<string, JsonValue | undefined> | undefined;
   }): Promise<LangfuseDataset<unknown, unknown>>;
-  getDataset<Input, Expected>(name: string): Promise<LangfuseDataset<Input, Expected>>;
-  upsertItems<Input, Expected>(
-    name: string,
-    items: LangfuseDatasetItem<Input, Expected>[],
-  ): Promise<void>;
+  getDataset<Input, Expected>(options: { name: string }): Promise<LangfuseDataset<Input, Expected>>;
+  upsertItems<Input, Expected>(options: {
+    name: string;
+    items: readonly LangfuseDatasetItem<Input, Expected>[];
+  }): Promise<void>;
   runExperiment<Input, Output, Expected>(
     options: LangfuseRunExperimentOptions<Input, Output, Expected>,
   ): Promise<LangfuseRunExperimentResult>;
@@ -148,6 +142,7 @@ export type LangfusePromptClientOptions = {
 };
 
 export type LangfusePromptGetOptions = {
+  name: string;
   version?: number | undefined;
   label?: string | undefined;
   cacheTtlMs?: number | undefined;
@@ -170,8 +165,8 @@ export type LangfusePrompt = {
 };
 
 export type LangfusePromptClient = {
-  getPrompt(name: string, options?: LangfusePromptGetOptions): Promise<LangfusePrompt>;
-  getPromptText(name: string, options?: LangfusePromptGetOptions): Promise<string>;
-  getPromptChat(name: string, options?: LangfusePromptGetOptions): Promise<LangfuseChatMessage[]>;
+  getPrompt(options: LangfusePromptGetOptions): Promise<LangfusePrompt>;
+  getPromptText(options: LangfusePromptGetOptions): Promise<string>;
+  getPromptChat(options: LangfusePromptGetOptions): Promise<LangfuseChatMessage[]>;
   refresh(): void;
 };

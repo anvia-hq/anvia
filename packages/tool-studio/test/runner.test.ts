@@ -1873,7 +1873,7 @@ describe("Anvia studio", () => {
       id: "support",
       model,
       tools: [refundTool],
-      observers: [observer],
+      observability: { observers: { external: observer }, primaryTrace: "external" },
       maxTurns: 2,
     });
     const runner = new Studio([agent]);
@@ -1947,7 +1947,11 @@ describe("Anvia studio", () => {
   it("passes trace options to observed non-streaming runs and preserves trace output", async () => {
     const observer = new TraceObserver();
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
-    const agent = new Agent({ id: "support", model, observers: [observer] });
+    const agent = new Agent({
+      id: "support",
+      model,
+      observability: { observers: { external: observer }, primaryTrace: "external" },
+    });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1969,7 +1973,11 @@ describe("Anvia studio", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       output: "traced",
-      trace: { traceId: "trace_1", observationId: "obs_1" },
+      trace: {
+        observer: "studio",
+        traceId: expect.any(String),
+        observationId: expect.any(String),
+      },
     });
     expect(observer.starts[0]?.trace).toMatchObject({
       name: "ui-run",
@@ -2792,7 +2800,11 @@ describe("Anvia studio", () => {
   it("preserves trace output on streaming final events", async () => {
     const observer = new TraceObserver("trace_stream");
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new Agent({ id: "support", model, observers: [observer] });
+    const agent = new Agent({
+      id: "support",
+      model,
+      observability: { observers: { external: observer }, primaryTrace: "external" },
+    });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -2812,7 +2824,11 @@ describe("Anvia studio", () => {
       expect.objectContaining({
         type: "run_end",
         status: "completed",
-        trace: { traceId: "trace_stream", observationId: "obs_1" },
+        trace: {
+          observer: "studio",
+          traceId: expect.any(String),
+          observationId: expect.any(String),
+        },
       }),
     );
     expect(observer.starts[0]?.trace).toMatchObject({ name: "stream" });
@@ -2822,11 +2838,21 @@ describe("Anvia studio", () => {
     const agent = new Agent({
       id: "support",
       model: new QueueModel([]),
-      observers: [new TraceObserver()],
+      observability: { observers: { external: new TraceObserver() } },
     });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.observability).toEqual({ enabled: true });
+  });
+
+  it("reserves the studio observer name for local trace persistence", () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      observability: { observers: { studio: new TraceObserver() } },
+    });
+
+    expect(() => new Studio([agent])).toThrow('reserves the observer name "studio"');
   });
 
   it("marks approvals enabled when a registered agent protects tools", () => {
@@ -3932,7 +3958,11 @@ describe("Anvia studio", () => {
     const runResult = (await run.json()) as AgentRunResponse;
     expect(runResult).toMatchObject({
       output: "traced answer",
-      trace: { observationId: expect.any(String), traceId: expect.any(String) },
+      trace: {
+        observer: "studio",
+        observationId: expect.any(String),
+        traceId: expect.any(String),
+      },
     });
 
     const traces = await runner.fetch(

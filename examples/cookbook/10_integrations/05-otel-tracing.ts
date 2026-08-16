@@ -2,7 +2,7 @@ import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
-import { createOtelEvalReporter, otel } from "@anvia/otel";
+import { createOtelEvalReporter, createOtelObserver } from "@anvia/otel";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
@@ -31,7 +31,7 @@ const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
   apiKey: process.env.OPENAI_API_KEY,
 });
-const tracing = otel.create({
+const tracing = createOtelObserver({
   serviceName: "anvia-cookbook",
 });
 
@@ -63,7 +63,10 @@ const agent = new Agent({
   instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
   maxTurns: 2,
   tools: [getTicket],
-  observers: [tracing],
+  observability: {
+    observers: { otel: tracing },
+    primaryTrace: "otel",
+  },
 });
 
 try {
@@ -91,7 +94,10 @@ try {
         expected: /checkout/i,
       },
     ],
-    target: agentEvalTarget(agent),
+    target: agentEvalTarget<string>({
+      agent,
+      request: ({ input }) => ({ prompt: input }),
+    }),
     metrics: [contains()],
     reporters: [createOtelEvalReporter({ onMissingTrace: "warn" })],
   });

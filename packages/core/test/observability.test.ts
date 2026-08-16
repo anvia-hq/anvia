@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
   ActiveGenerationObservers,
@@ -174,7 +174,11 @@ describe("agent observability", () => {
   it("records one run and one generation for text-only send", async () => {
     const observer = new RecordingObserver();
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
 
     const result = await agent.generate({
       prompt: "hello",
@@ -187,7 +191,11 @@ describe("agent observability", () => {
     });
     assertCompleted(result);
 
-    expect(result.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
+    expect(result.trace).toEqual({
+      observer: "test",
+      traceId: "trace_1",
+      observationId: "obs_1",
+    });
     expect(result.runId).toEqual(expect.any(String));
     expect(eventTypes(observer)).toEqual([
       "run_start",
@@ -247,7 +255,11 @@ describe("agent observability", () => {
         return delegate.completion(request);
       },
     };
-    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
 
     await expect(
       agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
@@ -287,7 +299,12 @@ describe("agent observability", () => {
       response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
       response([AssistantContent.text("7")]),
     ]);
-    const agent = new Agent({ id: "test-agent", model, observers: [observer], tools: [addTool] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+      tools: [addTool],
+    });
 
     await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({ output: "7" });
 
@@ -340,7 +357,7 @@ describe("agent observability", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
       tools: [failingTool],
     });
 
@@ -389,7 +406,7 @@ describe("agent observability", () => {
       id: "test-agent",
       model,
       tools: [guardedTool],
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
@@ -434,7 +451,7 @@ describe("agent observability", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
       tools: [addTool],
     });
 
@@ -457,7 +474,7 @@ describe("agent observability", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
       tools: [addTool],
       maxTurns: 0,
     });
@@ -483,7 +500,12 @@ describe("agent observability", () => {
         { type: "text_delta", delta: "llo" },
       ],
     ]);
-    const agent = new Agent({ id: "test-agent", model, observers: [observer], tools: [addTool] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+      tools: [addTool],
+    });
 
     const events = await collect(agent.stream({ prompt: "add" }));
 
@@ -539,7 +561,7 @@ describe("agent observability", () => {
       new Agent({
         id: "test-agent",
         model: new QueueModel([response([AssistantContent.text("ok")])]),
-        observers: [observer],
+        observability: { observers: { test: observer }, primaryTrace: "test" },
       }).generate({ prompt: "hello" }),
     ).resolves.toMatchObject({ output: "ok" });
 
@@ -547,9 +569,13 @@ describe("agent observability", () => {
       new Agent({
         id: "test-agent",
         model: new QueueModel([response([AssistantContent.text("ok")])]),
-        observers: [observer],
-      }).generate({ prompt: "hello", trace: { failOnObserverError: true } }),
-    ).rejects.toThrow("observer failed");
+        observability: {
+          observers: { test: observer },
+          primaryTrace: "test",
+          errorPolicy: "throw",
+        },
+      }).generate({ prompt: "hello" }),
+    ).rejects.toMatchObject({ name: "AgentObserverDispatchError", phase: "startRun" });
   });
 
   it("calls update on streaming observers once per delta", async () => {
@@ -573,7 +599,11 @@ describe("agent observability", () => {
         { type: "text_delta", delta: "llo" },
       ],
     ]);
-    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
     await collect(agent.stream({ prompt: "hi" }));
 
     expect(updates).toEqual([
@@ -598,7 +628,11 @@ describe("agent observability", () => {
       },
     };
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
     await agent.generate({ prompt: "hi" });
     expect(updates).toEqual([]);
   });
@@ -615,7 +649,11 @@ describe("agent observability", () => {
       },
     };
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hi" }]]);
-    const agent = new Agent({ id: "test-agent", model, observers: [observer] });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
     await expect(collect(agent.stream({ prompt: "hi" }))).resolves.toBeDefined();
   });
 
@@ -671,7 +709,7 @@ describe("agent observability", () => {
     const agent = new Agent({
       id: "test-agent",
       model,
-      observers: [observer],
+      observability: { observers: { test: observer }, primaryTrace: "test" },
       tools: [addTool],
       middlewares: middlewares ?? [],
     });
@@ -726,7 +764,7 @@ describe("agent observability", () => {
     const agent = new Agent({
       id: "test-agent",
       model: failingModel,
-      observers: [{ observer, failOnObserverError: true }],
+      observability: { observers: { test: observer }, errorPolicy: "throw" },
     });
 
     await expect(
@@ -779,44 +817,40 @@ describe("active agent observer groups", () => {
     const siblingStarts: AgentRunStartArgs[] = [];
     const siblingEnds: AgentRunEndArgs[] = [];
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun(args) {
-              const mutable = args as unknown as {
-                prompt: { content: Array<{ text?: string }> };
-                history: unknown[];
-              };
-              mutable.prompt.content[0] = { text: "mutated" };
-              mutable.history.push({ role: "user", content: [] });
-              return createRunObserver({
-                end(endArgs) {
-                  const mutableEnd = endArgs as unknown as {
-                    messages: unknown[];
-                    usage: { totalTokens: number };
-                  };
-                  mutableEnd.messages.splice(0);
-                  mutableEnd.usage.totalTokens = 99;
-                },
-              });
-            },
+      {
+        mutating: {
+          startRun(args) {
+            const mutable = args as unknown as {
+              prompt: { content: Array<{ text?: string }> };
+              history: unknown[];
+            };
+            mutable.prompt.content[0] = { text: "mutated" };
+            mutable.history.push({ role: "user", content: [] });
+            return createRunObserver({
+              end(endArgs) {
+                const mutableEnd = endArgs as unknown as {
+                  messages: unknown[];
+                  usage: { totalTokens: number };
+                };
+                mutableEnd.messages.splice(0);
+                mutableEnd.usage.totalTokens = 99;
+              },
+            });
           },
         },
-        {
-          observer: {
-            startRun(args) {
-              siblingStarts.push(args);
-              return createRunObserver({
-                end(args) {
-                  siblingEnds.push(args);
-                },
-              });
-            },
+        sibling: {
+          startRun(args) {
+            siblingStarts.push(args);
+            return createRunObserver({
+              end(args) {
+                siblingEnds.push(args);
+              },
+            });
           },
         },
-      ],
+      },
       original,
-      false,
+      { errorPolicy: "ignore" },
     );
     const endArgs: AgentRunEndArgs = {
       ...runEndArgs(),
@@ -845,49 +879,45 @@ describe("active agent observer groups", () => {
     const siblingStarts: AgentGenerationStartArgs[] = [];
     const siblingEnds: AgentGenerationEndArgs[] = [];
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                startGeneration(args) {
-                  const mutable = args as unknown as {
-                    request: { chatHistory: unknown[]; documents: Array<{ text: string }> };
-                  };
-                  mutable.request.chatHistory.splice(0);
-                  const document = mutable.request.documents[0];
-                  if (document !== undefined) document.text = "mutated";
-                  return {
-                    end(endArgs) {
-                      const mutableEnd = endArgs as unknown as {
-                        response: { choice: unknown[]; usage: { totalTokens: number } };
-                      };
-                      mutableEnd.response.choice.splice(0);
-                      mutableEnd.response.usage.totalTokens = 99;
-                    },
-                  };
-                },
-              }),
-          },
+      {
+        mutating: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration(args) {
+                const mutable = args as unknown as {
+                  request: { chatHistory: unknown[]; documents: Array<{ text: string }> };
+                };
+                mutable.request.chatHistory.splice(0);
+                const document = mutable.request.documents[0];
+                if (document !== undefined) document.text = "mutated";
+                return {
+                  end(endArgs) {
+                    const mutableEnd = endArgs as unknown as {
+                      response: { choice: unknown[]; usage: { totalTokens: number } };
+                    };
+                    mutableEnd.response.choice.splice(0);
+                    mutableEnd.response.usage.totalTokens = 99;
+                  },
+                };
+              },
+            }),
         },
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                startGeneration(args) {
-                  siblingStarts.push(args);
-                  return {
-                    end(args) {
-                      siblingEnds.push(args);
-                    },
-                  };
-                },
-              }),
-          },
+        sibling: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration(args) {
+                siblingStarts.push(args);
+                return {
+                  end(args) {
+                    siblingEnds.push(args);
+                  },
+                };
+              },
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
     const request: CompletionRequest = {
       chatHistory: [Message.user("hello")],
@@ -989,12 +1019,12 @@ describe("active agent observer groups", () => {
       },
     });
     const active = await startAgentRunObservers(
-      [
-        { observer: { startRun: () => mutatingRunObserver } },
-        { observer: { startRun: () => observingRunObserver } },
-      ],
+      {
+        mutating: { startRun: () => mutatingRunObserver },
+        sibling: { startRun: () => observingRunObserver },
+      },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
     const runFailure = new Error("run failed");
     const runError = {
@@ -1053,24 +1083,31 @@ describe("active agent observer groups", () => {
     expect(siblingToolErrors[0]?.error).toMatchObject({ message: "tool failed" });
   });
 
-  it("skips undefined run observers and selects the first available trace", async () => {
+  it("skips undefined run observers and selects only the configured primary trace", async () => {
     const runObserver = createRunObserver({
       trace: { traceId: "trace_1", observationId: "obs_1" },
     });
 
     const active = await startAgentRunObservers(
-      [{ observer: { startRun: () => undefined } }, { observer: { startRun: () => runObserver } }],
+      {
+        empty: { startRun: () => undefined },
+        traced: { startRun: () => runObserver },
+      },
       runStartArgs(),
-      false,
+      { primaryTrace: "traced", errorPolicy: "ignore" },
     );
 
-    expect(active.trace).toEqual({ traceId: "trace_1", observationId: "obs_1" });
+    expect(active.trace).toEqual({
+      observer: "traced",
+      traceId: "trace_1",
+      observationId: "obs_1",
+    });
   });
 
-  it("swallows run observer start failures unless global or registration strict mode is enabled", async () => {
+  it("collects named run observer failures according to the global policy", async () => {
     const error = new Error("start failed");
-    const registration = {
-      observer: {
+    const observers = {
+      broken: {
         startRun() {
           throw error;
         },
@@ -1078,48 +1115,64 @@ describe("active agent observer groups", () => {
     };
 
     await expect(
-      startAgentRunObservers([registration], runStartArgs(), false),
+      startAgentRunObservers(observers, runStartArgs(), { errorPolicy: "ignore" }),
     ).resolves.toMatchObject({
       trace: undefined,
     });
-    await expect(startAgentRunObservers([registration], runStartArgs(), true)).rejects.toThrow(
-      error,
-    );
+    await expect(
+      startAgentRunObservers(observers, runStartArgs(), { errorPolicy: "throw" }),
+    ).rejects.toMatchObject({
+      name: "AgentObserverDispatchError",
+      phase: "startRun",
+      failures: [{ observer: "broken", error }],
+    });
+  });
+
+  it("terminates observers that started before a strict run startup failure", async () => {
+    const cleanup = vi.fn();
     await expect(
       startAgentRunObservers(
-        [{ ...registration, failOnObserverError: true }],
+        {
+          started: {
+            startRun: () => createRunObserver({ error: cleanup }),
+          },
+          broken: {
+            startRun: () => {
+              throw new Error("startup failed");
+            },
+          },
+        },
         runStartArgs(),
-        false,
+        { errorPolicy: "throw" },
       ),
-    ).rejects.toThrow(error);
+    ).rejects.toMatchObject({ phase: "startRun" });
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 
   it("swallows nested observer failures in non-strict mode", async () => {
     const error = new Error("nested failed");
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                startGeneration: () => {
-                  throw error;
-                },
-                startTool: () => {
-                  throw error;
-                },
-                end: () => {
-                  throw error;
-                },
-                error: () => {
-                  throw error;
-                },
-              }),
-          },
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => {
+                throw error;
+              },
+              startTool: () => {
+                throw error;
+              },
+              end: () => {
+                throw error;
+              },
+              error: () => {
+                throw error;
+              },
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
 
     await expect(active.startGeneration(generationStartArgs())).resolves.toBeInstanceOf(
@@ -1133,40 +1186,77 @@ describe("active agent observer groups", () => {
   it("throws nested observer failures in strict mode", async () => {
     const error = new Error("strict failed");
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                startGeneration: () => {
-                  throw error;
-                },
-              }),
-          },
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => {
+                throw error;
+              },
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      true,
+      { errorPolicy: "throw" },
     );
 
-    await expect(active.startGeneration(generationStartArgs())).rejects.toThrow(error);
+    await expect(active.startGeneration(generationStartArgs())).rejects.toMatchObject({
+      name: "AgentObserverDispatchError",
+      phase: "startGeneration",
+    });
+  });
+
+  it("terminates nested observers that started before strict startup failures", async () => {
+    const generationCleanup = vi.fn();
+    const toolCleanup = vi.fn();
+    const active = await startAgentRunObservers(
+      {
+        started: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => ({ end() {}, error: generationCleanup }),
+              startTool: () => ({ end() {}, error: toolCleanup }),
+            }),
+        },
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => {
+                throw new Error("generation startup failed");
+              },
+              startTool: () => {
+                throw new Error("tool startup failed");
+              },
+            }),
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "throw" },
+    );
+
+    await expect(active.startGeneration(generationStartArgs())).rejects.toMatchObject({
+      phase: "startGeneration",
+    });
+    await expect(active.startTool(toolStartArgs())).rejects.toMatchObject({
+      phase: "startTool",
+    });
+    expect(generationCleanup).toHaveBeenCalledOnce();
+    expect(toolCleanup).toHaveBeenCalledOnce();
   });
 
   it("handles missing optional generation and tool observer methods", async () => {
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                startGeneration: () => undefined,
-                startTool: () => undefined,
-              }),
-          },
+      {
+        partial: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => undefined,
+              startTool: () => undefined,
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
 
     const generationObservers = await active.startGeneration(generationStartArgs());
@@ -1179,23 +1269,21 @@ describe("active agent observer groups", () => {
 
   it("skips absent optional callbacks on active observers", async () => {
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                startGeneration: () => ({
-                  end() {},
-                }),
-                startTool: () => ({
-                  end() {},
-                }),
+      {
+        partial: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => ({
+                end() {},
               }),
-          },
+              startTool: () => ({
+                end() {},
+              }),
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
 
     const generationObservers = await active.startGeneration(generationStartArgs());
@@ -1209,70 +1297,87 @@ describe("active agent observer groups", () => {
 
   it("applies strict handling inside generation and tool observer groups", async () => {
     const error = new Error("group failed");
+    const generationError = vi.fn(() => {
+      throw error;
+    });
+    const toolError = vi.fn(() => {
+      throw error;
+    });
     const generation = new ActiveGenerationObservers(
       [
         {
-          end() {
-            throw error;
-          },
-          error() {
-            throw error;
+          name: "generation",
+          terminal: false,
+          observer: {
+            end() {
+              throw error;
+            },
+            error: generationError,
           },
         },
       ],
-      true,
+      "throw",
     );
     const tool = new ActiveToolObservers(
       [
         {
-          streamEvent() {
-            throw error;
-          },
-          end() {
-            throw error;
-          },
-          error() {
-            throw error;
+          name: "tool",
+          terminal: false,
+          observer: {
+            streamEvent() {
+              throw error;
+            },
+            end() {
+              throw error;
+            },
+            error: toolError,
           },
         },
       ],
-      true,
+      "throw",
     );
 
-    await expect(generation.end(generationEndArgs())).rejects.toThrow(error);
-    await expect(generation.error(generationErrorArgs())).rejects.toThrow(error);
-    await expect(tool.streamEvent(toolStreamEventArgs())).rejects.toThrow(error);
-    await expect(tool.end(toolEndArgs())).rejects.toThrow(error);
-    await expect(tool.error(toolErrorArgs())).rejects.toThrow(error);
+    await expect(generation.end(generationEndArgs())).rejects.toMatchObject({
+      name: "AgentObserverDispatchError",
+      phase: "generation.end",
+    });
+    await expect(generation.error(generationErrorArgs())).resolves.toBeUndefined();
+    await expect(tool.streamEvent(toolStreamEventArgs())).rejects.toMatchObject({
+      name: "AgentObserverDispatchError",
+      phase: "tool.streamEvent",
+    });
+    await expect(tool.end(toolEndArgs())).rejects.toMatchObject({
+      name: "AgentObserverDispatchError",
+      phase: "tool.end",
+    });
+    await expect(tool.error(toolErrorArgs())).resolves.toBeUndefined();
+    expect(generationError).not.toHaveBeenCalled();
+    expect(toolError).not.toHaveBeenCalled();
   });
 
   it("fans out run event() to observers that implement it", async () => {
     const seen: AgentRunEventArgs[] = [];
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                event(args) {
-                  seen.push(args);
-                },
-              }),
-          },
+      {
+        first: {
+          startRun: () =>
+            createRunObserver({
+              event(args) {
+                seen.push(args);
+              },
+            }),
         },
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                event(args) {
-                  seen.push(args);
-                },
-              }),
-          },
+        second: {
+          startRun: () =>
+            createRunObserver({
+              event(args) {
+                seen.push(args);
+              },
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
 
     const args: AgentRunEventArgs = {
@@ -1287,41 +1392,36 @@ describe("active agent observer groups", () => {
 
   it("skips run observers that omit event?", async () => {
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () => createRunObserver({}),
-          },
-        },
-      ],
+      { test: { startRun: () => createRunObserver({}) } },
       runStartArgs(),
-      false,
+      { errorPolicy: "ignore" },
     );
 
     await expect(active.event({ name: "noop", attributes: { ok: true } })).resolves.toBeUndefined();
   });
 
-  it("propagates event errors when failOnObserverError is set", async () => {
+  it("propagates named event errors under the throw policy", async () => {
     const error = new Error("event failed");
     const active = await startAgentRunObservers(
-      [
-        {
-          observer: {
-            startRun: () =>
-              createRunObserver({
-                event() {
-                  throw error;
-                },
-              }),
-          },
-          failOnObserverError: true,
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              event() {
+                throw error;
+              },
+            }),
         },
-      ],
+      },
       runStartArgs(),
-      true,
+      { errorPolicy: "throw" },
     );
 
-    await expect(active.event({ name: "validation.passed" })).rejects.toThrow(error);
+    await expect(active.event({ name: "validation.passed" })).rejects.toMatchObject({
+      name: "AgentObserverDispatchError",
+      phase: "event",
+      failures: [{ observer: "broken", error }],
+    });
   });
 });
 

@@ -6,7 +6,7 @@ import {
   Usage,
 } from "@anvia/core";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
-import { createLangfuseEvalReporter } from "@anvia/langfuse";
+import { LangfuseClient } from "@anvia/langfuse";
 
 class StaticCompletionModel implements CompletionModel {
   readonly provider = "cookbook";
@@ -30,12 +30,12 @@ class StaticCompletionModel implements CompletionModel {
   }
 }
 
-const reportedScores: unknown[] = [];
-const reporter = createLangfuseEvalReporter({
-  score: async (score) => {
-    reportedScores.push(score);
-  },
+await using langfuse = new LangfuseClient({
+  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+  secretKey: process.env.LANGFUSE_SECRET_KEY,
+  baseUrl: process.env.LANGFUSE_BASE_URL,
 });
+const reporter = langfuse.evalReporter();
 
 const agent = new Agent({
   id: "support-agent",
@@ -56,10 +56,12 @@ const result = await runEvalSuite({
       },
     },
   ],
-  target: agentEvalTarget(agent),
+  target: agentEvalTarget<string>({
+    agent,
+    request: ({ input }) => ({ prompt: input }),
+  }),
   metrics: [contains()],
   reporters: [reporter],
 });
 
 console.log(result.results[0]?.metrics[0]);
-console.log(reportedScores);

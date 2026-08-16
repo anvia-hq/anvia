@@ -5,33 +5,29 @@
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
-  const tracing = createTracing({ name: "langfuse-ops-scoring-01" });
-  try {
-    const fakeTraceId = "00000000-0000-0000-0000-000000000001";
+  await using tracing = createTracing({ name: "langfuse-ops-scoring-01" });
+  const fakeTraceId = "00000000-0000-0000-0000-000000000001";
 
-    await tracing.score({
-      traceId: fakeTraceId,
-      name: "latency-ms",
-      value: 412,
-      dataType: "NUMERIC",
-    });
-    await tracing.score({
-      traceId: fakeTraceId,
-      name: "verdict",
-      value: "pass",
-      dataType: "CATEGORICAL",
-    });
-    await tracing.score({
-      traceId: fakeTraceId,
-      name: "grounded",
-      value: 1,
-      dataType: "BOOLEAN",
-    });
+  await tracing.score({
+    traceId: fakeTraceId,
+    name: "latency-ms",
+    value: 412,
+    dataType: "NUMERIC",
+  });
+  await tracing.score({
+    traceId: fakeTraceId,
+    name: "verdict",
+    value: "pass",
+    dataType: "CATEGORICAL",
+  });
+  await tracing.score({
+    traceId: fakeTraceId,
+    name: "grounded",
+    value: 1,
+    dataType: "BOOLEAN",
+  });
 
-    console.log("[scoring:01] sent 3 scores (NUMERIC, CATEGORICAL, BOOLEAN)");
-  } finally {
-    await tracing.shutdown();
-  }
+  console.log("[scoring:01] sent 3 scores (NUMERIC, CATEGORICAL, BOOLEAN)");
 }
 
 main().catch((error: unknown) => {

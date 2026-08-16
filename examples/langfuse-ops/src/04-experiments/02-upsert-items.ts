@@ -1,23 +1,21 @@
-// Demonstrates: client.upsertItems(name, items[]). Creates a dataset
+// Demonstrates: client.upsertItems({ name, items }). Creates a dataset
 // first (idempotently) and pushes a small set of items.
 
-import { createLangfuseDatasetClient } from "@anvia/langfuse";
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
-  const tracing = createTracing({ name: "langfuse-ops-experiments-02" });
-  try {
-    const client = createLangfuseDatasetClient(tracing);
-    const name = `langfuse-ops-upsert-items-${Date.now()}`;
-    await client.createDataset({ name, description: "For upsertItems demo" });
-    await client.upsertItems(name, [
+  await using tracing = createTracing({ name: "langfuse-ops-experiments-02" });
+  const client = tracing.datasetClient();
+  const name = `langfuse-ops-upsert-items-${Date.now()}`;
+  await client.createDataset({ name, description: "For upsertItems demo" });
+  await client.upsertItems({
+    name,
+    items: [
       { id: "c-1", input: { q: "hi" }, expected: "hello" },
       { id: "c-2", input: { q: "bye" }, expected: "goodbye" },
-    ]);
-    console.log(`[experiments:02] upserted 2 items into ${name}`);
-  } finally {
-    await tracing.shutdown();
-  }
+    ],
+  });
+  console.log(`[experiments:02] upserted 2 items into ${name}`);
 }
 
 main().catch((error: unknown) => {

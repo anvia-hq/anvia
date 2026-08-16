@@ -4,6 +4,8 @@ import type {
   AgentGenerationErrorArgs,
   AgentGenerationObserver,
   AgentGenerationStartArgs,
+  AgentObserver,
+  AgentObserverTraceInfo,
   AgentRunEndArgs,
   AgentRunErrorArgs,
   AgentRunEventArgs,
@@ -14,7 +16,6 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
-  AgentTraceInfo,
 } from "@anvia/core/observability";
 import {
   type Attributes,
@@ -50,20 +51,18 @@ import {
   toolStartAttributes,
   usageAttributesFromRecord,
 } from "./helpers.js";
-import type { OtelTracing, OtelTracingOptions } from "./types.js";
+import type { OtelObserverOptions } from "./types.js";
 
-export const otel = {
-  create(options: OtelTracingOptions = {}): OtelTracing {
-    return new OtelAgentObserver(options);
-  },
-};
+export function createOtelObserver(options: OtelObserverOptions = {}): AgentObserver {
+  return new OtelAgentObserver(options);
+}
 
-class OtelAgentObserver implements OtelTracing {
+class OtelAgentObserver implements AgentObserver {
   private readonly tracer: Tracer;
   private readonly serviceName: string | undefined;
-  private readonly options: OtelTracingOptions;
+  private readonly options: OtelObserverOptions;
 
-  constructor(options: OtelTracingOptions) {
+  constructor(options: OtelObserverOptions) {
     this.options = options;
     this.tracer =
       options.tracer ??
@@ -90,13 +89,13 @@ class OtelAgentObserver implements OtelTracing {
 }
 
 class OtelRunObserver implements AgentRunObserver {
-  readonly trace: AgentTraceInfo;
+  readonly trace: AgentObserverTraceInfo;
   private readonly rootContext: Context;
 
   constructor(
     private readonly tracer: Tracer,
     private readonly root: Span,
-    private readonly options: OtelTracingOptions,
+    private readonly options: OtelObserverOptions,
   ) {
     const spanContext = root.spanContext();
     this.trace = {
@@ -157,7 +156,7 @@ function eventTimestamp(value: Date | string | undefined): Date | undefined {
 class OtelGenerationObserver implements AgentGenerationObserver {
   constructor(
     private readonly generation: Span,
-    private readonly options: OtelTracingOptions,
+    private readonly options: OtelObserverOptions,
   ) {}
 
   end(args: AgentGenerationEndArgs): void {
@@ -190,7 +189,7 @@ class OtelToolObserver implements AgentToolObserver {
   constructor(
     private readonly tracer: Tracer,
     private readonly tool: Span,
-    private readonly options: OtelTracingOptions,
+    private readonly options: OtelObserverOptions,
   ) {
     this.toolContext = trace.setSpan(ROOT_CONTEXT, tool);
   }

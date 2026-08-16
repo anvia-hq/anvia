@@ -11,6 +11,12 @@ export * from "../../src/mcp";
 export * from "../../src/memory";
 export * from "../../src/model-listing";
 export * from "../../src/observability";
+
+import type { AgentObserver } from "../../src/observability";
+
+export function createObserver(observer: AgentObserver): AgentObserver {
+  return observer;
+}
 export * from "../../src/pipeline";
 export * from "../../src/skills";
 export * from "../../src/speech-generation";

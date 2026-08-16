@@ -6,6 +6,7 @@ import {
 import type { AgentStreamEvent } from "@anvia/core/agent";
 import {
   isJsonValue,
+  type JsonObject,
   type JsonValue,
   type Message,
   parseMessages,
@@ -308,7 +309,7 @@ export function traceForRun(
 ): AgentTraceOptions {
   const options: AgentTraceOptions = {};
   if (trace !== undefined) Object.assign(options, trace);
-  const metadata: Record<string, unknown> = {};
+  const metadata: JsonObject = {};
   if (trace?.metadata !== undefined) Object.assign(metadata, trace.metadata);
   metadata.agentId = agentId;
   options.metadata = metadata;

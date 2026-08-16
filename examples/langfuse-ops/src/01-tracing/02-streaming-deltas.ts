@@ -6,27 +6,23 @@ import { buildOpenAIClient, defaultModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
-  const tracing = createTracing({ name: "langfuse-ops-tracing-02" });
-  try {
-    const client = buildOpenAIClient();
-    const agent = buildSupportAgent(client.completionModel(defaultModel()), { tracing });
+  await using tracing = createTracing({ name: "langfuse-ops-tracing-02" });
+  const client = buildOpenAIClient();
+  const agent = buildSupportAgent(client.completionModel(defaultModel()), { tracing });
 
-    const stream = agent.stream({
-      prompt: "Give me a one-paragraph summary of ticket TICKET-1001.",
-      trace: { name: "streaming-trace", tags: ["tracing:02", "streaming"] },
-    });
+  const stream = agent.stream({
+    prompt: "Give me a one-paragraph summary of ticket TICKET-1001.",
+    trace: { name: "streaming-trace", tags: ["tracing:02", "streaming"] },
+  });
 
-    let textLength = 0;
-    for await (const event of stream) {
-      if (event.type === "text_delta") {
-        textLength += event.delta.length;
-      }
+  let textLength = 0;
+  for await (const event of stream) {
+    if (event.type === "text_delta") {
+      textLength += event.delta.length;
     }
-    console.log("[tracing:02] streamed text length:", textLength);
-    console.log("[tracing:02] inspect the trace in Langfuse to see text_delta updates");
-  } finally {
-    await tracing.shutdown();
   }
+  console.log("[tracing:02] streamed text length:", textLength);
+  console.log("[tracing:02] inspect the trace in Langfuse to see text_delta updates");
 }
 
 main().catch((error: unknown) => {

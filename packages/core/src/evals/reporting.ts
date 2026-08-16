@@ -96,6 +96,7 @@ function traceFromCarrier(value: unknown): EvalTraceRef | undefined {
 function traceFromMetadata(metadata: EvalMetadata | undefined): EvalTraceRef | undefined {
   if (metadata === undefined) return undefined;
   return readTraceRef({
+    observer: metadata.traceObserver,
     traceId: metadata.traceId,
     observationId: metadata.observationId,
     responseId: metadata.responseId,
@@ -106,9 +107,11 @@ function readTraceRef(value: unknown): EvalTraceRef | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const traceId = (value as { traceId?: unknown }).traceId;
   if (typeof traceId !== "string" || traceId.length === 0) return undefined;
+  const observer = (value as { observer?: unknown }).observer;
   const observationId = (value as { observationId?: unknown }).observationId;
   const responseId = (value as { responseId?: unknown }).responseId;
   const trace: EvalTraceRef = { traceId };
+  if (typeof observer === "string" && observer.length > 0) trace.observer = observer;
   if (typeof observationId === "string" && observationId.length > 0) {
     trace.observationId = observationId;
   }

@@ -14,7 +14,7 @@ import {
 import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantContent, Message } from "../../core/test/helpers/imports";
-import { createOtelEvalReporter, otel } from "../src/index";
+import { createOtelEvalReporter, createOtelObserver } from "../src/index";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -268,6 +268,17 @@ describe("OpenTelemetry eval reporter", () => {
     expect(() => reporter.report(args)).toThrow(/traceId and observationId/);
     expect(emit).not.toHaveBeenCalled();
 
+    expect(() =>
+      reporter.report({
+        ...args,
+        trace: {
+          observer: "langfuse",
+          traceId: "1234567890abcdef1234567890abcdef",
+          observationId: "1234567890abcdef",
+        },
+      }),
+    ).toThrow(/observer "otel"/);
+
     await createOtelEvalReporter({ logger }).report({
       ...args,
       trace: {
@@ -291,7 +302,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const getTracer = vi.spyOn(trace, "getTracer");
 
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -308,14 +319,14 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const getTracer = vi.spyOn(trace, "getTracer").mockReturnValue(tracer.tracer);
 
-    otel.create({ tracerVersion: "1.2.3" });
+    createOtelObserver({ tracerVersion: "1.2.3" });
 
     expect(getTracer).toHaveBeenCalledWith("@anvia/otel", "1.2.3");
   });
 
   it("uses the generic run span name when no agent name is provided", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
 
     await tracing.startRun({
       runId: "run_1",
@@ -329,7 +340,7 @@ describe("otel", () => {
 
   it("maps runs, generations, tools, and attributes to OpenTelemetry spans", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer, serviceName: "cookbook" });
+    const tracing = createOtelObserver({ tracer: tracer.tracer, serviceName: "cookbook" });
 
     const run = await tracing.startRun({
       runId: "run_1",
@@ -459,7 +470,7 @@ describe("otel", () => {
 
   it("omits prompt, response, and tool payloads in safe capture mode", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
+    const tracing = createOtelObserver({ tracer: tracer.tracer, captureMode: "safe" });
     const run = await tracing.startRun({
       runId: "run_1",
       instructions: "private instructions",
@@ -520,7 +531,7 @@ describe("otel", () => {
       [11, "<truncated>"],
     ] as const) {
       const tracer = new FakeTracer();
-      const tracing = otel.create({
+      const tracing = createOtelObserver({
         tracer: tracer.tracer,
         captureMode: "full",
         captureMaxBytes,
@@ -542,7 +553,7 @@ describe("otel", () => {
 
   it("records ad-hoc run events", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
       runId: "run_1",
       prompt: userMessage("hello"),
@@ -570,7 +581,7 @@ describe("otel", () => {
 
   it("keeps message metadata on run transcripts but omits it from model inputs", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
     const run = await tracing.startRun({
       runId: "run_1",
@@ -620,7 +631,7 @@ describe("otel", () => {
 
   it("transforms structured generation instructions and messages before capture", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({
+    const tracing = createOtelObserver({
       tracer: tracer.tracer,
       transformInput: (value) =>
         JSON.parse(JSON.stringify(value).replaceAll("private", "<redacted>")),
@@ -649,7 +660,7 @@ describe("otel", () => {
 
   it("records generation request options and output schema metadata", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -700,7 +711,7 @@ describe("otel", () => {
 
   it("serializes unsupported trace metadata as a failure marker", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const circular: Record<string, unknown> = {};
     circular.self = circular;
 
@@ -711,7 +722,7 @@ describe("otel", () => {
       history: [],
       maxTurns: 1,
       trace: {
-        metadata: { circular },
+        metadata: { circular } as never,
       },
     });
 
@@ -722,7 +733,7 @@ describe("otel", () => {
 
   it("records run, generation, and tool errors", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -774,7 +785,7 @@ describe("otel", () => {
 
   it("nests streamed child agent spans under the parent tool span", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -944,7 +955,7 @@ describe("otel", () => {
 
   it("applies safe capture to streamed child agent payloads", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
+    const tracing = createOtelObserver({ tracer: tracer.tracer, captureMode: "safe" });
     const run = await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -1086,7 +1097,7 @@ describe("otel", () => {
 
   it("records streamed child agent errors", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -1133,7 +1144,7 @@ describe("otel", () => {
 
   it("ends open streamed child spans when the parent tool ends", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
       runId: "run_1",
       agentName: "support",
@@ -1199,7 +1210,7 @@ describe("otel", () => {
 
   it("joins valid incoming trace ids and ignores invalid ones", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const incomingTraceId = "1234567890abcdef1234567890abcdef";
 
     const joined = await tracing.startRun({

@@ -36,7 +36,11 @@ const agent = new Agent({
   id: "support",
   model: client.completionModel(),
   instructions: "Answer support questions clearly.",
-  observers: [createLoggerObserver(logger)],
+  observability: {
+    observers: {
+      logger: createLoggerObserver({ logger }),
+    },
+  },
 });
 
 const result = await agent.generate({ prompt: "How do I reset my password?" });

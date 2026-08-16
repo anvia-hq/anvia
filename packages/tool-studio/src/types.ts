@@ -35,6 +35,7 @@ export type StudioCapability =
   | "traces";
 
 export type AgentTraceInfo = {
+  observer: string;
   traceId?: string | undefined;
   observationId?: string | undefined;
 };
@@ -43,11 +44,10 @@ export type AgentTraceOptions = {
   name?: string | undefined;
   userId?: string | undefined;
   sessionId?: string | undefined;
-  metadata?: Record<string, unknown> | undefined;
+  metadata?: JsonObject | undefined;
   tags?: string[] | undefined;
   version?: string | undefined;
   traceId?: string | undefined;
-  failOnObserverError?: boolean | undefined;
 };
 
 export type StudioModelRef = string | { provider: string; model: string };
@@ -205,7 +205,7 @@ export type StudioEvalSuite<
   concurrency?: number;
   // biome-ignore lint/suspicious/noExplicitAny: Studio passes reporters through to core.
   reporters?: any[];
-  failOnReporterError?: boolean;
+  reporterErrorPolicy?: "collect" | "throw";
   id?: string;
   description?: string;
   metadata?: JsonObject;

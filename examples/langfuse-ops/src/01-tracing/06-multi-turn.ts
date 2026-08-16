@@ -26,41 +26,40 @@ class LocalMemoryStore implements MemoryStore {
 }
 
 async function main(): Promise<void> {
-  const tracing = createTracing({ name: "langfuse-ops-tracing-06" });
-  try {
-    const client = buildOpenAIClient();
-    const agent = new Agent({
-      id: "support-agent",
-      model: client.completionModel(defaultModel()),
-      instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
-      memory: { store: new LocalMemoryStore() },
-      maxTurns: 2,
-      tools: [getTicket],
-      observers: [tracing],
-    });
-    const session = {
-      sessionId: "langfuse-ops-multi-turn",
-      userId: "langfuse-ops-user",
-    };
+  await using tracing = createTracing({ name: "langfuse-ops-tracing-06" });
+  const client = buildOpenAIClient();
+  const agent = new Agent({
+    id: "support-agent",
+    model: client.completionModel(defaultModel()),
+    instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
+    memory: { store: new LocalMemoryStore() },
+    maxTurns: 2,
+    tools: [getTicket],
+    observability: {
+      observers: { langfuse: tracing.observer() },
+      primaryTrace: "langfuse",
+    },
+  });
+  const session = {
+    sessionId: "langfuse-ops-multi-turn",
+    userId: "langfuse-ops-user",
+  };
 
-    const first = await agent.generate({
-      prompt: "What ticket is TICKET-1001 about? Give a one-line summary.",
-      session,
-      trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] },
-    });
-    assertCompleted(first);
-    console.log("[tracing:06] turn 1:", first.output);
+  const first = await agent.generate({
+    prompt: "What ticket is TICKET-1001 about? Give a one-line summary.",
+    session,
+    trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-1"] },
+  });
+  assertCompleted(first);
+  console.log("[tracing:06] turn 1:", first.output);
 
-    const second = await agent.generate({
-      prompt: "Now rewrite the summary in two sentences.",
-      session,
-      trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-2"] },
-    });
-    assertCompleted(second);
-    console.log("[tracing:06] turn 2:", second.output);
-  } finally {
-    await tracing.shutdown();
-  }
+  const second = await agent.generate({
+    prompt: "Now rewrite the summary in two sentences.",
+    session,
+    trace: { name: "multi-turn-demo", tags: ["tracing:06", "turn-2"] },
+  });
+  assertCompleted(second);
+  console.log("[tracing:06] turn 2:", second.output);
 }
 
 main().catch((error: unknown) => {

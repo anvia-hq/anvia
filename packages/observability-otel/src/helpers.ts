@@ -19,7 +19,7 @@ import {
   TraceFlags,
   trace,
 } from "@opentelemetry/api";
-import type { OtelTracingOptions } from "./types.js";
+import type { OtelObserverOptions } from "./types.js";
 
 export function rootSpanName(args: AgentRunStartArgs): string {
   return args.agentName === undefined || args.agentName.length === 0
@@ -30,7 +30,7 @@ export function rootSpanName(args: AgentRunStartArgs): string {
 export function runStartAttributes(
   args: AgentRunStartArgs,
   serviceName: string | undefined,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
     "service.name": serviceName,
@@ -60,7 +60,7 @@ export function runEventAttributes(args: AgentRunEventArgs): Attributes {
 
 export function runEndAttributes(
   args: AgentRunEndArgs,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
     "anvia.run.status": args.status,
@@ -75,7 +75,7 @@ export function runEndAttributes(
 
 export function runErrorAttributes(
   args: AgentRunErrorArgs,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
     "anvia.run.error": errorMessage(args.error),
@@ -86,7 +86,7 @@ export function runErrorAttributes(
 
 export function generationStartAttributes(
   args: AgentGenerationStartArgs,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   const params = modelParameters(args.request);
   return compactAttributes({
@@ -133,7 +133,7 @@ export function modelInputMessages(
 
 export function generationEndAttributes(
   args: AgentGenerationEndArgs,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
     "anvia.generation.turn": args.turn,
@@ -157,7 +157,7 @@ function textFromObservedAssistantContent(
 
 export function toolStartAttributes(
   args: AgentToolStartArgs,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
     "anvia.tool.name": args.toolName,
@@ -173,7 +173,7 @@ export function toolStartAttributes(
 
 export function toolEndAttributes(
   args: AgentToolEndArgs,
-  options: OtelTracingOptions = {},
+  options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
     "anvia.tool.name": args.toolName,
@@ -308,7 +308,7 @@ export function jsonString(value: unknown): string {
 function fullCapture(
   value: unknown,
   direction: "input" | "output",
-  options: OtelTracingOptions,
+  options: OtelObserverOptions,
 ): string | undefined {
   return options.captureMode === "full" && value !== undefined
     ? capturedJson(value, direction, options)
@@ -318,7 +318,7 @@ function fullCapture(
 export function capturedJson(
   value: unknown,
   direction: "input" | "output",
-  options: OtelTracingOptions,
+  options: OtelObserverOptions,
 ): string | undefined {
   if (options.captureMode === "safe") return undefined;
   const transform = direction === "input" ? options.transformInput : options.transformOutput;
@@ -328,7 +328,7 @@ export function capturedJson(
 export function capturedString(
   value: string | undefined,
   direction: "input" | "output",
-  options: OtelTracingOptions,
+  options: OtelObserverOptions,
 ): string | undefined {
   if (value === undefined || options.captureMode === "safe") return undefined;
   const transform = direction === "input" ? options.transformInput : options.transformOutput;

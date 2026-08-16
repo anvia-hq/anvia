@@ -3,4 +3,5 @@ export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
 export * from "./documents";
 export * from "./generate-completion";
 export * from "./json";
+export * from "./message-schema";
 export * from "./types";

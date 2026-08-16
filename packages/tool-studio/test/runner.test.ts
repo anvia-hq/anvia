@@ -5,18 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, createVectorContext } from "@anvia/core/agent";
 import {
-  AssistantContent,
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
   type Message as CoreMessage,
   type JsonObject,
-  Message,
   type ProviderTool,
   type StreamingCompletionModel,
-  ToolContent,
   Usage,
-  UserContent,
 } from "@anvia/core/completion";
 import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
 import { type EvalMetric, EvalOutcome } from "@anvia/core/evals";
@@ -37,6 +33,12 @@ import { InMemoryVectorStore, type VectorStore } from "@anvia/core/vector-store"
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
+import {
+  AssistantContent,
+  Message,
+  ToolContent,
+  UserContent,
+} from "../../core/test/helpers/imports";
 import {
   type AgentRunResponse,
   type AgentRunStreamEvent,
@@ -617,7 +619,7 @@ describe("Anvia studio", () => {
         method: "POST",
         body: JSON.stringify({
           sessionId: session.id,
-          message: "first",
+          messages: [Message.user("first")],
           model: "test:secondary",
         }),
       }),
@@ -629,7 +631,7 @@ describe("Anvia studio", () => {
         method: "POST",
         body: JSON.stringify({
           sessionId: session.id,
-          message: "second",
+          messages: [Message.user("second")],
         }),
       }),
     );
@@ -667,7 +669,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
-          message: "hello",
+          messages: [Message.user("hello")],
           model: "test:blocked",
         }),
       }),
@@ -691,20 +693,19 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
-          message: {
-            role: "user",
-            content: [
-              { type: "text", text: "Describe this image." },
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  data: "aW1hZ2U=",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Describe this image." },
+                {
+                  type: "image",
+                  image: { type: "data", data: "aW1hZ2U=" },
                   mediaType: "image/png",
                 },
-              },
-            ],
-          },
+              ],
+            },
+          ],
         }),
       }),
     );
@@ -714,7 +715,7 @@ describe("Anvia studio", () => {
       role: "user",
       content: [
         { type: "text", text: "Describe this image." },
-        { type: "image", source: { type: "base64", mediaType: "image/png" } },
+        { type: "image", image: { type: "data" }, mediaType: "image/png" },
       ],
     });
 
@@ -723,7 +724,7 @@ describe("Anvia studio", () => {
       role: "user",
       content: [
         { type: "text", text: "Describe this image." },
-        { type: "image", source: { type: "base64", mediaType: "image/png" } },
+        { type: "image", image: { type: "data" }, mediaType: "image/png" },
       ],
     });
   });
@@ -1099,7 +1100,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi" }),
+          body: JSON.stringify({ messages: [Message.user("hi")] }),
         }),
       );
       expect(res.status).toBe(200);
@@ -1216,7 +1217,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "trace me", sessionId: session.id }),
+          body: JSON.stringify({ messages: [Message.user("trace me")], sessionId: session.id }),
         }),
       );
       expect(run.status).toBe(200);
@@ -1269,7 +1270,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund policy", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("refund policy")], sessionId: session.id }),
       }),
     );
 
@@ -1306,7 +1307,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund policy", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("refund policy")], sessionId: session.id }),
       }),
     );
 
@@ -1341,7 +1342,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "research", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("research")], sessionId: session.id }),
       }),
     );
 
@@ -1413,7 +1414,7 @@ describe("Anvia studio", () => {
       agentId: "support",
       toolName: "add",
       status: "success",
-      result: "5",
+      result: { type: "json", value: 5 },
       events: [],
     });
   });
@@ -1617,7 +1618,10 @@ describe("Anvia studio", () => {
     await expect(toolRun.json()).resolves.toMatchObject({
       toolName: "github_lookup_policy",
       status: "success",
-      result: [{ type: "text", text: "policy" }],
+      result: {
+        type: "json",
+        value: [{ type: "text", text: "policy" }],
+      },
     });
   });
 
@@ -1805,7 +1809,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi" }),
+          body: JSON.stringify({ messages: [Message.user("hi")] }),
         }),
       );
       expect(res.status).toBe(200);
@@ -1824,8 +1828,11 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "What is this?",
-          history: [Message.user("The project is Anvia."), Message.assistant("Noted.")],
+          messages: [
+            Message.user("The project is Anvia."),
+            Message.assistant("Noted."),
+            Message.user("What is this?"),
+          ],
           maxTurns: 2,
           toolConcurrency: 3,
           metadata: { requestId: "req_1" },
@@ -1876,7 +1883,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "refund" }),
+          body: JSON.stringify({ messages: [Message.user("refund")] }),
         }),
       ),
     );
@@ -1924,7 +1931,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi" }),
+          body: JSON.stringify({ messages: [Message.user("hi")] }),
         }),
       );
 
@@ -1948,7 +1955,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "trace me",
+          messages: [Message.user("trace me")],
           trace: {
             name: "ui-run",
             sessionId: "session_1",
@@ -1981,13 +1988,13 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", stream: true }),
+        body: JSON.stringify({ messages: [Message.user("hi")], stream: true }),
       }),
     );
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
-    expect(res.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v1");
+    expect(res.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v2");
     expect(await readJsonl(res)).toEqual([
       expect.objectContaining({ type: "run_start", source: "agent" }),
       expect.objectContaining({ type: "turn_start", turn: 1 }),
@@ -2029,7 +2036,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi", stream: true }),
+          body: JSON.stringify({ messages: [Message.user("hi")], stream: true }),
         }),
       );
       const events = await readJsonl(res);
@@ -2118,11 +2125,11 @@ describe("Anvia studio", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({
-      error: { message: "sessionId cannot be combined with history" },
+      error: { message: "sessionId requires exactly one user message" },
     });
   });
 
-  it("keeps legacy message bodies authoritative when both request shapes are sent", async () => {
+  it("rejects mixed legacy and canonical message bodies", async () => {
     const model = new QueueModel([response([AssistantContent.text("legacy")])]);
     const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
@@ -2138,8 +2145,11 @@ describe("Anvia studio", () => {
       }),
     );
 
-    expect(res.status).toBe(200);
-    expect(model.requests[0]?.chatHistory).toEqual([Message.user("legacy")]);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: "Legacy message/history requests are not supported; use messages" },
+    });
+    expect(model.requests).toHaveLength(0);
   });
 
   it("pauses protected streaming tool calls until approval", async () => {
@@ -2166,7 +2176,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
+        body: JSON.stringify({ messages: [Message.user("refund")], stream: true }),
       }),
     );
 
@@ -2280,7 +2290,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
+        body: JSON.stringify({ messages: [Message.user("refund")], stream: true }),
       }),
     );
     const reader = createJsonlReader(response);
@@ -2346,7 +2356,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("refund")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
     expect(res.status).toBe(200);
@@ -2377,7 +2391,13 @@ describe("Anvia studio", () => {
     expect(remaining).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: { status: "success", output: "Rejected in Anvia Studio." },
+        result: {
+          status: "error",
+          error: {
+            code: "tool_execution_denied",
+            message: "Rejected in Anvia Studio.",
+          },
+        },
       }),
     );
 
@@ -2441,7 +2461,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "ask", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("ask")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -2496,12 +2520,12 @@ describe("Anvia studio", () => {
         type: "tool_result",
         result: {
           status: "success",
-          output: {
+          output: JSON.stringify({
             answers: [
               { questionId: "priority", answer: "High", choice: "High" },
               { questionId: "notes", answer: "Customer is blocked.", custom: true },
             ],
-          },
+          }),
         },
       }),
     );
@@ -2560,7 +2584,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "ask", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("ask")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
     const reader = createJsonlReader(response);
@@ -2641,7 +2669,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "ask", stream: true }),
+        body: JSON.stringify({ messages: [Message.user("ask")], stream: true }),
       }),
     );
 
@@ -2691,7 +2719,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
+        body: JSON.stringify({ messages: [Message.user("refund")], stream: true }),
       }),
     );
 
@@ -2730,7 +2758,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("hi")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -2767,7 +2799,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", stream: true, trace: { name: "stream" } }),
+        body: JSON.stringify({
+          messages: [Message.user("hi")],
+          stream: true,
+          trace: { name: "stream" },
+        }),
       }),
     );
 
@@ -2877,7 +2913,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/missing/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi" }),
+        body: JSON.stringify({ messages: [Message.user("hi")] }),
       }),
     );
 
@@ -2920,7 +2956,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "First question", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("First question")], sessionId: session.id }),
       }),
     );
     expect(firstRun.status).toBe(200);
@@ -2929,13 +2965,13 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Follow up", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("Follow up")], sessionId: session.id }),
       }),
     );
     expect(secondRun.status).toBe(200);
 
     expect(model.requests[1]?.chatHistory).toEqual([
-      Message.user("First question"),
+      Message.user([{ type: "text", text: "First question" }]),
       expect.objectContaining(Message.assistant("First answer")),
       Message.user("Follow up"),
     ]);
@@ -2955,9 +2991,9 @@ describe("Anvia studio", () => {
       title: "First question",
       messageCount: 4,
       messages: [
-        Message.user("First question"),
+        Message.user([{ type: "text", text: "First question" }]),
         Message.assistant("First answer"),
-        Message.user("Follow up"),
+        Message.user([{ type: "text", text: "Follow up" }]),
         Message.assistant("Second answer"),
       ],
       transcript: [
@@ -3001,7 +3037,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "First question", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("First question")], sessionId: session.id }),
       }),
     );
     expect(firstRun.status).toBe(200);
@@ -3010,7 +3046,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Follow up", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("Follow up")], sessionId: session.id }),
       }),
     );
     expect(secondRun.status).toBe(200);
@@ -3072,7 +3108,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "next",
+          messages: [Message.user("next")],
           sessionId: "compaction-session",
           stream: true,
         }),
@@ -3179,7 +3215,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "next",
+          messages: [Message.user("next")],
           sessionId: "failed-compaction-session",
         }),
       }),
@@ -3245,7 +3281,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Check ticket", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("Check ticket")], sessionId: session.id }),
       }),
     );
     expect(run.status).toBe(200);
@@ -3472,7 +3508,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("hi")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -3521,7 +3561,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "think", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("think")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
     const reader = createJsonlReader(response);
@@ -3590,7 +3634,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "my raw secret prompt",
+          messages: [Message.user("my raw secret prompt")],
           sessionId: session.id,
           stream: true,
         }),
@@ -3708,7 +3752,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/parent/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "delegate", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("delegate")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -3828,7 +3876,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "hi",
+          messages: [Message.user("hi")],
           sessionId: "session_1",
           history: [Message.user("old")],
         }),
@@ -3836,14 +3884,17 @@ describe("Anvia studio", () => {
     );
     expect(invalid.status).toBe(400);
     await expect(invalid.json()).resolves.toMatchObject({
-      error: { code: "bad_request", message: "sessionId cannot be combined with history" },
+      error: {
+        code: "bad_request",
+        message: "Legacy message/history requests are not supported; use messages",
+      },
     });
 
     const missing = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", sessionId: "missing" }),
+        body: JSON.stringify({ messages: [Message.user("hi")], sessionId: "missing" }),
       }),
     );
     expect(missing.status).toBe(404);
@@ -3871,7 +3922,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "trace me",
+          messages: [Message.user("trace me")],
           sessionId: session.id,
           trace: { name: "support-run", metadata: { source: "test" } },
         }),
@@ -3963,7 +4014,10 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "trace then delete", sessionId: session.id }),
+        body: JSON.stringify({
+          messages: [Message.user("trace then delete")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -4019,7 +4073,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "add", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("add")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
     expect(run.status).toBe(200);
@@ -4125,7 +4183,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "fail", sessionId: session.id }),
+        body: JSON.stringify({ messages: [Message.user("fail")], sessionId: session.id }),
       }),
     );
     expect(run.status).toBe(500);
@@ -4179,7 +4237,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "stream fail", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          messages: [Message.user("stream fail")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -4221,32 +4283,38 @@ describe("Anvia studio", () => {
   it("isolates in-memory messages and compaction snapshots from caller mutation", async () => {
     const store = createInMemoryStudioStore();
     store.createSession({ id: "session_1", agentId: "support" });
-    const original = Message.user("original");
+    const original = Message.user([{ type: "text", text: "original" }]);
     await store.append({
       scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: [original],
     });
+    if (typeof original.content === "string") {
+      throw new Error("Expected structured user content");
+    }
     const originalText = original.content[0];
     if (originalText?.type !== "text") {
       throw new Error("Expected text message");
     }
-    originalText.text = "mutated after append";
+    (originalText as { text: string }).text = "mutated after append";
 
     const snapshot = await store.compaction?.snapshot({ scope: { sessionId: "session_1" } });
     if (snapshot === undefined || store.compaction === undefined) {
       throw new Error("Expected in-memory compaction capability");
     }
     const snapshotMessage = snapshot.messages[0];
-    const snapshotText = snapshotMessage?.role === "user" ? snapshotMessage.content[0] : undefined;
+    const snapshotText =
+      snapshotMessage?.role === "user" && typeof snapshotMessage.content !== "string"
+        ? snapshotMessage.content[0]
+        : undefined;
     if (snapshotText?.type !== "text") {
       throw new Error("Expected text snapshot message");
     }
-    snapshotText.text = "mutated snapshot";
+    (snapshotText as { text: string }).text = "mutated snapshot";
 
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
-      Message.user("original"),
+      Message.user([{ type: "text", text: "original" }]),
     ]);
     const replacement = Message.system("Earlier discussion.", {
       metadata: {
@@ -4277,7 +4345,7 @@ describe("Anvia studio", () => {
       messages: [Message.user("hi")],
     });
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
-      Message.user("hi"),
+      Message.user([{ type: "text", text: "hi" }]),
     ]);
 
     await store.saveSessionRunTranscript({
@@ -4341,7 +4409,10 @@ describe("Anvia studio", () => {
   it("atomically replaces SQLite memory prefixes and exposes compaction messages", async () => {
     const store = createSqliteSessionStore({ path: ":memory:" });
     store.createSession({ id: "session_1", agentId: "support" });
-    const retained = [Message.user("recent"), Message.assistant("recent answer")];
+    const retained = [
+      Message.user([{ type: "text", text: "recent" }]),
+      Message.assistant("recent answer"),
+    ];
     await store.append({
       scope: { sessionId: "session_1" },
       runId: "run_1",
@@ -4552,7 +4623,7 @@ describe("Anvia studio", () => {
 
     const store = createSqliteSessionStore({ path });
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
-      Message.user("legacy"),
+      Message.user([{ type: "text", text: "legacy" }]),
     ]);
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
     await store.append({
@@ -4562,8 +4633,8 @@ describe("Anvia studio", () => {
       messages: [Message.user("new", { metadata })],
     });
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
-      Message.user("legacy"),
-      Message.user("new", { metadata }),
+      Message.user([{ type: "text", text: "legacy" }]),
+      Message.user([{ type: "text", text: "new" }], { metadata }),
     ]);
 
     const migrated = new DatabaseSync(path);
@@ -4667,21 +4738,21 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/main/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "main", sessionId: mainSession.id }),
+        body: JSON.stringify({ messages: [Message.user("main")], sessionId: mainSession.id }),
       }),
     );
     await runner.fetch(
       new Request("http://runner.test/agents/backup/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "backup", sessionId: backupSession.id }),
+        body: JSON.stringify({ messages: [Message.user("backup")], sessionId: backupSession.id }),
       }),
     );
     await runner.fetch(
       new Request("http://runner.test/agents/main/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "fail", sessionId: mainSession.id }),
+        body: JSON.stringify({ messages: [Message.user("fail")], sessionId: mainSession.id }),
       }),
     );
 
@@ -4763,7 +4834,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "observe",
+          messages: [Message.user("observe")],
           sessionId: session.id,
           trace: { name: "observability-test" },
         }),

@@ -109,6 +109,11 @@ function UsageMetric(props: { label: string; value: number; suffix?: string | un
 }
 
 function assistantPreview(message: AssistantMessage): string {
+  if (typeof message.content === "string") {
+    return message.content.trim().length > 0
+      ? truncatePreview(message.content)
+      : "Assistant response";
+  }
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n")
@@ -118,7 +123,7 @@ function assistantPreview(message: AssistantMessage): string {
   }
 
   const toolNames = message.content.flatMap((content) =>
-    content.type === "tool_call" ? [content.function.name] : [],
+    content.type === "tool-call" ? [content.toolName] : [],
   );
   if (toolNames.length > 0) {
     return `Tool call${toolNames.length === 1 ? "" : "s"}: ${toolNames.join(", ")}`;

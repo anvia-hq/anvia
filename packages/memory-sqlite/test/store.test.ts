@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { richMessages } from "../../core/test/helpers/rich-messages";
 import {
   SqliteMemoryClient,
   type SqliteMemoryStore,
@@ -34,112 +35,6 @@ function memoryCompactionMessage(
     },
   };
 }
-
-const richMessages: Message[] = [
-  { role: "system", content: "System instructions", metadata: { source: "system" } },
-  {
-    role: "user",
-    metadata: { composer: { entities: [{ id: "document-1" }] } },
-    content: [
-      { type: "text", text: "Inspect these", signature: "user-signature" },
-      {
-        type: "image",
-        source: { type: "url", url: "https://example.test/image.png" },
-        detail: "high",
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "aW1hZ2U=", mediaType: "image/png" },
-        detail: "low",
-      },
-      {
-        type: "document",
-        source: {
-          type: "url",
-          url: "https://example.test/report.pdf",
-          mediaType: "application/pdf",
-          filename: "report.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: {
-          type: "base64",
-          data: "cmVwb3J0",
-          mediaType: "application/pdf",
-          filename: "inline.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: { type: "text", text: "inline document", mediaType: "text/plain" },
-      },
-    ],
-  },
-  {
-    role: "assistant",
-    id: "assistant-1",
-    metadata: {
-      source: "assistant",
-      anvia: {
-        generation: {
-          provider: "test",
-          model: "test-model",
-          usage: {
-            inputTokens: 12,
-            outputTokens: 4,
-            totalTokens: 16,
-            cachedInputTokens: 3,
-            cacheCreationInputTokens: 0,
-          },
-        },
-      },
-    },
-    content: [
-      { type: "text", text: "Working", signature: "assistant-signature" },
-      {
-        type: "reasoning",
-        id: "reasoning-1",
-        text: "analysis summary",
-        content: [
-          { type: "text", text: "analysis", signature: "reasoning-signature" },
-          { type: "summary", text: " summary" },
-          { type: "encrypted", data: "ciphertext" },
-          { type: "redacted", data: "redacted-data" },
-        ],
-      },
-      {
-        type: "tool_call",
-        id: "tool-1",
-        callId: "call-1",
-        function: { name: "lookup", arguments: { query: "Anvia", limit: 3 } },
-        signature: "tool-signature",
-        additionalParams: { provider: "test" },
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "b3V0cHV0", mediaType: "image/png" },
-        detail: "auto",
-      },
-    ],
-  },
-  {
-    role: "tool",
-    metadata: { source: "tool" },
-    content: [
-      {
-        type: "tool_result",
-        id: "tool-1",
-        callId: "call-1",
-        toolName: "lookup",
-        content: [
-          { type: "text", text: "result" },
-          { type: "image", data: "cmVzdWx0", mediaType: "image/png" },
-        ],
-      },
-    ],
-  },
-];
 
 const tempDirs: string[] = [];
 const databases = new Set<DatabaseSync>();

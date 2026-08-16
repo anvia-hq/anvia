@@ -1,15 +1,19 @@
-import type { ClientDataMap, ClientStreamEvent, UIMessage } from "@anvia/client";
+import type { ClientDataMap, ClientMetadata, ClientStreamEvent, UIMessage } from "@anvia/client";
 import type { ContextUsage } from "@anvia/core/completion";
 
-export function contextUsageUpdateFromEvent<TData extends ClientDataMap>(
-  event: ClientStreamEvent<TData>,
-): ContextUsage | undefined {
+export function contextUsageUpdateFromEvent<
+  Metadata extends ClientMetadata,
+  Data extends ClientDataMap,
+>(event: ClientStreamEvent<Metadata, Data>): ContextUsage | undefined {
   return event.type === "message_end" || event.type === "turn_end" || event.type === "run_end"
     ? event.contextUsage
     : undefined;
 }
 
-export function contextUsageFromMessages(messages: UIMessage[]): ContextUsage | undefined {
+export function contextUsageFromMessages<
+  Metadata extends ClientMetadata,
+  Data extends ClientDataMap,
+>(messages: readonly UIMessage<Metadata, Data>[]): ContextUsage | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "assistant") continue;

@@ -1,9 +1,6 @@
-import {
-  type CompletionModelStreamEvent,
-  type CompletionRequest,
-  Message,
-} from "@anvia/core/completion";
+import type { CompletionModelStreamEvent, CompletionRequest } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
+import { Message } from "../../core/test/helpers/imports";
 import { GrokChatCompletionModel, GrokResponsesCompletionModel, tools } from "../src/index";
 
 describe("Grok completion models", () => {

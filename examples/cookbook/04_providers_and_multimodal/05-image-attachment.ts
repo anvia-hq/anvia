@@ -1,5 +1,4 @@
 import { Agent } from "@anvia/core/agent";
-import { Message, UserContent } from "@anvia/core/completion";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
@@ -15,15 +14,20 @@ const agent = new Agent({
 
 // Multimodal prompts combine text with image content parts.
 const response = await agent.generate({
-  prompt: Message.user([
-    UserContent.text("What is shown in this image?"),
-    UserContent.imageUrl(
-      "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
+  prompt: {
+    role: "user",
+    content: [
+      { type: "text", text: "What is shown in this image?" },
       {
+        type: "image",
+        image: {
+          type: "url",
+          url: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg",
+        },
         detail: "auto",
       },
-    ),
-  ]),
+    ],
+  },
 });
 
 if (response.status !== "completed") throw new Error("Unexpected tool approval request.");

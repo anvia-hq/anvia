@@ -1,6 +1,6 @@
 import type {
   ClientDataMap,
-  ClientDataSchemas,
+  ClientMetadata,
   ClientStreamCursor,
   ClientStreamEvent,
   ClientStreamRequest,
@@ -11,29 +11,20 @@ import type {
   ToolQuestionAnswer,
   UIMessage,
 } from "@anvia/client";
-import type { ContextUsage, Message } from "@anvia/core/completion";
+import type { ContextUsage } from "@anvia/core/completion";
 
-export type ClientConnectionOptions<TRequest, TData extends ClientDataMap> =
-  | {
-      endpoint: string | URL | ((request: TRequest) => string | URL);
-      transport?: never;
-      format?: "auto" | "jsonl" | "sse";
-      fetch?: typeof fetch;
-      headers?: HeadersInit | ((request: TRequest) => HeadersInit | Promise<HeadersInit>);
-      body?: (
-        request: TRequest,
-      ) => BodyInit | null | undefined | Promise<BodyInit | null | undefined>;
-      dataSchemas?: ClientDataSchemas<TData>;
-    }
-  | {
-      transport: ClientTransport<TRequest, TData>;
-      endpoint?: never;
-      format?: never;
-      fetch?: never;
-      headers?: never;
-      body?: never;
-      dataSchemas?: never;
-    };
+export type AnyClientTransport = ClientTransport<
+  ClientStreamRequest,
+  ClientDataMap,
+  ClientMetadata
+>;
+
+type TransportTypes<Transport extends AnyClientTransport> = NonNullable<Transport["_types"]>;
+
+export type TransportData<Transport extends AnyClientTransport> = TransportTypes<Transport>["data"];
+
+export type TransportMetadata<Transport extends AnyClientTransport> =
+  TransportTypes<Transport>["metadata"];
 
 export type ChatResumeCursor = ClientStreamCursor;
 export type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
@@ -44,11 +35,14 @@ export type ChatResumeOptions = {
   auto?: boolean;
 };
 
-export type ChatResumeState = {
-  version: 1;
+export type ChatResumeState<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
+  version: 2;
   streamId: string;
   lastEventId: number;
-  messages: UIMessage[];
+  messages: readonly UIMessage<Metadata, Data>[];
 };
 
 export type ToolApprovalDecisionInput = {
@@ -60,82 +54,61 @@ export type ToolApprovalDecisionInput = {
 
 export type ToolQuestionAnswerInput = {
   questionId: string;
-  answers: ToolQuestionAnswer[];
+  answers: readonly ToolQuestionAnswer[];
   question?: ToolQuestion;
 };
 
 export type HumanInputOptions = {
-  endpoint?: string | URL;
-  fetch?: typeof fetch;
   decideApproval?: (decision: ToolApprovalDecisionInput) => Promise<ToolApproval | undefined>;
   answerQuestion?: (answer: ToolQuestionAnswerInput) => Promise<ToolQuestion | undefined>;
 };
 
 export type HumanInputState = {
-  approvals: { all: ToolApproval[]; pending: ToolApproval[] };
-  questions: { all: ToolQuestion[]; pending: ToolQuestion[] };
+  approvals: { all: readonly ToolApproval[]; pending: readonly ToolApproval[] };
+  questions: { all: readonly ToolQuestion[]; pending: readonly ToolQuestion[] };
 };
 
-export type ChatSuggestion = {
+export type ChatSuggestion<Metadata extends ClientMetadata = ClientMetadata> = {
   id: string;
   prompt: string;
   label?: string;
-  metadata?: UIMessage["metadata"];
+  metadata?: Metadata;
 };
 
-export type SendMessageInput =
-  | string
-  | UIMessage
-  | {
-      id?: string;
-      text?: string;
-      attachments?: CreateUIAttachment[];
-      metadata?: UIMessage["metadata"];
-    };
-
-export type CreateChatRequestArgs = {
-  uiMessages: UIMessage[];
-  messages: Message[];
-  resume?: ChatResumeCursor;
+export type SendMessageInput<Metadata extends ClientMetadata = ClientMetadata> = {
+  text?: string;
+  attachments?: readonly CreateUIAttachment[];
+  metadata?: Metadata;
 };
 
 export type UseChatStatus = "ready" | "submitted" | "streaming" | "error";
 
-type UseChatCommonOptions<TData extends ClientDataMap> = {
-  initialMessages?: UIMessage[];
+export type UseChatOptions<Transport extends AnyClientTransport = ClientTransport> = {
+  transport: Transport;
+  initialMessages?: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
   resume?: ChatResumeOptions;
   humanInput?: HumanInputOptions;
-  suggestions?: ChatSuggestion[];
-  onEvent?: (event: ClientStreamEvent<TData>) => void;
-  onError?: (error: Error) => void;
+  suggestions?: readonly ChatSuggestion<TransportMetadata<Transport>>[];
+  onEvent?(event: ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>): void;
+  onError?(error: Error): void;
 };
 
-type ChatRequestFactoryOptions<TRequest> = [ClientStreamRequest] extends [TRequest]
-  ? { createRequest?: (args: CreateChatRequestArgs) => TRequest }
-  : { createRequest: (args: CreateChatRequestArgs) => TRequest };
-
-export type UseChatOptions<
-  TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
-> = ClientConnectionOptions<TRequest, TData> &
-  UseChatCommonOptions<TData> &
-  ChatRequestFactoryOptions<TRequest>;
-
-export type SetMessages = (
-  messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[]),
+export type SetMessages<Metadata extends ClientMetadata, Data extends ClientDataMap> = (
+  messages:
+    | readonly UIMessage<Metadata, Data>[]
+    | ((messages: readonly UIMessage<Metadata, Data>[]) => readonly UIMessage<Metadata, Data>[]),
 ) => void;
 
-export type UseChatResult<TData extends ClientDataMap = ClientDataMap> = {
-  messages: UIMessage[];
-  events: ClientStreamEvent<TData>[];
+export type UseChatResult<Transport extends AnyClientTransport = ClientTransport> = {
+  messages: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
+  events: readonly ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>[];
   contextUsage: ContextUsage | undefined;
-  suggestions: ChatSuggestion[];
-  setMessages: SetMessages;
-  sendMessage(input: SendMessageInput): Promise<void>;
-  send(input?: string): Promise<void>;
+  suggestions: readonly ChatSuggestion<TransportMetadata<Transport>>[];
+  setMessages: SetMessages<TransportMetadata<Transport>, TransportData<Transport>>;
+  sendMessage(input: SendMessageInput<TransportMetadata<Transport>>): Promise<void>;
   regenerate(): Promise<void>;
   stop(): void;
-  reset(messages?: UIMessage[]): void;
+  reset(): void;
   status: UseChatStatus;
   error: Error | undefined;
   text: string;
@@ -145,7 +118,10 @@ export type UseChatResult<TData extends ClientDataMap = ClientDataMap> = {
   humanInput: HumanInputState;
   decidingApprovals: ReadonlySet<string>;
   answeringQuestions: ReadonlySet<string>;
-  approveTool(approvalId: string, reason?: string): Promise<void>;
-  rejectTool(approvalId: string, reason?: string): Promise<void>;
-  answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]): Promise<void>;
+  approveTool(options: { approvalId: string; reason?: string }): Promise<void>;
+  rejectTool(options: { approvalId: string; reason?: string }): Promise<void>;
+  answerToolQuestion(options: {
+    questionId: string;
+    answers: readonly ToolQuestionAnswer[];
+  }): Promise<void>;
 };

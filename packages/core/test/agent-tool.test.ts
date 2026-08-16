@@ -561,7 +561,7 @@ describe("Agent.asTool", () => {
     await expect(tool.call({ prompt: "do work" })).resolves.toBe("delegated");
     expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
       role: "user",
-      content: [{ type: "text", text: "do work" }],
+      content: "do work",
     });
   });
 

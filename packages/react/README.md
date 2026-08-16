@@ -3,17 +3,19 @@
 React controllers for the explicit `@anvia/client` stream protocol.
 
 ```tsx
-import type { UIMessage } from "@anvia/client";
+import { createHttpClientTransport, type UIMessage } from "@anvia/client";
 import { useChat } from "@anvia/react";
 
+const transport = createHttpClientTransport({ endpoint: "/api/chat" });
+
 export function Chat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({ transport });
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void chat.sendMessage("Hello");
+        void chat.sendMessage({ text: "Hello" });
       }}
     >
       {chat.messages.map((message: UIMessage) => (
@@ -30,42 +32,47 @@ export function Chat() {
 }
 ```
 
-`useChat` and `useCompletion` require exactly one connection boundary:
+`useChat` and `useCompletion` require an explicit transport boundary:
 
 ```ts
-useChat({ endpoint: "/api/chat" });
+const transport = createHttpClientTransport({ endpoint: "/api/chat" });
+useChat({ transport });
 
 useChat({
-  transport: createDirectClientTransport(async (request) => handleChat(request)),
+  transport: createDirectClientTransport({
+    handler: ({ request, abortSignal }) => handleChat({ request, abortSignal }),
+  }),
 });
 ```
 
 Import transports, protocol types, `UIMessage`, and conversion helpers from `@anvia/client`.
 `@anvia/react` deliberately does not re-export them.
 
-Both hooks:
+`useChat`:
 
-- consume only framed `ClientStreamFrame` values;
-- expose `ready | submitted | streaming | error` status;
-- keep `UIMessage[]` locally and send core `Message[]` in `ClientStreamRequest`;
-- accept a custom `createRequest({ uiMessages, messages, resume })` for endpoint-specific request
-  types;
-- expose canonical events through `onEvent` and the returned `events` array;
-- support optional resumable streams and tool approval/question state.
+- consumes only framed `ClientStreamFrame` values;
+- exposes `ready | submitted | streaming | error` status;
+- keeps readonly `UIMessage[]` locally and sends core `Message[]` in `ClientStreamRequest`;
+- exposes canonical events through `onEvent` and the returned `events` array;
+- supports optional resumable streams and tool approval/question state.
 
 The default request is:
 
 ```ts
 type ClientStreamRequest = {
-  messages: Message[];
-  metadata?: JsonValue;
+  messages: readonly Message[];
+  metadata?: JsonObject;
   resume?: { streamId: string; after: number };
 };
 ```
 
-For resumable chat, pair `useChat({ endpoint, resume: { key } })` with
-`createClientStreamResponse(..., { resumable })` and `resumeClientStreamResponse(...)` on the
+For resumable chat, pair `useChat({ transport, resume: { key } })` with
+`createClientStreamResponse({ events, resumable })` and `resumeClientStreamResponse(...)` on the
 server.
+
+`useCompletion({ transport })` is a genuine single-turn controller. Call
+`complete({ prompt })`, or manage `input` and call `submit()`. Each call replaces the previous
+completion, events, and usage; it never exposes or accumulates chat messages.
 
 `useSmoothStreamText` and `useSmoothStreamItems` only smooth presentation. They do not change
 protocol events or message state.

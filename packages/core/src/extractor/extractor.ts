@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  type AssistantContent,
+  type AssistantContentPart,
   CompletionCapabilityError,
   type CompletionModel,
   type CompletionResult,
@@ -161,12 +161,12 @@ function resolveExtractionRetries(
 }
 
 function extractSubmittedData<Output>(
-  content: readonly AssistantContent[],
+  content: readonly AssistantContentPart[],
   schema: ZodSchema<Output>,
 ): Output {
   const submitted = content
-    .filter((item) => item.type === "tool_call")
-    .filter((toolCall) => toolCall.function.name === SUBMIT_TOOL_NAME)
+    .filter((item) => item.type === "tool-call")
+    .filter((toolCall) => toolCall.toolName === SUBMIT_TOOL_NAME)
     .at(-1);
 
   if (submitted === undefined) {
@@ -174,7 +174,7 @@ function extractSubmittedData<Output>(
   }
 
   try {
-    return schema.parse(submitted.function.arguments);
+    return schema.parse(submitted.input);
   } catch (error) {
     throw new Error("Submitted data failed output schema validation", { cause: error });
   }

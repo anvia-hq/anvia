@@ -1,16 +1,18 @@
 import { Agent } from "@anvia/core/agent";
 import {
-  AssistantContent,
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  Message,
-  ToolContent,
   Usage,
-  UserContent,
 } from "@anvia/core/completion";
 import type { Tool } from "@anvia/core/tool";
 import { describe, expect, it } from "vitest";
+import {
+  AssistantContent,
+  Message,
+  ToolContent,
+  UserContent,
+} from "../../core/test/helpers/imports";
 import {
   AnthropicCompletionModel,
   anthropicMessageHelpers,
@@ -108,6 +110,52 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
+  it("marks failed and denied tool results as errors", () => {
+    const params = toAnthropicMessagesParams("claude-sonnet-4-20250514", {
+      chatHistory: [
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "tool_error",
+              toolName: "lookup",
+              output: { type: "error-json", value: { code: "FAILED" } },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "tool_denied",
+              toolName: "delete",
+              output: { type: "execution-denied", reason: "Not allowed." },
+            },
+          ],
+        },
+      ],
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool_error",
+            content: '{"code":"FAILED"}',
+            is_error: true,
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool_denied",
+            content: "Not allowed.",
+            is_error: true,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("maps multimodal tool results to Anthropic content blocks", () => {
     const params = toAnthropicMessagesParams("claude-sonnet-4-20250514", {
       chatHistory: [
@@ -119,7 +167,11 @@ describe("Anthropic Messages mapping", () => {
             "toolu_1",
             [
               { type: "text", text: '{"coordMap":"0,0,100,100,100,100"}' },
-              { type: "image", data: "base64-png", mediaType: "image/png" },
+              {
+                type: "file",
+                data: { type: "data", data: "base64-png" },
+                mediaType: "image/png",
+              },
             ],
             "fc_1",
           ),
@@ -191,13 +243,11 @@ describe("Anthropic Messages mapping", () => {
     expect(params.messages).toEqual([
       {
         role: "user",
-        content: [
-          { type: "text", text: "<file id: owner>\nMira owns launch checklists.\n</file>\n" },
-        ],
+        content: "<file id: owner>\nMira owns launch checklists.\n</file>\n",
       },
       {
         role: "user",
-        content: [{ type: "text", text: "What is the owner?" }],
+        content: "What is the owner?",
       },
     ]);
   });
@@ -246,13 +296,13 @@ describe("Anthropic Messages mapping", () => {
       anthropicMessageHelpers.messageToAnthropicMessages(
         Message.user([UserContent.documentBase64("abc123", "text/csv")]),
       ),
-    ).toThrow("Anthropic Messages only supports PDF document attachments");
+    ).toThrow("Anthropic Messages only supports image and PDF file attachments");
 
     expect(() =>
       anthropicMessageHelpers.messageToAnthropicMessages(
         Message.assistant([AssistantContent.imageBase64("abc123", "image/png")]),
       ),
-    ).toThrow("Anthropic Messages does not support image content in assistant history");
+    ).toThrow("Anthropic Messages does not support image or file content in assistant history");
   });
 
   it("maps Anthropic tool_use blocks back to internal tool calls", () => {
@@ -274,7 +324,9 @@ describe("Anthropic Messages mapping", () => {
       },
     });
 
-    expect(response.choice).toEqual([AssistantContent.toolCall("toolu_1", "add", { x: 2, y: 5 })]);
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("toolu_1", "add", { x: 2, y: 5 }, "toolu_1"),
+    ]);
     expect(response.usage).toEqual({
       ...Usage.empty(),
       inputTokens: 15,
@@ -317,12 +369,12 @@ describe("Anthropic Messages mapping", () => {
       {
         type: "reasoning",
         text: "I should inspect the inputs.",
-        content: [{ type: "text", text: "I should inspect the inputs.", signature: "sig_1" }],
+        details: [{ type: "text", text: "I should inspect the inputs.", signature: "sig_1" }],
       },
       {
         type: "reasoning",
         text: "",
-        content: [{ type: "redacted", data: "redacted" }],
+        details: [{ type: "redacted", data: "redacted" }],
       },
       AssistantContent.text("Done."),
     ]);
@@ -767,10 +819,12 @@ describe("Anthropic Messages mapping", () => {
     expect(events).toContainEqual({
       type: "tool_call",
       turn: 1,
-      toolCall: AssistantContent.toolCall("toolu_1", "Write", {
-        file_path: "src/main.tsx",
-        content: "hello",
-      }),
+      toolCall: AssistantContent.toolCall(
+        "toolu_1",
+        "Write",
+        { file_path: "src/main.tsx", content: "hello" },
+        "toolu_1",
+      ),
     });
     expect(toolCalls).toEqual([{ file_path: "src/main.tsx", content: "hello" }]);
   });
@@ -807,10 +861,12 @@ describe("Anthropic Messages mapping", () => {
     expect(events).toContainEqual({
       type: "tool_call",
       turn: 1,
-      toolCall: AssistantContent.toolCall("toolu_1", "Write", {
-        file_path: "src/main.tsx",
-        content: "hello",
-      }),
+      toolCall: AssistantContent.toolCall(
+        "toolu_1",
+        "Write",
+        { file_path: "src/main.tsx", content: "hello" },
+        "toolu_1",
+      ),
     });
     expect(toolCalls).toEqual([{ file_path: "src/main.tsx", content: "hello" }]);
   });

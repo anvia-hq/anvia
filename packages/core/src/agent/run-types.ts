@@ -6,9 +6,10 @@ import type {
   Message as MessageType,
   ProviderToolCall,
   ReasoningContentType,
-  ToolCall,
   ToolCallArgumentsMode,
-  ToolResultContent,
+  ToolCallPart,
+  ToolResultContentPart,
+  ToolResultOutput,
   Usage,
   UserMessage,
 } from "../completion/index";
@@ -117,7 +118,7 @@ export type AgentDeltaEvent =
       contentType?: ReasoningContentType;
       signature?: string;
     }
-  | { type: "tool_call"; toolCall: ToolCall }
+  | { type: "tool_call"; toolCall: ToolCallPart }
   | { type: "source"; source: CompletionSource }
   | { type: "provider_tool_call"; toolCall: ProviderToolCall };
 
@@ -171,7 +172,7 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
   | {
       type: "tool_call";
       turn: number;
-      toolCall: ToolCall;
+      toolCall: ToolCallPart;
     }
   | {
       type: "source";
@@ -191,8 +192,9 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
       callId?: string;
       internalCallId: string;
       args: string;
+      output: ToolResultOutput;
       result: string;
-      structuredResult?: ToolResultContent[] | undefined;
+      structuredResult?: readonly ToolResultContentPart[] | undefined;
     }
   | {
       type: "turn_end";

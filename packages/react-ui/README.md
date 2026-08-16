@@ -3,11 +3,14 @@
 Composable React UI primitives for Anvia chat and completion experiences.
 
 ```tsx
+import { createHttpClientTransport } from "@anvia/client";
 import { useChat } from "@anvia/react";
 import { ChatProvider, Composer, Message, Thread } from "@anvia/react-ui";
 
 export function SupportChat() {
-  const chat = useChat({ endpoint: "/api/chat" });
+  const chat = useChat({
+    transport: createHttpClientTransport({ endpoint: "/api/chat" }),
+  });
   const triggers = [
     {
       id: "people",

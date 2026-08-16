@@ -1,5 +1,5 @@
 import type { ClientStreamEvent } from "@anvia/client";
-import type { ToolResultContent } from "@anvia/core/completion";
+import type { ToolResultContentPart } from "@anvia/core/completion";
 import { type Dispatch, type SetStateAction, useState } from "react";
 import type { StudioTranscriptChildAgentEvent } from "../../../../types";
 import { formatToolValue } from "../shared/format";
@@ -27,7 +27,7 @@ export function usePlaygroundTranscript(): {
     callId: string | undefined;
     args: string;
     result: string;
-    structuredResult?: ToolResultContent[];
+    structuredResult?: readonly ToolResultContentPart[];
   }) => void;
   assignAssistantTraceId: (traceId: string) => void;
   cancelPendingRun: (durationMs: number) => void;
@@ -319,7 +319,7 @@ function appendToolResult(
     callId: string | undefined;
     args: string;
     result: string;
-    structuredResult?: ToolResultContent[];
+    structuredResult?: readonly ToolResultContentPart[];
   },
 ): TranscriptEntry[] {
   const next = withoutPendingAssistant(entries);

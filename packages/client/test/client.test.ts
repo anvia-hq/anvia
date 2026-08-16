@@ -2,7 +2,6 @@ import type { AgentStreamEvent } from "@anvia/core/agent";
 import {
   type CompletionStreamEvent,
   type Message as CoreMessage,
-  Message,
   Usage,
 } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
@@ -16,35 +15,63 @@ import {
   createHttpClientTransport,
   messagesToUIMessages,
   parseClientStreamEvent,
+  parseClientStreamFrame,
+  parseClientStreamRequest,
+  parseUIMessage,
   uiMessagesToMessages,
 } from "../src";
 
+function CompileClientBoundary() {
+  const events = values<ClientStreamEvent>([]);
+  // @ts-expect-error Stream adapters accept one options object.
+  completionToClientStream(events);
+  // @ts-expect-error Direct transports accept one options object.
+  createDirectClientTransport(() => events);
+  const transport = createDirectClientTransport({ handler: () => events });
+  // @ts-expect-error Transport send accepts one options object, not a bare request.
+  transport.send({ messages: [] });
+}
+void CompileClientBoundary;
+
 describe("message boundary", () => {
   it("round-trips model IDs, metadata, reasoning, attachments, and tool results", () => {
-    const messages: CoreMessage[] = [
-      Message.user([
-        { type: "text", text: "Look", signature: "user_sig" },
-        { type: "image", source: { type: "url", url: "https://example.com/image.png" } },
-      ]),
-      Message.assistant(
-        [
+    const messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Look", signature: "user_sig" },
+          { type: "image", image: { type: "url", url: "https://example.com/image.png" } },
+        ],
+      },
+      {
+        role: "assistant",
+        id: "provider_message_1",
+        metadata: { custom: true },
+        content: [
           { type: "reasoning", id: "reason_1", text: "Think" },
           {
-            type: "tool_call",
-            id: "tool_1",
+            type: "tool-call",
+            toolCallId: "tool_1",
             callId: "call_1",
-            function: { name: "weather", arguments: { city: "Jakarta" } },
+            toolName: "weather",
+            input: { city: "Jakarta" },
             signature: "tool_sig",
-            additionalParams: { provider: "value" },
           },
         ],
-        { id: "provider_message_1", metadata: { custom: true } },
-      ),
-      Message.toolResult("tool_1", [{ type: "text", text: "Sunny" }], {
-        callId: "call_1",
-        toolName: "weather",
-      }),
-    ];
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "tool_1",
+            callId: "call_1",
+            toolName: "weather",
+            output: { type: "content", value: [{ type: "text", text: "Sunny" }] },
+          },
+        ],
+      },
+    ] satisfies CoreMessage[];
 
     const ui = messagesToUIMessages(messages);
     expect(ui[1]).toMatchObject({
@@ -75,8 +102,8 @@ describe("native stream adapters", () => {
       },
     };
     const events = await collect(
-      agentToClientStream(
-        values<AgentStreamEvent>([
+      agentToClientStream({
+        events: values<AgentStreamEvent>([
           { type: "memory_compaction", ...memoryCompaction },
           {
             type: "final",
@@ -91,8 +118,8 @@ describe("native stream adapters", () => {
             },
           },
         ]),
-        { runId: "client_run" },
-      ),
+        runId: "client_run",
+      }),
     );
 
     expect(events.find((event) => event.type === "memory_compaction")).toEqual({
@@ -113,8 +140,8 @@ describe("native stream adapters", () => {
   });
 
   it("always exposes tool-call deltas without an include option", async () => {
-    const stream = completionToClientStream(
-      values<CompletionStreamEvent>([
+    const stream = completionToClientStream({
+      events: values<CompletionStreamEvent>([
         {
           type: "tool_call_delta",
           id: "tool_1",
@@ -129,9 +156,10 @@ describe("native stream adapters", () => {
         {
           type: "tool_call",
           toolCall: {
-            type: "tool_call",
-            id: "tool_1",
-            function: { name: "weather", arguments: { city: "Jakarta" } },
+            type: "tool-call",
+            toolCallId: "tool_1",
+            toolName: "weather",
+            input: { city: "Jakarta" },
           },
         },
         {
@@ -141,9 +169,10 @@ describe("native stream adapters", () => {
             text: "",
             content: [
               {
-                type: "tool_call",
-                id: "tool_1",
-                function: { name: "weather", arguments: { city: "Jakarta" } },
+                type: "tool-call",
+                toolCallId: "tool_1",
+                toolName: "weather",
+                input: { city: "Jakarta" },
               },
             ],
             usage: Usage.empty(),
@@ -151,8 +180,8 @@ describe("native stream adapters", () => {
           },
         },
       ]),
-      { runId: "client_run" },
-    );
+      runId: "client_run",
+    });
     const events = await collect(stream);
     expect(events.filter((event) => event.type === "tool_call_delta")).toHaveLength(2);
     const completedCalls = events.filter((event) => event.type === "tool_call_end");
@@ -168,14 +197,14 @@ describe("native stream adapters", () => {
       {
         type: "turn_start",
         turn: 1,
-        prompt: Message.user("private prompt"),
-        history: [Message.user("private history")],
+        prompt: { role: "user", content: "private prompt" },
+        history: [{ role: "user", content: "private history" }],
       },
       {
         type: "generation_start",
         turn: 1,
         request: {
-          chatHistory: [Message.user("private request")],
+          chatHistory: [{ role: "user", content: "private request" }],
           documents: [],
           tools: [],
         },
@@ -203,7 +232,13 @@ describe("native stream adapters", () => {
         },
       },
     ]);
-    const events = await collect(agentToClientStream(native, { runId: "client_run" }));
+    const events = await collect(
+      agentToClientStream({
+        events: native,
+        runId: "client_run",
+        metadata: { tenantId: "acme" },
+      }),
+    );
     const serialized = JSON.stringify(events);
     expect(serialized).not.toContain("private prompt");
     expect(serialized).not.toContain("private history");
@@ -211,17 +246,55 @@ describe("native stream adapters", () => {
     expect(serialized).not.toContain('"private":true');
     expect(events.find((event) => event.type === "run_end")).toMatchObject({
       runId: "client_run",
-      metadata: { nativeRunId: "native_run" },
+      metadata: { tenantId: "acme" },
     });
+  });
+
+  it("keeps typed adapter metadata valid through terminal events", async () => {
+    const transport = createDirectClientTransport({
+      handler: () =>
+        agentToClientStream({
+          metadata: { tenantId: "acme" },
+          events: values<AgentStreamEvent>([
+            {
+              type: "final",
+              result: {
+                status: "completed",
+                runId: "native_run",
+                text: "done",
+                output: "done",
+                usage: Usage.empty(),
+                messages: [],
+              },
+            },
+          ]),
+        }),
+      metadataSchema: {
+        safeParse(value: unknown) {
+          return typeof value === "object" &&
+            value !== null &&
+            "tenantId" in value &&
+            value.tenantId === "acme"
+            ? { success: true as const, data: { tenantId: "acme" } }
+            : { success: false as const };
+        },
+      },
+    });
+
+    const frames = await collect(transport.send({ request: { messages: [] } }));
+    expect(frames.at(-1)).toMatchObject({ type: "stream_end", status: "completed" });
+    expect(
+      frames.find((frame) => frame.type === "stream_event" && frame.event.type === "run_end"),
+    ).toMatchObject({ event: { metadata: { tenantId: "acme" } } });
   });
 
   it("masks native errors by default", async () => {
     const events = await collect(
-      completionToClientStream(
-        values<CompletionStreamEvent>([
+      completionToClientStream({
+        events: values<CompletionStreamEvent>([
           { type: "error", error: new Error("database password"), usage: Usage.empty() },
         ]),
-      ),
+      }),
     );
     expect(events.find((event) => event.type === "error")).toMatchObject({
       error: { message: "An unexpected error occurred." },
@@ -244,13 +317,13 @@ describe("native stream adapters", () => {
     ];
 
     const suppressed = await collect(
-      completionToClientStream(values(completion()), { mapOutput: () => undefined }),
+      completionToClientStream({ events: values(completion()), mapOutput: () => undefined }),
     );
     expect(suppressed.find((event) => event.type === "run_end")).not.toHaveProperty("output");
     expect(JSON.stringify(suppressed)).not.toContain("secret");
 
     const nulled = await collect(
-      completionToClientStream(values(completion()), { mapOutput: () => null }),
+      completionToClientStream({ events: values(completion()), mapOutput: () => null }),
     );
     expect(nulled.find((event) => event.type === "run_end")).toMatchObject({ output: null });
   });
@@ -259,8 +332,8 @@ describe("native stream adapters", () => {
     const sharedSource = { type: "url" as const, url: "https://example.com/a", id: "source_a" };
     const sharedToolCall = { id: "provider_a", name: "search", status: "completed" };
     const events = await collect(
-      completionToClientStream(
-        values<CompletionStreamEvent>([
+      completionToClientStream({
+        events: values<CompletionStreamEvent>([
           { type: "source", source: sharedSource },
           { type: "provider_tool_call", toolCall: sharedToolCall },
           {
@@ -282,7 +355,7 @@ describe("native stream adapters", () => {
             },
           },
         ]),
-      ),
+      }),
     );
 
     expect(events.filter((event) => event.type === "source")).toHaveLength(2);
@@ -291,8 +364,8 @@ describe("native stream adapters", () => {
 
   it("finalizes anonymous reasoning without restarting or clearing it", async () => {
     const events = await collect(
-      completionToClientStream(
-        values<CompletionStreamEvent>([
+      completionToClientStream({
+        events: values<CompletionStreamEvent>([
           { type: "reasoning_delta", delta: "Think", contentType: "summary" },
           {
             type: "final",
@@ -303,7 +376,7 @@ describe("native stream adapters", () => {
                 {
                   type: "reasoning",
                   text: "Thinking",
-                  content: [{ type: "summary", text: "Thinking" }],
+                  details: [{ type: "summary", text: "Thinking" }],
                 },
                 { type: "text", text: "answer" },
               ],
@@ -312,7 +385,7 @@ describe("native stream adapters", () => {
             },
           },
         ]),
-      ),
+      }),
     );
     expect(events.filter((event) => event.type === "reasoning_start")).toHaveLength(1);
 
@@ -328,8 +401,8 @@ describe("native stream adapters", () => {
 
   it("keeps identified and anonymous reasoning parts distinct at finalization", async () => {
     const events = await collect(
-      completionToClientStream(
-        values<CompletionStreamEvent>([
+      completionToClientStream({
+        events: values<CompletionStreamEvent>([
           { type: "reasoning_delta", delta: "anonymous" },
           { type: "reasoning_delta", id: "reason_1", delta: "identified" },
           {
@@ -347,7 +420,7 @@ describe("native stream adapters", () => {
             },
           },
         ]),
-      ),
+      }),
     );
     const final = events.find((event) => event.type === "message_end");
     const reasoning = final?.parts?.filter((part) => part.type === "reasoning") ?? [];
@@ -357,15 +430,16 @@ describe("native stream adapters", () => {
 
   it("keeps tool results on the provider tool part using its explicit ID", async () => {
     const events = await collect(
-      agentToClientStream(
-        values<AgentStreamEvent>([
+      agentToClientStream({
+        events: values<AgentStreamEvent>([
           {
             type: "tool_call",
             turn: 1,
             toolCall: {
-              type: "tool_call",
-              id: "provider_tool_1",
-              function: { name: "weather", arguments: { city: "Jakarta" } },
+              type: "tool-call",
+              toolCallId: "provider_tool_1",
+              toolName: "weather",
+              input: { city: "Jakarta" },
             },
           },
           {
@@ -374,9 +448,10 @@ describe("native stream adapters", () => {
             response: {
               choice: [
                 {
-                  type: "tool_call",
-                  id: "provider_tool_1",
-                  function: { name: "weather", arguments: { city: "Jakarta" } },
+                  type: "tool-call",
+                  toolCallId: "provider_tool_1",
+                  toolName: "weather",
+                  input: { city: "Jakarta" },
                 },
               ],
               usage: Usage.empty(),
@@ -390,6 +465,7 @@ describe("native stream adapters", () => {
             toolCallId: "provider_tool_1",
             internalCallId: "internal_tool_1",
             args: '{"city":"Jakarta"}',
+            output: { type: "text", value: "Sunny" },
             result: "Sunny",
           },
           {
@@ -404,8 +480,8 @@ describe("native stream adapters", () => {
             },
           },
         ]),
-        { runId: "client_run" },
-      ),
+        runId: "client_run",
+      }),
     );
     const call = events.find((event) => event.type === "tool_call_end");
     const result = events.find((event) => event.type === "tool_result");
@@ -419,18 +495,20 @@ describe("native stream adapters", () => {
 
   it("associates concurrent same-name tool results by provider tool ID", async () => {
     const first = {
-      type: "tool_call" as const,
-      id: "provider_tool_a",
-      function: { name: "weather", arguments: { city: "Jakarta" } },
+      type: "tool-call" as const,
+      toolCallId: "provider_tool_a",
+      toolName: "weather",
+      input: { city: "Jakarta" },
     };
     const second = {
-      type: "tool_call" as const,
-      id: "provider_tool_b",
-      function: { name: "weather", arguments: { city: "Bandung" } },
+      type: "tool-call" as const,
+      toolCallId: "provider_tool_b",
+      toolName: "weather",
+      input: { city: "Bandung" },
     };
     const events = await collect(
-      agentToClientStream(
-        values<AgentStreamEvent>([
+      agentToClientStream({
+        events: values<AgentStreamEvent>([
           { type: "tool_call", turn: 1, toolCall: first },
           { type: "tool_call", turn: 1, toolCall: second },
           {
@@ -445,6 +523,7 @@ describe("native stream adapters", () => {
             toolCallId: "provider_tool_b",
             internalCallId: "internal_b",
             args: '{"city":"Bandung"}',
+            output: { type: "text", value: "Cloudy" },
             result: "Cloudy",
           },
           {
@@ -454,6 +533,7 @@ describe("native stream adapters", () => {
             toolCallId: "provider_tool_a",
             internalCallId: "internal_a",
             args: '{"city":"Jakarta"}',
+            output: { type: "text", value: "Sunny" },
             result: "Sunny",
           },
           {
@@ -468,7 +548,7 @@ describe("native stream adapters", () => {
             },
           },
         ]),
-      ),
+      }),
     );
     const calls = events.filter((event) => event.type === "tool_call_end");
     const results = events.filter((event) => event.type === "tool_result");
@@ -479,9 +559,109 @@ describe("native stream adapters", () => {
       calls.find((event) => event.toolCallId === "provider_tool_a")?.partId,
     );
   });
+
+  it("preserves text output types and exposes failed tools as errors", async () => {
+    const textCall = {
+      type: "tool-call" as const,
+      toolCallId: "text_tool",
+      toolName: "text_tool",
+      input: {},
+    };
+    const errorCall = {
+      type: "tool-call" as const,
+      toolCallId: "error_tool",
+      toolName: "error_tool",
+      input: {},
+    };
+    const events = await collect(
+      agentToClientStream({
+        events: values<AgentStreamEvent>([
+          { type: "tool_call", turn: 1, toolCall: textCall },
+          { type: "tool_call", turn: 1, toolCall: errorCall },
+          {
+            type: "turn_end",
+            turn: 1,
+            response: {
+              choice: [textCall, errorCall],
+              usage: Usage.empty(),
+              rawResponse: {},
+            },
+          },
+          {
+            type: "tool_result",
+            turn: 1,
+            toolName: "text_tool",
+            toolCallId: "text_tool",
+            internalCallId: "internal_text",
+            args: "{}",
+            output: { type: "text", value: '{"looks":"json"}' },
+            result: '{"looks":"json"}',
+          },
+          {
+            type: "tool_result",
+            turn: 1,
+            toolName: "error_tool",
+            toolCallId: "error_tool",
+            internalCallId: "internal_error",
+            args: "{}",
+            output: { type: "error-json", value: { code: "FAILED" } },
+            result: '{"code":"FAILED"}',
+          },
+          {
+            type: "final",
+            result: {
+              status: "completed",
+              runId: "native_run",
+              output: "done",
+              text: "done",
+              usage: Usage.empty(),
+              messages: [],
+            },
+          },
+        ]),
+      }),
+    );
+    const results = events.filter((event) => event.type === "tool_result");
+
+    expect(results.find((event) => event.toolCallId === "text_tool")?.result).toEqual({
+      status: "success",
+      output: '{"looks":"json"}',
+    });
+    expect(results.find((event) => event.toolCallId === "error_tool")?.result).toEqual({
+      status: "error",
+      error: {
+        message: "Tool execution failed.",
+        code: "tool_execution_error",
+        details: { code: "FAILED" },
+      },
+    });
+  });
 });
 
 describe("protocol and transport", () => {
+  it("rejects v1 frames and legacy UI-message requests", () => {
+    expect(() =>
+      parseClientStreamFrame({
+        type: "stream_start",
+        protocol: "anvia.client.v1",
+        streamId: "stream_1",
+        eventId: 0,
+        resumable: false,
+      }),
+    ).toThrow("protocol v1 is not supported");
+    expect(() =>
+      parseClientStreamRequest({
+        messages: [
+          {
+            id: "message_1",
+            role: "user",
+            parts: [{ id: "part_1", type: "text", text: "legacy" }],
+          },
+        ],
+      }),
+    ).toThrow("request.messages must be Message[]");
+  });
+
   it("validates memory compaction as a canonical client event", () => {
     expect(
       parseClientStreamEvent({
@@ -546,7 +726,7 @@ describe("protocol and transport", () => {
           [
             {
               type: "stream_start",
-              protocol: "anvia.client.v1",
+              protocol: "anvia.client.v2",
               streamId: "stream_1",
               eventId: 0,
               resumable: false,
@@ -564,13 +744,13 @@ describe("protocol and transport", () => {
           {
             headers: {
               "content-type": "application/x-ndjson",
-              "x-anvia-stream-protocol": "anvia.client.v1",
+              "x-anvia-stream-protocol": "anvia.client.v2",
             },
           },
         ),
     });
 
-    const frames = await collect(transport.send({ messages: [] }));
+    const frames = await collect(transport.send({ request: { messages: [] } }));
     expect(frames.find((frame) => frame.type === "stream_event")?.event).toMatchObject({
       name: "count",
       data: 42,
@@ -589,44 +769,47 @@ describe("protocol and transport", () => {
   });
 
   it("frames direct streams even though no HTTP boundary is involved", async () => {
-    const transport = createDirectClientTransport((_request: ClientStreamRequest) =>
-      values<ClientStreamEvent>([
-        { type: "run_start", runId: "run_1", source: "completion" },
-        { type: "run_end", runId: "run_1", status: "completed" },
-      ]),
-    );
-    const frames = await collect(transport.send({ messages: [] }));
+    const transport = createDirectClientTransport({
+      handler: ({ request: _request }: { request: ClientStreamRequest }) =>
+        values<ClientStreamEvent>([
+          { type: "run_start", runId: "run_1", source: "completion" },
+          { type: "run_end", runId: "run_1", status: "completed" },
+        ]),
+    });
+    const frames = await collect(transport.send({ request: { messages: [] } }));
     expect(frames.map((frame) => frame.type)).toEqual([
       "stream_start",
       "stream_event",
       "stream_event",
       "stream_end",
     ]);
-    expect(frames[0]).toMatchObject({ protocol: "anvia.client.v1", resumable: false });
+    expect(frames[0]).toMatchObject({ protocol: "anvia.client.v2", resumable: false });
   });
 
   it("propagates direct transport cancellation into the handled stream", async () => {
     let finishNext: ((result: IteratorResult<ClientStreamEvent>) => void) | undefined;
     let closed = false;
-    const transport = createDirectClientTransport((_request: ClientStreamRequest, options) => ({
-      [Symbol.asyncIterator]() {
-        expect(options.signal).toBeDefined();
-        return {
-          next: () =>
-            new Promise<IteratorResult<ClientStreamEvent>>((resolve) => {
-              finishNext = resolve;
-            }),
-          return: async () => {
-            closed = true;
-            finishNext?.({ done: true, value: undefined });
-            return { done: true, value: undefined };
-          },
-        };
-      },
-    }));
+    const transport = createDirectClientTransport({
+      handler: ({ abortSignal }) => ({
+        [Symbol.asyncIterator]() {
+          expect(abortSignal).toBeDefined();
+          return {
+            next: () =>
+              new Promise<IteratorResult<ClientStreamEvent>>((resolve) => {
+                finishNext = resolve;
+              }),
+            return: async () => {
+              closed = true;
+              finishNext?.({ done: true, value: undefined });
+              return { done: true, value: undefined };
+            },
+          };
+        },
+      }),
+    });
     const controller = new AbortController();
     const iterator = transport
-      .send({ messages: [] }, { signal: controller.signal })
+      .send({ request: { messages: [] }, abortSignal: controller.signal })
       [Symbol.asyncIterator]();
 
     await expect(iterator.next()).resolves.toMatchObject({
@@ -642,14 +825,14 @@ describe("protocol and transport", () => {
     const frames = [
       {
         type: "stream_start",
-        protocol: "anvia.client.v1",
+        protocol: "anvia.client.v2",
         streamId: "stream_1",
         eventId: 0,
         resumable: false,
       },
       {
         type: "stream_start",
-        protocol: "anvia.client.v1",
+        protocol: "anvia.client.v2",
         streamId: "stream_1",
         eventId: 0,
         resumable: false,
@@ -661,12 +844,12 @@ describe("protocol and transport", () => {
         new Response(frames.map((frame) => JSON.stringify(frame)).join("\n"), {
           headers: {
             "content-type": "application/x-ndjson",
-            "x-anvia-stream-protocol": "anvia.client.v1",
+            "x-anvia-stream-protocol": "anvia.client.v2",
           },
         }),
     });
 
-    await expect(collect(transport.send({ messages: [] }))).rejects.toThrow(
+    await expect(collect(transport.send({ request: { messages: [] } }))).rejects.toThrow(
       "more than one stream_start",
     );
   });
@@ -680,7 +863,7 @@ describe("protocol and transport", () => {
             [
               {
                 type: "stream_start",
-                protocol: "anvia.client.v1",
+                protocol: "anvia.client.v2",
                 streamId,
                 eventId: 0,
                 resumable,
@@ -692,7 +875,7 @@ describe("protocol and transport", () => {
             {
               headers: {
                 "content-type": "application/x-ndjson",
-                "x-anvia-stream-protocol": "anvia.client.v1",
+                "x-anvia-stream-protocol": "anvia.client.v2",
               },
             },
           ),
@@ -703,17 +886,17 @@ describe("protocol and transport", () => {
       resume: { streamId: "expected", after: 2 },
     };
 
-    await expect(collect(transportFor("wrong", true).send(request))).rejects.toThrow(
+    await expect(collect(transportFor("wrong", true).send({ request }))).rejects.toThrow(
       "streamId does not match",
     );
-    await expect(collect(transportFor("expected", false).send(request))).rejects.toThrow(
+    await expect(collect(transportFor("expected", false).send({ request }))).rejects.toThrow(
       "must identify a resumable stream",
     );
   });
 
-  it("keeps user metadata lossless and stores generated state separately", () => {
+  it("keeps JSON object metadata lossless and stores generated state separately", () => {
     const afterMessage = applyClientStreamEvent(
-      [{ id: "assistant_1", role: "assistant", parts: [], metadata: "user-metadata" }],
+      [{ id: "assistant_1", role: "assistant", parts: [], metadata: { source: "user" } }],
       {
         type: "message_end",
         runId: "run_1",
@@ -727,8 +910,84 @@ describe("protocol and transport", () => {
       status: "completed",
     });
 
-    expect(afterRun[0]?.metadata).toBe("user-metadata");
+    expect(afterRun[0]?.metadata).toEqual({ source: "user" });
     expect(afterRun[0]?.generation).toMatchObject({ runId: "run_1", status: "completed" });
+  });
+
+  it("rejects primitive UI metadata", () => {
+    expect(() =>
+      parseUIMessage({ id: "message_1", role: "user", parts: [], metadata: "invalid" }),
+    ).toThrow("metadata");
+  });
+
+  it("rejects UI messages with values that are not strict JSON", () => {
+    expect(() =>
+      parseUIMessage({
+        id: "message_1",
+        role: "assistant",
+        parts: [{ id: "text_1", type: "text", text: "hello", signature: undefined }],
+      }),
+    ).toThrow("strict JSON");
+  });
+
+  it("validates and transforms authoritative message data parts", () => {
+    type Data = { progress: { completed: number; total: number } };
+    const dataSchemas = {
+      progress: {
+        safeParse(value: unknown) {
+          if (
+            typeof value !== "object" ||
+            value === null ||
+            !("completed" in value) ||
+            !("total" in value) ||
+            typeof value.completed !== "number" ||
+            typeof value.total !== "number"
+          ) {
+            return { success: false as const };
+          }
+          return {
+            success: true as const,
+            data: { completed: Math.trunc(value.completed), total: Math.trunc(value.total) },
+          };
+        },
+      },
+    };
+    const event = parseClientStreamEvent<Record<string, never>, Data>(
+      {
+        type: "message_end",
+        runId: "run_1",
+        messageId: "assistant_1",
+        parts: [
+          {
+            id: "progress_1",
+            type: "data",
+            name: "progress",
+            data: { completed: 1.9, total: 3.2 },
+          },
+        ],
+      },
+      { dataSchemas },
+    );
+
+    expect(event).toMatchObject({
+      parts: [
+        {
+          name: "progress",
+          data: { completed: 1, total: 3 },
+        },
+      ],
+    });
+    expect(() =>
+      parseClientStreamEvent<Record<string, never>, Data>(
+        {
+          type: "message_end",
+          runId: "run_1",
+          messageId: "assistant_1",
+          parts: [{ id: "unknown_1", type: "data", name: "unknown", data: {} }],
+        },
+        { dataSchemas },
+      ),
+    ).toThrow('Invalid data event "unknown"');
   });
 
   it("uses message_end parts as the authoritative guarded result", () => {

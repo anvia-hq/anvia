@@ -1,13 +1,12 @@
 import { Agent, type Tool } from "@anvia/core";
+import type { CompletionModelStreamEvent, CompletionRequest } from "@anvia/core/completion";
+import { describe, expect, it } from "vitest";
 import {
   AssistantContent,
-  type CompletionModelStreamEvent,
-  type CompletionRequest,
   Message,
   ToolContent,
   UserContent,
-} from "@anvia/core/completion";
-import { describe, expect, it } from "vitest";
+} from "../../core/test/helpers/imports";
 import { OpenAIChatCompletionModel, OpenAIClient } from "../src/index";
 import {
   fromOpenAIChatCompletionResponse,
@@ -227,7 +226,7 @@ describe("OpenAI chat-completions client path", () => {
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.reasoning("provider reasoning text"),
+      AssistantContent.reasoningFromContent([{ type: "text", text: "provider reasoning text" }]),
       AssistantContent.text("created"),
     ]);
   });
@@ -404,7 +403,7 @@ describe("OpenAI chat-completions client path", () => {
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.toolCall("tool_0", "Echo", expectedArguments),
+      AssistantContent.toolCall("tool_0", "Echo", expectedArguments, "tool_0"),
     ]);
   });
 

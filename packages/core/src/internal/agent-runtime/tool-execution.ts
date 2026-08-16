@@ -4,12 +4,12 @@ import type { AgentApprovalDecision, AgentChildStreamEvent } from "../../agent/r
 import type {
   JsonObject,
   JsonValue,
-  ToolCall,
+  ToolCallPart,
   ToolDefinition,
-  ToolResult,
-  ToolResultContent,
+  ToolResultContentPart,
+  ToolResultOutput,
+  ToolResultPart,
 } from "../../completion";
-import { ToolContent } from "../../completion";
 import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
 import { runControl, toolCallControl } from "../../hooks";
 import { isMcpTool } from "../../mcp";
@@ -52,8 +52,9 @@ export type ToolResultEventPayload = {
   callId?: string;
   internalCallId: string;
   args: string;
+  output: ToolResultOutput;
   result: string;
-  structuredResult?: ToolResultContent[] | undefined;
+  structuredResult?: readonly ToolResultContentPart[] | undefined;
 };
 
 export type AgentToolEventPayload = {
@@ -99,41 +100,41 @@ export class ToolCallExecutor {
   ) {}
 
   async execute(
-    toolCalls: ToolCall[],
+    toolCalls: readonly ToolCallPart[],
     onResult?: (result: ToolResultEventPayload) => void,
     onStreamEvent?: (event: AgentToolEventPayload) => void,
     observation?: ToolExecutionObservation,
-  ): Promise<ToolResult[]> {
+  ): Promise<ToolResultPart[]> {
     for (const toolCall of toolCalls) {
-      if (toolCall.function.name.length === 0) {
+      if (toolCall.toolName.length === 0) {
         throw new Error(
-          `Completion returned tool call "${toolCall.id}" with an empty function name; this indicates invalid provider output or provider mapping.`,
+          `Completion returned tool call "${toolCall.toolCallId}" with an empty tool name; this indicates invalid provider output or provider mapping.`,
         );
       }
     }
 
     return mapWithConcurrency(toolCalls, this.concurrency, async (toolCall) => {
       throwIfAborted(this.abortSignal);
-      const args = JSON.stringify(toolCall.function.arguments ?? {});
+      const args = JSON.stringify(toolCall.input);
       const internalCallId = globalThis.crypto.randomUUID();
       const hookArgs: ToolHookArgs = {
-        toolName: toolCall.function.name,
+        toolName: toolCall.toolName,
         internalCallId,
         args,
       };
       if (toolCall.callId !== undefined) {
         hookArgs.toolCallId = toolCall.callId;
       }
-      const tool = this.agent.getTool(toolCall.function.name);
+      const tool = this.agent.getTool(toolCall.toolName);
       const toolDefinition = observation?.toolDefinitions?.find(
-        (definition) => definition.name === toolCall.function.name,
+        (definition) => definition.name === toolCall.toolName,
       );
       const toolMetadata = toolTraceMetadata(tool);
 
       const toolStartArgs: AgentToolStartArgs = {
         turn: observation?.turn ?? 0,
         toolCall,
-        toolName: toolCall.function.name,
+        toolName: toolCall.toolName,
         internalCallId,
         args,
         ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
@@ -157,7 +158,7 @@ export class ToolCallExecutor {
           throw this.cancel(callAction.reason);
         }
         if (callAction?.type === "skip") {
-          output = callAction.reason;
+          output = { type: "text", value: callAction.reason };
           skipped = true;
         } else {
           try {
@@ -170,7 +171,7 @@ export class ToolCallExecutor {
 
             let prepared: PreparedToolCall | undefined;
             try {
-              prepared = this.prepareToolCall(tool, toolCall.function.name, effectiveArgs);
+              prepared = this.prepareToolCall(tool, toolCall.toolName, effectiveArgs);
             } catch (error) {
               const outcome = await this.handleToolError(
                 toolCall,
@@ -197,14 +198,14 @@ export class ToolCallExecutor {
                       approved: true as const,
                     });
               if (!approvalDecision.approved) {
-                output = approvalDecision.result;
+                output = { type: "execution-denied", reason: approvalDecision.result };
                 skipped = true;
               } else {
                 const step = observation?.turn ?? 0;
                 const lifecycleEvent = {
                   runId: this.runContext.runId,
                   step,
-                  toolName: toolCall.function.name,
+                  toolName: toolCall.toolName,
                   input: lifecycleSnapshot(prepared.input),
                   ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
                 };
@@ -248,7 +249,7 @@ export class ToolCallExecutor {
         }
 
         if (output === undefined) {
-          throw new Error(`Tool "${toolCall.function.name}" did not produce an execution result.`);
+          throw new Error(`Tool "${toolCall.toolName}" did not produce an execution result.`);
         }
         let result = toolOutputToText(output);
         let structuredResult = toolOutputToStructuredResult(output);
@@ -280,7 +281,7 @@ export class ToolCallExecutor {
           await toolObservation.end({
             turn: observation?.turn ?? 0,
             toolCall,
-            toolName: toolCall.function.name,
+            toolName: toolCall.toolName,
             internalCallId,
             args: effectiveArgs,
             result,
@@ -295,19 +296,23 @@ export class ToolCallExecutor {
 
         const resultPayload: ToolResultEventPayload = {
           type: "tool_result",
-          toolName: toolCall.function.name,
-          toolCallId: toolCall.id,
+          toolName: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
           internalCallId,
           args: effectiveArgs,
+          output,
           result,
           structuredResult,
           ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
         };
         onResult?.(resultPayload);
-        return ToolContent.toolResult(toolCall.id, output, {
-          callId: toolCall.callId,
-          toolName: toolCall.function.name,
-        });
+        return {
+          type: "tool-result" as const,
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          output,
+          ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
+        };
       } catch (error) {
         await toolObservation.error(
           toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
@@ -319,7 +324,7 @@ export class ToolCallExecutor {
 
   private async runApprovedToolCall(
     prepared: PreparedToolCall,
-    toolCall: ToolCall,
+    toolCall: ToolCallPart,
     hookArgs: ToolHookArgs,
     effectiveArgs: string,
     toolObservation: ToolObserverScope,
@@ -336,7 +341,7 @@ export class ToolCallExecutor {
           const streamEventArgs: AgentToolStreamEventArgs = {
             turn: observation?.turn ?? 0,
             toolCall,
-            toolName: toolCall.function.name,
+            toolName: toolCall.toolName,
             internalCallId: hookArgs.internalCallId,
             args: effectiveArgs,
             event,
@@ -381,7 +386,7 @@ export class ToolCallExecutor {
   }
 
   private async handleToolError(
-    toolCall: ToolCall,
+    toolCall: ToolCallPart,
     hookArgs: ToolHookArgs,
     args: string,
     error: unknown,
@@ -401,7 +406,10 @@ export class ToolCallExecutor {
       throw this.cancel(errorAction.reason);
     }
     return {
-      output: error instanceof Error ? error.toString() : String(error),
+      output: {
+        type: "error-text",
+        value: error instanceof Error ? error.toString() : String(error),
+      },
       failed: true,
       error,
     };
@@ -432,7 +440,11 @@ export class ToolCallExecutor {
         replaced = true;
       }
     }
-    return replaced ? (structuredResult ?? result) : undefined;
+    return replaced
+      ? structuredResult === undefined
+        ? { type: "text", value: result }
+        : { type: "content", value: structuredResult }
+      : undefined;
   }
 
   private async runToolInputMiddlewares(
@@ -569,7 +581,7 @@ function approvalEventAttributes(
 
 function normalizeToolOutputMiddlewareResult(result: ToolOutputMiddlewareResult): {
   result?: string | undefined;
-  structuredResult?: ToolResultContent[] | undefined;
+  structuredResult?: readonly ToolResultContentPart[] | undefined;
 } {
   if (typeof result === "string") {
     return { result };
@@ -593,7 +605,7 @@ function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
 
 function toolErrorArgs(
   turn: number,
-  toolCall: ToolCall,
+  toolCall: ToolCallPart,
   internalCallId: string,
   args: string,
   error: unknown,
@@ -601,7 +613,7 @@ function toolErrorArgs(
   const observerArgs: AgentToolErrorArgs = {
     turn,
     toolCall,
-    toolName: toolCall.function.name,
+    toolName: toolCall.toolName,
     internalCallId,
     args,
     error,
@@ -633,17 +645,28 @@ class ToolObserverScope {
 }
 
 function toolOutputToText(output: NormalizedToolOutput): string {
-  return typeof output === "string" ? output : toolResultContentToText(output);
+  switch (output.type) {
+    case "text":
+    case "error-text":
+      return output.value;
+    case "json":
+    case "error-json":
+      return JSON.stringify(output.value);
+    case "content":
+      return toolResultContentToText(output.value);
+    case "execution-denied":
+      return output.reason ?? "Tool execution was denied.";
+  }
 }
 
 function toolOutputToStructuredResult(
   output: NormalizedToolOutput,
-): ToolResultContent[] | undefined {
-  return typeof output === "string" ? undefined : output;
+): readonly ToolResultContentPart[] | undefined {
+  return output.type === "content" ? output.value : undefined;
 }
 
 function agentToolEventPayload(
-  toolCall: ToolCall,
+  toolCall: ToolCallPart,
   internalCallId: string,
   event: ToolCallStreamEvent,
 ): AgentToolEventPayload | undefined {
@@ -652,7 +675,7 @@ function agentToolEventPayload(
   }
   const payload: AgentToolEventPayload = {
     type: "agent_tool_event" as const,
-    toolName: toolCall.function.name,
+    toolName: toolCall.toolName,
     internalCallId,
     agentId: event.agentId,
     event: event.event as AgentChildStreamEvent<unknown, unknown>,

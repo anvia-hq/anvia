@@ -1,13 +1,14 @@
 import { generateCompletion } from "../completion/generate-completion";
-import {
-  type AssistantContent,
-  type DocumentContent,
-  type JsonObject,
-  type JsonValue,
-  Message,
-  type Message as MessageType,
-  type ToolContent,
-  type UserContent,
+import type {
+  AssistantContentPart,
+  FilePart,
+  ImagePart,
+  JsonObject,
+  JsonValue,
+  Message as MessageType,
+  ToolResultOutput,
+  ToolResultPart,
+  UserContentPart,
 } from "../completion/types";
 import { assertFiniteNumber, assertPositiveInteger } from "./assert";
 import { MemoryCompactionError } from "./errors";
@@ -24,8 +25,8 @@ Preserve established facts, user preferences, decisions, unresolved work, constr
 Do not invent details. Do not include hidden reasoning or mention that you are summarizing.
 Return only the concise memory summary.`;
 
-/** Cap inline document text so compaction prompts stay bounded. */
-const MAX_DOCUMENT_TEXT_CHARS = 2_000;
+/** Cap inline file text so compaction prompts stay bounded. */
+const MAX_FILE_TEXT_CHARS = 2_000;
 
 export function createSummaryMemoryCompactor(
   options: CreateSummaryMemoryCompactorOptions,
@@ -73,7 +74,9 @@ export function createMemoryCompactionSummary(
   summary: string,
   compactedMessageCount: number,
 ): MemoryCompactionMessage {
-  return Message.system(summary, {
+  return {
+    role: "system",
+    content: summary,
     metadata: {
       anvia: {
         memoryCompaction: {
@@ -82,10 +85,10 @@ export function createMemoryCompactionSummary(
         },
       },
     },
-  }) as MemoryCompactionMessage;
+  };
 }
 
-export function cumulativeCompactedMessageCount(messages: MessageType[]): number {
+export function cumulativeCompactedMessageCount(messages: readonly MessageType[]): number {
   return messages.reduce((total, message) => {
     const metadata = memoryCompactionMetadata(message);
     return total + (metadata?.compactedMessageCount ?? 1);
@@ -115,16 +118,23 @@ function memoryCompactionMetadata(message: MessageType): MemoryCompactionMetadat
   };
 }
 
-function serializeMessagesForSummary(messages: MessageType[]): string {
+function serializeMessagesForSummary(messages: readonly MessageType[]): string {
   const entries = messages.map((message, index) => {
     if (message.role === "system") {
       return entry(index, "system", message.content);
     }
     if (message.role === "user") {
-      return entry(index, "user", message.content.map(serializeUserContent).join("\n"));
+      const content =
+        typeof message.content === "string"
+          ? message.content
+          : message.content.map(serializeUserContent).join("\n");
+      return entry(index, "user", content);
     }
     if (message.role === "assistant") {
-      const content = message.content.flatMap((item) => serializeAssistantContent(item)).join("\n");
+      const content =
+        typeof message.content === "string"
+          ? message.content
+          : message.content.flatMap((item) => serializeAssistantContent(item)).join("\n");
       return entry(index, "assistant", content);
     }
     return entry(index, "tool", message.content.map(serializeToolContent).join("\n"));
@@ -136,69 +146,82 @@ function entry(index: number, role: MessageType["role"], content: string): strin
   return JSON.stringify({ index, role, content });
 }
 
-function serializeUserContent(content: UserContent): string {
+function serializeUserContent(content: UserContentPart): string {
   if (content.type === "text") {
     return content.text;
   }
   if (content.type === "image") {
     return imageDescriptor(content);
   }
-  return documentDescriptor(content);
+  return fileDescriptor(content);
 }
 
-function serializeAssistantContent(content: AssistantContent): string[] {
+function serializeAssistantContent(content: AssistantContentPart): string[] {
   if (content.type === "text") {
     return [content.text];
   }
-  if (content.type === "tool_call") {
+  if (content.type === "tool-call") {
     return [
-      `[tool call name=${JSON.stringify(content.function.name)} arguments=${safeJson(
-        content.function.arguments,
-      )}]`,
+      `[tool call name=${JSON.stringify(content.toolName)} input=${safeJson(content.input)}]`,
     ];
   }
   if (content.type === "image") {
     return [imageDescriptor(content)];
   }
-  return [];
-}
-
-function serializeToolContent(content: ToolContent): string {
-  const label = content.toolName ?? content.id;
-  const result = content.content
-    .map((item) =>
-      item.type === "text"
-        ? item.text
-        : `[tool image mediaType=${item.mediaType ?? "image/unknown"} omitted]`,
-    )
-    .join("\n");
-  return `[tool result name=${JSON.stringify(label)}]\n${result}`;
-}
-
-function imageDescriptor(
-  content: Extract<UserContent | AssistantContent, { type: "image" }>,
-): string {
-  if (content.source.type === "url") {
-    return `[image url=${JSON.stringify(content.source.url)} detail=${content.detail ?? "auto"}]`;
+  if (content.type === "file") {
+    return [fileDescriptor(content)];
   }
-  return `[image mediaType=${content.source.mediaType} detail=${content.detail ?? "auto"} data omitted]`;
+  return (
+    content.details?.flatMap((detail) => {
+      if (detail.type === "text" || detail.type === "summary") {
+        return [detail.text];
+      }
+      return [];
+    }) ?? []
+  );
 }
 
-function documentDescriptor(content: DocumentContent): string {
-  const filename = content.source.filename;
+function serializeToolContent(content: ToolResultPart): string {
+  return `[tool result name=${JSON.stringify(content.toolName)}]\n${serializeToolOutput(content.output)}`;
+}
+
+function serializeToolOutput(output: ToolResultOutput): string {
+  if (output.type === "text" || output.type === "error-text") {
+    return output.value;
+  }
+  if (output.type === "json" || output.type === "error-json") {
+    return safeJson(output.value);
+  }
+  if (output.type === "execution-denied") {
+    return output.reason ?? "Tool execution was denied.";
+  }
+  return output.value
+    .map((part) => (part.type === "text" ? part.text : fileDescriptor(part)))
+    .join("\n");
+}
+
+function imageDescriptor(content: ImagePart): string {
+  if (content.image.type === "url") {
+    return `[image url=${JSON.stringify(content.image.url)} detail=${content.detail ?? "auto"}]`;
+  }
+  return `[image mediaType=${content.mediaType ?? "image/unknown"} detail=${content.detail ?? "auto"} data omitted]`;
+}
+
+function fileDescriptor(content: FilePart): string {
+  const filename = content.filename;
   const filenamePart = filename === undefined ? "" : ` filename=${JSON.stringify(filename)}`;
-  if (content.source.type === "text") {
-    return `[document${filenamePart} mediaType=${content.source.mediaType ?? "text/plain"}]\n${truncateForSummary(
-      content.source.text,
-      MAX_DOCUMENT_TEXT_CHARS,
+  if (content.data.type === "text") {
+    return `[file${filenamePart} mediaType=${content.mediaType}]\n${truncateForSummary(
+      content.data.text,
+      MAX_FILE_TEXT_CHARS,
     )}`;
   }
-  if (content.source.type === "url") {
-    return `[document${filenamePart} mediaType=${content.source.mediaType} url=${JSON.stringify(
-      content.source.url,
+  if (content.data.type === "url") {
+    return `[file${filenamePart} mediaType=${content.mediaType} url=${JSON.stringify(
+      content.data.url,
     )}]`;
   }
-  return `[document${filenamePart} mediaType=${content.source.mediaType} data omitted]`;
+  return `[file${filenamePart} mediaType=${content.mediaType} data omitted]`;
 }
 
 function truncateForSummary(text: string, maxChars: number): string {
@@ -212,7 +235,7 @@ function safeJson(value: JsonValue): string {
   try {
     return JSON.stringify(value);
   } catch {
-    return JSON.stringify(String(value));
+    return '"[unserializable JSON]"';
   }
 }
 

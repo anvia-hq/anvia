@@ -53,7 +53,7 @@ for await (const event of coordinator.stream({ prompt, toolConcurrency: 2 })) {
 
 function renderEvent(event: AgentStreamEvent): void {
   if (event.type === "tool_call") {
-    console.log("\ndelegating:", event.toolCall.function.name);
+    console.log("\ndelegating:", event.toolCall.toolName);
   }
 
   if (event.type === "agent_tool_event") {
@@ -78,7 +78,7 @@ function renderChildEvent(
   }
 
   if (event.type === "tool_call") {
-    console.log(`\n[${agentLabel}] tool call:`, event.toolCall.function.name);
+    console.log(`\n[${agentLabel}] tool call:`, event.toolCall.toolName);
   }
 
   if (event.type === "tool_result") {

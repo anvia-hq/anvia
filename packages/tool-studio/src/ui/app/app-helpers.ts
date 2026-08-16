@@ -1,5 +1,5 @@
-import type { UIMessage } from "@anvia/client";
-import type { Message, UserContent } from "@anvia/core/completion";
+import type { CreateUIAttachment } from "@anvia/client";
+import type { Message, UserContentPart } from "@anvia/core/completion";
 import type {
   StudioModelSummary,
   StudioPipelineLogEntry,
@@ -22,9 +22,8 @@ export type PromptAttachment = {
 
 export type StudioAgentRunRequest = {
   agentId: string;
-  message: string | Message;
+  messages: readonly Message[];
   sessionId?: string;
-  history?: Message[];
   model?: string;
   stream: true;
   metadata: {
@@ -155,8 +154,11 @@ export function userMessageWithAttachments(text: string, attachments: PromptAtta
   return { role: "user", content: userContentWithAttachments(text, attachments) };
 }
 
-function userContentWithAttachments(text: string, attachments: PromptAttachment[]): UserContent[] {
-  const content: UserContent[] = [];
+function userContentWithAttachments(
+  text: string,
+  attachments: PromptAttachment[],
+): UserContentPart[] {
+  const content: UserContentPart[] = [];
   if (text.length > 0) {
     content.push({ type: "text", text });
   }
@@ -164,49 +166,29 @@ function userContentWithAttachments(text: string, attachments: PromptAttachment[
     if (attachment.kind === "image") {
       content.push({
         type: "image",
-        source: {
-          type: "base64",
-          data: attachment.data,
-          mediaType: attachment.mediaType,
-        },
+        image: { type: "data", data: attachment.data },
+        mediaType: attachment.mediaType,
       });
       continue;
     }
     content.push({
-      type: "document",
-      source: {
-        type: "base64",
-        data: attachment.data,
-        mediaType: attachment.mediaType,
-        filename: attachment.name,
-      },
+      type: "file",
+      data: { type: "data", data: attachment.data },
+      mediaType: attachment.mediaType,
+      filename: attachment.name,
     });
   }
   return content;
 }
 
-export function userUIMessageWithAttachments(
-  text: string,
-  attachments: PromptAttachment[],
-): UIMessage {
-  return {
-    id: createPromptId("msg"),
-    role: "user",
-    parts: [
-      ...(text.length === 0 ? [] : [{ id: createPromptId("part"), type: "text" as const, text }]),
-      ...attachments.map((attachment) => ({
-        id: createPromptId("part"),
-        type: "attachment" as const,
-        attachment: {
-          id: attachment.id,
-          type: attachment.kind,
-          name: attachment.name,
-          mediaType: attachment.mediaType,
-          data: attachment.data,
-        },
-      })),
-    ],
-  };
+export function uiAttachmentsForPrompt(attachments: PromptAttachment[]): CreateUIAttachment[] {
+  return attachments.map((attachment) => ({
+    id: attachment.id,
+    type: attachment.kind,
+    name: attachment.name,
+    mediaType: attachment.mediaType,
+    data: attachment.data,
+  }));
 }
 
 export function transcriptAttachmentsForPrompt(
@@ -240,15 +222,4 @@ function mediaTypeFromName(name: string): string {
   if (/\.csv$/i.test(name)) return "text/csv";
   if (/\.json$/i.test(name)) return "application/json";
   return "text/plain";
-}
-
-let nextPromptId = 0;
-
-function createPromptId(prefix: string): string {
-  const random = globalThis.crypto?.randomUUID?.();
-  if (random !== undefined) {
-    return `${prefix}_${random}`;
-  }
-  nextPromptId += 1;
-  return `${prefix}_${nextPromptId.toString(36)}`;
 }

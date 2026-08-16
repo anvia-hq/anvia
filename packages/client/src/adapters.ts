@@ -1,18 +1,21 @@
 import type { AgentChildStreamEvent, AgentStreamEvent } from "@anvia/core/agent";
 import {
-  type AssistantContent,
+  type AssistantContentPart,
   type CompletionResponse,
   type CompletionSource,
   type CompletionStreamEvent,
   isJsonValue,
+  type JsonObject,
   type JsonValue,
   type ProviderToolCall,
-  type ToolCall,
-  type ToolResultContent,
+  type ToolCallPart,
+  type ToolResultContentPart,
+  type ToolResultOutput,
 } from "@anvia/core/completion";
 import { createClientId } from "./messages";
 import { maskedClientError } from "./protocol";
 import type {
+  ClientDataMap,
   ClientErrorMapper,
   ClientOutputMapper,
   ClientStream,
@@ -24,17 +27,18 @@ import type {
   UIToolMessagePart,
 } from "./types";
 
-export type ClientStreamAdapterOptions = {
+export type ClientStreamAdapterOptions<Metadata extends JsonObject = JsonObject> = {
   /** Stable correlation ID for this client-visible run. */
   runId?: string;
-  metadata?: JsonValue;
+  metadata?: Metadata;
   mapError?: ClientErrorMapper;
   mapOutput?: ClientOutputMapper;
 };
 
-export type CompletionClientStreamOptions = ClientStreamAdapterOptions & {
-  model?: { provider: string; id: string };
-};
+export type CompletionClientStreamOptions<Metadata extends JsonObject = JsonObject> =
+  ClientStreamAdapterOptions<Metadata> & {
+    model?: { provider: string; id: string };
+  };
 
 export type AgentClientStreamContext = {
   runId: string;
@@ -42,11 +46,15 @@ export type AgentClientStreamContext = {
   scope?: ClientStreamScope;
 };
 
-export type AgentClientStreamOptions<CustomEvent = unknown> = ClientStreamAdapterOptions & {
+export type AgentClientStreamOptions<
+  CustomEvent = unknown,
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+> = ClientStreamAdapterOptions<Metadata> & {
   mapCustomEvent?: (
     event: CustomEvent,
     context: AgentClientStreamContext,
-  ) => ClientStreamEvent | readonly ClientStreamEvent[] | undefined;
+  ) => ClientStreamEvent<Metadata, Data> | readonly ClientStreamEvent<Metadata, Data>[] | undefined;
 };
 
 type ReasoningState = {
@@ -64,9 +72,8 @@ type ToolState = {
   toolName?: string;
   input: JsonValue;
   signature?: string;
-  additionalParams?: JsonValue;
   result?:
-    | { status: "success"; output: JsonValue; content?: ToolResultContent[] }
+    | { status: "success"; output: JsonValue; content?: readonly ToolResultContentPart[] }
     | { status: "error"; error: ClientStreamError };
   started: boolean;
   ended: boolean;
@@ -105,10 +112,16 @@ type AgentAdapterRuntime = {
 type WithoutEventBase<T> = T extends unknown ? Omit<T, "runId" | "turn" | "scope"> : never;
 type ClientEventPayload = WithoutEventBase<ClientStreamEvent>;
 
-export function completionToClientStream<Output = string, RawResponse = unknown>(
-  events: AsyncIterable<CompletionStreamEvent<Output, RawResponse>>,
-  options: CompletionClientStreamOptions = {},
-): ClientStream {
+export function completionToClientStream<
+  Output = string,
+  RawResponse = unknown,
+  Metadata extends JsonObject = JsonObject,
+>(
+  options: CompletionClientStreamOptions<Metadata> & {
+    events: AsyncIterable<CompletionStreamEvent<Output, RawResponse>>;
+  },
+): ClientStream<Metadata> {
+  const { events } = options;
   const runId = options.runId ?? createClientId("run");
 
   return propagateCancellation(events, (source) => ({
@@ -192,13 +205,19 @@ export function completionToClientStream<Output = string, RawResponse = unknown>
         if (!terminal) yield* finishErroredRun(state, error, undefined, options.mapError);
       }
     },
-  }));
+  })) as ClientStream<Metadata>;
 }
 
-export function agentToClientStream<Output = string, RawResponse = unknown>(
-  events: AsyncIterable<AgentStreamEvent<Output, RawResponse>>,
-  options: AgentClientStreamOptions = {},
-): ClientStream {
+export function agentToClientStream<
+  Output = string,
+  RawResponse = unknown,
+  Metadata extends JsonObject = JsonObject,
+>(
+  options: AgentClientStreamOptions<unknown, Metadata> & {
+    events: AsyncIterable<AgentStreamEvent<Output, RawResponse>>;
+  },
+): ClientStream<Metadata> {
+  const { events } = options;
   const runId = options.runId ?? createClientId("run");
   return propagateCancellation(events, (source) => ({
     async *[Symbol.asyncIterator]() {
@@ -239,19 +258,26 @@ export function agentToClientStream<Output = string, RawResponse = unknown>(
         }
       }
     },
-  }));
+  })) as ClientStream<Metadata>;
 }
 
-export function customAgentEventsToClientStream<CustomEvent>(
-  events: AsyncIterable<AgentStreamEvent<unknown, unknown> | CustomEvent>,
-  options: AgentClientStreamOptions<CustomEvent> & {
-    mapCustomEvent: NonNullable<AgentClientStreamOptions<CustomEvent>["mapCustomEvent"]>;
+export function customAgentEventsToClientStream<
+  CustomEvent,
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+>(
+  options: AgentClientStreamOptions<CustomEvent, Metadata, Data> & {
+    events: AsyncIterable<AgentStreamEvent<unknown, unknown> | CustomEvent>;
+    mapCustomEvent: NonNullable<
+      AgentClientStreamOptions<CustomEvent, Metadata, Data>["mapCustomEvent"]
+    >;
   },
-): ClientStream {
+): ClientStream<Metadata, Data> {
   return agentToClientStream(
-    events as AsyncIterable<AgentStreamEvent<unknown, unknown>>,
-    options as AgentClientStreamOptions,
-  );
+    options as unknown as AgentClientStreamOptions<unknown, Metadata> & {
+      events: AsyncIterable<AgentStreamEvent<unknown, unknown>>;
+    },
+  ) as ClientStream<Metadata, Data>;
 }
 
 async function* translateAgentEvent(
@@ -349,12 +375,7 @@ async function* translateAgentEvent(
         event.callId,
         event.internalCallId,
       );
-      const output = toolResultOutput(event.result, event.structuredResult);
-      tool.result = {
-        status: "success",
-        output,
-        ...(event.structuredResult === undefined ? {} : { content: event.structuredResult }),
-      };
+      tool.result = clientToolResult(event.output, event.result);
       yield clientEvent(state, {
         type: "tool_result",
         messageId: state.messageId,
@@ -419,7 +440,7 @@ async function* translateAgentEvent(
         ...(event.memoryCompaction === undefined
           ? {}
           : { memoryCompaction: event.memoryCompaction }),
-        metadata: { nativeRunId: event.runId },
+        ...(runtime.options.metadata === undefined ? {} : { metadata: runtime.options.metadata }),
       });
       return;
     }
@@ -440,7 +461,7 @@ async function* translateAgentEvent(
         ...(result.memoryCompaction === undefined
           ? {}
           : { memoryCompaction: result.memoryCompaction }),
-        metadata: { nativeRunId: result.runId },
+        ...(runtime.options.metadata === undefined ? {} : { metadata: runtime.options.metadata }),
       });
       return;
     }
@@ -645,9 +666,9 @@ async function* appendToolCall(
 
 async function* finishToolCall(
   state: MessageState,
-  toolCall: ToolCall,
+  toolCall: ToolCallPart,
 ): AsyncIterable<ClientStreamEvent> {
-  const tool = getToolState(state, toolCall.id, toolCall.function.name);
+  const tool = getToolState(state, toolCall.toolCallId, toolCall.toolName);
   const wasEnded = tool.ended;
   if (!tool.started) {
     tool.started = true;
@@ -655,44 +676,39 @@ async function* finishToolCall(
       type: "tool_call_start",
       messageId: state.messageId,
       partId: tool.partId,
-      toolCallId: toolCall.id,
+      toolCallId: toolCall.toolCallId,
       ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
-      toolName: toolCall.function.name,
+      toolName: toolCall.toolName,
     });
   }
   if (toolCall.callId === undefined) delete tool.callId;
   else tool.callId = toolCall.callId;
-  tool.toolName = toolCall.function.name;
-  tool.input = toolCall.function.arguments;
+  tool.toolName = toolCall.toolName;
+  tool.input = toolCall.input;
   if (toolCall.signature === undefined) delete tool.signature;
   else tool.signature = toolCall.signature;
-  if (toolCall.additionalParams === undefined) delete tool.additionalParams;
-  else tool.additionalParams = toolCall.additionalParams;
   if (wasEnded) return;
   tool.ended = true;
   yield clientEvent(state, {
     type: "tool_call_end",
     messageId: state.messageId,
     partId: tool.partId,
-    toolCallId: toolCall.id,
+    toolCallId: toolCall.toolCallId,
     ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
-    toolName: toolCall.function.name,
-    input: toolCall.function.arguments,
+    toolName: toolCall.toolName,
+    input: toolCall.input,
     ...(toolCall.signature === undefined ? {} : { signature: toolCall.signature }),
-    ...(toolCall.additionalParams === undefined
-      ? {}
-      : { additionalParams: toolCall.additionalParams }),
   });
 }
 
 async function* finishMessage(
   state: MessageState,
-  content: readonly AssistantContent[],
+  content: readonly AssistantContentPart[],
   metadata: FinalMessageMetadata,
 ): AsyncIterable<ClientStreamEvent> {
   if (state.ended) return;
   const textContent = content.filter(
-    (part): part is Extract<AssistantContent, { type: "text" }> => part.type === "text",
+    (part): part is Extract<AssistantContentPart, { type: "text" }> => part.type === "text",
   );
   const text = textContent.map((part) => part.text).join("");
   if (state.textStarted || text.length > 0) {
@@ -718,7 +734,8 @@ async function* finishMessage(
   }
 
   const finalReasoning = content.filter(
-    (part): part is Extract<AssistantContent, { type: "reasoning" }> => part.type === "reasoning",
+    (part): part is Extract<AssistantContentPart, { type: "reasoning" }> =>
+      part.type === "reasoning",
   );
   const anonymousReasoning = [...state.reasoning.values()].filter(
     (reasoning) => reasoning.reasoningId === undefined,
@@ -747,7 +764,7 @@ async function* finishMessage(
         messageId: state.messageId,
         partId: current.partId,
         text: reasoning.text,
-        ...(reasoning.content === undefined ? {} : { content: reasoning.content }),
+        ...(reasoning.details === undefined ? {} : { content: reasoning.details }),
       });
     }
   }
@@ -763,9 +780,9 @@ async function* finishMessage(
   }
 
   for (const part of content) {
-    if (part.type === "tool_call") yield* finishToolCall(state, part);
-    if (part.type === "image") {
-      const attachment = imageAttachment(part);
+    if (part.type === "tool-call") yield* finishToolCall(state, part);
+    if (part.type === "image" || part.type === "file") {
+      const attachment = contentAttachment(part);
       yield clientEvent(state, {
         type: "attachment",
         messageId: state.messageId,
@@ -829,7 +846,7 @@ async function* finishErroredRun(
 }
 
 function contentToUIMessageParts(
-  content: readonly AssistantContent[],
+  content: readonly AssistantContentPart[],
   state: MessageState,
 ): UIMessagePart[] {
   let textIndex = 0;
@@ -859,31 +876,28 @@ function contentToUIMessageParts(
         text: contentPart.text,
       };
       if (contentPart.id !== undefined) part.reasoningId = contentPart.id;
-      if (contentPart.content !== undefined) part.content = contentPart.content;
+      if (contentPart.details !== undefined) part.content = contentPart.details;
       return part;
     }
-    if (contentPart.type === "tool_call") {
-      const tool = getToolState(state, contentPart.id, contentPart.function.name);
+    if (contentPart.type === "tool-call") {
+      const tool = getToolState(state, contentPart.toolCallId, contentPart.toolName);
       const part: UIToolMessagePart = {
         id: tool.partId,
         type: "tool",
-        toolName: contentPart.function.name,
-        toolCallId: contentPart.id,
+        toolName: contentPart.toolName,
+        toolCallId: contentPart.toolCallId,
         state:
           tool.result?.status === "error"
             ? "error"
             : tool.result
               ? "output-available"
               : "input-available",
-        input: contentPart.function.arguments,
+        input: contentPart.input,
       };
       if (contentPart.callId !== undefined) part.callId = contentPart.callId;
       if (tool.internalCallId !== undefined) part.internalCallId = tool.internalCallId;
       if (state.turn !== undefined) part.turn = state.turn;
       if (contentPart.signature !== undefined) part.signature = contentPart.signature;
-      if (contentPart.additionalParams !== undefined) {
-        part.additionalParams = contentPart.additionalParams;
-      }
       if (tool.result?.status === "success") {
         part.output = tool.result.output;
         if (tool.result.content !== undefined) part.resultContent = tool.result.content;
@@ -892,7 +906,7 @@ function contentToUIMessageParts(
       }
       return part;
     }
-    const attachment = imageAttachment(contentPart);
+    const attachment = contentAttachment(contentPart);
     return {
       id: createClientId("attachment_part"),
       type: "attachment",
@@ -947,23 +961,66 @@ function createReasoningState(id?: string): ReasoningState {
   };
 }
 
-function imageAttachment(content: Extract<AssistantContent, { type: "image" }>): UIAttachment {
+function contentAttachment(
+  content: Extract<AssistantContentPart, { type: "image" | "file" }>,
+): UIAttachment {
   const attachment: UIAttachment = {
     id: createClientId("attachment"),
-    type: "image",
+    type: content.type === "image" ? "image" : "file",
   };
-  if (content.detail !== undefined) attachment.detail = content.detail;
-  if (content.source.type === "url") {
-    attachment.url = content.source.url;
+  if (content.type === "image") {
+    if (content.detail !== undefined) attachment.detail = content.detail;
+    if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
+    if (content.image.type === "url") attachment.url = content.image.url;
+    else attachment.data = content.image.data;
+    return attachment;
+  }
+  attachment.mediaType = content.mediaType;
+  if (content.filename !== undefined) attachment.name = content.filename;
+  if (content.data.type === "url") {
+    attachment.url = content.data.url;
+  } else if (content.data.type === "data") {
+    attachment.data = content.data.data;
   } else {
-    attachment.data = content.source.data;
-    attachment.mediaType = content.source.mediaType;
+    attachment.text = content.data.text;
   }
   return attachment;
 }
 
-function toolResultOutput(result: string, structured?: ToolResultContent[]): JsonValue {
-  return structured ?? parseJsonOrString(result);
+function clientToolResult(
+  output: ToolResultOutput,
+  result: string,
+): NonNullable<ToolState["result"]> {
+  switch (output.type) {
+    case "text":
+      return { status: "success", output: output.value };
+    case "json":
+      return { status: "success", output: output.value };
+    case "content":
+      return { status: "success", output: result, content: output.value };
+    case "execution-denied":
+      return {
+        status: "error",
+        error: {
+          message: output.reason ?? "Tool execution was denied.",
+          code: "tool_execution_denied",
+        },
+      };
+    case "error-text":
+      return {
+        status: "error",
+        error: { message: output.value, code: "tool_execution_error" },
+      };
+    case "error-json":
+      return {
+        status: "error",
+        error: {
+          message: "Tool execution failed.",
+          code: "tool_execution_error",
+          details: output.value,
+        },
+      };
+  }
 }
 
 function parseJsonOrString(value: string): JsonValue {

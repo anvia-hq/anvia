@@ -1,4 +1,6 @@
 import {
+  type ClientDataMap,
+  type ClientMetadata,
   type CreateUIAttachment,
   createClientId,
   type UIAttachment,
@@ -7,13 +9,17 @@ import {
 } from "@anvia/client";
 import type { SendMessageInput } from "./types";
 
-export function createUserMessage(input: SendMessageInput): UIMessage | undefined {
-  if (isUIMessage(input)) return input;
-  const text = typeof input === "string" ? input : (input.text ?? "");
-  const attachments = typeof input === "string" ? [] : (input.attachments ?? []);
-  if (text.trim().length === 0 && attachments.length === 0) return undefined;
+export function createUserMessage<
+  Metadata extends ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(input: SendMessageInput<Metadata>): UIMessage<Metadata, Data> {
+  const text = input.text ?? "";
+  const attachments = input.attachments ?? [];
+  if (text.trim().length === 0 && attachments.length === 0) {
+    throw new TypeError("sendMessage requires nonblank text or at least one attachment.");
+  }
 
-  const parts: UIMessagePart[] = [];
+  const parts: UIMessagePart<Data>[] = [];
   if (text.trim().length > 0) {
     parts.push({ id: createClientId("part"), type: "text", text });
   }
@@ -25,19 +31,13 @@ export function createUserMessage(input: SendMessageInput): UIMessage | undefine
     });
   }
   return {
-    id: typeof input === "string" || input.id === undefined ? createClientId("msg") : input.id,
+    id: createClientId("msg"),
     role: "user",
     parts,
-    ...(typeof input === "string" || input.metadata === undefined
-      ? {}
-      : { metadata: input.metadata }),
+    ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
   };
 }
 
 function normalizeAttachment(attachment: CreateUIAttachment): UIAttachment {
   return { ...attachment, id: attachment.id ?? createClientId("attachment") };
-}
-
-function isUIMessage(value: SendMessageInput): value is UIMessage {
-  return typeof value === "object" && value !== null && "role" in value && "parts" in value;
 }

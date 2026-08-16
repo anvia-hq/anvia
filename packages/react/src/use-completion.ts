@@ -1,132 +1,169 @@
 import {
+  applyClientStreamEvent,
+  assistantText,
+  type ClientCompletionRequest,
   type ClientDataMap,
+  type ClientMetadata,
+  ClientProtocolError,
   type ClientStreamEvent,
-  type ClientStreamRequest,
-  createClientId,
+  type ClientTransport,
+  normalizeClientError,
   type UIMessage,
 } from "@anvia/client";
-import type { ContextUsage, Message } from "@anvia/core/completion";
-import { useCallback, useMemo, useState } from "react";
-import type { ClientConnectionOptions, UseChatStatus } from "./types";
-import { useChat } from "./use-chat";
+import type { ContextUsage } from "@anvia/core/completion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { contextUsageUpdateFromEvent } from "./context-usage";
+import type { UseChatStatus } from "./types";
 
 export type UseCompletionStatus = UseChatStatus;
 
-export type UseCompletionRequestArgs = {
-  uiMessages: UIMessage[];
-  messages: Message[];
-};
-
-type UseCompletionCommonOptions<TData extends ClientDataMap> = {
-  initialMessages?: UIMessage[];
-  initialCompletion?: string;
-  onEvent?: (event: ClientStreamEvent<TData>) => void;
-  onError?: (error: Error) => void;
-};
-
-type CompletionRequestFactoryOptions<TRequest> = [ClientStreamRequest] extends [TRequest]
-  ? { createRequest?: (args: UseCompletionRequestArgs) => TRequest }
-  : { createRequest: (args: UseCompletionRequestArgs) => TRequest };
-
 export type UseCompletionOptions<
-  TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
-> = ClientConnectionOptions<TRequest, TData> &
-  UseCompletionCommonOptions<TData> &
-  CompletionRequestFactoryOptions<TRequest>;
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
+  transport: ClientTransport<ClientCompletionRequest<Metadata>, Data, Metadata>;
+  initialInput?: string;
+  initialCompletion?: string;
+  onEvent?(event: ClientStreamEvent<Metadata, Data>): void;
+  onError?(error: Error): void;
+};
 
-export type UseCompletionResult<TData extends ClientDataMap = ClientDataMap> = {
-  messages: UIMessage[];
+export type UseCompletionResult<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
   completion: string;
   input: string;
   setInput(input: string): void;
-  complete(prompt?: string): Promise<void>;
+  complete(options: ClientCompletionRequest<Metadata>): Promise<void>;
+  submit(): Promise<void>;
   stop(): void;
-  reset(messagesOrCompletion?: UIMessage[] | string): void;
+  reset(): void;
   status: UseCompletionStatus;
   error: Error | undefined;
-  events: ClientStreamEvent<TData>[];
+  events: readonly ClientStreamEvent<Metadata, Data>[];
   contextUsage: ContextUsage | undefined;
 };
 
 export function useCompletion<
-  TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
->(options: UseCompletionOptions<TRequest, TData>): UseCompletionResult<TData> {
-  const [input, setInput] = useState("");
-  const initialMessages = useMemo(
-    () => options.initialMessages ?? initialCompletionMessage(options.initialCompletion),
-    [options.initialCompletion, options.initialMessages],
-  );
-  const connection =
-    options.transport !== undefined
-      ? { transport: options.transport }
-      : {
-          endpoint: options.endpoint,
-          ...(options.format === undefined ? {} : { format: options.format }),
-          ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-          ...(options.headers === undefined ? {} : { headers: options.headers }),
-          ...(options.body === undefined ? {} : { body: options.body }),
-          ...(options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas }),
-        };
-  const chat = useChat<TRequest, TData>({
-    ...connection,
-    initialMessages,
-    createRequest: (args) =>
-      options.createRequest === undefined
-        ? ({ messages: args.messages } as TRequest)
-        : options.createRequest({
-            uiMessages: args.uiMessages,
-            messages: args.messages,
-          }),
-    ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
-    ...(options.onError === undefined ? {} : { onError: options.onError }),
-  });
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(options: UseCompletionOptions<Metadata, Data>): UseCompletionResult<Metadata, Data> {
+  const [input, setInput] = useState(options.initialInput ?? "");
+  const [completion, setCompletion] = useState(options.initialCompletion ?? "");
+  const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
+  const [contextUsage, setContextUsage] = useState<ContextUsage>();
+  const [status, setStatus] = useState<UseCompletionStatus>("ready");
+  const [error, setError] = useState<Error>();
+  const messagesRef = useRef<readonly UIMessage<Metadata, Data>[]>([]);
+  const abortRef = useRef<AbortController | undefined>(undefined);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = undefined;
+    setStatus("ready");
+  }, []);
 
   const complete = useCallback(
-    async (prompt?: string) => {
-      const value = prompt ?? input;
-      setInput("");
-      await chat.sendMessage(value);
-    },
-    [chat.sendMessage, input],
-  );
+    async (request: ClientCompletionRequest<Metadata>) => {
+      if (request.prompt.trim().length === 0) {
+        throw new TypeError("complete requires a nonblank prompt.");
+      }
 
-  const reset = useCallback(
-    (messagesOrCompletion?: UIMessage[] | string) => {
-      setInput("");
-      if (Array.isArray(messagesOrCompletion)) {
-        chat.reset(messagesOrCompletion);
-      } else {
-        chat.reset(initialCompletionMessage(messagesOrCompletion));
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      messagesRef.current = [];
+      setCompletion("");
+      setEvents([]);
+      setContextUsage(undefined);
+      setError(undefined);
+      setStatus("submitted");
+
+      let streamError: Error | undefined;
+      try {
+        for await (const frame of options.transport.send({
+          request,
+          abortSignal: controller.signal,
+        })) {
+          if (abortRef.current !== controller || controller.signal.aborted) return;
+          if (frame.type === "stream_start") continue;
+          if (frame.type === "stream_event") {
+            setStatus("streaming");
+            const event = frame.event;
+            setEvents((current) => [...current, event]);
+            options.onEvent?.(event);
+            const nextContextUsage = contextUsageUpdateFromEvent(event);
+            if (nextContextUsage !== undefined) setContextUsage(nextContextUsage);
+            messagesRef.current = applyClientStreamEvent(messagesRef.current, event);
+            setCompletion(assistantText(messagesRef.current));
+            if (event.type === "error") {
+              const eventError = normalizeClientError(event.error);
+              streamError ??= eventError;
+              setError(eventError);
+              setStatus("error");
+              options.onError?.(eventError);
+            }
+            continue;
+          }
+          if (frame.status !== "completed") {
+            throw new ClientProtocolError(
+              `Client completion stream ended with status ${frame.status}.`,
+              frame,
+            );
+          }
+        }
+        if (abortRef.current === controller && !controller.signal.aborted) {
+          setStatus(streamError === undefined ? "ready" : "error");
+        }
+      } catch (caught) {
+        if (isAbortError(caught)) {
+          if (abortRef.current === controller) setStatus("ready");
+          return;
+        }
+        if (abortRef.current !== controller) return;
+        const nextError = normalizeClientError(caught);
+        setError(nextError);
+        setStatus("error");
+        options.onError?.(nextError);
+      } finally {
+        if (abortRef.current === controller) abortRef.current = undefined;
       }
     },
-    [chat.reset],
+    [options],
   );
 
+  const submit = useCallback(() => complete({ prompt: input }), [complete, input]);
+
+  const reset = useCallback(() => {
+    stop();
+    setInput(options.initialInput ?? "");
+    setCompletion(options.initialCompletion ?? "");
+    setEvents([]);
+    setContextUsage(undefined);
+    setError(undefined);
+    messagesRef.current = [];
+  }, [options.initialCompletion, options.initialInput, stop]);
+
   return {
-    messages: chat.messages,
-    completion: chat.text,
+    completion,
     input,
     setInput,
     complete,
-    stop: chat.stop,
+    submit,
+    stop,
     reset,
-    status: chat.status,
-    error: chat.error,
-    events: chat.events,
-    contextUsage: chat.contextUsage,
+    status,
+    error,
+    events,
+    contextUsage,
   };
 }
 
-function initialCompletionMessage(completion: string | undefined): UIMessage[] {
-  if (completion === undefined) return [];
-  const id = createClientId("initial_assistant");
-  return [
-    {
-      id,
-      role: "assistant",
-      parts: [{ id: `${id}_text`, type: "text", text: completion }],
-    },
-  ];
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
+  );
 }

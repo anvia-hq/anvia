@@ -9,26 +9,28 @@ import { completionToClientStream, parseClientStreamRequest } from "@anvia/clien
 import { streamCompletion } from "@anvia/core";
 
 const request = parseClientStreamRequest(await httpRequest.json());
-const events = completionToClientStream(
-  streamCompletion({ model, messages: request.messages }),
-);
+const events = completionToClientStream({
+  events: streamCompletion({ model, messages: request.messages }),
+});
 ```
 
 The request carries core `Message[]`; client-side `UIMessage[]` never crosses the server boundary.
-The response uses `ClientStreamEvent` records inside an always-framed `anvia.client.v1` stream.
+The response uses `ClientStreamEvent` records inside an always-framed `anvia.client.v2` stream.
 
 ## Public API
 
-- `completionToClientStream(events, options)` adapts native completion events.
-- `agentToClientStream(events, options)` adapts native Agent events, including nested-agent scope.
+- `completionToClientStream({ events, ...options })` adapts native completion events.
+- `agentToClientStream({ events, ...options })` adapts native Agent events, including nested-agent
+  scope.
 - `parseClientStreamRequest`, `parseClientStreamEvent`, and `parseClientStreamFrame` validate public
   input at runtime.
 - `createHttpClientTransport(options)` consumes framed JSONL or SSE responses and validates the
   protocol header, frame order, stream identity, and event IDs.
-- `createDirectClientTransport(handler)` provides the same framed contract without HTTP.
+- `createDirectClientTransport({ handler })` provides the same framed contract without HTTP.
 - `messagesToUIMessages` and `uiMessagesToMessages` explicitly convert server messages and UI
   state.
 - `applyClientStreamEvent(messages, event)` applies canonical events to `UIMessage[]` state.
+- `parseUIMessage` and `parseUIMessages` validate externally loaded UI state.
 
 Tool-call start, delta, and end events are automatic when the provider exposes streamed arguments.
 Errors are masked by default. Use `mapError` only at the server adapter boundary when an application

@@ -1,13 +1,26 @@
 import { type FetchEventStreamOptions, fetchEventStream } from "./fetch";
-import type { EventStreamFormat, EventTransport, EventTransportOptions } from "./types";
+import type { EventStreamFormat, EventTransport, EventTransportSendOptions } from "./types";
+
+export type EventTransportContext<TRequest> = EventTransportSendOptions<TRequest>;
+
+export type EventTransportBodyContext<TRequest> = Omit<
+  EventTransportContext<TRequest>,
+  "headers"
+> & {
+  headers: Headers;
+};
 
 export type CreateFetchEventTransportOptions<TRequest, TEvent> = {
-  endpoint: string | URL | ((request: TRequest) => string | URL);
+  endpoint: string | URL | ((context: EventTransportContext<TRequest>) => string | URL);
   method?: string;
   format?: EventStreamFormat | "auto";
   fetch?: typeof fetch;
-  headers?: HeadersInit | ((request: TRequest) => HeadersInit | Promise<HeadersInit>);
-  body?: (request: TRequest) => BodyInit | null | undefined | Promise<BodyInit | null | undefined>;
+  headers?:
+    | HeadersInit
+    | ((context: EventTransportContext<TRequest>) => HeadersInit | Promise<HeadersInit>);
+  body?: (
+    context: EventTransportBodyContext<TRequest>,
+  ) => BodyInit | null | undefined | Promise<BodyInit | null | undefined>;
   init?: Omit<RequestInit, "body" | "headers" | "method" | "signal">;
   mapEvent?: (event: unknown) => TEvent;
   validateResponse?: (response: Response) => void;
@@ -17,37 +30,40 @@ export function createFetchEventTransport<TRequest, TEvent = unknown>(
   options: CreateFetchEventTransportOptions<TRequest, TEvent>,
 ): EventTransport<TRequest, TEvent> {
   return {
-    async *send(request, transportOptions = {}) {
+    async *send(transportOptions) {
       const endpoint =
-        typeof options.endpoint === "function" ? options.endpoint(request) : options.endpoint;
-      const requestHeaders = await resolveHeaders(options.headers, request);
+        typeof options.endpoint === "function"
+          ? options.endpoint(transportOptions)
+          : options.endpoint;
+      const requestHeaders = await resolveHeaders(options.headers, transportOptions);
       const headers = mergeHeaders(requestHeaders, transportOptions.headers);
       const method = options.method ?? "POST";
-      const body = await resolveBody(options.body, request, headers, method);
+      const body = await resolveBody(options.body, transportOptions, headers, method);
       const init: FetchEventStreamOptions = {
         ...options.init,
+        input: endpoint,
         method,
         headers,
         format: options.format ?? "auto",
       };
       if (body !== undefined) init.body = body;
-      if (transportOptions.signal !== undefined) init.signal = transportOptions.signal;
+      if (transportOptions.abortSignal !== undefined) init.signal = transportOptions.abortSignal;
       if (options.fetch !== undefined) init.fetch = options.fetch;
       if (options.validateResponse !== undefined) init.validateResponse = options.validateResponse;
 
-      for await (const event of fetchEventStream<unknown>(endpoint, init)) {
+      for await (const event of fetchEventStream<unknown>(init)) {
         yield options.mapEvent === undefined ? (event as TEvent) : options.mapEvent(event);
       }
     },
   };
 }
 
-export function createDirectEventTransport<TRequest, TEvent>(
-  handler: (request: TRequest, options: EventTransportOptions) => AsyncIterable<TEvent>,
-): EventTransport<TRequest, TEvent> {
+export function createDirectEventTransport<TRequest, TEvent>(options: {
+  handler(context: EventTransportContext<TRequest>): AsyncIterable<TEvent>;
+}): EventTransport<TRequest, TEvent> {
   return {
-    async *send(request, options) {
-      const iterator = handler(request, options ?? {})[Symbol.asyncIterator]();
+    async *send(context) {
+      const iterator = options.handler(context)[Symbol.asyncIterator]();
       let closePromise: Promise<unknown> | undefined;
       const close = () => {
         closePromise ??= Promise.resolve(iterator.return?.());
@@ -56,15 +72,15 @@ export function createDirectEventTransport<TRequest, TEvent>(
       const onAbort = () => {
         void close();
       };
-      options?.signal?.addEventListener("abort", onAbort, { once: true });
+      context.abortSignal?.addEventListener("abort", onAbort, { once: true });
       try {
-        while (!options?.signal?.aborted) {
+        while (!context.abortSignal?.aborted) {
           const next = await iterator.next();
           if (next.done) break;
           yield next.value;
         }
       } finally {
-        options?.signal?.removeEventListener("abort", onAbort);
+        context.abortSignal?.removeEventListener("abort", onAbort);
         await close();
       }
     },
@@ -73,21 +89,21 @@ export function createDirectEventTransport<TRequest, TEvent>(
 
 async function resolveHeaders<TRequest>(
   headers: CreateFetchEventTransportOptions<TRequest, unknown>["headers"],
-  request: TRequest,
+  context: EventTransportContext<TRequest>,
 ): Promise<HeadersInit | undefined> {
-  return typeof headers === "function" ? headers(request) : headers;
+  return typeof headers === "function" ? headers(context) : headers;
 }
 
 async function resolveBody<TRequest>(
   body: CreateFetchEventTransportOptions<TRequest, unknown>["body"],
-  request: TRequest,
+  context: EventTransportContext<TRequest>,
   headers: Headers,
   method: string,
 ): Promise<BodyInit | null | undefined> {
-  if (body !== undefined) return body(request);
+  if (body !== undefined) return body({ ...context, headers });
   if (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") return undefined;
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
-  return JSON.stringify(request);
+  return JSON.stringify(context.request);
 }
 
 function mergeHeaders(...values: Array<HeadersInit | undefined>): Headers {

@@ -12,31 +12,31 @@ import { streamCompletion } from "@anvia/core";
 import { createClientStreamResponse } from "@anvia/server";
 
 const body = parseClientStreamRequest(await request.json());
-const events = completionToClientStream(
-  streamCompletion({ model, messages: body.messages }),
-);
+const events = completionToClientStream({
+  events: streamCompletion({ model, messages: body.messages }),
+});
 
-return createClientStreamResponse(events); // JSONL by default
+return createClientStreamResponse({ events }); // JSONL by default
 ```
 
-`createClientStreamResponse(events, options)` always emits `stream_start`, ordered
+`createClientStreamResponse({ events, ...options })` always emits `stream_start`, ordered
 `stream_event` frames, and `stream_end`, and sets
-`x-anvia-stream-protocol: anvia.client.v1`. Use `format: "sse"` for SSE framing.
+`x-anvia-stream-protocol: anvia.client.v2`. Use `format: "sse"` for SSE framing.
 
 For resumable streams, pass `{ resumable: { streamId, store } }` when creating the response and
 call `resumeClientStreamResponse({ streamId, after, store })` for a resume request.
 
 ## Generic event responses
 
-`createEventStreamResponse(events, options)` and `resumeEventStreamResponse(options)` are separate,
-generic helpers. They serialize the event type supplied by the application and do not claim that it
-is the Anvia client protocol.
+`createEventStreamResponse({ events, ...options })` and `resumeEventStreamResponse(options)` are
+separate, generic helpers. They serialize the event type supplied by the application and do not
+claim that it is the Anvia client protocol.
 
 The lower-level exports are:
 
-- `createJsonlStream(events, options)`
-- `createSseStream(events, options)`
-- `createResumableStream(events, options)`
+- `createJsonlStream({ events, ...options })`
+- `createSseStream({ events, ...options })`
+- `createResumableStream({ events, ...options })`
 - `resumeStreamEvents(options)`
 - `createMemoryResumableStreamStore()`
 

@@ -311,7 +311,7 @@ const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
         if (event.defaultPrevented || disabled) {
           return;
         }
-        void chat.sendMessage(suggestionPrompt);
+        void chat.sendMessage({ text: suggestionPrompt });
       },
       [chat, disabled, onClick, suggestionPrompt],
     );

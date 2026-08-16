@@ -1289,6 +1289,9 @@ function messageParts(message: Message): StoredMessagePart[] {
     return [{ type: "text", value: { type: "text", text: message.content } }];
   }
 
+  if (typeof message.content === "string") {
+    return [{ type: "text", value: { type: "text", text: message.content } }];
+  }
   return message.content.map((content) => ({
     type: content.type,
     value: content,
@@ -1297,41 +1300,47 @@ function messageParts(message: Message): StoredMessagePart[] {
 
 function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   const parts = partRows.map((partRow) => JSON.parse(partRow.part_json) as unknown);
-  const metadata = parseJsonValue<JsonValue>(row.metadata_json);
-  if (metadata !== undefined && !isJsonValue(metadata)) {
-    throw new TypeError("Stored Studio message metadata is not a strict JSON value.");
+  const metadata = parseJsonValue<JsonObject>(row.metadata_json);
+  if (
+    metadata !== undefined &&
+    (!isJsonValue(metadata) ||
+      typeof metadata !== "object" ||
+      metadata === null ||
+      Array.isArray(metadata))
+  ) {
+    throw new TypeError("Stored Studio message metadata is not a strict JSON object.");
   }
   if (row.role === "system") {
     const message: Extract<Message, { role: "system" }> = {
       role: "system",
       content: systemContentFromParts(parts),
+      ...(metadata === undefined ? {} : { metadata }),
     };
-    if (metadata !== undefined) message.metadata = metadata;
     return message;
   }
   if (row.role === "user") {
     const message: Extract<Message, { role: "user" }> = {
       role: "user",
       content: parts as Extract<Message, { role: "user" }>["content"],
+      ...(metadata === undefined ? {} : { metadata }),
     };
-    if (metadata !== undefined) message.metadata = metadata;
     return message;
   }
   if (row.role === "assistant") {
     const message: Extract<Message, { role: "assistant" }> = {
       role: "assistant",
       content: parts as Extract<Message, { role: "assistant" }>["content"],
+      ...(row.message_id === null ? {} : { id: row.message_id }),
+      ...(metadata === undefined ? {} : { metadata }),
     };
-    if (row.message_id !== null) message.id = row.message_id;
-    if (metadata !== undefined) message.metadata = metadata;
     return message;
   }
   if (row.role === "tool") {
     const message: Extract<Message, { role: "tool" }> = {
       role: "tool",
       content: parts as Extract<Message, { role: "tool" }>["content"],
+      ...(metadata === undefined ? {} : { metadata }),
     };
-    if (metadata !== undefined) message.metadata = metadata;
     return message;
   }
 

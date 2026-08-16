@@ -31,7 +31,7 @@ try {
     prompt: "Add 8 and 13, then increment the counter by the result.",
   })) {
     if (event.type === "tool_call") {
-      console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
+      console.log("tool call:", event.toolCall.toolName, event.toolCall.input);
     }
 
     if (event.type === "tool_result") {

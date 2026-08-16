@@ -1,4 +1,4 @@
-import { AssistantContent, Message, type ToolCall, type Usage } from "@anvia/core/completion";
+import type { ToolCallPart, Usage } from "@anvia/core/completion";
 import { EvalOutcome } from "@anvia/core/evals";
 import type { AgentGenerationStartArgs } from "@anvia/core/observability";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@opentelemetry/api";
 import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import { createOtelEvalReporter, otel } from "../src/index";
 
 afterEach(() => {
@@ -1331,7 +1332,7 @@ function usage(inputTokens: number, outputTokens: number): Usage {
   };
 }
 
-function toolCall(): ToolCall {
+function toolCall(): ToolCallPart {
   return AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" });
 }
 

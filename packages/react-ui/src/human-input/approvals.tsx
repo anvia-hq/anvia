@@ -107,9 +107,10 @@ const HumanInputApprove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
           return;
         }
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
-        void (decisionReason === undefined
-          ? chat.approveTool(approval.id)
-          : chat.approveTool(approval.id, decisionReason));
+        void chat.approveTool({
+          approvalId: approval.id,
+          ...(decisionReason === undefined ? {} : { reason: decisionReason }),
+        });
       },
       [approval.id, chat, disabled, onClick, reason],
     );
@@ -144,9 +145,10 @@ const HumanInputReject = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
           return;
         }
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
-        void (decisionReason === undefined
-          ? chat.rejectTool(approval.id)
-          : chat.rejectTool(approval.id, decisionReason));
+        void chat.rejectTool({
+          approvalId: approval.id,
+          ...(decisionReason === undefined ? {} : { reason: decisionReason }),
+        });
       },
       [approval.id, chat, disabled, onClick, reason],
     );

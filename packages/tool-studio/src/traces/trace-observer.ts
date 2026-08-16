@@ -292,20 +292,19 @@ class ChildAgentToolTraceAccumulator {
 
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
       const toolCall = child.toolCall;
-      const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
-      const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
+      const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
       const callId =
-        typeof toolCall.callId === "string"
-          ? toolCall.callId
-          : typeof toolCall.id === "string"
-            ? toolCall.id
+        typeof toolCall.toolCallId === "string"
+          ? toolCall.toolCallId
+          : typeof toolCall.callId === "string"
+            ? toolCall.callId
             : undefined;
       const start: (typeof this.toolStarts)[number] = {
         startedAt: new Date(),
         agentId,
         childTurn,
         toolName,
-        input: toJsonValue(toolCallFunction?.arguments ?? {}),
+        input: toJsonValue("input" in toolCall ? toolCall.input : {}),
         completed: false,
       };
       if (agentName !== undefined) start.agentName = agentName;
@@ -623,7 +622,6 @@ function toolMetadata(args: AgentToolStartArgs, skipped: boolean, result?: strin
     argumentBytes: byteLength(args.args),
     resultBytes: result === undefined ? undefined : byteLength(result),
     hasCallSignature: args.toolCall.signature !== undefined,
-    hasAdditionalParams: args.toolCall.additionalParams !== undefined,
     toolDescription: args.toolDefinition?.description,
     parameterKeys: Object.keys(properties).sort(),
     requiredParameterKeys: required,
@@ -642,7 +640,6 @@ function toolMetadata(args: AgentToolStartArgs, skipped: boolean, result?: strin
       argumentBytes: byteLength(args.args),
       resultBytes: result === undefined ? undefined : byteLength(result),
       hasCallSignature: args.toolCall.signature !== undefined,
-      hasAdditionalParams: args.toolCall.additionalParams !== undefined,
     }),
   });
 }

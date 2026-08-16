@@ -957,19 +957,18 @@ class LangfuseToolObserver implements AgentToolObserver {
         output: this.run.redactOutputValue({ toolCall: child.toolCall }),
       });
       const toolCall = child.toolCall;
-      const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
-      const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
+      const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
       const toolCallId =
-        typeof toolCall.callId === "string"
-          ? toolCall.callId
-          : typeof toolCall.id === "string"
-            ? toolCall.id
+        typeof toolCall.toolCallId === "string"
+          ? toolCall.toolCallId
+          : typeof toolCall.callId === "string"
+            ? toolCall.callId
             : undefined;
       const childTool = agent.startObservation(
         `${agentLabel(agentId, agentName)}.${toolName}`,
         {
           input: this.run.redactInputValue({
-            args: toolCallFunction?.arguments ?? {},
+            args: toolCall.input,
             toolCall,
           }),
           metadata: asMetadata(

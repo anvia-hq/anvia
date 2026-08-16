@@ -1,6 +1,5 @@
 import {
-  AssistantContent,
-  type AssistantContent as AssistantContentType,
+  type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
@@ -8,8 +7,8 @@ import {
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type DocumentContent,
-  type ImageContent,
+  type FilePart,
+  type ImagePart,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
@@ -17,9 +16,9 @@ import {
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
-  type ToolContent,
   type ToolDefinition,
-  type UserContent,
+  type ToolResultPart,
+  type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
@@ -271,19 +270,23 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     choices.find((choice) => isPlainObject(choice) && choice.index === 0) ??
     choices.find(isPlainObject);
   const message = isPlainObject(firstChoice?.message) ? firstChoice.message : {};
-  const choice: AssistantContentType[] = [];
+  const choice: AssistantContentPart[] = [];
 
   const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
   if (reasoning !== undefined && reasoning.length > 0) {
-    choice.push(AssistantContent.reasoning(reasoning));
+    choice.push({
+      type: "reasoning",
+      text: reasoning,
+      details: [{ type: "text", text: reasoning }],
+    });
   }
 
   if (typeof message.content === "string" && message.content.length > 0) {
-    choice.push(AssistantContent.text(message.content));
+    choice.push({ type: "text", text: message.content });
   }
 
   if (typeof message.refusal === "string" && message.refusal.length > 0) {
-    choice.push(AssistantContent.text(message.refusal));
+    choice.push({ type: "text", text: message.refusal });
   }
 
   const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -296,7 +299,13 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     const id = typeof toolCall.id === "string" ? toolCall.id : crypto.randomUUID();
     const name = typeof fn.name === "string" ? fn.name : "";
     const argsText = typeof fn.arguments === "string" ? fn.arguments : "{}";
-    choice.push(AssistantContent.toolCall(id, name, parseToolArguments(id, argsText)));
+    choice.push({
+      type: "tool-call",
+      toolCallId: id,
+      callId: id,
+      toolName: name,
+      input: parseToolArguments(id, argsText),
+    });
   }
 
   const result: CompletionResponse = {
@@ -521,6 +530,9 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   }
 
   if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return [{ role: "user", content: message.content }];
+    }
     const contentParts: ChatMessage[] = [];
 
     for (const content of message.content) {
@@ -540,6 +552,9 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
     return message.content.map(toolContentToChatMessage);
   }
 
+  if (typeof message.content === "string") {
+    return [{ role: "assistant", content: message.content }];
+  }
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
@@ -547,17 +562,19 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
     .flatMap((content) => (content.type === "reasoning" ? [content.text] : []))
     .filter((text) => text.length > 0)
     .join("\n");
-  if (message.content.some((content) => content.type === "image")) {
-    throw new Error("OpenAI chat completions does not support image content in assistant history");
+  if (message.content.some((content) => content.type === "image" || content.type === "file")) {
+    throw new Error(
+      "OpenAI chat completions does not support image or file content in assistant history",
+    );
   }
   const toolCalls = message.content
-    .filter((content) => content.type === "tool_call")
+    .filter((content) => content.type === "tool-call")
     .map((content) => ({
-      id: content.callId ?? content.id,
+      id: content.callId ?? content.toolCallId,
       type: "function",
       function: {
-        name: content.function.name,
-        arguments: JSON.stringify(content.function.arguments ?? {}),
+        name: content.toolName,
+        arguments: JSON.stringify(content.input),
       },
     }));
 
@@ -579,19 +596,15 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   return [chatMessage];
 }
 
-function toolContentToChatMessage(content: ToolContent): ChatMessage {
+function toolContentToChatMessage(content: ToolResultPart): ChatMessage {
   return {
     role: "tool",
-    tool_call_id: content.callId ?? content.id,
-    content: content.content
-      .map((item) =>
-        item.type === "text" ? item.text : `[image:${item.mediaType ?? "image/png"}]`,
-      )
-      .join("\n"),
+    tool_call_id: content.callId ?? content.toolCallId,
+    content: toolResultToText(content),
   };
 }
 
-function userContentToChatParts(content: UserContent): ChatMessage[] {
+function userContentToChatParts(content: UserContentPart): ChatMessage[] {
   if (content.type === "text") {
     return [{ type: "text", text: content.text }];
   }
@@ -604,27 +617,46 @@ function userContentToChatParts(content: UserContent): ChatMessage[] {
     return [{ type: "image_url", image_url }];
   }
 
-  if (content.type === "document") {
-    return documentToChatParts(content);
+  if (content.type === "file") {
+    return fileToChatParts(content);
   }
 
   return [];
 }
 
-function imageUrl(image: ImageContent): string {
-  if (image.source.type === "url") {
-    return image.source.url;
+function imageUrl(image: ImagePart): string {
+  if (image.image.type === "url") {
+    return image.image.url;
   }
 
-  return `data:${image.source.mediaType};base64,${image.source.data}`;
+  if (image.mediaType === undefined) {
+    throw new Error("OpenAI chat image data requires mediaType");
+  }
+  return `data:${image.mediaType};base64,${image.image.data}`;
 }
 
-function documentToChatParts(document: DocumentContent): ChatMessage[] {
-  if (document.source.type === "text") {
-    return [{ type: "text", text: document.source.text }];
+function fileToChatParts(file: FilePart): ChatMessage[] {
+  if (file.data.type === "text") {
+    return [{ type: "text", text: file.data.text }];
   }
 
-  throw new Error("OpenAI chat completions does not support file document attachments");
+  throw new Error("OpenAI chat completions does not support file attachments");
+}
+
+function toolResultToText(content: ToolResultPart): string {
+  const output = content.output;
+  if (output.type === "text" || output.type === "error-text") {
+    return output.value;
+  }
+  if (output.type === "json" || output.type === "error-json") {
+    return JSON.stringify(output.value);
+  }
+  if (output.type === "execution-denied") {
+    return output.reason ?? "Tool execution was denied.";
+  }
+  return output.value
+    .map((part) => (part.type === "text" ? part.text : `[file:${part.mediaType}]`))
+    .join("\n");
 }
 
 function toolDefinitionToOpenAIChatCompletion(tool: ToolDefinition): ChatMessage {

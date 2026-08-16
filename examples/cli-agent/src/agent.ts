@@ -1,5 +1,4 @@
 import { Agent } from "@anvia/core/agent";
-import { Message } from "@anvia/core/completion";
 import { OpenAIClient } from "@anvia/openai";
 import { getModelName, getTavilyApiKey, OPENROUTER_BASE_URL } from "./config.js";
 import { toAnviaHistory } from "./memory.js";
@@ -47,7 +46,7 @@ export async function streamAssistantResponse({
     tools: [createTavilySearchTool(tavilyApiKey), ...createLocalWorkspaceTools()],
   });
 
-  const transcript = [...toAnviaHistory(history), Message.user(prompt)];
+  const transcript = [...toAnviaHistory(history), { role: "user" as const, content: prompt }];
 
   for await (const event of agent.stream({ messages: transcript, maxTurns: MAX_TURNS })) {
     if (event.type === "text_delta") {
@@ -60,9 +59,9 @@ export async function streamAssistantResponse({
 
     if (event.type === "tool_call") {
       onToolCall?.({
-        id: event.toolCall.id,
-        name: event.toolCall.function.name,
-        args: event.toolCall.function.arguments,
+        id: event.toolCall.toolCallId,
+        name: event.toolCall.toolName,
+        args: event.toolCall.input,
         ...(event.toolCall.callId === undefined ? {} : { callId: event.toolCall.callId }),
       });
     }

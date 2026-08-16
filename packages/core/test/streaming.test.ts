@@ -1119,7 +1119,11 @@ describe("Agent streaming", () => {
   it("streams structured tool results with a display string", async () => {
     const structuredContent = ToolOutput.content([
       { type: "text", text: "screen" },
-      { type: "image", data: "base64-png", mediaType: "image/png" },
+      {
+        type: "file",
+        data: { type: "data", data: "iVBORw0KGgo=" },
+        mediaType: "image/png",
+      },
     ]);
     const screenshotTool = createTool({
       name: "computer_screenshot",
@@ -1145,8 +1149,8 @@ describe("Agent streaming", () => {
         type: "tool_result",
         turn: 1,
         toolName: "computer_screenshot",
-        result: "screen\n[image:image/png]",
-        structuredResult: structuredContent,
+        result: "screen\n[file:image/png]",
+        structuredResult: structuredContent.content,
       }),
     );
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -1496,19 +1500,19 @@ describe("Agent streaming", () => {
               type: "reasoning",
               id: "rs_1",
               text: "Review complete.",
-              content: [{ type: "summary", text: "Review complete." }],
+              details: [{ type: "summary", text: "Review complete." }],
             },
             {
               type: "reasoning",
               id: "rs_2",
               text: "Step",
-              content: [{ type: "text", text: "Step", signature: "sig_1" }],
+              details: [{ type: "text", text: "Step", signature: "sig_1" }],
             },
             {
               type: "reasoning",
               id: "rs_3",
               text: "",
-              content: [{ type: "encrypted", data: "opaque" }],
+              details: [{ type: "encrypted", data: "opaque" }],
             },
             AssistantContent.text("done"),
           ]),

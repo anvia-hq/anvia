@@ -6,4 +6,4 @@ export {
 export type { FetchEventStreamOptions } from "./fetch";
 export { EventStreamHttpError, fetchEventStream } from "./fetch";
 export { readJsonlStream, readSseStream } from "./streams";
-export type { EventStreamFormat, EventTransport, EventTransportOptions } from "./types";
+export type { EventStreamFormat, EventTransport, EventTransportSendOptions } from "./types";

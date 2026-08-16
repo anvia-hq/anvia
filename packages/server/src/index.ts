@@ -1,4 +1,5 @@
 export type {
+  ClientResumableEvent,
   CreateClientStreamResponseOptions,
   ResumeClientStreamResponseOptions,
 } from "./client-response";

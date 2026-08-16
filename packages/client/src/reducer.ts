@@ -1,4 +1,4 @@
-import { isJsonValue } from "@anvia/core/completion";
+import { isJsonValue, type JsonObject } from "@anvia/core/completion";
 import { createClientId } from "./messages";
 import type {
   ClientDataMap,
@@ -9,10 +9,10 @@ import type {
   UIToolMessagePart,
 } from "./types";
 
-export function applyClientStreamEvent<TData extends ClientDataMap>(
-  messages: UIMessage[],
-  event: ClientStreamEvent<TData>,
-): UIMessage[] {
+export function applyClientStreamEvent<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
+  event: ClientStreamEvent<Metadata, Data>,
+): readonly UIMessage<Metadata, Data>[] {
   if (event.scope?.parentToolCallId !== undefined) {
     return messages;
   }
@@ -136,7 +136,6 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
       if (event.callId !== undefined) part.callId = event.callId;
       if (event.turn !== undefined) part.turn = event.turn;
       if (event.signature !== undefined) part.signature = event.signature;
-      if (event.additionalParams !== undefined) part.additionalParams = event.additionalParams;
       return upsertPart(messages, event.messageId, part);
     }
     case "tool_result":
@@ -184,7 +183,7 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
         type: "data",
         name: event.name,
         data: event.data,
-      });
+      } as UIMessagePart<Data>);
     case "message_end":
       return messages.map((message) => {
         if (message.id !== event.messageId) return message;
@@ -226,7 +225,10 @@ export function applyClientStreamEvent<TData extends ClientDataMap>(
   }
 }
 
-function reconcileFinalParts(current: UIMessagePart[], final: UIMessagePart[]): UIMessagePart[] {
+function reconcileFinalParts<Data extends ClientDataMap>(
+  current: readonly UIMessagePart<Data>[],
+  final: readonly UIMessagePart<Data>[],
+): UIMessagePart<Data>[] {
   const clientOnly = current.filter(
     (part) => part.type === "source" || part.type === "data" || part.type === "error",
   );
@@ -271,25 +273,33 @@ function appendReasoningContent(
   return next;
 }
 
-export function messageText(message: UIMessage): string {
+export function messageText<Metadata extends JsonObject, Data extends ClientDataMap>(
+  message: UIMessage<Metadata, Data>,
+): string {
   return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
 }
 
-export function assistantText(messages: UIMessage[]): string {
+export function assistantText<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
+): string {
   const assistant = [...messages].reverse().find((message) => message.role === "assistant");
   return assistant === undefined ? "" : messageText(assistant);
 }
 
-function upsertPart(messages: UIMessage[], messageId: string, part: UIMessagePart): UIMessage[] {
+function upsertPart<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
+  messageId: string,
+  part: UIMessagePart<Data>,
+): readonly UIMessage<Metadata, Data>[] {
   return updatePart(messages, messageId, part.id, () => part);
 }
 
-function updatePart(
-  messages: UIMessage[],
+function updatePart<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
   messageId: string,
   partId: string,
-  update: (part: UIMessagePart | undefined) => UIMessagePart,
-): UIMessage[] {
+  update: (part: UIMessagePart<Data> | undefined) => UIMessagePart<Data>,
+): readonly UIMessage<Metadata, Data>[] {
   const current = ensureAssistant(messages, messageId);
   return current.map((message) => {
     if (message.id !== messageId) return message;
@@ -301,43 +311,49 @@ function updatePart(
   });
 }
 
-function ensureAssistant(messages: UIMessage[], messageId: string): UIMessage[] {
+function ensureAssistant<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
+  messageId: string,
+): readonly UIMessage<Metadata, Data>[] {
   return messages.some((message) => message.id === messageId)
     ? messages
     : [...messages, { id: messageId, role: "assistant", parts: [] }];
 }
 
-function appendToLastAssistant(messages: UIMessage[], part: UIMessagePart): UIMessage[] {
+function appendToLastAssistant<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
+  part: UIMessagePart<Data>,
+): readonly UIMessage<Metadata, Data>[] {
   const index = findLastIndex(messages, (message) => message.role === "assistant");
   if (index === -1) {
     return [...messages, { id: createClientId("msg"), role: "assistant", parts: [part] }];
   }
   const next = [...messages];
-  const message = next[index] as UIMessage;
+  const message = next[index] as UIMessage<Metadata, Data>;
   next[index] = { ...message, parts: [...message.parts, part] };
   return next;
 }
 
-function updateLastAssistantGeneration(
-  messages: UIMessage[],
+function updateLastAssistantGeneration<Metadata extends JsonObject, Data extends ClientDataMap>(
+  messages: readonly UIMessage<Metadata, Data>[],
   value: UIMessageGeneration,
-): UIMessage[] {
+): readonly UIMessage<Metadata, Data>[] {
   const index = findLastIndex(messages, (message) => message.role === "assistant");
   if (index === -1) return messages;
   const next = [...messages];
-  const message = next[index] as UIMessage;
+  const message = next[index] as UIMessage<Metadata, Data>;
   next[index] = { ...message, generation: mergeGeneration(message.generation, value) };
   return next;
 }
 
-function mergeMetadata(
-  current: UIMessage["metadata"],
-  provided: UIMessage["metadata"],
-): UIMessage["metadata"] {
+function mergeMetadata<Metadata extends JsonObject>(
+  current: Metadata | undefined,
+  provided: Metadata | undefined,
+): Metadata | undefined {
   if (provided === undefined) return current;
   if (!isRecord(current) || !isRecord(provided)) return provided;
   const next = { ...current, ...provided };
-  return isJsonValue(next) ? next : provided;
+  return isJsonValue(next) ? (next as Metadata) : provided;
 }
 
 function mergeGeneration(
@@ -350,7 +366,7 @@ function mergeGeneration(
   };
 }
 
-function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+function findLastIndex<T>(items: readonly T[], predicate: (item: T) => boolean): number {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     if (predicate(items[index] as T)) return index;
   }

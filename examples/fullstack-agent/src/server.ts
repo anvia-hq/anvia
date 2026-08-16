@@ -27,19 +27,17 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 app.post("/api/completion", async (c) => {
   const body = parseClientStreamRequest(await c.req.json());
 
-  return createClientStreamResponse(
-    completionToClientStream(
-      streamCompletion({
+  return createClientStreamResponse({
+    events: completionToClientStream({
+      events: streamCompletion({
         model,
         messages: body.messages,
         instructions,
       }),
-      body.metadata === undefined ? {} : { metadata: body.metadata },
-    ),
-    {
-      format: "jsonl",
-    },
-  );
+      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+    }),
+    format: "jsonl",
+  });
 });
 
 export function startApiServer(port = 8787) {

@@ -1,5 +1,6 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { JsonObject, ToolDefinition } from "../completion/index";
+import { ToolOutput } from "../tool";
 import { createCallToolParams, mapMcpToolResult } from "./result";
 import type { McpTool } from "./types";
 
@@ -34,7 +35,7 @@ export function createMcpTool(options: {
         undefined,
         context?.abortSignal === undefined ? {} : { signal: context.abortSignal },
       );
-      return mapMcpToolResult(result);
+      return ToolOutput.content(mapMcpToolResult(result));
     },
   };
   return Object.freeze(tool);

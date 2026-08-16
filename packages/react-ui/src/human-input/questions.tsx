@@ -220,7 +220,7 @@ const HumanInputQuestionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"b
         if (event.defaultPrevented || disabled) {
           return;
         }
-        void chat.answerToolQuestion(question.question.id, answers);
+        void chat.answerToolQuestion({ questionId: question.question.id, answers });
       },
       [answers, chat, disabled, onClick, question.question.id],
     );

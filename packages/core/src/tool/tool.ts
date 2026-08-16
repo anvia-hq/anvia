@@ -1,7 +1,11 @@
-import type { JsonObject, JsonValue, ToolDefinition, ToolResultContent } from "../completion/types";
-import {
-  isToolResultContentArray,
-  serializeToolResultOutput as serializeToolOutput,
+import { isJsonValue } from "../completion/json";
+import { parseMessage } from "../completion/message-schema";
+import type {
+  JsonObject,
+  JsonValue,
+  ToolDefinition,
+  ToolResultContentPart,
+  ToolResultOutput,
 } from "../completion/types";
 
 export type ToolApprovalRunContext = {
@@ -55,24 +59,67 @@ export type AnyTool = Omit<Tool<unknown, unknown>, "requiresApproval"> & {
   readonly requiresApproval?: unknown;
 };
 
-export type NormalizedToolOutput = string | ToolResultContent[];
+const richToolOutput = Symbol("anvia.tool-output.content");
+
+export type RichToolOutput = Readonly<{
+  [richToolOutput]: true;
+  content: readonly ToolResultContentPart[];
+}>;
+
+export type NormalizedToolOutput = ToolResultOutput;
+
+export class ToolResultSerializationError extends TypeError {
+  constructor(readonly output: unknown) {
+    super("Tool output must be a string, a strict JSON value, or ToolOutput.content(...).");
+    this.name = "ToolResultSerializationError";
+  }
+}
 
 export const ToolOutput = {
-  content(content: ToolResultContent[]): ToolResultContent[] {
-    return content;
+  content(content: readonly ToolResultContentPart[]): RichToolOutput {
+    return { [richToolOutput]: true, content };
   },
 };
 
-export { isToolResultContentArray, serializeToolOutput };
-
 export function normalizeToolResultOutput(output: unknown): NormalizedToolOutput {
-  return isToolResultContentArray(output) ? output : serializeToolOutput(output);
+  if (typeof output === "string") {
+    return { type: "text", value: output };
+  }
+  if (isRichToolOutput(output)) {
+    try {
+      const message = parseMessage({
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "validation",
+            toolName: "validation",
+            output: { type: "content", value: output.content },
+          },
+        ],
+      });
+      if (message.role !== "tool") throw new TypeError("Unexpected message role");
+      const result = message.content[0];
+      if (result?.output.type !== "content") throw new TypeError("Unexpected tool output");
+      return result.output;
+    } catch {
+      throw new ToolResultSerializationError(output);
+    }
+  }
+  if (isJsonValue(output)) {
+    return { type: "json", value: output };
+  }
+  throw new ToolResultSerializationError(output);
 }
 
-export function toolResultContentToText(content: ToolResultContent[]): string {
+export function toolResultContentToText(content: readonly ToolResultContentPart[]): string {
   return content
-    .map((item) => (item.type === "text" ? item.text : `[image:${item.mediaType ?? "image/png"}]`))
+    .map((item) => (item.type === "text" ? item.text : `[file:${item.mediaType}]`))
     .join("\n");
+}
+
+function isRichToolOutput(value: unknown): value is RichToolOutput {
+  return typeof value === "object" && value !== null && richToolOutput in value;
 }
 
 export function parseToolArgs(args: string): JsonValue {

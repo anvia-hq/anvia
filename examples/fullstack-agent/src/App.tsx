@@ -1,3 +1,4 @@
+import { createHttpClientTransport } from "@anvia/client";
 import { type UseChatStatus, useChat } from "@anvia/react";
 import { ChatProvider, Composer, Message, Thread } from "@anvia/react-ui";
 import { ArrowDown, ArrowUp, Copy, Plus, RotateCcw, Square } from "lucide-react";
@@ -11,10 +12,14 @@ const promptExamples = [
 const iconButtonClassName =
   "inline-grid h-9 w-9 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-default disabled:opacity-[0.35]";
 
+const transport = createHttpClientTransport({
+  endpoint: "/api/completion",
+  format: "jsonl",
+});
+
 export function App() {
   const chat = useChat({
-    endpoint: "/api/completion",
-    format: "jsonl",
+    transport,
     suggestions: promptExamples.map((prompt) => ({ id: prompt, prompt })),
   });
 

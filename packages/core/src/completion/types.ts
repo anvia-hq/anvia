@@ -11,343 +11,130 @@ export type Document = {
   additionalProps?: Record<string, string>;
 };
 
-export type Text = {
+export type TextPart = Readonly<{
   type: "text";
   text: string;
   signature?: string;
-};
+}>;
 
 export type ImageDetail = "auto" | "low" | "high";
 
-export type ImageContent = {
+export type FileData =
+  | Readonly<{ type: "url"; url: string }>
+  | Readonly<{ type: "data"; data: string }>
+  | Readonly<{ type: "text"; text: string }>;
+
+export type ImagePart = Readonly<{
   type: "image";
-  source:
-    | {
-        type: "url";
-        url: string;
-      }
-    | {
-        type: "base64";
-        data: string;
-        mediaType: string;
-      };
+  image: Exclude<FileData, Readonly<{ type: "text"; text: string }>>;
+  mediaType?: string;
   detail?: ImageDetail;
-};
+}>;
 
-export type DocumentContent = {
-  type: "document";
-  source:
-    | {
-        type: "url";
-        url: string;
-        mediaType: string;
-        filename?: string;
-      }
-    | {
-        type: "base64";
-        data: string;
-        mediaType: string;
-        filename?: string;
-      }
-    | {
-        type: "text";
-        text: string;
-        mediaType?: string;
-        filename?: string;
-      };
-};
+export type FilePart = Readonly<{
+  type: "file";
+  data: FileData;
+  mediaType: string;
+  filename?: string;
+}>;
 
-export type Reasoning = {
+export type ReasoningPart = Readonly<{
   type: "reasoning";
   text: string;
   id?: string;
-  content?: ReasoningContent[];
-};
+  details?: readonly ReasoningDetail[];
+}>;
 
-export type ReasoningContent =
-  | {
+export type ReasoningDetail =
+  | Readonly<{
       type: "text";
       text: string;
       signature?: string;
-    }
-  | {
+    }>
+  | Readonly<{
       type: "summary";
       text: string;
-    }
-  | {
+    }>
+  | Readonly<{
       type: "encrypted";
       data: string;
-    }
-  | {
+    }>
+  | Readonly<{
       type: "redacted";
       data: string;
-    };
+    }>;
 
-export type ReasoningContentType = ReasoningContent["type"];
+export type ReasoningContentType = ReasoningDetail["type"];
 
-export type ToolFunction = {
-  name: string;
-  arguments: JsonValue;
-};
-
-export type ToolCall = {
-  type: "tool_call";
-  id: string;
+export type ToolCallPart = Readonly<{
+  type: "tool-call";
+  toolCallId: string;
   callId?: string;
-  function: ToolFunction;
+  toolName: string;
+  input: JsonValue;
   signature?: string;
-  additionalParams?: JsonValue;
-};
+}>;
 
-export type ToolResultContent =
-  | { type: "text"; text: string }
-  | { type: "image"; data: string; mediaType?: string };
+export type ToolResultContentPart = TextPart | FilePart;
 
-export type ToolResult = {
-  type: "tool_result";
-  id: string;
+export type ToolResultOutput =
+  | Readonly<{ type: "text"; value: string }>
+  | Readonly<{ type: "json"; value: JsonValue }>
+  | Readonly<{ type: "content"; value: readonly ToolResultContentPart[] }>
+  | Readonly<{ type: "execution-denied"; reason?: string }>
+  | Readonly<{ type: "error-text"; value: string }>
+  | Readonly<{ type: "error-json"; value: JsonValue }>;
+
+export type ToolResultPart = Readonly<{
+  type: "tool-result";
+  toolCallId: string;
   callId?: string;
-  toolName?: string;
-  content: ToolResultContent[];
-};
+  toolName: string;
+  output: ToolResultOutput;
+}>;
 
-export type MessageOptions = {
-  metadata?: JsonValue | undefined;
-};
+export type UserContentPart = TextPart | ImagePart | FilePart;
+export type AssistantContentPart = TextPart | ImagePart | FilePart | ReasoningPart | ToolCallPart;
 
-export type AssistantMessageOptions = MessageOptions & {
-  id?: string | undefined;
-};
-
-export type ToolResultOptions = {
-  callId?: string | undefined;
-  toolName?: string | undefined;
-};
-
-export type ToolResultMessageOptions = ToolResultOptions & MessageOptions;
-
-export type UserContent = Text | ImageContent | DocumentContent;
-export type AssistantContent = Text | ToolCall | Reasoning | ImageContent;
-export type ToolContent = ToolResult;
-
-export type SystemMessage = {
+export type SystemMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "system";
   content: string;
-  metadata?: JsonValue;
-};
+  metadata?: Metadata;
+}>;
 
-export type UserMessage = {
+export type UserMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "user";
-  content: UserContent[];
-  metadata?: JsonValue;
-};
+  content: string | readonly UserContentPart[];
+  metadata?: Metadata;
+}>;
 
-export type AssistantMessage = {
+export type AssistantMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "assistant";
   id?: string;
-  content: AssistantContent[];
-  metadata?: JsonValue;
-};
+  content: string | readonly AssistantContentPart[];
+  metadata?: Metadata;
+}>;
 
-export type ToolMessage = {
+export type ToolMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "tool";
-  content: ToolContent[];
-  metadata?: JsonValue;
-};
+  content: readonly ToolResultPart[];
+  metadata?: Metadata;
+}>;
 
-export type Message = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
+export type Message<Metadata extends JsonObject = JsonObject> =
+  | SystemMessage<Metadata>
+  | UserMessage<Metadata>
+  | AssistantMessage<Metadata>
+  | ToolMessage<Metadata>;
 
-export const UserContent = {
-  text(text: string): Text {
-    return { type: "text", text };
-  },
-  imageUrl(url: string, options: { detail?: ImageDetail } = {}): ImageContent {
-    const image: ImageContent = { type: "image", source: { type: "url", url } };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  imageBase64(
-    data: string,
-    mediaType: string,
-    options: { detail?: ImageDetail } = {},
-  ): ImageContent {
-    const image: ImageContent = {
-      type: "image",
-      source: { type: "base64", data, mediaType },
-    };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  documentUrl(
-    url: string,
-    mediaType: string,
-    options: { filename?: string | undefined } = {},
-  ): DocumentContent {
-    return {
-      type: "document",
-      source:
-        options.filename === undefined
-          ? { type: "url", url, mediaType }
-          : { type: "url", url, mediaType, filename: options.filename },
-    };
-  },
-  documentBase64(
-    data: string,
-    mediaType: string,
-    options: { filename?: string | undefined } = {},
-  ): DocumentContent {
-    return {
-      type: "document",
-      source:
-        options.filename === undefined
-          ? { type: "base64", data, mediaType }
-          : { type: "base64", data, mediaType, filename: options.filename },
-    };
-  },
-  documentText(text: string): Text {
-    return { type: "text", text };
-  },
-};
-
-export const ToolContent = {
-  toolResult(
-    id: string,
-    content: string | ToolResultContent[],
-    callIdOrOptions?: string | ToolResultOptions,
-    toolName?: string,
-  ): ToolResult {
-    const normalized =
-      typeof content === "string" ? [{ type: "text" as const, text: content }] : content;
-    const options = normalizeToolResultOptions(callIdOrOptions, toolName);
-    const result: ToolResult = { type: "tool_result", id, content: normalized };
-    if (options.callId !== undefined) {
-      result.callId = options.callId;
-    }
-    if (options.toolName !== undefined) {
-      result.toolName = options.toolName;
-    }
-    return result;
-  },
-};
-
-function normalizeToolResultOptions(
-  callIdOrOptions?: string | ToolResultOptions,
-  toolName?: string,
-): ToolResultOptions {
-  if (callIdOrOptions === undefined) {
-    return toolName === undefined ? {} : { toolName };
+export function reasoningDisplayText(
+  reasoning: ReasoningPart | readonly ReasoningDetail[],
+): string {
+  const details = "type" in reasoning ? reasoning.details : reasoning;
+  if (details === undefined) {
+    return "type" in reasoning ? reasoning.text : "";
   }
-  if (typeof callIdOrOptions === "string") {
-    return toolName === undefined
-      ? { callId: callIdOrOptions }
-      : { callId: callIdOrOptions, toolName };
-  }
-  return toolName === undefined ? callIdOrOptions : { ...callIdOrOptions, toolName };
-}
-
-export function serializeToolResultOutput(output: unknown): string {
-  if (typeof output === "string") {
-    return output;
-  }
-
-  try {
-    const serialized = JSON.stringify(output);
-    return serialized === undefined ? String(output) : serialized;
-  } catch {
-    return String(output);
-  }
-}
-
-export function isToolResultContentArray(value: unknown): value is ToolResultContent[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((item) => {
-      if (typeof item !== "object" || item === null || !("type" in item)) {
-        return false;
-      }
-      if (item.type === "text") {
-        return "text" in item && typeof item.text === "string";
-      }
-      if (item.type === "image") {
-        return (
-          "data" in item &&
-          typeof item.data === "string" &&
-          (!("mediaType" in item) ||
-            item.mediaType === undefined ||
-            typeof item.mediaType === "string")
-        );
-      }
-      return false;
-    })
-  );
-}
-
-export const AssistantContent = {
-  text(text: string): Text {
-    return { type: "text", text };
-  },
-  imageUrl(url: string, options: { detail?: ImageDetail } = {}): ImageContent {
-    const image: ImageContent = { type: "image", source: { type: "url", url } };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  imageBase64(
-    data: string,
-    mediaType: string,
-    options: { detail?: ImageDetail } = {},
-  ): ImageContent {
-    const image: ImageContent = {
-      type: "image",
-      source: { type: "base64", data, mediaType },
-    };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  reasoning(text: string, id?: string): Reasoning {
-    return id === undefined ? { type: "reasoning", text } : { type: "reasoning", text, id };
-  },
-  reasoningFromContent(content: ReasoningContent[], id?: string): Reasoning {
-    const text = reasoningDisplayText(content);
-    const reasoning: Reasoning = { type: "reasoning", text, content };
-    return id === undefined ? reasoning : { ...reasoning, id };
-  },
-  reasoningSummary(text: string, id?: string): Reasoning {
-    return AssistantContent.reasoningFromContent([{ type: "summary", text }], id);
-  },
-  reasoningEncrypted(data: string, id?: string): Reasoning {
-    return AssistantContent.reasoningFromContent([{ type: "encrypted", data }], id);
-  },
-  reasoningRedacted(data: string, id?: string): Reasoning {
-    return AssistantContent.reasoningFromContent([{ type: "redacted", data }], id);
-  },
-  toolCall(id: string, name: string, args: JsonValue, callId?: string): ToolCall {
-    const base: ToolCall = {
-      type: "tool_call",
-      id,
-      function: {
-        name,
-        arguments: args,
-      },
-    };
-    return callId === undefined ? base : { ...base, callId };
-  },
-};
-
-export function reasoningDisplayText(reasoning: Reasoning | ReasoningContent[]): string {
-  const content = Array.isArray(reasoning) ? reasoning : reasoning.content;
-  if (content === undefined) {
-    return Array.isArray(reasoning) ? "" : reasoning.text;
-  }
-  return content
+  return details
     .flatMap((item) => {
       if (item.type === "text" || item.type === "summary") {
         return [item.text];
@@ -355,62 +142,6 @@ export function reasoningDisplayText(reasoning: Reasoning | ReasoningContent[]):
       return [];
     })
     .join("");
-}
-
-export const Message = {
-  system(content: string, options: MessageOptions = {}): SystemMessage {
-    return { role: "system", content, ...messageMetadata(options) };
-  },
-  user(content: string | UserContent[], options: MessageOptions = {}): UserMessage {
-    return {
-      role: "user",
-      content: typeof content === "string" ? [UserContent.text(content)] : content,
-      ...messageMetadata(options),
-    };
-  },
-  assistant(
-    content: string | AssistantContent[],
-    idOrOptions?: string | AssistantMessageOptions,
-  ): AssistantMessage {
-    const normalized = typeof content === "string" ? [AssistantContent.text(content)] : content;
-    const options = typeof idOrOptions === "string" ? { id: idOrOptions } : (idOrOptions ?? {});
-    const metadata = messageMetadata(options).metadata;
-    const message: AssistantMessage =
-      options.id === undefined
-        ? { role: "assistant", content: normalized }
-        : { role: "assistant", id: options.id, content: normalized };
-    if (metadata !== undefined) {
-      message.metadata = metadata;
-    }
-    return message;
-  },
-  tool(content: ToolContent | ToolContent[], options: MessageOptions = {}): ToolMessage {
-    return {
-      role: "tool",
-      content: Array.isArray(content) ? content : [content],
-      ...messageMetadata(options),
-    };
-  },
-  toolResult(id: string, output: unknown, options: ToolResultMessageOptions = {}): ToolMessage {
-    const content = isToolResultContentArray(output) ? output : serializeToolResultOutput(output);
-    return Message.tool(
-      ToolContent.toolResult(id, content, {
-        callId: options.callId,
-        toolName: options.toolName,
-      }),
-      { metadata: options.metadata },
-    );
-  },
-};
-
-function messageMetadata(options: MessageOptions): { metadata?: JsonValue } {
-  if (options.metadata === undefined) {
-    return {};
-  }
-  if (!isJsonValue(options.metadata)) {
-    throw new TypeError("Message metadata must be a strict JSON value.");
-  }
-  return { metadata: options.metadata };
 }
 
 export type ToolChoice =
@@ -808,7 +539,7 @@ export type CompletionRequest<ModelName extends string = string> = {
 };
 
 export type CompletionResponse<RawResponse = unknown> = {
-  choice: AssistantContent[];
+  choice: AssistantContentPart[];
   usage: Usage;
   contextUsage?: ContextUsage;
   rawResponse: RawResponse;
@@ -820,7 +551,7 @@ export type CompletionResponse<RawResponse = unknown> = {
 export type CompletionResult<Output = string, RawResponse = unknown> = {
   output: Output;
   text: string;
-  content: readonly AssistantContent[];
+  content: readonly AssistantContentPart[];
   usage: Usage;
   contextUsage?: ContextUsage;
   rawResponse: RawResponse;
@@ -880,7 +611,7 @@ export type CompletionStreamPart =
     }
   | {
       type: "tool_call";
-      toolCall: ToolCall;
+      toolCall: ToolCallPart;
     }
   | {
       type: "source";
@@ -971,22 +702,22 @@ export function assertCompletionRequestSupported(
   }
 }
 
-export function textFromAssistantContent(content: AssistantContent[]): string {
+export function textFromAssistantContent(content: readonly AssistantContentPart[]): string {
   return content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
 }
 
 function requestHasImageInput(request: CompletionRequest): boolean {
   return request.chatHistory.some((message) =>
-    message.role === "system" ? false : message.content.some((content) => content.type === "image"),
+    message.role === "system" || typeof message.content === "string"
+      ? false
+      : message.content.some((content) => content.type === "image"),
   );
 }
 
 function requestHasFileDocumentInput(request: CompletionRequest): boolean {
   return request.chatHistory.some((message) =>
-    message.role === "user"
-      ? message.content.some(
-          (content) => content.type === "document" && content.source.type !== "text",
-        )
+    message.role === "user" && typeof message.content !== "string"
+      ? message.content.some((content) => content.type === "file" && content.data.type !== "text")
       : false,
   );
 }

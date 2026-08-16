@@ -6,7 +6,7 @@ describe("chat resume storage", () => {
   it("persists and clears a validated framed-stream cursor", () => {
     const options = { key: "test", storage: window.sessionStorage } as const;
     const state = {
-      version: 1 as const,
+      version: 2 as const,
       streamId: "stream_1",
       lastEventId: 4,
       messages: [],

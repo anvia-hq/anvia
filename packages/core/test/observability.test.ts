@@ -363,10 +363,10 @@ describe("agent observability", () => {
       role: "tool",
       content: [
         {
-          type: "tool_result",
-          id: "call_1",
+          type: "tool-result",
+          toolCallId: "call_1",
           toolName: "fail",
-          content: [{ type: "text", text: "ToolCallError: tool failed" }],
+          output: { type: "error-text", value: "ToolCallError: tool failed" },
         },
       ],
     });
@@ -769,8 +769,8 @@ describe("active agent observer groups", () => {
     expectTypeOf<AgentGenerationEndArgs["response"]["choice"]>().toEqualTypeOf<
       Readonly<AgentGenerationEndArgs["response"]["choice"]>
     >();
-    expectTypeOf<AgentToolStartArgs["toolCall"]["function"]>().toEqualTypeOf<
-      Readonly<AgentToolStartArgs["toolCall"]["function"]>
+    expectTypeOf<AgentToolStartArgs["toolCall"]["input"]>().toEqualTypeOf<
+      Readonly<AgentToolStartArgs["toolCall"]["input"]>
     >();
   });
 
@@ -825,9 +825,15 @@ describe("active agent observer groups", () => {
 
     await active.end(endArgs);
 
-    expect(original.prompt).toEqual(Message.user("hello"));
+    expect(original.prompt).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    });
     expect(original.history).toEqual([]);
-    expect(siblingStarts[0]?.prompt).toEqual(Message.user("hello"));
+    expect(siblingStarts[0]?.prompt).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    });
     expect(siblingStarts[0]?.history).toEqual([]);
     expect(endArgs.messages).toHaveLength(2);
     expect(endArgs.usage.totalTokens).toBe(0);
@@ -929,12 +935,12 @@ describe("active agent observer groups", () => {
           },
           update(args) {
             const mutable = args.delta as unknown as { toolCall: ToolCall };
-            mutable.toolCall.function.arguments = { value: "mutated" };
+            (mutable.toolCall as { input: JsonObject }).input = { value: "mutated" };
           },
         };
       },
       startTool(args) {
-        (args.toolCall.function.arguments as Record<string, unknown>).value = "mutated";
+        (args.toolCall.input as Record<string, unknown>).value = "mutated";
         return {
           streamEvent(streamArgs) {
             const event = streamArgs.event.event as unknown as { chunk: string };
@@ -1004,7 +1010,7 @@ describe("active agent observer groups", () => {
       delta: { type: "tool_call" as const, toolCall: toolCall() },
     };
     const startArgs = toolStartArgs();
-    (startArgs.toolCall.function as { arguments: JsonObject }).arguments = { value: "original" };
+    (startArgs.toolCall as { input: JsonObject }).input = { value: "original" };
     const streamTools = await active.startTool(startArgs);
     const endTools = await active.startTool(startArgs);
     const errorTools = await active.startTool(startArgs);
@@ -1032,13 +1038,13 @@ describe("active agent observer groups", () => {
     expect(siblingEvents[0]?.attributes).toEqual({ label: "original" });
     expect(generationFailure.message).toBe("generation failed");
     expect(siblingGenerationErrors[0]?.error).toMatchObject({ message: "generation failed" });
-    expect(updateArgs.delta.toolCall.function.arguments).toEqual({ x: 1, y: 2 });
+    expect(updateArgs.delta.toolCall.input).toEqual({ x: 1, y: 2 });
     expect(siblingUpdates[0]?.delta).toMatchObject({
-      toolCall: { function: { arguments: { x: 1, y: 2 } } },
+      toolCall: { input: { x: 1, y: 2 } },
     });
-    expect(startArgs.toolCall.function.arguments).toEqual({ value: "original" });
+    expect(startArgs.toolCall.input).toEqual({ value: "original" });
     expect(siblingToolStarts).toHaveLength(3);
-    expect(siblingToolStarts[0]?.toolCall.function.arguments).toEqual({ value: "original" });
+    expect(siblingToolStarts[0]?.toolCall.input).toEqual({ value: "original" });
     expect(streamArgs.event.event).toEqual({ chunk: '{"x":1' });
     expect(siblingToolEvents[0]?.event.event).toEqual({ chunk: '{"x":1' });
     expect(endArgs.structuredResult).toHaveLength(1);
@@ -1424,12 +1430,10 @@ function toolStreamEventArgs(): AgentToolStreamEventArgs {
 
 function toolCall(): ToolCall {
   return {
-    type: "tool_call",
-    id: "call_1",
-    function: {
-      name: "add",
-      arguments: { x: 1, y: 2 },
-    },
+    type: "tool-call",
+    toolCallId: "call_1",
+    toolName: "add",
+    input: { x: 1, y: 2 },
   };
 }
 

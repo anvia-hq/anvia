@@ -1,6 +1,5 @@
 import {
-  AssistantContent,
-  type AssistantContent as AssistantContentType,
+  type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
@@ -16,10 +15,10 @@ import {
   type StreamingCompletionModel,
   type ToolCallArgumentsMode,
   type ToolChoice,
-  type ToolContent,
   type ToolDefinition,
+  type ToolResultPart,
   Usage,
-  type UserContent,
+  type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
 import type { GoogleGenAI } from "@google/genai";
@@ -240,11 +239,11 @@ export function messagesToGeminiContents(messages: MessageType[]): GeminiContent
 
     if (message.role === "assistant") {
       const content = assistantMessageToGeminiContent(message);
-      for (const item of message.content) {
-        if (item.type === "tool_call") {
-          toolNamesById.set(item.id, item.function.name);
+      for (const item of typeof message.content === "string" ? [] : message.content) {
+        if (item.type === "tool-call") {
+          toolNamesById.set(item.toolCallId, item.toolName);
           if (item.callId !== undefined) {
-            toolNamesById.set(item.callId, item.function.name);
+            toolNamesById.set(item.callId, item.toolName);
           }
         }
       }
@@ -271,7 +270,10 @@ function userMessageToGeminiContent(
 ): GeminiContent {
   return {
     role: "user",
-    parts: message.content.map(userContentToGeminiPart),
+    parts:
+      typeof message.content === "string"
+        ? [{ text: message.content }]
+        : message.content.map(userContentToGeminiPart),
   };
 }
 
@@ -290,49 +292,54 @@ function assistantMessageToGeminiContent(
 ): GeminiContent {
   return {
     role: "model",
-    parts: message.content.flatMap((content): GeminiPart[] => {
-      if (content.type === "text") {
-        const part: GeminiPart = { text: content.text };
-        if (content.signature !== undefined) {
-          part.thoughtSignature = content.signature;
-        }
-        return [part];
-      }
-      if (content.type === "tool_call") {
-        const functionCall: Record<string, unknown> = {
-          name: content.function.name,
-          args: content.function.arguments ?? {},
-        };
-        if (content.callId !== undefined) {
-          functionCall.id = content.callId;
-        }
-        const part: GeminiPart = { functionCall };
-        if (content.signature !== undefined) {
-          part.thoughtSignature = content.signature;
-        }
-        return [part];
-      }
-      if (content.type === "reasoning" && content.content !== undefined) {
-        return content.content.flatMap((reasoning): GeminiPart[] => {
-          if (reasoning.type !== "text" && reasoning.type !== "summary") {
+    parts:
+      typeof message.content === "string"
+        ? [{ text: message.content }]
+        : message.content.flatMap((content): GeminiPart[] => {
+            if (content.type === "text") {
+              const part: GeminiPart = { text: content.text };
+              if (content.signature !== undefined) {
+                part.thoughtSignature = content.signature;
+              }
+              return [part];
+            }
+            if (content.type === "tool-call") {
+              const functionCall: Record<string, unknown> = {
+                name: content.toolName,
+                args: content.input,
+              };
+              if (content.callId !== undefined) {
+                functionCall.id = content.callId;
+              }
+              const part: GeminiPart = { functionCall };
+              if (content.signature !== undefined) {
+                part.thoughtSignature = content.signature;
+              }
+              return [part];
+            }
+            if (content.type === "reasoning" && content.details !== undefined) {
+              return content.details.flatMap((reasoning): GeminiPart[] => {
+                if (reasoning.type !== "text" && reasoning.type !== "summary") {
+                  return [];
+                }
+                const part: GeminiPart = { text: reasoning.text, thought: true };
+                if (reasoning.type === "text" && reasoning.signature !== undefined) {
+                  part.thoughtSignature = reasoning.signature;
+                }
+                return [part];
+              });
+            }
+            if (content.type === "image" || content.type === "file") {
+              throw new Error(
+                "Gemini does not support image or file content in assistant history yet",
+              );
+            }
             return [];
-          }
-          const part: GeminiPart = { text: reasoning.text, thought: true };
-          if (reasoning.type === "text" && reasoning.signature !== undefined) {
-            part.thoughtSignature = reasoning.signature;
-          }
-          return [part];
-        });
-      }
-      if (content.type === "image") {
-        throw new Error("Gemini does not support image content in assistant history yet");
-      }
-      return [];
-    }),
+          }),
   };
 }
 
-function userContentToGeminiPart(content: UserContent): GeminiPart {
+function userContentToGeminiPart(content: UserContentPart): GeminiPart {
   if (content.type === "text") {
     return { text: content.text };
   }
@@ -342,20 +349,22 @@ function userContentToGeminiPart(content: UserContent): GeminiPart {
   return documentContentToGeminiPart(content);
 }
 
-function imageContentToGeminiPart(content: Extract<UserContent, { type: "image" }>): GeminiPart {
-  if (content.source.type === "base64") {
+function imageContentToGeminiPart(
+  content: Extract<UserContentPart, { type: "image" }>,
+): GeminiPart {
+  if (content.image.type === "data") {
     return {
       inlineData: {
-        mimeType: content.source.mediaType,
-        data: content.source.data,
+        mimeType: content.mediaType ?? "image/png",
+        data: content.image.data,
       },
     };
   }
 
   return {
     fileData: {
-      fileUri: content.source.url,
-      mimeType: mimeTypeFromImageUrl(content.source.url),
+      fileUri: content.image.url,
+      mimeType: content.mediaType ?? mimeTypeFromImageUrl(content.image.url),
     },
   };
 }
@@ -380,37 +389,37 @@ function safeUrlPathname(url: string): string {
 }
 
 function documentContentToGeminiPart(
-  content: Extract<UserContent, { type: "document" }>,
+  content: Extract<UserContentPart, { type: "file" }>,
 ): GeminiPart {
-  if (content.source.type === "text") {
-    return { text: content.source.text };
+  if (content.data.type === "text") {
+    return { text: content.data.text };
   }
 
-  if (content.source.type === "base64") {
+  if (content.data.type === "data") {
     return {
       inlineData: {
-        mimeType: content.source.mediaType,
-        data: content.source.data,
+        mimeType: content.mediaType,
+        data: content.data.data,
       },
     };
   }
 
   return {
     fileData: {
-      fileUri: content.source.url,
-      mimeType: content.source.mediaType,
+      fileUri: content.data.url,
+      mimeType: content.mediaType,
     },
   };
 }
 
 function toolContentToGeminiPart(
-  content: ToolContent,
+  content: ToolResultPart,
   toolNamesById: Map<string, string>,
 ): GeminiPart {
-  const id = content.callId ?? content.id;
+  const id = content.callId ?? content.toolCallId;
   const functionResponse: Record<string, unknown> = {
-    name: content.toolName ?? toolNamesById.get(id) ?? content.id,
-    response: toolResultResponse(content.content),
+    name: content.toolName || toolNamesById.get(id) || content.toolCallId,
+    response: toolResultResponse(content),
   };
   if (content.callId !== undefined) {
     functionResponse.id = content.callId;
@@ -418,16 +427,23 @@ function toolContentToGeminiPart(
   return { functionResponse };
 }
 
-function toolResultResponse(
-  content: Array<
-    { type: "text"; text: string } | { type: "image"; data: string; mediaType?: string }
-  >,
-): Record<string, unknown> {
+function toolResultResponse(content: ToolResultPart): Record<string, unknown> {
+  const output = content.output;
+  if (output.type === "json") {
+    return { result: output.value };
+  }
+  if (output.type === "text") {
+    return { content: output.value };
+  }
+  if (output.type === "error-json" || output.type === "error-text") {
+    return { error: output.value };
+  }
+  if (output.type === "execution-denied") {
+    return { error: output.reason ?? "Tool execution was denied." };
+  }
   return {
-    content: content
-      .map((item) =>
-        item.type === "text" ? item.text : `[image:${item.mediaType ?? "image/png"}]`,
-      )
+    content: output.value
+      .map((item) => (item.type === "text" ? item.text : `[file:${item.mediaType}]`))
       .join("\n"),
   };
 }
@@ -521,40 +537,43 @@ export function fromGeminiGenerateContentStreamChunk(chunk: unknown): Completion
 
 function assistantContentFromGeminiResponse(
   response: Record<string, unknown>,
-): AssistantContentType[] {
+): AssistantContentPart[] {
   const parts = candidateParts(response);
   if (parts.length === 0) {
     const text = textFromGeminiResponse(response);
-    return text.length > 0 ? [AssistantContent.text(text)] : [];
+    return text.length > 0 ? [{ type: "text", text }] : [];
   }
 
-  const choice: AssistantContentType[] = [];
+  const choice: AssistantContentPart[] = [];
   for (const part of parts) {
     if (typeof part.text === "string" && part.text.length > 0) {
       if (part.thought === true) {
-        choice.push(AssistantContent.reasoningSummary(part.text));
+        choice.push({
+          type: "reasoning",
+          text: part.text,
+          details: [{ type: "summary", text: part.text }],
+        });
       } else {
-        const text = AssistantContent.text(part.text);
         const signature = thoughtSignatureFrom(part);
-        if (signature !== undefined) {
-          text.signature = signature;
-        }
-        choice.push(text);
+        choice.push({
+          type: "text",
+          text: part.text,
+          ...(signature === undefined ? {} : { signature }),
+        });
       }
     }
     if (isPlainObject(part.functionCall)) {
       const call = functionCallFromGeminiPart(part.functionCall, part);
       if (call !== undefined) {
-        const toolCall = AssistantContent.toolCall(
-          call.id ?? crypto.randomUUID(),
-          call.name,
-          call.args,
-          call.id,
-        );
-        if (call.signature !== undefined) {
-          toolCall.signature = call.signature;
-        }
-        choice.push(toolCall);
+        const toolCallId = call.id ?? crypto.randomUUID();
+        choice.push({
+          type: "tool-call",
+          toolCallId,
+          ...(call.id === undefined ? {} : { callId: call.id }),
+          toolName: call.name,
+          input: call.args,
+          ...(call.signature === undefined ? {} : { signature: call.signature }),
+        });
       }
     }
   }

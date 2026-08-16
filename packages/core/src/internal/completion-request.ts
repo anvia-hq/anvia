@@ -1,3 +1,4 @@
+import { parseMessage, parseMessages } from "../completion/message-schema";
 import type {
   CompletionModel,
   CompletionRequest,
@@ -8,7 +9,7 @@ import type {
   ToolChoice,
   ToolDefinition,
 } from "../completion/types";
-import { isProviderTool, Message } from "../completion/types";
+import { isProviderTool } from "../completion/types";
 
 type ModelNameOf<Model extends CompletionModel> =
   Model extends CompletionModel<unknown, infer ModelName> ? ModelName : string;
@@ -58,180 +59,13 @@ export function createCompletionRequest<Model extends CompletionModel>(
 
 function messagesFromInput(input: string | MessageType | readonly MessageType[]): MessageType[] {
   if (typeof input === "string") {
-    return [Message.user(input)];
+    return [{ role: "user", content: input }];
   }
   if (Array.isArray(input)) {
-    return normalizeMessageArray(input);
+    if (input.length === 0) {
+      throw new Error("input must contain at least one Message.");
+    }
+    return parseMessages(input);
   }
-  if (!isCoreMessage(input)) {
-    throw new TypeError("input must be a string, Message, or Message[].");
-  }
-  return [input];
-}
-
-function normalizeMessageArray(messages: readonly MessageType[]): MessageType[] {
-  if (messages.length === 0) {
-    throw new Error("input must contain at least one Message.");
-  }
-  if (!messages.every(isCoreMessage)) {
-    throw new TypeError("input must contain only Message values.");
-  }
-
-  return [...messages];
-}
-
-function isCoreMessage(value: unknown): value is MessageType {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value.role === "system") {
-    return typeof value.content === "string";
-  }
-
-  if (value.role === "user") {
-    return Array.isArray(value.content) && value.content.every(isUserContent);
-  }
-
-  if (value.role === "assistant") {
-    return (
-      (value.id === undefined || typeof value.id === "string") &&
-      Array.isArray(value.content) &&
-      value.content.every(isAssistantContent)
-    );
-  }
-
-  if (value.role === "tool") {
-    return Array.isArray(value.content) && value.content.every(isToolContent);
-  }
-
-  return false;
-}
-
-function isUserContent(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value.type === "text") {
-    return typeof value.text === "string";
-  }
-
-  if (value.type === "image") {
-    return isImageContent(value);
-  }
-
-  if (value.type === "document") {
-    return isDocumentContent(value);
-  }
-
-  return false;
-}
-
-function isAssistantContent(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value.type === "text") {
-    return typeof value.text === "string";
-  }
-
-  if (value.type === "reasoning") {
-    return (
-      typeof value.text === "string" &&
-      (value.id === undefined || typeof value.id === "string") &&
-      (value.content === undefined || Array.isArray(value.content))
-    );
-  }
-
-  if (value.type === "tool_call") {
-    return (
-      typeof value.id === "string" &&
-      (value.callId === undefined || typeof value.callId === "string") &&
-      isRecord(value.function) &&
-      typeof value.function.name === "string" &&
-      "arguments" in value.function
-    );
-  }
-
-  if (value.type === "image") {
-    return isImageContent(value);
-  }
-
-  return false;
-}
-
-function isToolContent(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    value.type === "tool_result" &&
-    typeof value.id === "string" &&
-    (value.callId === undefined || typeof value.callId === "string") &&
-    (value.toolName === undefined || typeof value.toolName === "string") &&
-    Array.isArray(value.content) &&
-    value.content.every(isToolResultContent)
-  );
-}
-
-function isToolResultContent(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value.type === "text") {
-    return typeof value.text === "string";
-  }
-
-  if (value.type === "image") {
-    return (
-      typeof value.data === "string" &&
-      (value.mediaType === undefined || typeof value.mediaType === "string")
-    );
-  }
-
-  return false;
-}
-
-function isImageContent(value: Record<string, unknown>): boolean {
-  if (!isRecord(value.source)) {
-    return false;
-  }
-
-  if (value.source.type === "url") {
-    return typeof value.source.url === "string";
-  }
-
-  if (value.source.type === "base64") {
-    return typeof value.source.data === "string" && typeof value.source.mediaType === "string";
-  }
-
-  return false;
-}
-
-function isDocumentContent(value: Record<string, unknown>): boolean {
-  if (!isRecord(value.source)) {
-    return false;
-  }
-
-  if (value.source.type === "url") {
-    return typeof value.source.url === "string" && typeof value.source.mediaType === "string";
-  }
-
-  if (value.source.type === "base64") {
-    return typeof value.source.data === "string" && typeof value.source.mediaType === "string";
-  }
-
-  if (value.source.type === "text") {
-    return (
-      typeof value.source.text === "string" &&
-      (value.source.mediaType === undefined || typeof value.source.mediaType === "string")
-    );
-  }
-
-  return false;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return [parseMessage(input)];
 }

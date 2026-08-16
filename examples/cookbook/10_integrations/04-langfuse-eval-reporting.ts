@@ -1,6 +1,5 @@
 import {
   Agent,
-  AssistantContent,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -24,7 +23,7 @@ class StaticCompletionModel implements CompletionModel {
 
   async completion(_request: CompletionRequest): Promise<CompletionResponse> {
     return {
-      choice: [AssistantContent.text("Refunds are available for 30 days after purchase.")],
+      choice: [{ type: "text", text: "Refunds are available for 30 days after purchase." }],
       usage: Usage.empty(),
       rawResponse: {},
     };

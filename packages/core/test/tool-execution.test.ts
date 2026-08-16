@@ -63,7 +63,10 @@ describe("Agent tool execution", () => {
         },
       },
     ]);
-    await expect(agent.callTool("add", JSON.stringify({ x: 2, y: 5 }))).resolves.toBe("7");
+    await expect(agent.callTool("add", JSON.stringify({ x: 2, y: 5 }))).resolves.toEqual({
+      type: "json",
+      value: 7,
+    });
   });
 
   it("stores approval metadata without adding it to tool definitions", async () => {
@@ -92,7 +95,10 @@ describe("Agent tool execution", () => {
         },
       },
     ]);
-    await expect(agent.callTool("approved", JSON.stringify({ amount: 250 }))).resolves.toBe("ok");
+    await expect(agent.callTool("approved", JSON.stringify({ amount: 250 }))).resolves.toEqual({
+      type: "text",
+      value: "ok",
+    });
   });
 
   it("throws for missing tools", async () => {
@@ -117,7 +123,7 @@ describe("Agent tool execution", () => {
       }),
     ]);
 
-    await expect(agent.callTool("echo", "{}")).resolves.toBe("hello");
+    await expect(agent.callTool("echo", "{}")).resolves.toEqual({ type: "text", value: "hello" });
   });
 
   it("throws tool call errors for invalid Zod input", async () => {
@@ -158,9 +164,10 @@ describe("Agent tool execution", () => {
     const agent = agentWithTools([transformedTool]);
 
     expect(transformedTool.parseInput?.({ amount: "125" })).toEqual({ amount: 125 });
-    await expect(agent.callTool("transform", JSON.stringify({ amount: "21" }))).resolves.toBe(
-      '{"total":42}',
-    );
+    await expect(agent.callTool("transform", JSON.stringify({ amount: "21" }))).resolves.toEqual({
+      type: "json",
+      value: { total: 42 },
+    });
     expect(executedAmount).toBe(21);
   });
 
@@ -174,13 +181,20 @@ describe("Agent tool execution", () => {
       }),
     ]);
 
-    await expect(agent.callTool("object_output", "{}")).resolves.toBe('{"ok":true}');
+    await expect(agent.callTool("object_output", "{}")).resolves.toEqual({
+      type: "json",
+      value: { ok: true },
+    });
   });
 
   it("passes through structured tool result content", async () => {
     const content = ToolOutput.content([
       { type: "text", text: '{"coordMap":"0,0,100,100,100,100"}' },
-      { type: "image", data: "base64-png", mediaType: "image/png" },
+      {
+        type: "file",
+        data: { type: "data", data: "iVBORw0KGgo=" },
+        mediaType: "image/png",
+      },
     ]);
     const agent = agentWithTools([
       createTool({
@@ -191,7 +205,32 @@ describe("Agent tool execution", () => {
       }),
     ]);
 
-    await expect(agent.callTool("screenshot", "{}")).resolves.toEqual(content);
+    await expect(agent.callTool("screenshot", "{}")).resolves.toEqual({
+      type: "content",
+      value: content.content,
+    });
+  });
+
+  it("rejects malformed rich tool result content", async () => {
+    const agent = agentWithTools([
+      createTool({
+        name: "invalid_file",
+        description: "Return malformed rich content",
+        inputSchema: z.object({}),
+        execute: () =>
+          ToolOutput.content([
+            {
+              type: "file",
+              data: { type: "data", data: "not-base64!" },
+              mediaType: "image/png",
+            },
+          ]),
+      }),
+    ]);
+
+    await expect(agent.callTool("invalid_file", "{}")).rejects.toThrow(
+      "Tool output must be a string, a strict JSON value, or ToolOutput.content",
+    );
   });
 
   it("uses the prepared input contract for direct tool calls", async () => {
@@ -213,7 +252,10 @@ describe("Agent tool execution", () => {
     };
     const agent = agentWithTools([tool]);
 
-    await expect(agent.callTool("coerce", '{"value":"3"}')).resolves.toBe("3");
+    await expect(agent.callTool("coerce", '{"value":"3"}')).resolves.toEqual({
+      type: "json",
+      value: 3,
+    });
     expect(received).toEqual([3]);
   });
 
@@ -247,8 +289,14 @@ describe("Agent tool execution", () => {
     };
     const agent = agentWithTools([nullTool, undefinedTool]);
 
-    await expect(agent.callTool("null_input", "{}")).resolves.toBe("null");
-    await expect(agent.callTool("undefined_input", "{}")).resolves.toBe("undefined");
+    await expect(agent.callTool("null_input", "{}")).resolves.toEqual({
+      type: "text",
+      value: "null",
+    });
+    await expect(agent.callTool("undefined_input", "{}")).resolves.toEqual({
+      type: "text",
+      value: "undefined",
+    });
     expect(received).toEqual([null, undefined]);
   });
 
@@ -265,7 +313,10 @@ describe("Agent tool execution", () => {
     });
     const agent = agentWithTools([recursiveTool]);
 
-    await expect(agent.callTool("recursive", '{"value":"outer"}')).resolves.toBe("nested");
+    await expect(agent.callTool("recursive", '{"value":"outer"}')).resolves.toEqual({
+      type: "text",
+      value: "nested",
+    });
   });
 
   it("snapshots createTool options and returns independent definitions", async () => {
@@ -291,9 +342,10 @@ describe("Agent tool execution", () => {
       description: "Before mutation",
       parameters: { type: "object" },
     });
-    await expect(agentWithTools([tool]).callTool("before", '{"value":"ok"}')).resolves.toBe(
-      "before:ok",
-    );
+    await expect(agentWithTools([tool]).callTool("before", '{"value":"ok"}')).resolves.toEqual({
+      type: "text",
+      value: "before:ok",
+    });
   });
 
   it("rejects repeated tool registrations", () => {

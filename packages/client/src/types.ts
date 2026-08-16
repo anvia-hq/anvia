@@ -2,20 +2,22 @@ import type {
   CompletionSource,
   ContextUsage,
   ImageDetail,
+  JsonObject,
   JsonValue,
   Message,
   ProviderToolCall,
-  ReasoningContent,
   ReasoningContentType,
-  ToolResultContent,
+  ReasoningDetail,
+  ToolResultContentPart,
   Usage,
 } from "@anvia/core/completion";
 import type { GuardrailDecisionRecord } from "@anvia/core/guardrails";
 import type { MemoryCompactionInfo } from "@anvia/core/memory";
 
-export const CLIENT_STREAM_PROTOCOL = "anvia.client.v1" as const;
+export const CLIENT_STREAM_PROTOCOL = "anvia.client.v2" as const;
 
 export type ClientDataMap = Record<string, JsonValue>;
+export type ClientMetadata = JsonObject;
 
 export type ClientDataSchema<T extends JsonValue = JsonValue> = {
   safeParse(value: unknown): { success: true; data: T } | { success: false; error?: unknown };
@@ -24,6 +26,9 @@ export type ClientDataSchema<T extends JsonValue = JsonValue> = {
 export type ClientDataSchemas<TData extends ClientDataMap> = {
   [Name in keyof TData]: ClientDataSchema<TData[Name]>;
 };
+
+export type ClientMetadataSchema<TMetadata extends JsonObject = JsonObject> =
+  ClientDataSchema<TMetadata>;
 
 export type UIMessageRole = "system" | "user" | "assistant" | "tool";
 
@@ -46,14 +51,17 @@ export type UIMessageGeneration = {
   memoryCompaction?: MemoryCompactionInfo;
 };
 
-export type UIMessage = {
+export type UIMessage<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+> = Readonly<{
   id: string;
   role: UIMessageRole;
-  parts: UIMessagePart[];
+  parts: readonly UIMessagePart<Data>[];
   modelMessageId?: string;
-  metadata?: JsonValue;
+  metadata?: Metadata;
   generation?: UIMessageGeneration;
-};
+}>;
 
 export type UIAttachment = {
   id: string;
@@ -71,7 +79,16 @@ export type CreateUIAttachment = Omit<UIAttachment, "id"> & {
   id?: string;
 };
 
-export type UIMessagePart =
+type UIDataPart<Data extends ClientDataMap> = {
+  [Name in keyof Data & string]: {
+    id: string;
+    type: "data";
+    name: Name;
+    data: Data[Name];
+  };
+}[keyof Data & string];
+
+export type UIMessagePart<Data extends ClientDataMap = ClientDataMap> =
   | {
       id: string;
       type: "text";
@@ -83,7 +100,7 @@ export type UIMessagePart =
       type: "reasoning";
       text: string;
       reasoningId?: string;
-      content?: ReasoningContent[];
+      content?: readonly ReasoningDetail[];
     }
   | {
       id: string;
@@ -96,9 +113,8 @@ export type UIMessagePart =
       state: "input-streaming" | "input-available" | "output-available" | "error";
       input?: JsonValue;
       output?: JsonValue;
-      resultContent?: ToolResultContent[];
+      resultContent?: readonly ToolResultContentPart[];
       signature?: string;
-      additionalParams?: JsonValue;
       error?: UIError;
     }
   | {
@@ -106,12 +122,7 @@ export type UIMessagePart =
       type: "source";
       source: CompletionSource;
     }
-  | {
-      id: string;
-      type: "data";
-      name: string;
-      data: JsonValue;
-    }
+  | UIDataPart<Data>
   | {
       id: string;
       type: "attachment";
@@ -131,9 +142,14 @@ export type ClientStreamCursor = {
 };
 
 export type ClientStreamRequest = {
-  messages: Message[];
-  metadata?: JsonValue;
+  messages: readonly Message[];
+  metadata?: JsonObject;
   resume?: ClientStreamCursor;
+};
+
+export type ClientCompletionRequest<Metadata extends JsonObject = JsonObject> = {
+  prompt: string;
+  metadata?: Metadata;
 };
 
 export type ClientStreamScope = {
@@ -219,11 +235,11 @@ type ClientDataEvent<TData extends ClientDataMap> = {
   };
 }[keyof TData & string];
 
-type ClientStandardStreamEvent =
+type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientDataMap> =
   | {
       type: "run_start";
       source: "completion" | "agent";
-      metadata?: JsonValue;
+      metadata?: Metadata;
     }
   | { type: "turn_start" }
   | {
@@ -234,7 +250,7 @@ type ClientStandardStreamEvent =
       type: "message_start";
       messageId: string;
       role: "assistant";
-      metadata?: JsonValue;
+      metadata?: Metadata;
     }
   | {
       type: "text_start";
@@ -273,7 +289,7 @@ type ClientStandardStreamEvent =
       messageId: string;
       partId: string;
       text?: string;
-      content?: ReasoningContent[];
+      content?: readonly ReasoningDetail[];
     }
   | {
       type: "tool_call_start";
@@ -303,7 +319,6 @@ type ClientStandardStreamEvent =
       toolName: string;
       input: JsonValue;
       signature?: string;
-      additionalParams?: JsonValue;
     }
   | {
       type: "tool_result";
@@ -315,7 +330,7 @@ type ClientStandardStreamEvent =
       toolName: string;
       input?: JsonValue;
       result:
-        | { status: "success"; output: JsonValue; content?: ToolResultContent[] }
+        | { status: "success"; output: JsonValue; content?: readonly ToolResultContentPart[] }
         | { status: "error"; error: ClientStreamError };
     }
   | { type: "source"; messageId: string; partId: string; source: CompletionSource }
@@ -335,10 +350,10 @@ type ClientStandardStreamEvent =
       messageId: string;
       modelMessageId?: string;
       /** Authoritative model-authored parts after provider normalization and guardrails. */
-      parts?: UIMessagePart[];
+      parts?: readonly UIMessagePart<Data>[];
       usage?: Usage;
       contextUsage?: ContextUsage;
-      metadata?: JsonValue;
+      metadata?: Metadata;
     }
   | {
       type: "turn_end";
@@ -355,18 +370,24 @@ type ClientStandardStreamEvent =
       contextUsage?: ContextUsage;
       trace?: { traceId?: string; observationId?: string };
       memoryCompaction?: MemoryCompactionInfo;
-      metadata?: JsonValue;
+      metadata?: Metadata;
     }
   | { type: "error"; error: ClientStreamError; usage?: Usage };
 
-export type ClientStreamEvent<TData extends ClientDataMap = ClientDataMap> = ClientStreamEventBase &
-  (ClientStandardStreamEvent | ClientDataEvent<TData>);
+export type ClientStreamEvent<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+> = ClientStreamEventBase & (ClientStandardStreamEvent<Metadata, Data> | ClientDataEvent<Data>);
 
-export type ClientStream<TData extends ClientDataMap = ClientDataMap> = AsyncIterable<
-  ClientStreamEvent<TData>
->;
+export type ClientStream<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+> = AsyncIterable<ClientStreamEvent<Metadata, Data>>;
 
-export type ClientStreamFrame<TData extends ClientDataMap = ClientDataMap> =
+export type ClientStreamFrame<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+> =
   | {
       type: "stream_start";
       protocol: typeof CLIENT_STREAM_PROTOCOL;
@@ -378,7 +399,7 @@ export type ClientStreamFrame<TData extends ClientDataMap = ClientDataMap> =
       type: "stream_event";
       streamId: string;
       eventId: number;
-      event: ClientStreamEvent<TData>;
+      event: ClientStreamEvent<Metadata, Data>;
     }
   | {
       type: "stream_end";
@@ -387,20 +408,22 @@ export type ClientStreamFrame<TData extends ClientDataMap = ClientDataMap> =
       status: "completed" | "error" | "missing";
     };
 
-export type ClientTransportOptions = {
-  signal?: AbortSignal;
+export type ClientTransportSendOptions<TRequest> = {
+  request: TRequest;
+  abortSignal?: AbortSignal;
   headers?: HeadersInit;
   resume?: ClientStreamCursor;
 };
 
 export type ClientTransport<
   TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
+  Data extends ClientDataMap = ClientDataMap,
+  Metadata extends JsonObject = JsonObject,
 > = {
-  send: (
-    request: TRequest,
-    options?: ClientTransportOptions,
-  ) => AsyncIterable<ClientStreamFrame<TData>>;
+  readonly _types?: { metadata: Metadata; data: Data };
+  send(
+    options: ClientTransportSendOptions<TRequest>,
+  ): AsyncIterable<ClientStreamFrame<Metadata, Data>>;
 };
 
 export type ClientErrorMapper = (error: unknown) => ClientStreamError;

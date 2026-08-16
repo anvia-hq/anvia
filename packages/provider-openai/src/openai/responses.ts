@@ -1,6 +1,5 @@
 import {
-  AssistantContent,
-  type AssistantContent as AssistantContentType,
+  type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
@@ -9,23 +8,23 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type CompletionSource,
-  type DocumentContent,
-  type ImageContent,
+  type FilePart,
+  type ImagePart,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
   type ModelCallOptions,
   type ProviderTool,
   type ProviderToolCall,
-  type Reasoning,
-  type ReasoningContent,
+  type ReasoningDetail,
+  type ReasoningPart,
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
-  type ToolContent,
   type ToolDefinition,
-  type ToolResultContent,
-  type UserContent,
+  type ToolResultContentPart,
+  type ToolResultPart,
+  type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
 import type { OpenAI } from "openai";
@@ -261,7 +260,7 @@ function requestMessages(request: CompletionRequest<OpenAICompletionModelName>):
 export function fromOpenAIResponse(response: unknown): CompletionResponse {
   const raw = response as Record<string, unknown>;
   const output = Array.isArray(raw.output) ? raw.output : [];
-  const choice: AssistantContentType[] = [];
+  const choice: AssistantContentPart[] = [];
   const providerToolCalls: ProviderToolCall[] = [];
 
   for (const item of output) {
@@ -278,7 +277,13 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
       const callId = typeof item.call_id === "string" ? item.call_id : undefined;
       const name = typeof item.name === "string" ? item.name : "";
       const argsText = typeof item.arguments === "string" ? item.arguments : "{}";
-      choice.push(AssistantContent.toolCall(id, name, parseToolArguments(id, argsText), callId));
+      choice.push({
+        type: "tool-call",
+        toolCallId: id,
+        ...(callId === undefined ? {} : { callId }),
+        toolName: name,
+        input: parseToolArguments(id, argsText),
+      });
     }
 
     if (item.type === "reasoning") {
@@ -389,14 +394,16 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
     const item = event.item;
     if (item.type === "function_call") {
       const id = stringFrom(item.id) ?? crypto.randomUUID();
+      const callId = stringFrom(item.call_id);
       return {
         type: "tool_call",
-        toolCall: AssistantContent.toolCall(
-          id,
-          stringFrom(item.name) ?? "",
-          parseToolArguments(id, typeof item.arguments === "string" ? item.arguments : "{}"),
-          stringFrom(item.call_id),
-        ),
+        toolCall: {
+          type: "tool-call",
+          toolCallId: id,
+          ...(callId === undefined ? {} : { callId }),
+          toolName: stringFrom(item.name) ?? "",
+          input: parseToolArguments(id, typeof item.arguments === "string" ? item.arguments : "{}"),
+        },
       };
     }
     const providerToolCall = providerToolCallFromOutputItem(item);
@@ -462,6 +469,9 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   }
 
   if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return [{ role: "user", content: message.content }];
+    }
     const inputContent: ResponsesInputItem[] = [];
 
     for (const content of message.content) {
@@ -482,6 +492,9 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   }
 
   const items: ResponsesInputItem[] = [];
+  if (typeof message.content === "string") {
+    return [{ role: "assistant", content: message.content }];
+  }
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
@@ -493,33 +506,35 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
     if (content.type === "reasoning" && content.id !== undefined) {
       items.push(reasoningToOpenAIInput(content));
     }
-    if (content.type === "tool_call") {
+    if (content.type === "tool-call") {
       items.push({
         type: "function_call",
-        id: content.id,
-        call_id: content.callId ?? content.id,
-        name: content.function.name,
-        arguments: JSON.stringify(content.function.arguments ?? {}),
+        id: content.toolCallId,
+        call_id: content.callId ?? content.toolCallId,
+        name: content.toolName,
+        arguments: JSON.stringify(content.input),
       });
     }
-    if (content.type === "image") {
-      throw new Error("OpenAI Responses does not support image content in assistant history");
+    if (content.type === "image" || content.type === "file") {
+      throw new Error(
+        "OpenAI Responses does not support image or file content in assistant history",
+      );
     }
   }
 
   return items;
 }
 
-function toolContentToOpenAIResponsesItem(content: ToolContent): ResponsesInputItem {
+function toolContentToOpenAIResponsesItem(content: ToolResultPart): ResponsesInputItem {
   return {
     type: "function_call_output",
-    call_id: content.callId ?? content.id,
-    output: toolResultContentToOpenAIResponsesOutput(content.content),
+    call_id: content.callId ?? content.toolCallId,
+    output: toolResultToOpenAIResponsesOutput(content),
   };
 }
 
 function toolResultContentToOpenAIResponsesOutput(
-  content: ToolResultContent[],
+  content: readonly ToolResultContentPart[],
 ): string | ResponsesInputItem[] {
   if (content.every((item) => item.type === "text")) {
     return content.map((item) => item.text).join("\n");
@@ -529,25 +544,40 @@ function toolResultContentToOpenAIResponsesOutput(
     if (item.type === "text") {
       return { type: "input_text", text: item.text };
     }
-    return {
-      type: "input_image",
-      image_url: `data:${item.mediaType ?? "image/png"};base64,${item.data}`,
-      detail: "auto",
-    };
+    return fileToOpenAIResponsesPart(item);
   });
 }
 
-function reasoningItemToAssistantContent(item: Record<string, unknown>): Reasoning {
-  const content = reasoningContentFromOpenAIItem(item);
-  const id = stringFrom(item.id);
-  if (content.length === 0) {
-    return AssistantContent.reasoning("", id);
+function toolResultToOpenAIResponsesOutput(content: ToolResultPart): string | ResponsesInputItem[] {
+  const output = content.output;
+  if (output.type === "text" || output.type === "error-text") {
+    return output.value;
   }
-  return AssistantContent.reasoningFromContent(content, id);
+  if (output.type === "json" || output.type === "error-json") {
+    return JSON.stringify(output.value);
+  }
+  if (output.type === "execution-denied") {
+    return output.reason ?? "Tool execution was denied.";
+  }
+  return toolResultContentToOpenAIResponsesOutput(output.value);
 }
 
-function reasoningContentFromOpenAIItem(item: Record<string, unknown>): ReasoningContent[] {
-  const content: ReasoningContent[] = [];
+function reasoningItemToAssistantContent(item: Record<string, unknown>): ReasoningPart {
+  const content = reasoningContentFromOpenAIItem(item);
+  const id = stringFrom(item.id);
+  const text = content
+    .flatMap((detail) => (detail.type === "text" || detail.type === "summary" ? [detail.text] : []))
+    .join("");
+  return {
+    type: "reasoning",
+    text,
+    ...(id === undefined ? {} : { id }),
+    ...(content.length === 0 ? {} : { details: content }),
+  };
+}
+
+function reasoningContentFromOpenAIItem(item: Record<string, unknown>): ReasoningDetail[] {
+  const content: ReasoningDetail[] = [];
   if (Array.isArray(item.content)) {
     for (const part of item.content) {
       if (!isPlainObject(part)) {
@@ -574,31 +604,31 @@ function reasoningContentFromOpenAIItem(item: Record<string, unknown>): Reasonin
   return content;
 }
 
-function reasoningToOpenAIInput(reasoning: Reasoning): ResponsesInputItem {
+function reasoningToOpenAIInput(reasoning: ReasoningPart): ResponsesInputItem {
   const item: ResponsesInputItem = {
     type: "reasoning",
     id: reasoning.id,
     summary:
-      reasoning.content
-        ?.filter((content): content is Extract<ReasoningContent, { type: "summary" }> => {
+      reasoning.details
+        ?.filter((content): content is Extract<ReasoningDetail, { type: "summary" }> => {
           return content.type === "summary";
         })
         .map((content) => ({ type: "summary_text", text: content.text })) ?? [],
   };
-  const textContent = reasoning.content?.flatMap((content) =>
+  const textContent = reasoning.details?.flatMap((content) =>
     content.type === "text" ? [{ type: "reasoning_text", text: content.text }] : [],
   );
   if (textContent !== undefined && textContent.length > 0) {
     item.content = textContent;
   }
-  const encrypted = reasoning.content?.find((content) => content.type === "encrypted");
+  const encrypted = reasoning.details?.find((content) => content.type === "encrypted");
   if (encrypted?.type === "encrypted") {
     item.encrypted_content = encrypted.data;
   }
   return item;
 }
 
-function userContentToOpenAIResponsesParts(content: UserContent): ResponsesInputItem[] {
+function userContentToOpenAIResponsesParts(content: UserContentPart): ResponsesInputItem[] {
   if (content.type === "text") {
     return [{ type: "input_text", text: content.text }];
   }
@@ -611,38 +641,52 @@ function userContentToOpenAIResponsesParts(content: UserContent): ResponsesInput
     return [part];
   }
 
-  if (content.type === "document") {
-    return [documentToOpenAIResponsesPart(content)];
+  if (content.type === "file") {
+    return [fileToOpenAIResponsesPart(content)];
   }
 
   return [];
 }
 
-function imageUrl(image: ImageContent): string {
-  if (image.source.type === "url") {
-    return image.source.url;
+function imageUrl(image: ImagePart): string {
+  if (image.image.type === "url") {
+    return image.image.url;
   }
 
-  return `data:${image.source.mediaType};base64,${image.source.data}`;
+  if (image.mediaType === undefined) {
+    throw new Error("OpenAI Responses image data requires mediaType");
+  }
+  return `data:${image.mediaType};base64,${image.image.data}`;
 }
 
-function documentToOpenAIResponsesPart(document: DocumentContent): ResponsesInputItem {
-  if (document.source.type === "text") {
-    return { type: "input_text", text: document.source.text };
+function fileToOpenAIResponsesPart(file: FilePart): ResponsesInputItem {
+  if (file.data.type === "text") {
+    return { type: "input_text", text: file.data.text };
   }
 
-  if (document.source.mediaType !== "application/pdf") {
-    throw new Error(`OpenAI Responses only supports PDF document attachments`);
+  if (file.mediaType.startsWith("image/")) {
+    return {
+      type: "input_image",
+      image_url:
+        file.data.type === "url"
+          ? file.data.url
+          : `data:${file.mediaType};base64,${file.data.data}`,
+      detail: "auto",
+    };
   }
 
-  if (document.source.type === "url") {
-    return { type: "input_file", file_url: document.source.url };
+  if (file.mediaType !== "application/pdf") {
+    throw new Error("OpenAI Responses only supports image and PDF file attachments");
+  }
+
+  if (file.data.type === "url") {
+    return { type: "input_file", file_url: file.data.url };
   }
 
   return {
     type: "input_file",
-    file_data: `data:${document.source.mediaType};base64,${document.source.data}`,
-    filename: document.source.filename ?? "document.pdf",
+    file_data: `data:${file.mediaType};base64,${file.data.data}`,
+    filename: file.filename ?? "document.pdf",
   };
 }
 
@@ -673,23 +717,23 @@ function toolChoiceToOpenAI(toolChoice: ToolChoice): unknown {
   };
 }
 
-function messageOutputToAssistantContent(item: Record<string, unknown>): AssistantContentType[] {
+function messageOutputToAssistantContent(item: Record<string, unknown>): AssistantContentPart[] {
   const content = Array.isArray(item.content) ? item.content : [];
-  return content.flatMap((part): AssistantContentType[] => {
+  return content.flatMap((part): AssistantContentPart[] => {
     if (!isPlainObject(part)) {
       return [];
     }
 
     if (part.type === "output_text" && typeof part.text === "string") {
-      return [AssistantContent.text(part.text)];
+      return [{ type: "text", text: part.text }];
     }
 
     if (part.type === "text" && typeof part.text === "string") {
-      return [AssistantContent.text(part.text)];
+      return [{ type: "text", text: part.text }];
     }
 
     if (part.type === "refusal" && typeof part.refusal === "string") {
-      return [AssistantContent.text(part.refusal)];
+      return [{ type: "text", text: part.refusal }];
     }
 
     return [];

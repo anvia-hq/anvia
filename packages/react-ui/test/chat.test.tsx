@@ -171,7 +171,7 @@ describe("Chat primitives", () => {
 
     fireEvent.click(button);
 
-    expect(sendMessage).toHaveBeenCalledWith("hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "hello" });
   });
 
   it("clears the default textarea composer while the chat stream is still pending", async () => {
@@ -272,7 +272,7 @@ describe("Chat primitives", () => {
       await sendCompletion.promise;
     });
 
-    expect(sendMessage).toHaveBeenCalledWith("Hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "Hello" });
     expect(lastInputChangeWhilePending).toBe("");
     expect(inputWhilePending).toBe("");
   });
@@ -448,7 +448,7 @@ describe("Chat primitives", () => {
     });
 
     expect(callsWhilePending).toBe(1);
-    expect(sendMessage).toHaveBeenCalledWith("Hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "Hello" });
   });
 
   it("submits quote-only composer messages", async () => {
@@ -572,7 +572,7 @@ describe("Chat primitives", () => {
     expect(screen.getByText("Request failed")).toBeTruthy();
     fireEvent.click(screen.getByText("Summarize this"));
 
-    expect(sendMessage).toHaveBeenCalledWith("Summarize");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "Summarize" });
   });
 
   it("controls optional thread collection wrappers with keepMounted", () => {
@@ -1325,7 +1325,7 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(sendMessage).toHaveBeenCalledTimes(1);
     });
-    expect(sendMessage).toHaveBeenCalledWith("hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "hello" });
   });
 
   it("auto-resizes composer input up to the configured max rows", () => {

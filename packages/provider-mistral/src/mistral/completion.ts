@@ -1,6 +1,5 @@
 import {
-  AssistantContent,
-  type AssistantContent as AssistantContentType,
+  type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
@@ -8,7 +7,7 @@ import {
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type DocumentContent,
+  type FilePart,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
@@ -16,10 +15,10 @@ import {
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
-  type ToolContent,
   type ToolDefinition,
+  type ToolResultPart,
   Usage,
-  type UserContent,
+  type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
@@ -209,11 +208,11 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
   const choices = Array.isArray(raw.choices) ? raw.choices : [];
   const firstChoice = choices.find(isPlainObject);
   const message = isPlainObject(firstChoice?.message) ? firstChoice.message : {};
-  const choice: AssistantContentType[] = [];
+  const choice: AssistantContentPart[] = [];
 
   const text = stringContent(message.content);
   if (text !== undefined && text.length > 0) {
-    choice.push(AssistantContent.text(text));
+    choice.push({ type: "text", text });
   }
 
   const toolCalls = toolCallsFrom(message);
@@ -222,7 +221,13 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
     const id = stringFrom(toolCall.id) ?? deterministicToolCallId(raw.id, index);
     const name = stringFrom(fn.name) ?? "";
     const args = parseToolArgumentsValue(id, fn.arguments);
-    choice.push(AssistantContent.toolCall(id, name, args));
+    choice.push({
+      type: "tool-call",
+      toolCallId: id,
+      callId: id,
+      toolName: name,
+      input: args,
+    });
   }
 
   const result: CompletionResponse = {
@@ -315,6 +320,9 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   }
 
   if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return [{ role: "user", content: message.content }];
+    }
     const contentParts: string[] = [];
 
     for (const content of message.content) {
@@ -333,21 +341,24 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
     return message.content.map(toolContentToMistralMessage);
   }
 
+  if (typeof message.content === "string") {
+    return [{ role: "assistant", content: message.content }];
+  }
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
-  if (message.content.some((content) => content.type === "image")) {
-    throw new Error("Mistral chat does not support image content in assistant history");
+  if (message.content.some((content) => content.type === "image" || content.type === "file")) {
+    throw new Error("Mistral chat does not support image or file content in assistant history");
   }
 
   const toolCalls = message.content
-    .filter((content) => content.type === "tool_call")
+    .filter((content) => content.type === "tool-call")
     .map((content) => ({
-      id: content.id,
+      id: content.callId ?? content.toolCallId,
       type: "function",
       function: {
-        name: content.function.name,
-        arguments: JSON.stringify(content.function.arguments ?? {}),
+        name: content.toolName,
+        arguments: JSON.stringify(content.input),
       },
     }));
 
@@ -364,20 +375,16 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   return [chatMessage];
 }
 
-function toolContentToMistralMessage(content: ToolContent): MistralChatMessage {
+function toolContentToMistralMessage(content: ToolResultPart): MistralChatMessage {
   return {
     role: "tool",
-    toolCallId: content.callId ?? content.id,
-    name: content.toolName ?? content.id,
-    content: content.content
-      .map((item) =>
-        item.type === "text" ? item.text : `[image:${item.mediaType ?? "image/png"}]`,
-      )
-      .join("\n"),
+    toolCallId: content.callId ?? content.toolCallId,
+    name: content.toolName,
+    content: toolResultToMistralText(content),
   };
 }
 
-function userContentToMistralText(content: UserContent): string[] {
+function userContentToMistralText(content: UserContentPart): string[] {
   if (content.type === "text") {
     return [content.text];
   }
@@ -386,19 +393,35 @@ function userContentToMistralText(content: UserContent): string[] {
     throw new Error("Mistral image inputs are not supported yet");
   }
 
-  if (content.type === "document") {
+  if (content.type === "file") {
     return documentToMistralText(content);
   }
 
   return [];
 }
 
-function documentToMistralText(document: DocumentContent): string[] {
-  if (document.source.type === "text") {
-    return [document.source.text];
+function documentToMistralText(document: FilePart): string[] {
+  if (document.data.type === "text") {
+    return [document.data.text];
   }
 
   throw new Error("Mistral document inputs are not supported yet");
+}
+
+function toolResultToMistralText(content: ToolResultPart): string {
+  const output = content.output;
+  if (output.type === "text" || output.type === "error-text") {
+    return output.value;
+  }
+  if (output.type === "json" || output.type === "error-json") {
+    return JSON.stringify(output.value);
+  }
+  if (output.type === "execution-denied") {
+    return output.reason ?? "Tool execution was denied.";
+  }
+  return output.value
+    .map((item) => (item.type === "text" ? item.text : `[file:${item.mediaType}]`))
+    .join("\n");
 }
 
 function toolDefinitionToMistral(tool: ToolDefinition): MistralChatMessage {

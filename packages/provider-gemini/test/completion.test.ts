@@ -1,11 +1,11 @@
+import type { CompletionRequest } from "@anvia/core/completion";
+import { describe, expect, it } from "vitest";
 import {
   AssistantContent,
-  type CompletionRequest,
   Message,
   ToolContent,
   UserContent,
-} from "@anvia/core/completion";
-import { describe, expect, it } from "vitest";
+} from "../../core/test/helpers/imports";
 import {
   fromGeminiGenerateContentResponse,
   fromGeminiGenerateContentStreamChunk,
@@ -115,7 +115,7 @@ describe("Gemini completion mapping", () => {
           metadata: { composer: { entities: [] } },
         }),
         Message.assistant([AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" })]),
-        Message.tool(ToolContent.toolResult("call_1", "shipped")),
+        Message.tool(ToolContent.toolResult("call_1", "shipped", { toolName: "lookup_order" })),
       ],
       documents: [{ id: "policy", text: "Refunds take 5 days." }],
       tools: [
@@ -188,8 +188,10 @@ describe("Gemini completion mapping", () => {
   });
 
   it("preserves Gemini thought signatures in assistant history", () => {
-    const toolCall = AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" });
-    toolCall.signature = "tool_sig";
+    const toolCall = {
+      ...AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" }),
+      signature: "tool_sig",
+    };
     expect(
       messagesToGeminiContents([
         Message.assistant([
@@ -211,6 +213,48 @@ describe("Gemini completion mapping", () => {
           {
             functionCall: { name: "lookup_order", args: { id: "A1" } },
             thoughtSignature: "tool_sig",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("maps failed and denied tool results to function-response errors", () => {
+    expect(
+      messagesToGeminiContents([
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "tool_error",
+              toolName: "lookup",
+              output: { type: "error-json", value: { code: "FAILED" } },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "tool_denied",
+              toolName: "delete",
+              output: { type: "execution-denied", reason: "Not allowed." },
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              name: "lookup",
+              response: { error: { code: "FAILED" } },
+            },
+          },
+          {
+            functionResponse: {
+              name: "delete",
+              response: { error: "Not allowed." },
+            },
           },
         ],
       },

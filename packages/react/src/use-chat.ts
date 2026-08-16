@@ -1,13 +1,11 @@
 import {
   applyClientStreamEvent,
   assistantText,
-  type ClientDataMap,
   ClientProtocolError,
   type ClientStreamCursor,
   type ClientStreamEvent,
   type ClientStreamRequest,
   type ClientTransport,
-  createHttpClientTransport,
   normalizeClientError,
   type ToolApproval,
   type ToolQuestion,
@@ -15,32 +13,36 @@ import {
   type UIMessage,
   uiMessagesToMessages,
 } from "@anvia/client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
-import { defaultAnswerQuestion, defaultDecideApproval, upsertById } from "./human-input";
+import { upsertById } from "./human-input";
 import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";
 import type {
-  CreateChatRequestArgs,
+  AnyClientTransport,
   SendMessageInput,
   ToolApprovalDecisionInput,
   ToolQuestionAnswerInput,
+  TransportData,
+  TransportMetadata,
   UseChatOptions,
   UseChatResult,
 } from "./types";
 import { createUserMessage } from "./ui-messages";
 
-export function useChat<
-  TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
->(options: UseChatOptions<TRequest, TData>): UseChatResult<TData> {
-  const [messages, setMessagesState] = useState<UIMessage[]>(() => [
+export function useChat<Transport extends AnyClientTransport = ClientTransport>(
+  options: UseChatOptions<Transport>,
+): UseChatResult<Transport> {
+  type Metadata = TransportMetadata<Transport>;
+  type Data = TransportData<Transport>;
+
+  const [messages, setMessagesState] = useState<readonly UIMessage<Metadata, Data>[]>(() => [
     ...(options.initialMessages ?? []),
   ]);
-  const [events, setEvents] = useState<ClientStreamEvent<TData>[]>([]);
+  const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
   const [contextUsage, setContextUsage] = useState(() =>
     contextUsageFromMessages(options.initialMessages ?? []),
   );
-  const [status, setStatus] = useState<UseChatResult<TData>["status"]>("ready");
+  const [status, setStatus] = useState<UseChatResult<Transport>["status"]>("ready");
   const [error, setError] = useState<Error>();
   const [approvals, setApprovals] = useState<ToolApproval[]>([]);
   const [questions, setQuestions] = useState<ToolQuestion[]>([]);
@@ -73,33 +75,19 @@ export function useChat<
     return () => abortRef.current?.abort();
   }, []);
 
-  const transport = useMemo<ClientTransport<TRequest, TData>>(() => {
-    if (options.transport !== undefined) return options.transport;
-    return createHttpClientTransport<TRequest, TData>({
-      endpoint: options.endpoint,
-      ...(options.format === undefined ? {} : { format: options.format }),
-      ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-      ...(options.headers === undefined ? {} : { headers: options.headers }),
-      ...(options.body === undefined ? {} : { body: options.body }),
-      ...(options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas }),
-    });
-  }, [
-    options.body,
-    options.dataSchemas,
-    options.endpoint,
-    options.fetch,
-    options.format,
-    options.headers,
-    options.transport,
-  ]);
+  const transport = options.transport as unknown as ClientTransport<
+    ClientStreamRequest,
+    Data,
+    Metadata
+  >;
 
-  const updateMessages = useCallback<UseChatResult<TData>["setMessages"]>((next) => {
+  const updateMessages = useCallback<UseChatResult<Transport>["setMessages"]>((next) => {
     const value = typeof next === "function" ? next(messagesRef.current) : next;
     messagesRef.current = value;
     setMessagesState(value);
   }, []);
 
-  const setMessages = useCallback<UseChatResult<TData>["setMessages"]>(
+  const setMessages = useCallback<UseChatResult<Transport>["setMessages"]>(
     (next) => {
       updateMessages((current) => {
         const value = typeof next === "function" ? next(current) : next;
@@ -118,7 +106,7 @@ export function useChat<
   const persistResumeState = useCallback(() => {
     if (streamIdRef.current === undefined) return;
     saveChatResumeState(options.resume, {
-      version: 1,
+      version: 2,
       streamId: streamIdRef.current,
       lastEventId: lastEventIdRef.current,
       messages: messagesRef.current,
@@ -160,7 +148,7 @@ export function useChat<
   }, []);
 
   const applyEvent = useCallback(
-    (event: ClientStreamEvent<TData>): Error | undefined => {
+    (event: ClientStreamEvent<Metadata, Data>): Error | undefined => {
       setEvents((current) => [...current, event]);
       options.onEvent?.(event);
       const nextContextUsage = contextUsageUpdateFromEvent(event);
@@ -178,7 +166,10 @@ export function useChat<
   );
 
   const sendMessages = useCallback(
-    async (nextMessages: UIMessage[], runOptions: SendMessagesRunOptions = {}) => {
+    async (
+      nextMessages: readonly UIMessage<Metadata, Data>[],
+      runOptions: SendMessagesRunOptions = {},
+    ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -200,20 +191,14 @@ export function useChat<
       let streamError: Error | undefined;
       try {
         const coreMessages = uiMessagesToMessages(nextMessages);
-        const args: CreateChatRequestArgs = {
-          uiMessages: nextMessages,
+        const request: ClientStreamRequest = {
           messages: coreMessages,
           ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
         };
-        const request =
-          options.createRequest?.(args) ??
-          ({
-            messages: coreMessages,
-            ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
-          } as TRequest);
 
-        for await (const frame of transport.send(request, {
-          signal: controller.signal,
+        for await (const frame of transport.send({
+          request,
+          abortSignal: controller.signal,
           ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
         })) {
           if (abortRef.current !== controller || controller.signal.aborted) return;
@@ -273,7 +258,7 @@ export function useChat<
   );
 
   const resume = useCallback(async () => {
-    const saved = loadChatResumeState(options.resume);
+    const saved = loadChatResumeState<Metadata, Data>(options.resume);
     if (saved === undefined) return;
     await sendMessages(saved.messages, {
       resume: { streamId: saved.streamId, after: saved.lastEventId },
@@ -288,9 +273,8 @@ export function useChat<
   }, [options.resume?.auto, resume]);
 
   const sendMessage = useCallback(
-    async (input: SendMessageInput) => {
-      const message = createUserMessage(input);
-      if (message === undefined) return;
+    async (input: SendMessageInput<Metadata>) => {
+      const message = createUserMessage<Metadata, Data>(input);
       const current = messagesRef.current;
       const base =
         abortRef.current !== undefined && current.at(-1)?.role === "assistant"
@@ -330,10 +314,10 @@ export function useChat<
           ...(reason === undefined ? {} : { reason }),
           ...(approval === undefined ? {} : { approval }),
         };
-        const result =
-          options.humanInput.decideApproval === undefined
-            ? await defaultDecideApproval(input, options.humanInput)
-            : await options.humanInput.decideApproval(input);
+        if (options.humanInput.decideApproval === undefined) {
+          throw new Error("useChat humanInput.decideApproval is not configured");
+        }
+        const result = await options.humanInput.decideApproval(input);
         if (result !== undefined && humanInputVersionRef.current === version)
           updateApproval(result);
       } finally {
@@ -349,7 +333,7 @@ export function useChat<
   );
 
   const answerToolQuestion = useCallback(
-    async (questionId: string, answers: ToolQuestionAnswer[]) => {
+    async (questionId: string, answers: readonly ToolQuestionAnswer[]) => {
       if (options.humanInput === undefined) throw new Error("useChat humanInput is not configured");
       if (answeringQuestionsRef.current.has(questionId)) return;
       const version = humanInputVersionRef.current;
@@ -363,10 +347,10 @@ export function useChat<
           answers,
           ...(question === undefined ? {} : { question }),
         };
-        const result =
-          options.humanInput.answerQuestion === undefined
-            ? await defaultAnswerQuestion(input, options.humanInput)
-            : await options.humanInput.answerQuestion(input);
+        if (options.humanInput.answerQuestion === undefined) {
+          throw new Error("useChat humanInput.answerQuestion is not configured");
+        }
+        const result = await options.humanInput.answerQuestion(input);
         if (result !== undefined && humanInputVersionRef.current === version)
           updateQuestion(result);
       } finally {
@@ -381,21 +365,18 @@ export function useChat<
     [options.humanInput, updateQuestion],
   );
 
-  const reset = useCallback(
-    (nextMessages: UIMessage[] = []) => {
-      abortRef.current?.abort();
-      abortRef.current = undefined;
-      clearResumeState();
-      updateMessages(nextMessages);
-      setContextUsage(contextUsageFromMessages(nextMessages));
-      setEvents([]);
-      clearHumanInput();
-      setError(undefined);
-      setStatus("ready");
-      setIsResuming(false);
-    },
-    [clearHumanInput, clearResumeState, updateMessages],
-  );
+  const reset = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = undefined;
+    clearResumeState();
+    updateMessages([]);
+    setContextUsage(undefined);
+    setEvents([]);
+    clearHumanInput();
+    setError(undefined);
+    setStatus("ready");
+    setIsResuming(false);
+  }, [clearHumanInput, clearResumeState, updateMessages]);
 
   return {
     messages,
@@ -404,7 +385,6 @@ export function useChat<
     suggestions: options.suggestions ?? [],
     setMessages,
     sendMessage,
-    send: async (input = "") => sendMessage(input),
     regenerate,
     stop,
     reset,
@@ -420,15 +400,15 @@ export function useChat<
     },
     decidingApprovals: new Set(decidingApprovals),
     answeringQuestions: new Set(answeringQuestions),
-    approveTool: async (approvalId, reason) => decideToolApproval(approvalId, true, reason),
-    rejectTool: async (approvalId, reason) => decideToolApproval(approvalId, false, reason),
-    answerToolQuestion,
+    approveTool: async ({ approvalId, reason }) => decideToolApproval(approvalId, true, reason),
+    rejectTool: async ({ approvalId, reason }) => decideToolApproval(approvalId, false, reason),
+    answerToolQuestion: async ({ questionId, answers }) => answerToolQuestion(questionId, answers),
   };
 }
 
 type SendMessagesRunOptions = { resume?: ClientStreamCursor; isResuming?: boolean };
 
-function findLastUserIndex(messages: UIMessage[]): number {
+function findLastUserIndex(messages: readonly UIMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index]?.role === "user") return index;
   }

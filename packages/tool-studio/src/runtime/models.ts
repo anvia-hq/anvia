@@ -434,15 +434,13 @@ function modelWarnings(
 function requestModalities(request: AgentRunRequest): Set<StudioModelModality> {
   const modalities = new Set<StudioModelModality>(["text"]);
   for (const message of requestMessages(request)) {
-    if (typeof message === "string") {
-      continue;
-    }
     if (message.role === "user" || message.role === "assistant") {
+      if (typeof message.content === "string") continue;
       for (const content of message.content) {
         if (content.type === "image") {
           modalities.add("image");
         }
-        if (content.type === "document") {
+        if (content.type === "file") {
           modalities.add("document");
         }
       }
@@ -451,8 +449,8 @@ function requestModalities(request: AgentRunRequest): Set<StudioModelModality> {
   return modalities;
 }
 
-function requestMessages(request: AgentRunRequest): Array<string | Message> {
-  return [...(request.history ?? []), request.message];
+function requestMessages(request: AgentRunRequest): readonly Message[] {
+  return request.messages;
 }
 
 function normalizeProviderId(id: string): string {

@@ -1,11 +1,11 @@
-import { type Document, Message, type Message as MessageType } from "./types";
+import type { Document, Message } from "./types";
 
-export function normalizeDocuments(documents: Document[]): MessageType | undefined {
+export function normalizeDocuments(documents: Document[]): Message | undefined {
   if (documents.length === 0) {
     return undefined;
   }
 
-  return Message.user(documents.map(formatDocument).join("\n"));
+  return { role: "user", content: documents.map(formatDocument).join("\n") };
 }
 
 export function formatDocument(document: Document): string {

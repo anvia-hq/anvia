@@ -48,8 +48,8 @@ describe("HumanInput primitives", () => {
     fireEvent.click(screen.getByText("Approve"));
     fireEvent.click(screen.getByText("Reject"));
 
-    expect(approveTool).toHaveBeenCalledWith("approval_1");
-    expect(rejectTool).toHaveBeenCalledWith("approval_1");
+    expect(approveTool).toHaveBeenCalledWith({ approvalId: "approval_1" });
+    expect(rejectTool).toHaveBeenCalledWith({ approvalId: "approval_1" });
   });
 
   it("passes approval reasons and renders panel status", () => {
@@ -79,7 +79,10 @@ describe("HumanInput primitives", () => {
     });
     fireEvent.click(screen.getByText("Approve"));
 
-    expect(approveTool).toHaveBeenCalledWith("approval_1", "looks safe");
+    expect(approveTool).toHaveBeenCalledWith({
+      approvalId: "approval_1",
+      reason: "looks safe",
+    });
   });
 
   it("answers pending tool questions from selected choices", () => {
@@ -114,9 +117,10 @@ describe("HumanInput primitives", () => {
     fireEvent.click(screen.getByText("Yes"));
     fireEvent.click(screen.getByText("Submit"));
 
-    expect(answerToolQuestion).toHaveBeenCalledWith("question_1", [
-      { questionId: "confirm", answer: "Yes", choice: "yes" },
-    ]);
+    expect(answerToolQuestion).toHaveBeenCalledWith({
+      questionId: "question_1",
+      answers: [{ questionId: "confirm", answer: "Yes", choice: "yes" }],
+    });
   });
 
   it("answers pending tool questions from text prompts", () => {
@@ -150,8 +154,9 @@ describe("HumanInput primitives", () => {
     });
     fireEvent.click(screen.getByText("Submit"));
 
-    expect(answerToolQuestion).toHaveBeenCalledWith("question_1", [
-      { questionId: "details", answer: "Updated the config", custom: true },
-    ]);
+    expect(answerToolQuestion).toHaveBeenCalledWith({
+      questionId: "question_1",
+      answers: [{ questionId: "details", answer: "Updated the config", custom: true }],
+    });
   });
 });

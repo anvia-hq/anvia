@@ -1,12 +1,11 @@
+import { type CompletionRequest, Usage } from "@anvia/core/completion";
+import { describe, expect, it } from "vitest";
 import {
   AssistantContent,
-  type CompletionRequest,
   Message,
   ToolContent,
-  Usage,
   UserContent,
-} from "@anvia/core/completion";
-import { describe, expect, it } from "vitest";
+} from "../../core/test/helpers/imports";
 import {
   fromMistralChatResponse,
   fromMistralChatStreamChunk,
@@ -224,16 +223,16 @@ describe("Mistral completion mapping", () => {
     });
   });
 
-  it("falls back to the tool call id for the tool message name when no tool name is set", () => {
+  it("uses the explicit tool result name", () => {
     expect(
       mistralMessageHelpers.messageToMistralMessages(
-        Message.tool(ToolContent.toolResult("call_1", "shipped")),
+        Message.tool(ToolContent.toolResult("call_1", "shipped", { toolName: "lookup_order" })),
       ),
     ).toEqual([
       {
         role: "tool",
         toolCallId: "call_1",
-        name: "call_1",
+        name: "lookup_order",
         content: "shipped",
       },
     ]);
@@ -274,8 +273,8 @@ describe("Mistral completion mapping", () => {
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.toolCall("cmpl_9-tool-0", "first", {}),
-      AssistantContent.toolCall("cmpl_9-tool-1", "second", {}),
+      AssistantContent.toolCall("cmpl_9-tool-0", "first", {}, "cmpl_9-tool-0"),
+      AssistantContent.toolCall("cmpl_9-tool-1", "second", {}, "cmpl_9-tool-1"),
     ]);
   });
 
@@ -330,7 +329,7 @@ describe("Mistral completion mapping", () => {
     expect(response.messageId).toBe("cmpl_1");
     expect(response.choice).toEqual([
       AssistantContent.text("Use a reset link."),
-      AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" }),
+      AssistantContent.toolCall("call_1", "lookup_order", { id: "A1" }, "call_1"),
     ]);
     expect(response.usage).toEqual({
       ...Usage.empty(),

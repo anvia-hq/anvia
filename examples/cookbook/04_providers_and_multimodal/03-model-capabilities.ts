@@ -1,4 +1,3 @@
-import { Message, UserContent } from "@anvia/core/completion";
 import { GeminiCompletionModel } from "@anvia/gemini";
 
 const model = new GeminiCompletionModel(
@@ -24,12 +23,18 @@ console.log("Capabilities:", model.capabilities);
 
 await model.completion({
   chatHistory: [
-    Message.user([
-      UserContent.text("Summarize this report."),
-      UserContent.documentBase64("JVBERi0xLjQ=", "application/pdf", {
-        filename: "report.pdf",
-      }),
-    ]),
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Summarize this report." },
+        {
+          type: "file",
+          data: { type: "data", data: "JVBERi0xLjQ=" },
+          mediaType: "application/pdf",
+          filename: "report.pdf",
+        },
+      ],
+    },
   ],
   documents: [],
   tools: [],

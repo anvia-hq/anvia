@@ -154,7 +154,7 @@ async function prepareAgentRun(
   });
 
   const memoryMetadata = runMemoryMetadata(agentId, body, selectedModel, runId);
-  const promptMessage = normalizePromptMessage(body.message);
+  const promptMessage = body.messages.at(-1) as UserMessage;
   const sessionStore = props.stores.sessions;
   const shouldPersistSessionMessages =
     session !== undefined &&
@@ -255,7 +255,7 @@ async function recordRunReceived(props: {
     sessionId: props.session.id,
     runId: props.runId,
     agentId: props.agentId,
-    message: props.body.message,
+    message: props.body.messages.at(-1) as UserMessage,
     stream: props.body.stream === true,
     hasTrace: props.body.trace !== undefined,
   };
@@ -329,13 +329,13 @@ function createRunExecution(props: {
     return {
       generate: (options) =>
         props.runAgent.generate({
-          prompt: props.body.message,
+          prompt: props.promptMessage,
           session: { sessionId: session.id, metadata: props.memoryMetadata },
           ...options,
         }),
       stream: (options) =>
         props.runAgent.stream({
-          prompt: props.body.message,
+          prompt: props.promptMessage,
           session: { sessionId: session.id, metadata: props.memoryMetadata },
           ...options,
         }),
@@ -343,20 +343,10 @@ function createRunExecution(props: {
   }
 
   const transcript =
-    session !== undefined
-      ? [...session.messages, props.promptMessage]
-      : props.body.history === undefined
-        ? undefined
-        : [...props.body.history, props.promptMessage];
+    session !== undefined ? [...session.messages, props.promptMessage] : props.body.messages;
   return {
-    generate: (options) =>
-      transcript === undefined
-        ? props.runAgent.generate({ prompt: props.body.message, ...options })
-        : props.runAgent.generate({ messages: transcript, ...options }),
-    stream: (options) =>
-      transcript === undefined
-        ? props.runAgent.stream({ prompt: props.body.message, ...options })
-        : props.runAgent.stream({ messages: transcript, ...options }),
+    generate: (options) => props.runAgent.generate({ messages: transcript, ...options }),
+    stream: (options) => props.runAgent.stream({ messages: transcript, ...options }),
   };
 }
 
@@ -424,7 +414,7 @@ function handleStreamingAgentRun(
       }),
       store: run.sessionStore,
       session: run.session,
-      message: run.body.message,
+      message: run.body.messages.at(-1) as UserMessage,
       runId: run.runId,
       startedAt: run.runStartedAt,
       persistGeneratedMessages: run.shouldPersistSessionMessages,
@@ -576,7 +566,7 @@ async function completeBufferedSessionRun(
   await run.sessionStore.saveSessionRunTranscript({
     id: run.session.id,
     runId: run.runId,
-    ...optionalTitle(run.body.message),
+    ...optionalTitle(run.body.messages.at(-1) as UserMessage),
     transcript,
     status: "success",
   });
@@ -618,13 +608,13 @@ async function failBufferedSessionRun(run: PreparedAgentRun, error: unknown): Pr
   }
 
   const durationMs = Date.now() - run.runStartedAt;
-  const messages = run.failureMessages ?? [normalizePromptMessage(run.body.message)];
+  const messages = run.failureMessages ?? [run.body.messages.at(-1) as UserMessage];
   const transcript = transcriptFromMessages([...messages]);
   assignTranscriptRunDuration(transcript, durationMs);
   await run.sessionStore.saveSessionRunTranscript({
     id: run.session.id,
     runId: run.runId,
-    ...optionalTitle(run.body.message),
+    ...optionalTitle(run.body.messages.at(-1) as UserMessage),
     transcript,
     status: "error",
     error: serializeError(error),
@@ -633,12 +623,6 @@ async function failBufferedSessionRun(run: PreparedAgentRun, error: unknown): Pr
     run.sessionStore,
     runFailedLog(run.session.id, run.runId, error, run.runStartedAt),
   );
-}
-
-function normalizePromptMessage(message: string | UserMessage): UserMessage {
-  return typeof message === "string"
-    ? { role: "user", content: [{ type: "text", text: message }] }
-    : message;
 }
 
 function usesStoreAsAgentMemory(agent: Agent, store: StudioSessionStore): boolean {

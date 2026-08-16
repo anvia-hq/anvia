@@ -1,13 +1,15 @@
 import {
-  AssistantContent,
   type CompletionModelStreamEvent,
   type CompletionRequest,
-  Message,
-  ToolContent,
   Usage,
-  UserContent,
 } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
+import {
+  AssistantContent,
+  Message,
+  ToolContent,
+  UserContent,
+} from "../../core/test/helpers/imports";
 import { OpenAIResponsesCompletionModel } from "../src/index";
 import {
   fromOpenAIResponse,
@@ -191,7 +193,11 @@ describe("OpenAI Responses mapping", () => {
             "call_1",
             [
               { type: "text", text: '{"coordMap":"0,0,100,100,100,100"}' },
-              { type: "image", data: "base64-png", mediaType: "image/png" },
+              {
+                type: "file",
+                data: { type: "data", data: "base64-png" },
+                mediaType: "image/png",
+              },
             ],
             "fc_1",
           ),
@@ -291,13 +297,13 @@ describe("OpenAI Responses mapping", () => {
       openaiMessageHelpers.messageToResponsesInput(
         Message.user([UserContent.documentBase64("abc123", "text/csv")]),
       ),
-    ).toThrow("OpenAI Responses only supports PDF document attachments");
+    ).toThrow("OpenAI Responses only supports image and PDF file attachments");
 
     expect(() =>
       openaiMessageHelpers.messageToResponsesInput(
         Message.assistant([AssistantContent.imageBase64("abc123", "image/png")]),
       ),
-    ).toThrow("OpenAI Responses does not support image content in assistant history");
+    ).toThrow("OpenAI Responses does not support image or file content in assistant history");
   });
 
   it("maps Responses function calls back to internal tool calls", () => {
@@ -468,7 +474,7 @@ describe("OpenAI Responses mapping", () => {
         type: "reasoning",
         id: "rs_1",
         text: "Visible reasoning.Short summary.",
-        content: [
+        details: [
           { type: "text", text: "Visible reasoning." },
           { type: "summary", text: "Short summary." },
           { type: "encrypted", data: "encrypted" },

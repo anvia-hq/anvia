@@ -1,8 +1,7 @@
 import type { Anthropic } from "@anthropic-ai/sdk";
 import type { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import {
-  AssistantContent,
-  type AssistantContent as AssistantContentType,
+  type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
@@ -10,21 +9,21 @@ import {
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type DocumentContent,
-  type ImageContent,
+  type FilePart,
+  type ImagePart,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
   type ModelCallOptions,
-  type ReasoningContent,
+  type ReasoningDetail,
   resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
-  type ToolContent,
   type ToolDefinition,
-  type ToolResultContent,
+  type ToolResultContentPart,
+  type ToolResultPart,
   Usage,
-  type UserContent,
+  type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
 import { orderedRequestMessages } from "../request-messages";
@@ -398,7 +397,7 @@ function systemFromMessages(
 export function fromAnthropicMessage(response: unknown): CompletionResponse {
   const raw = response as Record<string, unknown>;
   const content = Array.isArray(raw.content) ? raw.content : [];
-  const choice: AssistantContentType[] = [];
+  const choice: AssistantContentPart[] = [];
 
   for (const block of content) {
     if (!isPlainObject(block)) {
@@ -406,25 +405,35 @@ export function fromAnthropicMessage(response: unknown): CompletionResponse {
     }
 
     if (block.type === "text" && typeof block.text === "string") {
-      choice.push(AssistantContent.text(block.text));
+      choice.push({ type: "text", text: block.text });
     }
 
     if (block.type === "thinking" && typeof block.thinking === "string") {
-      const text: Extract<ReasoningContent, { type: "text" }> =
+      const text: Extract<ReasoningDetail, { type: "text" }> =
         typeof block.signature === "string"
           ? { type: "text", text: block.thinking, signature: block.signature }
           : { type: "text", text: block.thinking };
-      choice.push(AssistantContent.reasoningFromContent([text]));
+      choice.push({ type: "reasoning", text: block.thinking, details: [text] });
     }
 
     if (block.type === "redacted_thinking" && typeof block.data === "string") {
-      choice.push(AssistantContent.reasoningRedacted(block.data));
+      choice.push({
+        type: "reasoning",
+        text: "",
+        details: [{ type: "redacted", data: block.data }],
+      });
     }
 
     if (block.type === "tool_use") {
       const id = typeof block.id === "string" ? block.id : crypto.randomUUID();
       const name = typeof block.name === "string" ? block.name : "";
-      choice.push(AssistantContent.toolCall(id, name, toJsonValue(block.input)));
+      choice.push({
+        type: "tool-call",
+        toolCallId: id,
+        callId: id,
+        toolName: name,
+        input: toJsonValue(block.input),
+      });
     }
   }
 
@@ -559,6 +568,9 @@ function messageToAnthropicMessages(message: MessageType): AnthropicMessage[] {
   }
 
   if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return [{ role: "user", content: message.content }];
+    }
     return [
       {
         role: "user",
@@ -579,46 +591,59 @@ function messageToAnthropicMessages(message: MessageType): AnthropicMessage[] {
   return [
     {
       role: "assistant",
-      content: message.content.flatMap((content): AnthropicContentBlock[] => {
-        if (content.type === "text") {
-          return [{ type: "text", text: content.text }];
-        }
+      content:
+        typeof message.content === "string"
+          ? message.content
+          : message.content.flatMap((content): AnthropicContentBlock[] => {
+              if (content.type === "text") {
+                return [{ type: "text", text: content.text }];
+              }
 
-        if (content.type === "tool_call") {
-          return [
-            {
-              type: "tool_use",
-              id: content.callId ?? content.id,
-              name: content.function.name,
-              input: content.function.arguments ?? {},
-            },
-          ];
-        }
+              if (content.type === "tool-call") {
+                return [
+                  {
+                    type: "tool_use",
+                    id: content.callId ?? content.toolCallId,
+                    name: content.toolName,
+                    input: content.input,
+                  },
+                ];
+              }
 
-        if (content.type === "reasoning" && content.content !== undefined) {
-          return content.content.flatMap(reasoningContentToAnthropicBlocks);
-        }
+              if (content.type === "reasoning" && content.details !== undefined) {
+                return content.details.flatMap(reasoningContentToAnthropicBlocks);
+              }
 
-        if (content.type === "image") {
-          throw new Error("Anthropic Messages does not support image content in assistant history");
-        }
+              if (content.type === "image" || content.type === "file") {
+                throw new Error(
+                  "Anthropic Messages does not support image or file content in assistant history",
+                );
+              }
 
-        return [];
-      }),
+              return [];
+            }),
     },
   ];
 }
 
-function toolContentToAnthropicBlock(content: ToolContent): AnthropicContentBlock {
-  return {
+function toolContentToAnthropicBlock(content: ToolResultPart): AnthropicContentBlock {
+  const block: AnthropicContentBlock = {
     type: "tool_result",
-    tool_use_id: content.callId ?? content.id,
-    content: toolResultContentToAnthropicContent(content.content),
+    tool_use_id: content.callId ?? content.toolCallId,
+    content: toolResultToAnthropicContent(content),
   };
+  if (
+    content.output.type === "error-text" ||
+    content.output.type === "error-json" ||
+    content.output.type === "execution-denied"
+  ) {
+    block.is_error = true;
+  }
+  return block;
 }
 
 function toolResultContentToAnthropicContent(
-  content: ToolResultContent[],
+  content: readonly ToolResultContentPart[],
 ): string | AnthropicContentBlock[] {
   if (content.every((item) => item.type === "text")) {
     return content.map((item) => item.text).join("\n");
@@ -628,18 +653,25 @@ function toolResultContentToAnthropicContent(
     if (item.type === "text") {
       return { type: "text", text: item.text };
     }
-    return {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: item.mediaType ?? "image/png",
-        data: item.data,
-      },
-    };
+    return fileToAnthropicBlock(item);
   });
 }
 
-function reasoningContentToAnthropicBlocks(content: ReasoningContent): AnthropicContentBlock[] {
+function toolResultToAnthropicContent(content: ToolResultPart): string | AnthropicContentBlock[] {
+  const output = content.output;
+  if (output.type === "text" || output.type === "error-text") {
+    return output.value;
+  }
+  if (output.type === "json" || output.type === "error-json") {
+    return JSON.stringify(output.value);
+  }
+  if (output.type === "execution-denied") {
+    return output.reason ?? "Tool execution was denied.";
+  }
+  return toolResultContentToAnthropicContent(output.value);
+}
+
+function reasoningContentToAnthropicBlocks(content: ReasoningDetail): AnthropicContentBlock[] {
   if (content.type === "text" || content.type === "summary") {
     const block: AnthropicContentBlock = {
       type: "thinking",
@@ -658,7 +690,7 @@ function reasoningContentToAnthropicBlocks(content: ReasoningContent): Anthropic
   return [];
 }
 
-function userContentToAnthropicBlock(content: UserContent): AnthropicContentBlock {
+function userContentToAnthropicBlock(content: UserContentPart): AnthropicContentBlock {
   if (content.type === "text") {
     return { type: "text", text: content.text };
   }
@@ -667,20 +699,20 @@ function userContentToAnthropicBlock(content: UserContent): AnthropicContentBloc
     return imageToAnthropicBlock(content);
   }
 
-  if (content.type === "document") {
-    return documentToAnthropicBlock(content);
+  if (content.type === "file") {
+    return fileToAnthropicBlock(content);
   }
 
   throw new Error("Tool results must be mapped before user content blocks");
 }
 
-function imageToAnthropicBlock(image: ImageContent): AnthropicContentBlock {
-  if (image.source.type === "url") {
+function imageToAnthropicBlock(image: ImagePart): AnthropicContentBlock {
+  if (image.image.type === "url") {
     return {
       type: "image",
       source: {
         type: "url",
-        url: image.source.url,
+        url: image.image.url,
       },
     };
   }
@@ -689,27 +721,35 @@ function imageToAnthropicBlock(image: ImageContent): AnthropicContentBlock {
     type: "image",
     source: {
       type: "base64",
-      media_type: image.source.mediaType,
-      data: image.source.data,
+      media_type: image.mediaType ?? "image/png",
+      data: image.image.data,
     },
   };
 }
 
-function documentToAnthropicBlock(document: DocumentContent): AnthropicContentBlock {
-  if (document.source.type === "text") {
-    return { type: "text", text: document.source.text };
+function fileToAnthropicBlock(file: FilePart): AnthropicContentBlock {
+  if (file.data.type === "text") {
+    return { type: "text", text: file.data.text };
   }
 
-  if (document.source.mediaType !== "application/pdf") {
-    throw new Error("Anthropic Messages only supports PDF document attachments");
+  if (file.mediaType.startsWith("image/")) {
+    return imageToAnthropicBlock({
+      type: "image",
+      image: file.data,
+      mediaType: file.mediaType,
+    });
   }
 
-  if (document.source.type === "url") {
+  if (file.mediaType !== "application/pdf") {
+    throw new Error("Anthropic Messages only supports image and PDF file attachments");
+  }
+
+  if (file.data.type === "url") {
     return {
       type: "document",
       source: {
         type: "url",
-        url: document.source.url,
+        url: file.data.url,
       },
     };
   }
@@ -718,8 +758,8 @@ function documentToAnthropicBlock(document: DocumentContent): AnthropicContentBl
     type: "document",
     source: {
       type: "base64",
-      media_type: document.source.mediaType,
-      data: document.source.data,
+      media_type: file.mediaType,
+      data: file.data.data,
     },
   };
 }

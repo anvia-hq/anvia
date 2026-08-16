@@ -127,7 +127,9 @@ describe("guardrails", () => {
     assertCompleted(result);
 
     expect(result.output).toBe("done");
-    expect(model.requests[0]?.chatHistory).toEqual([Message.user("hello [redacted]")]);
+    expect(model.requests[0]?.chatHistory).toEqual([
+      Message.user([{ type: "text", text: "hello [redacted]" }]),
+    ]);
     expect(result.guardrails).toMatchObject([
       { guardrailId: "redact-input", action: "rewrite", applied: true },
     ]);
@@ -268,16 +270,22 @@ describe("guardrails", () => {
       messages: [
         Message.user([
           { type: "text", text: "secret secret" },
-          { type: "document", source: { type: "text", text: "secret doc" } },
+          {
+            type: "file",
+            data: { type: "text", text: "secret doc" },
+            mediaType: "text/plain",
+          },
         ]),
       ],
     });
     await agent.generate({ prompt: "secret" });
 
     expect(model.requests[0]?.chatHistory[0]).toEqual(
-      Message.user("[redacted] [redacted]\n[redacted] doc"),
+      Message.user([{ type: "text", text: "[redacted] [redacted]\n[redacted] doc" }]),
     );
-    expect(model.requests[1]?.chatHistory[0]).toEqual(Message.user("[redacted]"));
+    expect(model.requests[1]?.chatHistory[0]).toEqual(
+      Message.user([{ type: "text", text: "[redacted]" }]),
+    );
   });
 
   it("rewrites final output before returning and committing the assistant message", async () => {

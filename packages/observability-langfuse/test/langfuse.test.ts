@@ -1,10 +1,4 @@
-import {
-  AssistantContent,
-  type JsonValue,
-  Message,
-  type Message as MessageType,
-  type Usage,
-} from "@anvia/core/completion";
+import type { JsonValue, Message as MessageType, Usage } from "@anvia/core/completion";
 import { EvalOutcome, exactMatch, runEvalSuite } from "@anvia/core/evals";
 import type {
   AgentGenerationStartArgs,
@@ -12,6 +6,7 @@ import type {
   AgentToolObserver,
 } from "@anvia/core/observability";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import { sanitizeTraceValue } from "../src/capture";
 import { createLangfuseDatasetClient } from "../src/dataset-client";
 import { runEvalAsExperiment } from "../src/experiment-runner";
@@ -3955,16 +3950,17 @@ describe("PII redaction", () => {
         role: "assistant",
         content: [
           { type: "text", text: "use 10.0.0.1" },
-          { type: "tool_call", id: "c", function: { name: "x", arguments: {} } },
+          { type: "tool-call", toolCallId: "c", toolName: "x", input: {} },
         ],
       },
     ]);
     expect(out[0]?.content[0]).toMatchObject({ text: "hi [REDACTED]" });
     expect(out[1]?.content[0]).toMatchObject({ text: "use [REDACTED]" });
     expect(out[1]?.content[1]).toEqual({
-      type: "tool_call",
-      id: "c",
-      function: { name: "x", arguments: {} },
+      type: "tool-call",
+      toolCallId: "c",
+      toolName: "x",
+      input: {},
     });
   });
 
@@ -3980,7 +3976,7 @@ describe("PII redaction", () => {
       r.redactMessages([
         {
           role: "assistant",
-          content: [{ type: "tool_call", id: "c", function: { name: "x", arguments: nested } }],
+          content: [{ type: "tool-call", toolCallId: "c", toolName: "x", input: nested }],
         },
       ]),
     ).not.toThrow();

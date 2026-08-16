@@ -4,7 +4,13 @@ import {
   customAgentEventsToClientStream,
 } from "@anvia/client";
 import type { AgentStreamEvent } from "@anvia/core/agent";
-import { isJsonValue, type JsonValue, type Message } from "@anvia/core/completion";
+import {
+  isJsonValue,
+  type JsonValue,
+  type Message,
+  parseMessages,
+  type ToolResultOutput,
+} from "@anvia/core/completion";
 import type { Context } from "hono";
 import type {
   AgentRunRequest,
@@ -23,8 +29,6 @@ import { streamStudioClient } from "./streams";
 import {
   isAgentTraceOptions,
   isJsonObject,
-  isMessage,
-  isMessageInput,
   isNonNegativeInteger,
   isObject,
   isPositiveInteger,
@@ -127,15 +131,13 @@ export function streamAgentRunEvents(
   events: AsyncIterable<AgentRunStreamEvent>,
   options: { runId: string; onCancel?: () => void | Promise<void> },
 ): Response {
-  return streamStudioClient(
-    customAgentEventsToClientStream<AgentRunStreamEvent>(
-      withAgentRunCancellation(events, options.onCancel),
-      {
-        runId: options.runId,
-        mapCustomEvent: studioEventToClientEvent,
-      },
-    ),
-  );
+  return streamStudioClient({
+    events: customAgentEventsToClientStream<AgentRunStreamEvent>({
+      events: withAgentRunCancellation(events, options.onCancel),
+      runId: options.runId,
+      mapCustomEvent: studioEventToClientEvent,
+    }),
+  });
 }
 
 function studioEventToClientEvent(
@@ -498,9 +500,9 @@ function acceptTranscriptStreamEvent(
     transcript.push({
       entryId: transcript.length,
       kind: "tool",
-      toolName: event.toolCall.function.name,
-      callId: event.toolCall.callId ?? event.toolCall.id,
-      args: formatJson(event.toolCall.function.arguments),
+      toolName: event.toolCall.toolName,
+      callId: event.toolCall.callId ?? event.toolCall.toolCallId,
+      args: formatJson(event.toolCall.input),
     });
   }
   if (event.type === "tool_result") {
@@ -694,9 +696,9 @@ function childAgentTranscriptEvent(
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
       agentId: event.agentId,
-      toolName: child.toolCall.function.name,
-      callId: child.toolCall.callId ?? child.toolCall.id,
-      args: formatJson(child.toolCall.function.arguments),
+      toolName: child.toolCall.toolName,
+      callId: child.toolCall.callId ?? child.toolCall.toolCallId,
+      args: formatJson(child.toolCall.input),
     };
     if (event.agentName !== undefined) entry.agentName = event.agentName;
     return entry;
@@ -868,18 +870,19 @@ function extractMessageText(message: string | Message): string {
   if (message.role === "system") {
     return message.content;
   }
+  if (typeof message.content === "string") {
+    return message.content;
+  }
   return message.content
     .flatMap((item) => {
       if (item.type === "text" || item.type === "reasoning") {
         return [item.text];
       }
-      if (item.type === "tool_call") {
-        return [`${item.function.name}(${formatJson(item.function.arguments)})`];
+      if (item.type === "tool-call") {
+        return [`${item.toolName}(${formatJson(item.input)})`];
       }
-      if (item.type === "tool_result") {
-        return item.content.map((result) =>
-          "text" in result ? result.text : `[image:${result.mediaType ?? "image/png"}]`,
-        );
+      if (item.type === "tool-result") {
+        return [toolResultOutputText(item.output)];
       }
       return [];
     })
@@ -892,23 +895,26 @@ function optionalTranscriptAttachments(message: string | Message): {
   if (typeof message === "string" || message.role !== "user") {
     return {};
   }
+  if (typeof message.content === "string") {
+    return {};
+  }
   const attachments = message.content.flatMap((content): StudioTranscriptAttachment[] => {
     if (content.type === "image") {
       const attachment: StudioTranscriptAttachment = { kind: "image" };
-      if (content.source.type === "base64") {
-        attachment.data = content.source.data;
-        attachment.mediaType = content.source.mediaType;
+      if (content.image.type === "data") {
+        attachment.data = content.image.data;
+        if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
       } else {
-        attachment.url = content.source.url;
+        attachment.url = content.image.url;
       }
       return [attachment];
     }
-    if (content.type === "document") {
+    if (content.type === "file") {
       const attachment: StudioTranscriptAttachment = { kind: "document" };
-      if (content.source.filename !== undefined) attachment.name = content.source.filename;
-      if (content.source.mediaType !== undefined) attachment.mediaType = content.source.mediaType;
-      if (content.source.type === "base64") attachment.data = content.source.data;
-      if (content.source.type === "url") attachment.url = content.source.url;
+      if (content.filename !== undefined) attachment.name = content.filename;
+      attachment.mediaType = content.mediaType;
+      if (content.data.type === "data") attachment.data = content.data.data;
+      if (content.data.type === "url") attachment.url = content.data.url;
       return [attachment];
     }
     return [];
@@ -928,8 +934,18 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
     return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
   }
 
-  const request =
-    "message" in body ? parseLegacyRunRequestBody(c, body) : parseUiRunRequestBody(c, body);
+  if ("message" in body || "history" in body) {
+    return {
+      error: errorResponse(
+        c,
+        400,
+        "bad_request",
+        "Legacy message/history requests are not supported; use messages",
+      ),
+    };
+  }
+
+  const request = parseRunRequestBody(c, body);
   if ("error" in request) {
     return request;
   }
@@ -937,39 +953,14 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
   return parseRunRequestOptions(c, body, request);
 }
 
-function parseLegacyRunRequestBody(
+function parseRunRequestBody(
   c: Context,
   body: Record<string, unknown>,
 ): AgentRunRequest | { error: Response } {
-  if (
-    !isMessageInput(body.message) ||
-    (typeof body.message !== "string" && body.message.role !== "user")
-  ) {
-    return {
-      error: errorResponse(c, 400, "bad_request", "Request body requires a string or UserMessage"),
-    };
-  }
-
-  const request: AgentRunRequest = {
-    message: typeof body.message === "string" ? body.message : body.message,
-  };
-
-  if ("history" in body) {
-    if (!Array.isArray(body.history) || !body.history.every(isMessage)) {
-      return { error: errorResponse(c, 400, "bad_request", "history must be a Message array") };
-    }
-    request.history = body.history;
-  }
-
-  return request;
-}
-
-function parseUiRunRequestBody(
-  c: Context,
-  body: Record<string, unknown>,
-): AgentRunRequest | { error: Response } {
-  const messages = body.messages;
-  if (!Array.isArray(messages) || !messages.every(isMessage)) {
+  let messages: Message[];
+  try {
+    messages = parseMessages(body.messages);
+  } catch {
     return {
       error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
     };
@@ -993,10 +984,7 @@ function parseUiRunRequestBody(
     };
   }
 
-  const history = messages.slice(0, -1);
-  const request: AgentRunRequest = { message };
-  if (history.length > 0) request.history = history;
-  return request;
+  return { messages };
 }
 
 function parseRunRequestOptions(
@@ -1008,9 +996,9 @@ function parseRunRequestOptions(
     if (typeof body.sessionId !== "string" || body.sessionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "sessionId must be a string") };
     }
-    if (request.history !== undefined) {
+    if (request.messages.length !== 1 || request.messages[0]?.role !== "user") {
       return {
-        error: errorResponse(c, 400, "bad_request", "sessionId cannot be combined with history"),
+        error: errorResponse(c, 400, "bad_request", "sessionId requires exactly one user message"),
       };
     }
     request.sessionId = body.sessionId;
@@ -1082,4 +1070,17 @@ function parseRunRequestOptions(
   }
 
   return request;
+}
+
+function toolResultOutputText(output: ToolResultOutput): string {
+  if (output.type === "text" || output.type === "error-text") return output.value;
+  if (output.type === "json" || output.type === "error-json") return formatJson(output.value);
+  if (output.type === "execution-denied") return output.reason ?? "Execution denied";
+  return output.value
+    .map((part) =>
+      part.type === "text"
+        ? part.text
+        : `[file:${part.mediaType}${part.filename === undefined ? "" : `:${part.filename}`}]`,
+    )
+    .join("\n");
 }

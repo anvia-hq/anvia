@@ -352,8 +352,9 @@ describe("memory compaction", () => {
     const history = [
       Message.user([
         {
-          type: "document",
-          source: { type: "text", text: longDocument, mediaType: "text/plain" },
+          type: "file",
+          data: { type: "text", text: longDocument },
+          mediaType: "text/plain",
         },
       ]),
       Message.assistant("noted"),
@@ -382,9 +383,13 @@ describe("memory compaction", () => {
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     const serialized =
-      summaryPrompt?.role === "user" && summaryPrompt.content[0]?.type === "text"
-        ? summaryPrompt.content[0].text
-        : "";
+      summaryPrompt?.role !== "user"
+        ? ""
+        : typeof summaryPrompt.content === "string"
+          ? summaryPrompt.content
+          : summaryPrompt.content[0]?.type === "text"
+            ? summaryPrompt.content[0].text
+            : "";
     expect(serialized).toContain("[truncated 500 chars]");
     expect(serialized).not.toContain(longDocument);
   });
@@ -814,7 +819,8 @@ describe("memory compaction", () => {
         },
         {
           type: "image",
-          source: { type: "base64", data: "SECRET_BASE64", mediaType: "image/png" },
+          image: { type: "data", data: "SECRET_BASE64" },
+          mediaType: "image/png",
         },
       ]),
       Message.assistant([
@@ -847,9 +853,13 @@ describe("memory compaction", () => {
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     expect(summaryPrompt?.role).toBe("user");
     const serialized =
-      summaryPrompt?.role === "user" && summaryPrompt.content[0]?.type === "text"
-        ? summaryPrompt.content[0].text
-        : "";
+      summaryPrompt?.role !== "user"
+        ? ""
+        : typeof summaryPrompt.content === "string"
+          ? summaryPrompt.content
+          : summaryPrompt.content[0]?.type === "text"
+            ? summaryPrompt.content[0].text
+            : "";
     expect(serialized).toContain("lookup");
     expect(serialized).toContain("found");
     expect(serialized).toContain("data omitted");

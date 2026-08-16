@@ -1,8 +1,8 @@
 import {
   isJsonValue as isCoreJsonValue,
+  isMessage,
   type JsonObject,
   type JsonValue,
-  type Message,
 } from "@anvia/core/completion";
 import type { AgentTraceOptions } from "../types";
 
@@ -18,22 +18,7 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return isCoreJsonValue(value);
 }
 
-export function isMessageInput(value: unknown): value is string | Message {
-  return typeof value === "string" || isMessage(value);
-}
-
-export function isMessage(value: unknown): value is Message {
-  if (!isObject(value) || typeof value.role !== "string") {
-    return false;
-  }
-  if (value.role === "system") {
-    return typeof value.content === "string";
-  }
-  if (value.role === "user" || value.role === "assistant" || value.role === "tool") {
-    return Array.isArray(value.content);
-  }
-  return false;
-}
+export { isMessage };
 
 export function isAgentTraceOptions(value: unknown): value is AgentTraceOptions {
   if (!isObject(value)) {

@@ -6,9 +6,8 @@ import type {
   JsonValue,
   Message,
   StreamingCompletionModel,
-  ToolResultContent,
+  ToolResultContentPart,
   Usage,
-  UserMessage,
 } from "@anvia/core/completion";
 import type {
   MemoryAppendOptions,
@@ -443,7 +442,7 @@ export type StudioTranscriptToolEntry = {
   callId?: string;
   args?: string;
   result?: string;
-  structuredResult?: ToolResultContent[];
+  structuredResult?: readonly ToolResultContentPart[];
   childEvents?: StudioTranscriptChildAgentEvent[];
   approval?: StudioToolApprovalTranscript;
   question?: StudioToolQuestionTranscript;
@@ -471,7 +470,7 @@ export type StudioTranscriptChildAgentEvent =
       callId?: string;
       args?: string;
       result?: string;
-      structuredResult?: ToolResultContent[];
+      structuredResult?: readonly ToolResultContentPart[];
     };
 
 export type StudioTranscriptEntry =
@@ -1145,19 +1144,7 @@ export type StudioPipelineRunResponse = {
 };
 
 export type AgentRunRequest = {
-  message: string | UserMessage;
-  history?: Message[];
-  sessionId?: string;
-  stream?: boolean;
-  maxTurns?: number;
-  toolConcurrency?: number;
-  model?: StudioModelRef;
-  metadata?: JsonObject;
-  trace?: AgentTraceOptions;
-};
-
-export type AgentRunUIRequest = {
-  messages: Message[];
+  messages: readonly Message[];
   sessionId?: string;
   stream?: boolean;
   maxTurns?: number;

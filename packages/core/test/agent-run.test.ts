@@ -462,7 +462,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(agent.generate({ prompt: "run a command" })).rejects.toThrow(
-      'Completion returned tool call "tool_0" with an empty function name; this indicates invalid provider output or provider mapping.',
+      'Completion returned tool call "tool_0" with an empty tool name; this indicates invalid provider output or provider mapping.',
     );
     expect(model.requests).toHaveLength(1);
   });
@@ -597,7 +597,11 @@ describe("Agent execution", () => {
   it("sends structured tool result content to the next model turn", async () => {
     const structuredContent = ToolOutput.content([
       { type: "text", text: '{"coordMap":"0,0,100,100,100,100"}' },
-      { type: "image", data: "base64-png", mediaType: "image/png" },
+      {
+        type: "file",
+        data: { type: "data", data: "iVBORw0KGgo=" },
+        mediaType: "image/png",
+      },
     ]);
     const screenshotTool = createTool({
       name: "computer_screenshot",
@@ -621,7 +625,7 @@ describe("Agent execution", () => {
       agent.generate({ prompt: "screenshot", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "done" });
 
-    expect(events).toEqual(['{"coordMap":"0,0,100,100,100,100"}\n[image:image/png]:2']);
+    expect(events).toEqual(['{"coordMap":"0,0,100,100,100,100"}\n[file:image/png]:2']);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -638,7 +642,11 @@ describe("Agent execution", () => {
   it("lets middleware observe structured results and replace them with text", async () => {
     const structuredContent = ToolOutput.content([
       { type: "text", text: "screen" },
-      { type: "image", data: "base64-png", mediaType: "image/png" },
+      {
+        type: "file",
+        data: { type: "data", data: "iVBORw0KGgo=" },
+        mediaType: "image/png",
+      },
     ]);
     const screenshotTool = createTool({
       name: "computer_screenshot",
@@ -671,7 +679,7 @@ describe("Agent execution", () => {
       output: "done",
     });
 
-    expect(seen).toEqual(["screen\n[image:image/png]:2:2"]);
+    expect(seen).toEqual(["screen\n[file:image/png]:2:2"]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -1334,8 +1342,12 @@ describe("Agent execution", () => {
     if (pending.status !== "approval_required") throw new Error("Expected approval");
     pending.usage.totalTokens = 999;
     const pendingUser = pending.messages[0];
-    if (pendingUser?.role === "user" && pendingUser.content[0]?.type === "text") {
-      pendingUser.content[0].text = "mutated";
+    if (
+      pendingUser?.role === "user" &&
+      typeof pendingUser.content !== "string" &&
+      pendingUser.content[0]?.type === "text"
+    ) {
+      (pendingUser.content[0] as { text: string }).text = "mutated";
     }
 
     const result = await agent.resume(pending, { approved: true });
@@ -1371,7 +1383,10 @@ describe("Agent execution", () => {
       role: "tool",
       content: [
         expect.objectContaining({
-          content: [expect.objectContaining({ text: expect.stringContaining("ToolCallError") })],
+          output: {
+            type: "error-text",
+            value: expect.stringContaining("ToolCallError"),
+          },
         }),
       ],
     });
@@ -1693,8 +1708,11 @@ describe("Agent execution", () => {
       lifecycle: {
         onStart(event) {
           const input = event.input as unknown as ReturnType<typeof Message.user>;
-          const text = input.role === "user" ? input.content[0] : undefined;
-          if (text?.type === "text") text.text = "mutated";
+          const text =
+            input.role === "user" && typeof input.content !== "string"
+              ? input.content[0]
+              : undefined;
+          if (text?.type === "text") (text as { text: string }).text = "mutated";
         },
         onStepFinish(event) {
           const mutable = event.response as unknown as CompletionResponse;
@@ -1712,9 +1730,13 @@ describe("Agent execution", () => {
       lifecycle: {
         onStart(event) {
           observed.push(
-            event.input.role === "user" && event.input.content[0]?.type === "text"
-              ? event.input.content[0].text
-              : "missing",
+            event.input.role !== "user"
+              ? "missing"
+              : typeof event.input.content === "string"
+                ? event.input.content
+                : event.input.content[0]?.type === "text"
+                  ? event.input.content[0].text
+                  : "missing",
           );
         },
         onStepFinish(event) {
@@ -1769,10 +1791,15 @@ describe("Agent execution", () => {
           events.push(`tool_start:${step}:${toolName}:${JSON.stringify(input)}`);
         },
         onToolFinish(event) {
+          if (!event.success) {
+            events.push(`tool_error:${event.step}:${event.toolName}`);
+            return;
+          }
+          const output = event.output as { type?: string; value?: unknown };
           events.push(
-            event.success
-              ? `tool_finish:${event.step}:${event.toolName}:${event.output}`
-              : `tool_error:${event.step}:${event.toolName}`,
+            `tool_finish:${event.step}:${event.toolName}:${
+              output.type === "json" ? JSON.stringify(output.value) : "unexpected"
+            }`,
           );
         },
       },

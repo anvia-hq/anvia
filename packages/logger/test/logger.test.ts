@@ -125,12 +125,10 @@ describe("createLoggerObserver", () => {
     const tool = (await run.startTool?.({
       turn: 1,
       toolCall: {
-        type: "tool_call",
-        id: "tool_1",
-        function: {
-          name: "lookup",
-          arguments: "{}",
-        },
+        type: "tool-call",
+        toolCallId: "tool_1",
+        toolName: "lookup",
+        input: {},
       },
       toolName: "lookup",
       args: "{}",
@@ -140,12 +138,10 @@ describe("createLoggerObserver", () => {
     tool.end({
       turn: 1,
       toolCall: {
-        type: "tool_call",
-        id: "tool_1",
-        function: {
-          name: "lookup",
-          arguments: "{}",
-        },
+        type: "tool-call",
+        toolCallId: "tool_1",
+        toolName: "lookup",
+        input: {},
       },
       toolName: "lookup",
       args: "{}",

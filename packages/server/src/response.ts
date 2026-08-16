@@ -22,33 +22,36 @@ type EventStreamResponseOptions<TEvent> = {
 };
 
 export function createEventStreamResponse<TEvent>(
-  events: AsyncIterable<TEvent>,
-  options: CreateEventStreamResponseOptions<TEvent> = {},
+  options: CreateEventStreamResponseOptions<TEvent> & { events: AsyncIterable<TEvent> },
 ): Response {
   const eventsForResponse: AsyncIterable<ResponseStreamEvent<TEvent>> =
     options.resumable === undefined
-      ? (events as AsyncIterable<ResponseStreamEvent<TEvent>>)
-      : createResumableStream(events, options.resumable);
+      ? (options.events as AsyncIterable<ResponseStreamEvent<TEvent>>)
+      : createResumableStream({ events: options.events, ...options.resumable });
 
-  return encodeEventStreamResponse(eventsForResponse, copyResponseOptions(options));
+  return encodeEventStreamResponse({
+    events: eventsForResponse,
+    ...copyResponseOptions(options),
+  });
 }
 
 export function resumeEventStreamResponse<TEvent>(
   options: ResumeEventStreamResponseOptions<TEvent>,
 ): Response {
-  return encodeEventStreamResponse(
-    resumeStreamEvents({
+  return encodeEventStreamResponse({
+    events: resumeStreamEvents({
       id: options.streamId,
       after: options.after,
       store: options.store,
     }),
-    copyResponseOptions(options),
-  );
+    ...copyResponseOptions(options),
+  });
 }
 
 export function encodeEventStreamResponse<TEvent>(
-  events: AsyncIterable<ResponseStreamEvent<TEvent>>,
-  options: EventStreamResponseOptions<TEvent>,
+  options: EventStreamResponseOptions<TEvent> & {
+    events: AsyncIterable<ResponseStreamEvent<TEvent>>;
+  },
 ): Response {
   const format = options.format ?? "jsonl";
   const headers = new Headers(options.headers);
@@ -65,8 +68,8 @@ export function encodeEventStreamResponse<TEvent>(
 
   const body =
     format === "sse"
-      ? createSseStream(events, options.sse)
-      : createJsonlStream(events, options.jsonl);
+      ? createSseStream({ events: options.events, ...options.sse })
+      : createJsonlStream({ events: options.events, ...options.jsonl });
 
   if (!headers.has("content-type")) {
     headers.set(

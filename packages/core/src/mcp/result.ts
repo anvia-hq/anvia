@@ -1,4 +1,4 @@
-import type { ToolResultContent } from "../completion/index";
+import type { ToolResultContentPart } from "../completion/index";
 import { isRecord } from "../internal/record";
 
 type McpResultContent =
@@ -43,7 +43,7 @@ export function createCallToolParams(
   return { name, arguments: args };
 }
 
-export function mapMcpToolResult(result: McpToolCallResult): ToolResultContent[] {
+export function mapMcpToolResult(result: McpToolCallResult): readonly ToolResultContentPart[] {
   if ("toolResult" in result) {
     return [{ type: "text", text: serializeMcpValue(result.toolResult) }];
   }
@@ -68,13 +68,17 @@ function mcpErrorMessage(content: McpResultContent[]): string {
   return text === "" ? "MCP tool returned an error" : text;
 }
 
-function mapMcpContent(content: McpResultContent): ToolResultContent {
+function mapMcpContent(content: McpResultContent): ToolResultContentPart {
   if (content.type === "text") {
     return { type: "text", text: content.text };
   }
 
   if (content.type === "image") {
-    return { type: "image", data: content.data, mediaType: content.mimeType };
+    return {
+      type: "file",
+      data: { type: "data", data: content.data },
+      mediaType: content.mimeType,
+    };
   }
 
   if (content.type === "resource") {
@@ -105,6 +109,14 @@ function serializeMcpValue(value: unknown): string {
     return value;
   }
 
-  const serialized = JSON.stringify(value);
-  return serialized === undefined ? String(value) : serialized;
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(value);
+  } catch (error) {
+    throw new TypeError("MCP tool results must be JSON-serializable.", { cause: error });
+  }
+  if (serialized === undefined) {
+    throw new TypeError("MCP tool results must be JSON-serializable.");
+  }
+  return serialized;
 }

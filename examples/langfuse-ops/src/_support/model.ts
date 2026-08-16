@@ -1,5 +1,4 @@
 import {
-  AssistantContent,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -36,7 +35,7 @@ export function getStaticModel(text: string): CompletionModel {
     },
     async completion(_request: CompletionRequest): Promise<CompletionResponse> {
       return {
-        choice: [AssistantContent.text(text)],
+        choice: [{ type: "text", text }],
         usage: Usage.empty(),
         rawResponse: {},
       };

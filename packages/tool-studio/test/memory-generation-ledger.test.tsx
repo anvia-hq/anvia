@@ -1,6 +1,6 @@
-import { AssistantContent, Message } from "@anvia/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import type { StudioMemoryMessageRecord } from "../src/types";
 import {
   MemoryGenerationLedger,

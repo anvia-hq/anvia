@@ -1,5 +1,5 @@
-import { Message, UserContent } from "@anvia/core/completion";
 import { describe, expect, it, vi } from "vitest";
+import { Message, UserContent } from "../../core/test/helpers/imports";
 import { transcriptFromMessages } from "../src/runtime/transcript";
 import {
   cancelPendingTranscriptRun,

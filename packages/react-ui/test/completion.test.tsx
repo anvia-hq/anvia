@@ -11,7 +11,7 @@ afterEach(() => {
 
 describe("Completion primitives", () => {
   it("submits completion input and renders completion output", () => {
-    const complete = vi.fn(async () => {});
+    const submit = vi.fn(async () => {});
 
     function Harness() {
       const [input, setInput] = useState("");
@@ -19,7 +19,7 @@ describe("Completion primitives", () => {
         <CompletionProvider
           controller={createCompletionController({
             completion: "Current answer",
-            complete,
+            submit,
             input,
             setInput,
           })}
@@ -41,11 +41,11 @@ describe("Completion primitives", () => {
     fireEvent.change(screen.getByLabelText("Prompt"), { target: { value: "finish this" } });
     fireEvent.submit(screen.getByLabelText("Completion form"));
 
-    expect(complete).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
   });
 
   it("respects prevented submit and supports stop", () => {
-    const complete = vi.fn(async () => {});
+    const submit = vi.fn(async () => {});
     const stop = vi.fn();
 
     function Harness() {
@@ -53,7 +53,7 @@ describe("Completion primitives", () => {
       return (
         <CompletionProvider
           controller={createCompletionController({
-            complete,
+            submit,
             input,
             setInput,
             status: "ready",
@@ -77,7 +77,7 @@ describe("Completion primitives", () => {
 
     fireEvent.submit(screen.getByLabelText("Completion form"));
 
-    expect(complete).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
 
     rerender(
       <CompletionProvider
@@ -100,14 +100,14 @@ describe("Completion primitives", () => {
   });
 
   it("submits completion input from Enter and ignores modified Enter", () => {
-    const complete = vi.fn(async () => {});
+    const submit = vi.fn(async () => {});
 
     function Harness() {
       const [input, setInput] = useState("");
       return (
         <CompletionProvider
           controller={createCompletionController({
-            complete,
+            submit,
             input,
             setInput,
           })}
@@ -126,6 +126,6 @@ describe("Completion primitives", () => {
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(complete).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
   });
 });

@@ -80,7 +80,7 @@ const prompt = "Use the ticket tool to summarize TICKET-1001 and remember who ow
 
 for await (const event of agent.stream({ prompt, session })) {
   if (event.type === "tool_call") {
-    console.log("tool call:", event.toolCall.function.name, event.toolCall.function.arguments);
+    console.log("tool call:", event.toolCall.toolName, event.toolCall.input);
   }
 
   if (event.type === "tool_result") {

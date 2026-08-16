@@ -1,20 +1,20 @@
-export { defaultAnswerQuestion, defaultDecideApproval } from "./human-input";
 export { initialMessagesFromMemory } from "./memory";
 export type { SmoothStreamItemAdapter, StreamSmoothingLifecycle } from "./stream-smoothing";
 export type {
+  AnyClientTransport,
   ChatResumeCursor,
   ChatResumeOptions,
   ChatResumeState,
   ChatResumeStorage,
   ChatSuggestion,
-  ClientConnectionOptions,
-  CreateChatRequestArgs,
   HumanInputOptions,
   HumanInputState,
   SendMessageInput,
   SetMessages,
   ToolApprovalDecisionInput,
   ToolQuestionAnswerInput,
+  TransportData,
+  TransportMetadata,
   UseChatOptions,
   UseChatResult,
   UseChatStatus,
@@ -22,7 +22,6 @@ export type {
 export { useChat } from "./use-chat";
 export type {
   UseCompletionOptions,
-  UseCompletionRequestArgs,
   UseCompletionResult,
   UseCompletionStatus,
 } from "./use-completion";

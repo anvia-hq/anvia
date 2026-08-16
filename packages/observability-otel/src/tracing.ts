@@ -259,13 +259,12 @@ class OtelToolObserver implements AgentToolObserver {
 
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
       const toolCall = child.toolCall;
-      const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
-      const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
+      const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
       const toolCallId =
-        typeof toolCall.callId === "string"
-          ? toolCall.callId
-          : typeof toolCall.id === "string"
-            ? toolCall.id
+        typeof toolCall.toolCallId === "string"
+          ? toolCall.toolCallId
+          : typeof toolCall.callId === "string"
+            ? toolCall.callId
             : undefined;
       const span = this.tracer.startSpan(
         `${agentLabel(agentId, agentName)}.${toolName}`,
@@ -277,11 +276,7 @@ class OtelToolObserver implements AgentToolObserver {
             "anvia.child_agent.turn": childTurn,
             "anvia.tool.name": toolName,
             "anvia.tool.call_id": toolCallId,
-            "anvia.tool.args": capturedJson(
-              toolCallFunction?.arguments ?? {},
-              "input",
-              this.options,
-            ),
+            "anvia.tool.args": capturedJson(toolCall.input, "input", this.options),
             "anvia.parent_tool.name": args.toolName,
             "anvia.parent_tool.internal_call_id": args.internalCallId,
             "anvia.parent_tool.call_id": args.toolCallId,

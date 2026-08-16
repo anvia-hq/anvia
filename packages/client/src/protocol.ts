@@ -1,13 +1,17 @@
-import type { JsonValue, Message } from "@anvia/core/completion";
-import { isJsonValue } from "@anvia/core/completion";
+import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
+import { isJsonValue, parseMessages } from "@anvia/core/completion";
 import {
   CLIENT_STREAM_PROTOCOL,
   type ClientDataMap,
   type ClientDataSchemas,
+  type ClientMetadataSchema,
   type ClientStreamError,
   type ClientStreamEvent,
   type ClientStreamFrame,
   type ClientStreamRequest,
+  type UIMessage,
+  type UIMessageGeneration,
+  type UIMessagePart,
 } from "./types";
 
 export class ClientProtocolError extends Error {
@@ -20,18 +24,84 @@ export class ClientProtocolError extends Error {
   }
 }
 
+export function parseUIMessage<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+>(
+  value: unknown,
+  options: {
+    metadataSchema?: ClientMetadataSchema<Metadata>;
+    dataSchemas?: ClientDataSchemas<Data>;
+  } = {},
+): UIMessage<Metadata, Data> {
+  const message = requireRecord(value, "UI message");
+  if (!isJsonValue(message)) {
+    throw new ClientProtocolError("UI messages must be strict JSON values.", value);
+  }
+  requireOnlyKeys(
+    message,
+    ["id", "role", "parts", "modelMessageId", "metadata", "generation"],
+    "UI message",
+  );
+  if (typeof message.id !== "string") invalid("UI message.id", value);
+  requireOneOf(message.role, ["system", "user", "assistant", "tool"], "UI message.role", value);
+  if (!Array.isArray(message.parts)) invalid("UI message.parts", value);
+  const parts = message.parts.map((part) => parseUIMessagePart(part, options.dataSchemas, value));
+  if (message.modelMessageId !== undefined && typeof message.modelMessageId !== "string") {
+    invalid("UI message.modelMessageId", value);
+  }
+  const metadata =
+    message.metadata === undefined
+      ? undefined
+      : parseMetadata(message.metadata, options.metadataSchema, value);
+  if (message.generation !== undefined && !isUIMessageGeneration(message.generation)) {
+    invalid("UI message.generation", value);
+  }
+  return {
+    id: message.id as string,
+    role: message.role as UIMessage<Metadata, Data>["role"],
+    parts,
+    ...(message.modelMessageId === undefined
+      ? {}
+      : { modelMessageId: message.modelMessageId as string }),
+    ...(metadata === undefined ? {} : { metadata }),
+    ...(message.generation === undefined
+      ? {}
+      : { generation: message.generation as UIMessageGeneration }),
+  };
+}
+
+export function parseUIMessages<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+>(
+  value: unknown,
+  options: {
+    metadataSchema?: ClientMetadataSchema<Metadata>;
+    dataSchemas?: ClientDataSchemas<Data>;
+  } = {},
+): UIMessage<Metadata, Data>[] {
+  if (!Array.isArray(value)) {
+    throw new ClientProtocolError("UI messages must be an array.", value);
+  }
+  return value.map((message) => parseUIMessage<Metadata, Data>(message, options));
+}
+
 export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
   const input = requireRecord(value, "Client stream request");
   requireOnlyKeys(input, ["messages", "metadata", "resume"], "Client stream request");
-  if (!Array.isArray(input.messages) || !input.messages.every(isMessage)) {
+  let messages: Message[];
+  try {
+    messages = parseMessages(input.messages);
+  } catch {
     throw new ClientProtocolError("Client stream request.messages must be Message[].", value);
   }
-  if (input.metadata !== undefined && !isJsonValue(input.metadata)) {
-    throw new ClientProtocolError("Client stream request.metadata must be JSON-safe.", value);
+  if (input.metadata !== undefined && !isJsonObject(input.metadata)) {
+    throw new ClientProtocolError("Client stream request.metadata must be a JSON object.", value);
   }
 
-  const request: ClientStreamRequest = { messages: input.messages as Message[] };
-  if (input.metadata !== undefined) request.metadata = input.metadata;
+  const request: ClientStreamRequest = { messages };
+  if (input.metadata !== undefined) request.metadata = input.metadata as JsonObject;
   if (input.resume !== undefined) {
     const resume = requireRecord(input.resume, "Client stream request.resume");
     requireOnlyKeys(resume, ["streamId", "after"], "Client stream request.resume");
@@ -46,10 +116,16 @@ export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
   return request;
 }
 
-export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataMap>(
+export function parseClientStreamEvent<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+>(
   value: unknown,
-  options: { dataSchemas?: ClientDataSchemas<TData> } = {},
-): ClientStreamEvent<TData> {
+  options: {
+    metadataSchema?: ClientMetadataSchema<Metadata>;
+    dataSchemas?: ClientDataSchemas<Data>;
+  } = {},
+): ClientStreamEvent<Metadata, Data> {
   const event = requireRecord(value, "Client stream event");
   if (!isJsonValue(event)) {
     throw new ClientProtocolError("Client stream events must be strict JSON values.", value);
@@ -163,7 +239,6 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
         "toolName",
         "input",
         "signature",
-        "additionalParams",
       ]);
       requireStrings(event, ["messageId", "partId", "toolCallId", "toolName"], value);
       requireOptionalStrings(event, ["callId", "signature"], value);
@@ -240,7 +315,7 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       return {
         ...event,
         data: parseDataEvent(event.name as string, event.data, options.dataSchemas, value),
-      } as ClientStreamEvent<TData>;
+      } as ClientStreamEvent<Metadata, Data>;
     case "message_end":
       requireEventKeys(event, [
         "messageId",
@@ -252,11 +327,17 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       ]);
       requireStrings(event, ["messageId"], value);
       requireOptionalStrings(event, ["modelMessageId"], value);
-      if (
-        event.parts !== undefined &&
-        (!Array.isArray(event.parts) || !event.parts.every(isUIMessagePart))
-      ) {
-        invalid("message_end.parts", value);
+      if (event.parts !== undefined) {
+        if (!Array.isArray(event.parts)) invalid("message_end.parts", value);
+        const parts = event.parts.map((part) =>
+          parseUIMessagePart(part, options.dataSchemas, value),
+        );
+        validateUsageAndContext(event, value);
+        return parseEventMetadata(
+          { ...event, parts },
+          options.metadataSchema,
+          value,
+        ) as ClientStreamEvent<Metadata, Data>;
       }
       validateUsageAndContext(event, value);
       break;
@@ -323,13 +404,22 @@ export function parseClientStreamEvent<TData extends ClientDataMap = ClientDataM
       throw new ClientProtocolError(`Unknown client stream event type "${event.type}".`, value);
   }
 
-  return event as ClientStreamEvent<TData>;
+  return parseEventMetadata(event, options.metadataSchema, value) as ClientStreamEvent<
+    Metadata,
+    Data
+  >;
 }
 
-export function parseClientStreamFrame<TData extends ClientDataMap = ClientDataMap>(
+export function parseClientStreamFrame<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+>(
   value: unknown,
-  options: { dataSchemas?: ClientDataSchemas<TData> } = {},
-): ClientStreamFrame<TData> {
+  options: {
+    metadataSchema?: ClientMetadataSchema<Metadata>;
+    dataSchemas?: ClientDataSchemas<Data>;
+  } = {},
+): ClientStreamFrame<Metadata, Data> {
   const frame = requireRecord(value, "Client stream frame");
   if (!isJsonValue(frame)) {
     throw new ClientProtocolError("Client stream frames must be strict JSON values.", value);
@@ -343,6 +433,9 @@ export function parseClientStreamFrame<TData extends ClientDataMap = ClientDataM
       ["type", "protocol", "streamId", "eventId", "resumable"],
       "stream_start frame",
     );
+    if (frame.protocol === "anvia.client.v1") {
+      throw new ClientProtocolError("Client stream protocol v1 is not supported.", value);
+    }
     if (
       frame.protocol !== CLIENT_STREAM_PROTOCOL ||
       typeof frame.streamId !== "string" ||
@@ -351,7 +444,7 @@ export function parseClientStreamFrame<TData extends ClientDataMap = ClientDataM
     ) {
       throw new ClientProtocolError("Invalid client stream_start frame.", value);
     }
-    return frame as ClientStreamFrame<TData>;
+    return frame as ClientStreamFrame<Metadata, Data>;
   }
   if (frame.type === "stream_event") {
     requireOnlyKeys(frame, ["type", "streamId", "eventId", "event"], "stream_event frame");
@@ -359,7 +452,7 @@ export function parseClientStreamFrame<TData extends ClientDataMap = ClientDataM
       throw new ClientProtocolError("Invalid client stream_event frame.", value);
     }
     const event = parseClientStreamEvent(frame.event, options);
-    return { ...frame, event } as ClientStreamFrame<TData>;
+    return { ...frame, event } as ClientStreamFrame<Metadata, Data>;
   }
   if (frame.type === "stream_end") {
     requireOnlyKeys(frame, ["type", "streamId", "eventId", "status"], "stream_end frame");
@@ -367,7 +460,7 @@ export function parseClientStreamFrame<TData extends ClientDataMap = ClientDataM
       throw new ClientProtocolError("Invalid client stream_end frame.", value);
     }
     requireOneOf(frame.status, ["completed", "error", "missing"], "stream_end.status", value);
-    return frame as ClientStreamFrame<TData>;
+    return frame as ClientStreamFrame<Metadata, Data>;
   }
   throw new ClientProtocolError(`Unknown client stream frame type "${frame.type}".`, value);
 }
@@ -404,6 +497,96 @@ function parseDataEvent<TData extends ClientDataMap>(
   return parsed.data;
 }
 
+function parseUIMessagePart<Data extends ClientDataMap>(
+  value: unknown,
+  schemas: ClientDataSchemas<Data> | undefined,
+  root: unknown,
+): UIMessagePart<Data> {
+  if (!isUIMessagePart(value)) {
+    throw new ClientProtocolError("UI message contains an invalid part.", root);
+  }
+  if (value.type !== "data") {
+    return value as UIMessagePart<Data>;
+  }
+  return {
+    ...value,
+    data: parseDataEvent(value.name, value.data, schemas, root),
+  } as UIMessagePart<Data>;
+}
+
+function parseMetadata<Metadata extends JsonObject>(
+  value: unknown,
+  schema: ClientMetadataSchema<Metadata> | undefined,
+  root: unknown,
+): Metadata {
+  if (schema === undefined) {
+    if (!isJsonObject(value)) {
+      throw new ClientProtocolError("Client metadata must be a JSON object.", root);
+    }
+    return value as Metadata;
+  }
+  const parsed = schema.safeParse(value);
+  if (parsed.success !== true || !isJsonObject(parsed.data)) {
+    throw new ClientProtocolError("Invalid client metadata.", root);
+  }
+  return parsed.data;
+}
+
+function parseEventMetadata<Metadata extends JsonObject>(
+  event: Record<string, unknown>,
+  schema: ClientMetadataSchema<Metadata> | undefined,
+  root: unknown,
+): Record<string, unknown> {
+  if (event.metadata === undefined) return event;
+  return { ...event, metadata: parseMetadata(event.metadata, schema, root) };
+}
+
+function isUIMessageGeneration(value: unknown): value is UIMessageGeneration {
+  if (!isRecord(value)) return false;
+  if (
+    !hasOnlyKeys(value, ["runId", "status", "usage", "contextUsage", "trace", "memoryCompaction"])
+  ) {
+    return false;
+  }
+  return (
+    (value.runId === undefined || typeof value.runId === "string") &&
+    (value.status === undefined ||
+      ["completed", "blocked", "approval_required", "cancelled", "error"].includes(
+        value.status as string,
+      )) &&
+    (value.usage === undefined || isUsage(value.usage)) &&
+    (value.contextUsage === undefined || isContextUsage(value.contextUsage)) &&
+    (value.trace === undefined || isTrace(value.trace)) &&
+    (value.memoryCompaction === undefined ||
+      (isRecord(value.memoryCompaction) &&
+        validateMemoryCompactionForGuard(value.memoryCompaction)))
+  );
+}
+
+function validateMemoryCompactionForGuard(value: Record<string, unknown>): boolean {
+  try {
+    requireOnlyKeys(
+      value,
+      [
+        "originalMessageCount",
+        "compactedMessageCount",
+        "retainedMessageCount",
+        "attempts",
+        "usage",
+      ],
+      "memory compaction",
+    );
+    validateMemoryCompactionInfo(value, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return isRecord(value) && isJsonValue(value);
+}
+
 function isClientStreamError(value: unknown): value is ClientStreamError {
   return (
     isRecord(value) &&
@@ -413,78 +596,6 @@ function isClientStreamError(value: unknown): value is ClientStreamError {
     (value.code === undefined || typeof value.code === "string") &&
     (value.retryable === undefined || typeof value.retryable === "boolean") &&
     (value.details === undefined || isJsonValue(value.details))
-  );
-}
-
-function isMessage(value: unknown): value is Message {
-  if (!isRecord(value) || !isJsonValue(value)) return false;
-  if (value.role === "system") {
-    return hasOnlyKeys(value, ["role", "content", "metadata"]) && typeof value.content === "string";
-  }
-  if (!Array.isArray(value.content)) return false;
-  if (value.role === "user") {
-    return (
-      hasOnlyKeys(value, ["role", "content", "metadata"]) && value.content.every(isUserContent)
-    );
-  }
-  if (value.role === "assistant") {
-    return (
-      hasOnlyKeys(value, ["role", "id", "content", "metadata"]) &&
-      (value.id === undefined || typeof value.id === "string") &&
-      value.content.every(isAssistantContent)
-    );
-  }
-  if (value.role === "tool") {
-    return (
-      hasOnlyKeys(value, ["role", "content", "metadata"]) && value.content.every(isToolContent)
-    );
-  }
-  return false;
-}
-
-function isUserContent(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.type !== "string") return false;
-  if (value.type === "text") return isTextContent(value);
-  if (value.type === "image") return isImageContent(value);
-  return value.type === "document" && isDocumentContent(value);
-}
-
-function isAssistantContent(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.type !== "string") return false;
-  if (value.type === "text") return isTextContent(value);
-  if (value.type === "reasoning") {
-    return (
-      hasOnlyKeys(value, ["type", "text", "id", "content"]) &&
-      typeof value.text === "string" &&
-      (value.id === undefined || typeof value.id === "string") &&
-      (value.content === undefined ||
-        (Array.isArray(value.content) && value.content.every(isReasoningContent)))
-    );
-  }
-  if (value.type === "image") return isImageContent(value);
-  return (
-    value.type === "tool_call" &&
-    hasOnlyKeys(value, ["type", "id", "callId", "function", "signature", "additionalParams"]) &&
-    typeof value.id === "string" &&
-    (value.callId === undefined || typeof value.callId === "string") &&
-    (value.signature === undefined || typeof value.signature === "string") &&
-    isRecord(value.function) &&
-    hasOnlyKeys(value.function, ["name", "arguments"]) &&
-    typeof value.function.name === "string" &&
-    isJsonValue(value.function.arguments)
-  );
-}
-
-function isToolContent(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    value.type === "tool_result" &&
-    hasOnlyKeys(value, ["type", "id", "callId", "toolName", "content"]) &&
-    typeof value.id === "string" &&
-    (value.callId === undefined || typeof value.callId === "string") &&
-    (value.toolName === undefined || typeof value.toolName === "string") &&
-    Array.isArray(value.content) &&
-    value.content.every(isToolResultContent)
   );
 }
 
@@ -529,7 +640,7 @@ function isAttachment(value: unknown): boolean {
   );
 }
 
-function isUIMessagePart(value: unknown): boolean {
+function isUIMessagePart(value: unknown): value is UIMessagePart {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.type !== "string") {
     return false;
   }
@@ -580,7 +691,6 @@ function isUIMessagePart(value: unknown): boolean {
       "output",
       "resultContent",
       "signature",
-      "additionalParams",
       "error",
     ]) &&
     typeof value.toolName === "string" &&
@@ -589,66 +699,14 @@ function isUIMessagePart(value: unknown): boolean {
     (value.internalCallId === undefined || typeof value.internalCallId === "string") &&
     (value.turn === undefined || isPositiveEventId(value.turn)) &&
     (value.signature === undefined || typeof value.signature === "string") &&
+    (value.input === undefined || isJsonValue(value.input)) &&
+    (value.output === undefined || isJsonValue(value.output)) &&
     (value.resultContent === undefined ||
       (Array.isArray(value.resultContent) && value.resultContent.every(isToolResultContent))) &&
     (value.error === undefined || isClientStreamError(value.error)) &&
     ["input-streaming", "input-available", "output-available", "error"].includes(
       value.state as string,
     )
-  );
-}
-
-function isTextContent(value: Record<string, unknown>): boolean {
-  return (
-    hasOnlyKeys(value, ["type", "text", "signature"]) &&
-    typeof value.text === "string" &&
-    (value.signature === undefined || typeof value.signature === "string")
-  );
-}
-
-function isImageContent(value: Record<string, unknown>): boolean {
-  if (!hasOnlyKeys(value, ["type", "source", "detail"]) || !isRecord(value.source)) {
-    return false;
-  }
-  if (value.detail !== undefined && !["auto", "low", "high"].includes(value.detail as string)) {
-    return false;
-  }
-  if (value.source.type === "url") {
-    return hasOnlyKeys(value.source, ["type", "url"]) && typeof value.source.url === "string";
-  }
-  return (
-    value.source.type === "base64" &&
-    hasOnlyKeys(value.source, ["type", "data", "mediaType"]) &&
-    typeof value.source.data === "string" &&
-    typeof value.source.mediaType === "string"
-  );
-}
-
-function isDocumentContent(value: Record<string, unknown>): boolean {
-  if (!hasOnlyKeys(value, ["type", "source"]) || !isRecord(value.source)) return false;
-  const source = value.source;
-  if (source.type === "url") {
-    return (
-      hasOnlyKeys(source, ["type", "url", "mediaType", "filename"]) &&
-      typeof source.url === "string" &&
-      typeof source.mediaType === "string" &&
-      (source.filename === undefined || typeof source.filename === "string")
-    );
-  }
-  if (source.type === "base64") {
-    return (
-      hasOnlyKeys(source, ["type", "data", "mediaType", "filename"]) &&
-      typeof source.data === "string" &&
-      typeof source.mediaType === "string" &&
-      (source.filename === undefined || typeof source.filename === "string")
-    );
-  }
-  return (
-    source.type === "text" &&
-    hasOnlyKeys(source, ["type", "text", "mediaType", "filename"]) &&
-    typeof source.text === "string" &&
-    (source.mediaType === undefined || typeof source.mediaType === "string") &&
-    (source.filename === undefined || typeof source.filename === "string")
   );
 }
 
@@ -673,13 +731,31 @@ function isReasoningContent(value: unknown): boolean {
 function isToolResultContent(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (value.type === "text") {
-    return hasOnlyKeys(value, ["type", "text"]) && typeof value.text === "string";
+    return (
+      hasOnlyKeys(value, ["type", "text", "signature"]) &&
+      typeof value.text === "string" &&
+      (value.signature === undefined || typeof value.signature === "string")
+    );
   }
   return (
-    value.type === "image" &&
-    hasOnlyKeys(value, ["type", "data", "mediaType"]) &&
-    typeof value.data === "string" &&
-    (value.mediaType === undefined || typeof value.mediaType === "string")
+    value.type === "file" &&
+    hasOnlyKeys(value, ["type", "data", "mediaType", "filename"]) &&
+    isFileData(value.data) &&
+    typeof value.mediaType === "string" &&
+    (value.filename === undefined || typeof value.filename === "string")
+  );
+}
+
+function isFileData(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.type === "url") {
+    return hasOnlyKeys(value, ["type", "url"]) && typeof value.url === "string";
+  }
+  if (value.type === "data") {
+    return hasOnlyKeys(value, ["type", "data"]) && typeof value.data === "string";
+  }
+  return (
+    value.type === "text" && hasOnlyKeys(value, ["type", "text"]) && typeof value.text === "string"
   );
 }
 

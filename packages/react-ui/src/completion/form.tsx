@@ -29,7 +29,7 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
     if (!canSubmit) {
       return;
     }
-    await completion.complete();
+    await completion.submit();
   }, [canSubmit, completion]);
 
   const value = useMemo<CompletionInputContextValue>(

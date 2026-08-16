@@ -8,9 +8,9 @@ import type {
   JsonValue,
   Message,
   ProviderToolCall,
-  ToolCall,
+  ToolCallPart,
   ToolDefinition,
-  ToolResultContent,
+  ToolResultContentPart,
   Usage,
 } from "../completion";
 import type { DeepReadonly } from "../internal/type-utils";
@@ -112,7 +112,7 @@ export type AgentRunEventArgs = {
 
 export type AgentToolStartArgs = {
   readonly turn: number;
-  readonly toolCall: DeepReadonly<ToolCall>;
+  readonly toolCall: DeepReadonly<ToolCallPart>;
   readonly toolName: string;
   readonly args: string;
   readonly internalCallId: string;
@@ -123,7 +123,7 @@ export type AgentToolStartArgs = {
 
 export type AgentToolEndArgs = AgentToolStartArgs & {
   readonly result: string;
-  readonly structuredResult?: readonly DeepReadonly<ToolResultContent>[] | undefined;
+  readonly structuredResult?: readonly DeepReadonly<ToolResultContentPart>[] | undefined;
   readonly skipped: boolean;
 };
 

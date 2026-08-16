@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpClient, McpClientGroup } from "../src/mcp";
+import { ToolOutput } from "../src/tool";
 
 const corePackageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -226,9 +227,9 @@ describe("McpClient", () => {
 
     const server = await client.connect();
     const signal = new AbortController().signal;
-    await expect(server.tools[0]?.call({}, { abortSignal: signal })).resolves.toEqual([
-      { type: "text", text: "done" },
-    ]);
+    await expect(server.tools[0]?.call({}, { abortSignal: signal })).resolves.toEqual(
+      ToolOutput.content([{ type: "text", text: "done" }]),
+    );
 
     expect(server).toMatchObject({
       name: "files",
@@ -345,18 +346,20 @@ describe("McpClient", () => {
       },
     });
     const rich = await stdioClient("rich").connect();
-    await expect(rich.tools[0]?.call({})).resolves.toEqual([
-      { type: "text", text: "hello" },
-      { type: "image", data: "abc", mediaType: "image/png" },
-      {
-        type: "text",
-        text: "MCP resource (file:///note.txt; text/plain; text)\nnote",
-      },
-      {
-        type: "text",
-        text: "MCP resource (file:///blob.bin; application/octet-stream; base64)\nYWJj",
-      },
-    ]);
+    await expect(rich.tools[0]?.call({})).resolves.toEqual(
+      ToolOutput.content([
+        { type: "text", text: "hello" },
+        { type: "file", data: { type: "data", data: "abc" }, mediaType: "image/png" },
+        {
+          type: "text",
+          text: "MCP resource (file:///note.txt; text/plain; text)\nnote",
+        },
+        {
+          type: "text",
+          text: "MCP resource (file:///blob.bin; application/octet-stream; base64)\nYWJj",
+        },
+      ]),
+    );
 
     sdk.behaviors.push({
       pages: [{ tools: [toolDefinition("audio")] }],
@@ -383,18 +386,27 @@ describe("McpClient", () => {
       result: { toolResult: { ok: true } },
     });
     const direct = await stdioClient("direct").connect();
-    await expect(direct.tools[0]?.call({})).resolves.toEqual([
-      { type: "text", text: '{"ok":true}' },
-    ]);
+    await expect(direct.tools[0]?.call({})).resolves.toEqual(
+      ToolOutput.content([{ type: "text", text: '{"ok":true}' }]),
+    );
 
     sdk.behaviors.push({
       pages: [{ tools: [toolDefinition("structured")] }],
       result: { content: [], structuredContent: { count: 2 } },
     });
     const structured = await stdioClient("structured").connect();
-    await expect(structured.tools[0]?.call({})).resolves.toEqual([
-      { type: "text", text: '{"count":2}' },
-    ]);
+    await expect(structured.tools[0]?.call({})).resolves.toEqual(
+      ToolOutput.content([{ type: "text", text: '{"count":2}' }]),
+    );
+
+    sdk.behaviors.push({
+      pages: [{ tools: [toolDefinition("invalid-direct")] }],
+      result: { toolResult: undefined },
+    });
+    const invalidDirect = await stdioClient("invalid-direct").connect();
+    await expect(invalidDirect.tools[0]?.call({})).rejects.toThrow(
+      "MCP tool results must be JSON-serializable",
+    );
 
     sdk.behaviors.push({
       pages: [{ tools: [toolDefinition("error")] }],
@@ -425,7 +437,9 @@ describe("McpClient", () => {
     sdk.behaviors.push({ pages: [{ tools: [toolDefinition("args")] }] });
     const server = await stdioClient("args").connect();
 
-    await expect(server.tools[0]?.call(null)).resolves.toEqual([{ type: "text", text: "ok" }]);
+    await expect(server.tools[0]?.call(null)).resolves.toEqual(
+      ToolOutput.content([{ type: "text", text: "ok" }]),
+    );
     expect(sdk.clients[0]?.callToolCalls[0]?.params).toEqual({ name: "args" });
     await expect(server.tools[0]?.call("invalid")).rejects.toThrow(
       "MCP tool arguments must be a JSON object",

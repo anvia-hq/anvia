@@ -12,7 +12,7 @@ export type MessageTextLayout = {
   segments: MessageTextSegment[];
 };
 
-export function messageTextLayout(parts: UIMessagePart[]): MessageTextLayout {
+export function messageTextLayout(parts: readonly UIMessagePart[]): MessageTextLayout {
   const textParts = parts.filter(
     (part): part is Extract<UIMessagePart, { type: "text" }> => part.type === "text",
   );

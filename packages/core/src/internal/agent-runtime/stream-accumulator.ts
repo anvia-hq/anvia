@@ -1,20 +1,20 @@
 import type { AgentDeltaEvent } from "../../agent/run-types";
 import type {
-  AssistantContent as AssistantContentType,
+  AssistantContentPart,
   CompletionModelStreamEvent,
   CompletionResponse,
   CompletionSource,
   JsonValue,
   ProviderToolCall,
-  ReasoningContent,
-  ToolCall,
+  ReasoningDetail,
+  ToolCallPart,
 } from "../../completion/index";
 import { Usage } from "../../completion/index";
 
 type ReasoningState = {
   id?: string;
   text: string;
-  content?: ReasoningContent[];
+  details?: ReasoningDetail[];
 };
 
 type PartialToolCall = {
@@ -23,7 +23,6 @@ type PartialToolCall = {
   name: string;
   argumentsText: string;
   signature?: string;
-  additionalParams?: JsonValue;
 };
 
 type OrderedPartRef =
@@ -112,7 +111,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   }
 
   private buildAccumulatedResponse(): CompletionResponse<RawResponse> {
-    const choice: AssistantContentType[] = [];
+    const choice: AssistantContentPart[] = [];
 
     for (const part of this.orderedParts) {
       if (part.type === "text") {
@@ -158,14 +157,14 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     return response;
   }
 
-  private upsertToolCall(toolCall: ToolCall): void {
-    if (!this.toolCalls.has(toolCall.id)) {
-      this.orderedParts.push({ type: "tool_call", key: toolCall.id });
+  private upsertToolCall(toolCall: ToolCallPart): void {
+    if (!this.toolCalls.has(toolCall.toolCallId)) {
+      this.orderedParts.push({ type: "tool_call", key: toolCall.toolCallId });
     }
     const partial: PartialToolCall = {
-      id: toolCall.id,
-      name: toolCall.function.name,
-      argumentsText: JSON.stringify(toolCall.function.arguments ?? {}),
+      id: toolCall.toolCallId,
+      name: toolCall.toolName,
+      argumentsText: JSON.stringify(toolCall.input ?? {}),
     };
     if (toolCall.callId !== undefined) {
       partial.callId = toolCall.callId;
@@ -173,10 +172,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     if (toolCall.signature !== undefined) {
       partial.signature = toolCall.signature;
     }
-    if (toolCall.additionalParams !== undefined) {
-      partial.additionalParams = toolCall.additionalParams;
-    }
-    this.toolCalls.set(toolCall.id, partial);
+    this.toolCalls.set(toolCall.toolCallId, partial);
   }
 
   private mergeFinalResponse(
@@ -195,26 +191,26 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       return this.withAccumulatedArtifacts(mergedResponse, accumulatedResponse);
     }
 
-    const finalById = new Map<string, ToolCall>();
-    const finalByCallId = new Map<string, ToolCall>();
+    const finalById = new Map<string, ToolCallPart>();
+    const finalByCallId = new Map<string, ToolCallPart>();
     for (const content of finalResponse.choice) {
-      if (content.type !== "tool_call") {
+      if (content.type !== "tool-call") {
         continue;
       }
-      finalById.set(content.id, content);
+      finalById.set(content.toolCallId, content);
       if (content.callId !== undefined) {
         finalByCallId.set(content.callId, content);
       }
     }
 
-    const matchedFinalToolCalls = new Set<ToolCall>();
+    const matchedFinalToolCalls = new Set<ToolCallPart>();
     const choice = accumulatedResponse.choice.map((content) => {
-      if (content.type !== "tool_call") {
+      if (content.type !== "tool-call") {
         return content;
       }
 
       const finalToolCall =
-        finalById.get(content.id) ??
+        finalById.get(content.toolCallId) ??
         (content.callId === undefined ? undefined : finalByCallId.get(content.callId));
       if (finalToolCall === undefined) {
         return content;
@@ -225,7 +221,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     });
 
     for (const content of finalResponse.choice) {
-      if (content.type !== "tool_call") {
+      if (content.type !== "tool-call") {
         continue;
       }
       if (!matchedFinalToolCalls.has(content)) {
@@ -346,16 +342,17 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       return;
     }
 
-    reasoning.content ??= [];
-    const last = reasoning.content.at(-1);
+    reasoning.details ??= [];
+    const last = reasoning.details.at(-1);
     if (contentType === "text") {
       if (last?.type === "text") {
-        last.text += event.delta;
-        if (event.signature !== undefined) {
-          last.signature = event.signature;
-        }
+        reasoning.details[reasoning.details.length - 1] = {
+          ...last,
+          text: `${last.text}${event.delta}`,
+          ...(event.signature === undefined ? {} : { signature: event.signature }),
+        };
       } else {
-        reasoning.content.push(
+        reasoning.details.push(
           event.signature === undefined
             ? { type: "text", text: event.delta }
             : { type: "text", text: event.delta, signature: event.signature },
@@ -366,19 +363,22 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
     if (contentType === "summary") {
       if (last?.type === "summary") {
-        last.text += event.delta;
+        reasoning.details[reasoning.details.length - 1] = {
+          ...last,
+          text: `${last.text}${event.delta}`,
+        };
       } else {
-        reasoning.content.push({ type: "summary", text: event.delta });
+        reasoning.details.push({ type: "summary", text: event.delta });
       }
       return;
     }
 
     if (contentType === "encrypted") {
-      reasoning.content.push({ type: "encrypted", data: event.delta });
+      reasoning.details.push({ type: "encrypted", data: event.delta });
       return;
     }
 
-    reasoning.content.push({ type: "redacted", data: event.delta });
+    reasoning.details.push({ type: "redacted", data: event.delta });
   }
 }
 
@@ -408,67 +408,52 @@ function mergeProviderToolCalls(
   return [...toolCalls.values()];
 }
 
-function reasoningContent(reasoning: ReasoningState): AssistantContentType {
+function reasoningContent(reasoning: ReasoningState): AssistantContentPart {
   const content =
-    reasoning.content === undefined
+    reasoning.details === undefined
       ? { type: "reasoning" as const, text: reasoning.text }
-      : { type: "reasoning" as const, text: reasoning.text, content: reasoning.content };
+      : { type: "reasoning" as const, text: reasoning.text, details: reasoning.details };
   return reasoning.id === undefined ? content : { ...content, id: reasoning.id };
 }
 
-function toolCallContent(toolCall: PartialToolCall, finalToolCall?: ToolCall): ToolCall {
+function toolCallContent(toolCall: PartialToolCall, finalToolCall?: ToolCallPart): ToolCallPart {
   const argumentsValue =
-    finalToolCall !== undefined && !isEmptyToolArguments(finalToolCall.function.arguments)
-      ? finalToolCall.function.arguments
+    finalToolCall !== undefined && !isEmptyToolArguments(finalToolCall.input)
+      ? finalToolCall.input
       : parseToolArguments(toolCall.id, toolCall.argumentsText);
-  const content: ToolCall = {
-    type: "tool_call",
-    id: toolCall.id,
-    function: {
-      name: toolCall.name,
-      arguments: argumentsValue,
-    },
+  return {
+    type: "tool-call",
+    toolCallId: toolCall.id,
+    toolName: toolCall.name,
+    input: argumentsValue,
+    ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
+    ...(toolCall.signature === undefined ? {} : { signature: toolCall.signature }),
   };
-  if (toolCall.callId !== undefined) {
-    content.callId = toolCall.callId;
-  }
-  if (toolCall.signature !== undefined) {
-    content.signature = toolCall.signature;
-  }
-  if (toolCall.additionalParams !== undefined) {
-    content.additionalParams = toolCall.additionalParams;
-  }
-  return content;
 }
 
 function matchingFinalToolCall(
   accumulated: PartialToolCall,
-  finalChoice: AssistantContentType[] | undefined,
-): ToolCall | undefined {
+  finalChoice: AssistantContentPart[] | undefined,
+): ToolCallPart | undefined {
   const byId = finalChoice?.find(
-    (content): content is ToolCall => content.type === "tool_call" && content.id === accumulated.id,
+    (content): content is ToolCallPart =>
+      content.type === "tool-call" && content.toolCallId === accumulated.id,
   );
   if (byId !== undefined || accumulated.callId === undefined) {
     return byId;
   }
   return finalChoice?.find(
-    (content): content is ToolCall =>
-      content.type === "tool_call" && content.callId === accumulated.callId,
+    (content): content is ToolCallPart =>
+      content.type === "tool-call" && content.callId === accumulated.callId,
   );
 }
 
-function mergeFinalToolCall(accumulated: ToolCall, finalToolCall: ToolCall): ToolCall {
-  const argumentsValue = isEmptyToolArguments(finalToolCall.function.arguments)
-    ? accumulated.function.arguments
-    : finalToolCall.function.arguments;
+function mergeFinalToolCall(accumulated: ToolCallPart, finalToolCall: ToolCallPart): ToolCallPart {
+  const input = isEmptyToolArguments(finalToolCall.input) ? accumulated.input : finalToolCall.input;
   return {
     ...accumulated,
     ...finalToolCall,
-    function: {
-      ...accumulated.function,
-      ...finalToolCall.function,
-      arguments: argumentsValue,
-    },
+    input,
   };
 }
 

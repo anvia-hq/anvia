@@ -2,7 +2,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   JsonValue,
-  ToolResultContent,
+  ToolResultContentPart,
 } from "../completion";
 import type { MaybePromise } from "../internal/type-utils";
 
@@ -51,8 +51,8 @@ export type ToolResultMiddlewareArgs = {
   args: string;
   result: string;
   originalResult: string;
-  structuredResult?: ToolResultContent[] | undefined;
-  originalStructuredResult?: ToolResultContent[] | undefined;
+  structuredResult?: readonly ToolResultContentPart[] | undefined;
+  originalStructuredResult?: readonly ToolResultContentPart[] | undefined;
   turn: number;
   toolCallId?: string | undefined;
   internalCallId: string;
@@ -64,7 +64,7 @@ export type ToolOutputMiddlewareResult =
   | string
   | {
       result?: string | undefined;
-      structuredResult?: ToolResultContent[] | undefined;
+      structuredResult?: readonly ToolResultContentPart[] | undefined;
     }
   | undefined;
 

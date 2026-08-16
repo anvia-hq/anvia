@@ -1,20 +1,31 @@
-import type { ClientDataMap } from "@anvia/client";
+import type {
+  ClientDataMap,
+  ClientMetadata,
+  ClientStreamRequest,
+  ClientTransport,
+} from "@anvia/client";
 import type { UseChatResult } from "@anvia/react";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
-export type ChatController<TData extends ClientDataMap = ClientDataMap> = UseChatResult<TData>;
+export type ChatController<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = UseChatResult<ClientTransport<ClientStreamRequest, Data, Metadata>>;
 
-export type ChatProviderProps<TData extends ClientDataMap = ClientDataMap> = {
-  controller: ChatController<TData>;
+export type ChatProviderProps<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
+  controller: ChatController<Metadata, Data>;
   children?: ReactNode;
 };
 
 const ChatContext = createContext<ChatController | undefined>(undefined);
 
-export function ChatProvider<TData extends ClientDataMap = ClientDataMap>({
-  controller,
-  children,
-}: ChatProviderProps<TData>): ReactElement {
+export function ChatProvider<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>({ controller, children }: ChatProviderProps<Metadata, Data>): ReactElement {
   return createElement(
     ChatContext.Provider,
     { value: controller as unknown as ChatController },
@@ -23,13 +34,14 @@ export function ChatProvider<TData extends ClientDataMap = ClientDataMap>({
 }
 
 export function useChatContext<
-  TData extends ClientDataMap = ClientDataMap,
->(): ChatController<TData> {
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(): ChatController<Metadata, Data> {
   const value = useContext(ChatContext);
   if (value === undefined) {
     throw new Error("Anvia chat primitives must be used inside ChatProvider.");
   }
-  return value as unknown as ChatController<TData>;
+  return value as unknown as ChatController<Metadata, Data>;
 }
 
 export function useHumanInput(): ChatController["humanInput"] {

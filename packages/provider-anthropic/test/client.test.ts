@@ -1,5 +1,5 @@
-import { Message } from "@anvia/core/completion";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { Message } from "../../core/test/helpers/imports";
 import {
   AnthropicClient,
   AnthropicCompletionModel,
@@ -53,7 +53,7 @@ describe("Anthropic client", () => {
       {
         model: "custom-messages-model",
         max_tokens: 1024,
-        messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+        messages: [{ role: "user", content: "hello" }],
       },
     ]);
   });

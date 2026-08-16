@@ -252,7 +252,7 @@ describe("Pipeline", () => {
     expect(result.output).toBe("answer");
     expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
       role: "user",
-      content: [{ type: "text", text: "Question: ping" }],
+      content: "Question: ping",
     });
   });
 
@@ -352,7 +352,7 @@ describe("Pipeline", () => {
     const result = await pipeline.run({ input: { note: "urgent" } });
     expect(result.output).toEqual({ priority: "high" });
     expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
-      content: [{ type: "text", text: "Extract priority: urgent" }],
+      content: "Extract priority: urgent",
     });
   });
 

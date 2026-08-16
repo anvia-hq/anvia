@@ -1,3 +1,4 @@
+import type { JsonObject } from "@anvia/core/completion";
 import { createClientId } from "./messages";
 import { ClientProtocolError, parseClientStreamEvent, parseClientStreamFrame } from "./protocol";
 import type { CreateFetchEventTransportOptions } from "./transport/event-transport";
@@ -6,35 +7,36 @@ import {
   CLIENT_STREAM_PROTOCOL,
   type ClientDataMap,
   type ClientDataSchemas,
+  type ClientMetadataSchema,
   type ClientStream,
   type ClientStreamCursor,
   type ClientStreamFrame,
   type ClientStreamRequest,
   type ClientTransport,
-  type ClientTransportOptions,
 } from "./types";
 
 export type CreateHttpClientTransportOptions<
   TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
+  Data extends ClientDataMap = ClientDataMap,
+  Metadata extends JsonObject = JsonObject,
 > = Omit<
-  CreateFetchEventTransportOptions<TRequest, ClientStreamFrame<TData>>,
+  CreateFetchEventTransportOptions<TRequest, ClientStreamFrame<Metadata, Data>>,
   "mapEvent" | "validateResponse"
 > & {
-  dataSchemas?: ClientDataSchemas<TData>;
+  metadataSchema?: ClientMetadataSchema<Metadata>;
+  dataSchemas?: ClientDataSchemas<Data>;
 };
 
 export function createHttpClientTransport<
   TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
->(options: CreateHttpClientTransportOptions<TRequest, TData>): ClientTransport<TRequest, TData> {
-  const transport = createFetchEventTransport<TRequest, ClientStreamFrame<TData>>({
+  Data extends ClientDataMap = ClientDataMap,
+  Metadata extends JsonObject = JsonObject,
+>(
+  options: CreateHttpClientTransportOptions<TRequest, Data, Metadata>,
+): ClientTransport<TRequest, Data, Metadata> {
+  const transport = createFetchEventTransport<TRequest, ClientStreamFrame<Metadata, Data>>({
     ...options,
-    mapEvent: (event) =>
-      parseClientStreamFrame(
-        event,
-        options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas },
-      ),
+    mapEvent: (event) => parseClientStreamFrame(event, protocolOptions(options)),
     validateResponse(response) {
       if (response.headers.get("x-anvia-stream-protocol") !== CLIENT_STREAM_PROTOCOL) {
         throw new ClientProtocolError(
@@ -45,30 +47,37 @@ export function createHttpClientTransport<
   });
 
   return {
-    async *send(request, transportOptions) {
-      const resume = transportOptions?.resume ?? resumeCursorFromRequest(request);
-      yield* validateFrameSequence(transport.send(request, transportOptions), resume);
+    async *send(sendOptions) {
+      const resume = sendOptions.resume ?? resumeCursorFromRequest(sendOptions.request);
+      yield* validateFrameSequence(transport.send(sendOptions), resume);
     },
   };
 }
 
-export type CreateDirectClientTransportOptions<TData extends ClientDataMap> = {
-  dataSchemas?: ClientDataSchemas<TData>;
+export type CreateDirectClientTransportOptions<
+  TRequest,
+  Data extends ClientDataMap,
+  Metadata extends JsonObject,
+> = {
+  handler(options: {
+    request: TRequest;
+    abortSignal?: AbortSignal;
+    headers?: HeadersInit;
+  }): ClientStream<Metadata, Data> | Promise<ClientStream<Metadata, Data>>;
+  metadataSchema?: ClientMetadataSchema<Metadata>;
+  dataSchemas?: ClientDataSchemas<Data>;
 };
 
 export function createDirectClientTransport<
   TRequest = ClientStreamRequest,
-  TData extends ClientDataMap = ClientDataMap,
+  Data extends ClientDataMap = ClientDataMap,
+  Metadata extends JsonObject = JsonObject,
 >(
-  handler: (
-    request: TRequest,
-    options: ClientTransportOptions,
-  ) => ClientStream<TData> | Promise<ClientStream<TData>>,
-  options: CreateDirectClientTransportOptions<TData> = {},
-): ClientTransport<TRequest, TData> {
+  options: CreateDirectClientTransportOptions<TRequest, Data, Metadata>,
+): ClientTransport<TRequest, Data, Metadata> {
   return {
-    async *send(request, transportOptions) {
-      const resume = transportOptions?.resume ?? resumeCursorFromRequest(request);
+    async *send(sendOptions) {
+      const resume = sendOptions.resume ?? resumeCursorFromRequest(sendOptions.request);
       if (resume !== undefined) {
         throw new ClientProtocolError("Direct client transports do not support resume cursors.");
       }
@@ -83,7 +92,13 @@ export function createDirectClientTransport<
       };
       let status: "completed" | "error" = "completed";
       try {
-        const events = await handler(request, transportOptions ?? {});
+        const events = await options.handler({
+          request: sendOptions.request,
+          ...(sendOptions.abortSignal === undefined
+            ? {}
+            : { abortSignal: sendOptions.abortSignal }),
+          ...(sendOptions.headers === undefined ? {} : { headers: sendOptions.headers }),
+        });
         const iterator = events[Symbol.asyncIterator]();
         let closePromise: Promise<unknown> | undefined;
         const close = () => {
@@ -93,20 +108,20 @@ export function createDirectClientTransport<
         const onAbort = () => {
           void close();
         };
-        transportOptions?.signal?.addEventListener("abort", onAbort, { once: true });
+        sendOptions.abortSignal?.addEventListener("abort", onAbort, { once: true });
         try {
-          while (!transportOptions?.signal?.aborted) {
+          while (!sendOptions.abortSignal?.aborted) {
             const next = await iterator.next();
             if (next.done) break;
-            const event = parseClientStreamEvent<TData>(
+            const event = parseClientStreamEvent<Metadata, Data>(
               next.value,
-              options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas },
+              protocolOptions(options),
             );
             eventId += 1;
             yield { type: "stream_event", streamId, eventId, event };
           }
         } finally {
-          transportOptions?.signal?.removeEventListener("abort", onAbort);
+          sendOptions.abortSignal?.removeEventListener("abort", onAbort);
           await close();
         }
       } catch {
@@ -117,10 +132,10 @@ export function createDirectClientTransport<
   };
 }
 
-async function* validateFrameSequence<TData extends ClientDataMap>(
-  frames: AsyncIterable<ClientStreamFrame<TData>>,
+async function* validateFrameSequence<Metadata extends JsonObject, Data extends ClientDataMap>(
+  frames: AsyncIterable<ClientStreamFrame<Metadata, Data>>,
   resume: ClientStreamCursor | undefined,
-): AsyncIterable<ClientStreamFrame<TData>> {
+): AsyncIterable<ClientStreamFrame<Metadata, Data>> {
   let streamId: string | undefined;
   let lastEventId = resume?.after ?? 0;
   let ended = false;
@@ -158,6 +173,19 @@ async function* validateFrameSequence<TData extends ClientDataMap>(
   if (streamId === undefined || !ended) {
     throw new ClientProtocolError("Client stream ended without a complete frame sequence.");
   }
+}
+
+function protocolOptions<Metadata extends JsonObject, Data extends ClientDataMap>(options: {
+  metadataSchema?: ClientMetadataSchema<Metadata>;
+  dataSchemas?: ClientDataSchemas<Data>;
+}): {
+  metadataSchema?: ClientMetadataSchema<Metadata>;
+  dataSchemas?: ClientDataSchemas<Data>;
+} {
+  return {
+    ...(options.metadataSchema === undefined ? {} : { metadataSchema: options.metadataSchema }),
+    ...(options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas }),
+  };
 }
 
 function resumeCursorFromRequest(value: unknown): ClientStreamCursor | undefined {

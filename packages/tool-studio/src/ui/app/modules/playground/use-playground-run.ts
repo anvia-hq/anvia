@@ -1,11 +1,15 @@
 import type {
   ClientStreamEvent,
+  ClientStreamRequest,
+  ClientTransport,
   ToolApproval,
   ToolQuestion,
   ToolQuestionAnswer,
 } from "@anvia/client";
+import { createHttpClientTransport } from "@anvia/client";
+import type { Message } from "@anvia/core/completion";
 import { useChat } from "@anvia/react";
-import { type RefObject, useRef } from "react";
+import { type RefObject, useMemo, useRef } from "react";
 import type { StudioConfig, StudioSessionLogEntry, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
@@ -13,7 +17,7 @@ import {
   type PromptAttachment,
   type StudioAgentRunRequest,
   transcriptAttachmentsForPrompt,
-  userUIMessageWithAttachments,
+  uiAttachmentsForPrompt,
 } from "../../app-helpers";
 import type { useStudioSessions } from "../sessions/use-studio-sessions";
 import { errorMessage, formatToolValue, titleFromText } from "../shared/format";
@@ -31,10 +35,19 @@ import type { usePlaygroundTranscript } from "./use-playground-transcript";
 type PlaygroundTranscriptController = ReturnType<typeof usePlaygroundTranscript>;
 type StudioSessionsController = ReturnType<typeof useStudioSessions>;
 type StudioTracesController = ReturnType<typeof useTraces>;
-type PlaygroundRunRequestContext = Omit<StudioAgentRunRequest, "message"> & {
-  promptText: string;
-  useTextMessage: boolean;
+type PlaygroundRunRequestContext = Omit<StudioAgentRunRequest, "messages"> & {
+  history?: readonly Message[];
 };
+
+const studioAgentTransport = createHttpClientTransport<StudioAgentRunRequest>({
+  endpoint: ({ request }) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
+  format: "jsonl",
+  headers: { "content-type": "application/json" },
+  body: ({ request }) => {
+    const { agentId: _agentId, ...body } = request;
+    return JSON.stringify(body);
+  },
+});
 
 export function usePlaygroundRun(props: {
   attachments: PromptAttachment[];
@@ -85,25 +98,28 @@ export function usePlaygroundRun(props: {
   const playgroundRunStartedAtRef = useRef<number | undefined>(undefined);
   const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
 
-  const playgroundChat = useChat<StudioAgentRunRequest>({
-    endpoint: (request) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
-    format: "jsonl",
-    headers: { "content-type": "application/json" },
-    body: (request) => {
-      const { agentId: _agentId, ...body } = request;
-      return JSON.stringify(body);
-    },
-    createRequest: ({ messages: coreMessages }) => {
-      const context = playgroundRunRequestRef.current;
-      if (context === undefined) {
-        throw new Error("Missing playground run request");
-      }
-      const message = context.useTextMessage ? context.promptText : coreMessages.at(-1);
-      if (message === undefined) {
-        throw new Error("Missing playground prompt message");
-      }
-      return runRequestFromContext(context, message);
-    },
+  const playgroundTransport = useMemo<ClientTransport<ClientStreamRequest>>(
+    () => ({
+      send(options) {
+        const context = playgroundRunRequestRef.current;
+        if (context === undefined) {
+          throw new Error("Missing playground run request");
+        }
+        const prompt = options.request.messages.at(-1);
+        if (prompt === undefined || prompt.role !== "user") {
+          throw new Error("Missing playground prompt message");
+        }
+        return studioAgentTransport.send({
+          ...options,
+          request: runRequestFromContext(context, prompt),
+        });
+      },
+    }),
+    [],
+  );
+
+  const playgroundChat = useChat({
+    transport: playgroundTransport,
     humanInput: {
       decideApproval: async (input) => {
         const response = await fetch(
@@ -180,10 +196,6 @@ export function usePlaygroundRun(props: {
     onPromptChange("");
     onAttachmentsChange([]);
     requestAnimationFrame(() => resizeTextarea(promptRef.current));
-    const promptMessage =
-      promptAttachments.length === 0
-        ? { text: trimmed }
-        : userUIMessageWithAttachments(trimmed, promptAttachments);
     transcript.setMessages((current) => {
       const userEntry: TranscriptEntry = {
         entryId: nextTranscriptId(),
@@ -219,8 +231,6 @@ export function usePlaygroundRun(props: {
       if (selectedModelRef.length > 0) metadata.studioModel = selectedModelRef;
       const runContext: PlaygroundRunRequestContext = {
         agentId,
-        promptText: trimmed,
-        useTextMessage: promptAttachments.length === 0,
         stream: true,
         metadata,
       };
@@ -231,7 +241,10 @@ export function usePlaygroundRun(props: {
       const startedAt = Date.now();
       playgroundRunStartedAtRef.current = startedAt;
 
-      await playgroundChat.sendMessage(promptMessage);
+      await playgroundChat.sendMessage({
+        text: trimmed,
+        attachments: uiAttachmentsForPrompt(promptAttachments),
+      });
       await playgroundVisibleEventRef.current;
 
       if (playgroundRunErrorRef.current === undefined) {
@@ -286,15 +299,15 @@ export function usePlaygroundRun(props: {
   function decideToolApproval(approvalId: string, approved: boolean) {
     onError("");
     const decision = approved
-      ? playgroundChat.approveTool(approvalId)
-      : playgroundChat.rejectTool(approvalId);
+      ? playgroundChat.approveTool({ approvalId })
+      : playgroundChat.rejectTool({ approvalId });
     void decision.catch((decisionError) => onError(errorMessage(decisionError)));
   }
 
   function answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]) {
     onError("");
     void playgroundChat
-      .answerToolQuestion(questionId, answers)
+      .answerToolQuestion({ questionId, answers })
       .catch((answerError) => onError(errorMessage(answerError)));
   }
 
@@ -399,16 +412,15 @@ export function usePlaygroundRun(props: {
 
 function runRequestFromContext(
   context: PlaygroundRunRequestContext,
-  message: StudioAgentRunRequest["message"],
+  message: Message,
 ): StudioAgentRunRequest {
   const request: StudioAgentRunRequest = {
     agentId: context.agentId,
-    message,
+    messages: context.sessionId === undefined ? [...(context.history ?? []), message] : [message],
     stream: context.stream,
     metadata: context.metadata,
   };
   if (context.sessionId !== undefined) request.sessionId = context.sessionId;
-  if (context.history !== undefined) request.history = context.history;
   if (context.model !== undefined) request.model = context.model;
   return request;
 }

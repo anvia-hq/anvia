@@ -1,4 +1,4 @@
-import type { JsonObject, Message, Usage } from "../completion";
+import type { JsonObject, Message, ToolResultPart, Usage } from "../completion";
 import type { MaybePromise } from "../internal/type-utils";
 
 export type GuardrailMode = "enforce" | "observe";
@@ -447,13 +447,19 @@ function textFromMessage(message: Message): string {
   if (message.role === "system") {
     return message.content;
   }
+  if (typeof message.content === "string") {
+    return message.content;
+  }
   return message.content
     .flatMap((content) => {
       if (content.type === "text") {
         return [content.text];
       }
-      if (content.type === "document" && content.source.type === "text") {
-        return [content.source.text];
+      if (content.type === "file" && content.data.type === "text") {
+        return [content.data.text];
+      }
+      if (content.type === "tool-result") {
+        return textFromToolResult(content.output);
       }
       return [];
     })
@@ -465,13 +471,13 @@ function rewriteMessageText(message: Message, text: string): Message {
     return { ...message, content: text };
   }
   if (message.role === "user") {
+    const content = typeof message.content === "string" ? [] : message.content;
     return {
       ...message,
       content: [
         { type: "text", text },
-        ...message.content.filter(
-          (item) =>
-            item.type !== "text" && !(item.type === "document" && item.source.type === "text"),
+        ...content.filter(
+          (item) => item.type !== "text" && !(item.type === "file" && item.data.type === "text"),
         ),
       ],
     };
@@ -480,4 +486,19 @@ function rewriteMessageText(message: Message, text: string): Message {
     return { ...message, content: [{ type: "text", text }] };
   }
   return message;
+}
+
+function textFromToolResult(output: ToolResultPart["output"]): string[] {
+  switch (output.type) {
+    case "text":
+    case "error-text":
+      return [output.value];
+    case "json":
+    case "error-json":
+      return [JSON.stringify(output.value)];
+    case "content":
+      return output.value.flatMap((part) => (part.type === "text" ? [part.text] : []));
+    case "execution-denied":
+      return output.reason === undefined ? [] : [output.reason];
+  }
 }

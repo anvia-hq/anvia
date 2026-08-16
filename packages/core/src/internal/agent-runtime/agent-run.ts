@@ -21,7 +21,6 @@ import type {
 import { getAgentToolState } from "../../agent/tool-state";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
 import {
-  AssistantContent,
   assertCompletionRequestSupported,
   type CompletionModel,
   type CompletionResponse,
@@ -29,11 +28,12 @@ import {
   getAssistantGenerationMetadata,
   type JsonObject,
   type JsonValue,
-  Message,
   type Message as MessageType,
   type ProviderToolCall,
-  type ToolCall,
-  type ToolResult,
+  parseMessage,
+  parseMessages,
+  type ToolCallPart,
+  type ToolResultPart,
   textFromAssistantContent,
   Usage,
 } from "../../completion/index";
@@ -328,7 +328,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           runId,
           text,
           usage,
-          messages: [this.promptMessage, Message.assistant(text)],
+          messages: [this.promptMessage, { role: "assistant", content: text }],
           trace: runObservers.trace,
           guardrails: [...this.guardrailDecisions],
           ...this.memoryCompactionResult(),
@@ -381,7 +381,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         });
 
         const toolCalls = response.choice.filter(
-          (item): item is ToolCall => item.type === "tool_call",
+          (item): item is ToolCallPart => item.type === "tool-call",
         );
         const assistantMessage = this.generatedAssistantMessage(response, request);
         newMessages.push(assistantMessage);
@@ -454,7 +454,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             toolDefinitions: request.tools,
           },
         );
-        const toolMessage = Message.tool(toolResults);
+        const toolMessage: MessageType = { role: "tool", content: toolResults };
         newMessages.push(toolMessage);
         await this.memoryRecorder.commitMessages(
           runId,
@@ -538,7 +538,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           runId,
           text,
           usage,
-          messages: [this.promptMessage, Message.assistant(text)],
+          messages: [this.promptMessage, { role: "assistant", content: text }],
           trace: runObservers.trace,
           guardrails: [...this.guardrailDecisions],
           ...this.memoryCompactionResult(),
@@ -650,7 +650,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         });
 
         const toolCalls = response.choice.filter(
-          (item): item is ToolCall => item.type === "tool_call",
+          (item): item is ToolCallPart => item.type === "tool-call",
         );
         const assistantMessage = this.generatedAssistantMessage(response, request);
         newMessages.push(assistantMessage);
@@ -711,7 +711,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           }
         } else {
           for (const toolCall of toolCalls) {
-            if (!emittedToolCallIds.has(toolCall.id)) {
+            if (!emittedToolCallIds.has(toolCall.toolCallId)) {
               yield { type: "tool_call", turn: currentTurns, toolCall };
             }
           }
@@ -733,7 +733,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           yield { turn: currentTurns, ...result };
         }
         const toolResults = await toolExecution.results;
-        const toolMessage = Message.tool(toolResults);
+        const toolMessage: MessageType = { role: "tool", content: toolResults };
         newMessages.push(toolMessage);
         await this.memoryRecorder.commitMessages(
           runId,
@@ -877,7 +877,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (mapped !== undefined) {
             await args.generationObservers.update?.({ turn: args.turn, delta: mapped });
             if (mapped.type === "tool_call") {
-              args.state.emittedToolCallIds.add(mapped.toolCall.id);
+              args.state.emittedToolCallIds.add(mapped.toolCall.toolCallId);
             }
             const shouldBuffer =
               args.bufferResponseEvents ||
@@ -999,10 +999,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         },
       },
     };
-    return Message.assistant(response.choice, {
+    return {
+      role: "assistant",
+      content: response.choice,
       ...(response.messageId === undefined ? {} : { id: response.messageId }),
       metadata,
-    });
+    };
   }
 
   private providerTraceRequest(
@@ -1077,12 +1079,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private async executeToolCalls(
     runId: string,
-    toolCalls: ToolCall[],
+    toolCalls: ToolCallPart[],
     newMessages: MessageType[],
     onResult?: (result: ToolResultEventPayload) => void,
     onStreamEvent?: (event: AgentToolEventPayload) => void,
     observation?: ToolExecutionObservation,
-  ): Promise<ToolResult[]> {
+  ): Promise<ToolResultPart[]> {
     const executor = new ToolCallExecutor(
       this.agent,
       this.activeHook,
@@ -1103,12 +1105,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private executeStreamingToolCalls(
     runId: string,
-    toolCalls: ToolCall[],
+    toolCalls: ToolCallPart[],
     newMessages: MessageType[],
     observation: ToolExecutionObservation,
   ): {
     events: AsyncIterable<ToolExecutionEventPayload>;
-    results: Promise<ToolResult[]>;
+    results: Promise<ToolResultPart[]>;
   } {
     const events = createAsyncQueue<ToolExecutionEventPayload>();
     const results = this.executeToolCalls(
@@ -1296,7 +1298,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       blocked: result.blocked,
       response: {
         ...response,
-        choice: [AssistantContent.text(text)],
+        choice: [{ type: "text", text }],
       },
       decisions: result.decisions,
     };
@@ -1709,8 +1711,14 @@ function normalizeAgentInput(input: AgentInput): {
     ) {
       throw new TypeError("Agent prompt must be text or a user message.");
     }
+    const parsedPrompt = parseMessage(
+      typeof prompt === "string" ? { role: "user", content: prompt } : prompt,
+    );
+    if (parsedPrompt.role !== "user") {
+      throw new TypeError("Agent prompt must be text or a user message.");
+    }
     return {
-      prompt: typeof prompt === "string" ? Message.user(prompt) : prompt,
+      prompt: parsedPrompt,
       history: [],
       ...(input.session === undefined ? {} : { scope: normalizeMemoryScope(input.session) }),
     };
@@ -1722,13 +1730,17 @@ function normalizeAgentInput(input: AgentInput): {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new TypeError("Agent input transcript must contain at least one message.");
   }
-  const activePrompt = messages.at(-1);
+  const parsedMessages = parseMessages(messages);
+  const activePrompt = parsedMessages.at(-1);
   if (activePrompt === undefined) {
     throw new TypeError("Agent input transcript must contain at least one message.");
   }
+  if (activePrompt.role !== "user") {
+    throw new TypeError("Agent input transcript must end with a user message.");
+  }
   return {
     prompt: activePrompt,
-    history: messages.slice(0, -1),
+    history: parsedMessages.slice(0, -1),
   };
 }
 
@@ -1749,16 +1761,23 @@ function normalizeSteeringInput(input: AgentSteerInput): MessageType[] {
     ) {
       throw new TypeError("Agent steering prompt must be text or a user message.");
     }
-    return [typeof prompt === "string" ? Message.user(prompt) : prompt];
+    const parsedPrompt = parseMessage(
+      typeof prompt === "string" ? { role: "user", content: prompt } : prompt,
+    );
+    if (parsedPrompt.role !== "user") {
+      throw new TypeError("Agent steering prompt must be text or a user message.");
+    }
+    return [parsedPrompt];
   }
   const messages = input.messages;
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new TypeError("Agent steering messages must contain at least one user message.");
   }
-  if (messages.some((message) => message.role !== "user")) {
+  const parsedMessages = parseMessages(messages);
+  if (parsedMessages.some((message) => message.role !== "user")) {
     throw new TypeError("Agent steering messages must all be user messages.");
   }
-  return [...messages];
+  return parsedMessages;
 }
 
 function normalizeMemoryScope(scope: MemoryScope): MemoryScope {
@@ -1800,14 +1819,14 @@ function responseStreamEvents(
     }
 
     if (item.type === "reasoning") {
-      if (item.content === undefined) {
+      if (item.details === undefined) {
         if (item.text.length > 0) {
           events.push(reasoningDeltaEvent(turn, item.text, { id: item.id }));
         }
         continue;
       }
 
-      for (const content of item.content) {
+      for (const content of item.details) {
         const delta =
           content.type === "encrypted" || content.type === "redacted" ? content.data : content.text;
         events.push(
@@ -1821,7 +1840,7 @@ function responseStreamEvents(
       continue;
     }
 
-    if (item.type === "tool_call") {
+    if (item.type === "tool-call") {
       events.push({ type: "tool_call", turn, toolCall: item });
     }
   }
@@ -1896,13 +1915,16 @@ function textFromMessage(message: MessageType): string {
   if (message.role === "system") {
     return message.content;
   }
+  if (typeof message.content === "string") {
+    return message.content;
+  }
   return message.content
     .flatMap((content) => {
       if (content.type === "text") {
         return [content.text];
       }
-      if (content.type === "document" && content.source.type === "text") {
-        return [content.source.text];
+      if (content.type === "file" && content.data.type === "text") {
+        return [content.data.text];
       }
       return [];
     })

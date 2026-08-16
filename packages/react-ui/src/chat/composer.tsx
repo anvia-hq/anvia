@@ -1,4 +1,9 @@
-import type { ClientDataMap, CreateUIAttachment, UIAttachment } from "@anvia/client";
+import type {
+  ClientDataMap,
+  ClientMetadata,
+  CreateUIAttachment,
+  UIAttachment,
+} from "@anvia/client";
 import type { Editor, Extensions, JSONContent } from "@tiptap/core";
 import { mergeAttributes } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
@@ -71,7 +76,7 @@ export type ComposerSubmitMessageArgs<TData extends ClientDataMap = ClientDataMa
   input: string;
   attachments: UIAttachment[];
   entities: ComposerEntity[];
-  chat: ChatController<TData>;
+  chat: ChatController<ClientMetadata, TData>;
   quote?: ComposerQuote | undefined;
   clear(): void;
 };
@@ -262,7 +267,8 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     const metadata = composerSubmitMetadata(submittedQuote, submittedEntities);
     let payload: Parameters<typeof chat.sendMessage>[0];
     if (submittedAttachments.length === 0) {
-      payload = metadata === undefined ? prompt : { text: submittedText, metadata };
+      payload =
+        metadata === undefined ? { text: submittedText } : { text: submittedText, metadata };
     } else {
       const attachmentPayload: {
         text: string;

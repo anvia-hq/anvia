@@ -18,7 +18,6 @@ export function createChatController(overrides: Partial<UseChatResult> = {}): Us
     suggestions: [],
     setMessages: vi.fn(),
     sendMessage: vi.fn(async () => {}),
-    send: vi.fn(async () => {}),
     regenerate: vi.fn(async () => {}),
     stop: vi.fn(),
     reset: vi.fn(),
@@ -45,11 +44,11 @@ export function createCompletionController(
   overrides: Partial<UseCompletionResult> = {},
 ): UseCompletionResult {
   return {
-    messages: [],
     completion: "",
     input: "",
     setInput: vi.fn(),
     complete: vi.fn(async () => {}),
+    submit: vi.fn(async () => {}),
     stop: vi.fn(),
     reset: vi.fn(),
     status: "ready",

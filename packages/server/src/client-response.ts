@@ -2,6 +2,9 @@ import {
   CLIENT_STREAM_PROTOCOL,
   type ClientDataMap,
   type ClientDataSchemas,
+  type ClientMetadata,
+  type ClientMetadataSchema,
+  ClientProtocolError,
   type ClientStream,
   type ClientStreamEvent,
   type ClientStreamFrame,
@@ -11,61 +14,89 @@ import {
 import { encodeEventStreamResponse } from "./response";
 import type { EventStreamFormat, ResumableStreamStore } from "./types";
 
-type ClientResponseOptions<TData extends ClientDataMap> = {
+type ClientResponseOptions<Metadata extends ClientMetadata, Data extends ClientDataMap> = {
   format?: EventStreamFormat;
   headers?: HeadersInit;
   status?: number;
   statusText?: string;
-  dataSchemas?: ClientDataSchemas<TData>;
+  metadataSchema?: ClientMetadataSchema<Metadata>;
+  dataSchemas?: ClientDataSchemas<Data>;
   sse?: { retry?: number };
 };
 
-export type CreateClientStreamResponseOptions<TData extends ClientDataMap = ClientDataMap> =
-  ClientResponseOptions<TData> & {
-    streamId?: string;
-    resumable?: {
-      streamId: string;
-      store: ResumableStreamStore<ClientStreamEvent<TData>>;
-    };
-  };
+export type ClientResumableEvent<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
+  protocol: typeof CLIENT_STREAM_PROTOCOL;
+  event: ClientStreamEvent<Metadata, Data>;
+};
 
-export type ResumeClientStreamResponseOptions<TData extends ClientDataMap = ClientDataMap> =
-  ClientResponseOptions<TData> & {
+export type CreateClientStreamResponseOptions<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = ClientResponseOptions<Metadata, Data> & {
+  events: ClientStream<Metadata, Data>;
+  streamId?: string;
+  resumable?: {
     streamId: string;
-    after: number;
-    store: ResumableStreamStore<ClientStreamEvent<TData>>;
+    store: ResumableStreamStore<ClientResumableEvent<Metadata, Data>>;
   };
+};
 
-export function createClientStreamResponse<TData extends ClientDataMap = ClientDataMap>(
-  events: ClientStream<TData>,
-  options: CreateClientStreamResponseOptions<TData> = {},
-): Response {
+export type ResumeClientStreamResponseOptions<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = ClientResponseOptions<Metadata, Data> & {
+  streamId: string;
+  after: number;
+  store: ResumableStreamStore<ClientResumableEvent<Metadata, Data>>;
+};
+
+export function createClientStreamResponse<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(options: CreateClientStreamResponseOptions<Metadata, Data>): Response {
   const frames =
     options.resumable === undefined
-      ? frameClientStream(events, options.streamId ?? createClientId("stream"), options.dataSchemas)
+      ? frameClientStream(
+          options.events,
+          options.streamId ?? createClientId("stream"),
+          options.metadataSchema,
+          options.dataSchemas,
+        )
       : frameResumableClientStream(
-          events,
+          options.events,
           options.resumable.streamId,
           options.resumable.store,
+          options.metadataSchema,
           options.dataSchemas,
         );
   return clientResponse(frames, options);
 }
 
-export function resumeClientStreamResponse<TData extends ClientDataMap = ClientDataMap>(
-  options: ResumeClientStreamResponseOptions<TData>,
-): Response {
+export function resumeClientStreamResponse<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(options: ResumeClientStreamResponseOptions<Metadata, Data>): Response {
   return clientResponse(
-    resumeClientFrames(options.streamId, options.after, options.store, options.dataSchemas),
+    resumeClientFrames(
+      options.streamId,
+      options.after,
+      options.store,
+      options.metadataSchema,
+      options.dataSchemas,
+    ),
     options,
   );
 }
 
-function frameClientStream<TData extends ClientDataMap>(
-  events: ClientStream<TData>,
+function frameClientStream<Metadata extends ClientMetadata, Data extends ClientDataMap>(
+  events: ClientStream<Metadata, Data>,
   streamId: string,
-  schemas: ClientDataSchemas<TData> | undefined,
-): AsyncIterable<ClientStreamFrame<TData>> {
+  metadataSchema: ClientMetadataSchema<Metadata> | undefined,
+  dataSchemas: ClientDataSchemas<Data> | undefined,
+): AsyncIterable<ClientStreamFrame<Metadata, Data>> {
   return propagateCancellation(events, (source) => ({
     async *[Symbol.asyncIterator]() {
       yield {
@@ -74,39 +105,43 @@ function frameClientStream<TData extends ClientDataMap>(
         streamId,
         eventId: 0,
         resumable: false,
-      } satisfies ClientStreamFrame<TData>;
+      } satisfies ClientStreamFrame<Metadata, Data>;
       let eventId = 0;
       let status: "completed" | "error" = "completed";
       try {
         for await (const value of source) {
-          const event = parseEvent(value, schemas);
+          const event = parseEvent(value, metadataSchema, dataSchemas);
           eventId += 1;
           yield {
             type: "stream_event",
             streamId,
             eventId,
             event,
-          } satisfies ClientStreamFrame<TData>;
+          } satisfies ClientStreamFrame<Metadata, Data>;
         }
       } catch {
         status = "error";
       }
-      yield { type: "stream_end", streamId, eventId, status } satisfies ClientStreamFrame<TData>;
+      yield { type: "stream_end", streamId, eventId, status } satisfies ClientStreamFrame<
+        Metadata,
+        Data
+      >;
     },
   }));
 }
 
-function frameResumableClientStream<TData extends ClientDataMap>(
-  events: ClientStream<TData>,
+function frameResumableClientStream<Metadata extends ClientMetadata, Data extends ClientDataMap>(
+  events: ClientStream<Metadata, Data>,
   streamId: string,
-  store: ResumableStreamStore<ClientStreamEvent<TData>>,
-  schemas: ClientDataSchemas<TData> | undefined,
-): AsyncIterable<ClientStreamFrame<TData>> {
+  store: ResumableStreamStore<ClientResumableEvent<Metadata, Data>>,
+  metadataSchema: ClientMetadataSchema<Metadata> | undefined,
+  dataSchemas: ClientDataSchemas<Data> | undefined,
+): AsyncIterable<ClientStreamFrame<Metadata, Data>> {
   let open: Promise<void> | undefined;
   function start(): Promise<void> {
     if (open !== undefined) return open;
     open = store.open({ streamId }).then(() => undefined);
-    void drainClientStream(events, streamId, store, schemas, open);
+    void drainClientStream(events, streamId, store, metadataSchema, dataSchemas, open);
     return open;
   }
   return {
@@ -114,26 +149,33 @@ function frameResumableClientStream<TData extends ClientDataMap>(
       try {
         await start();
       } catch {
-        yield startFrame<TData>(streamId, true);
-        yield endFrame<TData>(streamId, 0, "error");
+        yield startFrame<Metadata, Data>(streamId, true);
+        yield endFrame<Metadata, Data>(streamId, 0, "error");
         return;
       }
-      yield* resumeClientFrames(streamId, 0, store, schemas);
+      yield* resumeClientFrames(streamId, 0, store, metadataSchema, dataSchemas);
     },
   };
 }
 
-async function drainClientStream<TData extends ClientDataMap>(
-  events: ClientStream<TData>,
+async function drainClientStream<Metadata extends ClientMetadata, Data extends ClientDataMap>(
+  events: ClientStream<Metadata, Data>,
   streamId: string,
-  store: ResumableStreamStore<ClientStreamEvent<TData>>,
-  schemas: ClientDataSchemas<TData> | undefined,
+  store: ResumableStreamStore<ClientResumableEvent<Metadata, Data>>,
+  metadataSchema: ClientMetadataSchema<Metadata> | undefined,
+  dataSchemas: ClientDataSchemas<Data> | undefined,
   open: Promise<void>,
 ): Promise<void> {
   try {
     await open;
     for await (const value of events) {
-      await store.append({ streamId, event: parseEvent(value, schemas) });
+      await store.append({
+        streamId,
+        event: {
+          protocol: CLIENT_STREAM_PROTOCOL,
+          event: parseEvent(value, metadataSchema, dataSchemas),
+        },
+      });
     }
     await store.close({ streamId, status: "completed" });
   } catch {
@@ -145,18 +187,19 @@ async function drainClientStream<TData extends ClientDataMap>(
   }
 }
 
-async function* resumeClientFrames<TData extends ClientDataMap>(
+async function* resumeClientFrames<Metadata extends ClientMetadata, Data extends ClientDataMap>(
   streamId: string,
   after: number,
-  store: ResumableStreamStore<ClientStreamEvent<TData>>,
-  schemas: ClientDataSchemas<TData> | undefined,
-): AsyncIterable<ClientStreamFrame<TData>> {
-  yield startFrame<TData>(streamId, true);
+  store: ResumableStreamStore<ClientResumableEvent<Metadata, Data>>,
+  metadataSchema: ClientMetadataSchema<Metadata> | undefined,
+  dataSchemas: ClientDataSchemas<Data> | undefined,
+): AsyncIterable<ClientStreamFrame<Metadata, Data>> {
+  yield startFrame<Metadata, Data>(streamId, true);
   let eventId = after;
   let invalid = false;
   try {
     for await (const record of store.subscribe({ streamId, after })) {
-      const event = parseEvent(record.event, schemas);
+      const event = parseResumableEvent(record.event, metadataSchema, dataSchemas);
       eventId = record.eventId;
       yield { type: "stream_event", streamId, eventId, event };
     }
@@ -167,26 +210,48 @@ async function* resumeClientFrames<TData extends ClientDataMap>(
   try {
     const state = await store.status({ streamId });
     const status = invalid || state.status === "running" ? "error" : state.status;
-    yield endFrame<TData>(streamId, Math.max(eventId, state.lastEventId), status);
+    yield endFrame<Metadata, Data>(streamId, Math.max(eventId, state.lastEventId), status);
   } catch {
-    yield endFrame<TData>(streamId, eventId, "error");
+    yield endFrame<Metadata, Data>(streamId, eventId, "error");
   }
 }
 
-function parseEvent<TData extends ClientDataMap>(
+function parseResumableEvent<Metadata extends ClientMetadata, Data extends ClientDataMap>(
   value: unknown,
-  schemas: ClientDataSchemas<TData> | undefined,
-): ClientStreamEvent<TData> {
-  return parseClientStreamEvent<TData>(
-    value,
-    schemas === undefined ? {} : { dataSchemas: schemas },
-  );
+  metadataSchema: ClientMetadataSchema<Metadata> | undefined,
+  dataSchemas: ClientDataSchemas<Data> | undefined,
+): ClientStreamEvent<Metadata, Data> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ClientProtocolError("Invalid client resumable record.", value);
+  }
+  const record = value as { protocol?: unknown; event?: unknown };
+  if (record.protocol === "anvia.client.v1") {
+    throw new ClientProtocolError("Client resumable protocol v1 is not supported.", value);
+  }
+  if (record.protocol !== CLIENT_STREAM_PROTOCOL || !("event" in record)) {
+    throw new ClientProtocolError(
+      "Client resumable records must use the current client protocol.",
+      value,
+    );
+  }
+  return parseEvent(record.event, metadataSchema, dataSchemas);
 }
 
-function startFrame<TData extends ClientDataMap>(
+function parseEvent<Metadata extends ClientMetadata, Data extends ClientDataMap>(
+  value: unknown,
+  metadataSchema: ClientMetadataSchema<Metadata> | undefined,
+  dataSchemas: ClientDataSchemas<Data> | undefined,
+): ClientStreamEvent<Metadata, Data> {
+  return parseClientStreamEvent<Metadata, Data>(value, {
+    ...(metadataSchema === undefined ? {} : { metadataSchema }),
+    ...(dataSchemas === undefined ? {} : { dataSchemas }),
+  });
+}
+
+function startFrame<Metadata extends ClientMetadata, Data extends ClientDataMap>(
   streamId: string,
   resumable: boolean,
-): ClientStreamFrame<TData> {
+): ClientStreamFrame<Metadata, Data> {
   return {
     type: "stream_start",
     protocol: CLIENT_STREAM_PROTOCOL,
@@ -196,21 +261,22 @@ function startFrame<TData extends ClientDataMap>(
   };
 }
 
-function endFrame<TData extends ClientDataMap>(
+function endFrame<Metadata extends ClientMetadata, Data extends ClientDataMap>(
   streamId: string,
   eventId: number,
   status: "completed" | "error" | "missing",
-): ClientStreamFrame<TData> {
+): ClientStreamFrame<Metadata, Data> {
   return { type: "stream_end", streamId, eventId, status };
 }
 
-function clientResponse<TData extends ClientDataMap>(
-  frames: AsyncIterable<ClientStreamFrame<TData>>,
-  options: ClientResponseOptions<TData>,
+function clientResponse<Metadata extends ClientMetadata, Data extends ClientDataMap>(
+  frames: AsyncIterable<ClientStreamFrame<Metadata, Data>>,
+  options: ClientResponseOptions<Metadata, Data>,
 ): Response {
   const headers = new Headers(options.headers);
   headers.set("x-anvia-stream-protocol", CLIENT_STREAM_PROTOCOL);
-  return encodeEventStreamResponse(frames, {
+  return encodeEventStreamResponse({
+    events: frames,
     ...(options.format === undefined ? {} : { format: options.format }),
     headers,
     ...(options.status === undefined ? {} : { status: options.status }),

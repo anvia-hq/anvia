@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { AssistantContent, Usage } from "../src/completion";
+import { Usage } from "../src/completion";
 import { CompletionStreamAccumulator } from "../src/internal/agent-runtime/stream-accumulator";
+import { AssistantContent } from "./helpers/imports";
 
 describe("CompletionStreamAccumulator", () => {
   it("returns completed tool call stream events", () => {
@@ -455,11 +456,12 @@ describe("CompletionStreamAccumulator", () => {
 
     expect(accumulator.response().choice).toEqual([
       {
-        type: "tool_call",
-        id: "tool_1",
+        type: "tool-call",
+        toolCallId: "tool_1",
         callId: "call_1",
         signature: "signed",
-        function: { name: "lookup", arguments: { query: "anvia" } },
+        toolName: "lookup",
+        input: { query: "anvia" },
       },
     ]);
   });
@@ -587,7 +589,7 @@ describe("CompletionStreamAccumulator", () => {
         type: "reasoning",
         id: "reasoning_1",
         text: "analysissummary",
-        content: [
+        details: [
           { type: "text", text: "analysis", signature: "signature_1" },
           { type: "summary", text: "summary" },
           { type: "encrypted", data: "ciphertext" },

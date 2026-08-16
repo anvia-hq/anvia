@@ -1,11 +1,12 @@
-import type { UIMessage } from "@anvia/client";
+import { type ClientDataMap, type ClientMetadata, parseUIMessages } from "@anvia/client";
 import type { ChatResumeOptions, ChatResumeState } from "./types";
 
 const storageKeyPrefix = "anvia:chat-resume:";
 
-export function loadChatResumeState(
-  options: ChatResumeOptions | undefined,
-): ChatResumeState | undefined {
+export function loadChatResumeState<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(options: ChatResumeOptions | undefined): ChatResumeState<Metadata, Data> | undefined {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
   if (storage === undefined || key === undefined) return undefined;
@@ -13,15 +14,15 @@ export function loadChatResumeState(
     const raw = storage.getItem(key);
     if (raw === null) return undefined;
     const parsed: unknown = JSON.parse(raw);
-    return isChatResumeState(parsed) ? parsed : undefined;
+    return parseChatResumeState<Metadata, Data>(parsed);
   } catch {
     return undefined;
   }
 }
 
-export function saveChatResumeState(
+export function saveChatResumeState<Metadata extends ClientMetadata, Data extends ClientDataMap>(
   options: ChatResumeOptions | undefined,
-  state: ChatResumeState,
+  state: ChatResumeState<Metadata, Data>,
 ): void {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
@@ -59,26 +60,29 @@ function resolveResumeStorage(options: ChatResumeOptions | undefined): Storage |
   }
 }
 
-function isChatResumeState(value: unknown): value is ChatResumeState {
-  return (
-    isRecord(value) &&
-    value.version === 1 &&
-    typeof value.streamId === "string" &&
-    typeof value.lastEventId === "number" &&
-    Number.isSafeInteger(value.lastEventId) &&
-    value.lastEventId >= 0 &&
-    Array.isArray(value.messages) &&
-    value.messages.every(isUIMessage)
-  );
-}
-
-function isUIMessage(value: unknown): value is UIMessage {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    ["system", "user", "assistant", "tool"].includes(value.role as string) &&
-    Array.isArray(value.parts)
-  );
+function parseChatResumeState<Metadata extends ClientMetadata, Data extends ClientDataMap>(
+  value: unknown,
+): ChatResumeState<Metadata, Data> | undefined {
+  if (
+    !isRecord(value) ||
+    value.version !== 2 ||
+    typeof value.streamId !== "string" ||
+    typeof value.lastEventId !== "number" ||
+    !Number.isSafeInteger(value.lastEventId) ||
+    value.lastEventId < 0
+  ) {
+    return undefined;
+  }
+  try {
+    return {
+      version: 2,
+      streamId: value.streamId,
+      lastEventId: value.lastEventId,
+      messages: parseUIMessages<Metadata, Data>(value.messages),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

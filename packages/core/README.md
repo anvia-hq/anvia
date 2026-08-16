@@ -78,20 +78,27 @@ Use `messages` when the application already owns the transcript. Exactly one of 
 `messages` is required:
 
 ```ts
-import { Message, generateCompletion } from "@anvia/core";
+import { generateCompletion, type Message } from "@anvia/core";
 
 const result = await generateCompletion({
   model,
   messages: [
-    Message.system("You are concise."),
-    Message.user("Explain Anvia."),
-  ],
+    { role: "system", content: "You are concise." },
+    { role: "user", content: "Explain Anvia." },
+  ] satisfies readonly Message[],
   maxTokens: 300,
   providerOptions: {
     reasoning: { effort: "low" },
   },
 });
 ```
+
+Messages are plain, readonly `{ role, content }` objects. Use structural literals with
+`satisfies Message` or `satisfies readonly Message[]`; there is no message factory namespace.
+Multimodal user content uses `text`, `image`, and `file` parts, while assistant tool calls use
+`{ type: "tool-call", toolCallId, toolName, input }`. At external boundaries, validate with
+`parseMessage`, `parseMessages`, `messageSchema`, or an application-specific
+`createMessageSchema({ metadataSchema })`.
 
 Add `outputSchema` to the same function for typed, schema-validated output:
 
@@ -142,10 +149,10 @@ import { streamCompletion } from "@anvia/core";
 import { createClientStreamResponse } from "@anvia/server";
 
 const body = parseClientStreamRequest(await request.json());
-const events = completionToClientStream(
-  streamCompletion({ model, messages: body.messages }),
-);
-return createClientStreamResponse(events);
+const events = completionToClientStream({
+  events: streamCompletion({ model, messages: body.messages }),
+});
+return createClientStreamResponse({ events });
 ```
 
 Core does not own UI messages, HTTP transports, or the public wire protocol. Those boundaries live

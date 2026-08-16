@@ -1,9 +1,9 @@
 import { Agent } from "@anvia/core/agent";
 import type {
-  AssistantContent as AssistantContentType,
-  Reasoning,
-  ReasoningContent,
+  AssistantContentPart,
   ReasoningContentType,
+  ReasoningDetail,
+  ReasoningPart,
 } from "@anvia/core/completion";
 import { GeminiClient } from "@anvia/gemini";
 import { OpenAIClient } from "@anvia/openai";
@@ -65,7 +65,9 @@ for await (const event of agent.stream({ prompt })) {
 
   if (event.type === "final") {
     const reasoning = event.result.messages
-      .flatMap((message) => (message.role === "assistant" ? message.content : []))
+      .flatMap((message) =>
+        message.role === "assistant" && typeof message.content !== "string" ? message.content : [],
+      )
       .filter(isReasoning);
     console.log("\nreasoning blocks:", JSON.stringify(reasoning.map(summarizeReasoning), null, 2));
   }
@@ -87,22 +89,22 @@ function writeReasoning(contentType: ReasoningContentType | undefined, delta: st
   process.stderr.write(delta);
 }
 
-function isReasoning(content: AssistantContentType): content is Reasoning {
+function isReasoning(content: AssistantContentPart): content is ReasoningPart {
   return content.type === "reasoning";
 }
 
-function summarizeReasoning(reasoning: Reasoning): Reasoning {
-  if (reasoning.content === undefined) {
+function summarizeReasoning(reasoning: ReasoningPart): ReasoningPart {
+  if (reasoning.details === undefined) {
     return reasoning;
   }
 
   return {
     ...reasoning,
-    content: reasoning.content.map(summarizeReasoningContent),
+    details: reasoning.details.map(summarizeReasoningContent),
   };
 }
 
-function summarizeReasoningContent(content: ReasoningContent): ReasoningContent {
+function summarizeReasoningContent(content: ReasoningDetail): ReasoningDetail {
   if (content.type === "encrypted" || content.type === "redacted") {
     return {
       type: content.type,

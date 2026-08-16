@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import {
   CLIENT_STREAM_PROTOCOL,
+  type ClientCompletionRequest,
   type ClientStream,
   type ClientStreamEvent,
   type ClientStreamRequest,
@@ -11,18 +12,48 @@ import type { MemoryCompactionMessage } from "@anvia/core/memory";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as publicReact from "../src";
-import { type UseChatOptions, type UseCompletionOptions, useChat, useCompletion } from "../src";
+import { useChat, useCompletion } from "../src";
 
-declare const inferredCustomTransport: ClientTransport<{ prompt: string }>;
+declare const incompatibleTransport: ClientTransport<{ query: number }>;
+declare const chatTransport: ClientTransport<ClientStreamRequest>;
+type AppMetadata = { tenantId: string };
+type AppData = { progress: { completed: number; total: number } };
+declare const typedChatTransport: ClientTransport<ClientStreamRequest, AppData, AppMetadata>;
 
-function CompileCustomRequestInference() {
-  // @ts-expect-error Custom request inference must require a request factory.
-  useChat({ transport: inferredCustomTransport });
-  // @ts-expect-error Completion must enforce the same inferred request contract.
-  useCompletion({ transport: inferredCustomTransport });
+function CompileTransportBoundary() {
+  // @ts-expect-error Chat transports must accept ClientStreamRequest.
+  useChat({ transport: incompatibleTransport });
+  // @ts-expect-error Completion transports must accept ClientCompletionRequest.
+  useCompletion({ transport: incompatibleTransport });
+  // @ts-expect-error React does not own endpoint-based chat transport configuration.
+  useChat({ endpoint: "/api/chat" });
+  // @ts-expect-error React does not own endpoint-based completion transport configuration.
+  useCompletion({ endpoint: "/api/completion" });
+  const chat = useChat({ transport: chatTransport });
+  // @ts-expect-error send() was removed in favor of sendMessage().
+  chat.send({ text: "hello" });
+  // @ts-expect-error reset() does not replace the transcript.
+  chat.reset([]);
+  const typedChat = useChat({
+    transport: typedChatTransport,
+    onEvent(event) {
+      if (event.type === "data") {
+        const completed: number = event.data.completed;
+        void completed;
+        // @ts-expect-error Custom data remains typed through React events.
+        const invalid: string = event.data.completed;
+        void invalid;
+      }
+    },
+  });
+  void typedChat.sendMessage({ text: "hello", metadata: { tenantId: "acme" } });
+  // @ts-expect-error Transport metadata remains typed through sendMessage().
+  void typedChat.sendMessage({ text: "hello", metadata: { tenantId: 42 } });
+  const metadata: AppMetadata | undefined = typedChat.messages[0]?.metadata;
+  void metadata;
   return null;
 }
-void CompileCustomRequestInference;
+void CompileTransportBoundary;
 
 describe("public boundary", () => {
   it("does not hide explicit memory compaction messages during hydration", () => {
@@ -45,56 +76,40 @@ describe("public boundary", () => {
     expect(publicReact).not.toHaveProperty("fetchEventStream");
   });
 
-  it("requires request factories for custom transport request types", () => {
-    const transport = createDirectClientTransport<{ prompt: string }>(() => events([]));
-
-    // @ts-expect-error A custom request cannot be constructed from Message[] without a factory.
-    const invalidChat: UseChatOptions<{ prompt: string }> = { transport };
-    // @ts-expect-error Completion has the same custom-request requirement.
-    const invalidCompletion: UseCompletionOptions<{ prompt: string }> = { transport };
-    void invalidChat;
-    void invalidCompletion;
-
-    const chat = {
-      transport,
-      createRequest: () => ({ prompt: "chat" }),
-    } satisfies UseChatOptions<{ prompt: string }>;
-    const completion = {
-      transport,
-      createRequest: () => ({ prompt: "completion" }),
-    } satisfies UseCompletionOptions<{ prompt: string }>;
-    expect(chat.createRequest).toBeTypeOf("function");
-    expect(completion.createRequest).toBeTypeOf("function");
+  it("does not expose endpoint or request-factory shortcuts", () => {
+    expect(publicReact).not.toHaveProperty("createRequest");
+    expect(publicReact).not.toHaveProperty("endpoint");
   });
 });
 
 describe("useChat", () => {
   it("exposes memory compaction through events and onEvent without creating a message", async () => {
     const onEvent = vi.fn();
-    const transport = createDirectClientTransport((_request: ClientStreamRequest) =>
-      events([
-        { type: "run_start", runId: "run_1", source: "agent" },
-        {
-          type: "memory_compaction",
-          runId: "run_1",
-          originalMessageCount: 12,
-          compactedMessageCount: 8,
-          retainedMessageCount: 4,
-          attempts: 1,
-          usage: {
-            inputTokens: 20,
-            outputTokens: 5,
-            totalTokens: 25,
-            cachedInputTokens: 0,
-            cacheCreationInputTokens: 0,
+    const transport = createDirectClientTransport({
+      handler: () =>
+        events([
+          { type: "run_start", runId: "run_1", source: "agent" },
+          {
+            type: "memory_compaction",
+            runId: "run_1",
+            originalMessageCount: 12,
+            compactedMessageCount: 8,
+            retainedMessageCount: 4,
+            attempts: 1,
+            usage: {
+              inputTokens: 20,
+              outputTokens: 5,
+              totalTokens: 25,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+            },
           },
-        },
-        { type: "run_end", runId: "run_1", status: "completed", text: "done" },
-      ]),
-    );
+          { type: "run_end", runId: "run_1", status: "completed", text: "done" },
+        ]),
+    });
     const { result } = renderHook(() => useChat({ transport, onEvent }));
 
-    await act(async () => result.current.sendMessage("Hi"));
+    await act(async () => result.current.sendMessage({ text: "Hi" }));
 
     expect(result.current.events.map((event) => event.type)).toEqual([
       "run_start",
@@ -110,42 +125,44 @@ describe("useChat", () => {
 
   it("sends core messages and reduces the canonical framed stream", async () => {
     const requests: ClientStreamRequest[] = [];
-    const transport = createDirectClientTransport((request: ClientStreamRequest) => {
-      requests.push(request);
-      return events([
-        { type: "run_start", runId: "run_1", source: "completion" },
-        {
-          type: "message_start",
-          runId: "run_1",
-          messageId: "assistant_1",
-          role: "assistant",
-        },
-        {
-          type: "text_start",
-          runId: "run_1",
-          messageId: "assistant_1",
-          partId: "text_1",
-        },
-        {
-          type: "text_delta",
-          runId: "run_1",
-          messageId: "assistant_1",
-          partId: "text_1",
-          delta: "Hello",
-        },
-        {
-          type: "text_end",
-          runId: "run_1",
-          messageId: "assistant_1",
-          partId: "text_1",
-          text: "Hello!",
-        },
-        { type: "run_end", runId: "run_1", status: "completed", text: "Hello!" },
-      ]);
+    const transport = createDirectClientTransport({
+      handler: ({ request }) => {
+        requests.push(request);
+        return events([
+          { type: "run_start", runId: "run_1", source: "completion" },
+          {
+            type: "message_start",
+            runId: "run_1",
+            messageId: "assistant_1",
+            role: "assistant",
+          },
+          {
+            type: "text_start",
+            runId: "run_1",
+            messageId: "assistant_1",
+            partId: "text_1",
+          },
+          {
+            type: "text_delta",
+            runId: "run_1",
+            messageId: "assistant_1",
+            partId: "text_1",
+            delta: "Hello",
+          },
+          {
+            type: "text_end",
+            runId: "run_1",
+            messageId: "assistant_1",
+            partId: "text_1",
+            text: "Hello!",
+          },
+          { type: "run_end", runId: "run_1", status: "completed", text: "Hello!" },
+        ]);
+      },
     });
     const { result } = renderHook(() => useChat({ transport }));
 
-    await act(async () => result.current.sendMessage("Hi"));
+    await act(async () => result.current.sendMessage({ text: "Hi" }));
 
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
@@ -203,7 +220,7 @@ describe("useChat", () => {
     const { result } = renderHook(() => useChat({ transport, onError }));
     let pending: Promise<void>;
     act(() => {
-      pending = result.current.sendMessage("Hi");
+      pending = result.current.sendMessage({ text: "Hi" });
     });
     await waitFor(() => expect(result.current.status).toBe("submitted"));
     act(() => releaseStart?.());
@@ -217,26 +234,50 @@ describe("useChat", () => {
 });
 
 describe("useCompletion", () => {
-  it("is a prompt-oriented view over the same client protocol", async () => {
-    const transport = createDirectClientTransport((_request: ClientStreamRequest) =>
-      events([
-        { type: "run_start", runId: "run_1", source: "completion" },
-        {
-          type: "text_delta",
-          runId: "run_1",
-          messageId: "assistant_1",
-          partId: "text_1",
-          delta: "Done",
-        },
-        { type: "run_end", runId: "run_1", status: "completed", text: "Done" },
-      ]),
-    );
+  it("runs independent prompt-oriented requests over the client protocol", async () => {
+    const requests: ClientCompletionRequest[] = [];
+    const transport = createDirectClientTransport<ClientCompletionRequest>({
+      handler: ({ request }) => {
+        requests.push(request);
+        return events([
+          { type: "run_start", runId: "run_1", source: "completion" },
+          {
+            type: "text_delta",
+            runId: "run_1",
+            messageId: "assistant_1",
+            partId: "text_1",
+            delta: "Done",
+          },
+          { type: "run_end", runId: "run_1", status: "completed", text: "Done" },
+        ]);
+      },
+    });
     const { result } = renderHook(() => useCompletion({ transport }));
     act(() => result.current.setInput("Write"));
-    await act(async () => result.current.complete());
-    expect(result.current.input).toBe("");
+    await act(async () => result.current.submit());
+    expect(requests).toEqual([{ prompt: "Write" }]);
+    expect(result.current.input).toBe("Write");
     expect(result.current.completion).toBe("Done");
     expect(result.current.status).toBe("ready");
+  });
+
+  it("keeps error status when the stream reports a protocol error event", async () => {
+    const onError = vi.fn();
+    const transport = createDirectClientTransport<ClientCompletionRequest>({
+      handler: () =>
+        events([
+          { type: "run_start", runId: "run_1", source: "completion" },
+          { type: "error", runId: "run_1", error: { message: "Safe failure" } },
+          { type: "run_end", runId: "run_1", status: "error" },
+        ]),
+    });
+    const { result } = renderHook(() => useCompletion({ transport, onError }));
+
+    await act(async () => result.current.complete({ prompt: "Write" }));
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toBe("Safe failure");
+    expect(onError).toHaveBeenCalledOnce();
   });
 });
 

@@ -2,12 +2,11 @@ import { errorEvent } from "./errors";
 import type { EventStreamErrorEvent, SseStreamOptions } from "./types";
 
 export function createSseStream<TEvent>(
-  events: AsyncIterable<TEvent>,
-  options: SseStreamOptions<TEvent> = {},
+  options: SseStreamOptions<TEvent> & { events: AsyncIterable<TEvent> },
 ): ReadableStream<Uint8Array> {
   validateSseOptions(options);
   const encoder = new TextEncoder();
-  const iterator = events[Symbol.asyncIterator]();
+  const iterator = options.events[Symbol.asyncIterator]();
   const serialize = options.serialize ?? serializeJson;
 
   return new ReadableStream<Uint8Array>({

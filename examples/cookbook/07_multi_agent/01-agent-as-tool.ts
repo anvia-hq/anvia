@@ -76,7 +76,7 @@ const prompt = [
 
 for await (const event of coordinator.stream({ prompt, toolConcurrency: 3 })) {
   if (event.type === "tool_call") {
-    console.log("delegating:", event.toolCall.function.name, event.toolCall.function.arguments);
+    console.log("delegating:", event.toolCall.toolName, event.toolCall.input);
   }
 
   if (event.type === "tool_result") {

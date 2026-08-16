@@ -163,19 +163,19 @@ describe("skills", () => {
 
     await expect(
       agent.callTool("get_skill_instructions", JSON.stringify({ skillName: "review" })),
-    ).resolves.toBe("# Review\nUse direct feedback.");
+    ).resolves.toEqual({ type: "text", value: "# Review\nUse direct feedback." });
     await expect(
       agent.callTool(
         "get_skill_reference",
         JSON.stringify({ skillName: "review", referencePath: "guide.md" }),
       ),
-    ).resolves.toBe("Reference text");
+    ).resolves.toEqual({ type: "text", value: "Reference text" });
     await expect(
       agent.callTool(
         "get_skill_script",
         JSON.stringify({ skillName: "review", scriptPath: "helper.sh" }),
       ),
-    ).resolves.toBe("#!/bin/sh\necho helper\n");
+    ).resolves.toEqual({ type: "text", value: "#!/bin/sh\necho helper\n" });
   });
 
   it("executes skill scripts and reports failures", async () => {
@@ -204,7 +204,10 @@ describe("skills", () => {
           args: ["one", "two"],
         }),
       ),
-    ).resolves.toBe("stdout:\nstdout:one\n\n\nstderr:\nstderr:two\n");
+    ).resolves.toEqual({
+      type: "text",
+      value: "stdout:\nstdout:one\n\n\nstderr:\nstderr:two\n",
+    });
     await expect(
       agent.callTool(
         "run_skill_script",

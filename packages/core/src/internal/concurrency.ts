@@ -1,5 +1,5 @@
 export async function mapWithConcurrency<Input, Output>(
-  inputs: Input[],
+  inputs: readonly Input[],
   concurrency: number,
   mapper: (input: Input) => Promise<Output>,
 ): Promise<Output[]> {

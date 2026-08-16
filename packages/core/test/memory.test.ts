@@ -165,6 +165,28 @@ describe("agent memory", () => {
     expect(() => agent.generate({ messages: [] })).toThrow("at least one message");
   });
 
+  it("rejects malformed and non-user-terminated prompt transcripts", () => {
+    const model = new QueueModel([]);
+    const agent = new Agent({ id: "test-agent", model });
+
+    expect(() =>
+      agent.generate({
+        messages: [
+          {
+            role: "user",
+            content: "hello",
+            unexpected: true,
+          } as never,
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      agent.generate({
+        messages: [Message.user("hello"), Message.assistant("finished")],
+      }),
+    ).toThrow("end with a user message");
+  });
+
   it("stays stateless when a memory-enabled agent receives no session", async () => {
     const store = new RecordingMemoryStore({
       session_1: [Message.user("stored"), Message.assistant("stored answer")],
@@ -214,7 +236,7 @@ describe("agent memory", () => {
       { type: "text", text: "Describe this image" },
       {
         type: "image",
-        source: { type: "url", url: "https://example.test/image.png" },
+        image: { type: "url", url: "https://example.test/image.png" },
       },
     ]);
 

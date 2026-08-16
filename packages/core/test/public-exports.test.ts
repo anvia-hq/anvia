@@ -33,10 +33,9 @@ import type {
   AgentToolOptions as RootAgentToolOptions,
   RetryContext as RootRetryContext,
   RetryOptions as RootRetryOptions,
-  ToolContent as RootToolContentType,
 } from "../src/index";
 import * as publicCore from "../src/index";
-import { Message as RootMessage, ToolContent as RootToolContent, Usage } from "../src/index";
+import { Usage } from "../src/index";
 // @ts-expect-error ToolApprovalRequest is private to the agent runtime.
 import type { ToolApprovalRequest as InternalToolApprovalRequest } from "../src/internal/agent";
 import * as internalAgent from "../src/internal/agent";
@@ -213,7 +212,9 @@ describe("public exports", () => {
     expect(completion).not.toHaveProperty("createCompletion");
     expect(completion).not.toHaveProperty("createParsedCompletion");
     expect(completion).not.toHaveProperty("createCompletionStream");
-    expect(completion).toHaveProperty("Message");
+    expect(completion).not.toHaveProperty("Message");
+    expect(completion).toHaveProperty("parseMessage");
+    expect(completion).toHaveProperty("messagesSchema");
     expect(embeddings).toHaveProperty("embedText");
     expect(embeddings).toHaveProperty("embedDocuments");
     expect(embeddings).not.toHaveProperty("embedHybridDocuments");
@@ -388,20 +389,16 @@ describe("public exports", () => {
     });
   });
 
-  it("exposes ToolContent from the root entrypoint", () => {
-    expect(publicCore).toHaveProperty("ToolContent");
-    const toolResult: RootToolContentType = RootToolContent.toolResult("abc", "hello", "call_123");
-
-    expect(RootMessage.tool(toolResult)).toMatchObject({
-      role: "tool",
-      content: [
-        {
-          type: "tool_result",
-          id: "abc",
-          callId: "call_123",
-          content: [{ type: "text", text: "hello" }],
-        },
-      ],
+  it("exports structural message parsers without factory namespaces", () => {
+    expect(publicCore).not.toHaveProperty("Message");
+    expect(publicCore).not.toHaveProperty("UserContent");
+    expect(publicCore).not.toHaveProperty("AssistantContent");
+    expect(publicCore).not.toHaveProperty("ToolContent");
+    expect(publicCore).toMatchObject({
+      parseMessage: expect.any(Function),
+      parseMessages: expect.any(Function),
+      isMessage: expect.any(Function),
+      createMessageSchema: expect.any(Function),
     });
   });
 });

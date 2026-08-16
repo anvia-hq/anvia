@@ -229,9 +229,7 @@ describe("evals", () => {
     const output = await target("hello", { id: "case", input: "hello" });
 
     expect(output.output).toBe("ok");
-    expect(model.requests[0]?.chatHistory).toMatchObject([
-      { role: "user", content: [{ type: "text", text: "hello" }] },
-    ]);
+    expect(model.requests[0]?.chatHistory).toMatchObject([{ role: "user", content: "hello" }]);
   });
 
   it("captures reporter errors without failing by default", async () => {

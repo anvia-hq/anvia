@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { Agent } from "@anvia/core/agent";
 import {
-  AssistantContent,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -39,11 +38,14 @@ class InspectingModel implements CompletionModel {
       choice:
         this.calls === 1
           ? [
-              AssistantContent.toolCall("call_1", "issue_refund", {
-                orderId: "A-100",
-              }),
+              {
+                type: "tool-call",
+                toolCallId: "call_1",
+                toolName: "issue_refund",
+                input: { orderId: "A-100" },
+              },
             ]
-          : [AssistantContent.text("Refund issued.")],
+          : [{ type: "text", text: "Refund issued." }],
       usage: Usage.empty(),
       rawResponse: {},
     };

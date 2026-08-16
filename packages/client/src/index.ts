@@ -25,13 +25,18 @@ export {
   parseClientStreamEvent,
   parseClientStreamFrame,
   parseClientStreamRequest,
+  parseUIMessage,
+  parseUIMessages,
 } from "./protocol";
 export { applyClientStreamEvent, assistantText, messageText } from "./reducer";
 export type {
+  ClientCompletionRequest,
   ClientDataMap,
   ClientDataSchema,
   ClientDataSchemas,
   ClientErrorMapper,
+  ClientMetadata,
+  ClientMetadataSchema,
   ClientOutputMapper,
   ClientStream,
   ClientStreamCursor,
@@ -42,7 +47,7 @@ export type {
   ClientStreamScope,
   ClientToolApprovalStatus,
   ClientTransport,
-  ClientTransportOptions,
+  ClientTransportSendOptions,
   CreateUIAttachment,
   ToolApproval,
   ToolQuestion,

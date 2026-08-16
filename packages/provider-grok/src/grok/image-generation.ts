@@ -7,17 +7,14 @@ import type {
   ModelCallOptions,
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
-import { GROK_IMAGINE_IMAGE } from "./constants";
-import type { GrokImageGenerationModelName } from "./models";
+import type { GrokImageGenerationModelId } from "./models";
 
-export class GrokImageGenerationModel
-  implements ImageGenerationModel<unknown, GrokImageGenerationModelName>
-{
+export class GrokImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "grok";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: GrokImageGenerationModelName = GROK_IMAGINE_IMAGE,
+    readonly modelId: GrokImageGenerationModelId,
     private readonly fetchFn: typeof fetch | undefined = defaultFetch(),
   ) {}
 
@@ -27,17 +24,17 @@ export class GrokImageGenerationModel
   ): Promise<ImageGenerationResult<unknown>> {
     const params: Record<string, unknown> = {
       ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
-      model: this.defaultModel,
+      model: this.modelId,
       prompt: request.prompt,
       n: 1,
       response_format: "b64_json",
       aspect_ratio: aspectRatio(request.width, request.height),
     };
 
-    const response = await this.client.images.generate(
-      params as never,
-      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
-    );
+    const response = await this.client.images.generate(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     return imageResponseFromGrok(response, this.fetchFn, options?.abortSignal);
   }
 }

@@ -7,10 +7,11 @@ import {
   ToolContent,
   UserContent,
 } from "../../core/test/helpers/imports";
-import { OpenAIChatCompletionModel, OpenAIClient } from "../src/index";
+import { OpenAIClient } from "../src/index";
 import {
   fromOpenAIChatCompletionResponse,
   fromOpenAIChatCompletionStreamChunk,
+  OpenAIChatCompletionModel,
   toOpenAIChatCompletionParams,
 } from "../src/openai/chat-completion";
 
@@ -33,8 +34,8 @@ describe("OpenAI chat-completions client path", () => {
   it("exposes OpenAI chat-completions capability metadata", () => {
     const model = new OpenAIChatCompletionModel({} as never, "custom-chat-model");
 
-    expect(model.provider).toBe("openai-chat");
-    expect(model.defaultModel).toBe("custom-chat-model");
+    expect(model.provider).toBe("openai");
+    expect(model.modelId).toBe("custom-chat-model");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -62,11 +63,8 @@ describe("OpenAI chat-completions client path", () => {
       },
     };
 
-    const openai = new OpenAIClient({
-      client: client as never,
-      completionApi: "chat",
-    });
-    const model = openai.completionModel("custom-chat-model");
+    const openai = new OpenAIClient({ client: client as never });
+    const model = openai.completionModel({ modelId: "custom-chat-model", api: "chat" });
 
     expect(model).toBeInstanceOf(OpenAIChatCompletionModel);
     await model.completion({
@@ -82,13 +80,15 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
-  it("uses chat completions by default for custom base URLs", () => {
+  it("keeps protocol selection explicit for custom base URLs", () => {
     const openai = new OpenAIClient({
       apiKey: "test",
       baseUrl: "https://provider.example.com/v1",
     });
 
-    expect(openai.completionModel("custom-chat-model")).toBeInstanceOf(OpenAIChatCompletionModel);
+    expect(openai.completionModel({ modelId: "custom-chat-model", api: "chat" })).toBeInstanceOf(
+      OpenAIChatCompletionModel,
+    );
   });
 
   it("preserves assistant reasoning and provider tool call ids across tool turns", () => {
@@ -780,7 +780,7 @@ describe("OpenAI chat-completions client path", () => {
         documents: [],
         tools: [],
       }),
-    ).rejects.toThrow("openai-chat:custom-chat-model does not support document file input.");
+    ).rejects.toThrow("openai:custom-chat-model does not support document file input.");
     expect(calls).toHaveLength(0);
   });
 });

@@ -4,9 +4,11 @@ import { GPT_IMAGE_2, OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-const imageModel = client.imageGenerationModel(process.env.OPENAI_IMAGE_MODEL ?? GPT_IMAGE_2);
+const imageModel = client.imageGenerationModel({
+  modelId: process.env.OPENAI_IMAGE_MODEL ?? GPT_IMAGE_2,
+});
 
 const response = await generateImage({
   model: imageModel,

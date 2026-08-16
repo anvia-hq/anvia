@@ -10,10 +10,11 @@ import {
   ToolContent,
   UserContent,
 } from "../../core/test/helpers/imports";
-import { OpenAIResponsesCompletionModel } from "../src/index";
+import { OpenAIClient } from "../src/index";
 import {
   fromOpenAIResponse,
   fromOpenAIStreamEvent,
+  OpenAIResponsesCompletionModel,
   openaiMessageHelpers,
   toOpenAIResponsesParams,
 } from "../src/openai/responses";
@@ -23,7 +24,7 @@ describe("OpenAI Responses mapping", () => {
     const model = new OpenAIResponsesCompletionModel({} as never, "gpt-test");
 
     expect(model.provider).toBe("openai");
-    expect(model.defaultModel).toBe("gpt-test");
+    expect(model.modelId).toBe("gpt-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -37,19 +38,21 @@ describe("OpenAI Responses mapping", () => {
   });
 
   it("resolves built-in, custom, and unknown model context limits", () => {
-    const model = new OpenAIResponsesCompletionModel({} as never, "gpt-5", {
-      modelOverrides: { custom: { contextWindow: 42_000, maxOutputTokens: 2_000 } },
+    const client = new OpenAIClient({ client: {} as never });
+    const builtIn = client.completionModel({ modelId: "gpt-5", api: "responses" });
+    const custom = client.completionModel({
+      modelId: "custom",
+      api: "responses",
+      contextLimits: { contextWindow: 42_000, maxOutputTokens: 2_000 },
     });
+    const unknown = client.completionModel({ modelId: "unknown", api: "responses" });
 
-    expect(model.getModelInfo()).toMatchObject({
-      id: "gpt-5",
-      context: { contextWindow: 400_000, maxOutputTokens: 128_000 },
+    expect(builtIn.contextLimits).toMatchObject({
+      contextWindow: 400_000,
+      maxOutputTokens: 128_000,
     });
-    expect(model.getModelInfo("custom")).toEqual({
-      id: "custom",
-      context: { contextWindow: 42_000, maxOutputTokens: 2_000 },
-    });
-    expect(model.getModelInfo("unknown")).toBeUndefined();
+    expect(custom.contextLimits).toEqual({ contextWindow: 42_000, maxOutputTokens: 2_000 });
+    expect(unknown.contextLimits).toBeUndefined();
   });
 
   it("attaches context usage to completed and streamed responses", async () => {
@@ -65,6 +68,7 @@ describe("OpenAI Responses mapping", () => {
     const completionModel = new OpenAIResponsesCompletionModel(
       { responses: { create: async () => rawResponse } } as never,
       "gpt-5",
+      { contextWindow: 400_000, maxOutputTokens: 128_000 },
     );
 
     const response = await completionModel.completion(request);
@@ -72,7 +76,7 @@ describe("OpenAI Responses mapping", () => {
     expect(response.contextUsage).toMatchObject({
       usedTokens: 60,
       remainingTokens: 399_940,
-      model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+      model: { modelId: "gpt-5", context: { contextWindow: 400_000 } },
     });
 
     const streamModel = new OpenAIResponsesCompletionModel(
@@ -86,6 +90,7 @@ describe("OpenAI Responses mapping", () => {
         },
       } as never,
       "gpt-5",
+      { contextWindow: 400_000, maxOutputTokens: 128_000 },
     );
     const events: CompletionModelStreamEvent[] = [];
     for await (const event of streamModel.streamCompletion(request)) {

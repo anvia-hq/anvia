@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const tickets = new Map([
@@ -54,7 +54,7 @@ const getTicket = createTool({
   },
 });
 
-const model = client.completionModel("gpt-5.6-luna");
+const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const agent = new Agent({
   id: "studio-inspection-surfaces",
   model: model,

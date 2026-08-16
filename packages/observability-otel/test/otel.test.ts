@@ -427,7 +427,7 @@ describe("otel", () => {
     expect(generationSpan?.parentSpanId).toBe(root?.spanContextValue.spanId);
     expect(generationSpan?.attributes).toMatchObject({
       "anvia.generation.turn": 1,
-      "anvia.generation.model": "test-model",
+      "anvia.generation.model_id": "test-model",
       "anvia.generation.tool_count": 0,
       "anvia.generation.has_output_schema": false,
       "anvia.generation.message_id": "msg-1",
@@ -603,7 +603,6 @@ describe("otel", () => {
     await run?.startGeneration?.({
       ...generationStartArgs(),
       request: {
-        model: "test-model",
         chatHistory: [Message.user("hello", { metadata })],
         documents: [],
         tools: [],
@@ -672,7 +671,6 @@ describe("otel", () => {
     const generation = await run?.startGeneration?.({
       turn: 1,
       request: {
-        model: "test-model",
         chatHistory: [userMessage("hello")],
         documents: [],
         tools: [
@@ -836,7 +834,7 @@ describe("otel", () => {
             instructions: "Use the child policy.",
             chatHistory: [userMessage("inspect")],
           },
-          modelInfo: { provider: "test", defaultModel: "test-model" },
+          modelInfo: { provider: "test", modelId: "test-model" },
         },
       },
     });
@@ -993,7 +991,7 @@ describe("otel", () => {
             instructions: "private child instructions",
             chatHistory: [userMessage("private child prompt")],
           },
-          modelInfo: { provider: "test", defaultModel: "test-model" },
+          modelInfo: { provider: "test", modelId: "test-model" },
         },
       },
     });
@@ -1318,8 +1316,8 @@ class FakeSpan {
 function generationStartArgs(): AgentGenerationStartArgs {
   return {
     turn: 1,
+    modelInfo: { provider: "test", modelId: "test-model" },
     request: {
-      model: "test-model",
       instructions: "Answer clearly.",
       chatHistory: [userMessage("hello")],
       documents: [],

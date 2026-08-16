@@ -1,6 +1,6 @@
 import { embedDocuments } from "@anvia/core/embeddings";
 import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 type KnowledgeDoc = {
   id: string;
@@ -9,7 +9,7 @@ type KnowledgeDoc = {
   topic: string;
 };
 
-const embeddingModel = await createTransformersEmbeddingModel();
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 
 const docs: KnowledgeDoc[] = [
   {

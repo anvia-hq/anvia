@@ -186,17 +186,15 @@ describe("langfuse", () => {
       { asType: "agent" },
     );
 
-    const requestWithoutModel = { ...generationStartArgs().request };
-    delete requestWithoutModel.model;
     await run.startGeneration?.({
       ...generationStartArgs(),
       request: {
-        ...requestWithoutModel,
+        ...generationStartArgs().request,
         instructions: "You are a careful support agent.",
       },
       modelInfo: {
         provider: "test",
-        defaultModel: "provider-default",
+        modelId: "provider-default",
       },
     });
 
@@ -520,7 +518,6 @@ describe("langfuse", () => {
     await run.startGeneration?.({
       turn: 1,
       request: {
-        model: "gpt-4o",
         chatHistory: [userMessage("hi")],
         documents: [],
         tools: [],
@@ -529,7 +526,7 @@ describe("langfuse", () => {
       providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
       modelInfo: {
         provider: "openai",
-        defaultModel: "gpt-4o",
+        modelId: "gpt-4o",
         capabilities: {
           streaming: true,
           tools: true,
@@ -549,7 +546,7 @@ describe("langfuse", () => {
           providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
           modelInfo: {
             provider: "openai",
-            defaultModel: "gpt-4o",
+            modelId: "gpt-4o",
             capabilities: {
               streaming: true,
               tools: true,
@@ -589,13 +586,12 @@ describe("langfuse", () => {
     await run.startGeneration?.({
       turn: 1,
       request: {
-        model: "gpt-4o",
         chatHistory: [userMessage("hi")],
         documents: [],
         tools: [],
         providerOptions: {},
       },
-      modelInfo: { provider: "openai", defaultModel: "gpt-4o" },
+      modelInfo: { provider: "openai", modelId: "gpt-4o" },
     });
 
     const call = turn.startObservation.mock.calls[0]?.[1] as
@@ -603,7 +599,7 @@ describe("langfuse", () => {
       | undefined;
     expect(call?.metadata?.modelInfo).toEqual({
       provider: "openai",
-      defaultModel: "gpt-4o",
+      modelId: "gpt-4o",
     });
     expect(call?.metadata?.modelInfo).not.toHaveProperty("capabilities");
   });
@@ -625,7 +621,12 @@ describe("langfuse", () => {
       maxTurns: 1,
     })) as AgentRunObserver;
 
-    await run.startGeneration?.(generationStartArgs());
+    const args = generationStartArgs();
+    const argsWithoutModelInfo: AgentGenerationStartArgs = {
+      turn: args.turn,
+      request: args.request,
+    };
+    await run.startGeneration?.(argsWithoutModelInfo);
 
     const call = turn.startObservation.mock.calls[0]?.[1] as
       | { metadata?: Record<string, unknown> }
@@ -2886,8 +2887,8 @@ function fakeObservation(name: string, traceId: string, id: string) {
 function generationStartArgs(): AgentGenerationStartArgs {
   return {
     turn: 1,
+    modelInfo: { provider: "test", modelId: "test-model" },
     request: {
-      model: "test-model",
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
@@ -2903,7 +2904,7 @@ function childGenerationStartEvent() {
     request: generationStartArgs().request,
     modelInfo: {
       provider: "test",
-      defaultModel: "test-model",
+      modelId: "test-model",
       capabilities: {
         streaming: true,
         tools: true,

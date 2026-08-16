@@ -1,33 +1,42 @@
+import type { Mistral } from "@mistralai/mistralai";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   MistralClient,
-  MistralCompletionModel,
-  type MistralCompletionModelName,
-  MistralEmbeddingModel,
-  MistralOcrModel,
-  type MistralOcrModelName,
+  type MistralClientOptions,
+  type MistralCompletionModelId,
+  type MistralOcrModelId,
 } from "../src/index";
 
 describe("MistralClient", () => {
+  it("rejects mixed injected and managed configuration", () => {
+    const mixed = { client: fakeSdk() as unknown as Mistral, apiKey: "ignored" };
+    expectTypeOf(mixed).not.toMatchTypeOf<MistralClientOptions>();
+    expect(() => new MistralClient(mixed as never)).toThrow(
+      "MistralClient cannot combine client with apiKey",
+    );
+  });
+
   it("types known Mistral models while accepting custom model strings", () => {
     const client = new MistralClient({ client: fakeSdk() as never });
 
     expectTypeOf(
-      client.completionModel("mistral-large-latest").defaultModel,
-    ).toEqualTypeOf<MistralCompletionModelName>();
-    client.completionModel("custom-mistral-model");
+      client.completionModel({ modelId: "mistral-large-latest" }).modelId,
+    ).toEqualTypeOf<string>();
+    const completionId: MistralCompletionModelId = "custom-mistral-model";
+    client.completionModel({ modelId: completionId });
 
-    client.embeddingModel("mistral-embed");
-    client.embeddingModel("custom-mistral-embedding");
+    client.embeddingModel({ modelId: "mistral-embed" });
+    client.embeddingModel({ modelId: "custom-mistral-embedding" });
 
     expectTypeOf(
-      client.ocrModel("mistral-ocr-latest").defaultModel,
-    ).toEqualTypeOf<MistralOcrModelName>();
-    client.ocrModel("custom-mistral-ocr");
+      client.ocrModel({ modelId: "mistral-ocr-latest" }).modelId,
+    ).toEqualTypeOf<MistralOcrModelId>();
+    const ocrId: MistralOcrModelId = "custom-mistral-ocr";
+    client.ocrModel({ modelId: ocrId });
   });
 
   it("validates explicit Mistral credentials", () => {
-    expect(() => new MistralClient()).toThrow(
+    expect(() => new MistralClient({} as never)).toThrow(
       "Missing Mistral credentials. Pass apiKey when constructing MistralClient.",
     );
   });
@@ -35,9 +44,11 @@ describe("MistralClient", () => {
   it("creates completion, embedding, and OCR models with an injected SDK client", () => {
     const client = new MistralClient({ client: fakeSdk() as never });
 
-    expect(client.completionModel()).toBeInstanceOf(MistralCompletionModel);
-    expect(client.embeddingModel()).toBeInstanceOf(MistralEmbeddingModel);
-    expect(client.ocrModel()).toBeInstanceOf(MistralOcrModel);
+    expect(client.completionModel({ modelId: "mistral-large-latest" }).modelId).toBe(
+      "mistral-large-latest",
+    );
+    expect(client.embeddingModel({ modelId: "mistral-embed" }).modelId).toBe("mistral-embed");
+    expect(client.ocrModel({ modelId: "mistral-ocr-latest" }).modelId).toBe("mistral-ocr-latest");
   });
 
   it("lists models from the Mistral SDK", async () => {

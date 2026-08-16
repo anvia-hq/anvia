@@ -26,7 +26,7 @@ describe("Anthropic Messages mapping", () => {
     const model = new AnthropicCompletionModel({} as never, "claude-test");
 
     expect(model.provider).toBe("anthropic");
-    expect(model.defaultModel).toBe("claude-test");
+    expect(model.modelId).toBe("claude-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -39,12 +39,12 @@ describe("Anthropic Messages mapping", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new AnthropicCompletionModel({} as never, "claude-sonnet-4-20250514");
-
-    expect(model.getModelInfo()).toEqual({
-      id: "claude-sonnet-4-20250514",
-      context: { contextWindow: 200_000, maxOutputTokens: 64_000 },
+    const model = new AnthropicCompletionModel({} as never, "claude-sonnet-4-20250514", {
+      contextWindow: 200_000,
+      maxOutputTokens: 64_000,
     });
+
+    expect(model.contextLimits).toEqual({ contextWindow: 200_000, maxOutputTokens: 64_000 });
   });
 
   it("rejects unsupported output schemas before provider calls", async () => {

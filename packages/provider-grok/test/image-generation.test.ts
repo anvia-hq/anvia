@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
-import { aspectRatio, GrokImageGenerationModel, imageResponseFromGrok } from "../src/index";
+import { GrokImageGenerationModel } from "../src/grok/image-generation";
+import { aspectRatio, imageResponseFromGrok } from "../src/index";
 
 describe("Grok image generation", () => {
   it("maps core image requests to default xAI image generation params", async () => {

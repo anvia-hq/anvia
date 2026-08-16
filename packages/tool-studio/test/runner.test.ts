@@ -56,7 +56,7 @@ const { DatabaseSync } = createRequire(import.meta.url)(
 
 class QueueModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -75,7 +75,7 @@ class QueueModel {
     return {
       provider: this.provider,
       stream: options.stream === true,
-      model: request.model ?? this.defaultModel,
+      model: this.modelId,
       messageCount: request.chatHistory.length,
     };
   }
@@ -94,7 +94,7 @@ type CompletionOutcome = { response: CompletionResponse } | { error: unknown };
 
 class FlakyQueueModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -123,7 +123,7 @@ class FlakyQueueModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -149,7 +149,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
     return {
       provider: this.provider,
       stream: options.stream === true,
-      model: request.model ?? this.defaultModel,
+      model: this.modelId,
       messageCount: request.chatHistory.length,
     };
   }
@@ -176,7 +176,7 @@ async function* streamThenThrow(
 
 class GatedReasoningModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -259,7 +259,7 @@ class InspectableMemoryStore implements MemoryStore {
 
 class FailingStreamingModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -283,6 +283,8 @@ class FailingStreamingModel implements StreamingCompletionModel {
 }
 
 class KeywordEmbeddingModel implements EmbeddingModel {
+  readonly provider = "test";
+  readonly modelId = "keyword";
   readonly calls: string[][] = [];
 
   async embedTexts(texts: string[]): Promise<Embedding[]> {
@@ -512,12 +514,12 @@ describe("Anvia studio", () => {
     const agent = new Agent({ id: "support", model: new QueueModel([]), name: "Support" });
     const runner = new Studio([agent], {
       models: {
-        default: "openai:gpt-5",
+        defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
         providers: [
           {
             id: "openai",
             name: "OpenAI",
-            defaultModel: "gpt-5",
+            defaultModelId: "gpt-5",
             models: [
               {
                 id: "gpt-5",
@@ -534,7 +536,7 @@ describe("Anvia studio", () => {
         ],
         agents: {
           support: {
-            default: "openai:gpt-5",
+            defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
             allowed: ["openai:*"],
           },
         },
@@ -542,12 +544,12 @@ describe("Anvia studio", () => {
     });
 
     expect(runner.config().models).toMatchObject({
-      default: "openai:gpt-5",
+      defaultModelRef: "openai:gpt-5",
       providers: [
         {
           id: "openai",
           name: "OpenAI",
-          defaultModel: "gpt-5",
+          defaultModelId: "gpt-5",
           models: [
             {
               ref: "openai:gpt-5",
@@ -560,7 +562,7 @@ describe("Anvia studio", () => {
       ],
       agents: {
         support: {
-          default: "openai:gpt-5",
+          defaultModelRef: "openai:gpt-5",
           allowed: ["openai:*"],
         },
       },
@@ -569,7 +571,7 @@ describe("Anvia studio", () => {
     const models = await runner.fetch(new Request("http://runner.test/agents/support/models"));
     await expect(models.json()).resolves.toMatchObject({
       agentId: "support",
-      defaultModel: "openai:gpt-5",
+      defaultModelRef: "openai:gpt-5",
       models: [
         { ref: "openai:gpt-5", name: "GPT-5" },
         { ref: "openai:gpt-5-mini", name: "GPT-5 mini", metadata: { ownedBy: "provider" } },
@@ -589,11 +591,11 @@ describe("Anvia studio", () => {
         providers: [
           {
             id: "test",
-            defaultModel: "primary",
+            defaultModelId: "primary",
             models: [{ id: "secondary", modalities: { input: ["text"], output: ["text"] } }],
-            createCompletionModel: (model) => {
-              if (model !== "secondary") {
-                throw new Error(`Unexpected model: ${model}`);
+            createCompletionModel: ({ modelId }) => {
+              if (modelId !== "secondary") {
+                throw new Error(`Unexpected model: ${modelId}`);
               }
               return selectedModel;
             },
@@ -601,7 +603,7 @@ describe("Anvia studio", () => {
         ],
         agents: {
           support: {
-            allowed: ["test:secondary"],
+            allowed: [{ providerId: "test", modelId: "secondary" }],
           },
         },
       },
@@ -620,7 +622,7 @@ describe("Anvia studio", () => {
         body: JSON.stringify({
           sessionId: session.id,
           messages: [Message.user("first")],
-          model: "test:secondary",
+          model: { providerId: "test", modelId: "secondary" },
         }),
       }),
     );
@@ -659,7 +661,7 @@ describe("Anvia studio", () => {
         ],
         agents: {
           support: {
-            allowed: ["test:allowed"],
+            allowed: [{ providerId: "test", modelId: "allowed" }],
           },
         },
       },
@@ -670,7 +672,7 @@ describe("Anvia studio", () => {
         method: "POST",
         body: JSON.stringify({
           messages: [Message.user("hello")],
-          model: "test:blocked",
+          model: { providerId: "test", modelId: "blocked" },
         }),
       }),
     );
@@ -682,6 +684,29 @@ describe("Anvia studio", () => {
         message: "Model test:blocked is not allowed for agent support",
       },
     });
+  });
+
+  it("rejects malformed wildcard model policies without broadening them", () => {
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
+
+    expect(
+      () =>
+        new Studio([agent], {
+          models: {
+            providers: [
+              {
+                id: "test",
+                createCompletionModel: () => new QueueModel([]),
+              },
+            ],
+            agents: {
+              support: {
+                allowed: ["test:exact" as never],
+              },
+            },
+          },
+        }),
+    ).toThrow("Invalid wildcard model reference: test:exact");
   });
 
   it("accepts multimodal message payloads from Studio runs", async () => {
@@ -2009,7 +2034,7 @@ describe("Anvia studio", () => {
       expect.objectContaining({
         type: "generation_start",
         turn: 1,
-        model: { provider: "test", id: "test" },
+        model: { provider: "test", modelId: "test" },
       }),
       expect.objectContaining({ type: "message_start", turn: 1, role: "assistant" }),
       expect.objectContaining({ type: "text_start", turn: 1 }),
@@ -3998,15 +4023,14 @@ describe("Anvia studio", () => {
           status: "success",
           metadata: expect.objectContaining({
             provider: "test",
-            model: "test",
-            defaultModel: "test",
+            modelId: "test",
             toolCount: 0,
             toolNames: [],
             documentCount: 0,
             historyCount: 1,
             modelInfo: expect.objectContaining({
               provider: "test",
-              model: "test",
+              modelId: "test",
               capabilities: expect.objectContaining({ streaming: false }),
             }),
             modelCall: expect.objectContaining({
@@ -4130,8 +4154,7 @@ describe("Anvia studio", () => {
           status: "success",
           metadata: expect.objectContaining({
             provider: "test",
-            model: "test",
-            defaultModel: "test",
+            modelId: "test",
             toolCount: 1,
             toolNames: ["add"],
             documentCount: 0,
@@ -4139,7 +4162,7 @@ describe("Anvia studio", () => {
             firstDeltaMs: expect.any(Number),
             modelInfo: expect.objectContaining({
               provider: "test",
-              model: "test",
+              modelId: "test",
               capabilities: expect.objectContaining({ streaming: true }),
             }),
             modelCall: expect.objectContaining({
@@ -4177,8 +4200,7 @@ describe("Anvia studio", () => {
           status: "success",
           metadata: expect.objectContaining({
             provider: "test",
-            model: "test",
-            defaultModel: "test",
+            modelId: "test",
             toolCount: 1,
             toolNames: ["add"],
             documentCount: 0,

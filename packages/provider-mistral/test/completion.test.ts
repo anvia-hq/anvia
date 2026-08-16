@@ -10,17 +10,17 @@ import {
   fromMistralChatResponse,
   fromMistralChatStreamChunk,
   MistralClient,
-  MistralCompletionModel,
   mistralMessageHelpers,
   toMistralChatParams,
 } from "../src/index";
+import { MistralCompletionModel } from "../src/mistral/completion";
 
 describe("Mistral completion mapping", () => {
   it("exposes Mistral capability metadata", () => {
     const model = new MistralCompletionModel({} as never, "mistral-test");
 
     expect(model.provider).toBe("mistral");
-    expect(model.defaultModel).toBe("mistral-test");
+    expect(model.modelId).toBe("mistral-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -33,11 +33,14 @@ describe("Mistral completion mapping", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new MistralCompletionModel({} as never, "mistral-large-latest");
+    const model = new MistralClient({ client: {} as never }).completionModel({
+      modelId: "mistral-large-latest",
+    });
 
-    expect(model.getModelInfo()).toEqual({
-      id: "mistral-large-latest",
-      context: { contextWindow: 262_144, maxOutputTokens: 262_144 },
+    expect(model.modelId).toBe("mistral-large-latest");
+    expect(model.contextLimits).toEqual({
+      contextWindow: 262_144,
+      maxOutputTokens: 262_144,
     });
   });
 
@@ -413,7 +416,7 @@ describe("Mistral completion mapping", () => {
       } as never,
     });
 
-    await client.completionModel("mistral-test").completion({
+    await client.completionModel({ modelId: "mistral-test" }).completion({
       chatHistory: [Message.user("hello")],
       documents: [],
       tools: [],

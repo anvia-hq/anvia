@@ -14,6 +14,7 @@ import {
 
 export class GrokTranscriptionModel implements TranscriptionModel<unknown> {
   readonly provider = "grok";
+  readonly modelId = undefined;
 
   constructor(private readonly http: GrokHttpOptions) {}
 

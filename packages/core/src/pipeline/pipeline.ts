@@ -43,7 +43,7 @@ import type {
 const internalPipelineOptions = Symbol("internal-pipeline-options");
 
 type RawResponseOf<Model> =
-  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 type PipelineAgentRequest<Output, Model extends CompletionModel> = AgentInput &
   Omit<AgentRunSettings<Output, RawResponseOf<Model>>, "abortSignal">;

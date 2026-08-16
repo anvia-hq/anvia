@@ -1,9 +1,9 @@
+import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
-  type CompletionModelMetadataOptions,
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
@@ -11,7 +11,6 @@ import {
   type JsonValue,
   type Message as MessageType,
   type ModelCallOptions,
-  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolCallArgumentsMode,
   type ToolChoice,
@@ -23,7 +22,8 @@ import {
 } from "@anvia/core/completion";
 import type { GoogleGenAI } from "@google/genai";
 import { orderedRequestMessages } from "../request-messages";
-import { GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS, type GeminiCompletionModelName } from "./models";
+import type { GeminiCompletionModelId } from "./models";
+import { disableGeminiNativeRetries } from "./retry";
 
 type GeminiGenerateParams = Record<string, unknown>;
 type GeminiConfig = Record<string, unknown>;
@@ -33,9 +33,7 @@ type GeminiContent = {
 };
 type GeminiPart = Record<string, unknown>;
 
-export class GeminiCompletionModel
-  implements StreamingCompletionModel<unknown, GeminiCompletionModelName>
-{
+export class GeminiCompletionModel implements StreamingCompletionModel<unknown> {
   readonly provider = "gemini";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -49,48 +47,41 @@ export class GeminiCompletionModel
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel: GeminiCompletionModelName = "gemini-2.5-flash",
-    private readonly metadataOptions: CompletionModelMetadataOptions = {},
+    readonly modelId: GeminiCompletionModelId,
+    readonly contextLimits?: ModelContextLimits,
   ) {}
 
-  getModelInfo(
-    model: GeminiCompletionModelName = this.defaultModel,
-  ): CompletionModelInfo<GeminiCompletionModelName> | undefined {
-    return resolveCompletionModelInfo(
-      model,
-      GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS,
-      this.metadataOptions.modelOverrides,
-    );
+  private modelInfo(): CompletionModelInfo | undefined {
+    return this.contextLimits === undefined
+      ? undefined
+      : { modelId: this.modelId, context: this.contextLimits };
   }
 
   traceRequest(
-    request: CompletionRequest<GeminiCompletionModelName>,
+    request: CompletionRequest,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
-    const params = toGeminiGenerateContentParams(this.defaultModel, request);
+    const params = toGeminiGenerateContentParams(this.modelId, request);
     return providerRequestSummary(params, request, options);
   }
 
   async completion(
-    request: CompletionRequest<GeminiCompletionModelName>,
+    request: CompletionRequest,
     options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
-    const params = toGeminiGenerateContentParams(this.defaultModel, request);
+    const params = toGeminiGenerateContentParams(this.modelId, request);
     applyAbortSignal(params, options);
     const response = await this.client.models.generateContent(params as never);
-    return withContextUsage(
-      fromGeminiGenerateContentResponse(response),
-      this.getModelInfo(request.model ?? this.defaultModel),
-    );
+    return withContextUsage(fromGeminiGenerateContentResponse(response), this.modelInfo());
   }
 
   async *streamCompletion(
-    request: CompletionRequest<GeminiCompletionModelName>,
+    request: CompletionRequest,
     options?: ModelCallOptions,
   ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
-    const params = toGeminiGenerateContentParams(this.defaultModel, request);
+    const params = toGeminiGenerateContentParams(this.modelId, request);
     applyAbortSignal(params, options);
     const stream = await this.client.models.generateContentStream(params as never);
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
@@ -98,10 +89,7 @@ export class GeminiCompletionModel
         yield event.type === "final"
           ? {
               ...event,
-              response: withContextUsage(
-                event.response,
-                this.getModelInfo(request.model ?? this.defaultModel),
-              ),
+              response: withContextUsage(event.response, this.modelInfo()),
             }
           : event;
       }
@@ -110,18 +98,21 @@ export class GeminiCompletionModel
 }
 
 export function toGeminiGenerateContentParams(
-  defaultModel: GeminiCompletionModelName,
-  request: CompletionRequest<GeminiCompletionModelName>,
+  modelId: GeminiCompletionModelId,
+  request: CompletionRequest,
 ): GeminiGenerateParams {
   const messages = requestMessages(request);
   const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
   const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
   const providerConfig = isPlainObject(providerConfigValue) ? { ...providerConfigValue } : {};
   delete providerConfig.tools;
-  const config = { ...providerConfig, ...geminiConfig(request, messages) };
+  const config = disableGeminiNativeRetries({
+    ...providerConfig,
+    ...geminiConfig(request, messages),
+  });
   const params: GeminiGenerateParams = {
     ...providerTopLevel,
-    model: request.model ?? defaultModel,
+    model: modelId,
     contents: messagesToGeminiContents(messages),
     config,
   };
@@ -140,7 +131,7 @@ function applyAbortSignal(
 
 function providerRequestSummary(
   params: GeminiGenerateParams,
-  request: CompletionRequest<GeminiCompletionModelName>,
+  request: CompletionRequest,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   const config = isPlainObject(params.config) ? params.config : {};
@@ -183,14 +174,11 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
   ) as JsonObject;
 }
 
-function requestMessages(request: CompletionRequest<GeminiCompletionModelName>): MessageType[] {
+function requestMessages(request: CompletionRequest): MessageType[] {
   return orderedRequestMessages(request);
 }
 
-function geminiConfig(
-  request: CompletionRequest<GeminiCompletionModelName>,
-  messages: MessageType[],
-): GeminiConfig {
+function geminiConfig(request: CompletionRequest, messages: MessageType[]): GeminiConfig {
   const config: GeminiConfig = {};
   const systemInstruction = systemInstructionFrom(request, messages);
   if (systemInstruction !== undefined) {
@@ -216,7 +204,7 @@ function geminiConfig(
 }
 
 function systemInstructionFrom(
-  request: CompletionRequest<GeminiCompletionModelName>,
+  request: CompletionRequest,
   messages: MessageType[],
 ): string | undefined {
   const systemMessages = messages.flatMap((message) =>

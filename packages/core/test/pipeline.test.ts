@@ -20,7 +20,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,

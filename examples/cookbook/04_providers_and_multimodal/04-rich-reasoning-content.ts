@@ -11,16 +11,16 @@ import { OpenAIClient } from "@anvia/openai";
 const provider = process.env.ANVIA_REASONING_PROVIDER ?? "openai";
 const prompt = "Solve 19 * 23 and explain only the final answer.";
 
-const geminiClient = new GeminiClient({ apiKey: process.env.GEMINI_API_KEY });
+const geminiClient = new GeminiClient({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 const openAIClient = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
-const geminiModel = geminiClient.completionModel(
-  process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview",
-);
-const openAIModel = openAIClient.completionModel("gpt-5.5");
+const geminiModel = geminiClient.completionModel({
+  modelId: process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite-preview",
+});
+const openAIModel = openAIClient.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
 const providerOptions =
   provider === "gemini"

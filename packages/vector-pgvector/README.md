@@ -16,7 +16,8 @@ import { retrieveDocuments } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
 import { PgVectorClient } from "@anvia/pgvector";
 
-const embeddings = new OpenAIClient().embeddingModel("text-embedding-3-small");
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
+const embeddings = openai.embeddingModel({ modelId: "text-embedding-3-small" });
 const pgvector = new PgVectorClient({ connectionString: process.env.DATABASE_URL });
 const store = pgvector.vectorStore<{ id: string; text: string }>({
   tableName: "support_docs",

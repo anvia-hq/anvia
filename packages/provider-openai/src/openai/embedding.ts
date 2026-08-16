@@ -1,23 +1,26 @@
 import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type OpenAI from "openai";
-import type { OpenAIEmbeddingModelName } from "./models";
+import type { OpenAIEmbeddingModelId } from "./models";
 
-export type ProviderEmbeddingModelOptions = {
+export type OpenAIEmbeddingModelOptions = {
+  modelId: OpenAIEmbeddingModelId;
   dimensions?: number | undefined;
   user?: string | undefined;
   maxBatchSize?: number | undefined;
 };
 
 export class OpenAIEmbeddingModel implements EmbeddingModel {
+  readonly provider = "openai";
+  readonly modelId: OpenAIEmbeddingModelId;
   readonly dimensions: number | undefined;
   readonly maxBatchSize: number;
   private readonly user: string | undefined;
 
   constructor(
     private readonly client: OpenAI,
-    private readonly model: OpenAIEmbeddingModelName,
-    options: ProviderEmbeddingModelOptions = {},
+    options: OpenAIEmbeddingModelOptions,
   ) {
+    this.modelId = options.modelId;
     this.dimensions = options.dimensions;
     this.maxBatchSize = options.maxBatchSize ?? 1024;
     this.user = options.user;
@@ -38,7 +41,7 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
     }
 
     const params: Record<string, unknown> = {
-      model: this.model,
+      model: this.modelId,
       input: texts,
     };
     if (this.dimensions !== undefined) {
@@ -48,10 +51,10 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       params.user = this.user;
     }
 
-    const response = await this.client.embeddings.create(
-      params as never,
-      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
-    );
+    const response = await this.client.embeddings.create(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     const data = embeddingDataFromResponse(response, texts.length);
     if (data.length !== texts.length) {
       throw new Error(

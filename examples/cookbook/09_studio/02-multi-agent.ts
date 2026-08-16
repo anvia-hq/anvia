@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const getTicket = createTool({
@@ -53,7 +53,7 @@ const getRunbook = createTool({
   }),
 });
 
-const supportAgentModel = client.completionModel("gpt-5.6-luna");
+const supportAgentModel = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const supportAgent = new Agent({
   id: "support-triage",
   model: supportAgentModel,
@@ -64,7 +64,7 @@ const supportAgent = new Agent({
   tools: [getTicket],
 });
 
-const engineeringAgentModel = client.completionModel("gpt-5.6-luna");
+const engineeringAgentModel = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const engineeringAgent = new Agent({
   id: "engineering-triage",
   model: engineeringAgentModel,
@@ -75,7 +75,7 @@ const engineeringAgent = new Agent({
   tools: [getRunbook],
 });
 
-const commsAgentModel = client.completionModel("gpt-5.6-luna");
+const commsAgentModel = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const commsAgent = new Agent({
   id: "customer-comms",
   model: commsAgentModel,

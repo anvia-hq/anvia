@@ -1,7 +1,7 @@
 import type { ModelContextLimits } from "@anvia/core/completion";
 import type { ModelId } from "@anvia/core/model-listing";
 
-export type KnownOpenAICompletionModelName =
+export type KnownOpenAICompletionModelId =
   | "gpt-3.5-turbo"
   | "gpt-4"
   | "gpt-4-turbo"
@@ -46,7 +46,7 @@ export type KnownOpenAICompletionModelName =
   | "o4-mini"
   | "o4-mini-deep-research";
 
-export type OpenAICompletionModelName = ModelId<KnownOpenAICompletionModelName>;
+export type OpenAICompletionModelId = ModelId<KnownOpenAICompletionModelId>;
 
 const CONTEXT_128K_16K = { contextWindow: 128_000, maxOutputTokens: 16_384 };
 const CONTEXT_200K_100K = { contextWindow: 200_000, maxOutputTokens: 100_000 };
@@ -113,14 +113,14 @@ export const OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS: Readonly<Record<string, Mod
     "o4-mini-deep-research": CONTEXT_200K_100K,
   };
 
-export type KnownOpenAIEmbeddingModelName =
+export type KnownOpenAIEmbeddingModelId =
   | "text-embedding-3-large"
   | "text-embedding-3-small"
   | "text-embedding-ada-002";
 
-export type OpenAIEmbeddingModelName = ModelId<KnownOpenAIEmbeddingModelName>;
+export type OpenAIEmbeddingModelId = ModelId<KnownOpenAIEmbeddingModelId>;
 
-export type KnownOpenAIImageGenerationModelName =
+export type KnownOpenAIImageGenerationModelId =
   | "chatgpt-image-latest"
   | "dall-e-2"
   | "dall-e-3"
@@ -129,12 +129,12 @@ export type KnownOpenAIImageGenerationModelName =
   | "gpt-image-1.5"
   | "gpt-image-2";
 
-export type OpenAIImageGenerationModelName = ModelId<KnownOpenAIImageGenerationModelName>;
+export type OpenAIImageGenerationModelId = ModelId<KnownOpenAIImageGenerationModelId>;
 
-export type KnownOpenAISpeechGenerationModelName = "tts-1" | "tts-1-hd";
+export type KnownOpenAISpeechGenerationModelId = "tts-1" | "tts-1-hd";
 
-export type OpenAISpeechGenerationModelName = ModelId<KnownOpenAISpeechGenerationModelName>;
+export type OpenAISpeechGenerationModelId = ModelId<KnownOpenAISpeechGenerationModelId>;
 
-export type KnownOpenAITranscriptionModelName = "whisper-1";
+export type KnownOpenAITranscriptionModelId = "whisper-1";
 
-export type OpenAITranscriptionModelName = ModelId<KnownOpenAITranscriptionModelName>;
+export type OpenAITranscriptionModelId = ModelId<KnownOpenAITranscriptionModelId>;

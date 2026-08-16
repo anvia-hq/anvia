@@ -1,6 +1,5 @@
 import { parseMessage, parseMessages } from "../completion/message-schema";
 import type {
-  CompletionModel,
   CompletionRequest,
   CompletionTool,
   Document,
@@ -11,16 +10,7 @@ import type {
 } from "../completion/types";
 import { isProviderTool } from "../completion/types";
 
-type ModelNameOf<Model extends CompletionModel> =
-  Model extends CompletionModel<unknown, infer ModelName> ? ModelName : string;
-
-export type CompletionRequestFor<Model extends CompletionModel> = CompletionRequest<
-  ModelNameOf<Model>
->;
-
-export type CompletionRequestOptions<Model extends CompletionModel = CompletionModel> = {
-  model: Model;
-  modelOverride?: ModelNameOf<Model> | undefined;
+export type CompletionRequestOptions = {
   instructions?: string | undefined;
   documents?: readonly Document[] | undefined;
   tools?: readonly CompletionTool[] | undefined;
@@ -31,12 +21,12 @@ export type CompletionRequestOptions<Model extends CompletionModel = CompletionM
   providerOptions?: JsonObject | undefined;
 };
 
-export function createCompletionRequest<Model extends CompletionModel>(
+export function createCompletionRequest(
   input: string | MessageType | readonly MessageType[],
-  options: CompletionRequestOptions<Model>,
-): CompletionRequestFor<Model> {
+  options: CompletionRequestOptions,
+): CompletionRequest {
   const configuredTools = options.tools ?? [];
-  const request: CompletionRequestFor<Model> = {
+  const request: CompletionRequest = {
     chatHistory: messagesFromInput(input),
     documents: [...(options.documents ?? [])],
     tools: configuredTools.filter((tool): tool is ToolDefinition => !isProviderTool(tool)),
@@ -44,7 +34,6 @@ export function createCompletionRequest<Model extends CompletionModel>(
   const providerTools = configuredTools.filter(isProviderTool);
 
   if (providerTools.length > 0) request.providerTools = providerTools;
-  if (options.modelOverride !== undefined) request.model = options.modelOverride;
   if (options.instructions !== undefined && options.instructions.length > 0) {
     request.instructions = options.instructions;
   }

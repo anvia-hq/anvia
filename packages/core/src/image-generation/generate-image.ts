@@ -20,7 +20,7 @@ export type GenerateImageOptions<Model extends ImageGenerationModel = ImageGener
 };
 
 type RawResponseOf<Model> =
-  Model extends ImageGenerationModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends ImageGenerationModel<infer RawResponse> ? RawResponse : unknown;
 
 export async function generateImage<Model extends ImageGenerationModel>(
   options: GenerateImageOptions<Model>,

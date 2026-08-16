@@ -6,19 +6,17 @@ import type {
 } from "@anvia/core/speech-generation";
 import type { OpenAI } from "openai";
 import { isPlainObject } from "../utils";
-import type { OpenAISpeechGenerationModelName } from "./models";
+import type { OpenAISpeechGenerationModelId } from "./models";
 
 export const TTS_1 = "tts-1";
 export const TTS_1_HD = "tts-1-hd";
 
-export class OpenAISpeechGenerationModel
-  implements SpeechGenerationModel<unknown, OpenAISpeechGenerationModelName>
-{
+export class OpenAISpeechGenerationModel implements SpeechGenerationModel<unknown> {
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: OpenAISpeechGenerationModelName = TTS_1,
+    readonly modelId: OpenAISpeechGenerationModelId,
   ) {}
 
   async speechGeneration(
@@ -27,16 +25,16 @@ export class OpenAISpeechGenerationModel
   ): Promise<SpeechGenerationResult<unknown>> {
     const params: Record<string, unknown> = {
       ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
-      model: this.defaultModel,
+      model: this.modelId,
       input: request.text,
       voice: request.voice,
       speed: request.speed,
     };
 
-    const response = await this.client.audio.speech.create(
-      params as never,
-      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
-    );
+    const response = await this.client.audio.speech.create(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     return {
       audio: {
         data: new Uint8Array(await response.arrayBuffer()),

@@ -30,7 +30,7 @@ const fullCapabilities: CompletionModelCapabilities = {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities: CompletionModelCapabilities;
   readonly requests: CompletionRequest[] = [];
 

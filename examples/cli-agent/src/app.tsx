@@ -2,7 +2,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { streamAssistantResponse } from "./agent.js";
 import { buildTranscriptLines, TranscriptLineView } from "./components/transcript.js";
-import { getModelName, getOpenRouterApiKey } from "./config.js";
+import { getModelId, getOpenRouterApiKey } from "./config.js";
 import type { AssistantMessagePart, ChatMessage } from "./types.js";
 
 const STREAMING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -260,7 +260,7 @@ export function App() {
       <Box borderStyle="single" paddingX={1}>
         <Text color="cyan">anvia-cli-agent</Text>
         <Text dimColor> / </Text>
-        <Text dimColor>{getModelName()}</Text>
+        <Text dimColor>{getModelId()}</Text>
       </Box>
 
       <Box flexDirection="column" height={historyHeight} overflow="hidden" paddingX={1}>

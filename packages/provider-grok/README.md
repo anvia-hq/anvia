@@ -27,7 +27,7 @@ const client = new GrokClient({
   apiKey,
 });
 
-const model = client.completionModel(); // grok-4.5
+const model = client.completionModel({ modelId: "grok-4.5", api: "responses" });
 
 const agent = new Agent({
   id: "assistant",
@@ -41,7 +41,7 @@ if (result.status === "completed") console.log(result.output);
 
 ## Completion APIs
 
-`GrokClient` targets `https://api.x.ai/v1` by default and uses the Responses adapter by default:
+`GrokClient` targets `https://api.x.ai/v1` by default. Choose the protocol on each model handle:
 
 ```ts
 const client = new GrokClient({
@@ -52,10 +52,7 @@ const client = new GrokClient({
 Use the Chat Completions adapter when a workflow specifically needs that surface:
 
 ```ts
-const chatClient = new GrokClient({
-  apiKey: process.env.XAI_API_KEY,
-  completionApi: "chat",
-});
+const chatModel = client.completionModel({ modelId: "grok-4.5", api: "chat" });
 ```
 
 Provider-specific xAI parameters can be passed through completion `providerOptions`.
@@ -85,7 +82,7 @@ const grok = new GrokClient({ apiKey: process.env.XAI_API_KEY });
 
 const researcher = new Agent({
   id: "researcher",
-  model: grok.completionModel(),
+  model: grok.completionModel({ modelId: "grok-4.5", api: "responses" }),
   providerOptions: { max_turns: 5 },
   tools: [
     localDatabaseTool,
@@ -119,7 +116,7 @@ import { generateImage } from "@anvia/core";
 import { GROK_IMAGINE_IMAGE, GrokClient } from "@anvia/grok";
 
 const client = new GrokClient({ apiKey });
-const imageModel = client.imageGenerationModel(GROK_IMAGINE_IMAGE);
+const imageModel = client.imageGenerationModel({ modelId: GROK_IMAGINE_IMAGE });
 
 const result = await generateImage({
   model: imageModel,
@@ -182,11 +179,8 @@ speech, file or collection management, batches, stored completions, compaction, 
 ## Exports
 
 - `GrokClient`
-- `GrokResponsesCompletionModel`
-- `GrokChatCompletionModel`
-- `GrokImageGenerationModel`
-- `GrokSpeechGenerationModel`
-- `GrokTranscriptionModel`
+- structural completion, image, speech, and transcription handle types
+- Grok completion and image model-ID types
 - typed `tools` factories for xAI server-executed tools
 - model constants such as `GROK_4_5`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
 - `grok`

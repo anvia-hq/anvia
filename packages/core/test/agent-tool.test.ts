@@ -28,7 +28,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -73,6 +73,8 @@ const addTool = createTool({
 });
 
 const embeddingModel: EmbeddingModel = {
+  provider: "test",
+  modelId: "test-embedding",
   async embedTexts(texts) {
     return texts.map((document) => ({ document, vector: [1] }));
   },

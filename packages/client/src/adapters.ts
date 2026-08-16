@@ -37,7 +37,7 @@ export type ClientStreamAdapterOptions<Metadata extends JsonObject = JsonObject>
 
 export type CompletionClientStreamOptions<Metadata extends JsonObject = JsonObject> =
   ClientStreamAdapterOptions<Metadata> & {
-    model?: { provider: string; id: string };
+    model?: { provider: string; modelId: string };
   };
 
 export type AgentClientStreamContext = {
@@ -324,7 +324,7 @@ async function* translateAgentEvent(
         type: "generation_start",
         model: {
           provider: event.modelInfo.provider,
-          id: event.request.model ?? event.modelInfo.defaultModel,
+          modelId: event.modelInfo.modelId,
         },
       });
       yield* startMessage(state);

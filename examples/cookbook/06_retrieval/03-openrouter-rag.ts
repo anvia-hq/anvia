@@ -2,7 +2,7 @@ import { Agent, createVectorContext } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { InMemoryVectorStore } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 type PolicyNote = {
   id: string;
@@ -11,9 +11,9 @@ type PolicyNote = {
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-const embeddingModel = await createTransformersEmbeddingModel();
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 const notes: PolicyNote[] = [
   {
     id: "refunds",
@@ -33,7 +33,7 @@ const { documents: embedded } = await embedDocuments({
 });
 const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
 
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 const agent = new Agent({
   id: "agent",
   model: agentModel,

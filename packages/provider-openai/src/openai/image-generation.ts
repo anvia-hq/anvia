@@ -8,21 +8,19 @@ import type {
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
 import { isPlainObject } from "../utils";
-import type { OpenAIImageGenerationModelName } from "./models";
+import type { OpenAIImageGenerationModelId } from "./models";
 
 export const DALL_E_2 = "dall-e-2";
 export const DALL_E_3 = "dall-e-3";
 export const GPT_IMAGE_1 = "gpt-image-1";
 export const GPT_IMAGE_2 = "gpt-image-2";
 
-export class OpenAIImageGenerationModel
-  implements ImageGenerationModel<unknown, OpenAIImageGenerationModelName>
-{
+export class OpenAIImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: OpenAIImageGenerationModelName = GPT_IMAGE_1,
+    readonly modelId: OpenAIImageGenerationModelId,
   ) {}
 
   async imageGeneration(
@@ -31,19 +29,19 @@ export class OpenAIImageGenerationModel
   ): Promise<ImageGenerationResult<unknown>> {
     const params: Record<string, unknown> = {
       ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
-      model: this.defaultModel,
+      model: this.modelId,
       prompt: request.prompt,
       size: `${request.width}x${request.height}`,
     };
 
-    if (this.defaultModel === DALL_E_2 || this.defaultModel === DALL_E_3) {
+    if (this.modelId === DALL_E_2 || this.modelId === DALL_E_3) {
       params.response_format = "b64_json";
     }
 
-    const response = await this.client.images.generate(
-      params as never,
-      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
-    );
+    const response = await this.client.images.generate(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     return imageResponseFromOpenAI(response);
   }
 }

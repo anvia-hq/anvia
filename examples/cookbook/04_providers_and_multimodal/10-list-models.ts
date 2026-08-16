@@ -17,7 +17,7 @@ function createModelListingClient(): ModelListingClient {
   if (process.env.OPENAI_API_KEY !== undefined) {
     return new OpenAIClient({
       baseUrl: process.env.OPENAI_BASEURL,
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: process.env.OPENAI_API_KEY ?? "",
     });
   }
 

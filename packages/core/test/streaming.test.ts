@@ -29,7 +29,7 @@ import {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -460,7 +460,7 @@ describe("Agent streaming", () => {
     expect(await nextEvent(iterator)).toMatchObject({
       type: "generation_start",
       request: { chatHistory: [Message.user("hi")] },
-      modelInfo: { provider: "test", defaultModel: "test" },
+      modelInfo: { provider: "test", modelId: "test" },
     });
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", delta: "partial" });
     expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
@@ -863,7 +863,7 @@ describe("Agent streaming", () => {
     const assistantMessage = finalEvent.result.messages.at(-1);
     expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
-      model: "test",
+      modelId: "test",
       usage: {
         inputTokens: 2,
         outputTokens: 1,

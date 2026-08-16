@@ -28,7 +28,7 @@ export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
 export type AgentContextInput<T = unknown> = Document | VectorContext<T>;
 
 type RawResponseOf<Model> =
-  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 export type AgentOptions<
   Output = string,

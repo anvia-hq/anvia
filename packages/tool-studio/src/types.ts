@@ -50,7 +50,7 @@ export type AgentTraceOptions = {
   traceId?: string | undefined;
 };
 
-export type StudioModelRef = string | { provider: string; model: string };
+export type StudioModelRef = { providerId: string; modelId: string };
 
 export type StudioModelModality = "text" | "image" | "document" | "audio" | "video";
 
@@ -71,21 +71,21 @@ export type StudioModelDefinition = {
 export type StudioModelProvider = {
   id: string;
   name?: string;
-  defaultModel?: string;
+  defaultModelId?: string;
   models?: StudioModelDefinition[];
-  createCompletionModel(model: string): CompletionModel | StreamingCompletionModel;
-  listModels?: () => Promise<ModelList>;
+  createCompletionModel(options: { modelId: string }): CompletionModel | StreamingCompletionModel;
+  listModels?: (options?: { abortSignal?: AbortSignal | undefined }) => Promise<ModelList>;
   metadata?: JsonObject;
 };
 
 export type StudioAgentModelPolicy = {
-  default?: StudioModelRef;
+  defaultModelRef?: StudioModelRef;
   allowed?: Array<StudioModelRef | `${string}:*`>;
 };
 
 export type StudioModelConfig = {
   providers: StudioModelProvider[];
-  default?: StudioModelRef;
+  defaultModelRef?: StudioModelRef;
   agents?: Record<string, StudioAgentModelPolicy>;
 };
 
@@ -98,26 +98,26 @@ export type StudioModelSummary = StudioModelDefinition & {
 export type StudioModelProviderConfig = {
   id: string;
   name?: string;
-  defaultModel?: string;
+  defaultModelId?: string;
   models: StudioModelSummary[];
   metadata?: JsonObject;
   warning?: string;
 };
 
 export type StudioAgentModelPolicyConfig = {
-  default?: string;
+  defaultModelRef?: string;
   allowed?: string[];
 };
 
 export type StudioModelsConfig = {
   providers: StudioModelProviderConfig[];
-  default?: string;
+  defaultModelRef?: string;
   agents: Record<string, StudioAgentModelPolicyConfig>;
 };
 
 export type StudioAgentModelsSummary = {
   agentId: string;
-  defaultModel?: string;
+  defaultModelRef?: string;
   models: StudioModelSummary[];
   warnings?: JsonObject[];
 };

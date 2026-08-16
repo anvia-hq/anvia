@@ -33,7 +33,7 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const model = client.completionModel("gpt-5");
+const model = client.completionModel({ modelId: "gpt-5", api: "responses" });
 
 const lookupOrder = createTool({
   name: "lookup_order",
@@ -63,7 +63,7 @@ execution. The model and input are part of one options object:
 import { generateCompletion } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 
-const model = new OpenAIClient({ apiKey }).completionModel("gpt-5");
+const model = new OpenAIClient({ apiKey }).completionModel({ modelId: "gpt-5", api: "responses" });
 
 const result = await generateCompletion({
   model,
@@ -368,7 +368,7 @@ Media helpers follow the same one-object API and share `providerOptions`, `retri
 import { generateImage, generateSpeech, transcribe } from "@anvia/core";
 
 const image = await generateImage({
-  model: client.imageGenerationModel(),
+  model: client.imageGenerationModel({ modelId: "gpt-image-1" }),
   prompt: "A compact robot drawing an architecture diagram.",
   width: 1024,
   height: 1024,
@@ -376,13 +376,13 @@ const image = await generateImage({
 console.log(image.images[0].data);
 
 const speech = await generateSpeech({
-  model: client.speechGenerationModel(),
+  model: client.speechGenerationModel({ modelId: "gpt-4o-mini-tts" }),
   text: "Hello from Anvia.",
   voice: "alloy",
 });
 
 const transcript = await transcribe({
-  model: client.transcriptionModel(),
+  model: client.transcriptionModel({ modelId: "gpt-4o-mini-transcribe" }),
   audio: {
     data: speech.audio.data,
     filename: "speech.mp3",

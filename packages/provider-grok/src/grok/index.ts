@@ -1,5 +1,13 @@
-export { GrokClient, type GrokClientOptions } from "./client";
-export { GrokChatCompletionModel, GrokResponsesCompletionModel } from "./completion";
+export {
+  GrokClient,
+  type GrokClientOptions,
+  type GrokCompletionModelHandle,
+  type GrokCompletionModelOptions,
+  type GrokImageGenerationModelHandle,
+  type GrokImageGenerationModelOptions,
+  type GrokSpeechGenerationModelHandle,
+  type GrokTranscriptionModelHandle,
+} from "./client";
 export {
   GROK_4_3,
   GROK_4_5,
@@ -12,16 +20,14 @@ export {
 } from "./constants";
 export {
   aspectRatio,
-  GrokImageGenerationModel,
   imageResponseFromGrok,
 } from "./image-generation";
 export type {
-  GrokCompletionModelName,
-  GrokImageGenerationModelName,
-  KnownGrokCompletionModelName,
-  KnownGrokImageGenerationModelName,
+  GrokCompletionModelId,
+  GrokImageGenerationModelId,
+  KnownGrokCompletionModelId,
+  KnownGrokImageGenerationModelId,
 } from "./models";
-export { GrokSpeechGenerationModel } from "./speech-generation";
 export type {
   GrokFileSearchOptions,
   GrokMcpOptions,
@@ -37,4 +43,3 @@ export {
   webSearch,
   xSearch,
 } from "./tools";
-export { GrokTranscriptionModel } from "./transcription";

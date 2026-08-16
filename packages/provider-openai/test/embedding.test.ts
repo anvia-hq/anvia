@@ -4,7 +4,8 @@ import { OpenAIClient } from "../src/index";
 describe("OpenAI embedding models", () => {
   it("maps OpenAI embedding requests", async () => {
     const client = mockOpenAIClient();
-    const model = new OpenAIClient({ client: client as never }).embeddingModel("embed-a", {
+    const model = new OpenAIClient({ client: client as never }).embeddingModel({
+      modelId: "embed-a",
       dimensions: 3,
       user: "u1",
     });
@@ -31,7 +32,7 @@ describe("OpenAI embedding models", () => {
 
     await expect(
       new OpenAIClient({ client: client as never })
-        .embeddingModel("embed-a")
+        .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second", "third"]),
     ).resolves.toEqual([
       { document: "first", vector: [0] },
@@ -52,7 +53,7 @@ describe("OpenAI embedding models", () => {
 
     await expect(
       new OpenAIClient({ client: client as never })
-        .embeddingModel("embed-a")
+        .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response contained duplicate index 0");
   });
@@ -69,7 +70,7 @@ describe("OpenAI embedding models", () => {
 
     await expect(
       new OpenAIClient({ client: missingIndexClient as never })
-        .embeddingModel("embed-a")
+        .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response index 2 was outside input range 0..1");
 
@@ -81,7 +82,7 @@ describe("OpenAI embedding models", () => {
 
     await expect(
       new OpenAIClient({ client: missingRowClient as never })
-        .embeddingModel("embed-a")
+        .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response length 1 did not match input length 2");
   });
@@ -98,7 +99,7 @@ describe("OpenAI embedding models", () => {
 
     await expect(
       new OpenAIClient({ client: invalidIndexClient as never })
-        .embeddingModel("embed-a")
+        .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response item 0 contained an invalid index");
 
@@ -113,7 +114,7 @@ describe("OpenAI embedding models", () => {
 
     await expect(
       new OpenAIClient({ client: invalidEmbeddingClient as never })
-        .embeddingModel("embed-a")
+        .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response item 1 contained an invalid embedding");
   });
@@ -122,7 +123,7 @@ describe("OpenAI embedding models", () => {
     const compatibleClient = mockOpenAIClient();
 
     await new OpenAIClient({ client: compatibleClient as never })
-      .embeddingModel("compatible-embed")
+      .embeddingModel({ modelId: "compatible-embed" })
       .embedTexts(["hello"]);
 
     expect(compatibleClient.embeddings.createCalls[0]).toMatchObject({

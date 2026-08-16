@@ -24,7 +24,7 @@ const tempDirs: string[] = [];
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -50,7 +50,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,

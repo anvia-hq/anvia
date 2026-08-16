@@ -1,7 +1,7 @@
 import type { ModelContextLimits } from "@anvia/core/completion";
 import type { ModelId } from "@anvia/core/model-listing";
 
-export type KnownMistralCompletionModelName =
+export type KnownMistralCompletionModelId =
   | "codestral-latest"
   | "devstral-2512"
   | "devstral-latest"
@@ -32,7 +32,7 @@ export type KnownMistralCompletionModelName =
   | "pixtral-12b"
   | "pixtral-large-latest";
 
-export type MistralCompletionModelName = ModelId<KnownMistralCompletionModelName>;
+export type MistralCompletionModelId = ModelId<KnownMistralCompletionModelId>;
 
 const CONTEXT_128K = { contextWindow: 128_000, maxOutputTokens: 128_000 };
 const CONTEXT_256K = { contextWindow: 256_000, maxOutputTokens: 256_000 };
@@ -68,12 +68,12 @@ export const MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "open-mixtral-8x7b": { contextWindow: 32_000, maxOutputTokens: 32_000 },
   "pixtral-12b": CONTEXT_128K,
   "pixtral-large-latest": CONTEXT_128K,
-} satisfies Readonly<Record<KnownMistralCompletionModelName, ModelContextLimits>>;
+} satisfies Readonly<Record<KnownMistralCompletionModelId, ModelContextLimits>>;
 
-export type KnownMistralEmbeddingModelName = "mistral-embed";
+export type KnownMistralEmbeddingModelId = "mistral-embed";
 
-export type MistralEmbeddingModelName = ModelId<KnownMistralEmbeddingModelName>;
+export type MistralEmbeddingModelId = ModelId<KnownMistralEmbeddingModelId>;
 
-export type KnownMistralOcrModelName = "mistral-ocr-latest";
+export type KnownMistralOcrModelId = "mistral-ocr-latest";
 
-export type MistralOcrModelName = ModelId<KnownMistralOcrModelName>;
+export type MistralOcrModelId = ModelId<KnownMistralOcrModelId>;

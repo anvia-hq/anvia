@@ -1,7 +1,7 @@
 import { embedDocuments } from "@anvia/core/embeddings";
 import { retrieveDocuments } from "@anvia/core/vector-store";
 import { MilvusVectorClient } from "@anvia/milvus";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 type MarketNote = {
   id: string;
@@ -9,7 +9,7 @@ type MarketNote = {
   sector: string;
 };
 
-const embeddingModel = await createTransformersEmbeddingModel();
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 const notes: MarketNote[] = [
   {
     id: "cloud",

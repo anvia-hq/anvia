@@ -1,7 +1,7 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
 import { isPlainObject } from "../utils";
-import type { MistralOcrModelName } from "./models";
+import type { MistralOcrModelId } from "./models";
 
 export const MISTRAL_OCR_LATEST = "mistral-ocr-latest";
 
@@ -41,6 +41,7 @@ export type MistralOcrRequest = {
   extractFooter?: boolean | undefined;
   confidenceScoresGranularity?: "word" | "page" | null | undefined;
   providerOptions?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
 };
 
 export type MistralOcrUploadedFile = {
@@ -79,19 +80,29 @@ export class MistralOcrModel {
 
   constructor(
     private readonly client: Mistral,
-    readonly defaultModel: MistralOcrModelName = MISTRAL_OCR_LATEST,
+    readonly modelId: MistralOcrModelId,
   ) {}
 
   async ocr(request: MistralOcrRequest): Promise<MistralOcrResponse<unknown>> {
-    const { document, uploadedFile } = await this.documentFromSource(request.source);
+    const { document, uploadedFile } = await this.documentFromSource(
+      request.source,
+      request.abortSignal,
+    );
     const params = this.toOcrParams(request, document);
-    const response = await this.client.ocr.process(params as never);
+    const response = await this.client.ocr.process(
+      params as never,
+      {
+        signal: request.abortSignal,
+        retries: { strategy: "none" },
+      } as never,
+    );
 
     return normalizeOcrResponse(response, uploadedFile);
   }
 
   private async documentFromSource(
     source: MistralOcrSource,
+    abortSignal: AbortSignal | undefined,
   ): Promise<{ document: Record<string, unknown>; uploadedFile?: MistralOcrUploadedFile }> {
     if (source.type === "document_url") {
       const document: Record<string, unknown> = {
@@ -140,7 +151,13 @@ export class MistralOcrModel {
     if (source.expiry !== undefined) uploadParams.expiry = source.expiry;
     if (source.visibility !== undefined) uploadParams.visibility = source.visibility;
 
-    const uploadResponse = await this.client.files.upload(uploadParams as never);
+    const uploadResponse = await this.client.files.upload(
+      uploadParams as never,
+      {
+        signal: abortSignal,
+        retries: { strategy: "none" },
+      } as never,
+    );
     const uploadedFile = uploadedFileFromResponse(uploadResponse);
 
     return {
@@ -155,7 +172,7 @@ export class MistralOcrModel {
   private toOcrParams(request: MistralOcrRequest, document: Record<string, unknown>) {
     const params: Record<string, unknown> = {
       ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
-      model: this.defaultModel,
+      model: this.modelId,
       document,
     };
 

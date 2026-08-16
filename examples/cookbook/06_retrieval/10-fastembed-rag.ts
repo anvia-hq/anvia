@@ -1,6 +1,6 @@
 import { embedDocuments } from "@anvia/core/embeddings";
 import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
-import { createFastEmbedEmbeddingModel } from "@anvia/fastembed";
+import { loadFastEmbedEmbeddingModel } from "@anvia/fastembed";
 
 type KnowledgeDoc = {
   id: string;
@@ -9,8 +9,8 @@ type KnowledgeDoc = {
   topic: string;
 };
 
-const embeddingModel = await createFastEmbedEmbeddingModel({
-  model: "fast-bge-small-en-v1.5",
+const embeddingModel = await loadFastEmbedEmbeddingModel({
+  modelId: "fast-bge-small-en-v1.5",
   maxBatchSize: 32,
 });
 

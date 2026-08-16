@@ -1,7 +1,7 @@
 export const DEFAULT_MODEL = "deepseek/deepseek-v4-pro";
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-export function getModelName() {
+export function getModelId() {
   return process.env.ANVIA_MODEL ?? DEFAULT_MODEL;
 }
 

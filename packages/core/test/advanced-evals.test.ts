@@ -22,7 +22,7 @@ import {
 
 class QueueJudgeModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "judge";
+  readonly modelId = "judge";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -51,7 +51,7 @@ type JudgeRoute = {
 
 class RoutedJudgeModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "routed-judge";
+  readonly modelId = "routed-judge";
   readonly capabilities = {
     streaming: false,
     tools: true,

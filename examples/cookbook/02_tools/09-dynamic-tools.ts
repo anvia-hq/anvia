@@ -11,6 +11,8 @@ import { createTool, createToolIndex } from "@anvia/core/tool";
 import { z } from "zod";
 
 class KeywordEmbeddingModel implements EmbeddingModel {
+  readonly provider = "cookbook";
+  readonly modelId = "keyword";
   async embedTexts(texts: string[]): Promise<Embedding[]> {
     return texts.map((text) => ({ document: text, vector: vectorFor(text) }));
   }
@@ -18,7 +20,7 @@ class KeywordEmbeddingModel implements EmbeddingModel {
 
 class InspectingModel implements CompletionModel {
   readonly provider = "cookbook";
-  readonly defaultModel = "dynamic-tools";
+  readonly modelId = "dynamic-tools";
   readonly capabilities = {
     streaming: false,
     tools: true,

@@ -5,17 +5,17 @@ import { Studio } from "@anvia/studio";
 
 const openai = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const anthropic = new AnthropicClient({
   baseUrl: process.env.ANTHROPIC_BASEURL,
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY ?? "",
 });
 
 const agent = new Agent({
   id: "studio-model-router",
-  model: openai.completionModel("gpt-5.6-luna"),
+  model: openai.completionModel({ modelId: "gpt-5.6-luna", api: "responses" }),
   name: "Studio Model Router",
   description: "Demonstrates Studio model selection across multiple providers.",
   instructions: [
@@ -26,13 +26,14 @@ const agent = new Agent({
 
 new Studio([agent], {
   models: {
-    default: "openai:gpt-5.6-luna",
+    defaultModelRef: { providerId: "openai", modelId: "gpt-5.6-luna" },
     providers: [
       {
         id: "openai",
         name: "OpenAI",
-        defaultModel: "gpt-5.6-luna",
-        createCompletionModel: (model) => openai.completionModel(model),
+        defaultModelId: "gpt-5.6-luna",
+        createCompletionModel: ({ modelId }) =>
+          openai.completionModel({ modelId, api: "responses" }),
         listModels: () => openai.listModels(),
         models: [
           {
@@ -56,8 +57,8 @@ new Studio([agent], {
       {
         id: "anthropic",
         name: "Anthropic",
-        defaultModel: "claude-opus-4-8",
-        createCompletionModel: (model) => anthropic.completionModel(model),
+        defaultModelId: "claude-opus-4-8",
+        createCompletionModel: ({ modelId }) => anthropic.completionModel({ modelId }),
         listModels: () => anthropic.listModels(),
         models: [
           {
@@ -80,8 +81,11 @@ new Studio([agent], {
     ],
     agents: {
       "studio-model-router": {
-        default: "openai:gpt-5.6-luna",
-        allowed: ["openai:gpt-5.6-luna", "anthropic:claude-opus-4-8"],
+        defaultModelRef: { providerId: "openai", modelId: "gpt-5.6-luna" },
+        allowed: [
+          { providerId: "openai", modelId: "gpt-5.6-luna" },
+          { providerId: "anthropic", modelId: "claude-opus-4-8" },
+        ],
       },
     },
   },

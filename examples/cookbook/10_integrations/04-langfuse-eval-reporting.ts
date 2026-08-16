@@ -10,7 +10,7 @@ import { LangfuseClient } from "@anvia/langfuse";
 
 class StaticCompletionModel implements CompletionModel {
   readonly provider = "cookbook";
-  readonly defaultModel = "static";
+  readonly modelId = "static";
   readonly capabilities = {
     streaming: false,
     tools: false,

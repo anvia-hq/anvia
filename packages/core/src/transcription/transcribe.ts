@@ -27,7 +27,7 @@ export type TranscribeOptions<Model extends TranscriptionModel = TranscriptionMo
 };
 
 type RawResponseOf<Model> =
-  Model extends TranscriptionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends TranscriptionModel<infer RawResponse> ? RawResponse : unknown;
 
 export async function transcribe<Model extends TranscriptionModel>(
   options: TranscribeOptions<Model>,

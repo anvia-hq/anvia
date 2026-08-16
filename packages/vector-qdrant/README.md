@@ -16,7 +16,8 @@ import { retrieveDocuments } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
 import { QdrantVectorClient } from "@anvia/qdrant";
 
-const embeddings = new OpenAIClient().embeddingModel("text-embedding-3-small");
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
+const embeddings = openai.embeddingModel({ modelId: "text-embedding-3-small" });
 const qdrant = new QdrantVectorClient({
   url: process.env.QDRANT_URL,
   apiKey: process.env.QDRANT_API_KEY,
@@ -59,13 +60,13 @@ document ID, preventing stale chunks. Raw `store.search()` accepts vectors and n
 import { embedDocuments } from "@anvia/core/embeddings";
 import { retrieveDocuments } from "@anvia/core/vector-store";
 import {
-  createFastEmbedEmbeddingModel,
-  createFastEmbedSparseEmbeddingModel,
+  loadFastEmbedEmbeddingModel,
+  loadFastEmbedSparseEmbeddingModel,
 } from "@anvia/fastembed";
 import { QdrantVectorClient } from "@anvia/qdrant";
 
-const dense = await createFastEmbedEmbeddingModel();
-const sparse = await createFastEmbedSparseEmbeddingModel();
+const dense = await loadFastEmbedEmbeddingModel({ modelId: "fast-bge-small-en-v1.5" });
+const sparse = await loadFastEmbedSparseEmbeddingModel({ modelId: "prithivida/Splade_PP_en_v1" });
 const qdrant = new QdrantVectorClient({ url: process.env.QDRANT_URL });
 const store = qdrant.vectorStore<{ id: string; text: string }>({
   collectionName: "docs_hybrid",

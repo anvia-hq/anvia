@@ -18,11 +18,11 @@ const enableMathTools = process.env.ENABLE_MATH_TOOLS !== "false";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 const agent = new Agent({
   id: "agent",
-  model: client.completionModel("gpt-5.5"),
+  model: client.completionModel({ modelId: "gpt-5.5", api: "responses" }),
   instructions: "You are a concise assistant. Use tools only when they are available.",
   maxTurns: 2,
   tools: enableMathTools ? [addTool] : [],

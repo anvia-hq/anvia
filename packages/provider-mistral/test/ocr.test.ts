@@ -15,7 +15,7 @@ describe("Mistral OCR models", () => {
       } as never,
     });
 
-    const response = await client.ocrModel().ocr({
+    const response = await client.ocrModel({ modelId: "mistral-ocr-latest" }).ocr({
       source: {
         type: "document_url",
         url: "https://example.com/invoice.pdf",
@@ -86,7 +86,7 @@ describe("Mistral OCR models", () => {
       } as never,
     });
 
-    const response = await client.ocrModel().ocr({
+    const response = await client.ocrModel({ modelId: "mistral-ocr-latest" }).ocr({
       source: {
         type: "document_url",
         url: "https://example.com/invoice.pdf",
@@ -123,7 +123,7 @@ describe("Mistral OCR models", () => {
       } as never,
     });
 
-    await client.ocrModel("custom-ocr").ocr({
+    await client.ocrModel({ modelId: "custom-ocr" }).ocr({
       source: { type: "file_id", fileId: "file-123" },
       providerOptions: {
         model: "unsafe-model",
@@ -157,10 +157,10 @@ describe("Mistral OCR models", () => {
       } as never,
     });
 
-    await client.ocrModel("custom-ocr").ocr({
+    await client.ocrModel({ modelId: "custom-ocr" }).ocr({
       source: { type: "image_url", url: "https://example.com/page.png" },
     });
-    await client.ocrModel("custom-ocr").ocr({
+    await client.ocrModel({ modelId: "custom-ocr" }).ocr({
       source: { type: "file_id", fileId: "file-123" },
     });
 
@@ -207,7 +207,7 @@ describe("Mistral OCR models", () => {
       } as never,
     });
 
-    const response = await client.ocrModel().ocr({
+    const response = await client.ocrModel({ modelId: "mistral-ocr-latest" }).ocr({
       source: {
         type: "bytes",
         data: new Uint8Array([1, 2, 3]),
@@ -268,7 +268,7 @@ describe("Mistral OCR models", () => {
     });
 
     await expect(
-      client.ocrModel().ocr({
+      client.ocrModel({ modelId: "mistral-ocr-latest" }).ocr({
         source: { type: "bytes", data: new Uint8Array(), filename: "empty.pdf" },
       }),
     ).rejects.toThrow("Mistral OCR byte source cannot be empty.");

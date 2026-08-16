@@ -240,7 +240,7 @@ function formatModelValue(value: unknown): string {
     return `[${value.length}]`;
   }
   if (typeof value === "object") {
-    const model = objectString(value, "model") ?? objectString(value, "defaultModel");
+    const model = objectString(value, "modelId");
     const provider = objectString(value, "provider");
     const id = objectString(value, "id") ?? objectString(value, "name");
     const modelName = model ?? id;

@@ -23,7 +23,7 @@ import { Agent } from "@anvia/core";
 import { MistralClient } from "@anvia/mistral";
 
 const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
-const model = client.completionModel("mistral-large-latest");
+const model = client.completionModel({ modelId: "mistral-large-latest" });
 
 const agent = new Agent({
   id: "support",
@@ -38,14 +38,14 @@ if (result.status === "completed") console.log(result.output);
 ## Embeddings
 
 ```ts
-const embeddings = client.embeddingModel("mistral-embed");
+const embeddings = client.embeddingModel({ modelId: "mistral-embed" });
 const vectors = await embeddings.embedTexts(["Refunds take five business days."]);
 ```
 
 ## OCR
 
 ```ts
-const ocr = client.ocrModel();
+const ocr = client.ocrModel({ modelId: "mistral-ocr-latest" });
 const result = await ocr.ocr({
   source: {
     type: "document_url",
@@ -70,9 +70,8 @@ The v1 adapter supports text completions, streaming, tools, tool choice, structu
 ## Exports
 
 - `MistralClient`
-- `MistralCompletionModel`
-- `MistralEmbeddingModel`
-- `MistralOcrModel`
+- structural completion, embedding, and OCR handle types
+- Mistral completion, embedding, and OCR model-ID types
 - `MistralClientOptions`
 - `MistralEmbeddingModelOptions`
 - `MistralOcrRequest`

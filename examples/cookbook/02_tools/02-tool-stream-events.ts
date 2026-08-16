@@ -23,9 +23,9 @@ const weatherTool = createTool({
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
 const agent = new Agent({
   id: "agent",

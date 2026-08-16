@@ -24,7 +24,7 @@ export type GenerateSpeechOptions<Model extends SpeechGenerationModel = SpeechGe
 };
 
 type RawResponseOf<Model> =
-  Model extends SpeechGenerationModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends SpeechGenerationModel<infer RawResponse> ? RawResponse : unknown;
 
 export async function generateSpeech<Model extends SpeechGenerationModel>(
   options: GenerateSpeechOptions<Model>,

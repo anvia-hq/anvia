@@ -1,4 +1,10 @@
 import {
+  type ModelContextLimits,
+  resolveModelContextLimits,
+  type StreamingCompletionModel,
+} from "@anvia/core/completion";
+import type { EmbeddingModel } from "@anvia/core/embeddings";
+import {
   type ModelList,
   type ModelListingClient,
   ModelListingError,
@@ -6,51 +12,80 @@ import {
 import { Mistral } from "@mistralai/mistralai";
 import { MistralCompletionModel } from "./completion";
 import { MistralEmbeddingModel, type MistralEmbeddingModelOptions } from "./embedding";
-import type {
-  MistralCompletionModelName,
-  MistralEmbeddingModelName,
-  MistralOcrModelName,
-} from "./models";
-import { MISTRAL_OCR_LATEST, MistralOcrModel } from "./ocr";
+import type { MistralCompletionModelId, MistralOcrModelId } from "./models";
+import { MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS } from "./models";
+import { MistralOcrModel } from "./ocr";
 
-export type MistralClientOptions = {
-  apiKey?: string | undefined;
-  serverURL?: string | undefined;
-  client?: Mistral | undefined;
+type MistralManagedClientOptions = {
+  apiKey: string;
+  baseUrl?: string | undefined;
+  client?: never;
 };
 
+type MistralInjectedClientOptions = {
+  client: Mistral;
+  apiKey?: never;
+  baseUrl?: never;
+};
+
+export type MistralClientOptions = MistralManagedClientOptions | MistralInjectedClientOptions;
+
+export type MistralCompletionModelOptions = {
+  modelId: MistralCompletionModelId;
+  contextLimits?: ModelContextLimits | undefined;
+};
+
+export type MistralOcrModelOptions = { modelId: MistralOcrModelId };
+export type MistralCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type MistralEmbeddingModelHandle = EmbeddingModel;
+export type MistralOcrModelHandle = Pick<MistralOcrModel, "provider" | "modelId" | "ocr">;
+
 export class MistralClient implements ModelListingClient {
-  readonly client: Mistral;
+  private readonly sdk: Mistral;
 
-  constructor(options: MistralClientOptions = {}) {
-    this.client =
-      options.client ??
-      new Mistral({
-        apiKey: requireApiKey(options.apiKey),
-        serverURL: options.serverURL,
-      });
+  constructor(options: MistralClientOptions) {
+    if (options.client !== undefined) {
+      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "baseUrl"]);
+      this.sdk = options.client;
+      return;
+    }
+    this.sdk = new Mistral({
+      apiKey: requireApiKey(options.apiKey),
+      serverURL: options.baseUrl,
+      retryConfig: { strategy: "none" },
+    });
   }
 
-  completionModel(
-    model: MistralCompletionModelName = "mistral-large-latest",
-  ): MistralCompletionModel {
-    return new MistralCompletionModel(this.client, model);
+  completionModel(options: MistralCompletionModelOptions): MistralCompletionModelHandle {
+    const modelId = requireModelId(options.modelId);
+    return new MistralCompletionModel(
+      this.sdk,
+      modelId,
+      resolveModelContextLimits(
+        modelId,
+        MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS,
+        options.contextLimits,
+      ),
+    );
   }
 
-  embeddingModel(
-    model: MistralEmbeddingModelName = "mistral-embed",
-    options: MistralEmbeddingModelOptions = {},
-  ): MistralEmbeddingModel {
-    return new MistralEmbeddingModel(this.client, model, options);
+  embeddingModel(options: MistralEmbeddingModelOptions): MistralEmbeddingModelHandle {
+    requireModelId(options.modelId);
+    validateOptionalPositiveSafeInteger(options.dimensions, "dimensions");
+    validateOptionalPositiveSafeInteger(options.maxBatchSize, "maxBatchSize");
+    return new MistralEmbeddingModel(this.sdk, options);
   }
 
-  ocrModel(model: MistralOcrModelName = MISTRAL_OCR_LATEST): MistralOcrModel {
-    return new MistralOcrModel(this.client, model);
+  ocrModel(options: MistralOcrModelOptions): MistralOcrModelHandle {
+    return new MistralOcrModel(this.sdk, requireModelId(options.modelId));
   }
 
-  async listModels(): Promise<ModelList> {
+  async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
-      const response = await this.client.models.list();
+      const response = await this.sdk.models.list(undefined, {
+        ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+        retries: { strategy: "none" },
+      });
       const data = collectModelsFromResponse(response).map(toListedModel).filter(isListedModel);
       return { data };
     } catch (error) {
@@ -59,12 +94,32 @@ export class MistralClient implements ModelListingClient {
   }
 }
 
+function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
+  const conflict = keys.find((key) => key in options);
+  if (conflict !== undefined) {
+    throw new TypeError(`MistralClient cannot combine client with ${conflict}.`);
+  }
+}
+
 function requireApiKey(apiKey: string | undefined): string {
-  if (apiKey === undefined || apiKey.length === 0) {
+  if (apiKey === undefined || apiKey.trim().length === 0) {
     throw new Error("Missing Mistral credentials. Pass apiKey when constructing MistralClient.");
   }
 
   return apiKey;
+}
+
+function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
+}
+
+function validateOptionalPositiveSafeInteger(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
 }
 
 function collectModelsFromResponse(response: unknown): unknown[] {

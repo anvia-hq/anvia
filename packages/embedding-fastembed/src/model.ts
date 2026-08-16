@@ -2,34 +2,27 @@ import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/em
 import { EmbeddingModel as FastEmbedModel, FlagEmbedding } from "fastembed";
 import { parseBatch } from "./helpers.js";
 import type {
-  FastEmbedEmbeddingModelName,
-  FastEmbedEmbeddingModelOptions,
+  AdaptFastEmbedEmbeddingModelOptions,
+  FastEmbedEmbeddingModelHandle,
+  FastEmbedEmbeddingModelId,
   FastEmbedRuntime,
+  LoadFastEmbedEmbeddingModelOptions,
 } from "./types.js";
 
-export const DEFAULT_FASTEMBED_EMBEDDING_MODEL: FastEmbedEmbeddingModelName =
+export const DEFAULT_FASTEMBED_EMBEDDING_MODEL: FastEmbedEmbeddingModelId =
   FastEmbedModel.BGESmallENV15;
 
-export class FastEmbedEmbeddingModel implements EmbeddingModel {
-  readonly model: string;
+class FastEmbedEmbeddingModel implements EmbeddingModel {
+  readonly provider = "fastembed";
+  readonly modelId: string;
   readonly maxBatchSize: number;
 
   constructor(
     private readonly runtime: FastEmbedRuntime,
-    options: FastEmbedEmbeddingModelOptions = {},
+    options: { modelId: string; maxBatchSize?: number | undefined },
   ) {
-    this.model = options.model ?? DEFAULT_FASTEMBED_EMBEDDING_MODEL;
-    this.maxBatchSize = Math.max(1, Math.trunc(options.maxBatchSize ?? 256));
-  }
-
-  static async create(
-    options: FastEmbedEmbeddingModelOptions = {},
-  ): Promise<FastEmbedEmbeddingModel> {
-    const model = options.model ?? DEFAULT_FASTEMBED_EMBEDDING_MODEL;
-    const initOptions = Object.assign({}, options.initOptions, { model });
-    const runtime = await FlagEmbedding.init(initOptions as never);
-
-    return new FastEmbedEmbeddingModel(runtime, { ...options, model });
+    this.modelId = requireModelId(options.modelId);
+    this.maxBatchSize = positiveSafeInteger(options.maxBatchSize ?? 256, "maxBatchSize");
   }
 
   async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
@@ -57,16 +50,58 @@ export class FastEmbedEmbeddingModel implements EmbeddingModel {
   }
 }
 
+export async function loadFastEmbedEmbeddingModel(
+  options: LoadFastEmbedEmbeddingModelOptions,
+): Promise<FastEmbedEmbeddingModelHandle> {
+  validateLoadOptions(options);
+  const runtime = await FlagEmbedding.init({
+    model: options.modelId as Exclude<FastEmbedModel, FastEmbedModel.CUSTOM>,
+    ...(options.executionProviders === undefined
+      ? {}
+      : { executionProviders: options.executionProviders }),
+    ...(options.maxLength === undefined ? {} : { maxLength: options.maxLength }),
+    ...(options.cacheDir === undefined ? {} : { cacheDir: options.cacheDir }),
+    ...(options.showDownloadProgress === undefined
+      ? {}
+      : { showDownloadProgress: options.showDownloadProgress }),
+  });
+  return new FastEmbedEmbeddingModel(runtime, options);
+}
+
+export function adaptFastEmbedEmbeddingModel(
+  options: AdaptFastEmbedEmbeddingModelOptions,
+): FastEmbedEmbeddingModelHandle {
+  return new FastEmbedEmbeddingModel(options.runtime, options);
+}
+
+function validateLoadOptions(options: LoadFastEmbedEmbeddingModelOptions): void {
+  requireModelId(options.modelId);
+  if (options.maxLength !== undefined) {
+    positiveSafeInteger(options.maxLength, "maxLength");
+  }
+  if (options.maxBatchSize !== undefined) {
+    positiveSafeInteger(options.maxBatchSize, "maxBatchSize");
+  }
+}
+
+function requireModelId(modelId: string): string {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
+}
+
+function positiveSafeInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     const error = new Error("The operation was aborted.");
     error.name = "AbortError";
     throw error;
   }
-}
-
-export function createFastEmbedEmbeddingModel(
-  options: FastEmbedEmbeddingModelOptions = {},
-): Promise<FastEmbedEmbeddingModel> {
-  return FastEmbedEmbeddingModel.create(options);
 }

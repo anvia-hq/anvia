@@ -157,9 +157,9 @@ export function parseClientStreamEvent<
       if (
         event.model !== undefined &&
         (!isRecord(event.model) ||
-          !hasOnlyKeys(event.model, ["provider", "id"]) ||
+          !hasOnlyKeys(event.model, ["provider", "modelId"]) ||
           typeof event.model.provider !== "string" ||
-          typeof event.model.id !== "string")
+          typeof event.model.modelId !== "string")
       ) {
         invalid("generation_start.model", value);
       }
@@ -936,8 +936,8 @@ function isContextUsage(value: unknown): boolean {
       "usedPercent",
       "remainingPercent",
     ]) &&
-    hasOnlyKeys(value.model, ["id", "context"]) &&
-    typeof value.model.id === "string" &&
+    hasOnlyKeys(value.model, ["modelId", "context"]) &&
+    typeof value.model.modelId === "string" &&
     hasOnlyKeys(context, ["contextWindow", "maxInputTokens", "maxOutputTokens"]) &&
     isNonnegativeNumber(context.contextWindow) &&
     (context.maxInputTokens === undefined || isNonnegativeNumber(context.maxInputTokens)) &&

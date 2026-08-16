@@ -16,6 +16,7 @@ import {
   enrichTranscriptWithTraceIds,
   type PromptAttachment,
   type StudioAgentRunRequest,
+  studioModelRefFromKey,
   transcriptAttachmentsForPrompt,
   uiAttachmentsForPrompt,
 } from "../../app-helpers";
@@ -236,7 +237,9 @@ export function usePlaygroundRun(props: {
       };
       if (sessionId.length > 0) runContext.sessionId = sessionId;
       if (history !== undefined) runContext.history = history;
-      if (selectedModelRef.length > 0) runContext.model = selectedModelRef;
+      if (selectedModelRef.length > 0) {
+        runContext.model = studioModelRefFromKey(selectedModelRef);
+      }
       playgroundRunRequestRef.current = runContext;
       const startedAt = Date.now();
       playgroundRunStartedAtRef.current = startedAt;

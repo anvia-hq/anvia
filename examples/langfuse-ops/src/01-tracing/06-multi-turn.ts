@@ -5,7 +5,7 @@ import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { MemoryAppendOptions, MemoryScope, MemoryStore } from "@anvia/core/memory";
 import { assertCompleted, getTicket } from "../_support/agent.js";
-import { buildOpenAIClient, defaultModel } from "../_support/model.js";
+import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
 class LocalMemoryStore implements MemoryStore {
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   const client = buildOpenAIClient();
   const agent = new Agent({
     id: "support-agent",
-    model: client.completionModel(defaultModel()),
+    model: client.completionModel({ modelId: defaultModelId(), api: "responses" }),
     instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
     memory: { store: new LocalMemoryStore() },
     maxTurns: 2,

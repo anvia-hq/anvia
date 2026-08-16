@@ -7,6 +7,8 @@ describe("direct multimodal model APIs", () => {
   it("generates images with explicit options", async () => {
     const calls: unknown[] = [];
     const model: ImageGenerationModel = {
+      provider: "test",
+      modelId: "test-image",
       async imageGeneration(request) {
         calls.push(request);
         const image = new Uint8Array([1, 2, 3]);
@@ -48,6 +50,8 @@ describe("direct multimodal model APIs", () => {
   it("generates speech with explicit options", async () => {
     const calls: unknown[] = [];
     const model: SpeechGenerationModel = {
+      provider: "test",
+      modelId: "test-speech",
       async speechGeneration(request) {
         calls.push(request);
         return {
@@ -88,6 +92,8 @@ describe("direct multimodal model APIs", () => {
   it("transcribes audio with explicit options", async () => {
     const calls: unknown[] = [];
     const model: TranscriptionModel = {
+      provider: "test",
+      modelId: "test-transcription",
       async transcription(request) {
         calls.push(request);
         return { text: "hello world", rawResponse: { text: "hello world" } };
@@ -123,6 +129,8 @@ describe("direct multimodal model APIs", () => {
     });
     const received: number[][] = [];
     const model: TranscriptionModel = {
+      provider: "test",
+      modelId: "test-transcription",
       async transcription(request) {
         await ready;
         received.push([...request.data]);
@@ -206,6 +214,8 @@ const noDelayRetries = { initialDelayMs: 0, maxDelayMs: 0 } as const;
 
 function fakeImageModel(calls: unknown[] = []): ImageGenerationModel {
   return {
+    provider: "test",
+    modelId: "test-image",
     async imageGeneration(request) {
       calls.push(request);
       const image = new Uint8Array([1]);
@@ -216,6 +226,8 @@ function fakeImageModel(calls: unknown[] = []): ImageGenerationModel {
 
 function fakeAudioModel(calls: unknown[] = []): SpeechGenerationModel {
   return {
+    provider: "test",
+    modelId: "test-speech",
     async speechGeneration(request) {
       calls.push(request);
       return { audio: { data: new Uint8Array([1]) }, rawResponse: {} };
@@ -225,6 +237,8 @@ function fakeAudioModel(calls: unknown[] = []): SpeechGenerationModel {
 
 function fakeTranscriptionModel(): TranscriptionModel {
   return {
+    provider: "test",
+    modelId: "test-transcription",
     async transcription() {
       return { text: "done", rawResponse: {} };
     },
@@ -234,6 +248,8 @@ function fakeTranscriptionModel(): TranscriptionModel {
 function flakyImageModel(): ImageGenerationModel {
   let attempt = 0;
   return {
+    provider: "test",
+    modelId: "test-image",
     async imageGeneration() {
       attempt += 1;
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
@@ -246,6 +262,8 @@ function flakyImageModel(): ImageGenerationModel {
 function flakyAudioModel(): SpeechGenerationModel {
   let attempt = 0;
   return {
+    provider: "test",
+    modelId: "test-speech",
     async speechGeneration() {
       attempt += 1;
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
@@ -257,6 +275,8 @@ function flakyAudioModel(): SpeechGenerationModel {
 function flakyTranscriptionModel(): TranscriptionModel {
   let attempt = 0;
   return {
+    provider: "test",
+    modelId: "test-transcription",
     async transcription() {
       attempt += 1;
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });

@@ -2,7 +2,10 @@ import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 
-const openaiModel = new OpenAIClient({ apiKey: "test" }).completionModel("gpt-5");
+const openaiModel = new OpenAIClient({ apiKey: "test" }).completionModel({
+  modelId: "gpt-5",
+  api: "responses",
+});
 
 const agent = new Agent({
   id: "assistant",

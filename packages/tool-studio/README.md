@@ -29,7 +29,7 @@ const client = new OpenAIClient({
 
 const agent = new Agent({
   id: "support",
-  model: client.completionModel(),
+  model: client.completionModel({ modelId: "gpt-5", api: "responses" }),
   name: "Support",
   description: "Answers support questions.",
   instructions: "Answer support questions clearly.",
@@ -61,7 +61,7 @@ const anthropic = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const agent = new Agent({
   id: "support",
-  model: openai.completionModel("gpt-5"),
+  model: openai.completionModel({ modelId: "gpt-5", api: "responses" }),
   name: "Support",
   instructions: "Answer support questions clearly.",
 });
@@ -72,8 +72,9 @@ new Studio([agent], {
       {
         id: "openai",
         name: "OpenAI",
-        defaultModel: "gpt-5",
-        createCompletionModel: (model) => openai.completionModel(model),
+        defaultModelId: "gpt-5",
+        createCompletionModel: ({ modelId }) =>
+          openai.completionModel({ modelId, api: "responses" }),
         listModels: () => openai.listModels(),
         models: [
           {
@@ -85,14 +86,14 @@ new Studio([agent], {
       {
         id: "anthropic",
         name: "Anthropic",
-        defaultModel: "claude-sonnet-4-20250514",
-        createCompletionModel: (model) => anthropic.completionModel(model),
+        defaultModelId: "claude-sonnet-4-20250514",
+        createCompletionModel: ({ modelId }) => anthropic.completionModel({ modelId }),
       },
     ],
     agents: {
       support: {
-        default: "openai:gpt-5",
-        allowed: ["openai:*", "anthropic:claude-sonnet-4-20250514"],
+        defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
+        allowed: ["openai:*", { providerId: "anthropic", modelId: "claude-sonnet-4-20250514" }],
       },
     },
   },
@@ -104,8 +105,11 @@ also select a model per run:
 
 ```json
 {
-  "message": "Summarize this ticket",
-  "model": "anthropic:claude-sonnet-4-20250514",
+  "messages": [{ "role": "user", "content": "Summarize this ticket" }],
+  "model": {
+    "providerId": "anthropic",
+    "modelId": "claude-sonnet-4-20250514"
+  },
   "stream": true
 }
 ```

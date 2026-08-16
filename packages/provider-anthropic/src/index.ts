@@ -2,9 +2,12 @@ export * as anthropic from "./anthropic/index";
 export {
   AnthropicClient,
   type AnthropicClientOptions,
-  AnthropicCompletionModel,
-  type AnthropicCompletionModelName,
+  type AnthropicCompletionModelHandle,
+  type AnthropicCompletionModelId,
+  type AnthropicCompletionModelOptions,
   AnthropicVertexClient,
   type AnthropicVertexClientOptions,
-  type KnownAnthropicCompletionModelName,
+  type AnthropicVertexCompletionModelHandle,
+  type AnthropicVertexCompletionModelOptions,
+  type KnownAnthropicCompletionModelId,
 } from "./anthropic/index";

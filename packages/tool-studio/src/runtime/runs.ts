@@ -1031,16 +1031,14 @@ function parseRunRequestOptions(
   }
 
   if ("model" in body) {
-    if (typeof body.model === "string") {
-      request.model = body.model;
-    } else if (
+    if (
       isObject(body.model) &&
-      typeof body.model.provider === "string" &&
-      typeof body.model.model === "string"
+      typeof body.model.providerId === "string" &&
+      typeof body.model.modelId === "string"
     ) {
       request.model = {
-        provider: body.model.provider,
-        model: body.model.model,
+        providerId: body.model.providerId,
+        modelId: body.model.modelId,
       };
     } else {
       return {
@@ -1048,7 +1046,7 @@ function parseRunRequestOptions(
           c,
           400,
           "bad_request",
-          "model must be a provider:model string or { provider, model } object",
+          "model must be a { providerId, modelId } object",
         ),
       };
     }

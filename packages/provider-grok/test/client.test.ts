@@ -2,79 +2,87 @@ import type { ModelListingError } from "@anvia/core/model-listing";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   GROK_4_5,
-  GrokChatCompletionModel,
   GrokClient,
-  type GrokCompletionModelName,
-  GrokImageGenerationModel,
-  type GrokImageGenerationModelName,
-  GrokResponsesCompletionModel,
-  GrokSpeechGenerationModel,
-  GrokTranscriptionModel,
-  XAI_BASE_URL,
+  type GrokClientOptions,
+  type GrokCompletionModelId,
+  type GrokImageGenerationModelId,
 } from "../src/index";
 
 describe("GrokClient", () => {
+  it("rejects mixed injected and managed configuration", () => {
+    const mixed = {
+      client: fakeSdk() as never,
+      http: { apiKey: "key" },
+      baseUrl: "https://ignored.example.com",
+    };
+    expectTypeOf(mixed).not.toMatchTypeOf<GrokClientOptions>();
+    expect(() => new GrokClient(mixed as never)).toThrow(
+      "GrokClient cannot combine client with baseUrl",
+    );
+  });
+
   it("types known Grok models while accepting custom model strings", () => {
-    const client = new GrokClient({ client: fakeSdk() as never });
+    const client = injectedClient(fakeSdk());
 
     expectTypeOf(
-      client.completionModel("grok-4.3").defaultModel,
-    ).toEqualTypeOf<GrokCompletionModelName>();
-    client.completionModel("custom-grok-model");
+      client.completionModel({ modelId: "grok-4.3", api: "responses" }).modelId,
+    ).toEqualTypeOf<string>();
+    const completionId: GrokCompletionModelId = "custom-grok-model";
+    client.completionModel({ modelId: completionId, api: "chat" });
 
     expectTypeOf(
-      client.imageGenerationModel("grok-imagine-image").defaultModel,
-    ).toEqualTypeOf<GrokImageGenerationModelName>();
-    client.imageGenerationModel("custom-grok-image-model");
+      client.imageGenerationModel({ modelId: "grok-imagine-image" }).modelId,
+    ).toEqualTypeOf<string | undefined>();
+    const imageId: GrokImageGenerationModelId = "custom-grok-image-model";
+    client.imageGenerationModel({ modelId: imageId });
   });
 
   it("validates explicit Grok credentials", () => {
-    expect(() => new GrokClient()).toThrow("Missing Grok credentials");
+    expect(() => new GrokClient({} as never)).toThrow("Missing Grok credentials");
   });
 
-  it("targets xAI by default", () => {
+  it("binds managed clients to explicit model handles", () => {
     const client = new GrokClient({ apiKey: "key" });
 
-    expect((client.client as unknown as { baseURL?: string }).baseURL).toBe(XAI_BASE_URL);
+    expect(client.completionModel({ modelId: GROK_4_5, api: "responses" }).modelId).toBe(GROK_4_5);
   });
 
-  it("passes custom fetch to the SDK client", () => {
+  it("accepts custom transport configuration without exposing the native client", () => {
     const fetchFn = (async () => new Response()) as typeof fetch;
     const client = new GrokClient({ apiKey: "key", fetch: fetchFn });
 
-    expect((client.client as unknown as { fetch?: typeof fetch }).fetch).toBe(fetchFn);
+    expect(client.imageGenerationModel({ modelId: "grok-imagine-image" }).provider).toBe("grok");
   });
 
-  it("creates Responses completion models by default", () => {
-    const client = new GrokClient({ client: fakeSdk() as never });
-    const model = client.completionModel();
+  it("creates Responses completion models explicitly", () => {
+    const client = injectedClient(fakeSdk());
+    const model = client.completionModel({ modelId: GROK_4_5, api: "responses" });
 
-    expect(model).toBeInstanceOf(GrokResponsesCompletionModel);
-    expect(model.defaultModel).toBe(GROK_4_5);
+    expect(model.provider).toBe("grok");
+    expect(model.modelId).toBe(GROK_4_5);
   });
 
   it("creates Chat completion models when requested", () => {
-    const client = new GrokClient({
-      client: fakeSdk() as never,
-      completionApi: "chat",
-    });
-    const model = client.completionModel("grok-chat-test");
+    const client = injectedClient(fakeSdk());
+    const model = client.completionModel({ modelId: "grok-chat-test", api: "chat" });
 
-    expect(model).toBeInstanceOf(GrokChatCompletionModel);
-    expect(model.defaultModel).toBe("grok-chat-test");
+    expect(model.provider).toBe("grok");
+    expect(model.modelId).toBe("grok-chat-test");
   });
 
   it("creates image generation models", () => {
-    const client = new GrokClient({ client: fakeSdk() as never });
+    const client = injectedClient(fakeSdk());
 
-    expect(client.imageGenerationModel()).toBeInstanceOf(GrokImageGenerationModel);
+    expect(client.imageGenerationModel({ modelId: "grok-imagine-image" }).modelId).toBe(
+      "grok-imagine-image",
+    );
   });
 
   it("creates batch speech generation and transcription models", () => {
-    const client = new GrokClient({ client: fakeSdk() as never });
+    const client = injectedClient(fakeSdk());
 
-    expect(client.speechGenerationModel()).toBeInstanceOf(GrokSpeechGenerationModel);
-    expect(client.transcriptionModel()).toBeInstanceOf(GrokTranscriptionModel);
+    expect(client.speechGenerationModel().modelId).toBeUndefined();
+    expect(client.transcriptionModel().modelId).toBeUndefined();
   });
 
   it("lists Grok models", async () => {
@@ -94,6 +102,7 @@ describe("GrokClient", () => {
           }),
         },
       } as never,
+      http: { apiKey: "key" },
     });
 
     await expect(client.listModels()).resolves.toEqual({
@@ -128,6 +137,7 @@ describe("GrokClient", () => {
           }),
         },
       } as never,
+      http: { apiKey: "key" },
     });
 
     await expect(client.listModels()).resolves.toEqual({
@@ -149,6 +159,7 @@ describe("GrokClient", () => {
           list: async () => ({ unexpected: [] }),
         },
       } as never,
+      http: { apiKey: "key" },
     });
 
     await expect(client.listModels()).resolves.toEqual({ data: [] });
@@ -163,6 +174,7 @@ describe("GrokClient", () => {
           },
         },
       } as never,
+      http: { apiKey: "key" },
     });
 
     await expect(client.listModels()).rejects.toMatchObject({
@@ -180,4 +192,11 @@ function fakeSdk() {
     images: { generate: async () => ({ data: [] }) },
     models: { list: async () => ({ data: [] }) },
   };
+}
+
+function injectedClient(client: ReturnType<typeof fakeSdk>): GrokClient {
+  return new GrokClient({
+    client: client as never,
+    http: { apiKey: "key" },
+  });
 }

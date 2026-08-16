@@ -25,7 +25,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -51,7 +51,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -316,7 +316,7 @@ describe("guardrails", () => {
     expect(assistantMessage).toMatchObject(Message.assistant("[redacted] token"));
     expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
-      model: "test",
+      modelId: "test",
       usage: Usage.empty(),
     });
     expect(result.guardrails).toMatchObject([

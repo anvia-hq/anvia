@@ -17,6 +17,8 @@ export type SparseEmbedding = {
 };
 
 export interface EmbeddingModel {
+  readonly provider: string;
+  readonly modelId: string;
   readonly dimensions?: number | undefined;
   readonly maxBatchSize?: number | undefined;
   embedTexts(texts: string[], options?: ModelCallOptions | undefined): Promise<Embedding[]>;
@@ -24,6 +26,8 @@ export interface EmbeddingModel {
 
 /** Sparse lexical/neural encoder used for hybrid retrieval channels. */
 export interface SparseEmbeddingModel {
+  readonly provider: string;
+  readonly modelId: string;
   readonly maxBatchSize?: number | undefined;
   /** Embed passage/document texts for indexing. */
   embedTexts(texts: string[], options?: ModelCallOptions | undefined): Promise<SparseEmbedding[]>;

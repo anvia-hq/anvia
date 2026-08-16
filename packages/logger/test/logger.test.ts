@@ -104,7 +104,7 @@ describe("createLoggerObserver", () => {
       providerRequest: { provider: "test" },
       modelInfo: {
         provider: "test",
-        defaultModel: "test-model",
+        modelId: "test-model",
       },
     });
 

@@ -1,7 +1,8 @@
-import { GeminiCompletionModel } from "@anvia/gemini";
+import { GeminiClient } from "@anvia/gemini";
 
-const model = new GeminiCompletionModel(
-  {
+const calls: unknown[] = [];
+const client = new GeminiClient({
+  client: {
     models: {
       generateContent: async (params: unknown) => {
         calls.push(params);
@@ -12,13 +13,11 @@ const model = new GeminiCompletionModel(
       },
     },
   } as never,
-  "gemini-3.1-flash-lite-preview",
-);
-
-const calls: unknown[] = [];
+});
+const model = client.completionModel({ modelId: "gemini-3.1-flash-lite-preview" });
 
 console.log("Provider:", model.provider);
-console.log("Default model:", model.defaultModel);
+console.log("Model ID:", model.modelId);
 console.log("Capabilities:", model.capabilities);
 
 await model.completion({

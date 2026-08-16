@@ -6,7 +6,7 @@ import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { assertCompleted, buildSupportAgent, getTicket } from "./_support/agent.js";
 import { optionalEnv } from "./_support/env.js";
-import { buildOpenAIClient, defaultModel } from "./_support/model.js";
+import { buildOpenAIClient, defaultModelId } from "./_support/model.js";
 import { createTracing } from "./_support/tracing.js";
 
 const datasetName = `quickstart-dataset-${Date.now()}`;
@@ -15,10 +15,13 @@ async function main(): Promise<void> {
   await using tracing = createTracing({ name: "langfuse-ops-quickstart" });
   const langfuseBaseUrl = optionalEnv("LANGFUSE_BASE_URL") ?? "https://cloud.langfuse.com";
   const client = buildOpenAIClient();
-  const agent = buildSupportAgent(client.completionModel(defaultModel()), {
-    tracing,
-    tools: [getTicket],
-  });
+  const agent = buildSupportAgent(
+    client.completionModel({ modelId: defaultModelId(), api: "responses" }),
+    {
+      tracing,
+      tools: [getTicket],
+    },
+  );
 
   const response = await agent.generate({
     prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
@@ -73,7 +76,7 @@ async function main(): Promise<void> {
   };
   const evalAgent = new Agent({
     id: "eval-target",
-    model: client.completionModel(defaultModel()),
+    model: client.completionModel({ modelId: defaultModelId(), api: "responses" }),
     instructions: "Answer with a short factual sentence.",
     maxTurns: 1,
   });

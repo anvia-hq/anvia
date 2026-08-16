@@ -5,9 +5,10 @@ import { GEMINI_2_5_FLASH_IMAGE, GeminiClient } from "@anvia/gemini";
 
 const apiKey = requireEnv("GEMINI_API_KEY");
 const client = new GeminiClient({ apiKey });
-const imageModel = client.imageGenerationModel(
-  process.env.GEMINI_IMAGE_MODEL ?? GEMINI_2_5_FLASH_IMAGE,
-);
+const imageModel = client.imageGenerationModel({
+  api: "generateContent",
+  modelId: process.env.GEMINI_IMAGE_MODEL ?? GEMINI_2_5_FLASH_IMAGE,
+});
 
 const image = await generateImage({
   model: imageModel,
@@ -21,7 +22,7 @@ await writeFile("gemini-image-generation.png", image.images[0].data);
 
 const audioPath = process.env.ANVIA_AUDIO_FILE ?? "assets/audio/voice.wav";
 const transcript = await transcribe({
-  model: client.transcriptionModel(),
+  model: client.transcriptionModel({ modelId: "gemini-2.5-flash" }),
   audio: { data: await readFile(audioPath), filename: audioPath },
   prompt: "Return only the transcript.",
   temperature: 0,

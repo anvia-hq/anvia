@@ -32,7 +32,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -57,6 +57,8 @@ class QueueModel implements CompletionModel {
 }
 
 class KeywordEmbeddingModel implements EmbeddingModel {
+  readonly provider = "test";
+  readonly modelId = "keyword";
   async embedTexts(texts: string[]): Promise<Embedding[]> {
     return texts.map((document) => ({ document, vector: vectorFor(document) }));
   }

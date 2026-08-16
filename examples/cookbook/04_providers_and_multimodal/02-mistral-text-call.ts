@@ -2,10 +2,10 @@ import { Agent } from "@anvia/core/agent";
 import { MistralClient } from "@anvia/mistral";
 
 const client = new MistralClient({
-  apiKey: process.env.MISTRAL_API_KEY,
+  apiKey: process.env.MISTRAL_API_KEY ?? "",
 });
 
-const agentModel = client.completionModel("mistral-large-latest");
+const agentModel = client.completionModel({ modelId: "mistral-large-latest" });
 
 const agent = new Agent({
   id: "mistral-agent",

@@ -56,7 +56,7 @@ import { isVectorContext, type VectorContext } from "./vector-context";
 const DEFAULT_MAX_TURNS = 20;
 
 type RawResponseOf<Model> =
-  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 const providerOutputSchemas = new WeakMap<object, JsonObject>();
 

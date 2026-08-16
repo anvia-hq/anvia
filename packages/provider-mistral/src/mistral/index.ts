@@ -1,23 +1,29 @@
-export { MistralClient, type MistralClientOptions } from "./client";
+export {
+  MistralClient,
+  type MistralClientOptions,
+  type MistralCompletionModelHandle,
+  type MistralCompletionModelOptions,
+  type MistralEmbeddingModelHandle,
+  type MistralOcrModelHandle,
+  type MistralOcrModelOptions,
+} from "./client";
 export {
   fromMistralChatResponse,
   fromMistralChatStreamChunk,
-  MistralCompletionModel,
   mistralMessageHelpers,
   toMistralChatParams,
 } from "./completion";
-export { MistralEmbeddingModel, type MistralEmbeddingModelOptions } from "./embedding";
+export type { MistralEmbeddingModelOptions } from "./embedding";
 export type {
-  KnownMistralCompletionModelName,
-  KnownMistralEmbeddingModelName,
-  KnownMistralOcrModelName,
-  MistralCompletionModelName,
-  MistralEmbeddingModelName,
-  MistralOcrModelName,
+  KnownMistralCompletionModelId,
+  KnownMistralEmbeddingModelId,
+  KnownMistralOcrModelId,
+  MistralCompletionModelId,
+  MistralEmbeddingModelId,
+  MistralOcrModelId,
 } from "./models";
 export {
   MISTRAL_OCR_LATEST,
-  MistralOcrModel,
   type MistralOcrPage,
   type MistralOcrRequest,
   type MistralOcrResponse,

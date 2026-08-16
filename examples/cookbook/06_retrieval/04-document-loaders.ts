@@ -11,6 +11,8 @@ import {
 import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
 
 class KeywordEmbeddingModel implements EmbeddingModel {
+  readonly provider = "cookbook";
+  readonly modelId = "keyword";
   readonly dimensions = 4;
 
   async embedTexts(texts: string[]) {

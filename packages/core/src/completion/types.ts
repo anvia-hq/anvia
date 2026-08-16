@@ -232,27 +232,23 @@ export type ModelContextLimits = {
   maxOutputTokens?: number;
 };
 
-export type CompletionModelInfo<ModelName extends string = string> = {
-  id: ModelName;
+export type CompletionModelInfo = {
+  modelId: string;
   context: ModelContextLimits;
 };
 
-export type CompletionModelMetadataOptions = {
-  modelOverrides?: Readonly<Record<string, ModelContextLimits>>;
-};
-
-export type ContextUsage<ModelName extends string = string> = {
-  model: CompletionModelInfo<ModelName>;
+export type ContextUsage = {
+  model: CompletionModelInfo;
   usedTokens: number;
   remainingTokens: number;
   usedPercent: number;
   remainingPercent: number;
 };
 
-export function calculateContextUsage<ModelName extends string>(
+export function calculateContextUsage(
   usage: Usage,
-  model: CompletionModelInfo<ModelName> | undefined,
-): ContextUsage<ModelName> | undefined {
+  model: CompletionModelInfo | undefined,
+): ContextUsage | undefined {
   if (
     model === undefined ||
     !Number.isFinite(usage.inputTokens) ||
@@ -275,26 +271,25 @@ export function calculateContextUsage<ModelName extends string>(
   };
 }
 
-export function withContextUsage<RawResponse, ModelName extends string>(
+export function withContextUsage<RawResponse>(
   response: CompletionResponse<RawResponse>,
-  model: CompletionModelInfo<ModelName> | undefined,
+  model: CompletionModelInfo | undefined,
 ): CompletionResponse<RawResponse> {
   const contextUsage = calculateContextUsage(response.usage, model);
   return contextUsage === undefined ? response : { ...response, contextUsage };
 }
 
-export function resolveCompletionModelInfo<ModelName extends string>(
-  model: ModelName,
+export function resolveModelContextLimits(
+  modelId: string,
   catalog: Readonly<Record<string, ModelContextLimits>>,
-  overrides?: Readonly<Record<string, ModelContextLimits>>,
-): CompletionModelInfo<ModelName> | undefined {
-  const context = overrides?.[model] ?? catalog[model];
-  return context === undefined ? undefined : { id: model, context };
+  override?: ModelContextLimits,
+): ModelContextLimits | undefined {
+  return override ?? catalog[modelId];
 }
 
 export type AssistantGenerationMetadata = {
   provider: string;
-  model: string;
+  modelId: string;
   usage: Usage;
   contextUsage?: ContextUsage;
   sources?: CompletionSource[];
@@ -368,14 +363,14 @@ export function getAssistantGenerationMetadata(
   if (
     !isJsonObjectValue(generation) ||
     typeof generation.provider !== "string" ||
-    typeof generation.model !== "string" ||
+    typeof generation.modelId !== "string" ||
     !isUsageValue(generation.usage)
   ) {
     return undefined;
   }
   const metadata: AssistantGenerationMetadata = {
     provider: generation.provider,
-    model: generation.model,
+    modelId: generation.modelId,
     usage: {
       ...generation.usage,
       ...(generation.usage.details === undefined
@@ -414,7 +409,7 @@ function isContextUsageValue(value: JsonValue | undefined): value is JsonObject 
   }
   const context = value.model.context;
   if (
-    typeof value.model.id === "string" &&
+    typeof value.model.modelId === "string" &&
     isJsonObjectValue(context) &&
     isPositiveFiniteNumber(context.contextWindow) &&
     isOptionalPositiveFiniteNumber(context.maxInputTokens) &&
@@ -524,8 +519,7 @@ function isProviderToolCallArray(value: JsonValue | undefined): value is Provide
   );
 }
 
-export type CompletionRequest<ModelName extends string = string> = {
-  model?: ModelName;
+export type CompletionRequest = {
   instructions?: string;
   chatHistory: Message[];
   documents: Document[];
@@ -571,17 +565,17 @@ export type CompletionModelCapabilities = {
   providerTools?: boolean;
 };
 
-export interface CompletionModel<RawResponse = unknown, ModelName extends string = string> {
+export interface CompletionModel<RawResponse = unknown> {
   readonly provider: string;
-  readonly defaultModel: ModelName;
+  readonly modelId: string;
+  readonly contextLimits?: ModelContextLimits | undefined;
   readonly capabilities: CompletionModelCapabilities;
-  getModelInfo?(model?: ModelName): CompletionModelInfo<ModelName> | undefined;
   traceRequest?(
-    request: CompletionRequest<ModelName>,
+    request: CompletionRequest,
     options?: { stream?: boolean | undefined },
   ): JsonObject | undefined;
   completion(
-    request: CompletionRequest<ModelName>,
+    request: CompletionRequest,
     options?: ModelCallOptions,
   ): Promise<CompletionResponse<RawResponse>>;
 }
@@ -650,10 +644,10 @@ export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
       usage: Usage;
     };
 
-export interface StreamingCompletionModel<RawResponse = unknown, ModelName extends string = string>
-  extends CompletionModel<RawResponse, ModelName> {
+export interface StreamingCompletionModel<RawResponse = unknown>
+  extends CompletionModel<RawResponse> {
   streamCompletion(
-    request: CompletionRequest<ModelName>,
+    request: CompletionRequest,
     options?: ModelCallOptions,
   ): AsyncIterable<CompletionModelStreamEvent<RawResponse>>;
 }
@@ -670,7 +664,7 @@ export function assertCompletionRequestSupported(
   request: CompletionRequest,
   options: { streaming?: boolean | undefined } = {},
 ): void {
-  const modelLabel = `${model.provider}:${request.model ?? model.defaultModel}`;
+  const modelLabel = `${model.provider}:${model.modelId}`;
   const capabilities = model.capabilities;
 
   if (options.streaming === true && !capabilities.streaming) {

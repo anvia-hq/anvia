@@ -17,7 +17,7 @@ type RawResponse = { requestId: string };
 
 class QueueModel implements CompletionModel<RawResponse> {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities: CompletionModel["capabilities"];
   readonly requests: CompletionRequest[] = [];
 

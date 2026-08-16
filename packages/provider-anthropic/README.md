@@ -26,7 +26,7 @@ const client = new AnthropicClient({
   apiKey,
 });
 
-const model = client.completionModel("claude-sonnet-4-20250514");
+const model = client.completionModel({ modelId: "claude-sonnet-4-20250514" });
 
 const agent = new Agent({
   id: "assistant",
@@ -50,7 +50,7 @@ const client = new AnthropicClient({
   baseUrl,
 });
 
-const model = client.completionModel("provider/model-name");
+const model = client.completionModel({ modelId: "provider/model-name" });
 ```
 
 ## Vertex AI
@@ -65,7 +65,7 @@ const client = new AnthropicVertexClient({
   region: "global",
 });
 
-const model = client.completionModel("claude-sonnet-5");
+const model = client.completionModel({ modelId: "claude-sonnet-5" });
 ```
 
 The client follows the standard Google authentication flow. It reads
@@ -109,7 +109,8 @@ provide `listModels()`.
 
 - `AnthropicClient`
 - `AnthropicVertexClient`
-- `AnthropicCompletionModel`
+- structural Anthropic and Vertex completion handle types
+- `AnthropicCompletionModelId`
 - `anthropic`
 
 ## Development

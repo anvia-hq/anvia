@@ -19,6 +19,8 @@ import {
 } from "./helpers/imports";
 
 class KeywordModel implements EmbeddingModel {
+  readonly provider = "test";
+  readonly modelId = "keyword";
   readonly dimensions = 2;
   readonly maxBatchSize = 2;
   readonly calls: string[][] = [];
@@ -32,6 +34,8 @@ class KeywordModel implements EmbeddingModel {
 }
 
 class SparseModel implements SparseEmbeddingModel {
+  readonly provider = "test";
+  readonly modelId = "sparse";
   async embedTexts(texts: string[]) {
     return texts.map((document) => ({ document, vector: { indices: [0], values: [1] } }));
   }
@@ -93,6 +97,8 @@ describe("embedding helpers", () => {
   it("retries failed batches and honors abort signals", async () => {
     let attempts = 0;
     const model: EmbeddingModel = {
+      provider: "test",
+      modelId: "retry",
       async embedTexts(texts) {
         attempts += 1;
         if (attempts === 1) throw Object.assign(new Error("busy"), { status: 503 });
@@ -113,6 +119,8 @@ describe("embedding helpers", () => {
   it("rejects results from embedding models that finish after cancellation", async () => {
     let finishDense: ((value: Array<{ document: string; vector: number[] }>) => void) | undefined;
     const denseModel: EmbeddingModel = {
+      provider: "test",
+      modelId: "late-dense",
       embedTexts: () =>
         new Promise((resolve) => {
           finishDense = resolve;
@@ -135,6 +143,8 @@ describe("embedding helpers", () => {
         ) => void)
       | undefined;
     const sparseModel: SparseEmbeddingModel = {
+      provider: "test",
+      modelId: "late-sparse",
       embedTexts: () =>
         new Promise((resolve) => {
           finishSparse = resolve;
@@ -162,6 +172,8 @@ describe("embedding helpers", () => {
     await expect(
       embedTexts({
         model: {
+          provider: "test",
+          modelId: "invalid-dense",
           dimensions: 2,
           async embedTexts() {
             return [{ document: "cat", vector: [Number.NaN, 1] }];
@@ -173,6 +185,8 @@ describe("embedding helpers", () => {
     await expect(
       embedSparseQuery({
         model: {
+          provider: "test",
+          modelId: "invalid-sparse",
           async embedTexts() {
             return [];
           },
@@ -254,6 +268,8 @@ describe("vector stores and retrieval", () => {
     let embeddingAttempts = 0;
     let searchAttempts = 0;
     const model: EmbeddingModel = {
+      provider: "test",
+      modelId: "retry-retrieval",
       async embedTexts(texts) {
         embeddingAttempts += 1;
         if (embeddingAttempts === 1)

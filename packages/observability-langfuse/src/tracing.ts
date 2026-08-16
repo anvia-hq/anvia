@@ -758,7 +758,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     if (args.modelInfo !== undefined) {
       const modelInfo: Record<string, unknown> = {
         provider: args.modelInfo.provider,
-        defaultModel: args.modelInfo.defaultModel,
+        modelId: args.modelInfo.modelId,
       };
       if (args.modelInfo.capabilities !== undefined) {
         modelInfo.capabilities = args.modelInfo.capabilities;
@@ -768,7 +768,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     Object.assign(metadata, promptMetadata(this.promptRef));
     const generationAttributes: LangfuseGenerationAttributes = {
       input: this.redactInputValue(safeInput),
-      model: args.request.model ?? args.modelInfo?.defaultModel ?? "default",
+      model: args.modelInfo?.modelId ?? "unknown",
       modelParameters: modelParameters(args.request),
       metadata: asMetadata(this.redactInputValue(metadata)),
     };
@@ -1066,12 +1066,7 @@ class LangfuseToolObserver implements AgentToolObserver {
         `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
         {
           input: this.run.redactInputValue(input),
-          model:
-            typeof request.model === "string"
-              ? request.model
-              : typeof modelInfo?.defaultModel === "string"
-                ? modelInfo.defaultModel
-                : "default",
+          model: typeof modelInfo?.modelId === "string" ? modelInfo.modelId : "unknown",
           modelParameters: modelParameters(request as AgentGenerationStartArgs["request"]),
           metadata: asMetadata(
             this.run.redactInputValue({

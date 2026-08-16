@@ -28,7 +28,7 @@ const DEFAULT_EXTRACTOR_INSTRUCTIONS =
   "Always call the `submit` function with the structured data. Use default or null values when information is missing.";
 
 type RawResponseOf<Model> =
-  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 export type ExtractOptions<Output, Model extends CompletionModel = CompletionModel> = {
   model: Model;

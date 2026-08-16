@@ -13,7 +13,6 @@ import {
   type ContextUsage,
   cancelRun,
   createHook,
-  createMiddleware,
   createObserver,
   createTool,
   defineGuardrailPolicy,
@@ -33,7 +32,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -59,7 +58,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -394,7 +393,7 @@ describe("agent memory", () => {
     let attempts = 0;
     const model: CompletionModel = {
       provider: delegate.provider,
-      defaultModel: delegate.defaultModel,
+      modelId: delegate.modelId,
       capabilities: delegate.capabilities,
       async completion(request) {
         attempts += 1;
@@ -506,13 +505,6 @@ describe("agent memory", () => {
       id: "test-agent",
       model,
       memory: { store, savePolicy },
-      middlewares: [
-        createMiddleware({
-          onCompletionRequest({ request }) {
-            return { request: { ...request, model: "test-override" } };
-          },
-        }),
-      ],
       tools: [addTool],
     });
 
@@ -528,8 +520,8 @@ describe("agent memory", () => {
       .filter((message) => message.role === "assistant")
       .map(getAssistantGenerationMetadata);
     const expected = [
-      { provider: "test", model: "test-override", usage: firstUsage },
-      { provider: "test", model: "test-override", usage: secondUsage },
+      { provider: "test", modelId: "test", usage: firstUsage },
+      { provider: "test", modelId: "test", usage: secondUsage },
     ];
 
     expect(resultMetadata).toEqual(expected);
@@ -539,7 +531,7 @@ describe("agent memory", () => {
   it("persists and returns the latest context usage for a session", async () => {
     const store = new RecordingMemoryStore();
     const contextUsage: ContextUsage = {
-      model: { id: "test", context: { contextWindow: 100, maxOutputTokens: 20 } },
+      model: { modelId: "test", context: { contextWindow: 100, maxOutputTokens: 20 } },
       usedTokens: 25,
       remainingTokens: 75,
       usedPercent: 25,

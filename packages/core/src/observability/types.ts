@@ -77,7 +77,7 @@ export type AgentRunErrorArgs = {
 
 export type AgentGenerationModelInfo = {
   readonly provider: string;
-  readonly defaultModel: string;
+  readonly modelId: string;
   readonly capabilities?: DeepReadonly<CompletionModelCapabilities> | undefined;
 };
 

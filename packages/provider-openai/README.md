@@ -27,7 +27,7 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const model = client.completionModel("gpt-5");
+const model = client.completionModel({ modelId: "gpt-5", api: "responses" });
 
 const agent = new Agent({
   id: "assistant",
@@ -41,7 +41,7 @@ if (result.status === "completed") console.log(result.output);
 
 ## OpenAI-Compatible APIs
 
-When `baseUrl` is provided, `OpenAIClient` uses the chat-completions-compatible adapter by default:
+`baseUrl` changes only the endpoint. Choose the protocol on each model handle explicitly:
 
 ```ts
 import { OpenAIClient } from "@anvia/openai";
@@ -51,10 +51,10 @@ const client = new OpenAIClient({
   baseUrl,
 });
 
-const model = client.completionModel("openai/gpt-5.2");
+const model = client.completionModel({ modelId: "openai/gpt-5.2", api: "chat" });
 ```
 
-You can also force a specific completion API with `completionApi: "responses"` or `completionApi: "chat"`.
+The same client can create both `{ api: "responses" }` and `{ api: "chat" }` handles.
 
 ### Reasoning tool-call providers
 
@@ -77,7 +77,7 @@ const client = new OpenAIClient({
   baseUrl: "https://api.moonshot.ai/v1",
 });
 
-const model = client.completionModel("kimi-k2.6");
+const model = client.completionModel({ modelId: "kimi-k2.6", api: "chat" });
 
 const response = await generateCompletion({
   model,
@@ -96,10 +96,10 @@ enabled. Let the model choose tools naturally when using Kimi thinking mode.
 ## Other Models
 
 ```ts
-const embeddingModel = client.embeddingModel("text-embedding-3-small");
-const imageModel = client.imageGenerationModel();
-const speechModel = client.speechGenerationModel();
-const transcriptionModel = client.transcriptionModel();
+const embeddingModel = client.embeddingModel({ modelId: "text-embedding-3-small" });
+const imageModel = client.imageGenerationModel({ modelId: "gpt-image-1" });
+const speechModel = client.speechGenerationModel({ modelId: "gpt-4o-mini-tts" });
+const transcriptionModel = client.transcriptionModel({ modelId: "gpt-4o-mini-transcribe" });
 ```
 
 Use the provider-neutral helpers from `@anvia/core` to call media models:
@@ -122,12 +122,8 @@ const transcript = await transcribe({
 ## Exports
 
 - `OpenAIClient`
-- `OpenAIResponsesCompletionModel`
-- `OpenAIChatCompletionModel`
-- `OpenAIEmbeddingModel`
-- `OpenAIImageGenerationModel`
-- `OpenAISpeechGenerationModel`
-- `OpenAITranscriptionModel`
+- structural completion, embedding, image, speech, and transcription handle types
+- `OpenAICompletionModelId` and media model-ID types
 - model constants such as `GPT_IMAGE_1`, `DALL_E_3`, `TTS_1`, and `WHISPER_1`
 - `openai`
 

@@ -10,7 +10,7 @@ import { LensClient } from "@anvia/lens";
 
 class StaticSupportModel implements CompletionModel {
   readonly provider = "smoke";
-  readonly defaultModel = "static-support";
+  readonly modelId = "static-support";
   readonly capabilities = {
     streaming: false,
     tools: false,

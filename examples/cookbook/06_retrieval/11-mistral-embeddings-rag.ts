@@ -10,10 +10,10 @@ type KnowledgeDoc = {
 };
 
 const client = new MistralClient({
-  apiKey: process.env.MISTRAL_API_KEY,
+  apiKey: process.env.MISTRAL_API_KEY ?? "",
 });
 
-const embeddingModel = client.embeddingModel("mistral-embed");
+const embeddingModel = client.embeddingModel({ modelId: "mistral-embed" });
 
 const docs: KnowledgeDoc[] = [
   {

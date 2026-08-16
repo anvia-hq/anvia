@@ -18,9 +18,9 @@ export type ImageGenerationResult<RawResponse = unknown> = {
   rawResponse: RawResponse;
 };
 
-export interface ImageGenerationModel<RawResponse = unknown, ModelName extends string = string> {
-  readonly provider?: string | undefined;
-  readonly defaultModel?: ModelName | undefined;
+export interface ImageGenerationModel<RawResponse = unknown> {
+  readonly provider: string;
+  readonly modelId: string | undefined;
   imageGeneration(
     request: ImageGenerationRequest,
     options?: ModelCallOptions,

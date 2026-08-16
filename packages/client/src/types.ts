@@ -244,7 +244,7 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
   | { type: "turn_start" }
   | {
       type: "generation_start";
-      model?: { provider: string; id: string };
+      model?: { provider: string; modelId: string };
     }
   | {
       type: "message_start";

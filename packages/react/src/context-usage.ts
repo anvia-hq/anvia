@@ -32,7 +32,7 @@ function isContextUsage(value: unknown): value is ContextUsage {
   return (
     isRecord(value) &&
     isRecord(value.model) &&
-    typeof value.model.id === "string" &&
+    typeof value.model.modelId === "string" &&
     isRecord(value.model.context) &&
     typeof value.model.context.contextWindow === "number" &&
     typeof value.usedTokens === "number" &&

@@ -5,11 +5,11 @@ import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const speech = await generateSpeech({
-  model: client.speechGenerationModel(),
+  model: client.speechGenerationModel({ modelId: "gpt-4o-mini-tts" }),
   text: "Anvia can now generate speech and transcribe audio through provider-neutral APIs.",
   voice: "alloy",
   speed: 1,
@@ -20,7 +20,7 @@ await writeFile("openai-speech.mp3", speech.audio.data);
 
 const audioPath = process.env.ANVIA_AUDIO_FILE ?? "openai-speech.mp3";
 const transcript = await transcribe({
-  model: client.transcriptionModel(),
+  model: client.transcriptionModel({ modelId: "gpt-4o-mini-transcribe" }),
   audio: { data: await readFile(audioPath), filename: audioPath },
   prompt: "Transcribe the audio exactly.",
   temperature: 0,

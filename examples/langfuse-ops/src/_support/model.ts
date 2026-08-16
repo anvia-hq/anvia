@@ -14,7 +14,7 @@ export function buildOpenAIClient(): OpenAIClient {
   });
 }
 
-export function defaultModel(): string {
+export function defaultModelId(): string {
   return optionalEnv("ANVIA_MODEL") ?? "gpt-5";
 }
 
@@ -23,7 +23,7 @@ export function defaultModel(): string {
 export function getStaticModel(text: string): CompletionModel {
   return {
     provider: "langfuse-ops-static",
-    defaultModel: "static",
+    modelId: "static",
     capabilities: {
       streaming: false,
       tools: false,

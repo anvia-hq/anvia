@@ -25,7 +25,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -51,7 +51,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -532,7 +532,7 @@ describe("memory compaction", () => {
     ]);
     const summaryModel: CompletionModel = {
       provider: "test",
-      defaultModel: "test",
+      modelId: "test",
       capabilities: new QueueModel([]).capabilities,
       completion: async () => {
         throw new Error("summary unavailable");
@@ -671,7 +671,7 @@ describe("memory compaction", () => {
     let summaryAttempts = 0;
     const summaryModel: CompletionModel = {
       provider: summaryDelegate.provider,
-      defaultModel: summaryDelegate.defaultModel,
+      modelId: summaryDelegate.modelId,
       capabilities: summaryDelegate.capabilities,
       async completion(request) {
         summaryAttempts += 1;

@@ -26,7 +26,7 @@ describe("MemoryGenerationLedger", () => {
             anvia: {
               generation: {
                 provider: "openai",
-                model: "gpt-test",
+                modelId: "gpt-test",
                 usage,
               },
             },
@@ -43,7 +43,7 @@ describe("MemoryGenerationLedger", () => {
         turn: 2,
         createdAt: "2026-07-18T00:00:00.000Z",
         preview: "Stored answer",
-        generation: { provider: "openai", model: "gpt-test", usage },
+        generation: { provider: "openai", modelId: "gpt-test", usage },
       },
       {
         position: 2,
@@ -65,7 +65,7 @@ describe("MemoryGenerationLedger", () => {
             anvia: {
               generation: {
                 provider: "openai",
-                model: "gpt-test",
+                modelId: "gpt-test",
                 usage,
               },
             },

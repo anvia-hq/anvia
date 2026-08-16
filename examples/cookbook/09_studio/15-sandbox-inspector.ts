@@ -8,7 +8,7 @@ const previewPort = 3000;
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const sandbox = DockerSandbox.node({
@@ -87,7 +87,7 @@ try {
     process: { maxLogBytes: 64_000 },
   });
 
-  const model = client.completionModel("gpt-5.6-luna");
+  const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
   const agent = new Agent({
     id: "studio-sandbox-builder",
     model: model,

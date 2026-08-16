@@ -16,9 +16,9 @@ export type SpeechGenerationResult<RawResponse = unknown> = {
   rawResponse: RawResponse;
 };
 
-export interface SpeechGenerationModel<RawResponse = unknown, ModelName extends string = string> {
-  readonly provider?: string | undefined;
-  readonly defaultModel?: ModelName | undefined;
+export interface SpeechGenerationModel<RawResponse = unknown> {
+  readonly provider: string;
+  readonly modelId: string | undefined;
   speechGeneration(
     request: SpeechGenerationRequest,
     options?: ModelCallOptions,

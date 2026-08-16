@@ -1,6 +1,7 @@
 import type { CreateUIAttachment } from "@anvia/client";
 import type { Message, UserContentPart } from "@anvia/core/completion";
 import type {
+  StudioModelRef,
   StudioModelSummary,
   StudioPipelineLogEntry,
   StudioSession,
@@ -24,13 +25,24 @@ export type StudioAgentRunRequest = {
   agentId: string;
   messages: readonly Message[];
   sessionId?: string;
-  model?: string;
+  model?: StudioModelRef;
   stream: true;
   metadata: {
     source: string;
     studioModel?: string;
   };
 };
+
+export function studioModelRefFromKey(value: string): StudioModelRef {
+  const separator = value.indexOf(":");
+  if (separator <= 0 || separator === value.length - 1) {
+    throw new TypeError(`Invalid Studio model ref: ${value}`);
+  }
+  return {
+    providerId: value.slice(0, separator),
+    modelId: value.slice(separator + 1),
+  };
+}
 
 export function isPipelineLogEvent(event: unknown): event is {
   type: "pipeline_log";

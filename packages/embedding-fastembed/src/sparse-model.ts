@@ -7,33 +7,27 @@ import type {
 import { SparseEmbeddingModel as FastEmbedSparseModel, SparseTextEmbedding } from "fastembed";
 import { parseSparseBatch, parseSparseVector } from "./helpers.js";
 import type {
-  FastEmbedSparseEmbeddingModelName,
-  FastEmbedSparseEmbeddingModelOptions,
+  AdaptFastEmbedSparseEmbeddingModelOptions,
+  FastEmbedSparseEmbeddingModelHandle,
+  FastEmbedSparseEmbeddingModelId,
   FastEmbedSparseRuntime,
+  LoadFastEmbedSparseEmbeddingModelOptions,
 } from "./types.js";
 
-export const DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL: FastEmbedSparseEmbeddingModelName =
+export const DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL: FastEmbedSparseEmbeddingModelId =
   FastEmbedSparseModel.SpladePPEnV1;
 
-export class FastEmbedSparseEmbeddingModel implements SparseEmbeddingModel {
-  readonly model: string;
+class FastEmbedSparseEmbeddingModel implements SparseEmbeddingModel {
+  readonly provider = "fastembed";
+  readonly modelId: string;
   readonly maxBatchSize: number;
 
   constructor(
     private readonly runtime: FastEmbedSparseRuntime,
-    options: FastEmbedSparseEmbeddingModelOptions = {},
+    options: { modelId: string; maxBatchSize?: number | undefined },
   ) {
-    this.model = options.model ?? DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL;
-    this.maxBatchSize = Math.max(1, Math.trunc(options.maxBatchSize ?? 256));
-  }
-
-  static async create(
-    options: FastEmbedSparseEmbeddingModelOptions = {},
-  ): Promise<FastEmbedSparseEmbeddingModel> {
-    const model = options.model ?? DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL;
-    const initOptions = Object.assign({}, options.initOptions, { model });
-    const runtime = await SparseTextEmbedding.init(initOptions as never);
-    return new FastEmbedSparseEmbeddingModel(runtime, { ...options, model });
+    this.modelId = requireModelId(options.modelId);
+    this.maxBatchSize = positiveSafeInteger(options.maxBatchSize ?? 256, "maxBatchSize");
   }
 
   async embedTexts(texts: string[], options?: ModelCallOptions): Promise<SparseEmbedding[]> {
@@ -63,8 +57,57 @@ export class FastEmbedSparseEmbeddingModel implements SparseEmbeddingModel {
   async embedQuery(query: string, options?: ModelCallOptions): Promise<SparseEmbedding> {
     throwIfAborted(options?.abortSignal);
     const vector = parseSparseVector(await this.runtime.queryEmbed(query), 0);
+    throwIfAborted(options?.abortSignal);
     return { document: query, vector };
   }
+}
+
+export async function loadFastEmbedSparseEmbeddingModel(
+  options: LoadFastEmbedSparseEmbeddingModelOptions,
+): Promise<FastEmbedSparseEmbeddingModelHandle> {
+  validateLoadOptions(options);
+  const runtime = await SparseTextEmbedding.init({
+    model: options.modelId as Exclude<FastEmbedSparseModel, FastEmbedSparseModel.CUSTOM>,
+    ...(options.executionProviders === undefined
+      ? {}
+      : { executionProviders: options.executionProviders }),
+    ...(options.maxLength === undefined ? {} : { maxLength: options.maxLength }),
+    ...(options.cacheDir === undefined ? {} : { cacheDir: options.cacheDir }),
+    ...(options.showDownloadProgress === undefined
+      ? {}
+      : { showDownloadProgress: options.showDownloadProgress }),
+  });
+  return new FastEmbedSparseEmbeddingModel(runtime, options);
+}
+
+export function adaptFastEmbedSparseEmbeddingModel(
+  options: AdaptFastEmbedSparseEmbeddingModelOptions,
+): FastEmbedSparseEmbeddingModelHandle {
+  return new FastEmbedSparseEmbeddingModel(options.runtime, options);
+}
+
+function validateLoadOptions(options: LoadFastEmbedSparseEmbeddingModelOptions): void {
+  requireModelId(options.modelId);
+  if (options.maxLength !== undefined) {
+    positiveSafeInteger(options.maxLength, "maxLength");
+  }
+  if (options.maxBatchSize !== undefined) {
+    positiveSafeInteger(options.maxBatchSize, "maxBatchSize");
+  }
+}
+
+function requireModelId(modelId: string): string {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
+}
+
+function positiveSafeInteger(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -73,10 +116,4 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
     error.name = "AbortError";
     throw error;
   }
-}
-
-export function createFastEmbedSparseEmbeddingModel(
-  options: FastEmbedSparseEmbeddingModelOptions = {},
-): Promise<FastEmbedSparseEmbeddingModel> {
-  return FastEmbedSparseEmbeddingModel.create(options);
 }

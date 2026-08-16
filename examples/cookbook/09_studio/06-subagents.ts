@@ -6,10 +6,10 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
-const model = client.completionModel("gpt-5.6-luna");
+const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 
 const getTicket = createTool({
   name: "get_ticket",

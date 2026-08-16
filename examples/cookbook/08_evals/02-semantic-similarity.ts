@@ -1,5 +1,5 @@
 import { contains, runEvalSuite, semanticSimilarity } from "@anvia/core/evals";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 const cases = [
   {
@@ -14,7 +14,7 @@ const cases = [
   },
 ];
 
-const embeddingModel = await createTransformersEmbeddingModel();
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 
 const result = await runEvalSuite({
   name: "support-semantic-similarity",

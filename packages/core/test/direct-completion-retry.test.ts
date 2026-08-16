@@ -191,7 +191,7 @@ describe("direct completion retries", () => {
 
 class CompletionQueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities = { ...capabilities, streaming: false };
   readonly requests: CompletionRequest[] = [];
 
@@ -208,7 +208,7 @@ class CompletionQueueModel implements CompletionModel {
 
 class StreamQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities = capabilities;
   readonly requests: CompletionRequest[] = [];
 
@@ -226,7 +226,7 @@ class StreamQueueModel implements StreamingCompletionModel {
 
 class ThrowingStreamQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities = capabilities;
   readonly requests: CompletionRequest[] = [];
   private attempt = 0;
@@ -247,7 +247,7 @@ class ThrowingStreamQueueModel implements StreamingCompletionModel {
 
 class ClosingStreamModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities = capabilities;
   readonly requests: CompletionRequest[] = [];
   closed = false;

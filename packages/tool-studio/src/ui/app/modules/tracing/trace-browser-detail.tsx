@@ -684,9 +684,7 @@ export function observationDetailMetadata(
 function modelInfoMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
   const group = compactTraceMetadata({
     provider: metadata.provider,
-    model: metadata.model,
-    requestedModel: metadata.requestedModel,
-    defaultModel: metadata.defaultModel,
+    modelId: metadata.modelId,
   });
   return Object.keys(group).length === 0 ? undefined : group;
 }

@@ -168,7 +168,7 @@ function createStudioAgent(id: string, tools: AnyTool[]): StudioAgent {
 
 const sandboxModel: CompletionModel = {
   provider: "test",
-  defaultModel: "test",
+  modelId: "test",
   capabilities: {
     streaming: false,
     tools: true,

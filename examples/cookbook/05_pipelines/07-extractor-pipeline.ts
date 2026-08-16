@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const ticketSchema = z.object({
@@ -13,7 +13,7 @@ const ticketSchema = z.object({
   priority: z.enum(["low", "normal", "high"]),
 });
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 const ticketPipeline = new Pipeline({ id: "ticket-extraction", inputSchema: z.string() }).extract({
   id: "extract-ticket",
   model,

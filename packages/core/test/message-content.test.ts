@@ -254,7 +254,7 @@ describe("generation metadata", () => {
         anvia: {
           generation: {
             provider: "test",
-            model: "test-model",
+            modelId: "test-model",
             usage: {
               inputTokens: 7,
               outputTokens: 2,
@@ -268,7 +268,7 @@ describe("generation metadata", () => {
     } satisfies Message;
     expect(getAssistantGenerationMetadata(valid)).toMatchObject({
       provider: "test",
-      model: "test-model",
+      modelId: "test-model",
       usage: { totalTokens: 9 },
     });
 

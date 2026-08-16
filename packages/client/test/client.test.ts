@@ -218,7 +218,7 @@ describe("native stream adapters", () => {
           documents: [],
           tools: [],
         },
-        modelInfo: { provider: "test", defaultModel: "model" },
+        modelInfo: { provider: "test", modelId: "model" },
       },
       { type: "text_delta", turn: 1, delta: "Safe" },
       {

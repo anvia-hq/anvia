@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const quoteSnapshotTool = createTool({
@@ -70,7 +70,7 @@ const riskFlags = new Pipeline({ id: "risk-flags", inputSchema: z.string() }).st
   run: ({ input: ticker }) => riskFlagsTool.call({ ticker }),
 });
 
-const marketAnalystModel = client.completionModel("gpt-5.5");
+const marketAnalystModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 const marketAnalyst = new Agent({
   id: "market-analyst",
   model: marketAnalystModel,

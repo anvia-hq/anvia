@@ -63,7 +63,7 @@ export type StreamStructuredCompletionOptions<
 > = GenerateStructuredCompletionOptions<Output, Model>;
 
 type RawResponseOf<Model> =
-  Model extends CompletionModel<infer RawResponse, infer _ModelName> ? RawResponse : unknown;
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 export function generateCompletion<Output, Model extends CompletionModel>(
   options: GenerateStructuredCompletionOptions<Output, Model>,
@@ -240,7 +240,6 @@ function requestFromOptions<Model extends CompletionModel, Output>(
 ): CompletionRequest {
   const input = inputFromOptions(options);
   return createCompletionRequest(input, {
-    model: options.model,
     instructions: options.instructions,
     documents: options.documents,
     tools: options.tools,

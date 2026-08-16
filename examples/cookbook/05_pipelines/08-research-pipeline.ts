@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const searchNotesTool = createTool({
@@ -48,7 +48,7 @@ const sourceQuality = new Pipeline({ id: "source-quality", inputSchema: z.string
   run: ({ input: topic }) => sourceQualityTool.call({ topic }),
 });
 
-const synthesizerModel = client.completionModel("gpt-5.5");
+const synthesizerModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 const synthesizer = new Agent({
   id: "synthesizer",
   model: synthesizerModel,

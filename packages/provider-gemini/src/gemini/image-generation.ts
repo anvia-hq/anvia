@@ -7,20 +7,19 @@ import type {
   ModelCallOptions,
 } from "@anvia/core/image-generation";
 import type { GoogleGenAI } from "@google/genai";
-import type { GeminiImageGenerationModelName } from "./models";
+import type { GeminiGenerateContentImageModelId, GeminiGenerateImagesModelId } from "./models";
+import { disableGeminiNativeRetries } from "./retry";
 
 export const GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image";
 export const GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview";
 export const IMAGEN_4_GENERATE = "imagen-4.0-generate-001";
 
-export class GeminiImageGenerationModel
-  implements ImageGenerationModel<unknown, GeminiImageGenerationModelName>
-{
+export class GeminiImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "gemini";
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel: GeminiImageGenerationModelName = GEMINI_2_5_FLASH_IMAGE,
+    readonly modelId: GeminiGenerateContentImageModelId,
   ) {}
 
   async imageGeneration(
@@ -35,9 +34,9 @@ export class GeminiImageGenerationModel
       : {};
     const params: Record<string, unknown> = {
       ...providerTopLevel,
-      model: this.defaultModel,
+      model: this.modelId,
       contents: request.prompt,
-      config: {
+      config: disableGeminiNativeRetries({
         ...providerConfig,
         responseModalities: ["TEXT", "IMAGE"],
         imageConfig: {
@@ -45,7 +44,7 @@ export class GeminiImageGenerationModel
           aspectRatio: aspectRatio(request.width, request.height),
         },
         ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      },
+      }),
     };
 
     const response = await this.client.models.generateContent(params as never);
@@ -53,14 +52,12 @@ export class GeminiImageGenerationModel
   }
 }
 
-export class GeminiImagenGenerationModel
-  implements ImageGenerationModel<unknown, GeminiImageGenerationModelName>
-{
+export class GeminiImagenGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "gemini";
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel: GeminiImageGenerationModelName = IMAGEN_4_GENERATE,
+    readonly modelId: GeminiGenerateImagesModelId,
   ) {}
 
   async imageGeneration(
@@ -72,13 +69,13 @@ export class GeminiImagenGenerationModel
     const providerConfig = isPlainObject(providerConfigValue) ? providerConfigValue : {};
     const params: Record<string, unknown> = {
       ...providerTopLevel,
-      model: this.defaultModel,
+      model: this.modelId,
       prompt: request.prompt,
-      config: {
+      config: disableGeminiNativeRetries({
         ...providerConfig,
         aspectRatio: aspectRatio(request.width, request.height),
         ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      },
+      }),
     };
 
     const response = await this.client.models.generateImages(params as never);

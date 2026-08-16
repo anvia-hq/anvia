@@ -14,7 +14,7 @@ import {
 
 const model: CompletionModel = {
   provider: "test",
-  defaultModel: "test",
+  modelId: "test",
   capabilities: {
     streaming: false,
     tools: true,

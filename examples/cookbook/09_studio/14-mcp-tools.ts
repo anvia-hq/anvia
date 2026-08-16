@@ -5,7 +5,7 @@ import { Studio } from "@anvia/studio";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 const port = Number(process.env.RUNNER_PORT ?? 4021);
 
@@ -19,7 +19,7 @@ const counterMcp = new McpClient({
 });
 const counterServer = await counterMcp.connect();
 
-const model = client.completionModel("gpt-5.6-luna");
+const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const agent = new Agent({
   id: "studio-mcp-counter",
   model: model,

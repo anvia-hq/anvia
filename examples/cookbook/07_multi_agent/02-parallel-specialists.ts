@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const incident = [
@@ -15,7 +15,7 @@ const incident = [
   "Constraint: do not claim a root cause until engineering verifies it.",
 ].join("\n");
 
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
 const supportAgent = new Agent({
   id: "support",

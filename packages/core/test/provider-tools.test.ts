@@ -27,7 +27,7 @@ const searchTool: ProviderTool = {
 
 class ProviderToolModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -86,7 +86,6 @@ class StreamingProviderToolModel extends ProviderToolModel implements StreamingC
 
 describe("provider-executed tools", () => {
   it("creates a normalized request with copied collections and every optional field", () => {
-    const model = new ProviderToolModel();
     const history = [Message.system("system"), Message.user("research")];
     const documents = [{ id: "policy", text: "Refunds take 30 days." }];
     const localTool: CompletionTool = {
@@ -99,8 +98,6 @@ describe("provider-executed tools", () => {
     const providerOptions = { seed: 42 };
 
     const request = createCompletionRequest(history, {
-      model,
-      modelOverride: "override-model",
       instructions: "Use the policy.",
       documents,
       tools,
@@ -113,7 +110,6 @@ describe("provider-executed tools", () => {
 
     expect(request).toEqual({
       chatHistory: history,
-      model: "override-model",
       instructions: "Use the policy.",
       documents,
       tools: [localTool],
@@ -131,9 +127,7 @@ describe("provider-executed tools", () => {
   });
 
   it("partitions unified completion tools into local and provider collections", () => {
-    const model = new ProviderToolModel();
     const request = createCompletionRequest(Message.user("research"), {
-      model,
       tools: [
         { name: "local", description: "Local tool", parameters: { type: "object" } },
         searchTool,

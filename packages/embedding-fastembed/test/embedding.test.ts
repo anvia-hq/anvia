@@ -1,10 +1,10 @@
 import { embedTexts } from "@anvia/core/embeddings";
 import { describe, expect, it, vi } from "vitest";
 import {
-  createFastEmbedEmbeddingModel,
+  adaptFastEmbedEmbeddingModel,
   DEFAULT_FASTEMBED_EMBEDDING_MODEL,
-  FastEmbedEmbeddingModel,
   type FastEmbedRuntime,
+  loadFastEmbedEmbeddingModel,
 } from "../src/index";
 
 const initMock = vi.hoisted(() => vi.fn());
@@ -35,15 +35,16 @@ describe("FastEmbedEmbeddingModel", () => {
         ];
       }),
     };
-    const model = new FastEmbedEmbeddingModel(runtime, {
-      model: "fast-bge-small-en-v1.5",
+    const model = adaptFastEmbedEmbeddingModel({
+      runtime,
+      modelId: "fast-bge-small-en-v1.5",
       maxBatchSize: 8,
     });
 
     const embeddings = await model.embedTexts(["alpha", "beta"]);
 
     expect(runtime.embed).toHaveBeenCalledWith(["alpha", "beta"], 8);
-    expect(model.model).toBe("fast-bge-small-en-v1.5");
+    expect(model.modelId).toBe("fast-bge-small-en-v1.5");
     expect(model.maxBatchSize).toBe(8);
     expect(embeddings).toEqual([
       { document: "alpha", vector: [0.1, 0.2] },
@@ -57,21 +58,36 @@ describe("FastEmbedEmbeddingModel", () => {
         yield [[1, 0]];
       }),
     };
-    const model = new FastEmbedEmbeddingModel(runtime);
+    const model = adaptFastEmbedEmbeddingModel({
+      runtime,
+      modelId: "fast-bge-small-en-v1.5",
+    });
 
     await expect(model.embedTexts([])).resolves.toEqual([]);
     expect(runtime.embed).not.toHaveBeenCalled();
   });
 
-  it("normalizes invalid and fractional max batch sizes", () => {
+  it("rejects invalid and fractional max batch sizes", () => {
     const runtime: FastEmbedRuntime = {
       embed: vi.fn(async function* () {
         yield [];
       }),
     };
 
-    expect(new FastEmbedEmbeddingModel(runtime, { maxBatchSize: 0 }).maxBatchSize).toBe(1);
-    expect(new FastEmbedEmbeddingModel(runtime, { maxBatchSize: 2.9 }).maxBatchSize).toBe(2);
+    expect(() =>
+      adaptFastEmbedEmbeddingModel({
+        runtime,
+        modelId: "fast-bge-small-en-v1.5",
+        maxBatchSize: 0,
+      }),
+    ).toThrow("maxBatchSize must be a positive safe integer");
+    expect(() =>
+      adaptFastEmbedEmbeddingModel({
+        runtime,
+        modelId: "fast-bge-small-en-v1.5",
+        maxBatchSize: 2.9,
+      }),
+    ).toThrow("maxBatchSize must be a positive safe integer");
   });
 
   it("creates a default BGE Small embedding model", async () => {
@@ -82,7 +98,9 @@ describe("FastEmbedEmbeddingModel", () => {
     };
     initMock.mockResolvedValueOnce(runtime);
 
-    const model = await createFastEmbedEmbeddingModel();
+    const model = await loadFastEmbedEmbeddingModel({
+      modelId: DEFAULT_FASTEMBED_EMBEDDING_MODEL,
+    });
     const { embeddings } = await embedTexts({ model, texts: ["market note"] });
 
     expect(initMock).toHaveBeenCalledWith({
@@ -97,7 +115,10 @@ describe("FastEmbedEmbeddingModel", () => {
         yield [new Float32Array([0.25, 0.75])];
       }),
     };
-    const model = new FastEmbedEmbeddingModel(runtime);
+    const model = adaptFastEmbedEmbeddingModel({
+      runtime,
+      modelId: "fast-bge-small-en-v1.5",
+    });
 
     await expect(model.embedTexts(["typed"])).resolves.toEqual([
       { document: "typed", vector: [0.25, 0.75] },
@@ -112,9 +133,9 @@ describe("FastEmbedEmbeddingModel", () => {
     };
     initMock.mockResolvedValueOnce(runtime);
 
-    await createFastEmbedEmbeddingModel({
-      model: "fast-bge-base-en-v1.5",
-      initOptions: { cacheDir: "/tmp/anvia-fastembed" },
+    await loadFastEmbedEmbeddingModel({
+      modelId: "fast-bge-base-en-v1.5",
+      cacheDir: "/tmp/anvia-fastembed",
     });
 
     expect(initMock).toHaveBeenCalledWith({
@@ -129,7 +150,10 @@ describe("FastEmbedEmbeddingModel", () => {
         yield [[1, 0]];
       }),
     };
-    const model = new FastEmbedEmbeddingModel(runtime);
+    const model = adaptFastEmbedEmbeddingModel({
+      runtime,
+      modelId: "fast-bge-small-en-v1.5",
+    });
 
     await expect(model.embedTexts(["one", "two"])).rejects.toThrow(
       "returned 1 embeddings for 2 texts",
@@ -142,7 +166,10 @@ describe("FastEmbedEmbeddingModel", () => {
         yield "not-a-batch";
       }),
     };
-    const model = new FastEmbedEmbeddingModel(runtime);
+    const model = adaptFastEmbedEmbeddingModel({
+      runtime,
+      modelId: "fast-bge-small-en-v1.5",
+    });
 
     await expect(model.embedTexts(["one"])).rejects.toThrow("invalid batch at offset 0");
   });
@@ -154,7 +181,10 @@ describe("FastEmbedEmbeddingModel", () => {
         yield [new DataView(new ArrayBuffer(8))];
       }),
     };
-    const model = new FastEmbedEmbeddingModel(runtime);
+    const model = adaptFastEmbedEmbeddingModel({
+      runtime,
+      modelId: "fast-bge-small-en-v1.5",
+    });
 
     await expect(model.embedTexts(["one", "two"])).rejects.toThrow("invalid vector at index 1");
   });

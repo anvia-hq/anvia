@@ -2,13 +2,13 @@ import { AnthropicClient } from "@anvia/anthropic";
 import { Agent } from "@anvia/core/agent";
 
 const client = new AnthropicClient({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY ?? "",
   baseUrl: process.env.ANTHROPIC_BASEURL,
 });
 
-const agentModel = client.completionModel(
-  process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514",
-);
+const agentModel = client.completionModel({
+  modelId: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514",
+});
 
 const agent = new Agent({
   id: "anthropic-agent",

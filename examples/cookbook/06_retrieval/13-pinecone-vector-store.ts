@@ -1,7 +1,7 @@
 import { embedDocuments } from "@anvia/core/embeddings";
 import { retrieveDocuments, vectorFilter } from "@anvia/core/vector-store";
 import { PineconeVectorClient } from "@anvia/pinecone";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 type MarketNote = {
   id: string;
@@ -11,7 +11,7 @@ type MarketNote = {
 
 requireEnv("PINECONE_API_KEY");
 
-const embeddingModel = await createTransformersEmbeddingModel();
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 const notes: MarketNote[] = [
   {
     id: "cloud",

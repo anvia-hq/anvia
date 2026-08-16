@@ -16,7 +16,8 @@ import { retrieveDocuments } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
 import { ChromaVectorClient } from "@anvia/chroma";
 
-const embeddings = new OpenAIClient().embeddingModel("text-embedding-3-small");
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
+const embeddings = openai.embeddingModel({ modelId: "text-embedding-3-small" });
 const chroma = new ChromaVectorClient({ path: "http://localhost:8000" });
 const store = chroma.vectorStore<{ id: string; text: string }>({
   collectionName: "support_docs",

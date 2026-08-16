@@ -3,7 +3,7 @@
 
 import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { optionalEnv } from "../_support/env.js";
-import { buildOpenAIClient, defaultModel } from "../_support/model.js";
+import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
@@ -13,7 +13,10 @@ async function main(): Promise<void> {
   const prompt = await client.getPrompt({ name: name });
 
   const anviaClient = buildOpenAIClient();
-  const agent = buildSupportAgent(anviaClient.completionModel(defaultModel()), { tracing });
+  const agent = buildSupportAgent(
+    anviaClient.completionModel({ modelId: defaultModelId(), api: "responses" }),
+    { tracing },
+  );
 
   // The trace option exposes AgentTraceOptions, so prompt linkage is provided
   // through metadata on this code path.

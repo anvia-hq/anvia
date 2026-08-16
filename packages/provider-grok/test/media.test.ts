@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { GrokSpeechGenerationModel, GrokTranscriptionModel } from "../src/index";
+import { GrokSpeechGenerationModel } from "../src/grok/speech-generation";
+import { GrokTranscriptionModel } from "../src/grok/transcription";
 
 describe("Grok batch media models", () => {
   it("maps speech generation to xAI TTS and returns binary audio", async () => {

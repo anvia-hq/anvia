@@ -6,10 +6,10 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
-const replyModel = client.completionModel("gpt-5.6-luna");
+const replyModel = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const replyAgent = new Agent({
   id: "studio-reply-drafter",
   model: replyModel,

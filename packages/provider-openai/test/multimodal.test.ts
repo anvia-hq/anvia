@@ -7,7 +7,9 @@ import { OpenAIClient } from "../src/index";
 describe("OpenAI multimodal models", () => {
   it("maps base64 image responses and preserves all images", async () => {
     const client = mockOpenAIClient();
-    const model = new OpenAIClient({ client: client as never }).imageGenerationModel("dall-e-3");
+    const model = new OpenAIClient({ client: client as never }).imageGenerationModel({
+      modelId: "dall-e-3",
+    });
 
     const response = await generateImage({
       model,
@@ -33,7 +35,9 @@ describe("OpenAI multimodal models", () => {
 
   it("does not send legacy response_format for GPT image models", async () => {
     const client = mockOpenAIClient();
-    const model = new OpenAIClient({ client: client as never }).imageGenerationModel("gpt-image-2");
+    const model = new OpenAIClient({ client: client as never }).imageGenerationModel({
+      modelId: "gpt-image-2",
+    });
 
     await generateImage({
       model,
@@ -53,7 +57,9 @@ describe("OpenAI multimodal models", () => {
 
   it("rejects malformed image responses", async () => {
     const client = mockOpenAIClient({ imageResponse: { output_format: "png", data: [] } });
-    const model = new OpenAIClient({ client: client as never }).imageGenerationModel();
+    const model = new OpenAIClient({ client: client as never }).imageGenerationModel({
+      modelId: "gpt-image-1",
+    });
 
     await expect(generateImage({ model, prompt: "x" })).rejects.toThrow(
       "OpenAI image generation response contained no base64 images.",
@@ -66,7 +72,9 @@ describe("OpenAI multimodal models", () => {
         data: [{ url: "https://example.com/generated.png" }],
       },
     });
-    const model = new OpenAIClient({ client: client as never }).imageGenerationModel();
+    const model = new OpenAIClient({ client: client as never }).imageGenerationModel({
+      modelId: "gpt-image-1",
+    });
 
     await expect(generateImage({ model, prompt: "x" })).rejects.toThrow(
       "OpenAI image generation response contained image URLs, which are not supported.",
@@ -75,7 +83,9 @@ describe("OpenAI multimodal models", () => {
 
   it("maps speech responses to Uint8Array audio", async () => {
     const client = mockOpenAIClient();
-    const model = new OpenAIClient({ client: client as never }).speechGenerationModel("tts-test");
+    const model = new OpenAIClient({ client: client as never }).speechGenerationModel({
+      modelId: "tts-test",
+    });
 
     const response = await generateSpeech({
       model,
@@ -98,7 +108,9 @@ describe("OpenAI multimodal models", () => {
 
   it("maps object transcription responses to text", async () => {
     const client = mockOpenAIClient({ transcriptionResponse: { text: "object text" } });
-    const model = new OpenAIClient({ client: client as never }).transcriptionModel("whisper-test");
+    const model = new OpenAIClient({ client: client as never }).transcriptionModel({
+      modelId: "whisper-test",
+    });
 
     const response = await transcribe({
       model,
@@ -121,7 +133,9 @@ describe("OpenAI multimodal models", () => {
 
   it("maps string transcription responses to text", async () => {
     const client = mockOpenAIClient({ transcriptionResponse: "plain text" });
-    const model = new OpenAIClient({ client: client as never }).transcriptionModel();
+    const model = new OpenAIClient({ client: client as never }).transcriptionModel({
+      modelId: "whisper-1",
+    });
 
     const response = await transcribe({
       model,
@@ -134,7 +148,9 @@ describe("OpenAI multimodal models", () => {
   it("propagates provider errors", async () => {
     const error = new Error("provider failed");
     const client = mockOpenAIClient({ imageError: error });
-    const model = new OpenAIClient({ client: client as never }).imageGenerationModel();
+    const model = new OpenAIClient({ client: client as never }).imageGenerationModel({
+      modelId: "gpt-image-1",
+    });
 
     await expect(generateImage({ model, prompt: "x" })).rejects.toBe(error);
   });

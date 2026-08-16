@@ -34,7 +34,7 @@ const client = new OpenAIClient({
 
 const agent = new Agent({
   id: "support",
-  model: client.completionModel(),
+  model: client.completionModel({ modelId: "gpt-5", api: "responses" }),
   instructions: "Answer support questions clearly.",
   observability: {
     observers: { otel: tracing },

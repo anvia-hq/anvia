@@ -7,18 +7,16 @@ import type {
 import type { OpenAI } from "openai";
 import { toFile } from "openai";
 import { isPlainObject } from "../utils";
-import type { OpenAITranscriptionModelName } from "./models";
+import type { OpenAITranscriptionModelId } from "./models";
 
 export const WHISPER_1 = "whisper-1";
 
-export class OpenAITranscriptionModel
-  implements TranscriptionModel<unknown, OpenAITranscriptionModelName>
-{
+export class OpenAITranscriptionModel implements TranscriptionModel<unknown> {
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: OpenAITranscriptionModelName = WHISPER_1,
+    readonly modelId: OpenAITranscriptionModelId,
   ) {}
 
   async transcription(
@@ -27,7 +25,7 @@ export class OpenAITranscriptionModel
   ): Promise<TranscriptionResult<unknown>> {
     const params: Record<string, unknown> = {
       ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
-      model: this.defaultModel,
+      model: this.modelId,
       file: await toFile(
         request.data,
         request.filename,
@@ -38,10 +36,10 @@ export class OpenAITranscriptionModel
     if (request.language !== undefined) params.language = request.language;
     if (request.prompt !== undefined) params.prompt = request.prompt;
     if (request.temperature !== undefined) params.temperature = request.temperature;
-    const response = await this.client.audio.transcriptions.create(
-      params as never,
-      options?.abortSignal === undefined ? undefined : { signal: options.abortSignal },
-    );
+    const response = await this.client.audio.transcriptions.create(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     return {
       text: transcriptionText(response),
       rawResponse: response,

@@ -1,7 +1,7 @@
 import type { ModelContextLimits } from "@anvia/core/completion";
 import type { ModelId } from "@anvia/core/model-listing";
 
-export type KnownAnthropicCompletionModelName =
+export type KnownAnthropicCompletionModelId =
   | "claude-3-5-sonnet-20240620"
   | "claude-3-5-sonnet-20241022"
   | "claude-3-7-sonnet-20250219"
@@ -27,7 +27,7 @@ export type KnownAnthropicCompletionModelName =
   | "claude-sonnet-4-6"
   | "claude-sonnet-5";
 
-export type AnthropicCompletionModelName = ModelId<KnownAnthropicCompletionModelName>;
+export type AnthropicCompletionModelId = ModelId<KnownAnthropicCompletionModelId>;
 
 const CONTEXT_200K_32K = { contextWindow: 200_000, maxOutputTokens: 32_000 };
 const CONTEXT_200K_64K = { contextWindow: 200_000, maxOutputTokens: 64_000 };
@@ -58,4 +58,4 @@ export const ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "claude-sonnet-4-5-20250929": CONTEXT_200K_64K,
   "claude-sonnet-4-6": { contextWindow: 1_000_000, maxOutputTokens: 64_000 },
   "claude-sonnet-5": CONTEXT_1M_128K,
-} satisfies Readonly<Record<KnownAnthropicCompletionModelName, ModelContextLimits>>;
+} satisfies Readonly<Record<KnownAnthropicCompletionModelId, ModelContextLimits>>;

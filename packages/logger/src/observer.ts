@@ -161,7 +161,7 @@ function generationStartContext(
   const context: LogContext = {
     turn: args.turn,
     provider: args.modelInfo?.provider,
-    model: args.modelInfo?.defaultModel,
+    model: args.modelInfo?.modelId,
     providerRequest: args.providerRequest,
   };
   if (options.includeRequest === true) context.request = args.request;

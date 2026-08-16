@@ -45,7 +45,7 @@ void removedLangfuseExport;
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -63,7 +63,7 @@ class QueueModel implements CompletionModel {
     return {
       provider: this.provider,
       stream: false,
-      model: request.model ?? this.defaultModel,
+      modelId: this.modelId,
       messageCount: request.chatHistory.length,
     };
   }
@@ -80,7 +80,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -102,7 +102,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
     return {
       provider: this.provider,
       stream: options.stream === true,
-      model: request.model ?? this.defaultModel,
+      modelId: this.modelId,
       messageCount: request.chatHistory.length,
     };
   }
@@ -221,13 +221,13 @@ describe("agent observability", () => {
         args: expect.objectContaining({
           modelInfo: {
             provider: "test",
-            defaultModel: "test",
+            modelId: "test",
             capabilities: expect.objectContaining({ streaming: false }),
           },
           providerRequest: expect.objectContaining({
             provider: "test",
             stream: false,
-            model: "test",
+            modelId: "test",
             messageCount: 1,
           }),
         }),
@@ -245,7 +245,7 @@ describe("agent observability", () => {
     let attempts = 0;
     const model: CompletionModel = {
       provider: delegate.provider,
-      defaultModel: delegate.defaultModel,
+      modelId: delegate.modelId,
       capabilities: delegate.capabilities,
       async completion(request) {
         attempts += 1;
@@ -526,13 +526,13 @@ describe("agent observability", () => {
         args: expect.objectContaining({
           modelInfo: {
             provider: "test",
-            defaultModel: "test",
+            modelId: "test",
             capabilities: expect.objectContaining({ streaming: true }),
           },
           providerRequest: expect.objectContaining({
             provider: "test",
             stream: true,
-            model: "test",
+            modelId: "test",
           }),
         }),
       }),
@@ -727,7 +727,7 @@ describe("agent observability", () => {
     const cleanupCalls: string[] = [];
     const failingModel: CompletionModel = {
       provider: "test",
-      defaultModel: "test",
+      modelId: "test",
       capabilities: new QueueModel([]).capabilities,
       async completion() {
         throw primaryError;

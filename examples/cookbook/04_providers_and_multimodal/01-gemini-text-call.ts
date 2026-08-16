@@ -2,10 +2,10 @@ import { Agent } from "@anvia/core/agent";
 import { GeminiClient } from "@anvia/gemini";
 
 const client = new GeminiClient({
-  apiKey: process.env.GEMINI_API_KEY,
+  apiKey: process.env.GEMINI_API_KEY ?? "",
 });
 
-const agentModel = client.completionModel("gemini-2.5-flash");
+const agentModel = client.completionModel({ modelId: "gemini-2.5-flash" });
 
 const agent = new Agent({
   id: "gemini-agent",

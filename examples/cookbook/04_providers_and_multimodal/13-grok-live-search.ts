@@ -2,12 +2,12 @@ import { Agent } from "@anvia/core/agent";
 import { GrokClient, tools as grokTools } from "@anvia/grok";
 
 const grok = new GrokClient({
-  apiKey: process.env.XAI_API_KEY,
+  apiKey: process.env.XAI_API_KEY ?? "",
 });
 
 const researcher = new Agent({
   id: "grok-researcher",
-  model: grok.completionModel(),
+  model: grok.completionModel({ modelId: "grok-4.5", api: "responses" }),
   instructions: "Research current information and cite the sources you use.",
   providerOptions: { max_turns: 5 },
   tools: [

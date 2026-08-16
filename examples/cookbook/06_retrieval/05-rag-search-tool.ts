@@ -3,7 +3,7 @@ import { Agent } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
 import { createVectorSearchTool } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 type Runbook = {
   id: string;
@@ -12,9 +12,9 @@ type Runbook = {
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-const embeddingModel = await createTransformersEmbeddingModel();
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 const runbooks: Runbook[] = [
   {
     id: "database-latency",
@@ -48,7 +48,7 @@ const searchRunbooks = createVectorSearchTool({
   topK: 2,
 });
 
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 const agent = new Agent({
   id: "agent",
   model: agentModel,

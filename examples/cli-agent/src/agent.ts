@@ -1,6 +1,6 @@
 import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
-import { getModelName, getTavilyApiKey, OPENROUTER_BASE_URL } from "./config.js";
+import { getModelId, getTavilyApiKey, OPENROUTER_BASE_URL } from "./config.js";
 import { toAnviaHistory } from "./memory.js";
 import { createLocalWorkspaceTools } from "./tools/local.js";
 import { createTavilySearchTool } from "./tools/tavily.js";
@@ -38,7 +38,7 @@ export async function streamAssistantResponse({
     baseUrl: OPENROUTER_BASE_URL,
   });
   const tavilyApiKey = getTavilyApiKey();
-  const model = client.completionModel(getModelName());
+  const model = client.completionModel({ modelId: getModelId(), api: "chat" });
   const agent = new Agent({
     id: "assistant",
     model,

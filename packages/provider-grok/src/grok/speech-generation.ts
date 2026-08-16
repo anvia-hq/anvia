@@ -16,6 +16,7 @@ import {
 
 export class GrokSpeechGenerationModel implements SpeechGenerationModel<unknown> {
   readonly provider = "grok";
+  readonly modelId = undefined;
 
   constructor(private readonly http: GrokHttpOptions) {}
 

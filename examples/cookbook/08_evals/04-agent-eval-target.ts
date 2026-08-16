@@ -5,9 +5,9 @@ import { OpenAIClient } from "@anvia/openai";
 
 const openAIClient = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-const model = openAIClient.completionModel("gpt-5.5");
+const model = openAIClient.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
 const agent = new Agent({
   id: "support-policy-agent",

@@ -37,7 +37,7 @@ describe("model call cancellation", () => {
     const signals: Array<AbortSignal | undefined> = [];
     const model: StreamingCompletionModel = {
       provider: "test",
-      defaultModel: "test",
+      modelId: "test",
       capabilities,
       async completion(_request, options) {
         signals.push(options?.abortSignal);
@@ -59,18 +59,24 @@ describe("model call cancellation", () => {
   it("passes the caller AbortSignal to all direct media model calls", async () => {
     const signals: Array<AbortSignal | undefined> = [];
     const imageModel: ImageGenerationModel = {
+      provider: "test",
+      modelId: "test-image",
       async imageGeneration(_request, options) {
         signals.push(options?.abortSignal);
         return { images: [{ data: new Uint8Array([1]) }], rawResponse: {} };
       },
     };
     const speechModel: SpeechGenerationModel = {
+      provider: "test",
+      modelId: "test-speech",
       async speechGeneration(_request, options) {
         signals.push(options?.abortSignal);
         return { audio: { data: new Uint8Array([1]) }, rawResponse: {} };
       },
     };
     const transcriptionModel: TranscriptionModel = {
+      provider: "test",
+      modelId: "test-transcription",
       async transcription(_request, options) {
         signals.push(options?.abortSignal);
         return { text: "done", rawResponse: {} };
@@ -99,7 +105,7 @@ describe("model call cancellation", () => {
     let calls = 0;
     const model: CompletionModel = {
       provider: "test",
-      defaultModel: "test",
+      modelId: "test",
       capabilities: { ...capabilities, streaming: false },
       async completion(_request, options) {
         calls += 1;
@@ -126,7 +132,7 @@ describe("model call cancellation", () => {
     let calls = 0;
     const model: CompletionModel = {
       provider: "test",
-      defaultModel: "test",
+      modelId: "test",
       capabilities: { ...capabilities, streaming: false },
       async completion(_request, options) {
         calls += 1;
@@ -191,7 +197,7 @@ describe("model call cancellation", () => {
 
 class CompletionQueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = { ...capabilities, streaming: false };
 
   constructor(private readonly responses: CompletionResponse[]) {}

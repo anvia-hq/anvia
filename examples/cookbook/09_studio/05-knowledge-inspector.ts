@@ -14,6 +14,8 @@ type KnowledgeNote = {
 };
 
 class KeywordEmbeddingModel implements EmbeddingModel {
+  readonly provider = "cookbook";
+  readonly modelId = "keyword";
   async embedTexts(texts: string[]): Promise<Embedding[]> {
     return texts.map((text) => ({ document: text, vector: vectorFor(text) }));
   }
@@ -21,7 +23,7 @@ class KeywordEmbeddingModel implements EmbeddingModel {
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const notes: KnowledgeNote[] = [
@@ -98,7 +100,7 @@ const toolIndex = await createToolIndex({
   minScore: 0.75,
 });
 
-const model = client.completionModel("gpt-5.6-luna");
+const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
 const agent = new Agent({
   id: "studio-knowledge-ops",
   model: model,

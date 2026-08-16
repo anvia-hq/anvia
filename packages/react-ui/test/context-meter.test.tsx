@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ContextMeter } from "../src";
 
 const usage = {
-  model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+  model: { modelId: "gpt-5", context: { contextWindow: 400_000 } },
   usedTokens: 100_000,
   remainingTokens: 300_000,
   usedPercent: 25,

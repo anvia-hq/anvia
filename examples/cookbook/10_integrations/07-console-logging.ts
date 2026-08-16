@@ -14,7 +14,7 @@ logger.child({ component: "setup" }).info("console logger configured");
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
 const lookupTicket = createTool({
@@ -39,7 +39,7 @@ const lookupTicket = createTool({
 
 const agent = new Agent({
   id: "support-console-logger-demo",
-  model: client.completionModel("gpt-5.5"),
+  model: client.completionModel({ modelId: "gpt-5.5", api: "responses" }),
   instructions: "Use tools when useful. Answer with a short engineering-focused summary.",
   maxTurns: 2,
   tools: [lookupTicket],

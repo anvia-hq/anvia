@@ -6,7 +6,10 @@ import { GeminiClient } from "../src/index";
 describe("Gemini multimodal models", () => {
   it("maps native Gemini image responses and derives aspect ratio", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateContent",
+      modelId: "gemini-test",
+    });
 
     const response = await generateImage({
       model,
@@ -19,6 +22,7 @@ describe("Gemini multimodal models", () => {
       model: "gemini-test",
       contents: "draw a diagram",
       config: {
+        httpOptions: { retryOptions: { attempts: 1 } },
         responseModalities: ["TEXT", "IMAGE"],
         imageConfig: { aspectRatio: "4:3" },
       },
@@ -29,7 +33,10 @@ describe("Gemini multimodal models", () => {
 
   it("preserves provider image config while canonical dimensions win", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).imageGenerationModel();
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateContent",
+      modelId: "gemini-2.5-flash-image",
+    });
 
     await generateImage({
       model,
@@ -51,9 +58,10 @@ describe("Gemini multimodal models", () => {
 
   it("keeps Imagen generation on the explicit Imagen model factory", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).imagenGenerationModel(
-      "imagen-test",
-    );
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateImages",
+      modelId: "imagen-test",
+    });
 
     const response = await generateImage({
       model,
@@ -66,7 +74,11 @@ describe("Gemini multimodal models", () => {
     expect(client.models.generateImagesCalls[0]).toEqual({
       model: "imagen-test",
       prompt: "draw a diagram",
-      config: { aspectRatio: "4:3", numberOfImages: 2 },
+      config: {
+        aspectRatio: "4:3",
+        numberOfImages: 2,
+        httpOptions: { retryOptions: { attempts: 1 } },
+      },
     });
     expect(response.images[0].data).toEqual(new Uint8Array([4, 5, 6]));
     expect(response.images[0].mediaType).toBe("image/jpeg");
@@ -84,7 +96,10 @@ describe("Gemini multimodal models", () => {
         ],
       },
     });
-    const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateContent",
+      modelId: "gemini-test",
+    });
 
     await expect(generateImage({ model, prompt: "draw" })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
@@ -104,9 +119,10 @@ describe("Gemini multimodal models", () => {
         ],
       },
     });
-    const model = new GeminiClient({ client: client as never }).imagenGenerationModel(
-      "imagen-test",
-    );
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateImages",
+      modelId: "imagen-test",
+    });
 
     await expect(generateImage({ model, prompt: "draw" })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
@@ -115,7 +131,9 @@ describe("Gemini multimodal models", () => {
 
   it("maps transcription requests through generateContent inline audio", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).transcriptionModel("gemini-test");
+    const model = new GeminiClient({ client: client as never }).transcriptionModel({
+      modelId: "gemini-test",
+    });
 
     const response = await transcribe({
       model,
@@ -141,6 +159,7 @@ describe("Gemini multimodal models", () => {
         },
       ],
       config: {
+        httpOptions: { retryOptions: { attempts: 1 } },
         topP: 0.8,
         temperature: 0.2,
         systemInstruction:

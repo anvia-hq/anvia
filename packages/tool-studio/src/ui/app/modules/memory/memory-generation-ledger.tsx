@@ -74,7 +74,7 @@ function GenerationRow(props: { row: MemoryGenerationRow }) {
                 {generation.provider}
               </Badge>
               <Badge className="max-w-full truncate border-border/80 bg-muted/45 text-foreground">
-                {generation.model}
+                {generation.modelId}
               </Badge>
             </>
           )}

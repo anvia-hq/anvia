@@ -1,11 +1,11 @@
 import type { Anthropic } from "@anthropic-ai/sdk";
 import type { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
+import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
-  type CompletionModelMetadataOptions,
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
@@ -16,7 +16,6 @@ import {
   type Message as MessageType,
   type ModelCallOptions,
   type ReasoningDetail,
-  resolveCompletionModelInfo,
   type StreamingCompletionModel,
   type ToolChoice,
   type ToolDefinition,
@@ -28,10 +27,7 @@ import {
 } from "@anvia/core/completion";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, stringFrom } from "../utils";
-import {
-  ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
-  type AnthropicCompletionModelName,
-} from "./models";
+import type { AnthropicCompletionModelId } from "./models";
 
 type AnthropicCreateParams = Record<string, unknown>;
 type AnthropicMessage = Record<string, unknown>;
@@ -39,9 +35,7 @@ type AnthropicContentBlock = Record<string, unknown>;
 
 const DEFAULT_MAX_TOKENS = 1024;
 
-export class AnthropicCompletionModel
-  implements StreamingCompletionModel<unknown, AnthropicCompletionModelName>
-{
+export class AnthropicCompletionModel implements StreamingCompletionModel<unknown> {
   readonly provider = "anthropic";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -55,25 +49,21 @@ export class AnthropicCompletionModel
 
   constructor(
     private readonly client: Anthropic | AnthropicVertex,
-    readonly defaultModel: AnthropicCompletionModelName = "claude-sonnet-4-20250514",
-    private readonly metadataOptions: CompletionModelMetadataOptions = {},
+    readonly modelId: AnthropicCompletionModelId,
+    readonly contextLimits?: ModelContextLimits,
   ) {}
 
-  getModelInfo(
-    model: AnthropicCompletionModelName = this.defaultModel,
-  ): CompletionModelInfo<AnthropicCompletionModelName> | undefined {
-    return resolveCompletionModelInfo(
-      model,
-      ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
-      this.metadataOptions.modelOverrides,
-    );
+  private modelInfo(): CompletionModelInfo | undefined {
+    return this.contextLimits === undefined
+      ? undefined
+      : { modelId: this.modelId, context: this.contextLimits };
   }
 
   traceRequest(
-    request: CompletionRequest<AnthropicCompletionModelName>,
+    request: CompletionRequest,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
-    const params = toAnthropicMessagesParams(this.defaultModel, request);
+    const params = toAnthropicMessagesParams(this.modelId, request);
     if (options.stream === true) {
       params.stream = true;
     }
@@ -81,27 +71,24 @@ export class AnthropicCompletionModel
   }
 
   async completion(
-    request: CompletionRequest<AnthropicCompletionModelName>,
+    request: CompletionRequest,
     options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
-    const params = toAnthropicMessagesParams(this.defaultModel, request);
+    const params = toAnthropicMessagesParams(this.modelId, request);
     const response = await this.client.messages.create(
       params as never,
       anthropicRequestOptions(options),
     );
-    return withContextUsage(
-      fromAnthropicMessage(response),
-      this.getModelInfo(request.model ?? this.defaultModel),
-    );
+    return withContextUsage(fromAnthropicMessage(response), this.modelInfo());
   }
 
   async *streamCompletion(
-    request: CompletionRequest<AnthropicCompletionModelName>,
+    request: CompletionRequest,
     options?: ModelCallOptions,
   ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
-    const params = { ...toAnthropicMessagesParams(this.defaultModel, request), stream: true };
+    const params = { ...toAnthropicMessagesParams(this.modelId, request), stream: true };
     const stream = await this.client.messages.create(
       params as never,
       anthropicRequestOptions(options),
@@ -146,10 +133,7 @@ export class AnthropicCompletionModel
           usageMapped.type === "final"
             ? {
                 ...usageMapped,
-                response: withContextUsage(
-                  usageMapped.response,
-                  this.getModelInfo(request.model ?? this.defaultModel),
-                ),
+                response: withContextUsage(usageMapped.response, this.modelInfo()),
               }
             : usageMapped;
         if (
@@ -179,10 +163,7 @@ export class AnthropicCompletionModel
         }
         yield {
           type: "final",
-          response: withContextUsage(
-            response,
-            this.getModelInfo(request.model ?? this.defaultModel),
-          ),
+          response: withContextUsage(response, this.modelInfo()),
         };
       }
     }
@@ -296,14 +277,14 @@ function copyUsage(usage: Usage): Usage {
 }
 
 export function toAnthropicMessagesParams(
-  defaultModel: AnthropicCompletionModelName,
-  request: CompletionRequest<AnthropicCompletionModelName>,
+  modelId: AnthropicCompletionModelId,
+  request: CompletionRequest,
 ): AnthropicCreateParams {
   const messages = requestMessages(request);
   const system = systemFromMessages(request, messages);
   const params: AnthropicCreateParams = {
     ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
-    model: request.model ?? defaultModel,
+    model: modelId,
     max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
     messages: messages.flatMap(messageToAnthropicMessages),
   };
@@ -329,15 +310,16 @@ export function toAnthropicMessagesParams(
   return params;
 }
 
-function anthropicRequestOptions(
-  options: ModelCallOptions | undefined,
-): { signal?: AbortSignal | undefined } | undefined {
-  return options?.abortSignal === undefined ? undefined : { signal: options.abortSignal };
+function anthropicRequestOptions(options: ModelCallOptions | undefined): {
+  signal?: AbortSignal | undefined;
+  maxRetries: 0;
+} {
+  return { signal: options?.abortSignal, maxRetries: 0 };
 }
 
 function providerRequestSummary(
   params: AnthropicCreateParams,
-  request: CompletionRequest<AnthropicCompletionModelName>,
+  request: CompletionRequest,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   return compactJsonObject({
@@ -377,12 +359,12 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
   ) as JsonObject;
 }
 
-function requestMessages(request: CompletionRequest<AnthropicCompletionModelName>): MessageType[] {
+function requestMessages(request: CompletionRequest): MessageType[] {
   return orderedRequestMessages(request);
 }
 
 function systemFromMessages(
-  request: CompletionRequest<AnthropicCompletionModelName>,
+  request: CompletionRequest,
   messages: MessageType[],
 ): string | undefined {
   const systemMessages = messages.flatMap((message) =>

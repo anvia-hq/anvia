@@ -1,6 +1,6 @@
 import { embedDocuments } from "@anvia/core/embeddings";
 import { InMemoryVectorStore, retrieveDocuments, vectorFilter } from "@anvia/core/vector-store";
-import { createTransformersEmbeddingModel } from "@anvia/transformers";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
 type Report = {
   id: string;
@@ -9,7 +9,7 @@ type Report = {
   priority: number;
 };
 
-const model = await createTransformersEmbeddingModel();
+const model = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
 const reports: Report[] = [
   { id: "r1", text: "earnings outlook improved", desk: "markets", priority: 3 },
   { id: "r2", text: "support backlog increased", desk: "product", priority: 2 },

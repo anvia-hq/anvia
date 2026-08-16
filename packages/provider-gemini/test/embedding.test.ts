@@ -18,7 +18,8 @@ describe("Gemini embedding models", () => {
     });
 
     const embeddings = await client
-      .embeddingModel("gemini-embedding-test", {
+      .embeddingModel({
+        modelId: "gemini-embedding-test",
         dimensions: 32,
         taskType: "RETRIEVAL_DOCUMENT",
         title: "Docs",
@@ -31,6 +32,7 @@ describe("Gemini embedding models", () => {
         model: "gemini-embedding-test",
         contents: ["first", "second"],
         config: {
+          httpOptions: { retryOptions: { attempts: 1 } },
           outputDimensionality: 32,
           taskType: "RETRIEVAL_DOCUMENT",
           title: "Docs",
@@ -52,9 +54,9 @@ describe("Gemini embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Embedding response length 1 did not match input length 2",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "gemini-embedding-001" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Embedding response length 1 did not match input length 2");
   });
 
   it("rejects invalid Gemini embedding response rows", async () => {
@@ -68,9 +70,9 @@ describe("Gemini embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Invalid Gemini embedding response vector at position 1.",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "gemini-embedding-001" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Invalid Gemini embedding response vector at position 1.");
   });
 
   it("rejects malformed Gemini single embedding responses", async () => {
@@ -82,8 +84,8 @@ describe("Gemini embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a"])).rejects.toThrow(
-      "Invalid Gemini embedding response vector at position 0.",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "gemini-embedding-001" }).embedTexts(["a"]),
+    ).rejects.toThrow("Invalid Gemini embedding response vector at position 0.");
   });
 });

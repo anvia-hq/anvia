@@ -511,16 +511,13 @@ function generationMetadata(
   const request = args.request;
   const response = endArgs?.response;
   const rawResponse = isRecord(response?.rawResponse) ? response.rawResponse : undefined;
-  const effectiveModel =
-    request.model ?? stringValue(rawResponse?.model) ?? args.modelInfo?.defaultModel ?? "default";
+  const modelId = args.modelInfo?.modelId ?? stringValue(rawResponse?.model) ?? "unknown";
   const providerResponse = providerResponseSummary(rawResponse);
   const usage = response?.usage;
 
   return compactJsonObject({
     provider: args.modelInfo?.provider,
-    model: effectiveModel,
-    requestedModel: request.model,
-    defaultModel: args.modelInfo?.defaultModel,
+    modelId,
     messageId: response?.messageId,
     usage,
     toolCount: request.tools.length,
@@ -538,9 +535,7 @@ function generationMetadata(
     providerResponse,
     modelInfo: compactJsonObject({
       provider: args.modelInfo?.provider,
-      model: effectiveModel,
-      requestedModel: request.model,
-      defaultModel: args.modelInfo?.defaultModel,
+      modelId,
       capabilities: args.modelInfo?.capabilities,
     }),
     modelCall: compactJsonObject({
@@ -567,7 +562,6 @@ function generationMetadata(
 
 function completionRequestSummary(request: AgentGenerationStartArgs["request"]): JsonObject {
   return compactJsonObject({
-    model: request.model,
     instructions: request.instructions === undefined ? undefined : { present: true },
     messageCount: request.chatHistory.length,
     documentCount: request.documents.length,

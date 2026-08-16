@@ -9,17 +9,18 @@ import {
 import {
   fromGeminiGenerateContentResponse,
   fromGeminiGenerateContentStreamChunk,
+  GeminiCompletionModel,
   messagesToGeminiContents,
   toGeminiGenerateContentParams,
 } from "../src/gemini/completion";
-import { GeminiClient, GeminiCompletionModel } from "../src/index";
+import { GeminiClient } from "../src/index";
 
 describe("Gemini completion mapping", () => {
   it("exposes Gemini capability metadata", () => {
     const model = new GeminiCompletionModel({} as never, "gemini-test");
 
     expect(model.provider).toBe("gemini");
-    expect(model.defaultModel).toBe("gemini-test");
+    expect(model.modelId).toBe("gemini-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -32,15 +33,16 @@ describe("Gemini completion mapping", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new GeminiCompletionModel({} as never, "gemini-2.5-flash");
+    const model = new GeminiCompletionModel({} as never, "gemini-2.5-flash", {
+      contextWindow: 1_048_576,
+      maxInputTokens: 1_048_576,
+      maxOutputTokens: 65_536,
+    });
 
-    expect(model.getModelInfo()).toEqual({
-      id: "gemini-2.5-flash",
-      context: {
-        contextWindow: 1_048_576,
-        maxInputTokens: 1_048_576,
-        maxOutputTokens: 65_536,
-      },
+    expect(model.contextLimits).toEqual({
+      contextWindow: 1_048_576,
+      maxInputTokens: 1_048_576,
+      maxOutputTokens: 65_536,
     });
   });
 
@@ -128,6 +130,10 @@ describe("Gemini completion mapping", () => {
       providerOptions: {
         labels: { surface: "test" },
         config: {
+          httpOptions: {
+            headers: { "x-request-source": "test" },
+            retryOptions: { attempts: 7, maxDelay: 30 },
+          },
           topP: 0.9,
           temperature: 0.4,
         },
@@ -138,6 +144,10 @@ describe("Gemini completion mapping", () => {
       model: "gemini-2.5-flash",
       labels: { surface: "test" },
       config: {
+        httpOptions: {
+          headers: { "x-request-source": "test" },
+          retryOptions: { attempts: 1, maxDelay: 30 },
+        },
         systemInstruction: "Use the support policy.\n\nSystem context.",
         temperature: 0.2,
         maxOutputTokens: 128,
@@ -463,7 +473,7 @@ describe("Gemini completion mapping", () => {
       } as never,
     });
 
-    const model = client.completionModel("gemini-test");
+    const model = client.completionModel({ modelId: "gemini-test" });
     expect(model).toBeInstanceOf(GeminiCompletionModel);
 
     await expect(
@@ -480,6 +490,18 @@ describe("Gemini completion mapping", () => {
     }
 
     expect(calls).toHaveLength(2);
+    expect(calls).toEqual([
+      expect.objectContaining({
+        config: expect.objectContaining({
+          httpOptions: { retryOptions: { attempts: 1 } },
+        }),
+      }),
+      expect.objectContaining({
+        config: expect.objectContaining({
+          httpOptions: { retryOptions: { attempts: 1 } },
+        }),
+      }),
+    ]);
     expect(events).toContainEqual({ type: "text_delta", delta: "o" });
     expect(events).toContainEqual({ type: "text_delta", delta: "k" });
   });

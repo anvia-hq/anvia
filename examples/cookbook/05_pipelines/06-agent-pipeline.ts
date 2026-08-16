@@ -5,10 +5,10 @@ import { z } from "zod";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
-const analystModel = client.completionModel("gpt-5.5");
+const analystModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 const analyst = new Agent({
   id: "analyst",
   model: analystModel,

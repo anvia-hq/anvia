@@ -2,24 +2,73 @@ import {
   AnthropicVertex,
   type ClientOptions as AnthropicVertexSdkOptions,
 } from "@anthropic-ai/vertex-sdk";
+import {
+  type ModelContextLimits,
+  resolveModelContextLimits,
+  type StreamingCompletionModel,
+} from "@anvia/core/completion";
 import { AnthropicCompletionModel } from "./completion";
-import type { AnthropicCompletionModelName } from "./models";
+import {
+  ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
+  type AnthropicCompletionModelId,
+} from "./models";
 
-export type AnthropicVertexClientOptions = AnthropicVertexSdkOptions & {
-  client?: AnthropicVertex | undefined;
+type AnthropicVertexManagedClientOptions = Omit<AnthropicVertexSdkOptions, "maxRetries"> & {
+  client?: never;
 };
 
-export class AnthropicVertexClient {
-  readonly client: AnthropicVertex;
+type AnthropicVertexInjectedClientOptions = {
+  client: AnthropicVertex;
+} & {
+  [Key in Exclude<keyof AnthropicVertexManagedClientOptions, "client">]?: never;
+};
 
-  constructor(options: AnthropicVertexClientOptions = {}) {
+export type AnthropicVertexClientOptions =
+  | AnthropicVertexManagedClientOptions
+  | AnthropicVertexInjectedClientOptions;
+
+export type AnthropicVertexCompletionModelOptions = {
+  modelId: AnthropicCompletionModelId;
+  contextLimits?: ModelContextLimits | undefined;
+};
+
+export type AnthropicVertexCompletionModelHandle = StreamingCompletionModel<unknown>;
+
+export class AnthropicVertexClient {
+  private readonly sdk: AnthropicVertex;
+
+  constructor(options: AnthropicVertexClientOptions) {
     const { client, ...clientOptions } = options;
-    this.client = client ?? new AnthropicVertex(clientOptions);
+    if (client !== undefined) {
+      const conflict = Object.keys(clientOptions)[0];
+      if (conflict !== undefined) {
+        throw new TypeError(`AnthropicVertexClient cannot combine client with ${conflict}.`);
+      }
+      this.sdk = client;
+      return;
+    }
+    this.sdk = new AnthropicVertex({ ...clientOptions, maxRetries: 0 });
   }
 
   completionModel(
-    model: AnthropicCompletionModelName = "claude-sonnet-5",
-  ): AnthropicCompletionModel {
-    return new AnthropicCompletionModel(this.client, model);
+    options: AnthropicVertexCompletionModelOptions,
+  ): AnthropicVertexCompletionModelHandle {
+    const modelId = requireModelId(options.modelId);
+    return new AnthropicCompletionModel(
+      this.sdk,
+      modelId,
+      resolveModelContextLimits(
+        modelId,
+        ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
+        options.contextLimits,
+      ),
+    );
   }
+}
+
+function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
 }

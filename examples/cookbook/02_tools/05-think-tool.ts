@@ -18,9 +18,9 @@ const thinkTool = createThinkTool();
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-const agentModel = client.completionModel("gpt-5.5");
+const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
 // The think tool gives models an explicit scratchpad step before final answers.
 const agent = new Agent({

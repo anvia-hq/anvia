@@ -39,7 +39,7 @@ export function useAgentModels(props: {
         setSelectedModelRef((current) =>
           modelRefAvailable(body.models, current)
             ? current
-            : (body.defaultModel ?? body.models[0]?.ref ?? ""),
+            : (body.defaultModelRef ?? body.models[0]?.ref ?? ""),
         );
       } catch (loadError) {
         if (!cancelled) {

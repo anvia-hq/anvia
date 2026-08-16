@@ -194,7 +194,7 @@ describe("evals", () => {
     });
   });
 
-  it("runs LLM judge and LLM score metrics through Extractor", async () => {
+  it("runs LLM judge and LLM score metrics through tool-based extraction", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("judge", "submit", { passed: true, reason: "ok" })]),
       response([AssistantContent.toolCall("score", "submit", { score: 0.8, feedback: "good" })]),

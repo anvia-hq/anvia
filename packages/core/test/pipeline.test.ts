@@ -1,8 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
-import * as anvia from "./helpers/imports";
+import * as publicPipeline from "../src/pipeline";
 import {
   Agent,
+  AgentRunBlockedError,
   AgentRunCancelledError,
   AssistantContent,
   type CompletionModel,
@@ -10,9 +11,10 @@ import {
   type CompletionResponse,
   createObserver,
   createTool,
-  Extractor,
+  defineGuardrailPolicy,
+  defineInputGuardrail,
   Pipeline,
-  type PipelineOp,
+  PipelineAgentApprovalError,
   Usage,
 } from "./helpers/imports";
 
@@ -35,25 +37,14 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
-    if (response === undefined) {
-      throw new Error("No queued response");
-    }
+    if (response === undefined) throw new Error("No queued response");
     return response;
   }
 }
 
-function response(choice: CompletionResponse["choice"]): CompletionResponse {
-  return {
-    choice,
-    usage: Usage.empty(),
-    rawResponse: {},
-  };
-}
-
 describe("Pipeline", () => {
-  it("validates and normalizes constructor options", () => {
+  it("validates constructor options", () => {
     const pipeline = new Pipeline({ id: " ticket-triage ", inputSchema: z.string() });
-
     expect(pipeline.id).toBe("ticket-triage");
     expect(() => new Pipeline({ id: "   ", inputSchema: z.string() })).toThrow(
       "Pipeline id must be a non-empty string",
@@ -66,109 +57,224 @@ describe("Pipeline", () => {
     ).toThrow("Pipeline inputSchema must be a Zod schema");
   });
 
-  it("composes sync steps", async () => {
-    const pipeline = new Pipeline({ id: "sync-steps", inputSchema: z.number() })
-      .step((value) => value + 1)
-      .step((value) => `value:${value}`);
+  it("runs typed sync and async object stages", async () => {
+    const pipeline = new Pipeline({ id: "steps", inputSchema: z.number() })
+      .step({ id: "increment", run: ({ input }) => input + 1 })
+      .step({ id: "label", run: async ({ input }) => `value:${input}` });
 
-    expect(pipeline).toBeInstanceOf(Pipeline);
-    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<number, string>>();
-    await expect(pipeline.run(2)).resolves.toBe("value:3");
+    const result = await pipeline.run({ input: 2, runId: "run_steps" });
+
+    expectTypeOf(result.output).toEqualTypeOf<string>();
+    expect(result).toEqual({ runId: "run_steps", output: "value:3" });
   });
 
-  it("composes async steps", async () => {
-    const pipeline = new Pipeline({ id: "async-steps", inputSchema: z.string() })
-      .step(async (value) => value.trim())
-      .step(async (value) => value.toUpperCase());
-
-    await expect(pipeline.run(" hello ")).resolves.toBe("HELLO");
-  });
-
-  it("uses another pipeline op", async () => {
-    const suffix = new Pipeline({ id: "suffix", inputSchema: z.string() }).step(
-      (value) => `${value}!`,
+  it("requires stable unique stage ids", () => {
+    const base = new Pipeline({ id: "ids", inputSchema: z.string() }).step({
+      id: "normalize",
+      run: ({ input }) => input,
+    });
+    expect(() => base.step({ id: "normalize", run: ({ input }) => input })).toThrow(
+      'Pipeline stage id "normalize" is already registered',
     );
+    expect(() =>
+      new Pipeline({ id: "reserved", inputSchema: z.string() }).step({
+        id: "$input",
+        run: ({ input }) => input,
+      }),
+    ).toThrow("is reserved");
+  });
+
+  it("provides one run context to every mapper", async () => {
+    const controller = new AbortController();
+    const seen: unknown[] = [];
+    const pipeline = new Pipeline({ id: "context", inputSchema: z.string() }).step({
+      id: "capture",
+      run(context) {
+        seen.push(context);
+        return context.input.toUpperCase();
+      },
+    });
+
+    await pipeline.run({
+      input: "hello",
+      runId: "run_context",
+      metadata: { tenantId: "acme" },
+      abortSignal: controller.signal,
+    });
+
+    expect(seen).toEqual([
+      {
+        input: "hello",
+        runId: "run_context",
+        pipelineId: "context",
+        runMetadata: { tenantId: "acme" },
+        abortSignal: controller.signal,
+      },
+    ]);
+  });
+
+  it("uses asynchronous Zod parsing and preserves transformed types", async () => {
+    const pipeline = new Pipeline({
+      id: "async-schema",
+      inputSchema: z.string().transform(async (value) => value.trim().length),
+    }).step({
+      id: "double",
+      run: ({ input }) => {
+        expectTypeOf(input).toEqualTypeOf<number>();
+        return input * 2;
+      },
+    });
+
+    const result = await pipeline.run({ input: " hi " });
+    expect(result.output).toBe(4);
+  });
+
+  it("rejects cancellation that occurs during asynchronous input validation", async () => {
+    const controller = new AbortController();
+    const pipeline = new Pipeline({
+      id: "async-schema-abort",
+      inputSchema: z.string().transform(async (value) => {
+        await delay(5);
+        controller.abort("stop");
+        return value;
+      }),
+    });
+
+    await expect(
+      pipeline.run({ input: "value", abortSignal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("composes a child Pipeline with the same run context", async () => {
+    const child = new Pipeline({ id: "suffix", inputSchema: z.string() }).step({
+      id: "append",
+      run: ({ input, runId, runMetadata }) => `${input}!:${runId}:${runMetadata?.tenant}`,
+    });
     const pipeline = new Pipeline({ id: "composed", inputSchema: z.string() })
-      .step((value) => value.toUpperCase())
-      .use(suffix);
+      .step({ id: "uppercase", run: ({ input }) => input.toUpperCase() })
+      .compose({ id: "suffix-boundary", pipeline: child });
 
-    expect(pipeline).toBeInstanceOf(Pipeline);
-    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<string, string>>();
-    await expect(pipeline.run("ok")).resolves.toBe("OK!");
-  });
-
-  it("batches with a concurrency limit and preserves order", async () => {
-    let active = 0;
-    let maxActive = 0;
-    const pipeline = new Pipeline({ id: "batch", inputSchema: z.number() }).step(async (value) => {
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      active -= 1;
-      return value * 2;
+    const result = await pipeline.run({
+      input: "ok",
+      runId: "run_compose",
+      metadata: { tenant: "acme" },
     });
 
-    await expect(pipeline.batch([3, 1, 2, 4], { concurrency: 2 })).resolves.toEqual([6, 2, 4, 8]);
-    expect(maxActive).toBeLessThanOrEqual(2);
-    expect(maxActive).toBeGreaterThan(1);
+    expect(result.output).toBe("OK!:run_compose:acme");
   });
 
-  it("runs named parallel branches and returns object output", async () => {
+  it("runs named parallel Pipelines and infers their output", async () => {
+    const upper = new Pipeline({ id: "upper", inputSchema: z.string() }).step({
+      id: "transform",
+      run: ({ input }) => input.toUpperCase(),
+    });
+    const length = new Pipeline({ id: "length", inputSchema: z.string() }).step({
+      id: "measure",
+      run: async ({ input }) => input.length,
+    });
     const pipeline = new Pipeline({ id: "parallel", inputSchema: z.string() }).parallel({
-      upper: new Pipeline({ id: "uppercase", inputSchema: z.string() }).step((value) =>
-        value.toUpperCase(),
-      ),
-      length: new Pipeline({ id: "length", inputSchema: z.string() }).step(
-        async (value) => value.length,
-      ),
-      includesA: new Pipeline({ id: "includes-a", inputSchema: z.string() }).step((value) =>
-        value.includes("a"),
-      ),
+      id: "signals",
+      branches: { upper, length },
     });
 
-    expect(pipeline).toBeInstanceOf(Pipeline);
-    expectTypeOf(pipeline).toEqualTypeOf<
-      Pipeline<string, { upper: string; length: number; includesA: boolean }>
-    >();
-    await expect(pipeline.run("anvia")).resolves.toEqual({
-      upper: "ANVIA",
-      length: 5,
-      includesA: true,
-    });
+    const result = await pipeline.run({ input: "anvia" });
+
+    expectTypeOf(result.output).toEqualTypeOf<{ upper: string; length: number }>();
+    expect(result.output).toEqual({ upper: "ANVIA", length: 5 });
   });
 
-  it("prompts an agent and returns output", async () => {
-    const model = new QueueModel([response([AssistantContent.text("answer")])]);
-    const agent = new Agent({ id: "test-agent", model });
-    const pipeline = new Pipeline({ id: "agent-stage", inputSchema: z.string() })
-      .step((value) => `Question: ${value}`)
-      .agent(agent);
+  it("rejects ambiguous parallel branch ids", () => {
+    const branch = new Pipeline({ id: "branch", inputSchema: z.string() });
+    const pipeline = new Pipeline({ id: "parallel-ids", inputSchema: z.string() });
 
-    expect(pipeline).toBeInstanceOf(Pipeline);
-    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<string, string>>();
-    await expect(pipeline.run("ping")).resolves.toBe("answer");
+    expect(() =>
+      pipeline.parallel({
+        id: "signals",
+        branches: { left: branch, " left ": branch },
+      }),
+    ).toThrow('Pipeline parallel branch id "left" is already registered');
+    expect(() => pipeline.parallel({ id: "signals", branches: { " left ": branch } })).toThrow(
+      "must not contain surrounding whitespace",
+    );
+  });
+
+  it("aborts parallel siblings after the first branch failure", async () => {
+    let siblingAborted = false;
+    const failing = new Pipeline({ id: "failing", inputSchema: z.string() }).step({
+      id: "fail",
+      async run() {
+        await delay(5);
+        throw new Error("branch failed");
+      },
+    });
+    const waiting = new Pipeline({ id: "waiting", inputSchema: z.string() }).step({
+      id: "wait",
+      run: ({ abortSignal }) =>
+        new Promise<string>((resolve, reject) => {
+          const timer = setTimeout(() => resolve("late"), 1_000);
+          abortSignal?.addEventListener(
+            "abort",
+            () => {
+              siblingAborted = true;
+              clearTimeout(timer);
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true },
+          );
+        }),
+    });
+    const pipeline = new Pipeline({ id: "parallel-failure", inputSchema: z.string() }).parallel({
+      id: "branches",
+      branches: { failing, waiting },
+    });
+
+    await expect(pipeline.run({ input: "value" })).rejects.toThrow("branch failed");
+    expect(siblingAborted).toBe(true);
+  });
+
+  it("maps Pipeline values explicitly into Agent requests", async () => {
+    const model = new QueueModel([response([AssistantContent.text("answer")])]);
+    const agent = new Agent({ id: "support", model });
+    const pipeline = new Pipeline({
+      id: "agent-stage",
+      inputSchema: z.object({ q: z.string() }),
+    }).agent({
+      id: "answer",
+      agent,
+      approval: "reject",
+      request: ({ input }) => ({ prompt: `Question: ${input.q}` }),
+    });
+
+    const result = await pipeline.run({ input: { q: "ping" } });
+
+    expect(result.output).toBe("answer");
     expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
       role: "user",
       content: [{ type: "text", text: "Question: ping" }],
     });
   });
 
-  it("preserves schema-backed Agent output through a pipeline stage", async () => {
-    const model = new QueueModel([response([AssistantContent.text('{"answer":"typed"}')])]);
+  it("preserves schema-backed Agent output", async () => {
     const agent = new Agent({
       id: "typed-agent",
-      model,
+      model: new QueueModel([response([AssistantContent.text('{"answer":"typed"}')])]),
       outputSchema: z.object({ answer: z.string() }),
     });
-    const pipeline = new Pipeline({ id: "typed-agent-stage", inputSchema: z.string() }).agent(
+    const pipeline = new Pipeline({ id: "typed-agent-stage", inputSchema: z.string() }).agent({
+      id: "answer",
       agent,
-    );
+      approval: "reject",
+      request: ({ input }) => ({ prompt: input }),
+    });
 
-    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<string, { answer: string }>>();
-    await expect(pipeline.run("question")).resolves.toEqual({ answer: "typed" });
+    const result = await pipeline.run({ input: "question" });
+    expectTypeOf(result.output).toEqualTypeOf<{ answer: string }>();
+    expect(result.output).toEqual({ answer: "typed" });
   });
 
-  it("cancels an agent stage that requires tool approval", async () => {
+  it("explicitly rejects and cancels approval-required Agent stages", async () => {
     let observedError: unknown;
     const guardedTool = createTool({
       name: "guarded",
@@ -194,249 +300,242 @@ describe("Pipeline", () => {
         }),
       ],
     });
-    const pipeline = new Pipeline({ id: "approval-pipeline", inputSchema: z.string() }).agent(
+    const pipeline = new Pipeline({ id: "approval-pipeline", inputSchema: z.string() }).agent({
+      id: "guarded-agent",
       agent,
-    );
+      approval: "reject",
+      request: ({ input }) => ({ prompt: input }),
+    });
 
-    await expect(pipeline.run("run guarded tool")).rejects.toThrow(
-      "Pipeline agent stages cannot suspend for tool approval",
-    );
+    const error = await pipeline.run({ input: "run guarded tool" }).catch((failure) => failure);
+
+    expect(error).toBeInstanceOf(PipelineAgentApprovalError);
+    expect(error.result.status).toBe("approval_required");
     expect(observedError).toBeInstanceOf(AgentRunCancelledError);
   });
 
-  it("extracts structured data through an extractor", async () => {
+  it("preserves blocked Agent errors", async () => {
+    const inputGuardrail = defineInputGuardrail({
+      id: "block",
+      check(_context, { block }) {
+        return block({ reason: "blocked" });
+      },
+    });
+    const agent = new Agent({
+      id: "blocked-agent",
+      model: new QueueModel([]),
+      guardrails: defineGuardrailPolicy({ id: "blocked-policy", input: [inputGuardrail] }),
+    });
+    const pipeline = new Pipeline({ id: "blocked-pipeline", inputSchema: z.string() }).agent({
+      id: "blocked",
+      agent,
+      approval: "reject",
+      request: ({ input }) => ({ prompt: input }),
+    });
+    await expect(pipeline.run({ input: "stop" })).rejects.toBeInstanceOf(AgentRunBlockedError);
+  });
+
+  it("maps Pipeline values explicitly into extraction text", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("submit_1", "submit", { priority: "high" })]),
     ]);
-    const extractor = new Extractor({
+    const pipeline = new Pipeline({
+      id: "extractor-stage",
+      inputSchema: z.object({ note: z.string() }),
+    }).extract({
+      id: "priority",
       model,
       outputSchema: z.object({ priority: z.enum(["low", "high"]) }),
-    });
-    const pipeline = new Pipeline({ id: "extractor-stage", inputSchema: z.string() })
-      .step((value) => `Extract priority: ${value}`)
-      .extract(extractor);
-
-    expect(pipeline).toBeInstanceOf(Pipeline);
-    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<string, { priority: "low" | "high" }>>();
-    await expect(pipeline.run("urgent incident")).resolves.toEqual({ priority: "high" });
-  });
-
-  it("rejects run and batch when a step throws", async () => {
-    const pipeline = new Pipeline({ id: "errors", inputSchema: z.number() }).step((value) => {
-      if (value === 2) {
-        throw new Error("boom");
-      }
-      return value;
+      text: ({ input }) => `Extract priority: ${input.note}`,
     });
 
-    await expect(pipeline.run(2)).rejects.toThrow("boom");
-    await expect(pipeline.batch([1, 2, 3], { concurrency: 2 })).rejects.toThrow("boom");
+    const result = await pipeline.run({ input: { note: "urgent" } });
+    expect(result.output).toEqual({ priority: "high" });
+    expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
+      content: [{ type: "text", text: "Extract priority: urgent" }],
+    });
   });
 
-  it("can use a custom pipeline op", async () => {
-    const pipeline = new Pipeline({ id: "custom-op", inputSchema: z.number() }).use(
-      createPipelineOp((value) => value + 10),
-    );
+  it("produces hierarchical graphs and events for composed and parallel children", async () => {
+    const child = new Pipeline({ id: "child", inputSchema: z.string() }).step({
+      id: "shared",
+      run: ({ input }) => input.toUpperCase(),
+    });
+    const pipeline = new Pipeline({ id: "graph", inputSchema: z.string() })
+      .compose({ id: "nested", pipeline: child })
+      .parallel({ id: "fanout", branches: { left: child, right: child } });
+    const paths: string[][] = [];
 
-    await expect(pipeline.run(5)).resolves.toBe(15);
-  });
+    await pipeline.run({
+      input: "value",
+      runId: "run_graph",
+      observer: {
+        onEvent(event) {
+          if (event.type === "stage_started") paths.push([...event.path]);
+          expect(event.runId).toBe("run_graph");
+          expect(event.pipelineId).toBe("graph");
+        },
+      },
+    });
 
-  it("keeps fluent branching immutable", async () => {
-    const base = new Pipeline({ id: "immutable", inputSchema: z.number() }).step(
-      (value) => value + 1,
-    );
-    const doubled = base.step((value) => value * 2);
-    const labeled = base.step((value) => `value:${value}`);
-
-    await expect(base.run(2)).resolves.toBe(3);
-    await expect(doubled.run(2)).resolves.toBe(6);
-    await expect(labeled.run(2)).resolves.toBe("value:3");
-    expect(base.graph().nodes.map((node) => node.kind)).toEqual(["input", "step", "output"]);
-    expect(doubled.graph().nodes.map((node) => node.kind)).toEqual([
-      "input",
-      "step",
-      "step",
-      "output",
+    expect(paths).toEqual([
+      ["nested"],
+      ["nested", "shared"],
+      ["fanout"],
+      ["fanout", "left"],
+      ["fanout", "right"],
+      ["fanout", "left", "shared"],
+      ["fanout", "right", "shared"],
     ]);
-  });
-
-  it("exposes an automatic graph", () => {
-    const model = new QueueModel([response([AssistantContent.text("answer")])]);
-    const agent = new Agent({ id: "support", model, name: "Support" });
-    const pipeline = new Pipeline({
-      id: "ticket_triage",
-      inputSchema: z.string(),
-      name: "Ticket triage",
-      description: "Prepare a support answer.",
-      metadata: { owner: "support" },
-    })
-      .step((value) => value.trim())
-      .parallel({
-        upper: new Pipeline({ id: "upper", inputSchema: z.string() }).step((value) =>
-          value.toUpperCase(),
-        ),
-        length: new Pipeline({ id: "length", inputSchema: z.string() }).step(
-          (value) => value.length,
-        ),
-      })
-      .agent(agent);
-
-    expect(pipeline.graph()).toMatchObject({
-      id: "ticket_triage",
-      name: "Ticket triage",
-      description: "Prepare a support answer.",
-      metadata: { owner: "support" },
-      nodes: [
-        { id: "input", kind: "input", label: "Input" },
-        { kind: "step", label: "Step 1" },
-        { kind: "parallel", label: "2 parallel branches" },
-        { kind: "branch", label: "upper", branchKey: "upper" },
-        { kind: "branch", label: "length", branchKey: "length" },
-        { kind: "agent", label: "Support", agentId: "support", agentName: "Support" },
-        { id: "output", kind: "output", label: "Output" },
-      ],
-    });
+    expect(pipeline.graph().nodes.map((node) => node.path)).toEqual([
+      ["$input"],
+      ["nested"],
+      ["nested", "shared"],
+      ["fanout"],
+      ["fanout", "left"],
+      ["fanout", "left", "shared"],
+      ["fanout", "right"],
+      ["fanout", "right", "shared"],
+      ["$output"],
+    ]);
     expect(pipeline.graph().edges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ source: "input", target: "step_1" }),
-        expect.objectContaining({ source: "step_1", target: "parallel_2" }),
-        expect.objectContaining({ source: "parallel_2", target: "branch_3" }),
-        expect.objectContaining({ source: "parallel_2", target: "branch_4" }),
-        expect.objectContaining({ source: "branch_3", target: "agent_5" }),
-        expect.objectContaining({ source: "branch_4", target: "agent_5" }),
-        expect.objectContaining({ source: "agent_5", target: "output" }),
+        expect.objectContaining({ source: ["$input"], target: ["nested"] }),
+        expect.objectContaining({ source: ["nested"], target: ["nested", "shared"] }),
+        expect.objectContaining({ source: ["nested", "shared"], target: ["fanout"] }),
+        expect.objectContaining({ source: ["fanout"], target: ["fanout", "left"] }),
       ]),
     );
   });
 
-  it("emits pipeline stage run events without changing output", async () => {
-    const events: string[] = [];
-    const pipeline = new Pipeline({ id: "observed", inputSchema: z.number() })
-      .step((value) => value + 1)
-      .step((value) => value * 2);
+  it("isolates observer errors unless strict delivery is requested", async () => {
+    const pipeline = new Pipeline({ id: "observer", inputSchema: z.number() }).step({
+      id: "increment",
+      run: ({ input }) => input + 1,
+    });
+    const observer = { onEvent: () => Promise.reject(new Error("observer failed")) };
 
-    await expect(
-      pipeline.run(2, {
-        observer: {
-          onEvent(event) {
-            events.push(`${event.type}:${event.node.id}`);
-          },
-        },
-      }),
-    ).resolves.toBe(6);
-    expect(events).toEqual([
-      "stage_started:step_1",
-      "stage_completed:step_1",
-      "stage_started:step_2",
-      "stage_completed:step_2",
-    ]);
+    await expect(pipeline.run({ input: 1, observer })).resolves.toMatchObject({ output: 2 });
+    await expect(pipeline.run({ input: 1, observer, failOnObserverError: true })).rejects.toThrow(
+      "observer failed",
+    );
   });
 
-  it("exposes only the direct fluent API at type level", () => {
-    const pipeline = new Pipeline({ id: "types", inputSchema: z.number() });
-    const stepped = pipeline.step((value) => value + 1);
+  it("returns ordered settled batch entries with bounded concurrency", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const pipeline = new Pipeline({ id: "batch", inputSchema: z.number() }).step({
+      id: "double",
+      async run({ input }) {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await delay(5);
+        active -= 1;
+        if (input === 2) throw new Error("boom");
+        return input * 2;
+      },
+    });
 
-    expect(stepped).toBeInstanceOf(Pipeline);
-    expect("build" in pipeline).toBe(false);
+    const results = await pipeline.runBatch({ inputs: [3, 2, 1], concurrency: 2 });
+
+    expect(results.map((result) => result.status)).toEqual(["completed", "failed", "completed"]);
+    expect(results[0]).toMatchObject({ status: "completed", output: 6 });
+    expect(results[1]).toMatchObject({ status: "failed", error: expect.any(Error) });
+    expect(results[2]).toMatchObject({ status: "completed", output: 2 });
+    expect(maxActive).toBe(2);
+  });
+
+  it("settles input validation failures independently", async () => {
+    const pipeline = new Pipeline({ id: "validated-batch", inputSchema: z.number().positive() });
+
+    const results = await pipeline.runBatch({ inputs: [1, -1, 2], concurrency: 2 });
+
+    expect(results.map((result) => result.status)).toEqual(["completed", "failed", "completed"]);
+  });
+
+  it("stops scheduling and rejects the whole batch on external cancellation", async () => {
+    const controller = new AbortController();
+    let started = 0;
+    const pipeline = new Pipeline({ id: "cancelled-batch", inputSchema: z.number() }).step({
+      id: "wait",
+      run: ({ input, abortSignal }) =>
+        new Promise<number>((resolve, reject) => {
+          started += 1;
+          const timer = setTimeout(() => resolve(input), 1_000);
+          abortSignal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true },
+          );
+        }),
+    });
+
+    const batch = pipeline.runBatch({
+      inputs: [1, 2, 3, 4],
+      concurrency: 2,
+      abortSignal: controller.signal,
+    });
+    await delay(5);
+    controller.abort("stop");
+
+    await expect(batch).rejects.toMatchObject({ name: "AbortError" });
+    expect(started).toBe(2);
+  });
+
+  it("keeps fluent branches immutable", async () => {
+    const base = new Pipeline({ id: "immutable", inputSchema: z.number() }).step({
+      id: "increment",
+      run: ({ input }) => input + 1,
+    });
+    const doubled = base.step({ id: "double", run: ({ input }) => input * 2 });
+    const labeled = base.step({ id: "label", run: ({ input }) => `value:${input}` });
+
+    expect((await base.run({ input: 2 })).output).toBe(3);
+    expect((await doubled.run({ input: 2 })).output).toBe(6);
+    expect((await labeled.run({ input: 2 })).output).toBe("value:3");
+    expect(base.graph().nodes.map((node) => node.id)).toEqual(["$input", "increment", "$output"]);
+  });
+
+  it("removes positional and arbitrary operation APIs", () => {
+    const pipeline = new Pipeline({ id: "types", inputSchema: z.number() });
+    expect("use" in pipeline).toBe(false);
+    expect("batch" in pipeline).toBe(false);
+    expect("PipelineOp" in publicPipeline).toBe(false);
 
     if (unreachable()) {
-      // @ts-expect-error - Pipeline requires an options object.
-      new Pipeline<number>();
-      // @ts-expect-error - Pipeline requires id and inputSchema.
-      new Pipeline<number>({ name: "M" });
-      // @ts-expect-error - the executor/graph constructor is internal.
-      new Pipeline<number, number>(async (value) => value, pipeline.graph());
-      // @ts-expect-error - use step(...) instead of map(...).
-      pipeline.map((value: number) => value);
-      // @ts-expect-error - use step(...) instead of then(...).
-      pipeline.then((value: number) => value);
-      // @ts-expect-error - use use(...) instead of chain(...).
-      pipeline.chain(stepped);
-      // @ts-expect-error - pipelines use run(...).
-      pipeline.call(1);
-      // @ts-expect-error - Pipeline has no build phase.
-      pipeline.build();
-      // @ts-expect-error - construct Pipeline directly instead.
-      anvia.pipeline();
-      // @ts-expect-error - use pipeline.parallel({ ... }) instead.
-      anvia.parallel();
+      // @ts-expect-error - arbitrary PipelineOp composition was removed.
+      type RemovedPipelineOp = import("../src/pipeline").PipelineOp;
+      // @ts-expect-error - step requires one options object.
+      pipeline.step((input: number) => input + 1);
+      // @ts-expect-error - run requires one options object.
+      pipeline.run(1);
+      // @ts-expect-error - batch was replaced by runBatch.
+      pipeline.batch([1], { concurrency: 1 });
+      // @ts-expect-error - arbitrary operation composition was removed.
+      pipeline.use({ run: (input: number) => input });
+      // @ts-expect-error - parallel requires stage metadata and branches.
+      pipeline.parallel({ branch: pipeline });
+      // @ts-expect-error - Agent stages require a request mapper and approval behavior.
+      pipeline.agent(new Agent({ id: "old", model: new QueueModel([]) }));
+      const removed = undefined as unknown as RemovedPipelineOp;
+      void removed;
     }
-  });
-
-  it("accepts a Zod schema at construction and infers input type", async () => {
-    const pipeline = new Pipeline({
-      id: "object-input",
-      inputSchema: z.object({ query: z.string(), limit: z.number() }),
-    }).step((input) => {
-      expectTypeOf(input).toEqualTypeOf<{ query: string; limit: number }>();
-      return `${input.query}:${input.limit}`;
-    });
-
-    await expect(pipeline.run({ query: "search", limit: 3 })).resolves.toBe("search:3");
-  });
-
-  it("validates input with a Zod schema at runtime", async () => {
-    const pipeline = new Pipeline({
-      id: "validated-input",
-      inputSchema: z.object({ query: z.string() }),
-    }).step(({ query }) => query);
-
-    await expect(pipeline.run({ query: "ok" })).resolves.toBe("ok");
-    await expect(pipeline.run({ query: 42 } as unknown as { query: string })).rejects.toThrow();
-  });
-
-  it("preserves distinct Zod input and transformed output types", async () => {
-    let parseCount = 0;
-    const pipeline = new Pipeline({
-      id: "transformed-input",
-      inputSchema: z.string().transform((value) => {
-        parseCount += 1;
-        return value.trim().length;
-      }),
-    }).step((length) => {
-      expectTypeOf(length).toEqualTypeOf<number>();
-      return length * 2;
-    });
-
-    expectTypeOf(pipeline).toEqualTypeOf<Pipeline<string, number>>();
-    await expect(pipeline.run(" hi ")).resolves.toBe(4);
-    expect(parseCount).toBe(1);
-  });
-
-  it("applies Zod defaults when parsing input", async () => {
-    const pipeline = new Pipeline({
-      id: "defaults",
-      inputSchema: z.object({ query: z.string(), limit: z.number().default(10) }),
-    }).step((input) => {
-      expectTypeOf(input).toEqualTypeOf<{ query: string; limit: number }>();
-      return `${input.query}:${input.limit}`;
-    });
-
-    await expect(pipeline.run({ query: "hi" })).resolves.toBe("hi:10");
-  });
-
-  it("accepts pipeline metadata through constructor options", async () => {
-    const pipeline = new Pipeline({
-      id: "metadata",
-      inputSchema: z.object({ x: z.string() }),
-      name: "X Pipeline",
-      description: "desc",
-      metadata: { owner: "test" },
-    }).step(({ x }) => x.toUpperCase());
-
-    await expect(pipeline.run({ x: "ok" })).resolves.toBe("OK");
-    expect(pipeline.name).toBe("X Pipeline");
-    expect(pipeline.description).toBe("desc");
-    expect(pipeline.metadata).toEqual({ owner: "test" });
   });
 });
 
-function unreachable(): boolean {
-  return false;
+function response(choice: CompletionResponse["choice"]): CompletionResponse {
+  return { choice, usage: Usage.empty(), rawResponse: {} };
 }
 
-function createPipelineOp<Input, Output>(
-  run: (input: Input) => Output | Promise<Output>,
-): PipelineOp<Input, Output> {
-  return { run };
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function unreachable(): boolean {
+  return false;
 }

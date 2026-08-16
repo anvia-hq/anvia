@@ -231,7 +231,7 @@ describe("public exports", () => {
     expect(evals).toHaveProperty("faithfulness");
     expect(evals).toHaveProperty("turnRelevancy");
     expect(evals).toHaveProperty("knowledgeRetention");
-    expect(extractor).toHaveProperty("Extractor");
+    expect(extractor).toHaveProperty("extract");
     expect(extractor).not.toHaveProperty("ExtractorBuilder");
     expect(guardrails).toHaveProperty("defineGuardrailPolicy");
     expect(guardrails).toHaveProperty("defineInputGuardrail");
@@ -312,15 +312,12 @@ describe("public exports", () => {
     expect(pipeline.Pipeline.prototype).not.toHaveProperty("prompt");
   });
 
-  it("exposes the focused Extractor without builder or legacy execution methods", () => {
+  it("exposes stateless extraction without builder or class APIs", () => {
     expectTypeOf<RemovedExtractorBuilder>().toBeAny();
     expect(publicCore).not.toHaveProperty("Extractor");
-    expect(extractor.Extractor.prototype).toHaveProperty("extract");
-    expect(extractor.Extractor.prototype).toHaveProperty("extractResult");
-    expect(extractor.Extractor.prototype).not.toHaveProperty("build");
-    expect(extractor.Extractor.prototype).not.toHaveProperty("extractWithUsage");
-    expect(extractor.Extractor.prototype).not.toHaveProperty("extractWithHistory");
-    expect(extractor.Extractor.prototype).not.toHaveProperty("getInner");
+    expect(extractor).toHaveProperty("extract");
+    expect(extractor).not.toHaveProperty("Extractor");
+    expect(extractor).not.toHaveProperty("ExtractorBuilder");
   });
 
   it("exposes direct model operations from the root entrypoint", () => {

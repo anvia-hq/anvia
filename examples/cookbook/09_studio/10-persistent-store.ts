@@ -68,18 +68,23 @@ const escalationPipeline = new Pipeline({
   name: "Persistent Escalation Pipeline",
   description: "Creates pipeline logs and replayable run history in the same SQLite store.",
 })
-  .step((area) => area.trim().toLowerCase(), {
+  .step({
+    id: "normalize-area",
     name: "Normalize Area",
+    run: ({ input }) => input.trim().toLowerCase(),
   })
-  .step((area) => ({
-    area,
-    severity: area.includes("webhook") ? "high" : "normal",
-    owner: area.includes("billing")
-      ? "billing-ops"
-      : area.includes("fulfillment")
-        ? "warehouse-ops"
-        : "platform",
-  }));
+  .step({
+    id: "assign-owner",
+    run: ({ input: area }) => ({
+      area,
+      severity: area.includes("webhook") ? "high" : "normal",
+      owner: area.includes("billing")
+        ? "billing-ops"
+        : area.includes("fulfillment")
+          ? "warehouse-ops"
+          : "platform",
+    }),
+  });
 
 new Studio([agent, escalationPipeline], {
   stores: {

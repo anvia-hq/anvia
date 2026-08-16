@@ -1,22 +1,6 @@
 import type { z } from "zod";
 import type { JsonObject } from "../completion";
-
-/** Minimal interface for anything that can run as a pipeline stage. */
-export interface PipelineOp<Input = unknown, Output = unknown> {
-  run(input: Input): Output | Promise<Output>;
-}
-
-export interface PipelineBatchOptions {
-  /** Maximum number of inputs processed at the same time. */
-  concurrency: number;
-}
-
-export type AwaitedOutput<Op> =
-  Op extends PipelineOp<unknown, infer Output> ? Awaited<Output> : never;
-
-export type ParallelOutput<Branches extends Record<string, PipelineOp<unknown, unknown>>> = {
-  [Key in keyof Branches]: AwaitedOutput<Branches[Key]>;
-};
+import type { Pipeline } from "./pipeline";
 
 export type PipelineMetadata = {
   id?: string | undefined;
@@ -34,10 +18,18 @@ export type PipelineOptions<Input, Parsed = Input> = {
 };
 
 export type PipelineStageMetadata = {
-  id?: string | undefined;
+  id: string;
   name?: string | undefined;
   description?: string | undefined;
   metadata?: JsonObject | undefined;
+};
+
+export type PipelineStageContext<Input> = {
+  input: Input;
+  runId: string;
+  pipelineId: string;
+  runMetadata?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
 };
 
 export type PipelineStageKind =
@@ -50,8 +42,11 @@ export type PipelineStageKind =
   | "extractor"
   | "output";
 
+export type PipelineNodePath = readonly string[];
+
 export type PipelineGraphNode = {
   id: string;
+  path: PipelineNodePath;
   kind: PipelineStageKind;
   label: string;
   description?: string | undefined;
@@ -64,8 +59,8 @@ export type PipelineGraphNode = {
 
 export type PipelineGraphEdge = {
   id: string;
-  source: string;
-  target: string;
+  source: PipelineNodePath;
+  target: PipelineNodePath;
   label?: string | undefined;
 };
 
@@ -75,44 +70,89 @@ export type PipelineGraph = PipelineMetadata & {
   edges: PipelineGraphEdge[];
 };
 
+type PipelineRunEventBase = {
+  runId: string;
+  pipelineId: string;
+  path: PipelineNodePath;
+  node: PipelineGraphNode;
+};
+
 export type PipelineRunEvent =
-  | {
-      type: "stage_started";
-      node: PipelineGraphNode;
-    }
-  | {
+  | (PipelineRunEventBase & { type: "stage_started" })
+  | (PipelineRunEventBase & {
       type: "stage_completed";
-      node: PipelineGraphNode;
       durationMs: number;
-    }
-  | {
+    })
+  | (PipelineRunEventBase & {
       type: "stage_failed";
-      node: PipelineGraphNode;
       durationMs: number;
       error: unknown;
-    };
+    });
 
 export type PipelineRunObserver = {
   onEvent(event: PipelineRunEvent): void | Promise<void>;
 };
 
-export type PipelineRunOptions = {
+export type PipelineRunOptions<Input> = {
+  input: Input;
+  runId?: string | undefined;
+  metadata?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
   observer?: PipelineRunObserver | undefined;
+  failOnObserverError?: boolean | undefined;
+};
+
+export type PipelineRunResult<Output> = {
+  runId: string;
+  output: Awaited<Output>;
+};
+
+export type PipelineBatchOptions<Input> = {
+  inputs: Iterable<Input>;
+  concurrency: number;
+  metadata?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
+  observer?: PipelineRunObserver | undefined;
+  failOnObserverError?: boolean | undefined;
+};
+
+export type PipelineBatchItem<Output> =
+  | {
+      status: "completed";
+      runId: string;
+      output: Awaited<Output>;
+    }
+  | {
+      status: "failed";
+      runId: string;
+      error: unknown;
+    };
+
+export type PipelineOutput<Value> =
+  Value extends Pipeline<infer _Input, infer Output> ? Awaited<Output> : never;
+
+export type ParallelOutput<Branches extends Record<string, unknown>> = {
+  [Key in keyof Branches]: PipelineOutput<Branches[Key]>;
 };
 
 export type PipelineRunContext = {
+  runId: string;
+  pipelineId: string;
+  runMetadata?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
   observer?: PipelineRunObserver | undefined;
+  failOnObserverError: boolean;
 };
 
 export type PipelineExecutor<Input, Output> = (
   input: Input,
   context: PipelineRunContext,
+  pathPrefix: PipelineNodePath,
 ) => Output | Promise<Output>;
 
 export type PipelineState = {
   graph: PipelineGraph;
-  terminalNodeId: string;
-  terminalNodeIds: string[];
-  nextNodeIndex: number;
+  terminalPaths: PipelineNodePath[];
+  stageIds: ReadonlySet<string>;
   nextEdgeIndex: number;
 };

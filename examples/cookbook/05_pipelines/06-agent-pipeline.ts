@@ -24,14 +24,25 @@ const executiveUpdate = new Pipeline({
   id: "executive-update",
   inputSchema: z.array(z.string()),
 })
-  .step((notes) => notes.map((note) => `- ${note}`).join("\n"))
-  .step((notes) => `Prepare an executive update from these notes:\n\n${notes}`)
-  .agent(analyst);
+  .step({
+    id: "format-notes",
+    run: ({ input }) => input.map((note) => `- ${note}`).join("\n"),
+  })
+  .agent({
+    id: "analyze",
+    agent: analyst,
+    approval: "reject",
+    request: ({ input }) => ({
+      prompt: `Prepare an executive update from these notes:\n\n${input}`,
+    }),
+  });
 
-const output = await executiveUpdate.run([
-  "Acme Co. missed several webhook retries in the last hour.",
-  "Failures only affect payloads larger than 512 KB.",
-  "Engineering is checking retry queue limits and delivery logs.",
-]);
+const { output } = await executiveUpdate.run({
+  input: [
+    "Acme Co. missed several webhook retries in the last hour.",
+    "Failures only affect payloads larger than 512 KB.",
+    "Engineering is checking retry queue limits and delivery logs.",
+  ],
+});
 
 console.log(output);

@@ -41,25 +41,29 @@ const orderStatusPipeline = new Pipeline({
     sampleInput: "ORDER 11001",
   },
 })
-  .step((raw) => raw.trim().replace(/^order\s+/i, ""), {
+  .step({
+    id: "normalize-order-id",
     name: "Normalize Order Id",
     description: "Accept either a bare order id or input like ORDER 11001.",
+    run: ({ input }) => input.trim().replace(/^order\s+/i, ""),
   })
-  .step(
-    (orderId): OrderSnapshot =>
+  .step({
+    id: "read-order",
+    name: "Read Order Snapshot",
+    description: "Look up the order in local application state.",
+    run: ({ input: orderId }): OrderSnapshot =>
       orders[orderId] ?? {
         id: orderId,
         status: "unknown",
         customer: "Unknown",
         notes: "No local order snapshot was found for this id.",
       },
-    {
-      name: "Read Order Snapshot",
-      description: "Look up the order in local application state.",
-    },
-  )
-  .step(
-    (order) => ({
+  })
+  .step({
+    id: "build-summary",
+    name: "Build Operator Summary",
+    description: "Return a compact result object for Studio inspection.",
+    run: ({ input: order }) => ({
       title: `Order ${order.id}`,
       status: order.status,
       customer: order.customer,
@@ -73,11 +77,7 @@ const orderStatusPipeline = new Pipeline({
               : "Ask the customer to verify the order id.",
       notes: order.notes,
     }),
-    {
-      name: "Build Operator Summary",
-      description: "Return a compact result object for Studio inspection.",
-    },
-  );
+  });
 
 const ticketRoutingPipeline = new Pipeline({
   id: "ticket-routing-pipeline",
@@ -89,37 +89,50 @@ const ticketRoutingPipeline = new Pipeline({
     sampleInput: "Enterprise customer reports checkout outage after payment retries failed.",
   },
 })
-  .step((ticket) => ticket.trim(), {
+  .step({
+    id: "normalize-ticket",
     name: "Normalize Ticket",
     description: "Trim pasted ticket text before deterministic branch analysis.",
+    run: ({ input }) => input.trim(),
   })
-  .parallel(
-    {
+  .parallel({
+    id: "analyze-ticket",
+    name: "Analyze Ticket",
+    description: "Run independent deterministic classifiers in parallel.",
+    branches: {
       classification: new Pipeline({
         id: "ticket-classification",
         inputSchema: z.string(),
-      }).step((ticket) => ({
-        topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
-      })),
-      priority: new Pipeline({ id: "ticket-priority", inputSchema: z.string() }).step((ticket) => ({
-        priority:
-          ticket.toLowerCase().includes("outage") ||
-          ticket.toLowerCase().includes("enterprise") ||
-          ticket.toLowerCase().includes("blocked")
-            ? "high"
-            : "normal",
-      })),
-      routing: new Pipeline({ id: "ticket-routing", inputSchema: z.string() }).step((ticket) => ({
-        team: ticket.toLowerCase().includes("payment") ? "billing-ops" : "support-ops",
-      })),
+      }).step({
+        id: "classify",
+        run: ({ input }) => ({
+          topic: input.toLowerCase().includes("payment") ? "billing" : "operations",
+        }),
+      }),
+      priority: new Pipeline({ id: "ticket-priority", inputSchema: z.string() }).step({
+        id: "estimate",
+        run: ({ input }) => ({
+          priority:
+            input.toLowerCase().includes("outage") ||
+            input.toLowerCase().includes("enterprise") ||
+            input.toLowerCase().includes("blocked")
+              ? "high"
+              : "normal",
+        }),
+      }),
+      routing: new Pipeline({ id: "ticket-routing", inputSchema: z.string() }).step({
+        id: "route",
+        run: ({ input }) => ({
+          team: input.toLowerCase().includes("payment") ? "billing-ops" : "support-ops",
+        }),
+      }),
     },
-    {
-      name: "Analyze Ticket",
-      description: "Run independent deterministic classifiers in parallel.",
-    },
-  )
-  .step(
-    ({ classification, priority, routing }) => ({
+  })
+  .step({
+    id: "build-routing-decision",
+    name: "Build Routing Decision",
+    description: "Merge branch outputs into one routing object.",
+    run: ({ input: { classification, priority, routing } }) => ({
       topic: classification.topic,
       priority: priority.priority,
       team: routing.team,
@@ -129,10 +142,6 @@ const ticketRoutingPipeline = new Pipeline({
           ? `Escalate to ${routing.team} with the incident context.`
           : `Queue for ${routing.team} review.`,
     }),
-    {
-      name: "Build Routing Decision",
-      description: "Merge branch outputs into one routing object.",
-    },
-  );
+  });
 
 new Studio([orderStatusPipeline, ticketRoutingPipeline]).start();

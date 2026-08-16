@@ -1,42 +1,52 @@
 import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
-const classifyText = new Pipeline({ id: "classify-text", inputSchema: z.string() }).step(
-  (text) => ({
-    topic: text.toLowerCase().includes("payment") ? "billing" : "operations",
+const classifyText = new Pipeline({ id: "classify-text", inputSchema: z.string() }).step({
+  id: "classify",
+  run: ({ input }) => ({
+    topic: input.toLowerCase().includes("payment") ? "billing" : "operations",
   }),
-);
+});
 
-const extractSignals = new Pipeline({ id: "extract-signals", inputSchema: z.string() }).step(
-  (text) => ({
-    hasOutage: text.toLowerCase().includes("outage"),
-    hasEnterpriseCustomer: text.toLowerCase().includes("enterprise"),
+const extractSignals = new Pipeline({ id: "extract-signals", inputSchema: z.string() }).step({
+  id: "extract",
+  run: ({ input }) => ({
+    hasOutage: input.toLowerCase().includes("outage"),
+    hasEnterpriseCustomer: input.toLowerCase().includes("enterprise"),
   }),
-);
+});
 
-const estimatePriority = new Pipeline({ id: "estimate-priority", inputSchema: z.string() }).step(
-  (text) => ({
+const estimatePriority = new Pipeline({ id: "estimate-priority", inputSchema: z.string() }).step({
+  id: "estimate",
+  run: ({ input }) => ({
     priority:
-      text.toLowerCase().includes("outage") || text.toLowerCase().includes("missed orders")
+      input.toLowerCase().includes("outage") || input.toLowerCase().includes("missed orders")
         ? "high"
         : "normal",
   }),
-);
+});
 
 const triage = new Pipeline({ id: "triage", inputSchema: z.string() })
   .parallel({
-    classification: classifyText,
-    signals: extractSignals,
-    priority: estimatePriority,
+    id: "signals",
+    branches: {
+      classification: classifyText,
+      signals: extractSignals,
+      priority: estimatePriority,
+    },
   })
-  .step(({ classification, signals, priority }) => ({
-    ...classification,
-    ...signals,
-    ...priority,
-  }));
+  .step({
+    id: "merge",
+    run: ({ input: { classification, signals, priority } }) => ({
+      ...classification,
+      ...signals,
+      ...priority,
+    }),
+  });
 
-const result = await triage.run(
-  "Enterprise customer reports checkout outage and missed orders after payment retries failed.",
-);
+const result = await triage.run({
+  input:
+    "Enterprise customer reports checkout outage and missed orders after payment retries failed.",
+});
 
-console.log(result);
+console.log(result.output);

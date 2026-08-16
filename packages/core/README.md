@@ -310,7 +310,7 @@ compactor; full snapshot-to-replacement conflict retries are separately opt-in.
 ## Structured Extraction
 
 ```ts
-import { Extractor } from "@anvia/core/extractor";
+import { extract } from "@anvia/core/extractor";
 import { z } from "zod";
 
 const ticketSchema = z.object({
@@ -319,12 +319,12 @@ const ticketSchema = z.object({
   summary: z.string(),
 });
 
-const extractor = new Extractor({ model, outputSchema: ticketSchema });
-
-const ticket = await extractor.extract(
-  "Acme Co. reports checkout failures. Priority is high.",
-  { retries: { maxAttempts: 2 } },
-);
+const { output: ticket } = await extract({
+  model,
+  text: "Acme Co. reports checkout failures. Priority is high.",
+  outputSchema: ticketSchema,
+  retries: { maxAttempts: 2 },
+});
 ```
 
 ## Pipelines
@@ -334,11 +334,22 @@ import { Pipeline } from "@anvia/core/pipeline";
 import { z } from "zod";
 
 const pipeline = new Pipeline({ id: "support-flow", inputSchema: z.string() })
-  .step((input) => `Extract this support ticket:\n\n${input}`)
-  .agent(agent)
-  .extract(extractor);
+  .agent({
+    id: "draft",
+    agent,
+    approval: "reject",
+    request: ({ input }) => ({ prompt: `Draft a reply for this ticket:\n\n${input}` }),
+  })
+  .extract({
+    id: "parse",
+    model,
+    outputSchema: ticketSchema,
+    text: ({ input }) => input,
+  });
 
-const result = await pipeline.run("Customer cannot complete checkout.");
+const { runId, output } = await pipeline.run({
+  input: "Customer cannot complete checkout.",
+});
 ```
 
 ## Media

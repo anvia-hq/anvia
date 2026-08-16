@@ -111,15 +111,14 @@ export function pipelineRunFailedLog(
 }
 
 export function pipelineStageLog(
-  pipelineId: string,
-  runId: string,
   event: PipelineRunEvent,
+  studioPipelineId: string = event.pipelineId,
 ): StudioPipelineLogAppendInput {
   const category = stageCategory(event.node);
   if (event.type === "stage_started") {
     return {
-      pipelineId,
-      runId,
+      pipelineId: studioPipelineId,
+      runId: event.runId,
       level: "debug",
       category,
       event: `${event.node.kind}.started`,
@@ -129,8 +128,8 @@ export function pipelineStageLog(
   }
   if (event.type === "stage_completed") {
     return {
-      pipelineId,
-      runId,
+      pipelineId: studioPipelineId,
+      runId: event.runId,
       level: "debug",
       category,
       event: `${event.node.kind}.completed`,
@@ -142,8 +141,8 @@ export function pipelineStageLog(
     };
   }
   return {
-    pipelineId,
-    runId,
+    pipelineId: studioPipelineId,
+    runId: event.runId,
     level: "error",
     category,
     event: `${event.node.kind}.failed`,
@@ -172,6 +171,7 @@ function stageCategory(node: PipelineGraphNode): StudioPipelineLogAppendInput["c
 function nodeMetadata(node: PipelineGraphNode): JsonObject {
   const metadata: JsonObject = {
     nodeId: node.id,
+    nodePath: [...node.path],
     kind: node.kind,
     label: node.label,
   };

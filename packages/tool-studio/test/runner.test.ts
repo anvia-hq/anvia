@@ -737,8 +737,8 @@ describe("Anvia studio", () => {
       description: "Prepare support tickets",
       metadata: { owner: "support" },
     })
-      .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
-      .step((input) => input.toUpperCase(), { id: "classify", name: "Classify" });
+      .step({ id: "normalize", name: "Normalize", run: ({ input }) => input.trim() })
+      .step({ id: "classify", name: "Classify", run: ({ input }) => input.toUpperCase() });
     const runner = new Studio([agent, pipeline]);
 
     expect(runner.config()).toMatchObject({
@@ -772,19 +772,64 @@ describe("Anvia studio", () => {
       graph: {
         id: "ticket-pipeline",
         nodes: [
-          { id: "input", kind: "input" },
-          { id: "normalize", kind: "step", label: "Normalize" },
-          { id: "classify", kind: "step", label: "Classify" },
-          { id: "output", kind: "output" },
+          { id: "$input", path: ["$input"], kind: "input" },
+          { id: "normalize", path: ["normalize"], kind: "step", label: "Normalize" },
+          { id: "classify", path: ["classify"], kind: "step", label: "Classify" },
+          { id: "$output", path: ["$output"], kind: "output" },
         ],
       },
     });
   });
 
+  it("stores stage logs under the Studio registration id", async () => {
+    const pipeline = new Pipeline({ id: "aliased-pipeline", inputSchema: z.string() }).step({
+      id: "uppercase",
+      run: ({ input }) => input.toUpperCase(),
+    });
+    const runner = new Studio([pipeline, pipeline]);
+
+    const buffered = await runner.fetch(
+      new Request("http://runner.test/pipelines/aliased-pipeline-2/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: "buffered" }),
+      }),
+    );
+    expect(buffered.status).toBe(200);
+
+    const streamed = await runner.fetch(
+      new Request("http://runner.test/pipelines/aliased-pipeline-2/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: "streamed", stream: true }),
+      }),
+    );
+    expect(streamed.status).toBe(200);
+    await readJsonl(streamed);
+
+    const registeredLogs = (await (
+      await runner.fetch(
+        new Request("http://runner.test/pipelines/aliased-pipeline-2/logs?limit=100"),
+      )
+    ).json()) as { logs: Array<{ event: string }> };
+    expect(registeredLogs.logs.filter((log) => log.event === "step.started")).toHaveLength(2);
+
+    const originalLogs = (await (
+      await runner.fetch(
+        new Request("http://runner.test/pipelines/aliased-pipeline/logs?limit=100"),
+      )
+    ).json()) as { logs: Array<{ event: string }> };
+    expect(originalLogs.logs).toEqual([]);
+  });
+
   it("runs pipelines over HTTP and persists runs plus metadata-only pipeline logs", async () => {
     const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() })
-      .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
-      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" });
+      .step({ id: "normalize", name: "Normalize", run: ({ input }) => input.trim() })
+      .step({
+        id: "shape",
+        name: "Shape",
+        run: ({ input }) => ({ reply: input.toUpperCase() }),
+      });
     const studioDbPath = join(studioDbDir ?? tmpdir(), "pipeline.sqlite");
     const runner = new Studio([pipeline], {
       stores: {
@@ -848,7 +893,11 @@ describe("Anvia studio", () => {
     const nextBody = (await nextPage.json()) as {
       logs: Array<{ event: string; sequence: number; metadata?: unknown }>;
     };
-    expect(nextBody.logs[0]).toMatchObject({ event: "step.started", sequence: 2 });
+    expect(nextBody.logs[0]).toMatchObject({
+      event: "step.started",
+      sequence: 2,
+      metadata: { nodeId: "normalize", nodePath: ["normalize"] },
+    });
     expect(nextBody.logs.map((log) => log.event)).toContain("pipeline.run_completed");
     expect(nextBody).not.toHaveProperty("nextCursor");
 
@@ -950,10 +999,11 @@ describe("Anvia studio", () => {
   });
 
   it("replays persisted pipeline runs outside the first runs page", async () => {
-    const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() }).step(
-      (input) => ({ reply: input.toUpperCase() }),
-      { id: "shape", name: "Shape" },
-    );
+    const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() }).step({
+      id: "shape",
+      name: "Shape",
+      run: ({ input }) => ({ reply: input.toUpperCase() }),
+    });
     const store = createSqliteSessionStore({
       path: join(studioDbDir ?? tmpdir(), "replay.sqlite"),
     });

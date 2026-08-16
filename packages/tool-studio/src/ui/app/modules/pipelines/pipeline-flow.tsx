@@ -91,10 +91,11 @@ export function nodeStatusFromLogs(
     if (log.runId !== activeRunId) {
       continue;
     }
-    const nodeId = metadataString(log.metadata, "nodeId");
-    if (nodeId === undefined) {
+    const nodePath = metadataPath(log.metadata, "nodePath");
+    if (nodePath === undefined) {
       continue;
     }
+    const nodeId = pipelineNodeKey(nodePath);
     if (log.event.endsWith(".started")) {
       statuses.set(nodeId, "running");
     }
@@ -120,13 +121,14 @@ export function toFlow(
   }
 
   const nodes: Node[] = graph.nodes.map((node) => {
-    const depth = depths.get(node.id) ?? 0;
+    const nodeId = pipelineNodeKey(node.path);
+    const depth = depths.get(nodeId) ?? 0;
     const slot = depthSlots.get(depth) ?? 0;
     depthSlots.set(depth, slot + 1);
     const count = depthCounts.get(depth) ?? 1;
-    const status = statuses.get(node.id);
+    const status = statuses.get(nodeId);
     return {
-      id: node.id,
+      id: nodeId,
       type: "pipelineStage",
       position: {
         x: (slot - (count - 1) / 2) * 280,
@@ -146,8 +148,8 @@ export function toFlow(
 
   const edges: Edge[] = graph.edges.map((edge) => ({
     id: edge.id,
-    source: edge.source,
-    target: edge.target,
+    source: pipelineNodeKey(edge.source),
+    target: pipelineNodeKey(edge.target),
     type: "smoothstep",
     className: "pipeline-flow-edge",
     label: edge.label,
@@ -182,19 +184,21 @@ export function toFlow(
 function nodeDepths(graph: StudioPipelineDetail["graph"]): Map<string, number> {
   const depths = new Map<string, number>();
   for (const node of graph.nodes) {
-    depths.set(node.id, 0);
+    depths.set(pipelineNodeKey(node.path), 0);
   }
 
   for (let index = 0; index < graph.nodes.length; index += 1) {
     let changed = false;
     for (const edge of graph.edges) {
-      const sourceDepth = depths.get(edge.source);
-      if (sourceDepth === undefined || !depths.has(edge.target)) {
+      const source = pipelineNodeKey(edge.source);
+      const target = pipelineNodeKey(edge.target);
+      const sourceDepth = depths.get(source);
+      if (sourceDepth === undefined || !depths.has(target)) {
         continue;
       }
       const nextDepth = sourceDepth + 1;
-      if (nextDepth > (depths.get(edge.target) ?? 0)) {
-        depths.set(edge.target, nextDepth);
+      if (nextDepth > (depths.get(target) ?? 0)) {
+        depths.set(target, nextDepth);
         changed = true;
       }
     }
@@ -218,10 +222,16 @@ function statusColor(status: NodeStatus | undefined): string {
   }
 }
 
-function metadataString(
+function metadataPath(
   metadata: StudioPipelineLogEntry["metadata"],
   key: string,
-): string | undefined {
+): string[] | undefined {
   const value = metadata?.[key];
-  return typeof value === "string" ? value : undefined;
+  return Array.isArray(value) && value.every((segment) => typeof segment === "string")
+    ? value
+    : undefined;
+}
+
+export function pipelineNodeKey(path: readonly string[]): string {
+  return JSON.stringify(path);
 }

@@ -5,21 +5,27 @@ const fetchCustomerProfile = new Pipeline({
   id: "fetch-customer-profile",
   inputSchema: z.string(),
 })
-  .step(async (customerId) => {
-    await delay(10);
-    return {
-      id: customerId,
-      name: "Acme Co.",
-      plan: "enterprise",
-      openTickets: 3,
-    };
+  .step({
+    id: "fetch-profile",
+    async run({ input: customerId }) {
+      await delay(10);
+      return {
+        id: customerId,
+        name: "Acme Co.",
+        plan: "enterprise",
+        openTickets: 3,
+      };
+    },
   })
-  .step((customer) => ({
-    ...customer,
-    priority: customer.plan === "enterprise" || customer.openTickets > 2 ? "high" : "normal",
-  }));
+  .step({
+    id: "assign-priority",
+    run: ({ input: customer }) => ({
+      ...customer,
+      priority: customer.plan === "enterprise" || customer.openTickets > 2 ? "high" : "normal",
+    }),
+  });
 
-const profile = await fetchCustomerProfile.run("cus_123");
+const { output: profile } = await fetchCustomerProfile.run({ input: "cus_123" });
 
 console.log(profile);
 

@@ -17,16 +17,22 @@ const searchPipeline = new Pipeline({
   name: "Search Pipeline",
   description: "Validates input with a Zod schema, then runs a search.",
 })
-  .step(({ query, limit }) => search(query, limit ?? 10))
-  .step((results) => ({ query: results[0]?.split(" #")[0] ?? "", count: results.length }));
+  .step({
+    id: "search",
+    run: ({ input: { query, limit } }) => search(query, limit ?? 10),
+  })
+  .step({
+    id: "summarize",
+    run: ({ input }) => ({ query: input[0]?.split(" #")[0] ?? "", count: input.length }),
+  });
 
-const result = await searchPipeline.run({ query: "anvia" });
+const result = await searchPipeline.run({ input: { query: "anvia" } });
 
-console.log(result);
+console.log(result.output);
 console.log(searchPipeline.name);
 
 try {
-  await searchPipeline.run({ query: "" } as { query: string; limit?: number });
+  await searchPipeline.run({ input: { query: "" } as { query: string; limit?: number } });
 } catch (error) {
   console.log(
     "validation rejected:",

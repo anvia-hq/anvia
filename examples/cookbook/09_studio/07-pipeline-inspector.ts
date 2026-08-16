@@ -31,44 +31,54 @@ const ticketPipeline = new Pipeline({
     owner: "support-operations",
   },
 })
-  .step((ticket) => ticket.trim(), {
+  .step({
+    id: "normalize-ticket",
     name: "Normalize Ticket",
     description: "Trim pasted ticket text before branching.",
+    run: ({ input }) => input.trim(),
   })
-  .parallel(
-    {
+  .parallel({
+    id: "analyze-ticket",
+    name: "Analyze Ticket",
+    description: "Run deterministic branch checks for Studio graph inspection.",
+    branches: {
       classification: new Pipeline({
         id: "ticket-classification",
         inputSchema: z.string(),
-      }).step((ticket) => ({
-        topic: ticket.toLowerCase().includes("payment") ? "billing" : "operations",
-      })),
-      priority: new Pipeline({ id: "ticket-priority", inputSchema: z.string() }).step((ticket) => ({
-        priority:
-          ticket.toLowerCase().includes("outage") || ticket.toLowerCase().includes("enterprise")
-            ? "high"
-            : "normal",
-      })),
+      }).step({
+        id: "classify",
+        run: ({ input }) => ({
+          topic: input.toLowerCase().includes("payment") ? "billing" : "operations",
+        }),
+      }),
+      priority: new Pipeline({ id: "ticket-priority", inputSchema: z.string() }).step({
+        id: "estimate",
+        run: ({ input }) => ({
+          priority:
+            input.toLowerCase().includes("outage") || input.toLowerCase().includes("enterprise")
+              ? "high"
+              : "normal",
+        }),
+      }),
     },
-    {
-      name: "Analyze Ticket",
-      description: "Run deterministic branch checks for Studio graph inspection.",
-    },
-  )
-  .step(
-    ({ classification, priority }) =>
+  })
+  .step({
+    id: "prepare-reply",
+    name: "Prepare Reply Prompt",
+    run: ({ input: { classification, priority } }) =>
       [
         `Topic: ${classification.topic}`,
         `Priority: ${priority.priority}`,
         "Ticket: Enterprise customer reports payment retries causing checkout outage.",
       ].join("\n"),
-    {
-      name: "Prepare Reply Prompt",
-    },
-  )
-  .agent(replyAgent, {
+  })
+  .agent({
+    id: "draft-reply",
+    agent: replyAgent,
+    approval: "reject",
     name: "Draft Reply",
     description: "Send the prepared context to the reply agent.",
+    request: ({ input }) => ({ prompt: input }),
   });
 
 new Studio([replyAgent, ticketPipeline]).start();

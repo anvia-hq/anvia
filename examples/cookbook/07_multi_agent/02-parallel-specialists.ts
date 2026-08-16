@@ -59,60 +59,80 @@ const synthesizerAgent = new Agent({
   ].join("\n"),
 });
 
-const supportNotesPipeline = new Pipeline({ id: "support-notes", inputSchema: z.string() })
-  .step((input) => `Triage this incident for support:\n\n${input}`)
-  .agent(supportAgent);
+const supportNotesPipeline = new Pipeline({ id: "support-notes", inputSchema: z.string() }).agent({
+  id: "support",
+  agent: supportAgent,
+  approval: "reject",
+  request: ({ input }) => ({ prompt: `Triage this incident for support:\n\n${input}` }),
+});
 
 const engineeringNotesPipeline = new Pipeline({
   id: "engineering-notes",
   inputSchema: z.string(),
-})
-  .step((input) => `Triage this incident for engineering:\n\n${input}`)
-  .agent(engineeringAgent);
+}).agent({
+  id: "engineering",
+  agent: engineeringAgent,
+  approval: "reject",
+  request: ({ input }) => ({ prompt: `Triage this incident for engineering:\n\n${input}` }),
+});
 
-const commsNotesPipeline = new Pipeline({ id: "comms-notes", inputSchema: z.string() })
-  .step((input) => `Draft customer communication for this incident:\n\n${input}`)
-  .agent(commsAgent);
+const commsNotesPipeline = new Pipeline({ id: "comms-notes", inputSchema: z.string() }).agent({
+  id: "comms",
+  agent: commsAgent,
+  approval: "reject",
+  request: ({ input }) => ({
+    prompt: `Draft customer communication for this incident:\n\n${input}`,
+  }),
+});
 
 const incidentBrief = new Pipeline({ id: "incident-brief", inputSchema: z.string() })
   .parallel({
-    support: supportNotesPipeline,
-    engineering: engineeringNotesPipeline,
-    comms: commsNotesPipeline,
+    id: "specialists",
+    branches: {
+      support: supportNotesPipeline,
+      engineering: engineeringNotesPipeline,
+      comms: commsNotesPipeline,
+    },
   })
-  .step(({ support, engineering, comms }) => {
-    const supportNotes = visibleText(
-      support,
-      "Support should treat this as high priority, acknowledge missed order updates, and collect retry failure examples.",
-    );
-    const engineeringNotes = visibleText(
-      engineering,
-      "Engineering should inspect retry payload-size handling, queue limits, and outbound delivery logs.",
-    );
-    const commsNotes = visibleText(
-      comms,
-      "We are investigating missed webhook retries for larger payloads and will provide the next update after diagnostics.",
-    );
+  .agent({
+    id: "synthesize",
+    agent: synthesizerAgent,
+    approval: "reject",
+    request: ({ input: { support, engineering, comms } }) => {
+      const supportNotes = visibleText(
+        support,
+        "Support should treat this as high priority, acknowledge missed order updates, and collect retry failure examples.",
+      );
+      const engineeringNotes = visibleText(
+        engineering,
+        "Engineering should inspect retry payload-size handling, queue limits, and outbound delivery logs.",
+      );
+      const commsNotes = visibleText(
+        comms,
+        "We are investigating missed webhook retries for larger payloads and will provide the next update after diagnostics.",
+      );
 
-    console.log("support specialist:\n", supportNotes);
-    console.log("engineering specialist:\n", engineeringNotes);
-    console.log("comms specialist:\n", commsNotes);
+      console.log("support specialist:\n", supportNotes);
+      console.log("engineering specialist:\n", engineeringNotes);
+      console.log("comms specialist:\n", commsNotes);
 
-    return [
-      "Synthesize these specialist notes.",
-      "",
-      `Incident:\n${incident}`,
-      "",
-      `Support notes:\n${supportNotes}`,
-      "",
-      `Engineering notes:\n${engineeringNotes}`,
-      "",
-      `Customer comms notes:\n${commsNotes}`,
-    ].join("\n");
-  })
-  .agent(synthesizerAgent);
+      return {
+        prompt: [
+          "Synthesize these specialist notes.",
+          "",
+          `Incident:\n${incident}`,
+          "",
+          `Support notes:\n${supportNotes}`,
+          "",
+          `Engineering notes:\n${engineeringNotes}`,
+          "",
+          `Customer comms notes:\n${commsNotes}`,
+        ].join("\n"),
+      };
+    },
+  });
 
-const final = await incidentBrief.run(incident);
+const { output: final } = await incidentBrief.run({ input: incident });
 
 console.log("final brief:\n", visibleText(final, "No visible synthesis text was returned."));
 

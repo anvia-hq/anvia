@@ -1,4 +1,4 @@
-import { Extractor } from "@anvia/core/extractor";
+import { extract } from "@anvia/core/extractor";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
@@ -13,15 +13,13 @@ const client = new OpenAIClient({
 });
 const model = client.completionModel("gpt-5.5");
 
-const extractor = new Extractor({
+const result = await extract({
   model,
+  text: "Please fix the production login issue today.",
   outputSchema: taskSchema,
   instructions: "If urgency is explicit, use high priority.",
-});
-
-const result = await extractor.extractResult("Please fix the production login issue today.", {
   retries: { maxAttempts: 2 },
 });
 
-console.log(result.data);
+console.log(result.output);
 console.log(result.usage);

@@ -55,17 +55,20 @@ const riskFlagsTool = createTool({
   ],
 });
 
-const quoteSnapshot = new Pipeline({ id: "quote-snapshot", inputSchema: z.string() }).step(
-  (ticker) => quoteSnapshotTool.call({ ticker }),
-);
+const quoteSnapshot = new Pipeline({ id: "quote-snapshot", inputSchema: z.string() }).step({
+  id: "quote",
+  run: ({ input: ticker }) => quoteSnapshotTool.call({ ticker }),
+});
 
-const marketNews = new Pipeline({ id: "market-news", inputSchema: z.string() }).step((ticker) =>
-  marketNewsTool.call({ ticker }),
-);
+const marketNews = new Pipeline({ id: "market-news", inputSchema: z.string() }).step({
+  id: "news",
+  run: ({ input: ticker }) => marketNewsTool.call({ ticker }),
+});
 
-const riskFlags = new Pipeline({ id: "risk-flags", inputSchema: z.string() }).step((ticker) =>
-  riskFlagsTool.call({ ticker }),
-);
+const riskFlags = new Pipeline({ id: "risk-flags", inputSchema: z.string() }).step({
+  id: "risks",
+  run: ({ input: ticker }) => riskFlagsTool.call({ ticker }),
+});
 
 const marketAnalystModel = client.completionModel("gpt-5.5");
 const marketAnalyst = new Agent({
@@ -80,29 +83,36 @@ const marketAnalyst = new Agent({
 });
 
 const marketPipeline = new Pipeline({ id: "market-analysis", inputSchema: z.string() })
-  .step((ticker) => ticker.trim().toUpperCase())
+  .step({ id: "normalize-ticker", run: ({ input }) => input.trim().toUpperCase() })
   .parallel({
-    quoteJson: quoteSnapshot,
-    newsJson: marketNews,
-    risksJson: riskFlags,
+    id: "market-signals",
+    branches: {
+      quoteJson: quoteSnapshot,
+      newsJson: marketNews,
+      risksJson: riskFlags,
+    },
   })
-  .step(({ quoteJson: quote, newsJson: news, risksJson: risks }) => {
-    return [
-      `Analyze this mock market packet for ${quote.ticker}.`,
-      "",
-      `Price: ${quote.price}`,
-      `Change: ${quote.changePercent}%`,
-      `Volume: ${quote.volume}`,
-      "",
-      "News:",
-      ...news.map((item) => `- ${item}`),
-      "",
-      "Risks:",
-      ...risks.map((item) => `- ${item}`),
-    ].join("\n");
-  })
-  .agent(marketAnalyst);
+  .agent({
+    id: "analyze",
+    agent: marketAnalyst,
+    approval: "reject",
+    request: ({ input: { quoteJson: quote, newsJson: news, risksJson: risks } }) => ({
+      prompt: [
+        `Analyze this mock market packet for ${quote.ticker}.`,
+        "",
+        `Price: ${quote.price}`,
+        `Change: ${quote.changePercent}%`,
+        `Volume: ${quote.volume}`,
+        "",
+        "News:",
+        ...news.map((item) => `- ${item}`),
+        "",
+        "Risks:",
+        ...risks.map((item) => `- ${item}`),
+      ].join("\n"),
+    }),
+  });
 
-const analysis = await marketPipeline.run("ACME");
+const { output: analysis } = await marketPipeline.run({ input: "ACME" });
 
 console.log(analysis);

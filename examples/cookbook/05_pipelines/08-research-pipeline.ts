@@ -38,13 +38,15 @@ const sourceQualityTool = createTool({
   }),
 });
 
-const searchNotes = new Pipeline({ id: "search-notes", inputSchema: z.string() }).step((topic) =>
-  searchNotesTool.call({ topic }),
-);
+const searchNotes = new Pipeline({ id: "search-notes", inputSchema: z.string() }).step({
+  id: "search",
+  run: ({ input: topic }) => searchNotesTool.call({ topic }),
+});
 
-const sourceQuality = new Pipeline({ id: "source-quality", inputSchema: z.string() }).step(
-  (topic) => sourceQualityTool.call({ topic }),
-);
+const sourceQuality = new Pipeline({ id: "source-quality", inputSchema: z.string() }).step({
+  id: "assess",
+  run: ({ input: topic }) => sourceQualityTool.call({ topic }),
+});
 
 const synthesizerModel = client.completionModel("gpt-5.5");
 const synthesizer = new Agent({
@@ -60,22 +62,31 @@ const synthesizer = new Agent({
 
 const researchPipeline = new Pipeline({ id: "research", inputSchema: z.string() })
   .parallel({
-    notesJson: searchNotes,
-    qualityJson: sourceQuality,
+    id: "research-sources",
+    branches: {
+      notesJson: searchNotes,
+      qualityJson: sourceQuality,
+    },
   })
-  .step(({ notesJson: notes, qualityJson: quality }) => {
-    return [
-      "Synthesize this research packet.",
-      "",
-      "Search notes:",
-      ...notes.map((note) => `- ${note}`),
-      "",
-      `Confidence: ${quality.confidence}`,
-      `Caveat: ${quality.caveat}`,
-    ].join("\n");
-  })
-  .agent(synthesizer);
+  .agent({
+    id: "synthesize",
+    agent: synthesizer,
+    approval: "reject",
+    request: ({ input: { notesJson: notes, qualityJson: quality } }) => ({
+      prompt: [
+        "Synthesize this research packet.",
+        "",
+        "Search notes:",
+        ...notes.map((note) => `- ${note}`),
+        "",
+        `Confidence: ${quality.confidence}`,
+        `Caveat: ${quality.caveat}`,
+      ].join("\n"),
+    }),
+  });
 
-const report = await researchPipeline.run("Anvia pipeline cookbook examples");
+const { output: report } = await researchPipeline.run({
+  input: "Anvia pipeline cookbook examples",
+});
 
 console.log(report);

@@ -16,6 +16,7 @@ import type {
 } from "../src/agent";
 import * as publicAgent from "../src/agent";
 import * as completion from "../src/completion";
+import * as documents from "../src/documents";
 import * as embeddings from "../src/embeddings";
 // @ts-expect-error EvalSuiteTypeBuilder was removed from the public eval API.
 import type { EvalSuiteTypeBuilder as RemovedEvalSuiteTypeBuilder } from "../src/evals";
@@ -39,7 +40,6 @@ import { Usage } from "../src/index";
 // @ts-expect-error ToolApprovalRequest is private to the agent runtime.
 import type { ToolApprovalRequest as InternalToolApprovalRequest } from "../src/internal/agent";
 import * as internalAgent from "../src/internal/agent";
-import * as loaders from "../src/loaders";
 import * as mcp from "../src/mcp";
 import * as memory from "../src/memory";
 import * as modelListing from "../src/model-listing";
@@ -84,6 +84,10 @@ type RemovedMcpSseOptions = import("../src/mcp").McpSseOptions;
 type RemovedConnectMcp = typeof import("../src/mcp").connectMcp;
 // @ts-expect-error The MCP factory namespace was removed in favor of constructors.
 type RemovedMcpFactory = typeof import("../src/mcp").mcp;
+// @ts-expect-error FileLoader was removed with the legacy loader API.
+type RemovedFileLoader = import("../src/documents").FileLoader;
+// @ts-expect-error PdfFileLoader was removed with the legacy loader API.
+type RemovedPdfFileLoader = import("../src/documents").PdfFileLoader;
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
@@ -247,7 +251,12 @@ describe("public exports", () => {
     expect(imageGeneration).toHaveProperty("generateImage");
     expect(imageGeneration).not.toHaveProperty("imageGenerationRequest");
     expect(imageGeneration).not.toHaveProperty("ImageGenerationRequestBuilder");
-    expect(loaders).toHaveProperty("FileLoader");
+    expect(documents).toHaveProperty("chunkText");
+    expect(documents).toHaveProperty("extractPdfText");
+    expect(documents).not.toHaveProperty("FileLoader");
+    expect(documents).not.toHaveProperty("PdfFileLoader");
+    expect(publicCore).not.toHaveProperty("chunkText");
+    expect(publicCore).not.toHaveProperty("extractPdfText");
     expect(mcp).toHaveProperty("McpClient");
     expect(mcp).toHaveProperty("McpClientGroup");
     expect(mcp).toHaveProperty("isMcpTool");
@@ -267,6 +276,8 @@ describe("public exports", () => {
     expectTypeOf<RemovedMcpSseOptions>().toBeAny();
     expectTypeOf<RemovedConnectMcp>().toBeAny();
     expectTypeOf<RemovedMcpFactory>().toBeAny();
+    expectTypeOf<RemovedFileLoader>().toBeAny();
+    expectTypeOf<RemovedPdfFileLoader>().toBeAny();
 
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       new mcp.McpClient({

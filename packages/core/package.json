@@ -48,9 +48,9 @@
       "types": "./dist/evals/index.d.ts",
       "import": "./dist/evals/index.js"
     },
-    "./loaders": {
-      "types": "./dist/loaders/index.d.ts",
-      "import": "./dist/loaders/index.js"
+    "./documents": {
+      "types": "./dist/documents/index.d.ts",
+      "import": "./dist/documents/index.js"
     },
     "./extractor": {
       "types": "./dist/extractor/index.d.ts",
@@ -106,14 +106,13 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/speech-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/speech-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/documents/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "pdfjs-dist": "^6.2.108",
-    "tinyglobby": "^0.2.17",
     "undici": "^8.10.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

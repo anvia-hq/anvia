@@ -25,7 +25,7 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | `03_structured_output` | Schema-first extraction, agent output schemas, context, retries, and extraction with prior messages. |
 | `04_providers_and_multimodal` | Provider adapters, model capabilities, model listing, reasoning streams, image/PDF attachments, image generation, audio generation, and transcription. |
 | `05_pipelines` | Step transforms, async steps, composition, named parallel branches, batching, agents, extractors, and richer workflows. |
-| `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document loaders, vector stores, and embedding provider variants. |
+| `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document chunking and PDF extraction, vector stores, and embedding provider variants. |
 | `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, and streaming agent-tools. |
 | `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, LLM judges, RAG quality, G-Eval, and conversational evals. |
 | `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool and sandbox inspection, MCP tools, SQLite persistence, multi-provider model selection, and UI route options. |
@@ -75,7 +75,7 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 - Langfuse examples need Langfuse credentials and live in `10_integrations`.
 - `integrations:06` logs agent lifecycle events with Pino through `@anvia/logger`; `integrations:07` shows the built-in console logger.
 - Studio examples start a local HTTP server and keep Studio state in memory by default. `studio:10` shows explicit SQLite store wiring for sessions, traces, pipeline logs, and pipeline run history. `studio:13` shows the Studio message-composer model selector across OpenAI and Anthropic. `studio:14` shows MCP tools in Studio. `studio:15` requires Docker and exposes an ephemeral sandbox workspace, published preview port, and managed process through the Sandboxes inspector; Ctrl+C destroys the session.
-- Loader examples may write sample files under `.memory`.
+- Document examples may write sample files under `.memory`.
 - Image and audio generation examples write generated media files in the current working directory.
 - `providers:09` uses the bundled `assets/audio/voice.wav` sample by default. Set `ANVIA_AUDIO_FILE` to transcribe a different local audio file.
 - `tools:11` requires Docker and runs code in an ephemeral `@anvia/sandbox` container workspace.

@@ -359,6 +359,35 @@ const { runId, output } = await pipeline.run({
 });
 ```
 
+## Documents
+
+Applications own file discovery, file reads, source metadata, and per-file error policy. Core only
+provides deterministic in-memory chunking and scoped PDF text extraction:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { chunkText, extractPdfText } from "@anvia/core/documents";
+
+const text = await readFile("guide.txt", "utf8");
+const chunks = chunkText({
+  text,
+  strategy: "recursive",
+  maxSize: 1_000,
+  overlap: 100,
+  separators: ["\n\n", "\n", " "],
+});
+
+const { pages } = await extractPdfText({
+  data: new Uint8Array(await readFile("guide.pdf")),
+  abortSignal,
+});
+```
+
+Use `strategy: "fixed"` for deterministic sliding windows. Recursive chunking requires an explicit
+separator order and falls back to fixed-size splitting when none of those separators can divide an
+oversized section. Chunk offsets use JavaScript string indices and always identify the exact source
+slice. PDF pages are one-based, and the parser task is disposed before extraction settles.
+
 ## Media
 
 Media helpers follow the same one-object API and share `providerOptions`, `retries`, and
@@ -450,7 +479,7 @@ MCP server instructions remain inspectable metadata and are not added to Agent i
 - `skills`: local skill loading
 - `observability`: observer interfaces for runs, generations, and tool calls
 - `evals`: evaluation helpers and reporters
-- `loaders`: document loading utilities
+- `documents`: in-memory text chunking and PDF text extraction
 - `speech-generation`, `image-generation`, `transcription`: provider-neutral media interfaces
 
 ## Development

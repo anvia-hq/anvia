@@ -334,11 +334,13 @@ describe("public exports", () => {
     expect("transcribe" in publicCore).toBe(true);
   });
 
-  it("exposes memory compaction helpers from root and memory entrypoints", () => {
+  it("exposes canonical memory helpers from root and memory entrypoints", () => {
+    expect(publicCore).toHaveProperty("createMemoryScopeKey");
     expect(publicCore).toHaveProperty("createSummaryMemoryCompactor");
     expect(publicCore).toHaveProperty("isMemoryCompactionMessage");
     expect(publicCore).toHaveProperty("MemoryCompactionError");
     expect(publicCore).toHaveProperty("MemoryCompactionConflictError");
+    expect(memory).toHaveProperty("createMemoryScopeKey");
     expect(memory).toHaveProperty("createSummaryMemoryCompactor");
     expect(memory).toHaveProperty("isMemoryCompactionMessage");
     expectTypeOf<RemovedMemoryContext>().toBeAny();
@@ -353,6 +355,16 @@ describe("public exports", () => {
     expectTypeOf<
       Parameters<typeof memory.createSummaryMemoryCompactor>["length"]
     >().toEqualTypeOf<1>();
+    expect(
+      memory.createMemoryScopeKey({
+        scope: {
+          sessionId: "thread-1",
+          userId: "user-1",
+          metadata: { tenant: { id: "tenant-1" } },
+        },
+        metadataKeys: ["tenant.id"],
+      }),
+    ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
 
     const capability = null as unknown as import("../src/memory").MemoryCompactionCapability;
     const model = null as unknown as import("../src/completion").CompletionModel;

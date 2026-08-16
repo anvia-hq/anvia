@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -12,25 +12,21 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
+import { createMemoryScopeKey } from "@anvia/core/memory";
+import type { PostgresMemoryClient } from "./client.js";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
   PostgresMemoryClientLike,
   PostgresMemoryPoolLike,
   PostgresMemorySchemaOptions,
-  PostgresMemoryScopeOptions,
   PostgresMemoryStoreOptions,
   PostgresMemoryTransactionClientLike,
 } from "./types.js";
 
-const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
-  includeUserId: true,
-  metadataKeys: [],
-};
-
 type ResolvedPostgresMemoryStoreOptions = Required<
-  Pick<PostgresMemoryStoreOptions, "createIfMissing" | "errors" | "lock" | "validateMessages">
+  Pick<PostgresMemoryStoreOptions, "errorPolicy" | "lock" | "validateMessages">
 > &
-  Pick<PostgresMemoryStoreOptions, "scope">;
+  Pick<PostgresMemoryStoreOptions, "scopeKey">;
 
 type ResolvedPostgresMemoryTables = {
   sessions: string;
@@ -75,31 +71,6 @@ type InspectionMessageRow = {
   message: unknown;
 };
 
-export async function createPostgresMemoryStore(
-  options: PostgresMemoryStoreOptions = {},
-): Promise<PostgresMemoryStore> {
-  return PostgresMemoryStore.connect(options);
-}
-
-export function createPostgresMemoryScopeKey(
-  context: MemoryScope,
-  options: PostgresMemoryScopeOptions = {},
-): string {
-  const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
-  const metadataKeys = options.metadataKeys ?? defaultScopeOptions.metadataKeys;
-  const values: JsonValue[] = [context.sessionId];
-
-  if (includeUserId) {
-    values.push(context.userId ?? null);
-  }
-
-  for (const key of metadataKeys) {
-    values.push(metadataValue(context.metadata, key) ?? null);
-  }
-
-  return JSON.stringify(values);
-}
-
 export function createPostgresMemorySchemaSql(options: PostgresMemorySchemaOptions = {}): string {
   const tables = resolveTables(options);
   return `CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -138,6 +109,8 @@ CREATE TABLE IF NOT EXISTS ${tables.errors} (
 );`;
 }
 
+export const postgresMemoryStoreFactory = Symbol("PostgresMemoryStore.factory");
+
 export class PostgresMemoryStore implements MemoryStore {
   readonly kind = "postgres";
   readonly inspector: MemoryInspector = {
@@ -149,26 +122,37 @@ export class PostgresMemoryStore implements MemoryStore {
     replacePrefix: (options) => this.replaceCompactionPrefix(options),
   };
 
-  private constructor(
-    private readonly client: PostgresMemoryClientLike,
-    private readonly tables: ResolvedPostgresMemoryTables,
-    private readonly options: ResolvedPostgresMemoryStoreOptions,
-  ) {}
+  private readonly owner: PostgresMemoryClient;
+  private readonly tables: ResolvedPostgresMemoryTables;
+  private readonly schemaOptions: PostgresMemorySchemaOptions;
+  private readonly options: ResolvedPostgresMemoryStoreOptions;
 
-  static async connect(options: PostgresMemoryStoreOptions = {}): Promise<PostgresMemoryStore> {
-    const client = options.client ?? (await defaultPgClient(options.connectionString));
-    const tables = resolveTables(options);
-    const resolved = resolveOptions(options);
+  private constructor(input: { owner: PostgresMemoryClient; options: PostgresMemoryStoreOptions }) {
+    this.owner = input.owner;
+    this.tables = resolveTables(input.options);
+    this.schemaOptions = input.options;
+    this.options = resolveOptions(input.options);
+  }
 
-    if (resolved.createIfMissing) {
-      await client.query(createPostgresMemorySchemaSql(options));
-    }
+  static [postgresMemoryStoreFactory](input: {
+    owner: PostgresMemoryClient;
+    options: PostgresMemoryStoreOptions;
+  }): PostgresMemoryStore {
+    return new PostgresMemoryStore(input);
+  }
 
-    return new PostgresMemoryStore(client, tables, resolved);
+  async ensure(): Promise<void> {
+    const client = await this.client();
+    await client.query(createPostgresMemorySchemaSql(this.schemaOptions));
+    await this.validateClient(client);
+  }
+
+  async validate(): Promise<void> {
+    await this.validateClient(await this.client());
   }
 
   async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
-    const result = await this.client.query(
+    const result = await (await this.client()).query(
       `SELECT m.message
        FROM ${this.tables.messages} m
        INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
@@ -208,13 +192,13 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   async clear({ scope }: { scope: MemoryScope }): Promise<void> {
-    await this.client.query(`DELETE FROM ${this.tables.sessions} WHERE scope_key = $1`, [
+    await (await this.client()).query(`DELETE FROM ${this.tables.sessions} WHERE scope_key = $1`, [
       this.scopeKey(scope),
     ]);
   }
 
   async recordError(input: MemoryErrorOptions): Promise<void> {
-    if (this.options.errors === "ignore") {
+    if (this.options.errorPolicy === "ignore") {
       return;
     }
     this.validateInputMessages(input.messages);
@@ -245,7 +229,7 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
-    const result = await this.client.query(
+    const result = await (await this.client()).query(
       `SELECT m.id, m.position, m.message
        FROM ${this.tables.messages} m
        INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
@@ -317,7 +301,7 @@ export class PostgresMemoryStore implements MemoryStore {
       where = `WHERE s.user_id = $${values.length}`;
     }
     values.push(options.limit);
-    const result = await this.client.query(
+    const result = await (await this.client()).query(
       `SELECT
          s.id AS ref,
          s.session_id,
@@ -338,7 +322,7 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
-    const summaryResult = await this.client.query(
+    const summaryResult = await (await this.client()).query(
       `SELECT
          s.id AS ref,
          s.session_id,
@@ -356,7 +340,7 @@ export class PostgresMemoryStore implements MemoryStore {
     const row = summaryResult.rows[0] as InspectionSessionRow | undefined;
     if (row === undefined) return undefined;
 
-    const messageResult = await this.client.query(
+    const messageResult = await (await this.client()).query(
       `SELECT position, run_id, turn, created_at, message
        FROM ${this.tables.messages}
        WHERE memory_session_id = $1
@@ -397,7 +381,7 @@ export class PostgresMemoryStore implements MemoryStore {
   private async transaction<T>(
     operation: (tx: PostgresMemoryClientLike) => Promise<T>,
   ): Promise<T> {
-    const tx = await transactionClient(this.client);
+    const tx = await transactionClient(await this.client());
     try {
       await tx.query("BEGIN");
       const result = await operation(tx);
@@ -488,19 +472,38 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   private scopeKey(context: MemoryScope): string {
-    if (typeof this.options.scope === "function") {
-      return this.options.scope(context);
+    if (typeof this.options.scopeKey === "function") {
+      return this.options.scopeKey({ scope: context });
     }
-    return createPostgresMemoryScopeKey(context, this.options.scope);
+    return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
+  }
+
+  private client(): Promise<PostgresMemoryClientLike> {
+    return this.owner.nativeClient();
+  }
+
+  private async validateClient(client: PostgresMemoryClientLike): Promise<void> {
+    await client.query(
+      `SELECT
+         s.id, s.scope_key, s.session_id, s.user_id, s.metadata, s.created_at, s.updated_at,
+         m.id, m.memory_session_id, m.run_id, m.turn, m.position, m.role, m.message, m.created_at
+       FROM ${this.tables.sessions} s
+       LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
+       LIMIT 0`,
+    );
+    await client.query(
+      `SELECT id, memory_session_id, run_id, error, messages, created_at
+       FROM ${this.tables.errors}
+       LIMIT 0`,
+    );
   }
 }
 
 function resolveOptions(options: PostgresMemoryStoreOptions): ResolvedPostgresMemoryStoreOptions {
   return {
-    scope: options.scope,
-    errors: options.errors ?? "store",
+    scopeKey: options.scopeKey,
+    errorPolicy: options.errorPolicy ?? "store",
     validateMessages: options.validateMessages ?? true,
-    createIfMissing: options.createIfMissing ?? true,
     lock: options.lock ?? "advisory",
   };
 }
@@ -559,30 +562,8 @@ function isTransactionClient(
   return "release" in client && typeof client.release === "function";
 }
 
-async function defaultPgClient(
-  connectionString: string | undefined,
-): Promise<PostgresMemoryPoolLike> {
-  const pg = await import("pg");
-  return new pg.Pool(connectionString === undefined ? {} : { connectionString });
-}
-
 function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
-}
-
-function metadataValue(metadata: JsonObject | undefined, path: string): JsonValue | undefined {
-  let current: JsonValue | undefined = metadata;
-  for (const part of path.split(".")) {
-    if (!isJsonObject(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return current;
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isoTimestamp(value: string | Date): string {

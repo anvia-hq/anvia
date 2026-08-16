@@ -1,14 +1,23 @@
-import type { MemoryCompactionMessage, Message } from "@anvia/core";
+import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
+import * as memoryDrizzle from "../src/index.js";
 import {
   agentMemoryErrors,
   agentMemoryMessages,
   agentMemorySessions,
-  createDrizzleMemoryScopeKey,
-  createDrizzleMemoryStore,
+  type DrizzleMemoryDatabaseLike,
+  DrizzleMemoryStore,
+  type DrizzleMemoryStoreOptions,
   drizzleMemorySchema,
 } from "../src/index.js";
 import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
+
+// @ts-expect-error The positional store factory was removed.
+const removedStoreFactory = memoryDrizzle.createDrizzleMemoryStore;
+// @ts-expect-error Scope-key creation is canonical in @anvia/core/memory.
+const removedScopeKeyFactory = memoryDrizzle.createDrizzleMemoryScopeKey;
+void removedStoreFactory;
+void removedScopeKeyFactory;
 
 const userMessage: Message = {
   role: "user",
@@ -154,7 +163,7 @@ describe("Drizzle memory public API", () => {
 
     expect(isMemoryMessage(validMessage)).toBe(true);
     expect(isMemoryMessage(invalidMessage)).toBe(false);
-    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    const store = createTestMemoryStore(new FakeDrizzleDb());
     await expect(
       store.append({
         scope: { sessionId: "thread-invalid" },
@@ -189,9 +198,34 @@ describe("Drizzle memory public API", () => {
     expect(agentMemoryErrors).toBe(drizzleMemorySchema.agentMemoryErrors);
   });
 
+  it("validates configured tables through a non-mutating read path", async () => {
+    const db = new FakeDrizzleDb();
+    const store = new DrizzleMemoryStore({ db });
+
+    await expect(store.validate()).resolves.toBeUndefined();
+    expect(db.events).toEqual([]);
+    expect(db.sessions.size).toBe(0);
+    expect(db.messages).toHaveLength(0);
+    expect(db.errors).toHaveLength(0);
+  });
+
+  it("rejects databases without transaction support", () => {
+    const db = new FakeDrizzleDb();
+    const withoutTransactions = {
+      select: db.select.bind(db),
+      insert: db.insert.bind(db),
+      delete: db.delete.bind(db),
+      execute: db.execute.bind(db),
+    };
+
+    expect(() => new DrizzleMemoryStore({ db: withoutTransactions })).toThrow(
+      "requires db.transaction",
+    );
+  });
+
   it("appends multiple turns, loads in position order, and clears scoped messages", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
@@ -221,7 +255,7 @@ describe("Drizzle memory public API", () => {
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
       scope: context,
@@ -286,7 +320,7 @@ describe("Drizzle memory public API", () => {
   });
 
   it("inspects persisted conversations with ordered message records", async () => {
-    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    const store = createTestMemoryStore(new FakeDrizzleDb());
     await store.append({
       scope: {
         sessionId: "thread-1",
@@ -322,7 +356,7 @@ describe("Drizzle memory public API", () => {
   });
 
   it("round-trips every supported message content shape", async () => {
-    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    const store = createTestMemoryStore(new FakeDrizzleDb());
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
     await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
@@ -332,7 +366,7 @@ describe("Drizzle memory public API", () => {
 
   it("does not open a transaction for empty appends", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
 
     await store.append({
       scope: { sessionId: "thread-1" },
@@ -347,7 +381,7 @@ describe("Drizzle memory public API", () => {
 
   it("stores and can ignore failed-run diagnostics", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
 
     await store.recordError({
       scope: { sessionId: "thread-1" },
@@ -366,7 +400,7 @@ describe("Drizzle memory public API", () => {
     expect(db.events).toEqual(["transaction", "lock"]);
 
     const ignoringDb = new FakeDrizzleDb();
-    const ignoringStore = createDrizzleMemoryStore(ignoringDb, { errors: "ignore" });
+    const ignoringStore = createTestMemoryStore(ignoringDb, { errorPolicy: "ignore" });
 
     await ignoringStore.recordError({
       scope: { sessionId: "thread-1" },
@@ -381,7 +415,7 @@ describe("Drizzle memory public API", () => {
 
   it("serializes JSON and non-JSON failed-run diagnostics", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
 
     await store.recordError({
       scope: { sessionId: "thread-json" },
@@ -408,19 +442,12 @@ describe("Drizzle memory public API", () => {
 
   it("requires db.execute for advisory locking but supports lock none without it", async () => {
     const noExecuteDb = createNoExecuteDrizzleDb(new FakeDrizzleDb());
-    const lockingStore = createDrizzleMemoryStore(noExecuteDb);
-
-    await expect(
-      lockingStore.append({
-        scope: { sessionId: "thread-1" },
-        runId: "run-1",
-        turn: 0,
-        messages: [userMessage],
-      }),
-    ).rejects.toThrow("advisory locking requires db.execute");
+    expect(() => createTestMemoryStore(noExecuteDb)).toThrow(
+      'with lock: "advisory" requires db.execute',
+    );
 
     const unlockedDb = new FakeDrizzleDb();
-    const unlockedStore = createDrizzleMemoryStore(createNoExecuteDrizzleDb(unlockedDb), {
+    const unlockedStore = createTestMemoryStore(createNoExecuteDrizzleDb(unlockedDb), {
       lock: "none",
     });
     await unlockedStore.append({
@@ -431,12 +458,12 @@ describe("Drizzle memory public API", () => {
     });
 
     expect(await unlockedStore.load({ scope: { sessionId: "thread-1" } })).toEqual([userMessage]);
-    expect(unlockedDb.events).toEqual([]);
+    expect(unlockedDb.events).toEqual(["transaction"]);
   });
 
   it("rejects malformed stored messages by default and can bypass validation", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
     const context = { sessionId: "thread-1" };
     const malformed = { role: "bad", content: [] };
 
@@ -450,14 +477,14 @@ describe("Drizzle memory public API", () => {
 
     await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
 
-    const unsafeStore = createDrizzleMemoryStore(db, { validateMessages: false });
+    const unsafeStore = createTestMemoryStore(db, { validateMessages: false });
     await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("uses custom scope functions", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db, {
-      scope: (context) => String(context.metadata?.tenantId ?? "unknown"),
+    const store = createTestMemoryStore(db, {
+      scopeKey: ({ scope }) => String(scope.metadata?.tenantId ?? "unknown"),
     });
 
     await store.append({
@@ -477,43 +504,61 @@ describe("Drizzle memory public API", () => {
 
   it("creates stable scope keys from metadata paths", () => {
     expect(
-      createDrizzleMemoryScopeKey(
-        {
+      createMemoryScopeKey({
+        scope: {
           sessionId: "thread-1",
           userId: "user-1",
           metadata: { tenant: { id: "tenant-1" } },
         },
-        { metadataKeys: ["tenant.id"] },
-      ),
+        metadataKeys: ["tenant.id"],
+      }),
     ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
   });
 
   it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
     expect(
-      createDrizzleMemoryScopeKey(
-        { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        { metadataKeys: ["count", "enabled", "missing.value"] },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
     ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
   });
 
   it("can omit user ids from generated scope keys", () => {
     expect(
-      createDrizzleMemoryScopeKey(
-        { sessionId: "thread-1", userId: "user-1" },
-        { includeUserId: false },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", userId: "user-1" },
+        includeUserId: false,
+      }),
     ).toBe(JSON.stringify(["thread-1"]));
   });
 
-  it("fails clearly when the database object is not Drizzle-like", async () => {
-    const store = createDrizzleMemoryStore({});
-
-    await expect(store.load({ scope: { sessionId: "thread-1" } })).rejects.toThrow(
+  it("fails clearly when the database object is not Drizzle-like", () => {
+    expect(() => createTestMemoryStore({})).toThrow(
       "DrizzleMemoryStore expected db.select to be a function.",
     );
   });
+
+  it("rejects the removed positional constructor at compile time", () => {
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      const db = new FakeDrizzleDb();
+      // @ts-expect-error DrizzleMemoryStore accepts one options object.
+      new DrizzleMemoryStore(db);
+      new DrizzleMemoryStore({
+        db,
+        // @ts-expect-error Scope-key configuration was renamed.
+        scope: {},
+      });
+    }
+  });
 });
+
+function createTestMemoryStore(
+  db: DrizzleMemoryDatabaseLike,
+  options: Omit<DrizzleMemoryStoreOptions, "db"> = {},
+): DrizzleMemoryStore {
+  return new DrizzleMemoryStore({ db, ...options });
+}
 
 type SessionRow = {
   id: string;
@@ -830,6 +875,7 @@ function createNoExecuteDrizzleDb(db: FakeDrizzleDb): object {
     select: db.select.bind(db),
     insert: db.insert.bind(db),
     delete: db.delete.bind(db),
+    transaction: db.transaction.bind(db),
   };
 }
 

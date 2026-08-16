@@ -49,14 +49,17 @@ npx prisma migrate dev --name add_anvia_memory
 
 ```ts
 import { Agent } from "@anvia/core";
-import { createPrismaMemoryStore } from "@anvia/memory-prisma";
+import { PrismaMemoryStore } from "@anvia/memory-prisma";
 import { prisma } from "./db";
 
-const memory = createPrismaMemoryStore(prisma, {
-  scope: {
+const memory = new PrismaMemoryStore({
+  client: prisma,
+  scopeKey: {
     metadataKeys: ["tenantId"],
   },
 });
+
+await memory.validate();
 
 const agent = new Agent({
   id: "support",
@@ -74,7 +77,12 @@ await agent.generate({
 });
 ```
 
-`scope` defines the database key for one memory thread. By default the key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory across tenants or workspaces. Scope is storage isolation, not authorization.
+`scopeKey` defines the database key for one memory thread. By default the key includes `sessionId`
+and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory
+across tenants or workspaces. Scope is storage isolation, not authorization.
+
+The Prisma client and its shutdown lifecycle remain caller-owned. `validate()` performs a
+non-mutating read-path check; schema creation remains in the application's Prisma migrations.
 
 The store also exposes core's optional read-only memory inspector. When this agent is registered
 with `@anvia/studio`, existing Prisma conversations appear automatically on the Memory page. Studio
@@ -90,28 +98,30 @@ is absent, rather than pretending replacement is atomic.
 The default client path expects Prisma delegates named `agentMemorySession`, `agentMemoryMessage`, and `agentMemoryError`. If your app uses custom model names, pass delegates explicitly:
 
 ```ts
-const memory = PrismaMemoryStore.fromDelegates({
-  sessions: prisma.customMemorySession,
-  messages: prisma.customMemoryMessage,
-  errors: prisma.customMemoryError,
-  transaction: (operation, options) =>
-    prisma.$transaction(
-      (tx) =>
-        operation({
-          sessions: tx.customMemorySession,
-          messages: tx.customMemoryMessage,
-          errors: tx.customMemoryError,
-          transaction: async (nested) => nested({
+const memory = new PrismaMemoryStore({
+  delegates: {
+    sessions: prisma.customMemorySession,
+    messages: prisma.customMemoryMessage,
+    errors: prisma.customMemoryError,
+    transaction: (operation, options) =>
+      prisma.$transaction(
+        (tx) =>
+          operation({
             sessions: tx.customMemorySession,
             messages: tx.customMemoryMessage,
             errors: tx.customMemoryError,
-            transaction: async () => {
-              throw new Error("Nested transactions are not supported.");
-            },
+            transaction: async (nested) => nested({
+              sessions: tx.customMemorySession,
+              messages: tx.customMemoryMessage,
+              errors: tx.customMemoryError,
+              transaction: async () => {
+                throw new Error("Nested transactions are not supported.");
+              },
+            }),
           }),
-        }),
-      options,
-    ),
+        options,
+      ),
+  },
 });
 ```
 

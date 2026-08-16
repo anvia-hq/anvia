@@ -1,15 +1,13 @@
-import type { MemoryCompactionMessage, Message } from "@anvia/core";
-import { describe, expect, it } from "vitest";
+import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
+import { afterEach, describe, expect, it } from "vitest";
 import type {
   PostgresMemoryClientLike,
   PostgresMemoryQueryResult,
+  PostgresMemoryStore,
+  PostgresMemoryStoreOptions,
   PostgresMemoryTransactionClientLike,
 } from "../src/index.js";
-import {
-  createPostgresMemorySchemaSql,
-  createPostgresMemoryScopeKey,
-  createPostgresMemoryStore,
-} from "../src/index.js";
+import { createPostgresMemorySchemaSql, PostgresMemoryClient } from "../src/index.js";
 import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
 
 const userMessage: Message = {
@@ -396,6 +394,13 @@ class FakePgPool extends FakePgClient {
   }
 }
 
+const memoryClients = new Set<PostgresMemoryClient>();
+
+afterEach(async () => {
+  await Promise.all([...memoryClients].map((client) => client.close()));
+  memoryClients.clear();
+});
+
 describe("PostgresMemoryStore", () => {
   it("uses core strict JSON validation for message metadata", async () => {
     const validMessage: Message = {
@@ -411,10 +416,7 @@ describe("PostgresMemoryStore", () => {
 
     expect(isMemoryMessage(validMessage)).toBe(true);
     expect(isMemoryMessage(invalidMessage)).toBe(false);
-    const store = await createPostgresMemoryStore({
-      client: new FakePgClient(),
-      createIfMissing: false,
-    });
+    const store = await createTestMemoryStore({ client: new FakePgClient() });
     await expect(
       store.append({
         scope: { sessionId: "thread-invalid" },
@@ -445,7 +447,7 @@ describe("PostgresMemoryStore", () => {
 
   it("appends multiple turns, loads in position order, and clears scoped messages", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
@@ -477,7 +479,7 @@ describe("PostgresMemoryStore", () => {
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
       scope: context,
@@ -543,7 +545,7 @@ describe("PostgresMemoryStore", () => {
 
   it("inspects persisted conversations with message storage metadata", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     await store.append({
       scope: {
         sessionId: "thread-1",
@@ -580,7 +582,7 @@ describe("PostgresMemoryStore", () => {
 
   it("round-trips every supported message content shape", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
     await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
@@ -590,7 +592,7 @@ describe("PostgresMemoryStore", () => {
 
   it("does not open a transaction for empty appends", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await store.append({
       scope: { sessionId: "thread-1" },
@@ -605,7 +607,7 @@ describe("PostgresMemoryStore", () => {
   it("creates schema SQL by default", async () => {
     const client = new FakePgClient();
 
-    await createPostgresMemoryStore({ client });
+    await createTestMemoryStore({ client, ensure: true });
 
     expect(client.queries[0]).toContain("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     expect(client.queries[0]).toContain('"anvia_memory_sessions"');
@@ -614,7 +616,7 @@ describe("PostgresMemoryStore", () => {
   it("rolls back failed transactional appends", async () => {
     const client = new FakePgClient();
     client.failMessageInsert = true;
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await expect(
       store.append({
@@ -631,7 +633,7 @@ describe("PostgresMemoryStore", () => {
 
   it("checks out and releases a transaction client when given a pool", async () => {
     const pool = new FakePgPool();
-    const store = await createPostgresMemoryStore({ client: pool, createIfMissing: false });
+    const store = await createTestMemoryStore({ client: pool });
 
     await store.append({
       scope: { sessionId: "thread-1" },
@@ -648,7 +650,7 @@ describe("PostgresMemoryStore", () => {
 
   it("stores and can ignore failed-run diagnostics", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await store.recordError({
       scope: { sessionId: "thread-1" },
@@ -666,10 +668,9 @@ describe("PostgresMemoryStore", () => {
     ]);
 
     const ignoringClient = new FakePgClient();
-    const ignoringStore = await createPostgresMemoryStore({
+    const ignoringStore = await createTestMemoryStore({
       client: ignoringClient,
-      createIfMissing: false,
-      errors: "ignore",
+      errorPolicy: "ignore",
     });
 
     await ignoringStore.recordError({
@@ -685,7 +686,7 @@ describe("PostgresMemoryStore", () => {
 
   it("serializes JSON and non-JSON failed-run diagnostics", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await store.recordError({
       scope: { sessionId: "thread-json" },
@@ -714,9 +715,8 @@ describe("PostgresMemoryStore", () => {
 
   it("can disable advisory locking", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({
+    const store = await createTestMemoryStore({
       client,
-      createIfMissing: false,
       lock: "none",
     });
 
@@ -732,10 +732,9 @@ describe("PostgresMemoryStore", () => {
 
   it("uses custom scope functions", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({
+    const store = await createTestMemoryStore({
       client,
-      createIfMissing: false,
-      scope: (context) => String(context.metadata?.tenantId ?? "unknown"),
+      scopeKey: ({ scope }) => String(scope.metadata?.tenantId ?? "unknown"),
     });
 
     await store.append({
@@ -755,7 +754,7 @@ describe("PostgresMemoryStore", () => {
 
   it("rejects malformed stored messages by default and can bypass validation", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "thread-1" };
     const malformed = { role: "bad", content: [] };
 
@@ -769,9 +768,8 @@ describe("PostgresMemoryStore", () => {
 
     await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
 
-    const unsafeStore = await createPostgresMemoryStore({
+    const unsafeStore = await createTestMemoryStore({
       client,
-      createIfMissing: false,
       validateMessages: false,
     });
     await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
@@ -788,32 +786,48 @@ describe("PostgresMemoryStore", () => {
 
   it("creates stable scope keys from metadata paths", () => {
     expect(
-      createPostgresMemoryScopeKey(
-        {
+      createMemoryScopeKey({
+        scope: {
           sessionId: "thread-1",
           userId: "user-1",
           metadata: { tenant: { id: "tenant-1" } },
         },
-        { metadataKeys: ["tenant.id"] },
-      ),
+        metadataKeys: ["tenant.id"],
+      }),
     ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
   });
 
   it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
     expect(
-      createPostgresMemoryScopeKey(
-        { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        { metadataKeys: ["count", "enabled", "missing.value"] },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
     ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
   });
 
   it("can omit user ids from generated scope keys", () => {
     expect(
-      createPostgresMemoryScopeKey(
-        { sessionId: "thread-1", userId: "user-1" },
-        { includeUserId: false },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", userId: "user-1" },
+        includeUserId: false,
+      }),
     ).toBe(JSON.stringify(["thread-1"]));
   });
 });
+
+type CreateTestMemoryStoreOptions = PostgresMemoryStoreOptions & {
+  client: PostgresMemoryClientLike;
+  ensure?: boolean | undefined;
+};
+
+async function createTestMemoryStore(
+  options: CreateTestMemoryStoreOptions,
+): Promise<PostgresMemoryStore> {
+  const { client: nativeClient, ensure = false, ...storeOptions } = options;
+  const client = new PostgresMemoryClient({ client: nativeClient });
+  memoryClients.add(client);
+  const store = client.memoryStore(storeOptions);
+  if (ensure) await store.ensure();
+  return store;
+}

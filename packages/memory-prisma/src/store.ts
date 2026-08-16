@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -12,21 +12,20 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
+import { createMemoryScopeKey } from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
   PrismaMemoryClientLike,
   PrismaMemoryConventionalDelegates,
   PrismaMemoryDelegates,
-  PrismaMemoryScopeOptions,
-  PrismaMemorySessionCreateData,
   PrismaMemoryStoreOptions,
   PrismaMemoryTransactionOptions,
 } from "./types.js";
 
-const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
-  includeUserId: true,
-  metadataKeys: [],
-};
+type ResolvedPrismaMemoryStoreOptions = Required<
+  Pick<PrismaMemoryStoreOptions, "errorPolicy" | "validateMessages">
+> &
+  Pick<PrismaMemoryStoreOptions, "scopeKey" | "transaction">;
 
 type PrismaInspectionSessionRow = {
   id: string;
@@ -53,44 +52,19 @@ type PrismaCompactionMessageRow = {
   message: unknown;
 };
 
-export function createPrismaMemoryStore(
-  client: unknown,
-  options: PrismaMemoryStoreOptions = {},
-): PrismaMemoryStore {
-  return PrismaMemoryStore.fromClient(client, options);
-}
-
-export function createPrismaMemoryScopeKey(
-  context: MemoryScope,
-  options: PrismaMemoryScopeOptions = {},
-): string {
-  const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
-  const metadataKeys = options.metadataKeys ?? defaultScopeOptions.metadataKeys;
-  const values: JsonValue[] = [context.sessionId];
-
-  if (includeUserId) {
-    values.push(context.userId ?? null);
-  }
-
-  for (const key of metadataKeys) {
-    values.push(metadataValue(context.metadata, key) ?? null);
-  }
-
-  return JSON.stringify(values);
-}
-
 export class PrismaMemoryStore implements MemoryStore {
   readonly kind = "prisma";
   readonly inspector: MemoryInspector | undefined;
   readonly compaction: MemoryCompactionCapability | undefined;
 
-  private constructor(
-    private readonly delegates: PrismaMemoryDelegates,
-    private readonly options: Required<
-      Pick<PrismaMemoryStoreOptions, "errors" | "validateMessages">
-    > &
-      Pick<PrismaMemoryStoreOptions, "scope" | "transaction">,
-  ) {
+  private readonly delegates: PrismaMemoryDelegates;
+  private readonly options: ResolvedPrismaMemoryStoreOptions;
+
+  constructor(options: PrismaMemoryStoreOptions) {
+    this.delegates =
+      options.delegates === undefined ? conventionalDelegates(options.client) : options.delegates;
+    this.options = resolveOptions(options);
+    const delegates = this.delegates;
     this.inspector = hasInspectionDelegates(delegates)
       ? {
           listConversations: (options) => this.listConversations(options),
@@ -106,15 +80,27 @@ export class PrismaMemoryStore implements MemoryStore {
         : undefined;
   }
 
-  static fromClient(client: unknown, options: PrismaMemoryStoreOptions = {}): PrismaMemoryStore {
-    return new PrismaMemoryStore(conventionalDelegates(client), resolveOptions(options));
-  }
-
-  static fromDelegates(
-    delegates: PrismaMemoryDelegates,
-    options: PrismaMemoryStoreOptions = {},
-  ): PrismaMemoryStore {
-    return new PrismaMemoryStore(delegates, resolveOptions(options));
+  async validate(): Promise<void> {
+    await this.delegates.messages.findMany({
+      where: { memorySession: { scopeKey: "__anvia_memory_validation__" } },
+      orderBy: { position: "asc" },
+      take: 1,
+      select: {
+        id: true,
+        memorySessionId: true,
+        runId: true,
+        turn: true,
+        position: true,
+        role: true,
+        message: true,
+        createdAt: true,
+      },
+    });
+    if (this.options.errorPolicy === "store" && this.delegates.errors === undefined) {
+      throw new Error(
+        'PrismaMemoryStore validation requires an errors delegate. Pass errorPolicy: "ignore" to disable failed-run storage.',
+      );
+    }
   }
 
   async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
@@ -164,13 +150,13 @@ export class PrismaMemoryStore implements MemoryStore {
   }
 
   async recordError(input: MemoryErrorOptions): Promise<void> {
-    if (this.options.errors === "ignore") {
+    if (this.options.errorPolicy === "ignore") {
       return;
     }
     this.validateInputMessages(input.messages);
     if (this.delegates.errors === undefined) {
       throw new Error(
-        'PrismaMemoryStore recordError requires an errors delegate. Pass errors: "ignore" to disable failed-run storage.',
+        'PrismaMemoryStore recordError requires an errors delegate. Pass errorPolicy: "ignore" to disable failed-run storage.',
       );
     }
 
@@ -315,10 +301,10 @@ export class PrismaMemoryStore implements MemoryStore {
   }
 
   private scopeKey(context: MemoryScope): string {
-    if (typeof this.options.scope === "function") {
-      return this.options.scope(context);
+    if (typeof this.options.scopeKey === "function") {
+      return this.options.scopeKey({ scope: context });
     }
-    return createPrismaMemoryScopeKey(context, this.options.scope);
+    return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
   }
 
   private validateInputMessages(messages: Message[]): void {
@@ -330,10 +316,10 @@ export class PrismaMemoryStore implements MemoryStore {
   }
 }
 
-function resolveOptions(options: PrismaMemoryStoreOptions): PrismaMemoryStore["options"] {
+function resolveOptions(options: PrismaMemoryStoreOptions): ResolvedPrismaMemoryStoreOptions {
   return {
-    scope: options.scope,
-    errors: options.errors ?? "store",
+    scopeKey: options.scopeKey,
+    errorPolicy: options.errorPolicy ?? "store",
     validateMessages: options.validateMessages ?? true,
     transaction: options.transaction,
   };
@@ -347,6 +333,8 @@ async function upsertSession(
   return delegates.sessions.upsert({
     where: { scopeKey },
     update: {
+      sessionId: context.sessionId,
+      userId: context.userId ?? null,
       metadata: metadata(context),
     },
     create: sessionCreateData(context, scopeKey),
@@ -354,8 +342,11 @@ async function upsertSession(
   });
 }
 
-function sessionCreateData(context: MemoryScope, scopeKey: string): PrismaMemorySessionCreateData {
-  const data: PrismaMemorySessionCreateData = {
+function sessionCreateData(
+  context: MemoryScope,
+  scopeKey: string,
+): { scopeKey: string; sessionId: string; userId?: string; metadata: JsonObject } {
+  const data: { scopeKey: string; sessionId: string; userId?: string; metadata: JsonObject } = {
     scopeKey,
     sessionId: context.sessionId,
     metadata: metadata(context),
@@ -368,21 +359,6 @@ function sessionCreateData(context: MemoryScope, scopeKey: string): PrismaMemory
 
 function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
-}
-
-function metadataValue(metadata: JsonObject | undefined, path: string): JsonValue | undefined {
-  let current: JsonValue | undefined = metadata;
-  for (const part of path.split(".")) {
-    if (!isJsonObject(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return current;
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function conventionalDelegates(client: unknown): PrismaMemoryDelegates {

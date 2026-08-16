@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -12,25 +12,20 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
+import { createMemoryScopeKey } from "@anvia/core/memory";
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import { drizzleMemorySchema } from "./schema.js";
 import type {
   DrizzleMemoryDatabaseLike,
   DrizzleMemorySchema,
-  DrizzleMemoryScopeOptions,
   DrizzleMemoryStoreOptions,
 } from "./types.js";
 
-const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
-  includeUserId: true,
-  metadataKeys: [],
-};
-
 type ResolvedDrizzleMemoryStoreOptions = Required<
-  Pick<DrizzleMemoryStoreOptions, "errors" | "lock" | "validateMessages">
+  Pick<DrizzleMemoryStoreOptions, "errorPolicy" | "lock" | "validateMessages">
 > &
-  Pick<DrizzleMemoryStoreOptions, "scope">;
+  Pick<DrizzleMemoryStoreOptions, "scopeKey">;
 
 type DrizzleRuntimeDatabase = {
   select(selection?: unknown): DrizzleSelectBuilder;
@@ -96,32 +91,6 @@ type InspectionMessageRow = {
   message: unknown;
 };
 
-export function createDrizzleMemoryStore(
-  db: DrizzleMemoryDatabaseLike,
-  options: DrizzleMemoryStoreOptions = {},
-): DrizzleMemoryStore {
-  return new DrizzleMemoryStore(db, options.schema ?? drizzleMemorySchema, resolveOptions(options));
-}
-
-export function createDrizzleMemoryScopeKey(
-  context: MemoryScope,
-  options: DrizzleMemoryScopeOptions = {},
-): string {
-  const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
-  const metadataKeys = options.metadataKeys ?? defaultScopeOptions.metadataKeys;
-  const values: JsonValue[] = [context.sessionId];
-
-  if (includeUserId) {
-    values.push(context.userId ?? null);
-  }
-
-  for (const key of metadataKeys) {
-    values.push(metadataValue(context.metadata, key) ?? null);
-  }
-
-  return JSON.stringify(values);
-}
-
 export class DrizzleMemoryStore implements MemoryStore {
   readonly kind = "drizzle";
   readonly inspector: MemoryInspector = {
@@ -133,11 +102,51 @@ export class DrizzleMemoryStore implements MemoryStore {
     replacePrefix: (options) => this.replaceCompactionPrefix(options),
   };
 
-  constructor(
-    private readonly db: DrizzleMemoryDatabaseLike,
-    private readonly schema: DrizzleMemorySchema,
-    private readonly options: ResolvedDrizzleMemoryStoreOptions,
-  ) {}
+  private readonly db: DrizzleMemoryDatabaseLike;
+  private readonly schema: DrizzleMemorySchema;
+  private readonly options: ResolvedDrizzleMemoryStoreOptions;
+
+  constructor(options: DrizzleMemoryStoreOptions) {
+    const db = runtimeDatabase(options.db);
+    const resolvedOptions = resolveOptions(options);
+    if (typeof db.transaction !== "function") {
+      throw new TypeError("DrizzleMemoryStore requires db.transaction for atomic memory writes.");
+    }
+    if (resolvedOptions.lock === "advisory" && typeof db.execute !== "function") {
+      throw new TypeError(
+        'DrizzleMemoryStore with lock: "advisory" requires db.execute. Pass lock: "none" only when the database provides equivalent serialization.',
+      );
+    }
+    this.db = options.db;
+    this.schema = options.schema ?? drizzleMemorySchema;
+    this.options = resolvedOptions;
+  }
+
+  async validate(): Promise<void> {
+    const db = runtimeDatabase(this.db);
+    const {
+      agentMemorySessions: sessions,
+      agentMemoryMessages: messages,
+      agentMemoryErrors: errors,
+    } = this.schema;
+    await db
+      .select({
+        sessionId: sessions.id,
+        scopeKey: sessions.scopeKey,
+        messageId: messages.id,
+        position: messages.position,
+        message: messages.message,
+      })
+      .from(sessions)
+      .leftJoin(messages, eq(messages.memorySessionId, sessions.id))
+      .limit(0);
+    if (this.options.errorPolicy === "store") {
+      await db
+        .select({ id: errors.id, memorySessionId: errors.memorySessionId, error: errors.error })
+        .from(errors)
+        .limit(0);
+    }
+  }
 
   async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
     const db = runtimeDatabase(this.db);
@@ -194,7 +203,7 @@ export class DrizzleMemoryStore implements MemoryStore {
   }
 
   async recordError(input: MemoryErrorOptions): Promise<void> {
-    if (this.options.errors === "ignore") {
+    if (this.options.errorPolicy === "ignore") {
       return;
     }
     this.validateInputMessages(input.messages);
@@ -356,10 +365,10 @@ export class DrizzleMemoryStore implements MemoryStore {
 
   private async transaction<T>(operation: (tx: DrizzleRuntimeDatabase) => Promise<T>): Promise<T> {
     const db = runtimeDatabase(this.db);
-    if (typeof db.transaction === "function") {
-      return db.transaction(operation);
+    if (typeof db.transaction !== "function") {
+      throw new Error("DrizzleMemoryStore requires db.transaction for atomic memory writes.");
     }
-    return operation(db);
+    return db.transaction(operation);
   }
 
   private async lock(db: DrizzleRuntimeDatabase, scopeKey: string): Promise<void> {
@@ -405,10 +414,10 @@ export class DrizzleMemoryStore implements MemoryStore {
   }
 
   private scopeKey(context: MemoryScope): string {
-    if (typeof this.options.scope === "function") {
-      return this.options.scope(context);
+    if (typeof this.options.scopeKey === "function") {
+      return this.options.scopeKey({ scope: context });
     }
-    return createDrizzleMemoryScopeKey(context, this.options.scope);
+    return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
   }
 
   private validateInputMessages(messages: Message[]): void {
@@ -422,8 +431,8 @@ export class DrizzleMemoryStore implements MemoryStore {
 
 function resolveOptions(options: DrizzleMemoryStoreOptions): ResolvedDrizzleMemoryStoreOptions {
   return {
-    scope: options.scope,
-    errors: options.errors ?? "store",
+    scopeKey: options.scopeKey,
+    errorPolicy: options.errorPolicy ?? "store",
     validateMessages: options.validateMessages ?? true,
     lock: options.lock ?? "advisory",
   };
@@ -443,21 +452,6 @@ function runtimeDatabase(db: DrizzleMemoryDatabaseLike): DrizzleRuntimeDatabase 
 
 function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
-}
-
-function metadataValue(metadata: JsonObject | undefined, path: string): JsonValue | undefined {
-  let current: JsonValue | undefined = metadata;
-  for (const part of path.split(".")) {
-    if (!isJsonObject(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return current;
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function compactionRevision(rows: CompactionMessageRow[]): string {

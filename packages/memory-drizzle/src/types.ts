@@ -1,25 +1,17 @@
-import type { MemoryAppendOptions, MemoryErrorOptions, MemoryScope } from "@anvia/core/memory";
+import type { MemoryScopeKeyResolver } from "@anvia/core/memory";
 import type { drizzleMemorySchema } from "./schema.js";
 
-export type DrizzleMemoryErrorMode = "store" | "ignore";
+export type DrizzleMemoryErrorPolicy = "store" | "ignore";
 export type DrizzleMemoryLockMode = "advisory" | "none";
 
 export type DrizzleMemoryDatabaseLike = object;
 export type DrizzleMemorySchema = typeof drizzleMemorySchema;
 
-export type DrizzleMemoryScopeOptions = {
-  includeUserId?: boolean | undefined;
-  metadataKeys?: string[] | undefined;
-};
-
 export type DrizzleMemoryStoreOptions = {
+  db: DrizzleMemoryDatabaseLike;
   schema?: DrizzleMemorySchema | undefined;
-  scope?: DrizzleMemoryScopeOptions | ((context: MemoryScope) => string) | undefined;
-  errors?: DrizzleMemoryErrorMode | undefined;
+  scopeKey?: MemoryScopeKeyResolver | undefined;
+  errorPolicy?: DrizzleMemoryErrorPolicy | undefined;
   validateMessages?: boolean | undefined;
   lock?: DrizzleMemoryLockMode | undefined;
 };
-
-export type DrizzleMemoryAppendOptions = MemoryAppendOptions;
-export type DrizzleMemoryScope = MemoryScope;
-export type DrizzleMemoryErrorOptions = MemoryErrorOptions;

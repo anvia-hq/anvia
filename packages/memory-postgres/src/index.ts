@@ -1,20 +1,16 @@
+export { PostgresMemoryClient } from "./client.js";
 export {
   createPostgresMemorySchemaSql,
-  createPostgresMemoryScopeKey,
-  createPostgresMemoryStore,
   PostgresMemoryStore,
 } from "./store.js";
 export type {
-  PostgresMemoryAppendOptions,
   PostgresMemoryClientLike,
-  PostgresMemoryErrorMode,
-  PostgresMemoryErrorOptions,
+  PostgresMemoryClientOptions,
+  PostgresMemoryErrorPolicy,
   PostgresMemoryLockMode,
   PostgresMemoryPoolLike,
   PostgresMemoryQueryResult,
   PostgresMemorySchemaOptions,
-  PostgresMemoryScope,
-  PostgresMemoryScopeOptions,
   PostgresMemoryStoreOptions,
   PostgresMemoryTableNames,
   PostgresMemoryTransactionClientLike,

@@ -15,6 +15,19 @@ export type MemoryScope = {
   metadata?: JsonObject | undefined;
 };
 
+export type MemoryScopeKeyOptions = {
+  includeUserId?: boolean | undefined;
+  metadataKeys?: readonly string[] | undefined;
+};
+
+export type CreateMemoryScopeKeyOptions = MemoryScopeKeyOptions & {
+  scope: MemoryScope;
+};
+
+export type MemoryScopeKeyResolver =
+  | MemoryScopeKeyOptions
+  | ((options: { scope: MemoryScope }) => string);
+
 export type MemoryLoadOptions = {
   scope: MemoryScope;
 };

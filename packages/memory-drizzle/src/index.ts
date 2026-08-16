@@ -4,19 +4,11 @@ export {
   agentMemorySessions,
   drizzleMemorySchema,
 } from "./schema.js";
-export {
-  createDrizzleMemoryScopeKey,
-  createDrizzleMemoryStore,
-  DrizzleMemoryStore,
-} from "./store.js";
+export { DrizzleMemoryStore } from "./store.js";
 export type {
-  DrizzleMemoryAppendOptions,
   DrizzleMemoryDatabaseLike,
-  DrizzleMemoryErrorMode,
-  DrizzleMemoryErrorOptions,
+  DrizzleMemoryErrorPolicy,
   DrizzleMemoryLockMode,
   DrizzleMemorySchema,
-  DrizzleMemoryScope,
-  DrizzleMemoryScopeOptions,
   DrizzleMemoryStoreOptions,
 } from "./types.js";

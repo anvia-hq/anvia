@@ -1,23 +1,15 @@
-export {
-  createPrismaMemoryScopeKey,
-  createPrismaMemoryStore,
-  PrismaMemoryStore,
-} from "./store.js";
+export { PrismaMemoryStore } from "./store.js";
 export type {
-  PrismaMemoryAppendData,
-  PrismaMemoryAppendOptions,
   PrismaMemoryClientLike,
   PrismaMemoryConventionalDelegates,
   PrismaMemoryDelegates,
-  PrismaMemoryErrorData,
   PrismaMemoryErrorDelegate,
-  PrismaMemoryErrorMode,
-  PrismaMemoryErrorOptions,
+  PrismaMemoryErrorPolicy,
   PrismaMemoryMessageDelegate,
-  PrismaMemoryScope,
-  PrismaMemoryScopeOptions,
-  PrismaMemorySessionCreateData,
+  PrismaMemoryMessageRow,
+  PrismaMemoryPositionRow,
   PrismaMemorySessionDelegate,
+  PrismaMemorySessionRow,
   PrismaMemoryStoreOptions,
   PrismaMemoryTransactionOptions,
 } from "./types.js";

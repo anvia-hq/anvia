@@ -133,6 +133,7 @@ export type {
 } from "./image-generation";
 export { generateImage } from "./image-generation";
 export type {
+  CreateMemoryScopeKeyOptions,
   CreateSummaryMemoryCompactorOptions,
   MemoryAppendOptions,
   MemoryClearOptions,
@@ -160,9 +161,12 @@ export type {
   MemoryOptions,
   MemorySavePolicy,
   MemoryScope,
+  MemoryScopeKeyOptions,
+  MemoryScopeKeyResolver,
   MemoryStore,
 } from "./memory";
 export {
+  createMemoryScopeKey,
   createSummaryMemoryCompactor,
   isMemoryCompactionMessage,
   MemoryCompactionConflictError,

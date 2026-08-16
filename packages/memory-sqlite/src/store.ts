@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -17,22 +13,41 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
+import { createMemoryScopeKey } from "@anvia/core/memory";
+import { type SqliteMemoryClient, sqliteMemoryExistingClient } from "./client.js";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
-import type { SqliteMemoryScopeOptions, SqliteMemoryStoreOptions } from "./types.js";
-
-type DatabaseSyncConstructor = typeof DatabaseSyncType;
-
-let DatabaseSync: DatabaseSyncConstructor | undefined;
-
-const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
-  includeUserId: true,
-  metadataKeys: [],
-};
+import type {
+  SqliteMemoryDatabaseLike,
+  SqliteMemorySchemaOptions,
+  SqliteMemoryStoreOptions,
+} from "./types.js";
 
 type ResolvedSqliteMemoryStoreOptions = Required<
-  Pick<SqliteMemoryStoreOptions, "createIfMissing" | "errors" | "validateMessages">
+  Pick<SqliteMemoryStoreOptions, "errorPolicy" | "validateMessages">
 > &
-  Pick<SqliteMemoryStoreOptions, "scope">;
+  Pick<SqliteMemoryStoreOptions, "scopeKey">;
+
+type ResolvedSqliteMemoryTables = {
+  sessions: string;
+  messages: string;
+  errors: string;
+  messagesPositionIndex: string;
+  messagesPositionIndexName: string;
+};
+
+type SqliteIndexRow = {
+  name: string;
+  unique: number;
+};
+
+type SqliteIndexColumnRow = {
+  seqno: number;
+  name: string;
+};
+
+type SqliteForeignKeysRow = {
+  foreign_keys: number;
+};
 
 type SessionIdRow = {
   id: string;
@@ -70,28 +85,7 @@ type InspectionMessageRow = {
   message_json: string;
 };
 
-export function createSqliteMemoryStore(options: SqliteMemoryStoreOptions = {}): SqliteMemoryStore {
-  return new SqliteMemoryStore(options.path ?? ":memory:", resolveOptions(options));
-}
-
-export function createSqliteMemoryScopeKey(
-  context: MemoryScope,
-  options: SqliteMemoryScopeOptions = {},
-): string {
-  const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
-  const metadataKeys = options.metadataKeys ?? defaultScopeOptions.metadataKeys;
-  const values: JsonValue[] = [context.sessionId];
-
-  if (includeUserId) {
-    values.push(context.userId ?? null);
-  }
-
-  for (const key of metadataKeys) {
-    values.push(metadataValue(context.metadata, key) ?? null);
-  }
-
-  return JSON.stringify(values);
-}
+export const sqliteMemoryStoreFactory = Symbol("SqliteMemoryStore.factory");
 
 export class SqliteMemoryStore implements MemoryStore {
   readonly kind = "sqlite";
@@ -103,19 +97,40 @@ export class SqliteMemoryStore implements MemoryStore {
     snapshot: ({ scope }) => this.loadCompactionSnapshot(scope),
     replacePrefix: (options) => this.replaceCompactionPrefix(options),
   };
-  private db: DatabaseSyncType | undefined;
+  private readonly tables: ResolvedSqliteMemoryTables;
+  private readonly options: ResolvedSqliteMemoryStoreOptions;
 
-  constructor(
-    private readonly path: string,
-    private readonly options: ResolvedSqliteMemoryStoreOptions,
-  ) {}
+  private constructor(input: { owner: SqliteMemoryClient; options: SqliteMemoryStoreOptions }) {
+    this.owner = input.owner;
+    this.tables = resolveTables(input.options);
+    this.options = resolveOptions(input.options);
+  }
+
+  private readonly owner: SqliteMemoryClient;
+
+  static [sqliteMemoryStoreFactory](input: {
+    owner: SqliteMemoryClient;
+    options: SqliteMemoryStoreOptions;
+  }): SqliteMemoryStore {
+    return new SqliteMemoryStore(input);
+  }
+
+  async ensure(): Promise<void> {
+    const database = await this.owner.nativeClient();
+    database.exec(sqliteMemorySchemaSql(this.tables));
+    await this.validateDatabase(database);
+  }
+
+  async validate(): Promise<void> {
+    await this.validateDatabase(await this.database());
+  }
 
   async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
-    const rows = this.database()
+    const rows = (await this.database())
       .prepare(
         `SELECT m.message_json
-         FROM anvia_memory_messages m
-         INNER JOIN anvia_memory_sessions s ON s.id = m.memory_session_id
+         FROM ${this.tables.messages} m
+         INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
          WHERE s.scope_key = $scopeKey
          ORDER BY m.position ASC`,
       )
@@ -132,22 +147,22 @@ export class SqliteMemoryStore implements MemoryStore {
     }
     this.validateInputMessages(input.messages);
 
-    const db = this.database();
+    const db = await this.database();
     const scopeKey = this.scopeKey(input.scope);
 
     try {
       db.exec("BEGIN IMMEDIATE");
-      const sessionId = this.upsertSession(input.scope, scopeKey);
+      const sessionId = this.upsertSession(db, input.scope, scopeKey);
       const last = db
         .prepare(
           `SELECT MAX(position) AS position
-           FROM anvia_memory_messages
+           FROM ${this.tables.messages}
            WHERE memory_session_id = $memorySessionId`,
         )
         .get({ $memorySessionId: sessionId }) as PositionRow | undefined;
       const start = (last?.position ?? -1) + 1;
       const insertMessage = db.prepare(
-        `INSERT INTO anvia_memory_messages (
+        `INSERT INTO ${this.tables.messages} (
           id,
           memory_session_id,
           run_id,
@@ -190,27 +205,27 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 
   async clear({ scope }: { scope: MemoryScope }): Promise<void> {
-    this.database()
-      .prepare("DELETE FROM anvia_memory_sessions WHERE scope_key = $scopeKey")
+    (await this.database())
+      .prepare(`DELETE FROM ${this.tables.sessions} WHERE scope_key = $scopeKey`)
       .run({
         $scopeKey: this.scopeKey(scope),
       });
   }
 
   async recordError(input: MemoryErrorOptions): Promise<void> {
-    if (this.options.errors === "ignore") {
+    if (this.options.errorPolicy === "ignore") {
       return;
     }
     this.validateInputMessages(input.messages);
 
-    const db = this.database();
+    const db = await this.database();
     const scopeKey = this.scopeKey(input.scope);
 
     try {
       db.exec("BEGIN IMMEDIATE");
-      const sessionId = this.upsertSession(input.scope, scopeKey);
+      const sessionId = this.upsertSession(db, input.scope, scopeKey);
       db.prepare(
-        `INSERT INTO anvia_memory_errors (
+        `INSERT INTO ${this.tables.errors} (
           id,
           memory_session_id,
           run_id,
@@ -241,11 +256,11 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 
   private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
-    const rows = this.database()
+    const rows = (await this.database())
       .prepare(
         `SELECT m.id, m.position, m.message_json
-         FROM anvia_memory_messages m
-         INNER JOIN anvia_memory_sessions s ON s.id = m.memory_session_id
+         FROM ${this.tables.messages} m
+         INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
          WHERE s.scope_key = $scopeKey
          ORDER BY m.position ASC`,
       )
@@ -261,7 +276,7 @@ export class SqliteMemoryStore implements MemoryStore {
   ): Promise<MemoryCompactionReplacePrefixResult> {
     this.validateInputMessages([input.replacement]);
     assertCompactionMessageCount(input.messageCount);
-    const db = this.database();
+    const db = await this.database();
     const scopeKey = this.scopeKey(input.scope);
 
     try {
@@ -269,8 +284,8 @@ export class SqliteMemoryStore implements MemoryStore {
       const rows = db
         .prepare(
           `SELECT m.id, m.position, m.message_json
-           FROM anvia_memory_messages m
-           INNER JOIN anvia_memory_sessions s ON s.id = m.memory_session_id
+           FROM ${this.tables.messages} m
+           INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
            WHERE s.scope_key = $scopeKey
            ORDER BY m.position ASC`,
         )
@@ -284,13 +299,13 @@ export class SqliteMemoryStore implements MemoryStore {
         db.exec("ROLLBACK");
         return { status: "conflict" };
       }
-      const sessionId = this.upsertSession(input.scope, scopeKey);
-      const deleteMessage = db.prepare("DELETE FROM anvia_memory_messages WHERE id = $id");
+      const sessionId = this.upsertSession(db, input.scope, scopeKey);
+      const deleteMessage = db.prepare(`DELETE FROM ${this.tables.messages} WHERE id = $id`);
       for (const row of rows.slice(0, input.messageCount)) {
         deleteMessage.run({ $id: row.id });
       }
       db.prepare(
-        `INSERT INTO anvia_memory_messages (
+        `INSERT INTO ${this.tables.messages} (
           id,
           memory_session_id,
           run_id,
@@ -330,7 +345,7 @@ export class SqliteMemoryStore implements MemoryStore {
     options: MemoryConversationListOptions,
   ): Promise<MemoryConversationSummary[]> {
     const where = options.userId === undefined ? "" : "WHERE s.user_id = $userId";
-    const statement = this.database().prepare(
+    const statement = (await this.database()).prepare(
       `SELECT
          s.id AS ref,
          s.session_id,
@@ -339,8 +354,8 @@ export class SqliteMemoryStore implements MemoryStore {
          s.created_at,
          s.updated_at,
          COUNT(m.id) AS message_count
-       FROM anvia_memory_sessions s
-       LEFT JOIN anvia_memory_messages m ON m.memory_session_id = s.id
+       FROM ${this.tables.sessions} s
+       LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
        ${where}
        GROUP BY s.id
        ORDER BY s.updated_at DESC, s.id DESC
@@ -353,7 +368,8 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 
   private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
-    const row = this.database()
+    const database = await this.database();
+    const row = database
       .prepare(
         `SELECT
            s.id AS ref,
@@ -363,18 +379,18 @@ export class SqliteMemoryStore implements MemoryStore {
            s.created_at,
            s.updated_at,
            COUNT(m.id) AS message_count
-         FROM anvia_memory_sessions s
-         LEFT JOIN anvia_memory_messages m ON m.memory_session_id = s.id
+         FROM ${this.tables.sessions} s
+         LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
          WHERE s.id = $ref
          GROUP BY s.id`,
       )
       .get({ $ref: ref }) as InspectionSessionRow | undefined;
     if (row === undefined) return undefined;
 
-    const messages = this.database()
+    const messages = database
       .prepare(
         `SELECT position, run_id, turn, created_at, message_json
-         FROM anvia_memory_messages
+         FROM ${this.tables.messages}
          WHERE memory_session_id = $ref
          ORDER BY position ASC`,
       )
@@ -405,36 +421,23 @@ export class SqliteMemoryStore implements MemoryStore {
     return summary;
   }
 
-  private database(): DatabaseSyncType {
-    if (this.db !== undefined) {
-      return this.db;
-    }
-
-    if (this.path !== ":memory:") {
-      mkdirSync(dirname(resolve(this.path)), { recursive: true });
-    }
-
-    const SQLite = databaseSync();
-    this.db = new SQLite(this.path);
-    this.db.exec("PRAGMA foreign_keys = ON");
-
-    if (this.options.createIfMissing) {
-      this.db.exec(sqliteMemorySchemaSql);
-    }
-
-    return this.db;
+  private database(): Promise<SqliteMemoryDatabaseLike> {
+    return this.owner[sqliteMemoryExistingClient]();
   }
 
-  private upsertSession(context: MemoryScope, scopeKey: string): string {
-    const db = this.database();
+  private upsertSession(
+    db: SqliteMemoryDatabaseLike,
+    context: MemoryScope,
+    scopeKey: string,
+  ): string {
     const existing = db
-      .prepare("SELECT id FROM anvia_memory_sessions WHERE scope_key = $scopeKey")
+      .prepare(`SELECT id FROM ${this.tables.sessions} WHERE scope_key = $scopeKey`)
       .get({ $scopeKey: scopeKey }) as SessionIdRow | undefined;
     const now = new Date().toISOString();
 
     if (existing !== undefined) {
       db.prepare(
-        `UPDATE anvia_memory_sessions
+        `UPDATE ${this.tables.sessions}
          SET session_id = $sessionId,
              user_id = $userId,
              metadata_json = $metadataJson,
@@ -452,7 +455,7 @@ export class SqliteMemoryStore implements MemoryStore {
 
     const id = randomUUID();
     db.prepare(
-      `INSERT INTO anvia_memory_sessions (
+      `INSERT INTO ${this.tables.sessions} (
         id,
         scope_key,
         session_id,
@@ -494,15 +497,77 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 
   private scopeKey(context: MemoryScope): string {
-    if (typeof this.options.scope === "function") {
-      return this.options.scope(context);
+    if (typeof this.options.scopeKey === "function") {
+      return this.options.scopeKey({ scope: context });
     }
-    return createSqliteMemoryScopeKey(context, this.options.scope);
+    return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
+  }
+
+  private async validateDatabase(database: SqliteMemoryDatabaseLike): Promise<void> {
+    const foreignKeys = database.prepare("PRAGMA foreign_keys").get() as
+      | SqliteForeignKeysRow
+      | undefined;
+    if (foreignKeys?.foreign_keys !== 1) {
+      throw new Error(
+        "Sqlite memory requires foreign-key enforcement. Enable foreign keys on the injected database.",
+      );
+    }
+
+    database
+      .prepare(
+        `SELECT
+           s.id, s.scope_key, s.session_id, s.user_id, s.metadata_json, s.created_at, s.updated_at,
+           m.id, m.memory_session_id, m.run_id, m.turn, m.position, m.role, m.message_json, m.created_at
+         FROM ${this.tables.sessions} s
+         LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
+         LIMIT 0`,
+      )
+      .all();
+    database
+      .prepare(
+        `SELECT id, memory_session_id, run_id, error_json, messages_json, created_at
+         FROM ${this.tables.errors}
+         LIMIT 0`,
+      )
+      .all();
+
+    const messageIndexes = database
+      .prepare(`PRAGMA index_list(${this.tables.messages})`)
+      .all() as unknown as SqliteIndexRow[];
+    const hasUniquePositionIndex = messageIndexes
+      .filter((index) => index.unique === 1)
+      .some((index) => {
+        const columns = database
+          .prepare(`PRAGMA index_info(${quoteIdentifier(index.name)})`)
+          .all() as unknown as SqliteIndexColumnRow[];
+        return (
+          columns
+            .sort((left, right) => left.seqno - right.seqno)
+            .map((column) => column.name)
+            .join(",") === "memory_session_id,position"
+        );
+      });
+    if (!hasUniquePositionIndex) {
+      throw new Error("Sqlite memory messages table requires a unique position index.");
+    }
+
+    const namedIndex = database
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = $name")
+      .get({ $name: this.tables.messagesPositionIndexName });
+    if (namedIndex === undefined) {
+      throw new Error(
+        `Sqlite memory messages position index is missing: ${this.tables.messagesPositionIndexName}`,
+      );
+    }
   }
 }
 
-const sqliteMemorySchemaSql = `
-CREATE TABLE IF NOT EXISTS anvia_memory_sessions (
+export function createSqliteMemorySchemaSql(options: SqliteMemorySchemaOptions = {}): string {
+  return sqliteMemorySchemaSql(resolveTables(options));
+}
+
+function sqliteMemorySchemaSql(tables: ResolvedSqliteMemoryTables): string {
+  return `CREATE TABLE IF NOT EXISTS ${tables.sessions} (
   id TEXT PRIMARY KEY,
   scope_key TEXT NOT NULL UNIQUE,
   session_id TEXT NOT NULL,
@@ -512,9 +577,9 @@ CREATE TABLE IF NOT EXISTS anvia_memory_sessions (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS anvia_memory_messages (
+CREATE TABLE IF NOT EXISTS ${tables.messages} (
   id TEXT PRIMARY KEY,
-  memory_session_id TEXT NOT NULL REFERENCES anvia_memory_sessions(id) ON DELETE CASCADE,
+  memory_session_id TEXT NOT NULL REFERENCES ${tables.sessions}(id) ON DELETE CASCADE,
   run_id TEXT NOT NULL,
   turn INTEGER NOT NULL,
   position INTEGER NOT NULL,
@@ -524,26 +589,46 @@ CREATE TABLE IF NOT EXISTS anvia_memory_messages (
   UNIQUE(memory_session_id, position)
 );
 
-CREATE INDEX IF NOT EXISTS anvia_memory_messages_session_position_idx
-  ON anvia_memory_messages(memory_session_id, position);
+CREATE INDEX IF NOT EXISTS ${tables.messagesPositionIndex}
+  ON ${tables.messages}(memory_session_id, position);
 
-CREATE TABLE IF NOT EXISTS anvia_memory_errors (
+CREATE TABLE IF NOT EXISTS ${tables.errors} (
   id TEXT PRIMARY KEY,
-  memory_session_id TEXT NOT NULL REFERENCES anvia_memory_sessions(id) ON DELETE CASCADE,
+  memory_session_id TEXT NOT NULL REFERENCES ${tables.sessions}(id) ON DELETE CASCADE,
   run_id TEXT NOT NULL,
   error_json TEXT NOT NULL,
   messages_json TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 `;
+}
 
 function resolveOptions(options: SqliteMemoryStoreOptions): ResolvedSqliteMemoryStoreOptions {
   return {
-    scope: options.scope,
-    errors: options.errors ?? "store",
+    scopeKey: options.scopeKey,
+    errorPolicy: options.errorPolicy ?? "store",
     validateMessages: options.validateMessages ?? true,
-    createIfMissing: options.createIfMissing ?? true,
   };
+}
+
+function resolveTables(options: SqliteMemorySchemaOptions): ResolvedSqliteMemoryTables {
+  const prefix = options.tablePrefix ?? "anvia_";
+  const messagesPositionIndexName =
+    options.tableNames?.messagesPositionIndex ?? `${prefix}memory_messages_session_position_idx`;
+  return {
+    sessions: quoteIdentifier(options.tableNames?.sessions ?? `${prefix}memory_sessions`),
+    messages: quoteIdentifier(options.tableNames?.messages ?? `${prefix}memory_messages`),
+    errors: quoteIdentifier(options.tableNames?.errors ?? `${prefix}memory_errors`),
+    messagesPositionIndex: quoteIdentifier(messagesPositionIndexName),
+    messagesPositionIndexName,
+  };
+}
+
+function quoteIdentifier(identifier: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Invalid SQLite identifier: ${identifier}`);
+  }
+  return `"${identifier.replaceAll('"', '""')}"`;
 }
 
 function compactionRevision(rows: CompactionMessageRow[]): string {
@@ -556,38 +641,6 @@ function assertCompactionMessageCount(value: number): void {
   }
 }
 
-function databaseSync(): DatabaseSyncConstructor {
-  if (DatabaseSync !== undefined) {
-    return DatabaseSync;
-  }
-
-  const require = createRequire(import.meta.url);
-  try {
-    const sqlite = require("node:sqlite") as { DatabaseSync: DatabaseSyncConstructor };
-    DatabaseSync = sqlite.DatabaseSync;
-    return DatabaseSync;
-  } catch (error) {
-    throw new Error("@anvia/memory-sqlite requires a Node.js runtime with node:sqlite support.", {
-      cause: error,
-    });
-  }
-}
-
 function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
-}
-
-function metadataValue(metadata: JsonObject | undefined, path: string): JsonValue | undefined {
-  let current: JsonValue | undefined = metadata;
-  for (const part of path.split(".")) {
-    if (!isJsonObject(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return current;
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

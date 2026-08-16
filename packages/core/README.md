@@ -387,6 +387,8 @@ Use `strategy: "fixed"` for deterministic sliding windows. Recursive chunking re
 separator order and falls back to fixed-size splitting when none of those separators can divide an
 oversized section. Chunk offsets use JavaScript string indices and always identify the exact source
 slice. PDF pages are one-based, and the parser task is disposed before extraction settles.
+If parsing or abort handling fails together with parser cleanup, extraction rejects with an
+`AggregateError` containing the operation failure first and the cleanup failure second.
 
 ## Media
 

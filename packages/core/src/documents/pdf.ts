@@ -39,20 +39,59 @@ export async function extractPdfText(
   };
   const abort = createAbortPromise(abortSignal, destroy);
 
+  return runWithCleanup(
+    async () => {
+      const document = await abort.wait(loadingTask.promise);
+      const pages: PdfTextPage[] = [];
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        abortSignal?.throwIfAborted();
+        const page = await abort.wait(document.getPage(pageNumber));
+        const content = await abort.wait(page.getTextContent());
+        pages.push({ pageNumber, text: extractPageText(content.items) });
+      }
+      return { pages };
+    },
+    async () => {
+      abort.dispose();
+      await destroy();
+    },
+  );
+}
+
+async function runWithCleanup<Result>(
+  operation: () => Promise<Result>,
+  cleanup: () => Promise<void>,
+): Promise<Result> {
+  let outcome: { ok: true; value: Result } | { ok: false; error: unknown };
   try {
-    const document = await abort.wait(loadingTask.promise);
-    const pages: PdfTextPage[] = [];
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      abortSignal?.throwIfAborted();
-      const page = await abort.wait(document.getPage(pageNumber));
-      const content = await abort.wait(page.getTextContent());
-      pages.push({ pageNumber, text: extractPageText(content.items) });
-    }
-    return { pages };
-  } finally {
-    abort.dispose();
-    await destroy();
+    outcome = { ok: true, value: await operation() };
+  } catch (error) {
+    outcome = { ok: false, error };
   }
+
+  let cleanupError: unknown;
+  let cleanupFailed = false;
+  try {
+    await cleanup();
+  } catch (error) {
+    cleanupFailed = true;
+    cleanupError = error;
+  }
+
+  if (!outcome.ok) {
+    if (cleanupFailed) {
+      throw new AggregateError(
+        [outcome.error, cleanupError],
+        "PDF extraction and cleanup both failed",
+        { cause: outcome.error },
+      );
+    }
+    throw outcome.error;
+  }
+  if (cleanupFailed) {
+    throw cleanupError;
+  }
+  return outcome.value;
 }
 
 function isAbortSignal(value: unknown): value is AbortSignal {

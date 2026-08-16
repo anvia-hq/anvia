@@ -77,6 +77,35 @@ describe("extractPdfText lifecycle", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("surfaces a cleanup failure after successful extraction", async () => {
+    const cleanupError = new Error("cleanup failed");
+    const destroy = vi.fn(async () => {
+      throw cleanupError;
+    });
+    pdfjs.getDocument.mockReturnValue(loadingTask({ destroy }));
+
+    await expect(extractPdfText({ data: new Uint8Array([1]) })).rejects.toBe(cleanupError);
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves parsing and cleanup failures together", async () => {
+    const parsingError = new Error("parsing failed");
+    const cleanupError = new Error("cleanup failed");
+    const destroy = vi.fn(async () => {
+      throw cleanupError;
+    });
+    pdfjs.getDocument.mockReturnValue({
+      promise: Promise.reject(parsingError),
+      destroy,
+    });
+
+    await expect(extractPdfText({ data: new Uint8Array([1]) })).rejects.toMatchObject({
+      cause: parsingError,
+      errors: [parsingError, cleanupError],
+    });
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
   it("propagates mid-operation abort and destroys the loading task once", async () => {
     const destroy = vi.fn(async () => undefined);
     const getPage = vi.fn(() => new Promise<never>(() => undefined));
@@ -95,6 +124,33 @@ describe("extractPdfText lifecycle", () => {
     controller.abort(reason);
 
     await expect(extraction).rejects.toBe(reason);
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves abort and cleanup failures together", async () => {
+    const cleanupError = new Error("cleanup failed");
+    const destroy = vi.fn(async () => {
+      throw cleanupError;
+    });
+    const getPage = vi.fn(() => new Promise<never>(() => undefined));
+    pdfjs.getDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1, getPage }),
+      destroy,
+    });
+    const controller = new AbortController();
+    const abortReason = new Error("cancelled");
+
+    const extraction = extractPdfText({
+      data: new Uint8Array([1]),
+      abortSignal: controller.signal,
+    });
+    await vi.waitFor(() => expect(getPage).toHaveBeenCalledTimes(1));
+    controller.abort(abortReason);
+
+    await expect(extraction).rejects.toMatchObject({
+      cause: abortReason,
+      errors: [abortReason, cleanupError],
+    });
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 });

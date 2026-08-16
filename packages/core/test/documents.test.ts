@@ -67,6 +67,25 @@ describe("chunkText", () => {
     }
   });
 
+  it("keeps available recursive boundaries when overlap changes the next window", () => {
+    const source = "a b c dd z";
+
+    expect(
+      chunkText({
+        text: source,
+        strategy: "recursive",
+        maxSize: 5,
+        overlap: 2,
+        separators: [" "],
+      }),
+    ).toEqual([
+      { index: 0, text: "a b ", start: 0, end: 4 },
+      { index: 1, text: "b c ", start: 2, end: 6 },
+      { index: 2, text: "c dd ", start: 4, end: 9 },
+      { index: 3, text: "d z", start: 7, end: 10 },
+    ]);
+  });
+
   it("keeps recursive offsets valid when an early section is shorter than overlap", () => {
     const source = "a abcdefghij";
     const chunks = chunkText({
@@ -100,6 +119,19 @@ describe("chunkText", () => {
       { index: 1, text: "efgh", start: 4, end: 8 },
       { index: 2, text: "ij", start: 8, end: 10 },
     ]);
+  });
+
+  it("handles long unmatched separator lists without recursive stack growth", () => {
+    const separators = Array.from({ length: 20_000 }, (_, index) => `separator-${index}`);
+
+    expect(
+      chunkText({
+        text: "abcdefghij",
+        strategy: "recursive",
+        maxSize: 4,
+        separators,
+      }).map((chunk) => chunk.text),
+    ).toEqual(["abcd", "efgh", "ij"]);
   });
 
   it("rejects invalid strategies, sizes, overlaps, and strategy combinations", () => {

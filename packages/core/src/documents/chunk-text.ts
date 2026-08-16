@@ -35,12 +35,11 @@ export function chunkText(options: ChunkTextOptions): readonly TextChunk[] {
     return chunkFixed(validated.text, validated.maxSize, validated.overlap);
   }
 
-  const ranges = splitRecursive(
+  const ranges = resolveRecursiveRanges(
     validated.text,
     { start: 0, end: validated.text.length },
     validated.maxSize,
     validated.separators,
-    0,
   );
   return applyRecursiveOverlap(validated.text, ranges, validated.maxSize, validated.overlap);
 }
@@ -135,31 +134,49 @@ function chunkFixed(text: string, maxSize: number, overlap: number): readonly Te
   return chunks;
 }
 
-function splitRecursive(
+function resolveRecursiveRanges(
   text: string,
-  range: TextRange,
+  initialRange: TextRange,
   maxSize: number,
   separators: readonly string[],
-  separatorIndex: number,
 ): readonly TextRange[] {
-  if (range.end - range.start <= maxSize) {
-    return [range];
-  }
-  if (separatorIndex >= separators.length) {
-    return hardSplit(range, maxSize);
+  const resolved: TextRange[] = [];
+  const pending: Array<Readonly<{ range: TextRange; separatorIndex: number }>> = [
+    { range: initialRange, separatorIndex: 0 },
+  ];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined) {
+      break;
+    }
+    if (current.range.end - current.range.start <= maxSize) {
+      resolved.push(current.range);
+      continue;
+    }
+
+    let pieces: readonly TextRange[] | undefined;
+    let nextSeparatorIndex = separators.length;
+    for (let index = current.separatorIndex; index < separators.length; index += 1) {
+      const candidate = splitAfterSeparator(text, current.range, separators[index] as string);
+      if (candidate.length > 1) {
+        pieces = candidate;
+        nextSeparatorIndex = index + 1;
+        break;
+      }
+    }
+
+    if (pieces === undefined) {
+      resolved.push(...hardSplit(current.range, maxSize));
+      continue;
+    }
+
+    for (let index = pieces.length - 1; index >= 0; index -= 1) {
+      pending.push({ range: pieces[index] as TextRange, separatorIndex: nextSeparatorIndex });
+    }
   }
 
-  const pieces = splitAfterSeparator(text, range, separators[separatorIndex] as string);
-  if (pieces.length <= 1) {
-    return splitRecursive(text, range, maxSize, separators, separatorIndex + 1);
-  }
-
-  const resolved = pieces.flatMap((piece) =>
-    piece.end - piece.start <= maxSize
-      ? [piece]
-      : splitRecursive(text, piece, maxSize, separators, separatorIndex + 1),
-  );
-  return packAdjacent(resolved, maxSize);
+  return resolved;
 }
 
 function splitAfterSeparator(text: string, range: TextRange, separator: string): TextRange[] {
@@ -192,26 +209,6 @@ function hardSplit(range: TextRange, maxSize: number): readonly TextRange[] {
     ranges.push({ start, end: Math.min(start + maxSize, range.end) });
   }
   return ranges;
-}
-
-function packAdjacent(ranges: readonly TextRange[], maxSize: number): readonly TextRange[] {
-  const first = ranges[0];
-  if (first === undefined) {
-    return [];
-  }
-
-  const packed: TextRange[] = [];
-  let current = first;
-  for (const range of ranges.slice(1)) {
-    if (range.end - current.start <= maxSize) {
-      current = { start: current.start, end: range.end };
-    } else {
-      packed.push(current);
-      current = range;
-    }
-  }
-  packed.push(current);
-  return packed;
 }
 
 function applyRecursiveOverlap(

@@ -476,7 +476,14 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   }
 
   if (message.role === "tool") {
-    return message.content.map(toolContentToOpenAIResponsesItem);
+    return message.content.map((content) => {
+      if (content.type !== "tool-result") {
+        throw new TypeError(
+          "Anvia interaction responses must be resolved by Agent before provider calls.",
+        );
+      }
+      return toolContentToOpenAIResponsesItem(content);
+    });
   }
 
   const items: ResponsesInputItem[] = [];

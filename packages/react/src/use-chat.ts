@@ -1,27 +1,27 @@
 import {
   applyClientStreamEvent,
   assistantText,
+  type ClientInteraction,
   ClientProtocolError,
   type ClientStreamCursor,
   type ClientStreamEvent,
   type ClientStreamRequest,
   type ClientTransport,
   normalizeClientError,
-  type ToolApproval,
-  type ToolQuestion,
-  type ToolQuestionAnswer,
   type UIMessage,
   uiMessagesToMessages,
 } from "@anvia/client";
+import {
+  type AgentInteractionResponse,
+  assertAgentInteractionResponse,
+  parseAgentInteractionResponse,
+} from "@anvia/core/agent";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
-import { upsertById } from "./human-input";
 import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";
 import type {
   AnyClientTransport,
   SendMessageInput,
-  ToolApprovalDecisionInput,
-  ToolQuestionAnswerInput,
   TransportData,
   TransportMetadata,
   UseChatOptions,
@@ -44,39 +44,33 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
   );
   const [status, setStatus] = useState<UseChatResult<Transport>["status"]>("ready");
   const [error, setError] = useState<Error>();
-  const [approvals, setApprovals] = useState<ToolApproval[]>([]);
-  const [questions, setQuestions] = useState<ToolQuestion[]>([]);
-  const [decidingApprovals, setDecidingApprovals] = useState<Set<string>>(() => new Set());
-  const [answeringQuestions, setAnsweringQuestions] = useState<Set<string>>(() => new Set());
+  const [interactions, setInteractions] = useState<ClientInteraction[]>([]);
+  const [respondingInteractions, setRespondingInteractions] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [streamId, setStreamIdState] = useState<string>();
   const [isResuming, setIsResuming] = useState(false);
 
   const messagesRef = useRef(messages);
-  const approvalsRef = useRef(approvals);
-  const questionsRef = useRef(questions);
-  const decidingApprovalsRef = useRef(decidingApprovals);
-  const answeringQuestionsRef = useRef(answeringQuestions);
+  const interactionsRef = useRef(interactions);
+  const respondingRef = useRef(respondingInteractions);
+  const requestRef = useRef<ClientStreamRequest<Metadata> | undefined>(undefined);
+  const waitingRef = useRef(false);
   const streamIdRef = useRef<string | undefined>(undefined);
   const lastEventIdRef = useRef(0);
   const abortRef = useRef<AbortController | undefined>(undefined);
   const autoResumeStartedRef = useRef(false);
-  const humanInputVersionRef = useRef(0);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
   useEffect(() => {
-    approvalsRef.current = approvals;
-  }, [approvals]);
-  useEffect(() => {
-    questionsRef.current = questions;
-  }, [questions]);
-  useEffect(() => {
-    return () => abortRef.current?.abort();
-  }, []);
+    interactionsRef.current = interactions;
+  }, [interactions]);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const transport = options.transport as unknown as ClientTransport<
-    ClientStreamRequest,
+    ClientStreamRequest<Metadata>,
     Data,
     Metadata
   >;
@@ -104,12 +98,14 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
   }, []);
 
   const persistResumeState = useCallback(() => {
-    if (streamIdRef.current === undefined) return;
+    if (streamIdRef.current === undefined || requestRef.current === undefined) return;
     saveChatResumeState(options.resume, {
-      version: 2,
+      version: 3,
       streamId: streamIdRef.current,
       lastEventId: lastEventIdRef.current,
       messages: messagesRef.current,
+      interactions: interactionsRef.current,
+      request: requestRef.current,
     });
   }, [options.resume]);
 
@@ -119,32 +115,13 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     clearChatResumeState(options.resume);
   }, [options.resume, setStreamId]);
 
-  const updateApproval = useCallback((approval: ToolApproval) => {
-    setApprovals((current) => {
-      const next = upsertById(current, approval);
-      approvalsRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const updateQuestion = useCallback((question: ToolQuestion) => {
-    setQuestions((current) => {
-      const next = upsertById(current, question);
-      questionsRef.current = next;
-      return next;
-    });
-  }, []);
-
-  const clearHumanInput = useCallback(() => {
-    humanInputVersionRef.current += 1;
-    approvalsRef.current = [];
-    questionsRef.current = [];
-    decidingApprovalsRef.current = new Set();
-    answeringQuestionsRef.current = new Set();
-    setApprovals([]);
-    setQuestions([]);
-    setDecidingApprovals(new Set());
-    setAnsweringQuestions(new Set());
+  const updateInteraction = useCallback((interaction: ClientInteraction) => {
+    const current = interactionsRef.current;
+    const index = current.findIndex((item) => item.request.id === interaction.request.id);
+    const next = index === -1 ? [...current, interaction] : [...current];
+    if (index !== -1) next[index] = interaction;
+    interactionsRef.current = next;
+    setInteractions(next);
   }, []);
 
   const applyEvent = useCallback(
@@ -153,8 +130,12 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       options.onEvent?.(event);
       const nextContextUsage = contextUsageUpdateFromEvent(event);
       if (nextContextUsage !== undefined) setContextUsage(nextContextUsage);
-      if (event.type === "tool_approval") updateApproval(event.approval);
-      if (event.type === "tool_question") updateQuestion(event.question);
+      if (event.type === "interaction") {
+        updateInteraction({ request: event.interaction, runId: event.runId, status: "pending" });
+      }
+      if (event.type === "run_end") {
+        waitingRef.current = event.status === "suspended";
+      }
       updateMessages((current) => applyClientStreamEvent(current, event));
       if (event.type !== "error") return undefined;
       const nextError = normalizeClientError(event.error);
@@ -162,18 +143,25 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       options.onError?.(nextError);
       return nextError;
     },
-    [options, updateApproval, updateMessages, updateQuestion],
+    [options, updateInteraction, updateMessages],
   );
 
-  const sendMessages = useCallback(
+  const runRequest = useCallback(
     async (
+      request: ClientStreamRequest<Metadata>,
       nextMessages: readonly UIMessage<Metadata, Data>[],
-      runOptions: SendMessagesRunOptions = {},
+      runOptions: RunRequestOptions = {},
     ) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      waitingRef.current =
+        runOptions.isResuming === true &&
+        interactionsRef.current.some((interaction) => interaction.status === "pending");
 
+      const activeRequest =
+        runOptions.resume === undefined ? request : { ...request, resume: runOptions.resume };
+      requestRef.current = activeRequest;
       if (runOptions.resume === undefined) {
         clearResumeState();
       } else {
@@ -184,25 +172,25 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
-      clearHumanInput();
+      if (runOptions.clearInteractions === true) {
+        interactionsRef.current = [];
+        setInteractions([]);
+      }
       setStatus("submitted");
       setIsResuming(runOptions.isResuming === true);
 
       let streamError: Error | undefined;
+      let accepted = false;
       try {
-        const coreMessages = uiMessagesToMessages(nextMessages);
-        const request: ClientStreamRequest = {
-          messages: coreMessages,
-          ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
-        };
-
         for await (const frame of transport.send({
-          request,
+          request: activeRequest,
           abortSignal: controller.signal,
           ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
         })) {
-          if (abortRef.current !== controller || controller.signal.aborted) return;
+          if (abortRef.current !== controller || controller.signal.aborted) return accepted;
           if (frame.type === "stream_start") {
+            accepted = true;
+            runOptions.onAccepted?.();
             setStreamId(frame.streamId);
             persistResumeState();
             continue;
@@ -215,7 +203,6 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
             persistResumeState();
             continue;
           }
-
           lastEventIdRef.current = frame.eventId;
           clearResumeState();
           if (frame.status !== "completed") {
@@ -226,14 +213,14 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
           }
         }
         if (abortRef.current === controller && !controller.signal.aborted) {
-          setStatus(streamError === undefined ? "ready" : "error");
+          setStatus(streamError !== undefined ? "error" : waitingRef.current ? "waiting" : "ready");
         }
       } catch (caught) {
         if (isAbortError(caught)) {
           if (abortRef.current === controller) setStatus("ready");
-          return;
+          return accepted;
         }
-        if (abortRef.current !== controller) return;
+        if (abortRef.current !== controller) return accepted;
         const nextError = normalizeClientError(caught);
         setError(nextError);
         setStatus("error");
@@ -244,10 +231,10 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
           setIsResuming(false);
         }
       }
+      return accepted;
     },
     [
       applyEvent,
-      clearHumanInput,
       clearResumeState,
       options,
       persistResumeState,
@@ -257,14 +244,27 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     ],
   );
 
+  const sendMessages = useCallback(
+    async (nextMessages: readonly UIMessage<Metadata, Data>[]) => {
+      await runRequest(
+        { type: "messages", messages: uiMessagesToMessages(nextMessages) },
+        nextMessages,
+        { clearInteractions: true },
+      );
+    },
+    [runRequest],
+  );
+
   const resume = useCallback(async () => {
     const saved = loadChatResumeState<Metadata, Data>(options.resume);
     if (saved === undefined) return;
-    await sendMessages(saved.messages, {
+    interactionsRef.current = [...saved.interactions];
+    setInteractions([...saved.interactions]);
+    await runRequest(saved.request, saved.messages, {
       resume: { streamId: saved.streamId, after: saved.lastEventId },
       isResuming: true,
     });
-  }, [options.resume, sendMessages]);
+  }, [options.resume, runRequest]);
 
   useEffect(() => {
     if (options.resume?.auto === false || autoResumeStartedRef.current) return;
@@ -290,6 +290,45 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     if (lastUser !== -1) await sendMessages(messagesRef.current.slice(0, lastUser + 1));
   }, [sendMessages]);
 
+  const respondToInteraction = useCallback(
+    async (input: { interactionId: string; response: AgentInteractionResponse }) => {
+      const interaction = interactionsRef.current.find(
+        (item) => item.request.id === input.interactionId && item.status === "pending",
+      );
+      if (interaction === undefined) {
+        throw new TypeError(`No pending interaction exists for "${input.interactionId}".`);
+      }
+      const response = parseAgentInteractionResponse(input.response);
+      assertAgentInteractionResponse(interaction.request, response);
+      if (respondingRef.current.has(input.interactionId)) return;
+      const responding = new Set(respondingRef.current).add(input.interactionId);
+      respondingRef.current = responding;
+      setRespondingInteractions(responding);
+      try {
+        const accepted = await runRequest(
+          {
+            type: "interaction_response",
+            interactionId: input.interactionId,
+            response,
+          },
+          messagesRef.current,
+          {
+            onAccepted: () => updateInteraction({ ...interaction, status: "responded" }),
+          },
+        );
+        if (!accepted) {
+          throw new ClientProtocolError("The interaction response was not accepted.");
+        }
+      } finally {
+        const next = new Set(respondingRef.current);
+        next.delete(input.interactionId);
+        respondingRef.current = next;
+        setRespondingInteractions(next);
+      }
+    },
+    [runRequest, updateInteraction],
+  );
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = undefined;
@@ -298,73 +337,6 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     setIsResuming(false);
   }, [clearResumeState]);
 
-  const decideToolApproval = useCallback(
-    async (approvalId: string, approved: boolean, reason?: string) => {
-      if (options.humanInput === undefined) throw new Error("useChat humanInput is not configured");
-      if (decidingApprovalsRef.current.has(approvalId)) return;
-      const version = humanInputVersionRef.current;
-      const pending = new Set(decidingApprovalsRef.current).add(approvalId);
-      decidingApprovalsRef.current = pending;
-      setDecidingApprovals(pending);
-      try {
-        const approval = approvalsRef.current.find((item) => item.id === approvalId);
-        const input: ToolApprovalDecisionInput = {
-          approvalId,
-          approved,
-          ...(reason === undefined ? {} : { reason }),
-          ...(approval === undefined ? {} : { approval }),
-        };
-        if (options.humanInput.decideApproval === undefined) {
-          throw new Error("useChat humanInput.decideApproval is not configured");
-        }
-        const result = await options.humanInput.decideApproval(input);
-        if (result !== undefined && humanInputVersionRef.current === version)
-          updateApproval(result);
-      } finally {
-        if (humanInputVersionRef.current === version) {
-          const next = new Set(decidingApprovalsRef.current);
-          next.delete(approvalId);
-          decidingApprovalsRef.current = next;
-          setDecidingApprovals(next);
-        }
-      }
-    },
-    [options.humanInput, updateApproval],
-  );
-
-  const answerToolQuestion = useCallback(
-    async (questionId: string, answers: readonly ToolQuestionAnswer[]) => {
-      if (options.humanInput === undefined) throw new Error("useChat humanInput is not configured");
-      if (answeringQuestionsRef.current.has(questionId)) return;
-      const version = humanInputVersionRef.current;
-      const pending = new Set(answeringQuestionsRef.current).add(questionId);
-      answeringQuestionsRef.current = pending;
-      setAnsweringQuestions(pending);
-      try {
-        const question = questionsRef.current.find((item) => item.id === questionId);
-        const input: ToolQuestionAnswerInput = {
-          questionId,
-          answers,
-          ...(question === undefined ? {} : { question }),
-        };
-        if (options.humanInput.answerQuestion === undefined) {
-          throw new Error("useChat humanInput.answerQuestion is not configured");
-        }
-        const result = await options.humanInput.answerQuestion(input);
-        if (result !== undefined && humanInputVersionRef.current === version)
-          updateQuestion(result);
-      } finally {
-        if (humanInputVersionRef.current === version) {
-          const next = new Set(answeringQuestionsRef.current);
-          next.delete(questionId);
-          answeringQuestionsRef.current = next;
-          setAnsweringQuestions(next);
-        }
-      }
-    },
-    [options.humanInput, updateQuestion],
-  );
-
   const reset = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = undefined;
@@ -372,11 +344,14 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     updateMessages([]);
     setContextUsage(undefined);
     setEvents([]);
-    clearHumanInput();
+    interactionsRef.current = [];
+    respondingRef.current = new Set();
+    setInteractions([]);
+    setRespondingInteractions(new Set());
     setError(undefined);
     setStatus("ready");
     setIsResuming(false);
-  }, [clearHumanInput, clearResumeState, updateMessages]);
+  }, [clearResumeState, updateMessages]);
 
   return {
     messages,
@@ -394,19 +369,21 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     streamId,
     isResuming,
     resume,
-    humanInput: {
-      approvals: { all: approvals, pending: approvals.filter((item) => item.status === "pending") },
-      questions: { all: questions, pending: questions.filter((item) => item.status === "pending") },
+    interactions: {
+      all: interactions,
+      pending: interactions.filter((item) => item.status === "pending"),
     },
-    decidingApprovals: new Set(decidingApprovals),
-    answeringQuestions: new Set(answeringQuestions),
-    approveTool: async ({ approvalId, reason }) => decideToolApproval(approvalId, true, reason),
-    rejectTool: async ({ approvalId, reason }) => decideToolApproval(approvalId, false, reason),
-    answerToolQuestion: async ({ questionId, answers }) => answerToolQuestion(questionId, answers),
+    respondingInteractions: new Set(respondingInteractions),
+    respondToInteraction,
   };
 }
 
-type SendMessagesRunOptions = { resume?: ClientStreamCursor; isResuming?: boolean };
+type RunRequestOptions = {
+  resume?: ClientStreamCursor;
+  isResuming?: boolean;
+  clearInteractions?: boolean;
+  onAccepted?: () => void;
+};
 
 function findLastUserIndex(messages: readonly UIMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {

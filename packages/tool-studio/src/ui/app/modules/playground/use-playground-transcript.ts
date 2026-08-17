@@ -1,7 +1,7 @@
 import type { ClientStreamEvent } from "@anvia/client";
 import type { ToolResultContentPart } from "@anvia/core/completion";
 import { type Dispatch, type SetStateAction, useState } from "react";
-import type { StudioTranscriptChildAgentEvent } from "../../../../types";
+import type { StudioToolQuestionAnswer, StudioTranscriptChildAgentEvent } from "../../../../types";
 import { formatToolValue } from "../shared/format";
 import {
   findMatchingToolIndex,
@@ -33,6 +33,8 @@ export function usePlaygroundTranscript(): {
   cancelPendingRun: (durationMs: number) => void;
   clearPendingAssistant: () => void;
   completeRun: (durationMs: number) => void;
+  resolveToolApproval: (id: string, approved: boolean, reason?: string) => void;
+  resolveToolQuestion: (id: string, answers: StudioToolQuestionAnswer[]) => void;
   updateToolApproval: (approval: ToolApprovalUpdate) => void;
   updateToolQuestion: (question: ToolQuestionUpdate) => void;
 } {
@@ -59,11 +61,62 @@ export function usePlaygroundTranscript(): {
     clearPendingAssistant: () => setMessages((current) => withoutPendingAssistant(current)),
     completeRun: (durationMs) =>
       setMessages((current) => completeTranscriptRun(current, durationMs)),
+    resolveToolApproval: (id, approved, reason) =>
+      setMessages((current) => resolveToolApproval(current, id, approved, reason)),
+    resolveToolQuestion: (id, answers) =>
+      setMessages((current) => resolveToolQuestion(current, id, answers)),
     updateToolApproval: (approval) =>
       setMessages((current) => updateToolApproval(current, approval)),
     updateToolQuestion: (question) =>
       setMessages((current) => updateToolQuestion(current, question)),
   };
+}
+
+function resolveToolApproval(
+  entries: TranscriptEntry[],
+  id: string,
+  approved: boolean,
+  reason?: string,
+): TranscriptEntry[] {
+  const next = [...entries];
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const entry = next[index];
+    if (entry?.kind !== "tool" || entry.approval?.id !== id) continue;
+    next[index] = {
+      ...entry,
+      approval: {
+        ...entry.approval,
+        status: approved ? "approved" : "rejected",
+        resolvedAt: new Date().toISOString(),
+        ...(reason === undefined ? {} : { reason }),
+      },
+    };
+    break;
+  }
+  return next;
+}
+
+function resolveToolQuestion(
+  entries: TranscriptEntry[],
+  id: string,
+  answers: StudioToolQuestionAnswer[],
+): TranscriptEntry[] {
+  const next = [...entries];
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const entry = next[index];
+    if (entry?.kind !== "tool" || entry.question?.id !== id) continue;
+    next[index] = {
+      ...entry,
+      question: {
+        ...entry.question,
+        status: "answered",
+        answeredAt: new Date().toISOString(),
+        answers,
+      },
+    };
+    break;
+  }
+  return next;
 }
 
 export function cancelPendingTranscriptRun(

@@ -62,9 +62,9 @@ const coordinator = new Agent({
   ].join("\n"),
   maxTurns: 4,
   tools: [
-    supportAgent.asTool({ name: "ask_support_agent" }),
-    engineeringAgent.asTool({ name: "ask_engineering_agent" }),
-    commsAgent.asTool({ name: "ask_comms_agent" }),
+    supportAgent.asTool({ name: "ask_support_agent", suspension: "reject" }),
+    engineeringAgent.asTool({ name: "ask_engineering_agent", suspension: "reject" }),
+    commsAgent.asTool({ name: "ask_comms_agent", suspension: "reject" }),
   ],
 });
 

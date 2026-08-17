@@ -215,12 +215,17 @@ describe("Agent MCP registrations", () => {
 
     const pending = await agent.generate({ prompt: "run guarded" });
     expect(pending).toMatchObject({
-      status: "approval_required",
-      approval: { toolName: "mcp_guarded" },
+      status: "suspended",
+      interaction: { type: "tool-approval", toolName: "mcp_guarded" },
     });
     expect(executed).toBe(false);
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       output: "done",
     });
     expect(executed).toBe(true);

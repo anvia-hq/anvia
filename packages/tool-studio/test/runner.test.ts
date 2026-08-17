@@ -28,7 +28,7 @@ import type {
 } from "@anvia/core/memory";
 import type { AgentObserver, AgentRunObserver, AgentRunStartArgs } from "@anvia/core/observability";
 import { Pipeline } from "@anvia/core/pipeline";
-import { createToolIndex, type Tool } from "@anvia/core/tool";
+import { createQuestionTool, createToolIndex, type Tool } from "@anvia/core/tool";
 import { InMemoryVectorStore, type VectorStore } from "@anvia/core/vector-store";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
@@ -45,7 +45,6 @@ import {
   createInMemoryStudioStore,
   Studio,
   type StudioSessionRunTranscriptInput,
-  type StudioToolApproval,
 } from "../src/index";
 import { registerObservabilityRoutes, StudioObservabilityHub } from "../src/runtime/observability";
 import { createSqliteSessionStore } from "../src/sqlite";
@@ -366,25 +365,10 @@ function createRefundTool(execute: (args: { orderId: string; amount: number }) =
   } satisfies Tool<{ orderId: string; amount: number }, string>;
 }
 
-const askQuestionTool = {
+const askQuestionTool = createQuestionTool({
   name: "ask_question",
-  definition() {
-    return {
-      name: "ask_question",
-      description: "Ask the user for missing input",
-      parameters: {
-        type: "object",
-        properties: {
-          questions: { type: "array" },
-        },
-        required: ["questions"],
-      },
-    };
-  },
-  call() {
-    throw new Error("Studio should answer ask_question without executing the tool");
-  },
-} satisfies Tool<unknown, string>;
+  description: "Ask the user for missing input",
+});
 
 const lookupPolicyTool = {
   name: "lookup_policy",
@@ -424,9 +408,10 @@ function vectorFor(text: string): number[] {
 }
 
 describe("Anvia studio", () => {
-  it("exposes translated approval stream events without raw core approval events", () => {
+  it("exposes only canonical Agent interaction events", () => {
     expectTypeOf<Extract<AgentRunStreamEvent, { type: "approval_required" }>>().toBeNever();
-    expectTypeOf<Extract<AgentRunStreamEvent, { type: "tool_approval_request" }>>().not.toBeNever();
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "tool_approval_request" }>>().toBeNever();
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "interaction_response" }>>().not.toBeNever();
   });
 
   it("generates config from registered agents", async () => {
@@ -620,6 +605,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
+          type: "messages",
           sessionId: session.id,
           messages: [Message.user("first")],
           model: { providerId: "test", modelId: "secondary" },
@@ -632,6 +618,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
+          type: "messages",
           sessionId: session.id,
           messages: [Message.user("second")],
         }),
@@ -671,6 +658,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hello")],
           model: { providerId: "test", modelId: "blocked" },
         }),
@@ -718,6 +706,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
+          type: "messages",
           messages: [
             {
               role: "user",
@@ -1125,7 +1114,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [Message.user("hi")] }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
         }),
       );
       expect(res.status).toBe(200);
@@ -1242,7 +1231,11 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [Message.user("trace me")], sessionId: session.id }),
+          body: JSON.stringify({
+            type: "messages",
+            messages: [Message.user("trace me")],
+            sessionId: session.id,
+          }),
         }),
       );
       expect(run.status).toBe(200);
@@ -1295,7 +1288,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("refund policy")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund policy")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -1332,7 +1329,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("refund policy")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund policy")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -1367,7 +1368,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("research")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("research")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -1834,14 +1839,14 @@ describe("Anvia studio", () => {
     try {
       expect(runner.config()).toMatchObject({
         agents: [{ id: "support", name: "Support", quickPrompts: ["Issue a refund"] }],
-        capabilities: { approvals: { enabled: true } },
+        capabilities: { interactions: { enabled: true } },
       });
 
       const res = await runner.fetch(
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [Message.user("hi")] }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
         }),
       );
       expect(res.status).toBe(200);
@@ -1860,6 +1865,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [
             Message.user("The project is Anvia."),
             Message.assistant("Noted."),
@@ -1883,7 +1889,7 @@ describe("Anvia studio", () => {
     ]);
   });
 
-  it("uses one run id across buffered approvals, observers, and responses", async () => {
+  it("links separate buffered runs across an interaction response", async () => {
     let executed = false;
     const refundTool = createRefundTool(({ orderId, amount }) => {
       executed = true;
@@ -1910,37 +1916,57 @@ describe("Anvia studio", () => {
     });
     const runner = new Studio([agent]);
 
-    const runPromise = Promise.resolve(
-      runner.fetch(
-        new Request("http://runner.test/agents/support/runs", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [Message.user("refund")] }),
-        }),
-      ),
-    );
-    const approval = await waitForPendingApproval(runner);
-    expect(executed).toBe(false);
-
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approval.id}/decision`, {
+    const firstResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+          maxTurns: 2,
+          trace: { name: "interaction-phase", metadata: { source: "test" } },
+        }),
       }),
     );
-    expect(decision.status).toBe(200);
+    const first = (await firstResponse.json()) as AgentRunResponse;
+    if (first.status !== "suspended") throw new Error("Expected suspended run");
+    expect(first).not.toHaveProperty("continuation");
+    expect(first).not.toHaveProperty("messages");
+    expect(executed).toBe(false);
 
-    const runResponse = await withTimeout(runPromise, 1_000);
-    expect(runResponse.status).toBe(200);
-    const result = (await runResponse.json()) as AgentRunResponse;
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: first.interaction.id,
+          response: { type: "tool-approval", approved: true },
+        }),
+      }),
+    );
+    expect(resumedResponse.status).toBe(200);
+    const result = (await resumedResponse.json()) as AgentRunResponse;
     expect(result).toMatchObject({
       status: "completed",
-      runId: approval.runId,
       output: "Refund complete",
+      resumedFrom: {
+        runId: first.runId,
+        interactionId: first.interaction.id,
+      },
     });
-    expect(observer.starts).toHaveLength(1);
-    expect(observer.starts[0]?.runId).toBe(approval.runId);
+    expect(result.runId).not.toBe(first.runId);
+    expect(observer.starts.map((start) => start.runId)).toEqual([first.runId, result.runId]);
+    expect(observer.starts.map((start) => start.trace)).toEqual([
+      expect.objectContaining({
+        name: "interaction-phase",
+        metadata: expect.objectContaining({ source: "test" }),
+      }),
+      expect.objectContaining({
+        name: "interaction-phase",
+        metadata: expect.objectContaining({ source: "test" }),
+      }),
+    ]);
     expect(executed).toBe(true);
   });
 
@@ -1963,7 +1989,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [Message.user("hi")] }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
         }),
       );
 
@@ -1991,6 +2017,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("trace me")],
           trace: {
             name: "ui-run",
@@ -2028,13 +2055,13 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("hi")], stream: true }),
+        body: JSON.stringify({ type: "messages", messages: [Message.user("hi")], stream: true }),
       }),
     );
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
-    expect(res.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v2");
+    expect(res.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v3");
     expect(await readJsonl(res)).toEqual([
       expect.objectContaining({ type: "run_start", source: "agent" }),
       expect.objectContaining({ type: "turn_start", turn: 1 }),
@@ -2076,7 +2103,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messages: [Message.user("hi")], stream: true }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")], stream: true }),
         }),
       );
       const events = await readJsonl(res);
@@ -2107,6 +2134,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hi")],
           metadata: { source: "test" },
         }),
@@ -2127,6 +2155,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("before"), Message.assistant("old"), Message.user("next")],
         }),
       }),
@@ -2157,6 +2186,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("before"), Message.user("next")],
           sessionId: session.id,
         }),
@@ -2192,7 +2222,7 @@ describe("Anvia studio", () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it("pauses protected streaming tool calls until approval", async () => {
+  it("suspends a protected stream and resumes it through the canonical run route", async () => {
     let executed = false;
     const refundTool = createRefundTool(({ orderId, amount }) => {
       executed = true;
@@ -2209,258 +2239,140 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
-    const runner = new Studio([agent]);
+    const runner = new Studio([
+      new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 }),
+    ]);
 
-    const res = await runner.fetch(
+    const firstResponse = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("refund")], stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+          stream: true,
+        }),
       }),
     );
-
-    expect(res.status).toBe(200);
-    const reader = createJsonlReader(res);
-    const eventsBeforeApproval: unknown[] = [];
-    let approvalId = "";
-    let approvalRunId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      eventsBeforeApproval.push(event);
-      if (
-        (event as { type?: string }).type === "tool_approval" &&
-        (event as { approval?: { status?: string } }).approval?.status === "pending"
-      ) {
-        const approval = (event as { approval: { id: string; runId: string } }).approval;
-        approvalId = approval.id;
-        approvalRunId = approval.runId;
-      }
-    }
-
-    expect(eventsBeforeApproval).toContainEqual(
-      expect.objectContaining({ type: "tool_call_end", toolName: "issue_refund" }),
-    );
-    expect(eventsBeforeApproval).not.toContainEqual(
-      expect.objectContaining({ type: "approval_required" }),
-    );
+    const firstEvents = await readJsonl(firstResponse);
+    const interactionEvent = firstEvents.find(
+      (event) =>
+        (event as { type?: string }).type === "interaction" &&
+        (event as { interaction?: { type?: string } }).interaction?.type === "tool-approval",
+    ) as { interaction: { id: string }; runId: string } | undefined;
+    expect(interactionEvent).toBeDefined();
     expect(executed).toBe(false);
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/approvals?status=pending"))
-    ).json()) as { approvals: Array<{ id: string; status: string; toolName: string }> };
-    expect(pending.approvals).toEqual([
+    expect(firstEvents).toContainEqual(
       expect.objectContaining({
-        id: approvalId,
-        status: "pending",
-        toolName: "issue_refund",
-      }),
-    ]);
-
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
+        type: "run_end",
+        status: "suspended",
+        runId: interactionEvent?.runId,
       }),
     );
-    expect(decision.status).toBe(200);
-    await expect(decision.json()).resolves.toMatchObject({ id: approvalId, status: "approved" });
 
-    const duplicate = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: { type: "tool-approval", approved: true, reason: "Reviewed" },
+          stream: true,
+        }),
       }),
     );
-    expect(duplicate.status).toBe(409);
-
-    const missing = await runner.fetch(
-      new Request("http://runner.test/approvals/missing/decision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
-      }),
-    );
-    expect(missing.status).toBe(404);
-
-    const remaining = await readRemainingJsonl(reader);
+    const resumedEvents = await readJsonl(resumedResponse);
     expect(executed).toBe(true);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_approval",
-        approval: expect.objectContaining({ id: approvalId, status: "approved" }),
-      }),
-    );
-    expect(remaining).toContainEqual(
+    expect(resumedEvents).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
         result: { status: "success", output: "Refunded 25 for ORD-1" },
       }),
     );
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "run_end",
-        runId: approvalRunId,
-        status: "completed",
-      }),
-    );
-  });
+    const resumedEnd = resumedEvents.find(
+      (event) => (event as { type?: string }).type === "run_end",
+    ) as { runId: string; status: string } | undefined;
+    expect(resumedEnd).toMatchObject({ status: "completed" });
+    expect(resumedEnd?.runId).not.toBe(interactionEvent?.runId);
 
-  it("cancels pending approvals when a streaming response is cancelled", async () => {
-    let executed = false;
-    const refundTool = createRefundTool(() => {
-      executed = true;
-      return "should not run";
-    });
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-    ]);
-    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
-    const runner = new Studio([agent]);
-    const response = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("refund")], stream: true }),
-      }),
-    );
-    const reader = createJsonlReader(response);
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if (
-        (event as { type?: string }).type === "tool_approval" &&
-        (event as { approval?: { status?: string } }).approval?.status === "pending"
-      ) {
-        approvalId = (event as { approval: { id: string } }).approval.id;
-      }
-    }
-
-    await withTimeout(reader.cancel(), 1_000);
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/approvals?status=pending"))
-    ).json()) as { approvals: unknown[] };
-    expect(pending.approvals).toEqual([]);
-    const resolved = (await (
-      await runner.fetch(new Request("http://runner.test/approvals?status=resolved"))
-    ).json()) as { approvals: Array<{ id: string; status: string; reason?: string }> };
-    expect(resolved.approvals).toContainEqual(
-      expect.objectContaining({
-        id: approvalId,
-        status: "cancelled",
-        reason: "Run cancelled in Anvia Studio.",
-      }),
-    );
-    expect(executed).toBe(false);
-  });
-
-  it("rejects protected tool calls without executing them and persists approval status", async () => {
-    let executed = false;
-    const refundTool = createRefundTool(() => {
-      executed = true;
-      return "should not run";
-    });
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-      [{ type: "text_delta", delta: "Refund denied" }],
-    ]);
-    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
-    const runner = new Studio([agent]);
-    const created = await runner.fetch(
-      new Request("http://runner.test/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId: "support" }),
-      }),
-    );
-    const session = (await created.json()) as { id: string };
-
-    const res = await runner.fetch(
+    const duplicate = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          messages: [Message.user("refund")],
-          sessionId: session.id,
-          stream: true,
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: { type: "tool-approval", approved: true },
         }),
       }),
     );
-    expect(res.status).toBe(200);
-
-    const reader = createJsonlReader(res);
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if (
-        (event as { type?: string }).type === "tool_approval" &&
-        (event as { approval?: { status?: string } }).approval?.status === "pending"
-      ) {
-        approvalId = (event as { approval: { id: string } }).approval.id;
-      }
-    }
-
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: false }),
-      }),
-    );
-    expect(decision.status).toBe(200);
-    const remaining = await readRemainingJsonl(reader);
-
-    expect(executed).toBe(false);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: {
-          status: "error",
-          error: {
-            code: "tool_execution_denied",
-            message: "Rejected in Anvia Studio.",
-          },
-        },
-      }),
-    );
-
-    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
-    await expect(loaded.json()).resolves.toMatchObject({
-      transcript: [
-        { kind: "message", role: "user", text: "refund" },
-        {
-          kind: "tool",
-          toolName: "issue_refund",
-          approval: {
-            id: approvalId,
-            status: "rejected",
-            reason: "Rejected in Anvia Studio.",
-          },
-          result: "Rejected in Anvia Studio.",
-        },
-        { kind: "message", role: "assistant", text: "Refund denied" },
-      ],
-    });
+    expect(duplicate.status).toBe(409);
   });
 
-  it("pauses ask_question tool calls until Studio receives answers", async () => {
+  it("rejects a protected tool without executing it", async () => {
+    let executed = false;
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "issue_refund", {
+          orderId: "ORD-1",
+          amount: 25,
+        }),
+      ]),
+      response([AssistantContent.text("Refund denied")]),
+    ]);
+    const runner = new Studio([
+      new Agent({
+        id: "support",
+        model,
+        tools: [
+          createRefundTool(() => {
+            executed = true;
+            return "should not run";
+          }),
+        ],
+        maxTurns: 2,
+      }),
+    ]);
+
+    const firstResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+        }),
+      }),
+    );
+    const first = (await firstResponse.json()) as AgentRunResponse;
+    if (first.status !== "suspended") throw new Error("Expected suspended run");
+
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: first.interaction.id,
+          response: {
+            type: "tool-approval",
+            approved: false,
+            reason: "Rejected in Anvia Studio.",
+          },
+        }),
+      }),
+    );
+    expect(resumedResponse.status).toBe(200);
+    await expect(resumedResponse.json()).resolves.toMatchObject({
+      status: "completed",
+      output: "Refund denied",
+      resumedFrom: { runId: first.runId, interactionId: first.interaction.id },
+    });
+    expect(executed).toBe(false);
+  });
+
+  it("uses the first-class question tool and validates answers on resume", async () => {
     const model = new StreamingQueueModel([
       [
         {
@@ -2471,265 +2383,137 @@ describe("Anvia studio", () => {
             questions: [
               {
                 id: "priority",
-                question: "Which priority should we use?",
-                choices: ["Low", "Medium", "High"],
+                text: "Which priority should we use?",
+                choices: [
+                  { label: "Low", value: "low" },
+                  { label: "High", value: "high" },
+                ],
               },
-              {
-                id: "notes",
-                question: "Any extra context?",
-                choices: [{ label: "Other", value: "other" }],
-              },
+              { id: "notes", text: "Any extra context?" },
             ],
           }),
         },
       ],
       [{ type: "text_delta", delta: "Thanks for the context" }],
     ]);
-    const agent = new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 });
-    const runner = new Studio([agent]);
+    const runner = new Studio([
+      new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 }),
+    ]);
 
-    const created = await runner.fetch(
-      new Request("http://runner.test/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId: "support" }),
-      }),
-    );
-    const session = (await created.json()) as { id: string };
-
-    const res = await runner.fetch(
+    const firstResponse = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("ask")],
-          sessionId: session.id,
           stream: true,
         }),
       }),
     );
+    const firstEvents = await readJsonl(firstResponse);
+    const interactionEvent = firstEvents.find(
+      (event) =>
+        (event as { type?: string }).type === "interaction" &&
+        (event as { interaction?: { type?: string } }).interaction?.type === "tool-question",
+    ) as { interaction: { id: string; questions: unknown[] } } | undefined;
+    expect(interactionEvent?.interaction.questions).toHaveLength(2);
 
-    expect(res.status).toBe(200);
-    const reader = createJsonlReader(res);
-    let questionId = "";
-    while (questionId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if (
-        (event as { type?: string }).type === "tool_question" &&
-        (event as { question?: { status?: string } }).question?.status === "pending"
-      ) {
-        questionId = (event as { question: { id: string } }).question.id;
-      }
-    }
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/questions?status=pending"))
-    ).json()) as { questions: Array<{ id: string; status: string; toolName: string }> };
-    expect(pending.questions).toEqual([
-      expect.objectContaining({
-        id: questionId,
-        status: "pending",
-        toolName: "ask_question",
-      }),
-    ]);
-
-    const answer = await runner.fetch(
-      new Request(`http://runner.test/questions/${questionId}/answer`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          answers: [
-            { questionId: "priority", answer: "High", choice: "High" },
-            { questionId: "notes", answer: "Customer is blocked.", custom: true },
-          ],
-        }),
-      }),
-    );
-    expect(answer.status).toBe(200);
-    await expect(answer.json()).resolves.toMatchObject({ id: questionId, status: "answered" });
-
-    const remaining = await readRemainingJsonl(reader);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_question",
-        question: expect.objectContaining({ id: questionId, status: "answered" }),
-      }),
-    );
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: {
-          status: "success",
-          output: JSON.stringify({
-            answers: [
-              { questionId: "priority", answer: "High", choice: "High" },
-              { questionId: "notes", answer: "Customer is blocked.", custom: true },
-            ],
-          }),
-        },
-      }),
-    );
-
-    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
-    await expect(loaded.json()).resolves.toMatchObject({
-      transcript: [
-        { kind: "message", role: "user", text: "ask" },
-        {
-          kind: "tool",
-          toolName: "ask_question",
-          question: {
-            id: questionId,
-            status: "answered",
-            answers: [
-              { questionId: "priority", answer: "High", choice: "High" },
-              { questionId: "notes", answer: "Customer is blocked.", custom: true },
-            ],
-          },
-        },
-        { kind: "message", role: "assistant", text: "Thanks for the context" },
-      ],
-    });
-  });
-
-  it("cancels pending questions when a streaming response is cancelled", async () => {
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "ask_question",
-          argumentsDelta: JSON.stringify({
-            questions: [
-              {
-                id: "priority",
-                question: "Which priority should we use?",
-                choices: ["Low", "High"],
-              },
-            ],
-          }),
-        },
-      ],
-    ]);
-    const agent = new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 });
-    const runner = new Studio([agent]);
-    const created = await runner.fetch(
-      new Request("http://runner.test/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId: "support" }),
-      }),
-    );
-    const session = (await created.json()) as { id: string };
-    const response = await runner.fetch(
+    const invalid = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          messages: [Message.user("ask")],
-          sessionId: session.id,
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: {
+            type: "tool-question",
+            answers: [{ questionId: "priority", value: "high" }],
+          },
+        }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: {
+            type: "tool-question",
+            answers: [
+              { questionId: "priority", value: "high" },
+              { questionId: "notes", value: "Customer is blocked." },
+            ],
+          },
           stream: true,
         }),
       }),
     );
-    const reader = createJsonlReader(response);
-    let questionId = "";
-    while (questionId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if (
-        (event as { type?: string }).type === "tool_question" &&
-        (event as { question?: { status?: string } }).question?.status === "pending"
-      ) {
-        questionId = (event as { question: { id: string } }).question.id;
-      }
-    }
-
-    await withTimeout(reader.cancel(), 1_000);
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/questions?status=pending"))
-    ).json()) as { questions: unknown[] };
-    expect(pending.questions).toEqual([]);
-    const resolved = (await (
-      await runner.fetch(new Request("http://runner.test/questions?status=resolved"))
-    ).json()) as { questions: Array<{ id: string; status: string; cancelledAt?: string }> };
-    expect(resolved.questions).toContainEqual(
-      expect.objectContaining({
-        id: questionId,
-        status: "cancelled",
-        cancelledAt: expect.any(String),
-      }),
-    );
-    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
-    await expect(loaded.json()).resolves.toMatchObject({
-      transcript: [
-        { kind: "message", role: "user", text: "ask" },
-        {
-          kind: "tool",
-          toolName: "ask_question",
-          question: {
-            id: questionId,
-            status: "cancelled",
-            cancelledAt: expect.any(String),
-          },
-        },
-        {
-          kind: "message",
-          role: "assistant",
-          text: "",
-          durationMs: expect.any(Number),
-        },
-      ],
-    });
-  });
-
-  it("skips invalid ask_question calls that omit choices", async () => {
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "ask_question",
-          argumentsDelta: JSON.stringify({
-            questions: [
-              {
-                id: "notes",
-                question: "Any extra context?",
-                choices: [],
-              },
-            ],
-          }),
-        },
-      ],
-      [{ type: "text_delta", delta: "I need choices first" }],
-    ]);
-    const agent = new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 });
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("ask")], stream: true }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    const events = await readJsonl(res);
-    expect(events).not.toContainEqual(
-      expect.objectContaining({
-        type: "tool_question",
-        question: expect.objectContaining({ status: "pending" }),
-      }),
-    );
-    expect(events).toContainEqual(
+    const resumedEvents = await readJsonl(resumedResponse);
+    expect(resumedEvents).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
         result: {
           status: "success",
-          output: "ask_question requires every question to include text and at least one choice.",
+          output: {
+            answers: [
+              { questionId: "priority", value: "high" },
+              { questionId: "notes", value: "Customer is blocked." },
+            ],
+          },
         },
       }),
     );
+    expect(resumedEvents).toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
+    );
+  });
+
+  it("does not claim continuations across Studio process restarts", async () => {
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "issue_refund", {
+          orderId: "ORD-1",
+          amount: 25,
+        }),
+      ]),
+    ]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      tools: [createRefundTool(() => "done")],
+    });
+    const firstRunner = new Studio([agent]);
+    const firstResponse = await firstRunner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+        }),
+      }),
+    );
+    const first = (await firstResponse.json()) as AgentRunResponse;
+    if (first.status !== "suspended") throw new Error("Expected suspended run");
+
+    const restartedRunner = new Studio([agent]);
+    const unavailable = await restartedRunner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: first.interaction.id,
+          response: { type: "tool-approval", approved: true },
+        }),
+      }),
+    );
+    expect(unavailable.status).toBe(404);
   });
 
   it("runs approval metadata tools directly when the approval condition is false", async () => {
@@ -2759,7 +2543,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("refund")], stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+          stream: true,
+        }),
       }),
     );
 
@@ -2767,8 +2555,7 @@ describe("Anvia studio", () => {
     const events = await readJsonl(res);
     expect(events).not.toContainEqual(
       expect.objectContaining({
-        type: "tool_approval",
-        approval: expect.objectContaining({ status: "pending" }),
+        type: "interaction",
       }),
     );
     expect(events).toContainEqual(
@@ -2799,6 +2586,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hi")],
           sessionId: session.id,
           stream: true,
@@ -2823,8 +2611,10 @@ describe("Anvia studio", () => {
       type: "reasoning_delta",
       delta: "thinking",
     });
+    const remainingEvents = readRemainingJsonl(reader);
+    await waitFor(() => model.releaseText !== undefined);
     model.releaseText?.();
-    await expect(readRemainingJsonl(reader)).resolves.toContainEqual(
+    await expect(remainingEvents).resolves.toContainEqual(
       expect.objectContaining({ type: "run_end", status: "completed" }),
     );
   });
@@ -2844,6 +2634,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hi")],
           stream: true,
           trace: { name: "stream" },
@@ -2887,7 +2678,7 @@ describe("Anvia studio", () => {
     expect(() => new Studio([agent])).toThrow('reserves the observer name "studio"');
   });
 
-  it("marks approvals enabled when a registered agent protects tools", () => {
+  it("marks interactions enabled when a registered agent protects tools", () => {
     const agent = new Agent({
       id: "support",
       model: new QueueModel([]),
@@ -2895,7 +2686,7 @@ describe("Anvia studio", () => {
     });
     const runner = new Studio([agent]);
 
-    expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
+    expect(runner.config().capabilities.interactions).toEqual({ enabled: true });
   });
 
   it("serves the runner UI shell routes", async () => {
@@ -2971,7 +2762,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/missing/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("hi")] }),
+        body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
       }),
     );
 
@@ -3014,7 +2805,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("First question")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("First question")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(firstRun.status).toBe(200);
@@ -3023,7 +2818,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("Follow up")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("Follow up")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(secondRun.status).toBe(200);
@@ -3095,7 +2894,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("First question")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("First question")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(firstRun.status).toBe(200);
@@ -3104,7 +2907,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("Follow up")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("Follow up")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(secondRun.status).toBe(200);
@@ -3166,6 +2973,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("next")],
           sessionId: "compaction-session",
           stream: true,
@@ -3273,6 +3081,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("next")],
           sessionId: "failed-compaction-session",
         }),
@@ -3339,7 +3148,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("Check ticket")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("Check ticket")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(run.status).toBe(200);
@@ -3567,6 +3380,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hi")],
           sessionId: session.id,
           stream: true,
@@ -3620,6 +3434,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("think")],
           sessionId: session.id,
           stream: true,
@@ -3692,6 +3507,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("my raw secret prompt")],
           sessionId: session.id,
           stream: true,
@@ -3792,7 +3608,7 @@ describe("Anvia studio", () => {
     const parentAgent = new Agent({
       id: "parent",
       model: parentModel,
-      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
       maxTurns: 2,
     });
     const runner = new Studio([parentAgent]);
@@ -3811,6 +3627,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("delegate")],
           sessionId: session.id,
           stream: true,
@@ -3934,6 +3751,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hi")],
           sessionId: "session_1",
           history: [Message.user("old")],
@@ -3952,7 +3770,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("hi")], sessionId: "missing" }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hi")],
+          sessionId: "missing",
+        }),
       }),
     );
     expect(missing.status).toBe(404);
@@ -3980,6 +3802,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("trace me")],
           sessionId: session.id,
           trace: { name: "support-run", metadata: { source: "test" } },
@@ -4076,6 +3899,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("trace then delete")],
           sessionId: session.id,
         }),
@@ -4135,6 +3959,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("add")],
           sessionId: session.id,
           stream: true,
@@ -4242,7 +4067,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("fail")], sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("fail")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(run.status).toBe(500);
@@ -4297,6 +4126,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("stream fail")],
           sessionId: session.id,
           stream: true,
@@ -4797,21 +4627,33 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/main/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("main")], sessionId: mainSession.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("main")],
+          sessionId: mainSession.id,
+        }),
       }),
     );
     await runner.fetch(
       new Request("http://runner.test/agents/backup/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("backup")], sessionId: backupSession.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("backup")],
+          sessionId: backupSession.id,
+        }),
       }),
     );
     await runner.fetch(
       new Request("http://runner.test/agents/main/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: [Message.user("fail")], sessionId: mainSession.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("fail")],
+          sessionId: mainSession.id,
+        }),
       }),
     );
 
@@ -4893,6 +4735,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("observe")],
           sessionId: session.id,
           trace: { name: "observability-test" },
@@ -5175,23 +5018,6 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       clearTimeout(timeout);
     }
   }
-}
-
-async function waitForPendingApproval(runner: Studio): Promise<StudioToolApproval> {
-  return withTimeout(
-    (async () => {
-      while (true) {
-        const response = await runner.fetch(
-          new Request("http://runner.test/approvals?status=pending"),
-        );
-        const body = (await response.json()) as { approvals: StudioToolApproval[] };
-        const approval = body.approvals[0];
-        if (approval !== undefined) return approval;
-        await new Promise((resolve) => setTimeout(resolve, 5));
-      }
-    })(),
-    1_000,
-  );
 }
 
 async function waitFor(predicate: () => boolean, ms = 1000): Promise<void> {

@@ -13,6 +13,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as publicReact from "../src";
 import { useChat, useCompletion } from "../src";
+import { saveChatResumeState } from "../src/resume";
 
 declare const incompatibleTransport: ClientTransport<{ query: number }>;
 declare const chatTransport: ClientTransport<ClientStreamRequest>;
@@ -34,6 +35,10 @@ function CompileTransportBoundary() {
   chat.send({ text: "hello" });
   // @ts-expect-error reset() does not replace the transcript.
   chat.reset([]);
+  // @ts-expect-error Tool approvals use the unified interaction response method.
+  chat.approveTool({ approvalId: "approval_1" });
+  // @ts-expect-error Tool questions use the unified interaction response method.
+  chat.answerToolQuestion({ questionId: "question_1", answers: [] });
   const typedChat = useChat({
     transport: typedChatTransport,
     onEvent(event) {
@@ -227,9 +232,179 @@ describe("useChat", () => {
     await waitFor(() => expect(result.current.status).toBe("streaming"));
     act(() => releaseEnd?.());
     await act(async () => pending);
-    expect(result.current.status).toBe("error");
+    await waitFor(() => expect(result.current.status).toBe("error"));
     expect(result.current.error?.message).toBe("Safe failure");
     expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("enters waiting state and resumes through a unified interaction request", async () => {
+    const requests: ClientStreamRequest[] = [];
+    const transport = createDirectClientTransport({
+      handler: ({ request }) => {
+        requests.push(request);
+        return request.type === "messages"
+          ? events([
+              { type: "run_start", runId: "run_1", source: "agent" },
+              {
+                type: "interaction",
+                runId: "run_1",
+                interaction: {
+                  type: "tool-approval",
+                  id: "interaction_1",
+                  toolName: "delete_account",
+                  toolCallId: "call_1",
+                  internalCallId: "internal_1",
+                  input: { accountId: "account_1" },
+                },
+              },
+              { type: "run_end", runId: "run_1", status: "suspended" },
+            ])
+          : events([
+              { type: "run_start", runId: "run_2", source: "agent" },
+              { type: "run_end", runId: "run_2", status: "completed", text: "Deleted" },
+            ]);
+      },
+    });
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => result.current.sendMessage({ text: "Delete the account" }));
+    expect(result.current.status).toBe("waiting");
+    expect(result.current.interactions.pending).toHaveLength(1);
+
+    await act(async () =>
+      result.current.respondToInteraction({
+        interactionId: "interaction_1",
+        response: { type: "tool-approval", approved: true },
+      }),
+    );
+
+    expect(requests[1]).toEqual({
+      type: "interaction_response",
+      interactionId: "interaction_1",
+      response: { type: "tool-approval", approved: true },
+    });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.interactions.pending).toHaveLength(0);
+    expect(result.current.interactions.all[0]?.status).toBe("responded");
+    expect(result.current.respondingInteractions.size).toBe(0);
+  });
+
+  it("keeps an interaction pending when transport fails before accepting it", async () => {
+    let attempt = 0;
+    const transport: ClientTransport<ClientStreamRequest> = {
+      async *send() {
+        attempt += 1;
+        if (attempt > 1) throw new Error("Network unavailable");
+        yield {
+          type: "stream_start",
+          protocol: CLIENT_STREAM_PROTOCOL,
+          streamId: "stream_1",
+          eventId: 0,
+          resumable: false,
+        };
+        yield {
+          type: "stream_event",
+          streamId: "stream_1",
+          eventId: 1,
+          event: {
+            type: "interaction",
+            runId: "run_1",
+            interaction: {
+              type: "tool-approval",
+              id: "interaction_1",
+              toolName: "delete_account",
+              toolCallId: "call_1",
+              internalCallId: "internal_1",
+              input: {},
+            },
+          },
+        };
+        yield {
+          type: "stream_event",
+          streamId: "stream_1",
+          eventId: 2,
+          event: { type: "run_end", runId: "run_1", status: "suspended" },
+        };
+        yield {
+          type: "stream_end",
+          streamId: "stream_1",
+          eventId: 2,
+          status: "completed",
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport }));
+    await act(async () => result.current.sendMessage({ text: "Delete" }));
+
+    let responseError: unknown;
+    await act(async () => {
+      try {
+        await result.current.respondToInteraction({
+          interactionId: "interaction_1",
+          response: { type: "tool-approval", approved: false },
+        });
+      } catch (error) {
+        responseError = error;
+      }
+    });
+
+    expect(responseError).toMatchObject({ message: "The interaction response was not accepted." });
+    expect(result.current.status).toBe("error");
+    expect(result.current.interactions.pending).toHaveLength(1);
+    expect(result.current.respondingInteractions.size).toBe(0);
+  });
+
+  it("restores pending interactions when replay resumes after their event", async () => {
+    const resume = {
+      key: "pending-interaction",
+      storage: window.sessionStorage,
+      auto: false,
+    } as const;
+    saveChatResumeState(resume, {
+      version: 3,
+      streamId: "stream_1",
+      lastEventId: 2,
+      messages: [],
+      interactions: [
+        {
+          request: {
+            type: "tool-approval",
+            id: "interaction_1",
+            toolName: "delete_account",
+            toolCallId: "call_1",
+            internalCallId: "internal_1",
+            input: {},
+          },
+          runId: "run_1",
+          status: "pending",
+        },
+      ],
+      request: { type: "messages", messages: [] },
+    });
+    const transport: ClientTransport<ClientStreamRequest> = {
+      async *send({ resume: cursor }) {
+        expect(cursor).toEqual({ streamId: "stream_1", after: 2 });
+        yield {
+          type: "stream_start",
+          protocol: CLIENT_STREAM_PROTOCOL,
+          streamId: "stream_1",
+          eventId: 0,
+          resumable: true,
+        };
+        yield {
+          type: "stream_end",
+          streamId: "stream_1",
+          eventId: 2,
+          status: "completed",
+        };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport, resume }));
+
+    await act(async () => result.current.resume());
+
+    expect(result.current.status).toBe("waiting");
+    expect(result.current.interactions.pending[0]?.request.id).toBe("interaction_1");
   });
 });
 

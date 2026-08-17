@@ -68,6 +68,10 @@ export function prepareToolCall(tool: AnyTool, args: string): PreparedToolCall {
     throw asToolCallError(tool.name, error);
   }
 
+  return prepareToolCallFromInput(tool, input);
+}
+
+export function prepareToolCallFromInput(tool: AnyTool, input: unknown): PreparedToolCall {
   return {
     input,
     async call(context) {

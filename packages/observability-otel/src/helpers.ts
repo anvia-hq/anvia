@@ -63,7 +63,10 @@ export function runEndAttributes(
   options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
+    "anvia.run.id": args.runId,
     "anvia.run.status": args.status,
+    "anvia.run.resumed_from.id": args.resumedFrom?.runId,
+    "anvia.run.resumed_from.interaction_id": args.resumedFrom?.interactionId,
     "anvia.run.blocked_stage": args.status === "blocked" ? args.stage : undefined,
     "anvia.run.text": capturedString(args.text, "output", options),
     "anvia.run.output":

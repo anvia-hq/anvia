@@ -62,7 +62,7 @@ const synthesizerAgent = new Agent({
 const supportNotesPipeline = new Pipeline({ id: "support-notes", inputSchema: z.string() }).agent({
   id: "support",
   agent: supportAgent,
-  approval: "reject",
+  suspension: "reject",
   request: ({ input }) => ({ prompt: `Triage this incident for support:\n\n${input}` }),
 });
 
@@ -72,14 +72,14 @@ const engineeringNotesPipeline = new Pipeline({
 }).agent({
   id: "engineering",
   agent: engineeringAgent,
-  approval: "reject",
+  suspension: "reject",
   request: ({ input }) => ({ prompt: `Triage this incident for engineering:\n\n${input}` }),
 });
 
 const commsNotesPipeline = new Pipeline({ id: "comms-notes", inputSchema: z.string() }).agent({
   id: "comms",
   agent: commsAgent,
-  approval: "reject",
+  suspension: "reject",
   request: ({ input }) => ({
     prompt: `Draft customer communication for this incident:\n\n${input}`,
   }),
@@ -97,7 +97,7 @@ const incidentBrief = new Pipeline({ id: "incident-brief", inputSchema: z.string
   .agent({
     id: "synthesize",
     agent: synthesizerAgent,
-    approval: "reject",
+    suspension: "reject",
     request: ({ input: { support, engineering, comms } }) => {
       const supportNotes = visibleText(
         support,

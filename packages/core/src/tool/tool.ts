@@ -19,7 +19,8 @@ export type ToolApprovalContext<Args = unknown> = {
   toolName: string;
   args: Args;
   rawArgs: string;
-  toolCallId?: string;
+  toolCallId: string;
+  callId?: string;
   internalCallId: string;
   run: ToolApprovalRunContext;
 };
@@ -100,6 +101,7 @@ export function normalizeToolResultOutput(output: unknown): NormalizedToolOutput
       });
       if (message.role !== "tool") throw new TypeError("Unexpected message role");
       const result = message.content[0];
+      if (result?.type !== "tool-result") throw new TypeError("Unexpected tool result part");
       if (result?.output.type !== "content") throw new TypeError("Unexpected tool output");
       return result.output;
     } catch {

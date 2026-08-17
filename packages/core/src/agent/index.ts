@@ -1,7 +1,32 @@
 export type { ModelCallOptions } from "../model-call-options";
 export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
 export { Agent } from "./agent";
-export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./errors";
+export {
+  AgentRunBlockedError,
+  AgentRunCancelledError,
+  AgentStreamClosedError,
+  AgentToolSuspensionError,
+  MaxTurnsError,
+} from "./errors";
+export type {
+  AgentContinuation,
+  AgentInteractionRequest,
+  AgentInteractionResponse,
+  AgentQuestionAnswer,
+  AgentQuestionChoice,
+  AgentQuestionPrompt,
+  AgentToolApprovalRequest,
+  AgentToolQuestionRequest,
+} from "./interactions";
+export {
+  agentContinuationSchema,
+  agentInteractionRequestSchema,
+  agentInteractionResponseSchema,
+  assertAgentInteractionResponse,
+  parseAgentContinuation,
+  parseAgentInteractionRequest,
+  parseAgentInteractionResponse,
+} from "./interactions";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,
@@ -12,9 +37,6 @@ export type {
   AgentToolStartEvent,
 } from "./lifecycle";
 export type {
-  AgentApprovalDecision,
-  AgentApprovalRequiredEvent,
-  AgentApprovalRequiredResult,
   AgentBlockedResult,
   AgentChildStreamEvent,
   AgentDeltaEvent,
@@ -27,9 +49,10 @@ export type {
   AgentRunOptions,
   AgentRunSettings,
   AgentSteerInput,
+  AgentSteerReceipt,
   AgentStream,
   AgentStreamEvent,
-  AgentToolApprovalRequest,
+  AgentSuspendedResult,
   AgentToolCallDeltaEvent,
 } from "./run-types";
 export type {

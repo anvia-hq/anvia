@@ -95,7 +95,7 @@ const marketPipeline = new Pipeline({ id: "market-analysis", inputSchema: z.stri
   .agent({
     id: "analyze",
     agent: marketAnalyst,
-    approval: "reject",
+    suspension: "reject",
     request: ({ input: { quoteJson: quote, newsJson: news, risksJson: risks } }) => ({
       prompt: [
         `Analyze this mock market packet for ${quote.ticker}.`,

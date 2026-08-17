@@ -45,7 +45,7 @@ const agent = new Agent({
 const result = await agent.generate({ prompt: "How do I reset my password?" });
 
 if (result.status === "completed") console.log(result.output);
-console.log(result.status === "approval_required" ? undefined : result.trace?.traceId);
+console.log(result.trace?.traceId);
 ```
 
 Initialize OpenTelemetry in your application before creating spans. For OTLP HTTP, configure `@opentelemetry/sdk-node` and `@opentelemetry/exporter-trace-otlp-http` in your app process.

@@ -14,6 +14,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import {
   compactJsonObject,
@@ -121,6 +122,20 @@ class StudioRunTraceObserver implements AgentRunObserver {
         this.observations.push(parentObservation);
         this.observations.push(...childTrace.observations(parentObservation.id));
       },
+      suspend: (suspendArgs: AgentToolSuspendedArgs) => {
+        this.observations.push(
+          traceObservation({
+            kind: "tool",
+            name: args.toolName,
+            status: "suspended",
+            turn: args.turn,
+            startedAt,
+            input: parseOrString(args.args),
+            output: toJsonValue({ interaction: suspendArgs.interaction }),
+            metadata: toolMetadata(args, false),
+          }),
+        );
+      },
       error: (errorArgs: AgentToolErrorArgs) => {
         const parentObservation = traceObservation({
           kind: "tool",
@@ -139,15 +154,19 @@ class StudioRunTraceObserver implements AgentRunObserver {
   }
 
   async end(args: AgentRunEndArgs): Promise<void> {
-    await this.save("success", {
+    await this.save(args.status === "suspended" ? "suspended" : "success", {
       endedAt: new Date(),
       output: args.status === "completed" ? traceOutput(args.output) : args.text,
       result: {
+        runId: this.props.args.runId,
         status: args.status,
         text: args.text,
+        ...(args.resumedFrom === undefined ? {} : { resumedFrom: args.resumedFrom }),
         ...(args.status === "completed"
           ? { output: toJsonValue(args.output) }
-          : { stage: args.stage }),
+          : args.status === "blocked"
+            ? { stage: args.stage }
+            : { interaction: toJsonValue(args.interaction) }),
       },
       usage: args.usage,
       messages: toJsonValue(args.messages),

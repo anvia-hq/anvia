@@ -419,33 +419,14 @@ async function* translateAgentEvent(
         decision: event.decision,
       });
       return;
-    case "approval_required": {
-      const input = jsonValueOrUndefined(event.approval.input);
-      yield scopedEvent(runtime.runId, turn, scope, {
-        type: "tool_approval",
-        approval: {
-          id: event.approval.id,
-          runId: event.runId,
-          toolName: event.approval.toolName,
-          ...(event.approval.toolCallId === undefined ? {} : { callId: event.approval.toolCallId }),
-          ...(input === undefined ? {} : { input }),
-          status: "pending",
-          ...(event.approval.reason === undefined ? {} : { reason: event.approval.reason }),
-        },
-      });
-      yield scopedEvent(runtime.runId, turn, scope, {
-        type: "run_end",
-        status: "approval_required",
-        usage: event.usage,
-        ...(event.memoryCompaction === undefined
-          ? {}
-          : { memoryCompaction: event.memoryCompaction }),
-        ...(runtime.options.metadata === undefined ? {} : { metadata: runtime.options.metadata }),
-      });
-      return;
-    }
     case "final": {
       const result = event.result;
+      if (result.status === "suspended" && scope === undefined) {
+        yield scopedEvent(runtime.runId, turn, scope, {
+          type: "interaction",
+          interaction: result.interaction,
+        });
+      }
       const output =
         result.status === "completed"
           ? clientOutput(result.output, runtime.options.mapOutput)
@@ -1056,10 +1037,6 @@ function valueFingerprint(value: unknown): string {
   return `${typeof value}:${JSON.stringify(value)}`;
 }
 
-function jsonValueOrUndefined(value: unknown): JsonValue | undefined {
-  return isJsonValue(value) ? value : undefined;
-}
-
 function clientTrace(trace: {
   readonly observer: string;
   readonly traceId?: string | undefined;
@@ -1121,7 +1098,7 @@ function scopeKey(scope: ClientStreamScope | undefined): string {
 }
 
 function isRootTerminalAgentEvent(event: AgentStreamEvent<unknown, unknown>): boolean {
-  return event.type === "final" || event.type === "approval_required" || event.type === "error";
+  return event.type === "final" || event.type === "error";
 }
 
 function propagateCancellation<TSource, TOutput>(

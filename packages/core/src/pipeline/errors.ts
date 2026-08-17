@@ -1,8 +1,8 @@
-import type { AgentApprovalRequiredResult } from "../agent/run-types";
+import type { AgentSuspendedResult } from "../agent/run-types";
 
-export class PipelineAgentApprovalError extends Error {
-  constructor(readonly result: AgentApprovalRequiredResult) {
-    super("Pipeline agent stage required tool approval and was rejected.");
-    this.name = "PipelineAgentApprovalError";
+export class PipelineAgentSuspensionError extends Error {
+  constructor(readonly result: AgentSuspendedResult) {
+    super("Pipeline agent stage suspended for human interaction.");
+    this.name = "PipelineAgentSuspensionError";
   }
 }

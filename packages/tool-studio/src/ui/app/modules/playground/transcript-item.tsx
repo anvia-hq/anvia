@@ -704,7 +704,8 @@ function QuestionPromptControl(props: {
           })}
         </div>
       ) : null}
-      {submittedAnswer !== undefined ? null : (
+      {submittedAnswer !== undefined ||
+      (props.question.choices.length > 0 && !props.question.allowCustom) ? null : (
         <Textarea
           className="min-h-24 text-sm"
           disabled={props.disabled}

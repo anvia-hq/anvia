@@ -202,15 +202,36 @@ await agent.generate({
 ```
 
 Agent results are discriminated by `status`. Completed results include typed `output` and `text`;
-guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approval can return
-`status: "approval_required"`.
+guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approvals and first-class
+questions return a JSON-safe `status: "suspended"` result.
 
 ```ts
 const result = await agent.generate({ prompt: "Help with this request." });
 
 if (result.status === "completed") console.log(result.output);
 if (result.status === "blocked") console.log(result.stage, result.text);
+if (result.status === "suspended") {
+  const resumed = await agent.generate({
+    continuation: result.continuation,
+    response:
+      result.interaction.type === "tool-approval"
+        ? { type: "tool-approval", approved: true }
+        : {
+            type: "tool-question",
+            answers: result.interaction.questions.map((question) => ({
+              questionId: question.id,
+              value: "application-provided answer",
+            })),
+          },
+  });
+  console.log(resumed.status, resumed.resumedFrom);
+}
 ```
+
+Keep continuations server-side. A resumed phase receives a new `runId`; Core validates the
+continuation and current Agent/tool registration but does not provide a durable continuation store
+or exactly-once execution. Use `createQuestionTool({ name, description })` when a model must ask for
+structured free-text or choice answers.
 
 An Agent with `outputSchema` carries that output type through `generate`, `stream`, `asTool`, and
 Pipeline Agent stages. Agent stream finals use the same result shape:
@@ -344,7 +365,7 @@ const pipeline = new Pipeline({ id: "support-flow", inputSchema: z.string() })
   .agent({
     id: "draft",
     agent,
-    approval: "reject",
+    suspension: "reject",
     request: ({ input }) => ({ prompt: `Draft a reply for this ticket:\n\n${input}` }),
   })
   .extract({
@@ -468,7 +489,7 @@ MCP server instructions remain inspectable metadata and are not added to Agent i
 
 ## Public Areas
 
-- `agent`: typed Agent runtime, run results, approvals, retries, and stream events
+- `agent`: typed Agent runtime, continuations, interactions, retries, and stream events
 - `tool`: typed tool creation and tool sets
 - `completion`: direct completion helpers and provider-neutral model contracts
 - `memory`: durable session memory interfaces and in-memory store

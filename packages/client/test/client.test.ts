@@ -291,7 +291,7 @@ describe("native stream adapters", () => {
       },
     });
 
-    const frames = await collect(transport.send({ request: { messages: [] } }));
+    const frames = await collect(transport.send({ request: { type: "messages", messages: [] } }));
     expect(frames.at(-1)).toMatchObject({ type: "stream_end", status: "completed" });
     expect(
       frames.find((frame) => frame.type === "stream_event" && frame.event.type === "run_end"),
@@ -646,10 +646,120 @@ describe("native stream adapters", () => {
       },
     });
   });
+
+  it("maps suspended Agent finals to one interaction followed by a suspended run end", async () => {
+    const interaction = {
+      type: "tool-approval" as const,
+      id: "interaction_1",
+      toolName: "delete_account",
+      toolCallId: "call_1",
+      internalCallId: "internal_1",
+      input: { accountId: "account_1" },
+    };
+    const events = await collect(
+      agentToClientStream({
+        runId: "run_1",
+        events: values<AgentStreamEvent>([
+          {
+            type: "final",
+            result: {
+              status: "suspended",
+              runId: "run_1",
+              text: "",
+              usage: Usage.empty(),
+              messages: [],
+              interaction,
+              continuation: {
+                version: 1,
+                agentId: "agent_1",
+                sourceRunId: "run_1",
+                interaction,
+                state: {},
+              },
+            },
+          },
+        ]),
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual(["run_start", "interaction", "run_end"]);
+    expect(events[1]).toMatchObject({ type: "interaction", runId: "run_1", interaction });
+    expect(events[2]).toMatchObject({ type: "run_end", runId: "run_1", status: "suspended" });
+    expect(JSON.stringify(events)).not.toContain("continuation");
+  });
+
+  it("does not expose rejected child-Agent suspension as a resumable root interaction", async () => {
+    const interaction = {
+      type: "tool-approval" as const,
+      id: "child_interaction",
+      toolName: "delete_account",
+      toolCallId: "call_1",
+      internalCallId: "internal_1",
+      input: {},
+    };
+    const events = await collect(
+      agentToClientStream({
+        runId: "root_run",
+        events: values<AgentStreamEvent>([
+          {
+            type: "agent_tool_event",
+            turn: 1,
+            toolName: "child_agent",
+            toolCallId: "parent_call",
+            internalCallId: "parent_internal",
+            agentId: "child",
+            event: {
+              type: "final",
+              result: {
+                status: "suspended",
+                runId: "child_run",
+                text: "",
+                usage: Usage.empty(),
+                messages: [],
+                interaction,
+                continuation: {
+                  version: 1,
+                  agentId: "child",
+                  sourceRunId: "child_run",
+                  interaction,
+                  state: {},
+                },
+              },
+            },
+          },
+        ]),
+      }),
+    );
+
+    expect(events.some((event) => event.type === "interaction")).toBe(false);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "run_end",
+        status: "suspended",
+        scope: expect.objectContaining({ parentToolCallId: "parent_call" }),
+      }),
+    );
+  });
 });
 
 describe("protocol and transport", () => {
-  it("rejects v1 frames and legacy UI-message requests", () => {
+  it("rejects direct-handler failures before emitting stream acceptance", async () => {
+    const transport = createDirectClientTransport({
+      handler: async () => {
+        throw new Error("Interaction continuation is unavailable");
+      },
+    });
+
+    await expect(
+      collect(
+        transport.send({
+          request: { type: "messages", messages: [] },
+        }),
+      ),
+    ).rejects.toThrow("Interaction continuation is unavailable");
+  });
+
+  it("rejects v1/v2 frames and legacy UI-message requests", () => {
     expect(() =>
       parseClientStreamFrame({
         type: "stream_start",
@@ -660,6 +770,15 @@ describe("protocol and transport", () => {
       }),
     ).toThrow("protocol v1 is not supported");
     expect(() =>
+      parseClientStreamFrame({
+        type: "stream_start",
+        protocol: "anvia.client.v2",
+        streamId: "stream_1",
+        eventId: 0,
+        resumable: false,
+      }),
+    ).toThrow("protocol v2 is not supported");
+    expect(() =>
       parseClientStreamRequest({
         messages: [
           {
@@ -669,7 +788,31 @@ describe("protocol and transport", () => {
           },
         ],
       }),
-    ).toThrow("request.messages must be Message[]");
+    ).toThrow("request.type");
+  });
+
+  it("parses the discriminated interaction response request", () => {
+    expect(
+      parseClientStreamRequest({
+        type: "interaction_response",
+        interactionId: "interaction_1",
+        response: { type: "tool-approval", approved: true },
+        metadata: { tenantId: "acme" },
+      }),
+    ).toEqual({
+      type: "interaction_response",
+      interactionId: "interaction_1",
+      response: { type: "tool-approval", approved: true },
+      metadata: { tenantId: "acme" },
+    });
+    expect(() =>
+      parseClientStreamRequest({
+        type: "interaction_response",
+        interactionId: "interaction_1",
+        response: { type: "tool-approval", approved: true },
+        messages: [],
+      }),
+    ).toThrow(/cannot include messages/);
   });
 
   it("validates memory compaction as a canonical client event", () => {
@@ -736,7 +879,7 @@ describe("protocol and transport", () => {
           [
             {
               type: "stream_start",
-              protocol: "anvia.client.v2",
+              protocol: "anvia.client.v3",
               streamId: "stream_1",
               eventId: 0,
               resumable: false,
@@ -754,13 +897,13 @@ describe("protocol and transport", () => {
           {
             headers: {
               "content-type": "application/x-ndjson",
-              "x-anvia-stream-protocol": "anvia.client.v2",
+              "x-anvia-stream-protocol": "anvia.client.v3",
             },
           },
         ),
     });
 
-    const frames = await collect(transport.send({ request: { messages: [] } }));
+    const frames = await collect(transport.send({ request: { type: "messages", messages: [] } }));
     expect(frames.find((frame) => frame.type === "stream_event")?.event).toMatchObject({
       name: "count",
       data: 42,
@@ -815,14 +958,14 @@ describe("protocol and transport", () => {
           { type: "run_end", runId: "run_1", status: "completed" },
         ]),
     });
-    const frames = await collect(transport.send({ request: { messages: [] } }));
+    const frames = await collect(transport.send({ request: { type: "messages", messages: [] } }));
     expect(frames.map((frame) => frame.type)).toEqual([
       "stream_start",
       "stream_event",
       "stream_event",
       "stream_end",
     ]);
-    expect(frames[0]).toMatchObject({ protocol: "anvia.client.v2", resumable: false });
+    expect(frames[0]).toMatchObject({ protocol: "anvia.client.v3", resumable: false });
   });
 
   it("propagates direct transport cancellation into the handled stream", async () => {
@@ -848,7 +991,7 @@ describe("protocol and transport", () => {
     });
     const controller = new AbortController();
     const iterator = transport
-      .send({ request: { messages: [] }, abortSignal: controller.signal })
+      .send({ request: { type: "messages", messages: [] }, abortSignal: controller.signal })
       [Symbol.asyncIterator]();
 
     await expect(iterator.next()).resolves.toMatchObject({
@@ -864,14 +1007,14 @@ describe("protocol and transport", () => {
     const frames = [
       {
         type: "stream_start",
-        protocol: "anvia.client.v2",
+        protocol: "anvia.client.v3",
         streamId: "stream_1",
         eventId: 0,
         resumable: false,
       },
       {
         type: "stream_start",
-        protocol: "anvia.client.v2",
+        protocol: "anvia.client.v3",
         streamId: "stream_1",
         eventId: 0,
         resumable: false,
@@ -883,14 +1026,14 @@ describe("protocol and transport", () => {
         new Response(frames.map((frame) => JSON.stringify(frame)).join("\n"), {
           headers: {
             "content-type": "application/x-ndjson",
-            "x-anvia-stream-protocol": "anvia.client.v2",
+            "x-anvia-stream-protocol": "anvia.client.v3",
           },
         }),
     });
 
-    await expect(collect(transport.send({ request: { messages: [] } }))).rejects.toThrow(
-      "more than one stream_start",
-    );
+    await expect(
+      collect(transport.send({ request: { type: "messages", messages: [] } })),
+    ).rejects.toThrow("more than one stream_start");
   });
 
   it("rejects resume responses for another or non-resumable stream", async () => {
@@ -902,7 +1045,7 @@ describe("protocol and transport", () => {
             [
               {
                 type: "stream_start",
-                protocol: "anvia.client.v2",
+                protocol: "anvia.client.v3",
                 streamId,
                 eventId: 0,
                 resumable,
@@ -914,13 +1057,14 @@ describe("protocol and transport", () => {
             {
               headers: {
                 "content-type": "application/x-ndjson",
-                "x-anvia-stream-protocol": "anvia.client.v2",
+                "x-anvia-stream-protocol": "anvia.client.v3",
               },
             },
           ),
       });
     }
     const request: ClientStreamRequest = {
+      type: "messages",
       messages: [],
       resume: { streamId: "expected", after: 2 },
     };

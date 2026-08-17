@@ -177,6 +177,7 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
 
     const unmerged: UIToolMessagePart[] = [];
     for (const content of message.content) {
+      if (content.type !== "tool-result") continue;
       const location =
         (content.callId === undefined ? undefined : byCallId.get(content.callId)) ??
         byToolCallId.get(content.toolCallId);

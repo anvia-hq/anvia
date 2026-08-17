@@ -460,7 +460,7 @@ function requestModalities(request: AgentRunRequest): Set<StudioModelModality> {
 }
 
 function requestMessages(request: AgentRunRequest): readonly Message[] {
-  return request.messages;
+  return request.type === "messages" ? request.messages : [];
 }
 
 function normalizeProviderId(id: string): string {

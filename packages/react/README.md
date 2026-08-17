@@ -51,20 +51,42 @@ Import transports, protocol types, `UIMessage`, and conversion helpers from `@an
 `useChat`:
 
 - consumes only framed `ClientStreamFrame` values;
-- exposes `ready | submitted | streaming | error` status;
+- exposes `ready | submitted | streaming | waiting | error` status;
 - keeps readonly `UIMessage[]` locally and sends core `Message[]` in `ClientStreamRequest`;
 - exposes canonical events through `onEvent` and the returned `events` array;
-- supports optional resumable streams and tool approval/question state.
+- supports optional resumable streams and unified Agent interaction state.
 
 The default request is:
 
 ```ts
-type ClientStreamRequest = {
-  messages: readonly Message[];
-  metadata?: JsonObject;
-  resume?: { streamId: string; after: number };
-};
+type ClientStreamRequest =
+  | {
+      type: "messages";
+      messages: readonly Message[];
+      metadata?: JsonObject;
+      resume?: { streamId: string; after: number };
+    }
+  | {
+      type: "interaction_response";
+      interactionId: string;
+      response: AgentInteractionResponse;
+      metadata?: JsonObject;
+      resume?: { streamId: string; after: number };
+    };
 ```
+
+When `chat.status === "waiting"`, render `chat.interactions.pending` and resume through the same
+transport boundary:
+
+```ts
+await chat.respondToInteraction({
+  interactionId,
+  response: { type: "tool-approval", approved: true },
+});
+```
+
+The browser never receives an `AgentContinuation`; the server retains and atomically claims it by
+interaction ID.
 
 For resumable chat, pair `useChat({ transport, resume: { key } })` with
 `createClientStreamResponse({ events, resumable })` and `resumeClientStreamResponse(...)` on the

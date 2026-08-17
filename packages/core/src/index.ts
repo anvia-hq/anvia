@@ -1,5 +1,29 @@
 export { Agent } from "./agent/agent";
-export { AgentRunBlockedError, AgentRunCancelledError, MaxTurnsError } from "./agent/errors";
+export {
+  AgentRunBlockedError,
+  AgentRunCancelledError,
+  AgentStreamClosedError,
+  AgentToolSuspensionError,
+  MaxTurnsError,
+} from "./agent/errors";
+export type {
+  AgentContinuation,
+  AgentInteractionRequest,
+  AgentInteractionResponse,
+  AgentQuestionAnswer,
+  AgentQuestionChoice,
+  AgentQuestionPrompt,
+  AgentToolApprovalRequest,
+  AgentToolQuestionRequest,
+} from "./agent/interactions";
+export {
+  agentContinuationSchema,
+  agentInteractionRequestSchema,
+  agentInteractionResponseSchema,
+  parseAgentContinuation,
+  parseAgentInteractionRequest,
+  parseAgentInteractionResponse,
+} from "./agent/interactions";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,
@@ -10,9 +34,6 @@ export type {
   AgentToolStartEvent,
 } from "./agent/lifecycle";
 export type {
-  AgentApprovalDecision,
-  AgentApprovalRequiredEvent,
-  AgentApprovalRequiredResult,
   AgentBlockedResult,
   AgentChildStreamEvent,
   AgentDeltaEvent,
@@ -25,9 +46,10 @@ export type {
   AgentRunOptions,
   AgentRunSettings,
   AgentSteerInput,
+  AgentSteerReceipt,
   AgentStream,
   AgentStreamEvent,
-  AgentToolApprovalRequest,
+  AgentSuspendedResult,
   AgentToolCallDeltaEvent,
 } from "./agent/run-types";
 export type {
@@ -201,7 +223,7 @@ export type {
   ToolCallStreamEvent,
   ToolRequiresApproval,
 } from "./tool/index";
-export { createThinkTool, createTool } from "./tool/index";
+export { createQuestionTool, createThinkTool, createTool } from "./tool/index";
 export type {
   AgentMiddleware,
   CompletionRequestMiddlewareArgs,

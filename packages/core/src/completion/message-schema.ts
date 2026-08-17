@@ -102,6 +102,36 @@ const toolResultPartSchema = z
   })
   .strict();
 
+const toolApprovalResponsePartSchema = z
+  .object({
+    type: z.literal("tool-approval-response"),
+    interactionId: z.string().min(1),
+    toolCallId: z.string().min(1),
+    callId: z.string().optional(),
+    toolName: z.string().min(1),
+    approved: z.boolean(),
+    reason: z.string().optional(),
+  })
+  .strict();
+
+const toolQuestionAnswerSchema = z
+  .object({
+    questionId: z.string().min(1),
+    value: z.string(),
+  })
+  .strict();
+
+const toolQuestionResponsePartSchema = z
+  .object({
+    type: z.literal("tool-question-response"),
+    interactionId: z.string().min(1),
+    toolCallId: z.string().min(1),
+    callId: z.string().optional(),
+    toolName: z.string().min(1),
+    answers: z.array(toolQuestionAnswerSchema),
+  })
+  .strict();
+
 export type MessageMetadataSchema<Metadata extends JsonObject> = z.ZodType<Metadata>;
 
 export function createMessageSchema<Metadata extends JsonObject>(options: {
@@ -139,7 +169,17 @@ export function createMessageSchema<Metadata extends JsonObject>(options: {
     })
     .strict();
   const tool = z
-    .object({ role: z.literal("tool"), content: z.array(toolResultPartSchema), metadata })
+    .object({
+      role: z.literal("tool"),
+      content: z.array(
+        z.union([
+          toolResultPartSchema,
+          toolApprovalResponsePartSchema,
+          toolQuestionResponsePartSchema,
+        ]),
+      ),
+      metadata,
+    })
     .strict();
 
   const message = z.union([system, user, assistant, tool]);

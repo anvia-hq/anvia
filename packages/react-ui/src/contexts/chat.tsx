@@ -4,6 +4,7 @@ import type {
   ClientStreamRequest,
   ClientTransport,
 } from "@anvia/client";
+import type { AgentToolApprovalRequest, AgentToolQuestionRequest } from "@anvia/core/agent";
 import type { UseChatResult } from "@anvia/react";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
@@ -44,6 +45,24 @@ export function useChatContext<
   return value as unknown as ChatController<Metadata, Data>;
 }
 
-export function useHumanInput(): ChatController["humanInput"] {
-  return useChatContext().humanInput;
+export function useHumanInput() {
+  const interactions = useChatContext().interactions;
+  const approvals = interactions.all.filter(
+    (item): item is typeof item & { request: AgentToolApprovalRequest } =>
+      item.request.type === "tool-approval",
+  );
+  const questions = interactions.all.filter(
+    (item): item is typeof item & { request: AgentToolQuestionRequest } =>
+      item.request.type === "tool-question",
+  );
+  return {
+    approvals: {
+      all: approvals,
+      pending: approvals.filter((item) => item.status === "pending"),
+    },
+    questions: {
+      all: questions,
+      pending: questions.filter((item) => item.status === "pending"),
+    },
+  };
 }

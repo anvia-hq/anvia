@@ -75,7 +75,7 @@ const ticketPipeline = new Pipeline({
   .agent({
     id: "draft-reply",
     agent: replyAgent,
-    approval: "reject",
+    suspension: "reject",
     name: "Draft Reply",
     description: "Send the prepared context to the reply agent.",
     request: ({ input }) => ({ prompt: input }),

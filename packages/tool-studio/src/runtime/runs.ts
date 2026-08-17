@@ -4,10 +4,10 @@ import {
   customAgentEventsToClientStream,
 } from "@anvia/client";
 import type { AgentStreamEvent } from "@anvia/core/agent";
+import { parseAgentInteractionResponse } from "@anvia/core/agent";
 import {
   isJsonValue,
   type JsonObject,
-  type JsonValue,
   type Message,
   parseMessages,
   type ToolResultOutput,
@@ -37,7 +37,7 @@ import {
 
 export { transcriptFromMessages } from "./transcript";
 
-export type TranslatedAgentStreamEvent = Exclude<AgentStreamEvent, { type: "approval_required" }>;
+export type TranslatedAgentStreamEvent = AgentStreamEvent;
 
 export class AsyncEventQueue<T> {
   private readonly values: T[] = [];
@@ -75,58 +75,6 @@ export class AsyncEventQueue<T> {
   }
 }
 
-export async function* mergeRunAndApprovalEvents(
-  runEvents: AsyncIterable<TranslatedAgentStreamEvent>,
-  approvalEvents: AsyncEventQueue<AgentRunStreamEvent>,
-): AsyncIterable<AgentRunStreamEvent> {
-  type TaggedNext =
-    | { source: "run"; value: IteratorResult<TranslatedAgentStreamEvent> }
-    | { source: "approval"; value: IteratorResult<AgentRunStreamEvent> };
-  const runIterator = runEvents[Symbol.asyncIterator]();
-  let runDone = false;
-  let runNext: Promise<IteratorResult<TranslatedAgentStreamEvent>> | undefined = runIterator.next();
-  let approvalNext: Promise<IteratorResult<AgentRunStreamEvent>> | undefined =
-    approvalEvents.next();
-
-  try {
-    while (runNext !== undefined || approvalNext !== undefined) {
-      const pending: Promise<TaggedNext>[] = [];
-      if (runNext !== undefined) {
-        pending.push(runNext.then((value) => ({ source: "run", value })));
-      }
-      if (approvalNext !== undefined) {
-        pending.push(approvalNext.then((value) => ({ source: "approval", value })));
-      }
-
-      const result = await Promise.race(pending);
-
-      if (result.source === "run") {
-        if (result.value.done === true) {
-          runDone = true;
-          runNext = undefined;
-          approvalEvents.close();
-        } else {
-          runNext = runIterator.next();
-          yield result.value.value;
-        }
-        continue;
-      }
-
-      if (result.value.done === true) {
-        approvalNext = undefined;
-      } else {
-        approvalNext = approvalEvents.next();
-        yield result.value.value;
-      }
-    }
-  } finally {
-    if (!runDone && runIterator.return !== undefined) {
-      await runIterator.return();
-    }
-    approvalEvents.close();
-  }
-}
-
 export function streamAgentRunEvents(
   _c: Context,
   events: AsyncIterable<AgentRunStreamEvent>,
@@ -145,58 +93,6 @@ function studioEventToClientEvent(
   event: AgentRunStreamEvent,
   context: AgentClientStreamContext,
 ): ClientStreamEvent | undefined {
-  if (event.type === "tool_approval_request" || event.type === "tool_approval_result") {
-    return {
-      type: "tool_approval",
-      runId: context.runId,
-      ...(context.turn === undefined ? {} : { turn: context.turn }),
-      ...(context.scope === undefined ? {} : { scope: context.scope }),
-      approval: {
-        id: event.approval.id,
-        runId: event.approval.runId,
-        agentId: event.approval.agentId,
-        ...(event.approval.sessionId === undefined ? {} : { sessionId: event.approval.sessionId }),
-        toolName: event.approval.toolName,
-        ...(event.approval.callId === undefined ? {} : { callId: event.approval.callId }),
-        internalCallId: event.approval.internalCallId,
-        input: parseJsonOrString(event.approval.args),
-        status: event.approval.status,
-        requestedAt: event.approval.requestedAt,
-        ...(event.approval.resolvedAt === undefined
-          ? {}
-          : { resolvedAt: event.approval.resolvedAt }),
-        ...(event.approval.reason === undefined ? {} : { reason: event.approval.reason }),
-      },
-    };
-  }
-  if (event.type === "tool_question_request" || event.type === "tool_question_result") {
-    return {
-      type: "tool_question",
-      runId: context.runId,
-      ...(context.turn === undefined ? {} : { turn: context.turn }),
-      ...(context.scope === undefined ? {} : { scope: context.scope }),
-      question: {
-        id: event.question.id,
-        runId: event.question.runId,
-        agentId: event.question.agentId,
-        ...(event.question.sessionId === undefined ? {} : { sessionId: event.question.sessionId }),
-        toolName: event.question.toolName,
-        ...(event.question.callId === undefined ? {} : { callId: event.question.callId }),
-        internalCallId: event.question.internalCallId,
-        input: parseJsonOrString(event.question.args),
-        questions: event.question.questions,
-        status: event.question.status,
-        requestedAt: event.question.requestedAt,
-        ...(event.question.answeredAt === undefined
-          ? {}
-          : { answeredAt: event.question.answeredAt }),
-        ...(event.question.cancelledAt === undefined
-          ? {}
-          : { cancelledAt: event.question.cancelledAt }),
-        ...(event.question.answers === undefined ? {} : { answers: event.question.answers }),
-      },
-    };
-  }
   if (event.type === "session_log" && isJsonValue(event.log)) {
     return {
       type: "data",
@@ -224,15 +120,6 @@ function studioEventToClientEvent(
     };
   }
   return undefined;
-}
-
-function parseJsonOrString(value: string): JsonValue {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return isJsonValue(parsed) ? parsed : value;
-  } catch {
-    return value;
-  }
 }
 
 function withAgentRunCancellation(
@@ -326,13 +213,14 @@ export function createPersistedStreamingSessionTranscript(props: {
   runId: string;
   startedAt: number;
   persistGeneratedMessages?: boolean;
+  generatedMessagesStartIndex?: 0 | 1;
 }): {
   events: AsyncIterable<AgentRunStreamEvent>;
   cancel: () => Promise<void>;
 } {
   const transcript: StudioTranscriptEntry[] = [messageToTranscriptEntry(props.message, 0)];
   const title = optionalTitle(props.message);
-  let status: "running" | "success" | "error" | "cancelled" = "running";
+  let status: "running" | "success" | "suspended" | "error" | "cancelled" = "running";
   let saveTail: Promise<void> = Promise.resolve();
   const isCancelled = () => status === "cancelled";
 
@@ -371,7 +259,13 @@ export function createPersistedStreamingSessionTranscript(props: {
           assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
         }
         const eventStatus =
-          event.type === "final" ? "success" : event.type === "error" ? "error" : "running";
+          event.type === "final"
+            ? event.result.status === "suspended"
+              ? "suspended"
+              : "success"
+            : event.type === "error"
+              ? "error"
+              : "running";
 
         const saveInput: Parameters<typeof props.store.saveSessionRunTranscript>[0] = {
           id: props.session.id,
@@ -382,7 +276,10 @@ export function createPersistedStreamingSessionTranscript(props: {
         };
         if (event.type === "error") saveInput.error = serializeError(event.error);
         await saveTranscript(saveInput);
-        const generatedMessages = event.type === "final" ? event.result.messages.slice(1) : [];
+        const generatedMessages =
+          event.type === "final"
+            ? event.result.messages.slice(props.generatedMessagesStartIndex ?? 1)
+            : [];
         if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
           await props.store.append({
             scope: { sessionId: props.session.id },
@@ -544,71 +441,61 @@ function acceptTranscriptStreamEvent(
     }
     appendChildAgentTranscriptEvent(matched, event);
   }
-  if (event.type === "tool_approval_request") {
+  if (event.type === "final" && event.result.status === "suspended") {
+    const interaction = event.result.interaction;
     const matched = findTranscriptToolEntry(
       transcript,
-      event.approval.toolName,
-      approvalCallId(event.approval),
+      interaction.toolName,
+      interaction.callId ?? interaction.toolCallId,
     );
-    if (matched !== undefined) {
+    if (matched !== undefined && interaction.type === "tool-approval") {
       matched.approval = {
-        id: event.approval.id,
-        status: event.approval.status,
-        requestedAt: event.approval.requestedAt,
+        id: interaction.id,
+        status: "pending",
+        requestedAt: new Date().toISOString(),
+        ...(interaction.reason === undefined ? {} : { reason: interaction.reason }),
       };
     }
-  }
-  if (event.type === "tool_approval_result") {
-    const matched = findTranscriptToolEntry(
-      transcript,
-      event.approval.toolName,
-      approvalCallId(event.approval),
-    );
-    if (matched !== undefined) {
-      const approval: NonNullable<typeof matched.approval> = {
-        id: event.approval.id,
-        status: event.approval.status,
-        requestedAt: event.approval.requestedAt,
-      };
-      if (event.approval.resolvedAt !== undefined) approval.resolvedAt = event.approval.resolvedAt;
-      if (event.approval.reason !== undefined) approval.reason = event.approval.reason;
-      matched.approval = approval;
-    }
-  }
-  if (event.type === "tool_question_request") {
-    const matched = findTranscriptToolEntry(
-      transcript,
-      event.question.toolName,
-      questionCallId(event.question),
-    );
-    if (matched !== undefined) {
+    if (matched !== undefined && interaction.type === "tool-question") {
       matched.question = {
-        id: event.question.id,
-        status: event.question.status,
-        requestedAt: event.question.requestedAt,
-        questions: event.question.questions,
+        id: interaction.id,
+        status: "pending",
+        requestedAt: new Date().toISOString(),
+        questions: interaction.questions.map((question) => ({
+          id: question.id,
+          question: question.text,
+          choices: [...(question.choices ?? [])],
+          allowCustom: question.choices === undefined || question.allowCustom === true,
+        })),
       };
     }
   }
-  if (event.type === "tool_question_result") {
+  if (event.type === "interaction_response") {
+    const response = event.response;
     const matched = findTranscriptToolEntry(
       transcript,
-      event.question.toolName,
-      questionCallId(event.question),
+      response.toolName,
+      response.callId ?? response.toolCallId,
     );
-    if (matched !== undefined) {
-      const question: NonNullable<typeof matched.question> = {
-        id: event.question.id,
-        status: event.question.status,
-        requestedAt: event.question.requestedAt,
-        questions: event.question.questions,
+    const respondedAt = new Date().toISOString();
+    if (matched?.approval !== undefined && response.type === "tool-approval-response") {
+      matched.approval = {
+        ...matched.approval,
+        status: response.approved ? "approved" : "rejected",
+        resolvedAt: respondedAt,
+        ...(response.reason === undefined ? {} : { reason: response.reason }),
       };
-      if (event.question.answeredAt !== undefined) question.answeredAt = event.question.answeredAt;
-      if (event.question.cancelledAt !== undefined) {
-        question.cancelledAt = event.question.cancelledAt;
-      }
-      if (event.question.answers !== undefined) question.answers = event.question.answers;
-      matched.question = question;
+    }
+    if (matched?.question !== undefined && response.type === "tool-question-response") {
+      matched.question = {
+        ...matched.question,
+        status: "answered",
+        answeredAt: respondedAt,
+        answers: response.answers.map((answer) => ({
+          questionId: answer.questionId,
+          answer: answer.value,
+        })),
+      };
     }
   }
   if (event.type === "final" && event.result.trace?.traceId !== undefined) {
@@ -617,14 +504,6 @@ function acceptTranscriptStreamEvent(
   if (event.type === "error") {
     appendTranscriptAssistantError(transcript, errorText(event.error));
   }
-}
-
-function approvalCallId(approval: { callId?: string; toolCallId?: string }): string | undefined {
-  return approval.callId ?? approval.toolCallId;
-}
-
-function questionCallId(question: { callId?: string; toolCallId?: string }): string | undefined {
-  return question.callId ?? question.toolCallId;
 }
 
 function appendChildAgentTranscriptEvent(
@@ -958,6 +837,42 @@ function parseRunRequestBody(
   c: Context,
   body: Record<string, unknown>,
 ): AgentRunRequest | { error: Response } {
+  if (body.type === "interaction_response") {
+    if (typeof body.interactionId !== "string" || body.interactionId.trim().length === 0) {
+      return { error: errorResponse(c, 400, "bad_request", "interactionId must be a string") };
+    }
+    if (body.messages !== undefined || body.sessionId !== undefined || body.model !== undefined) {
+      return {
+        error: errorResponse(
+          c,
+          400,
+          "bad_request",
+          "Interaction responses cannot include messages, sessionId, or model",
+        ),
+      };
+    }
+    try {
+      return {
+        type: "interaction_response",
+        interactionId: body.interactionId,
+        response: parseAgentInteractionResponse(body.response),
+      };
+    } catch {
+      return {
+        error: errorResponse(c, 400, "bad_request", "response must be an interaction response"),
+      };
+    }
+  }
+  if (body.type !== "messages") {
+    return {
+      error: errorResponse(
+        c,
+        400,
+        "bad_request",
+        'type must be "messages" or "interaction_response"',
+      ),
+    };
+  }
   let messages: Message[];
   try {
     messages = parseMessages(body.messages);
@@ -985,7 +900,7 @@ function parseRunRequestBody(
     };
   }
 
-  return { messages };
+  return { type: "messages", messages };
 }
 
 function parseRunRequestOptions(
@@ -993,7 +908,7 @@ function parseRunRequestOptions(
   body: Record<string, unknown>,
   request: AgentRunRequest,
 ): AgentRunRequest | { error: Response } {
-  if ("sessionId" in body) {
+  if (request.type === "messages" && "sessionId" in body) {
     if (typeof body.sessionId !== "string" || body.sessionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "sessionId must be a string") };
     }
@@ -1012,7 +927,7 @@ function parseRunRequestOptions(
     request.stream = body.stream;
   }
 
-  if ("maxTurns" in body) {
+  if (request.type === "messages" && "maxTurns" in body) {
     if (!isNonNegativeInteger(body.maxTurns)) {
       return {
         error: errorResponse(c, 400, "bad_request", "maxTurns must be a non-negative integer"),
@@ -1021,7 +936,7 @@ function parseRunRequestOptions(
     request.maxTurns = body.maxTurns;
   }
 
-  if ("toolConcurrency" in body) {
+  if (request.type === "messages" && "toolConcurrency" in body) {
     if (!isPositiveInteger(body.toolConcurrency)) {
       return {
         error: errorResponse(c, 400, "bad_request", "toolConcurrency must be a positive integer"),
@@ -1030,7 +945,7 @@ function parseRunRequestOptions(
     request.toolConcurrency = body.toolConcurrency;
   }
 
-  if ("model" in body) {
+  if (request.type === "messages" && "model" in body) {
     if (
       isObject(body.model) &&
       typeof body.model.providerId === "string" &&

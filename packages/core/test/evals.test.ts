@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   Agent,
+  AgentEvalSuspensionError,
   AssistantContent,
   agentEvalTarget,
   type CompletionModel,
@@ -10,6 +11,7 @@ import {
   contains,
   containsAll,
   containsAny,
+  createTool,
   defineMetric,
   doesNotMatch,
   type Embedding,
@@ -235,6 +237,69 @@ describe("evals", () => {
 
     expect(output.output).toBe("ok");
     expect(model.requests[0]?.chatHistory).toMatchObject([{ role: "user", content: "hello" }]);
+  });
+
+  it("requires an explicit deterministic responder for suspended Agent evals", async () => {
+    const guarded = createTool({
+      name: "guarded",
+      description: "Guarded operation",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute: () => "approved",
+    });
+    const model = new QueueModel([response([AssistantContent.toolCall("call_1", "guarded", {})])]);
+    const target = agentEvalTarget<string>({
+      agent: new Agent({ id: "agent", model, tools: [guarded] }),
+      request: ({ input }) => ({ prompt: input }),
+    });
+
+    await expect(target("hello", { id: "case", input: "hello" })).rejects.toBeInstanceOf(
+      AgentEvalSuspensionError,
+    );
+  });
+
+  it("resumes suspended Agent eval phases through the configured responder", async () => {
+    const guarded = createTool({
+      name: "guarded",
+      description: "Guarded operation",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute: () => "approved",
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const phases: number[] = [];
+    const lifecycleStarts: string[] = [];
+    const target = agentEvalTarget<string>({
+      agent: new Agent({ id: "agent", model, tools: [guarded] }),
+      request: ({ input }) => ({
+        prompt: input,
+        maxTurns: 2,
+        lifecycle: {
+          onStart({ runId }) {
+            lifecycleStarts.push(runId);
+          },
+        },
+      }),
+      interactions: {
+        respond({ interaction, phase }) {
+          phases.push(phase);
+          if (interaction.type !== "tool-approval") {
+            throw new Error("Unexpected question interaction");
+          }
+          return { type: "tool-approval", approved: true };
+        },
+      },
+    });
+
+    const output = await target("hello", { id: "case", input: "hello" });
+    expect(output.output).toBe("done");
+    expect(output.resumedFrom?.runId).toBeDefined();
+    expect(phases).toEqual([1]);
+    expect(lifecycleStarts).toHaveLength(2);
+    expect(lifecycleStarts[1]).not.toBe(lifecycleStarts[0]);
   });
 
   it("captures reporter errors without failing by default", async () => {

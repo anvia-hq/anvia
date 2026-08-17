@@ -537,7 +537,14 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   }
 
   if (message.role === "tool") {
-    return message.content.map(toolContentToChatMessage);
+    return message.content.map((content) => {
+      if (content.type !== "tool-result") {
+        throw new TypeError(
+          "Anvia interaction responses must be resolved by Agent before provider calls.",
+        );
+      }
+      return toolContentToChatMessage(content);
+    });
   }
 
   if (typeof message.content === "string") {

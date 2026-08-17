@@ -328,104 +328,79 @@ function logsFromStreamEvent(props: {
   }
   if (event.type === "final") {
     const result = event.result;
-    return [
-      runCompletedLog({
+    const logs: StudioSessionLogAppendInput[] = [];
+    if (result.status === "suspended") {
+      logs.push({
         sessionId,
         runId,
-        durationMs: Date.now() - props.startedAt,
-        usage: result.usage,
-        output: result.text,
-        messageCount: result.messages.length,
-      }),
-      memorySavedLog({ sessionId, runId, messageCount: result.messages.length }),
-    ];
+        level: "info",
+        category: "run",
+        event: "run.suspended",
+        message: `Run suspended for ${result.interaction.type}`,
+        metadata: {
+          interactionId: result.interaction.id,
+          interactionType: result.interaction.type,
+          toolName: result.interaction.toolName,
+          sourceRunId: result.continuation.sourceRunId,
+        },
+      });
+    } else {
+      logs.push(
+        runCompletedLog({
+          sessionId,
+          runId,
+          durationMs: Date.now() - props.startedAt,
+          usage: result.usage,
+          output: result.text,
+          messageCount: result.messages.length,
+        }),
+      );
+    }
+    if (result.resumedFrom !== undefined) {
+      logs.push({
+        sessionId,
+        runId,
+        level: "info",
+        category: "run",
+        event: "interaction.resumed",
+        message: "Interaction resumed in a linked run",
+        metadata: {
+          interactionId: result.resumedFrom.interactionId,
+          sourceRunId: result.resumedFrom.runId,
+          resumedRunId: result.runId,
+        },
+      });
+    }
+    logs.push(memorySavedLog({ sessionId, runId, messageCount: result.messages.length }));
+    return logs;
   }
   if (event.type === "error") {
     return [runFailedLog(sessionId, runId, event.error, props.startedAt)];
   }
-  if (event.type === "tool_approval_request") {
+  if (event.type === "interaction_response") {
+    const response = event.response;
     const metadata: JsonObject = {
-      approvalId: event.approval.id,
-      toolName: event.approval.toolName,
-      status: event.approval.status,
-      hasReason: event.approval.reason !== undefined,
-      argumentBytes: byteLength(event.approval.args),
+      interactionId: response.interactionId,
+      interactionType:
+        response.type === "tool-approval-response" ? "tool-approval" : "tool-question",
+      toolName: response.toolName,
+      sourceRunId: event.sourceRunId,
     };
-    if (event.approval.callId !== undefined) metadata.callId = event.approval.callId;
+    if (response.callId !== undefined) metadata.callId = response.callId;
+    if (response.type === "tool-approval-response") {
+      metadata.approved = response.approved;
+      metadata.hasReason = response.reason !== undefined;
+    } else {
+      metadata.answerCount = response.answers.length;
+    }
     return [
       {
         sessionId,
         runId,
         level: "info",
-        category: "approval",
-        event: "approval.requested",
-        message: `Approval requested for ${event.approval.toolName}`,
-        metadata,
-      },
-    ];
-  }
-  if (event.type === "tool_approval_result") {
-    const metadata: JsonObject = {
-      approvalId: event.approval.id,
-      toolName: event.approval.toolName,
-      status: event.approval.status,
-      hasReason: event.approval.reason !== undefined,
-    };
-    if (event.approval.callId !== undefined) metadata.callId = event.approval.callId;
-    return [
-      {
-        sessionId,
-        runId,
-        level: event.approval.status === "approved" ? "info" : "warn",
-        category: "approval",
-        event: "approval.resolved",
-        message: `Approval ${event.approval.status} for ${event.approval.toolName}`,
-        metadata,
-      },
-    ];
-  }
-  if (event.type === "tool_question_request") {
-    const metadata: JsonObject = {
-      questionId: event.question.id,
-      toolName: event.question.toolName,
-      status: event.question.status,
-      questionCount: event.question.questions.length,
-      argumentBytes: byteLength(event.question.args),
-    };
-    if (event.question.callId !== undefined) metadata.callId = event.question.callId;
-    return [
-      {
-        sessionId,
-        runId,
-        level: "info",
-        category: "question",
-        event: "question.requested",
-        message: `Question requested by ${event.question.toolName}`,
-        metadata,
-      },
-    ];
-  }
-  if (event.type === "tool_question_result") {
-    const cancelled = event.question.status === "cancelled";
-    const metadata: JsonObject = {
-      questionId: event.question.id,
-      toolName: event.question.toolName,
-      status: event.question.status,
-      questionCount: event.question.questions.length,
-      argumentBytes: byteLength(event.question.args),
-      answerCount: event.question.answers?.length ?? 0,
-    };
-    if (event.question.callId !== undefined) metadata.callId = event.question.callId;
-    return [
-      {
-        sessionId,
-        runId,
-        level: "info",
-        category: "question",
-        event: cancelled ? "question.cancelled" : "question.answered",
-        message: cancelled
-          ? `Question cancelled for ${event.question.toolName}`
-          : `Question answered for ${event.question.toolName}`,
+        category: "run",
+        event: "interaction.responded",
+        message: `Interaction response received for ${response.toolName}`,
         metadata,
       },
     ];

@@ -6,6 +6,7 @@ import type {
   JsonObject,
   JsonValue,
   Message as MessageType,
+  ToolInteractionResponsePart,
   ToolResultOutput,
   ToolResultPart,
   UserContentPart,
@@ -181,7 +182,12 @@ function serializeAssistantContent(content: AssistantContentPart): string[] {
   );
 }
 
-function serializeToolContent(content: ToolResultPart): string {
+function serializeToolContent(content: ToolResultPart | ToolInteractionResponsePart): string {
+  if (content.type !== "tool-result") {
+    return `[agent interaction response type=${JSON.stringify(content.type)}]\n${safeJson(
+      content as unknown as JsonValue,
+    )}`;
+  }
   return `[tool result name=${JSON.stringify(content.toolName)}]\n${serializeToolOutput(content.output)}`;
 }
 

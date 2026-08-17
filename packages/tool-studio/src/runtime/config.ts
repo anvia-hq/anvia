@@ -1,4 +1,5 @@
 import type { JsonValue } from "@anvia/core/completion";
+import { isQuestionTool } from "@anvia/core/tool";
 import type {
   StudioAgent,
   StudioAgentConfig,
@@ -155,8 +156,12 @@ export function capabilityConfig(
     capabilities.sandboxes = { enabled: true };
   }
 
-  if (agents.some((agent) => agent.agent.tools.some(toolRequiresApproval))) {
-    capabilities.approvals = { enabled: true };
+  if (
+    agents.some((agent) =>
+      agent.agent.tools.some((tool) => toolRequiresApproval(tool) || isQuestionTool(tool)),
+    )
+  ) {
+    capabilities.interactions = { enabled: true };
   }
   if (agents.some(agentHasKnowledge)) {
     capabilities.knowledge = { enabled: true };

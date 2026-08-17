@@ -11,6 +11,9 @@ export function extractRagText(message: MessageType): string | undefined {
   if (message.role === "tool") {
     return message.content
       .flatMap((item) => {
+        if (item.type !== "tool-result") {
+          return [];
+        }
         const output = item.output;
         if (output.type === "text" || output.type === "error-text") {
           return [output.value];

@@ -22,6 +22,7 @@ export type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
   AgentTraceInfo,
   AgentTraceOptions,
 } from "./types";

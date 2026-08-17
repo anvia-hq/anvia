@@ -31,7 +31,7 @@ const executiveUpdate = new Pipeline({
   .agent({
     id: "analyze",
     agent: analyst,
-    approval: "reject",
+    suspension: "reject",
     request: ({ input }) => ({
       prompt: `Prepare an executive update from these notes:\n\n${input}`,
     }),

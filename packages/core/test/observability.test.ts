@@ -22,6 +22,7 @@ import {
   type AgentToolErrorArgs,
   type AgentToolStartArgs,
   type AgentToolStreamEventArgs,
+  type AgentToolSuspendedArgs,
   AssistantContent,
   assertCompleted,
   type CompletionModel,
@@ -140,6 +141,9 @@ class RecordingObserver implements AgentObserver {
         return {
           end: (endArgs: AgentToolEndArgs) => {
             this.events.push({ type: "tool_end", args: endArgs });
+          },
+          suspend: (suspendArgs: AgentToolSuspendedArgs) => {
+            this.events.push({ type: "tool_suspended", args: suspendArgs });
           },
           error: (errorArgs) => {
             this.events.push({ type: "tool_error", args: errorArgs });
@@ -410,15 +414,25 @@ describe("agent observability", () => {
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    await agent.resume(pending, { approved: true, reason: "Reviewed" });
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    expect(eventTypes(observer)).toContain("tool_start");
+    expect(eventTypes(observer)).toContain("tool_suspended");
+    expect(eventTypes(observer)).not.toContain("tool_error");
+    expect(observer.events).toContainEqual({
+      type: "run_end",
+      args: expect.objectContaining({ status: "suspended", interaction: pending.interaction }),
+    });
+    await agent.generate({
+      continuation: pending.continuation,
+      response: { type: "tool-approval", approved: true, reason: "Reviewed" },
+    });
 
     expect(observer.events).toContainEqual({
       type: "run_event",
       args: {
         name: "tool.approval_requested",
         attributes: expect.objectContaining({
-          approvalId: pending.approval.id,
+          approvalId: pending.interaction.id,
           toolName: "guarded",
           reason: "Review the operation",
         }),
@@ -429,7 +443,7 @@ describe("agent observability", () => {
       args: {
         name: "tool.approval_resolved",
         attributes: expect.objectContaining({
-          approvalId: pending.approval.id,
+          approvalId: pending.interaction.id,
           approved: true,
           decisionReason: "Reviewed",
         }),
@@ -1452,6 +1466,7 @@ function runStartArgs(): AgentRunStartArgs {
 function runEndArgs(): AgentRunEndArgs {
   return {
     status: "completed",
+    runId: "run_1",
     output: "ok",
     text: "ok",
     usage: Usage.empty(),

@@ -1,4 +1,5 @@
-import type { AgentDeltaEvent } from "../agent/run-types";
+import type { AgentInteractionRequest } from "../agent/interactions";
+import type { AgentDeltaEvent, AgentRunLink } from "../agent/run-types";
 import type {
   CompletionModelCapabilities,
   CompletionRequest,
@@ -52,11 +53,13 @@ export type AgentRunStartArgs = {
 };
 
 type AgentRunEndArgsBase = {
+  readonly runId: string;
   readonly text: string;
   readonly usage: DeepReadonly<Usage>;
   readonly messages: readonly DeepReadonly<Message>[];
   readonly sources?: readonly DeepReadonly<CompletionSource>[] | undefined;
   readonly providerToolCalls?: readonly DeepReadonly<ProviderToolCall>[] | undefined;
+  readonly resumedFrom?: DeepReadonly<AgentRunLink> | undefined;
 };
 
 export type AgentRunEndArgs =
@@ -67,6 +70,10 @@ export type AgentRunEndArgs =
   | (AgentRunEndArgsBase & {
       readonly status: "blocked";
       readonly stage: "input" | "output";
+    })
+  | (AgentRunEndArgsBase & {
+      readonly status: "suspended";
+      readonly interaction: DeepReadonly<AgentInteractionRequest>;
     });
 
 export type AgentRunErrorArgs = {
@@ -132,6 +139,10 @@ export type AgentToolErrorArgs = AgentToolStartArgs & {
   readonly error: unknown;
 };
 
+export type AgentToolSuspendedArgs = AgentToolStartArgs & {
+  readonly interaction: DeepReadonly<AgentInteractionRequest>;
+};
+
 export type AgentToolStreamEventArgs = AgentToolStartArgs & {
   readonly event: DeepReadonly<ToolCallStreamEvent>;
 };
@@ -145,6 +156,7 @@ export interface AgentGenerationObserver {
 export interface AgentToolObserver {
   streamEvent?(args: AgentToolStreamEventArgs): void | Promise<void>;
   end(args: AgentToolEndArgs): void | Promise<void>;
+  suspend?(args: AgentToolSuspendedArgs): void | Promise<void>;
   error?(args: AgentToolErrorArgs): void | Promise<void>;
 }
 

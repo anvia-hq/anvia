@@ -5,6 +5,7 @@ import {
   AgentRunCancelledError,
   type AgentRunErrorArgs,
   type AgentStream,
+  AgentStreamClosedError,
   type AgentStreamEvent,
   AssistantContent,
   type CompletionModelStreamEvent,
@@ -168,7 +169,7 @@ describe("Agent streaming", () => {
       message: (runError as Error).message,
       reason: (runError as AgentRunCancelledError).reason,
     });
-    expect(stream.steer({ prompt: "too late" })).toBe(false);
+    expect(() => stream.steer({ prompt: "too late" })).toThrow(AgentStreamClosedError);
   });
 
   it("measures first-delta latency from before generation_start is emitted", async () => {
@@ -635,12 +636,41 @@ describe("Agent streaming", () => {
     const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream({ prompt: "hi" });
 
-    expect(stream.steer({ prompt: "revise" })).toBe(true);
+    const receipt = stream.steer({ prompt: "revise" });
+    expect(receipt).toMatchObject({ status: "queued" });
     const events = await collect(stream);
 
     expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "second" } });
-    expect(stream.steer({ prompt: "late" })).toBe(false);
+    expect(() => stream.steer({ prompt: "late" })).toThrow(AgentStreamClosedError);
     await expect(collect(stream)).rejects.toThrow("Agent stream has already been consumed.");
+  });
+
+  it("closes steering before asynchronous terminal finalization begins", async () => {
+    const finishStarted = deferred<void>();
+    const finishRelease = deferred<void>();
+    const stream = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]),
+    }).stream({
+      prompt: "hi",
+      lifecycle: {
+        async onFinish() {
+          finishStarted.resolve();
+          await finishRelease.promise;
+        },
+      },
+    });
+
+    const completion = collect(stream);
+    await finishStarted.promise;
+    expect(() => stream.steer({ prompt: "too late" })).toThrow(AgentStreamClosedError);
+    finishRelease.resolve();
+    await expect(completion).resolves.toContainEqual(
+      expect.objectContaining({
+        type: "final",
+        result: expect.objectContaining({ output: "done" }),
+      }),
+    );
   });
 
   it("rejects steering after stream errors and cancellation", async () => {
@@ -653,7 +683,7 @@ describe("Agent streaming", () => {
       type: "error",
       error: { message: "No queued response" },
     });
-    expect(errorStream.steer({ prompt: "late" })).toBe(false);
+    expect(() => errorStream.steer({ prompt: "late" })).toThrow(AgentStreamClosedError);
 
     const hook = createHook({
       onRunStart() {
@@ -669,7 +699,7 @@ describe("Agent streaming", () => {
       type: "error",
       error: expect.any(AgentRunCancelledError),
     });
-    expect(cancelledStream.steer({ prompt: "late" })).toBe(false);
+    expect(() => cancelledStream.steer({ prompt: "late" })).toThrow(AgentStreamClosedError);
   });
 
   it("continues when steering arrives before a no-tool response finalizes", async () => {
@@ -697,17 +727,20 @@ describe("Agent streaming", () => {
     });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
-    expect(stream.steer({ prompt: "revise" })).toBe(true);
+    const receipt = stream.steer({ prompt: "revise" });
+    expect(receipt).toMatchObject({ status: "queued" });
 
     const rest = await collectIterator(iterator);
     expect(rest.map((event) => event.type)).toEqual([
+      "steering_applied",
       "turn_start",
       "generation_start",
       "text_delta",
       "turn_end",
       "final",
     ]);
-    expect(rest[0]).toMatchObject({
+    expect(rest[0]).toMatchObject({ type: "steering_applied", id: receipt.id, turn: 1 });
+    expect(rest[1]).toMatchObject({
       type: "turn_start",
       turn: 2,
       prompt: Message.user("revise"),
@@ -755,7 +788,7 @@ describe("Agent streaming", () => {
     const eventsPromise = collect(stream);
 
     await toolStarted.promise;
-    expect(stream.steer({ prompt: "also explain" })).toBe(true);
+    expect(stream.steer({ prompt: "also explain" })).toMatchObject({ status: "queued" });
     toolRelease.resolve(7);
 
     const events = await eventsPromise;
@@ -791,11 +824,17 @@ describe("Agent streaming", () => {
     expect(await nextEvent(iterator)).toMatchObject({ type: "text_delta", turn: 1 });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn_end", turn: 1 });
 
-    expect(stream.steer({ prompt: firstSteer })).toBe(true);
-    expect(stream.steer({ messages: [secondSteer] })).toBe(true);
+    const firstReceipt = stream.steer({ prompt: firstSteer });
+    const secondReceipt = stream.steer({ messages: [secondSteer] });
+    expect(firstReceipt).toMatchObject({ status: "queued" });
+    expect(secondReceipt).toMatchObject({ status: "queued" });
 
     const rest = await collectIterator(iterator);
-    expect(rest[0]).toMatchObject({
+    expect(rest.slice(0, 2)).toMatchObject([
+      { type: "steering_applied", id: firstReceipt.id, turn: 1 },
+      { type: "steering_applied", id: secondReceipt.id, turn: 1 },
+    ]);
+    expect(rest[2]).toMatchObject({
       type: "turn_start",
       turn: 2,
       prompt: secondSteer,
@@ -947,21 +986,81 @@ describe("Agent streaming", () => {
     const firstSegment = await collect(agent.stream({ prompt: "run guarded" }));
     const pending = firstSegment.at(-1);
     expect(pending).toMatchObject({
-      type: "approval_required",
-      approval: { toolName: "guarded", input: { value: 7 }, reason: "Approve 7" },
+      type: "final",
+      result: {
+        status: "suspended",
+        interaction: { type: "tool-approval", toolName: "guarded", input: { value: 7 } },
+      },
     });
     expect(executed).toBe(false);
-    if (pending?.type !== "approval_required") throw new Error("Expected approval event");
+    if (pending?.type !== "final" || pending.result.status !== "suspended") {
+      throw new Error("Expected suspended final event");
+    }
 
-    const resumed = await collect(agent.resume(pending, { approved: true }));
+    const resumed = await collect(
+      agent.stream({
+        continuation: pending.result.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    );
     expect(executed).toBe(true);
     expect(resumed).toContainEqual(
       expect.objectContaining({ type: "tool_result", toolName: "guarded", result: "approved 7" }),
     );
     expect(resumed.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
-    expect(() => agent.resume(pending, { approved: true })).toThrow(
-      "Approval continuation does not belong to this agent.",
+    expect(resumed.at(-1)).toMatchObject({
+      type: "final",
+      result: { resumedFrom: { runId: pending.result.runId } },
+    });
+  });
+
+  it("preserves accepted steering across a suspended stream boundary", async () => {
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "Run a guarded operation",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute: () => "approved",
+    });
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "call_1",
+          name: "guarded",
+          argumentsDelta: "{}",
+        },
+      ],
+      [{ type: "text_delta", delta: "prioritized" }],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+    const stream = agent.stream({ prompt: "run guarded" });
+    const iterator = stream[Symbol.asyncIterator]();
+    const firstEvents: AgentStreamEvent[] = [];
+    while (firstEvents.at(-1)?.type !== "turn_end") {
+      firstEvents.push(await nextEvent(iterator));
+    }
+    const receipt = stream.steer({ prompt: "Prioritize this." });
+    const rest = await collectIterator(iterator);
+    const pending = rest.at(-1);
+    if (pending?.type !== "final" || pending.result.status !== "suspended") {
+      throw new Error("Expected suspended final event");
+    }
+    expect(() => stream.steer({ prompt: "too late" })).toThrow(AgentStreamClosedError);
+
+    const resumed = await collect(
+      agent.stream({
+        continuation: pending.result.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
     );
+
+    expect(resumed).toContainEqual({ type: "steering_applied", id: receipt.id, turn: 1 });
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(Message.user("Prioritize this."));
+    expect(resumed.at(-1)).toMatchObject({
+      type: "final",
+      result: { status: "completed", output: "prioritized" },
+    });
   });
 
   it("always emits provider tool call deltas", async () => {
@@ -1287,7 +1386,7 @@ describe("Agent streaming", () => {
     const parentAgent = new Agent({
       id: "parent",
       model: parentModel,
-      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
     });
 
     const events = await collect(parentAgent.stream({ prompt: "delegate" }));
@@ -1347,7 +1446,7 @@ describe("Agent streaming", () => {
     const parentAgent = new Agent({
       id: "parent",
       model: parentModel,
-      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
     });
 
     const events = await collect(parentAgent.stream({ prompt: "delegate" }));
@@ -1407,7 +1506,7 @@ describe("Agent streaming", () => {
     const parentAgent = new Agent({
       id: "parent",
       model: parentModel,
-      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
     });
 
     const events = await collect(parentAgent.stream({ prompt: "delegate" }));

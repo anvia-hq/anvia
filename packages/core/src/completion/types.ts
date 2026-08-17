@@ -93,6 +93,32 @@ export type ToolResultPart = Readonly<{
   output: ToolResultOutput;
 }>;
 
+export type ToolApprovalResponsePart = Readonly<{
+  type: "tool-approval-response";
+  interactionId: string;
+  toolCallId: string;
+  callId?: string;
+  toolName: string;
+  approved: boolean;
+  reason?: string;
+}>;
+
+export type ToolQuestionAnswer = Readonly<{
+  questionId: string;
+  value: string;
+}>;
+
+export type ToolQuestionResponsePart = Readonly<{
+  type: "tool-question-response";
+  interactionId: string;
+  toolCallId: string;
+  callId?: string;
+  toolName: string;
+  answers: readonly ToolQuestionAnswer[];
+}>;
+
+export type ToolInteractionResponsePart = ToolApprovalResponsePart | ToolQuestionResponsePart;
+
 export type UserContentPart = TextPart | ImagePart | FilePart;
 export type AssistantContentPart = TextPart | ImagePart | FilePart | ReasoningPart | ToolCallPart;
 
@@ -117,7 +143,7 @@ export type AssistantMessage<Metadata extends JsonObject = JsonObject> = Readonl
 
 export type ToolMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "tool";
-  content: readonly ToolResultPart[];
+  content: readonly (ToolResultPart | ToolInteractionResponsePart)[];
   metadata?: Metadata;
 }>;
 

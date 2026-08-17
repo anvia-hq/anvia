@@ -88,6 +88,10 @@ type RemovedMcpFactory = typeof import("../src/mcp").mcp;
 type RemovedFileLoader = import("../src/documents").FileLoader;
 // @ts-expect-error PdfFileLoader was removed with the legacy loader API.
 type RemovedPdfFileLoader = import("../src/documents").PdfFileLoader;
+// @ts-expect-error Approval-required results were replaced by AgentSuspendedResult.
+type RemovedApprovalRequiredResult = import("../src/agent").AgentApprovalRequiredResult;
+// @ts-expect-error Approval decisions were replaced by AgentInteractionResponse.
+type RemovedApprovalDecision = import("../src/agent").AgentApprovalDecision;
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
@@ -100,6 +104,8 @@ describe("public exports", () => {
     expectTypeOf<AgentToolInput>().not.toBeNever();
     expectTypeOf<AgentToolOptions>().not.toBeNever();
     expectTypeOf<RemovedRootAgentSession>().toBeAny();
+    expectTypeOf<RemovedApprovalRequiredResult>().toBeAny();
+    expectTypeOf<RemovedApprovalDecision>().toBeAny();
     expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
     expectTypeOf<Parameters<PublicAgentType["generate"]>["length"]>().toEqualTypeOf<1>();
     expectTypeOf<Parameters<PublicAgentType["stream"]>["length"]>().toEqualTypeOf<1>();
@@ -109,6 +115,12 @@ describe("public exports", () => {
       agent.generate("hello");
       // @ts-expect-error Agent.stream no longer accepts a positional prompt.
       agent.stream("hello");
+      // @ts-expect-error Continuation runs cannot override prompt or session.
+      agent.generate({
+        continuation: {} as import("../src/agent").AgentContinuation,
+        response: { type: "tool-approval" as const, approved: true },
+        prompt: "not allowed",
+      });
     }
   });
 
@@ -138,6 +150,9 @@ describe("public exports", () => {
     expect("Agent" in publicAgent).toBe(true);
     expect("AgentSession" in publicAgent).toBe(false);
     expect(publicAgent.Agent.prototype).not.toHaveProperty("session");
+    expect(publicAgent.Agent.prototype).not.toHaveProperty("resume");
+    expect(publicAgent).toHaveProperty("parseAgentContinuation");
+    expect(publicAgent).toHaveProperty("parseAgentInteractionResponse");
   });
 
   it("exposes only the internal Agent integration contract", () => {
@@ -145,7 +160,7 @@ describe("public exports", () => {
     expect("createResolvedAgent" in internalAgent).toBe(true);
     expect("getResolvedAgentOptions" in internalAgent).toBe(true);
     expect("getAgentToolState" in internalAgent).toBe(true);
-    expect("getAgentApprovalRequestDetails" in internalAgent).toBe(true);
+    expect("getAgentApprovalRequestDetails" in internalAgent).toBe(false);
     expect("withInternalAgentRunOptions" in internalAgent).toBe(true);
     expect("AgentSession" in internalAgent).toBe(false);
     expect("DEFAULT_MAX_TURNS" in internalAgent).toBe(false);
@@ -160,6 +175,8 @@ describe("public exports", () => {
     expect("AgentRunBlockedError" in publicAgent).toBe(true);
     expect("MaxTurnsError" in publicAgent).toBe(true);
     expect("ToolApprovalRequiredError" in publicAgent).toBe(false);
+    expect("AgentToolSuspensionError" in publicAgent).toBe(true);
+    expect("AgentStreamClosedError" in publicAgent).toBe(true);
   });
 
   it("keeps controlling hooks internal", () => {
@@ -217,6 +234,7 @@ describe("public exports", () => {
     expect(completion).not.toHaveProperty("createParsedCompletion");
     expect(completion).not.toHaveProperty("createCompletionStream");
     expect(completion).not.toHaveProperty("Message");
+    expect(tool).toHaveProperty("createQuestionTool");
     expect(completion).toHaveProperty("parseMessage");
     expect(completion).toHaveProperty("messagesSchema");
     expect(embeddings).toHaveProperty("embedText");

@@ -26,8 +26,10 @@ export function createCompletionRequest(
   options: CompletionRequestOptions,
 ): CompletionRequest {
   const configuredTools = options.tools ?? [];
+  const chatHistory = messagesFromInput(input);
+  assertNoAgentInteractionParts(chatHistory);
   const request: CompletionRequest = {
-    chatHistory: messagesFromInput(input),
+    chatHistory,
     documents: [...(options.documents ?? [])],
     tools: configuredTools.filter((tool): tool is ToolDefinition => !isProviderTool(tool)),
   };
@@ -44,6 +46,16 @@ export function createCompletionRequest(
   if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
 
   return request;
+}
+
+function assertNoAgentInteractionParts(messages: readonly MessageType[]): void {
+  for (const message of messages) {
+    if (message.role === "tool" && message.content.some((part) => part.type !== "tool-result")) {
+      throw new TypeError(
+        "Completion messages contain an unresolved Agent interaction response. Resume the Agent with its continuation instead of sending interaction parts directly to a provider.",
+      );
+    }
+  }
 }
 
 function messagesFromInput(input: string | MessageType | readonly MessageType[]): MessageType[] {

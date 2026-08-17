@@ -1,5 +1,5 @@
 import type { Message } from "../completion/index";
-import type { AgentBlockedResult } from "./run-types";
+import type { AgentBlockedResult, AgentSuspendedResult } from "./run-types";
 
 export class MaxTurnsError extends Error {
   constructor(
@@ -27,5 +27,19 @@ export class AgentRunBlockedError extends Error {
   constructor(readonly result: AgentBlockedResult) {
     super(`Agent run was blocked by an ${result.stage} guardrail.`);
     this.name = "AgentRunBlockedError";
+  }
+}
+
+export class AgentStreamClosedError extends Error {
+  constructor() {
+    super("Agent stream is no longer accepting steering input.");
+    this.name = "AgentStreamClosedError";
+  }
+}
+
+export class AgentToolSuspensionError extends Error {
+  constructor(readonly result: AgentSuspendedResult) {
+    super("Agent tool execution suspended for human interaction.");
+    this.name = "AgentToolSuspensionError";
   }
 }

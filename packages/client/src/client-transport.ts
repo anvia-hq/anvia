@@ -81,6 +81,12 @@ export function createDirectClientTransport<
       if (resume !== undefined) {
         throw new ClientProtocolError("Direct client transports do not support resume cursors.");
       }
+      const events = await options.handler({
+        request: sendOptions.request,
+        ...(sendOptions.abortSignal === undefined ? {} : { abortSignal: sendOptions.abortSignal }),
+        ...(sendOptions.headers === undefined ? {} : { headers: sendOptions.headers }),
+      });
+      const iterator = events[Symbol.asyncIterator]();
       const streamId = createClientId("stream");
       let eventId = 0;
       yield {
@@ -92,14 +98,6 @@ export function createDirectClientTransport<
       };
       let status: "completed" | "error" = "completed";
       try {
-        const events = await options.handler({
-          request: sendOptions.request,
-          ...(sendOptions.abortSignal === undefined
-            ? {}
-            : { abortSignal: sendOptions.abortSignal }),
-          ...(sendOptions.headers === undefined ? {} : { headers: sendOptions.headers }),
-        });
-        const iterator = events[Symbol.asyncIterator]();
         let closePromise: Promise<unknown> | undefined;
         const close = () => {
           closePromise ??= Promise.resolve(iterator.return?.());

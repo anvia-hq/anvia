@@ -1,6 +1,7 @@
 import type { CompletionResponse, Message, Usage } from "../completion";
 import type { DeepReadonly, MaybePromise } from "../internal/type-utils";
 import type { MemoryCompactionInfo } from "../memory";
+import type { AgentInteractionRequest } from "./interactions";
 
 export type AgentLifecycleRunEvent = {
   runId: string;
@@ -48,6 +49,10 @@ export type AgentFinishEvent<Output = string> =
   | (AgentFinishEventBase & {
       status: "blocked";
       stage: "input" | "output";
+    })
+  | (AgentFinishEventBase & {
+      status: "suspended";
+      interaction: DeepReadonly<AgentInteractionRequest>;
     });
 
 export type AgentErrorEvent = AgentLifecycleRunEvent & {

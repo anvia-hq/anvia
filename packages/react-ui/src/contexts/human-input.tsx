@@ -1,9 +1,10 @@
+import type { ClientInteraction } from "@anvia/client";
 import type {
-  ToolApproval,
-  ToolQuestion,
-  ToolQuestionAnswer,
-  ToolQuestionPrompt,
-} from "@anvia/client";
+  AgentQuestionAnswer,
+  AgentQuestionPrompt,
+  AgentToolApprovalRequest,
+  AgentToolQuestionRequest,
+} from "@anvia/core/agent";
 import {
   createContext,
   createElement,
@@ -15,20 +16,23 @@ import {
 } from "react";
 
 export type ApprovalContextValue = {
-  approval: ToolApproval;
+  approval: ApprovalInteraction;
   reason: string;
   setReason(reason: string): void;
 };
 
 export type QuestionContextValue = {
-  question: ToolQuestion;
-  answers: Record<string, ToolQuestionAnswer>;
-  setAnswer(prompt: ToolQuestionPrompt, answer: ToolQuestionAnswer): void;
+  question: QuestionInteraction;
+  answers: Record<string, AgentQuestionAnswer>;
+  setAnswer(prompt: AgentQuestionPrompt, answer: AgentQuestionAnswer): void;
 };
 
 export type QuestionPromptContextValue = {
-  prompt: ToolQuestionPrompt;
+  prompt: AgentQuestionPrompt;
 };
+
+export type ApprovalInteraction = ClientInteraction & { request: AgentToolApprovalRequest };
+export type QuestionInteraction = ClientInteraction & { request: AgentToolQuestionRequest };
 
 const ApprovalContext = createContext<ApprovalContextValue | undefined>(undefined);
 const QuestionContext = createContext<QuestionContextValue | undefined>(undefined);
@@ -38,7 +42,7 @@ export function InternalApprovalProvider({
   approval,
   children,
 }: {
-  approval: ToolApproval;
+  approval: ApprovalInteraction;
   children?: ReactNode;
 }): ReactElement {
   const [reason, setReason] = useState("");
@@ -64,7 +68,7 @@ export function InternalQuestionPromptProvider({
   prompt,
   children,
 }: {
-  prompt: ToolQuestionPrompt;
+  prompt: AgentQuestionPrompt;
   children?: ReactNode;
 }): ReactElement {
   return createElement(QuestionPromptContext.Provider, { value: { prompt } }, children);

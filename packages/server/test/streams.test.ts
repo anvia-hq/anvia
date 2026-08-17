@@ -66,7 +66,7 @@ describe("client stream responses", () => {
       ]),
       streamId: "stream_1",
     });
-    expect(response.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v2");
+    expect(response.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v3");
     const frames = (await jsonl(response)) as ClientStreamFrame[];
     expect(frames.map((frame) => frame.type)).toEqual([
       "stream_start",
@@ -75,7 +75,7 @@ describe("client stream responses", () => {
       "stream_end",
     ]);
     expect(frames[0]).toMatchObject({
-      protocol: "anvia.client.v2",
+      protocol: "anvia.client.v3",
       streamId: "stream_1",
       resumable: false,
     });
@@ -97,7 +97,7 @@ describe("client stream responses", () => {
     ).toEqual([
       {
         type: "stream_start",
-        protocol: "anvia.client.v2",
+        protocol: "anvia.client.v3",
         streamId: "stream_1",
         eventId: 0,
         resumable: false,
@@ -157,7 +157,7 @@ describe("client stream responses", () => {
     });
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     const text = await response.text();
-    expect(text).toContain('"protocol":"anvia.client.v2"');
+    expect(text).toContain('"protocol":"anvia.client.v3"');
     expect(text).toContain('"type":"stream_end"');
   });
 
@@ -177,7 +177,7 @@ describe("client stream responses", () => {
       resumeClientStreamResponse({ streamId: "stream_v1", after: 0, store }),
     )) as ClientStreamFrame[];
     expect(frames).toEqual([
-      expect.objectContaining({ type: "stream_start", protocol: "anvia.client.v2" }),
+      expect.objectContaining({ type: "stream_start", protocol: "anvia.client.v3" }),
       { type: "stream_end", streamId: "stream_v1", eventId: 1, status: "error" },
     ]);
   });

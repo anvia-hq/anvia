@@ -32,7 +32,12 @@ export function parseTraceStatus(value: string | undefined): StudioTraceStatus |
   if (status === undefined) {
     return undefined;
   }
-  return status === "running" || status === "success" || status === "error" ? status : false;
+  return status === "running" ||
+    status === "success" ||
+    status === "suspended" ||
+    status === "error"
+    ? status
+    : false;
 }
 
 /**

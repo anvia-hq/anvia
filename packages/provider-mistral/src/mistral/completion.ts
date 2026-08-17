@@ -326,7 +326,14 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   }
 
   if (message.role === "tool") {
-    return message.content.map(toolContentToMistralMessage);
+    return message.content.map((content) => {
+      if (content.type !== "tool-result") {
+        throw new TypeError(
+          "Anvia interaction responses must be resolved by Agent before provider calls.",
+        );
+      }
+      return toolContentToMistralMessage(content);
+    });
   }
 
   if (typeof message.content === "string") {

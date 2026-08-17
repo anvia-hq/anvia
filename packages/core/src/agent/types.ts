@@ -106,6 +106,7 @@ export type ResolvedAgentOptions<
 
 export type AgentToolOptions = {
   name: string;
+  suspension: "reject";
   description?: string | undefined;
   maxTurns?: number | undefined;
   stream?: boolean | undefined;

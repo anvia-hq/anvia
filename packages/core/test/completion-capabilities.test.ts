@@ -251,6 +251,32 @@ describe("generateCompletion", () => {
     expect(model.requests).toHaveLength(0);
   });
 
+  it("rejects unresolved Agent interaction messages before provider invocation", async () => {
+    const model = new QueueModel();
+
+    await expect(
+      generateCompletion({
+        model,
+        messages: [
+          Message.user("continue"),
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                interactionId: "interaction_1",
+                toolCallId: "call_1",
+                toolName: "delete_account",
+                approved: true,
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/unresolved Agent interaction response/);
+    expect(model.requests).toHaveLength(0);
+  });
+
   it("streams normalized completion events with streamCompletion", async () => {
     const model = new StreamingQueueModel();
 

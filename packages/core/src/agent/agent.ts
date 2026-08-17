@@ -30,16 +30,14 @@ import type {
   ToolCallStreamEvent,
 } from "../tool/tool";
 import type { VectorInspectRequest, VectorSearchResult } from "../vector-store";
-import { AgentRunBlockedError } from "./errors";
+import { AgentRunBlockedError, AgentToolSuspensionError } from "./errors";
 import { normalizeAgentId } from "./ids";
 import type { AgentLifecycle } from "./lifecycle";
 import type {
-  AgentApprovalDecision,
-  AgentApprovalRequiredEvent,
-  AgentApprovalRequiredResult,
   AgentResult,
   AgentRunOptions,
   AgentSteerInput,
+  AgentSteerReceipt,
   AgentStream,
   AgentStreamEvent,
 } from "./run-types";
@@ -142,7 +140,7 @@ export class Agent<
   }
 
   generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentResult<Output>> {
-    return createGenerateExecution(this, AgentRun.fromAgent(this, options)).next();
+    return AgentRun.fromAgent(this, options).generate();
   }
 
   stream(
@@ -152,34 +150,13 @@ export class Agent<
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
       throw new Error("This completion model does not support streaming");
     }
-    return createStreamExecution(this, run);
-  }
-
-  resume(
-    pending: AgentApprovalRequiredResult,
-    decision: AgentApprovalDecision,
-  ): Promise<AgentResult<Output>>;
-  resume(
-    pending: AgentApprovalRequiredEvent,
-    decision: AgentApprovalDecision,
-  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>;
-  resume(
-    pending: AgentApprovalRequiredResult | AgentApprovalRequiredEvent,
-    decision: AgentApprovalDecision,
-  ): Promise<AgentResult<Output>> | AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    assertAgentApprovalDecision(decision);
-    const continuation = approvalContinuations.get(pending);
-    if (continuation === undefined || continuation.agent !== this) {
-      throw new TypeError("Approval continuation does not belong to this agent.");
-    }
-    approvalContinuations.delete(pending);
-    continuation.resolve(decision);
-    return continuation.mode === "generate"
-      ? (continuation.resume() as Promise<AgentResult<Output>>)
-      : (continuation.resume() as AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>);
+    return new DefaultAgentStream(run);
   }
 
   asTool(options: AgentToolOptions): Tool<{ prompt: string }, Output> {
+    if (options.suspension !== "reject") {
+      throw new TypeError('Agent.asTool() requires suspension: "reject".');
+    }
     const description =
       options.description ?? this.description ?? `Prompt the ${options.name} agent.`;
 
@@ -204,15 +181,6 @@ export class Agent<
             abortSignal: context.abortSignal,
           });
           for await (const event of childStream) {
-            if (event.type === "approval_required") {
-              await cancelAgentApproval(
-                event,
-                `Agent tool "${options.name}" cannot suspend for tool approval.`,
-              );
-              throw new Error(
-                `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
-              );
-            }
             const streamEvent: ToolCallStreamEvent = {
               agentId: this.id,
               event,
@@ -225,6 +193,9 @@ export class Agent<
               throw event.error;
             }
             if (event.type === "final") {
+              if (event.result.status === "suspended") {
+                throw new AgentToolSuspensionError(event.result);
+              }
               if (event.result.status === "blocked") {
                 throw new AgentRunBlockedError(event.result);
               }
@@ -242,14 +213,8 @@ export class Agent<
           maxTurns: options.maxTurns,
           abortSignal: context.abortSignal,
         });
-        if (response.status === "approval_required") {
-          await cancelAgentApproval(
-            response,
-            `Agent tool "${options.name}" cannot suspend for tool approval.`,
-          );
-          throw new Error(
-            `Agent tool "${options.name}" cannot suspend for tool approval. Run the agent directly to handle approvals.`,
-          );
+        if (response.status === "suspended") {
+          throw new AgentToolSuspensionError(response);
         }
         if (response.status === "blocked") {
           throw new AgentRunBlockedError(response);
@@ -515,172 +480,16 @@ function resolveAgentMemory<Output, M extends CompletionModel, ContextDocument>(
   return { store, ...resolvedOptions };
 }
 
-type GenerateExecution<Output = unknown> = {
-  next(): Promise<AgentResult<Output>>;
-  cancel(reason: string): Promise<void>;
-};
-
-type ApprovalContinuationBase = {
-  agent: object;
-  resolve(decision: AgentApprovalDecision): void;
-  cancel(reason: string): Promise<void>;
-};
-
-type ApprovalContinuation = ApprovalContinuationBase &
-  (
-    | {
-        mode: "generate";
-        resume(): Promise<AgentResult<unknown>>;
-      }
-    | {
-        mode: "stream";
-        resume(): AgentStream<AgentStreamEvent<unknown, unknown>>;
-      }
-  );
-
-const approvalContinuations = new WeakMap<object, ApprovalContinuation>();
-
-function assertAgentApprovalDecision(decision: AgentApprovalDecision): void {
-  if (typeof decision !== "object" || decision === null || typeof decision.approved !== "boolean") {
-    throw new TypeError("Approval decision must include an approved boolean.");
-  }
-  if (decision.reason !== undefined && typeof decision.reason !== "string") {
-    throw new TypeError("Approval decision reason must be a string.");
-  }
-}
-
-function createGenerateExecution<Output, M extends CompletionModel>(
-  agent: Agent<Output, M>,
-  run: AgentRun<Output, M>,
-): GenerateExecution<Output> {
-  const completion = run.generate();
-  const execution: GenerateExecution<Output> = {
-    async next() {
-      const outcome = await Promise.race([
-        completion.then((result) => ({ type: "completed" as const, result })),
-        run.waitForApproval().then(() => ({ type: "approval" as const })),
-      ]);
-      if (outcome.type === "completed") {
-        return outcome.result;
-      }
-      const pending = run.approvalResult();
-      approvalContinuations.set(pending, {
-        agent,
-        mode: "generate",
-        resolve: (decision) => run.resolveApproval(decision),
-        resume: () => execution.next(),
-        cancel: (reason) => execution.cancel(reason),
-      });
-      return pending;
-    },
-    async cancel(reason) {
-      run.cancel(reason);
-      await completion.catch(() => undefined);
-    },
-  };
-  return execution;
-}
-
-class StreamExecution<Output, M extends CompletionModel> {
-  private readonly iterator: AsyncIterator<AgentStreamEvent<Output, RawResponseOf<M>>>;
-  private nextEvent:
-    | Promise<IteratorResult<AgentStreamEvent<Output, RawResponseOf<M>>>>
-    | undefined;
-  private phase: "active" | "approval" | "terminal" | "cancelled" = "active";
-
-  constructor(
-    private readonly agent: Agent<Output, M>,
-    private readonly run: AgentRun<Output, M>,
-  ) {
-    this.iterator = run.events()[Symbol.asyncIterator]();
-  }
-
-  segment(): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    if (this.phase === "approval") {
-      this.phase = "active";
-    }
-    return new DefaultAgentStream(this);
-  }
-
-  steer(input: AgentSteerInput): boolean {
-    return this.run.steer(input);
-  }
-
-  async *events(): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    while (true) {
-      this.nextEvent ??= this.iterator.next();
-      let outcome:
-        | {
-            type: "event";
-            event: IteratorResult<AgentStreamEvent<Output, RawResponseOf<M>>>;
-          }
-        | { type: "approval" };
-      try {
-        outcome = await Promise.race([
-          this.nextEvent.then((event) => ({ type: "event" as const, event })),
-          this.run.waitForApproval().then(() => ({ type: "approval" as const })),
-        ]);
-      } catch (error) {
-        this.phase = "terminal";
-        throw error;
-      }
-      if (outcome.type === "approval") {
-        this.phase = "approval";
-        const pending = this.run.approvalEvent();
-        approvalContinuations.set(pending, {
-          agent: this.agent,
-          mode: "stream",
-          resolve: (decision) => this.run.resolveApproval(decision),
-          resume: () => this.segment(),
-          cancel: (reason) => this.cancel(reason),
-        });
-        yield pending;
-        return;
-      }
-      this.nextEvent = undefined;
-      if (outcome.event.done) {
-        this.phase = "terminal";
-        return;
-      }
-      yield outcome.event.value;
-    }
-  }
-
-  shouldCancelActiveSegment(): boolean {
-    return this.phase === "active";
-  }
-
-  async cancel(reason: string): Promise<void> {
-    if (this.phase === "terminal" || this.phase === "cancelled") {
-      return;
-    }
-    this.phase = "cancelled";
-    this.run.cancel(reason);
-    try {
-      await this.iterator.return?.();
-    } catch {
-      // Cancellation is best-effort; the run finalizes its observers and memory before rejecting.
-    }
-  }
-}
-
-function createStreamExecution<Output, M extends CompletionModel>(
-  agent: Agent<Output, M>,
-  run: AgentRun<Output, M>,
-): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
-  return new StreamExecution(agent, run).segment();
-}
-
 class DefaultAgentStream<Output, M extends CompletionModel>
   implements AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>
 {
   private consuming = false;
   private completed = false;
 
-  constructor(private readonly execution: StreamExecution<Output, M>) {}
+  constructor(private readonly run: AgentRun<Output, M>) {}
 
-  steer(input: AgentSteerInput): boolean {
-    return this.execution.steer(input);
+  steer(input: AgentSteerInput): AgentSteerReceipt {
+    return this.run.steer(input);
   }
 
   [Symbol.asyncIterator](): AsyncIterator<AgentStreamEvent<Output, RawResponseOf<M>>> {
@@ -696,29 +505,17 @@ class DefaultAgentStream<Output, M extends CompletionModel>
     }
     this.consuming = true;
     try {
-      for await (const event of this.execution.events()) {
+      for await (const event of this.run.events()) {
         yield event;
       }
     } finally {
-      if (this.execution.shouldCancelActiveSegment()) {
-        await this.execution.cancel("Agent stream consumer closed the stream.");
+      if (!this.completed) {
+        this.run.cancel("Agent stream consumer closed the stream.");
       }
       this.consuming = false;
       this.completed = true;
     }
   }
-}
-
-export async function cancelAgentApproval(
-  pending: AgentApprovalRequiredResult | AgentApprovalRequiredEvent,
-  reason: string,
-): Promise<void> {
-  const continuation = approvalContinuations.get(pending);
-  if (continuation === undefined) {
-    return;
-  }
-  approvalContinuations.delete(pending);
-  await continuation.cancel(reason);
 }
 
 function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {

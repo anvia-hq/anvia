@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { type Agent, cancelAgentApproval } from "../agent/agent";
+import type { Agent } from "../agent/agent";
 import { AgentRunBlockedError } from "../agent/errors";
 import type { AgentInput, AgentRunOptions, AgentRunSettings } from "../agent/run-types";
 import type { CompletionModel, JsonObject } from "../completion";
 import { type ExtractOptions, extract as extractData } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import { mapWithConcurrency } from "../internal/concurrency";
-import { PipelineAgentApprovalError } from "./errors";
+import { PipelineAgentSuspensionError } from "./errors";
 import {
   appendComposedGraph,
   appendParallelBranch,
@@ -72,7 +72,7 @@ export type PipelineAgentOptions<
   request(
     context: PipelineStageContext<Input>,
   ): PipelineAgentRequest<AgentOutput, Model> | Promise<PipelineAgentRequest<AgentOutput, Model>>;
-  approval: "reject";
+  suspension: "reject";
 };
 
 export type PipelineExtractOptions<
@@ -223,6 +223,9 @@ export class Pipeline<Input, Output = Input> {
   agent<AgentOutput, Model extends CompletionModel>(
     options: PipelineAgentOptions<Awaited<Output>, AgentOutput, Model>,
   ): Pipeline<Input, AgentOutput> {
+    if (options.suspension !== "reject") {
+      throw new TypeError('Pipeline Agent stages require suspension: "reject".');
+    }
     const next = appendStageNode(this.state, "agent", options, {
       defaultLabel: options.agent.name ?? options.agent.id,
       agentId: options.agent.id,
@@ -237,12 +240,8 @@ export class Pipeline<Input, Output = Input> {
           ...request,
           abortSignal: context.abortSignal,
         } as AgentRunOptions<AgentOutput, RawResponseOf<Model>>);
-        if (response.status === "approval_required") {
-          await cancelAgentApproval(
-            response,
-            `Pipeline agent stage "${next.node.id}" rejects tool approval suspension.`,
-          );
-          throw new PipelineAgentApprovalError(response);
+        if (response.status === "suspended") {
+          throw new PipelineAgentSuspensionError(response);
         }
         if (response.status === "blocked") {
           throw new AgentRunBlockedError(response);

@@ -45,6 +45,9 @@ export function transcriptFromMessages(messages: readonly Message[]): StudioTran
     }
     if (message.role === "tool") {
       for (const content of message.content) {
+        if (content.type !== "tool-result") {
+          continue;
+        }
         transcript.push({
           entryId: transcript.length,
           kind: "tool",

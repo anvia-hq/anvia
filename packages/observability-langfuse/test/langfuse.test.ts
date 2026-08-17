@@ -937,6 +937,7 @@ describe("langfuse", () => {
       toolCallId: "call-1",
     });
     await runObserver.end({
+      runId: "run-1",
       status: "completed",
       output: "Done",
       text: "Done",
@@ -1028,6 +1029,7 @@ describe("langfuse", () => {
     expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run.end({
+      runId: "run-1",
       status: "completed",
       output: "done",
       text: "done",

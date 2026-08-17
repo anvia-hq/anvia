@@ -8,6 +8,7 @@ import type {
   ReasoningContentType,
   ToolCallArgumentsMode,
   ToolCallPart,
+  ToolInteractionResponsePart,
   ToolResultContentPart,
   ToolResultOutput,
   Usage,
@@ -22,6 +23,11 @@ import type {
 } from "../observability/types";
 import type { RetrySetting } from "../retry";
 import type { AgentMiddleware } from "../tool";
+import type {
+  AgentContinuation,
+  AgentInteractionRequest,
+  AgentInteractionResponse,
+} from "./interactions";
 import type { AgentLifecycle } from "./lifecycle";
 
 export type AgentPrompt = string | UserMessage;
@@ -31,10 +37,21 @@ export type AgentInput =
       prompt: AgentPrompt;
       messages?: never;
       session?: MemoryScope | undefined;
+      continuation?: never;
+      response?: never;
     }
   | {
       messages: readonly MessageType[];
       prompt?: never;
+      session?: never;
+      continuation?: never;
+      response?: never;
+    }
+  | {
+      continuation: AgentContinuation;
+      response: AgentInteractionResponse;
+      prompt?: never;
+      messages?: never;
       session?: never;
     };
 
@@ -56,7 +73,12 @@ export type AgentRunSettings<Output = string, RawResponse = unknown> = {
 export type AgentRunOptions<Output = string, RawResponse = unknown> = AgentInput &
   AgentRunSettings<Output, RawResponse>;
 
-type AgentResultBase = {
+export type AgentRunLink = Readonly<{
+  runId: string;
+  interactionId: string;
+}>;
+
+export type AgentResultBase = {
   runId: string;
   text: string;
   usage: Usage;
@@ -67,6 +89,7 @@ type AgentResultBase = {
   sources?: CompletionSource[] | undefined;
   providerToolCalls?: ProviderToolCall[] | undefined;
   memoryCompaction?: MemoryCompactionInfo | undefined;
+  resumedFrom?: AgentRunLink | undefined;
 };
 
 export type AgentResponse<Output = string> = AgentResultBase & {
@@ -79,35 +102,16 @@ export type AgentBlockedResult = AgentResultBase & {
   stage: "input" | "output";
 };
 
-export type AgentApprovalRequiredResult = {
-  status: "approval_required";
-  runId: string;
-  approval: AgentToolApprovalRequest;
-  usage: Usage;
-  messages: MessageType[];
-  memoryCompaction?: MemoryCompactionInfo | undefined;
+export type AgentSuspendedResult = AgentResultBase & {
+  status: "suspended";
+  interaction: AgentInteractionRequest;
+  continuation: AgentContinuation;
 };
 
 export type AgentResult<Output = string> =
   | AgentResponse<Output>
   | AgentBlockedResult
-  | AgentApprovalRequiredResult;
-
-export type AgentToolApprovalRequest = {
-  id: string;
-  toolName: string;
-  toolCallId?: string | undefined;
-  reason?: string | undefined;
-  input: unknown;
-};
-
-export type AgentApprovalRequiredEvent = Omit<AgentApprovalRequiredResult, "status"> & {
-  type: "approval_required";
-};
-
-export type AgentApprovalDecision =
-  | { approved: true; reason?: string }
-  | { approved: false; reason?: string };
+  | AgentSuspendedResult;
 
 export type AgentDeltaEvent =
   | { type: "text_delta"; delta: string }
@@ -141,6 +145,23 @@ export type AgentToolCallDeltaEvent = {
 
 export type AgentMemoryCompactionEvent = MemoryCompactionInfo & {
   type: "memory_compaction";
+};
+
+export type AgentInteractionResponseEvent = {
+  type: "interaction_response";
+  response: ToolInteractionResponsePart;
+  sourceRunId: string;
+};
+
+export type AgentSteerReceipt = Readonly<{
+  id: string;
+  status: "queued";
+}>;
+
+export type AgentSteeringAppliedEvent = {
+  type: "steering_applied";
+  id: string;
+  turn: number;
 };
 
 type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
@@ -208,11 +229,12 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
       decision: GuardrailDecisionRecord;
     }
   | AgentMemoryCompactionEvent
+  | AgentInteractionResponseEvent
+  | AgentSteeringAppliedEvent
   | {
       type: "final";
-      result: AgentResponse<Output> | AgentBlockedResult;
+      result: AgentResult<Output>;
     }
-  | AgentApprovalRequiredEvent
   | AgentErrorStreamEvent;
 
 export type AgentChildStreamEvent<Output = string, RawResponse = unknown> =
@@ -235,5 +257,5 @@ export type AgentStreamEvent<Output = string, RawResponse = unknown> =
   | AgentToolStreamEvent;
 
 export interface AgentStream<Event = AgentStreamEvent> extends AsyncIterable<Event> {
-  steer(input: AgentSteerInput): boolean;
+  steer(input: AgentSteerInput): AgentSteerReceipt;
 }

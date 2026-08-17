@@ -1,11 +1,16 @@
-import type { ToolApproval } from "@anvia/client";
 import { type ChangeEvent, forwardRef, type MouseEvent, type ReactNode, useCallback } from "react";
 
-import { InternalApprovalProvider, useApproval, useChatContext, useHumanInput } from "../contexts";
+import {
+  type ApprovalInteraction,
+  InternalApprovalProvider,
+  useApproval,
+  useChatContext,
+  useHumanInput,
+} from "../contexts";
 import { stringifyValue } from "../format";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
 
-type ApprovalChildren = ReactNode | ((approval: ToolApproval) => ReactNode);
+type ApprovalChildren = ReactNode | ((approval: ApprovalInteraction) => ReactNode);
 type HumanInputFilter = "pending" | "all";
 
 type HumanInputStatusProps = Omit<PrimitiveProps<"div">, "children"> & {
@@ -54,7 +59,7 @@ const HumanInputApprovals = forwardRef<HTMLDivElement, HumanInputApprovalsProps>
       {
         ...props,
         children: approvals.map((approval) => (
-          <InternalApprovalProvider key={approval.id} approval={approval}>
+          <InternalApprovalProvider key={approval.request.id} approval={approval}>
             {typeof children === "function"
               ? children(approval)
               : (children ?? <HumanInputApproval />)}
@@ -98,7 +103,8 @@ const HumanInputApprove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
     const chat = useChatContext();
     const { approval, reason } = useApproval();
     const disabled =
-      props.disabled ?? (approval.status !== "pending" || chat.decidingApprovals.has(approval.id));
+      props.disabled ??
+      (approval.status !== "pending" || chat.respondingInteractions.has(approval.request.id));
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -107,12 +113,16 @@ const HumanInputApprove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
           return;
         }
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
-        void chat.approveTool({
-          approvalId: approval.id,
-          ...(decisionReason === undefined ? {} : { reason: decisionReason }),
+        void chat.respondToInteraction({
+          interactionId: approval.request.id,
+          response: {
+            type: "tool-approval",
+            approved: true,
+            ...(decisionReason === undefined ? {} : { reason: decisionReason }),
+          },
         });
       },
-      [approval.id, chat, disabled, onClick, reason],
+      [approval.request.id, chat, disabled, onClick, reason],
     );
 
     return renderPrimitive(
@@ -136,7 +146,8 @@ const HumanInputReject = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
     const chat = useChatContext();
     const { approval, reason } = useApproval();
     const disabled =
-      props.disabled ?? (approval.status !== "pending" || chat.decidingApprovals.has(approval.id));
+      props.disabled ??
+      (approval.status !== "pending" || chat.respondingInteractions.has(approval.request.id));
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -145,12 +156,16 @@ const HumanInputReject = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
           return;
         }
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
-        void chat.rejectTool({
-          approvalId: approval.id,
-          ...(decisionReason === undefined ? {} : { reason: decisionReason }),
+        void chat.respondToInteraction({
+          interactionId: approval.request.id,
+          response: {
+            type: "tool-approval",
+            approved: false,
+            ...(decisionReason === undefined ? {} : { reason: decisionReason }),
+          },
         });
       },
-      [approval.id, chat, disabled, onClick, reason],
+      [approval.request.id, chat, disabled, onClick, reason],
     );
 
     return renderPrimitive(
@@ -197,12 +212,12 @@ const HumanInputApprovalReason = forwardRef<HTMLTextAreaElement, PrimitiveProps<
   },
 );
 
-function defaultApprovalContent(approval: ToolApproval): ReactNode {
+function defaultApprovalContent(approval: ApprovalInteraction): ReactNode {
   return (
     <>
-      <div data-anvia-approval-tool="">{approval.toolName}</div>
-      {approval.input !== undefined ? (
-        <pre data-anvia-approval-args="">{stringifyValue(approval.input)}</pre>
+      <div data-anvia-approval-tool="">{approval.request.toolName}</div>
+      {approval.request.input !== undefined ? (
+        <pre data-anvia-approval-args="">{stringifyValue(approval.request.input)}</pre>
       ) : null}
       <HumanInputApprovalReason />
       <HumanInputApprove />

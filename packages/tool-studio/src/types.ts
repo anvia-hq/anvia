@@ -1,4 +1,10 @@
-import type { Agent, AgentResponse, AgentStreamEvent } from "@anvia/core/agent";
+import type {
+  Agent,
+  AgentInteractionResponse,
+  AgentResult,
+  AgentStreamEvent,
+  AgentSuspendedResult,
+} from "@anvia/core/agent";
 import type {
   CompletionModel,
   CompletionModelCapabilities,
@@ -21,7 +27,7 @@ import type { Hono } from "hono";
 
 export type StudioCapability =
   | "agents"
-  | "approvals"
+  | "interactions"
   | "evals"
   | "memory"
   | "knowledge"
@@ -561,7 +567,7 @@ export type StudioSessionListOptions = {
   limit: number;
 };
 
-export type StudioSessionRunStatus = "running" | "success" | "error" | "cancelled";
+export type StudioSessionRunStatus = "running" | "success" | "suspended" | "error" | "cancelled";
 
 export type StudioSessionRunTranscriptInput = {
   id: string;
@@ -644,7 +650,7 @@ export type StudioSessionStore = StudioMemoryStore & {
   deleteSession?(id: string): boolean | Promise<boolean>;
 };
 
-export type StudioTraceStatus = "running" | "success" | "error";
+export type StudioTraceStatus = "running" | "success" | "suspended" | "error";
 
 export type StudioTraceObservationKind = "agent" | "generation" | "tool";
 
@@ -965,11 +971,6 @@ export type StudioServeLifecycleOptions = Omit<StudioServeOptions, "handleSignal
   onShutdown?: () => void | Promise<void>;
 };
 
-export type StudioToolApprovalDecision = {
-  approved: boolean;
-  reason?: string;
-};
-
 export type StudioToolApprovalStatus =
   | "pending"
   | "approved"
@@ -977,37 +978,12 @@ export type StudioToolApprovalStatus =
   | "timed_out"
   | "cancelled";
 
-export type StudioToolApproval = {
-  id: string;
-  runId: string;
-  agentId: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId: string;
-  args: string;
-  status: StudioToolApprovalStatus;
-  requestedAt: string;
-  resolvedAt?: string;
-  reason?: string;
-};
-
 export type StudioToolApprovalTranscript = {
   id: string;
   status: StudioToolApprovalStatus;
   requestedAt: string;
   resolvedAt?: string;
   reason?: string;
-};
-
-export type StudioToolApprovalRequestEvent = {
-  type: "tool_approval_request";
-  approval: StudioToolApproval;
-};
-
-export type StudioToolApprovalResultEvent = {
-  type: "tool_approval_result";
-  approval: StudioToolApproval;
 };
 
 export type StudioToolQuestionChoice = {
@@ -1019,6 +995,7 @@ export type StudioToolQuestionPrompt = {
   id: string;
   question: string;
   choices: StudioToolQuestionChoice[];
+  allowCustom: boolean;
 };
 
 export type StudioToolQuestionAnswer = {
@@ -1030,23 +1007,6 @@ export type StudioToolQuestionAnswer = {
 
 export type StudioToolQuestionStatus = "pending" | "answered" | "cancelled";
 
-export type StudioToolQuestion = {
-  id: string;
-  runId: string;
-  agentId: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId: string;
-  args: string;
-  questions: StudioToolQuestionPrompt[];
-  status: StudioToolQuestionStatus;
-  requestedAt: string;
-  answeredAt?: string;
-  cancelledAt?: string;
-  answers?: StudioToolQuestionAnswer[];
-};
-
 export type StudioToolQuestionTranscript = {
   id: string;
   status: StudioToolQuestionStatus;
@@ -1055,16 +1015,6 @@ export type StudioToolQuestionTranscript = {
   cancelledAt?: string;
   questions: StudioToolQuestionPrompt[];
   answers?: StudioToolQuestionAnswer[];
-};
-
-export type StudioToolQuestionRequestEvent = {
-  type: "tool_question_request";
-  question: StudioToolQuestion;
-};
-
-export type StudioToolQuestionResultEvent = {
-  type: "tool_question_result";
-  question: StudioToolQuestion;
 };
 
 export type StudioSessionLogEvent = {
@@ -1200,25 +1150,40 @@ export type StudioPipelineRunResponse = {
   output: JsonValue;
 };
 
-export type AgentRunRequest = {
-  messages: readonly Message[];
-  sessionId?: string;
+type AgentRunRequestBase = {
   stream?: boolean;
-  maxTurns?: number;
-  toolConcurrency?: number;
-  model?: StudioModelRef;
   metadata?: JsonObject;
   trace?: AgentTraceOptions;
 };
 
-export type AgentRunResponse = AgentResponse;
+export type AgentRunRequest =
+  | (AgentRunRequestBase & {
+      type: "messages";
+      messages: readonly Message[];
+      sessionId?: string;
+      maxTurns?: number;
+      toolConcurrency?: number;
+      model?: StudioModelRef;
+      interactionId?: never;
+      response?: never;
+    })
+  | (AgentRunRequestBase & {
+      type: "interaction_response";
+      interactionId: string;
+      response: AgentInteractionResponse;
+      messages?: never;
+      sessionId?: never;
+      maxTurns?: never;
+      toolConcurrency?: never;
+      model?: never;
+    });
+
+export type AgentRunResponse =
+  | Exclude<AgentResult, AgentSuspendedResult>
+  | Omit<AgentSuspendedResult, "continuation" | "messages">;
 
 export type AgentRunStreamEvent =
-  | Exclude<AgentStreamEvent, { type: "approval_required" }>
-  | StudioToolApprovalRequestEvent
-  | StudioToolApprovalResultEvent
-  | StudioToolQuestionRequestEvent
-  | StudioToolQuestionResultEvent
+  | AgentStreamEvent
   | StudioSessionLogEvent
   | StudioPipelineLogEvent
   | StudioPipelineFinalEvent;

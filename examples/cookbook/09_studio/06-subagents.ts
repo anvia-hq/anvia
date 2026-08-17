@@ -110,9 +110,13 @@ const coordinator = new Agent({
   ].join("\n"),
   maxTurns: 4,
   tools: [
-    supportAgent.asTool({ name: "ask_support_subagent", stream: true }),
-    engineeringAgent.asTool({ name: "ask_engineering_subagent", stream: true }),
-    commsAgent.asTool({ name: "ask_comms_subagent", stream: true }),
+    supportAgent.asTool({ name: "ask_support_subagent", stream: true, suspension: "reject" }),
+    engineeringAgent.asTool({
+      name: "ask_engineering_subagent",
+      stream: true,
+      suspension: "reject",
+    }),
+    commsAgent.asTool({ name: "ask_comms_subagent", stream: true, suspension: "reject" }),
   ],
 });
 

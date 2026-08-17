@@ -25,7 +25,9 @@ export type {
 export { InternalComposerProvider, useComposer } from "./composer";
 export type {
   ApprovalContextValue,
+  ApprovalInteraction,
   QuestionContextValue,
+  QuestionInteraction,
   QuestionPromptContextValue,
 } from "./human-input";
 export {

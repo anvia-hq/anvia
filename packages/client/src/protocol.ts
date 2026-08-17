@@ -1,3 +1,4 @@
+import { parseAgentInteractionRequest, parseAgentInteractionResponse } from "@anvia/core/agent";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import { isJsonValue, parseMessages } from "@anvia/core/completion";
 import {
@@ -89,18 +90,52 @@ export function parseUIMessages<
 
 export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
   const input = requireRecord(value, "Client stream request");
-  requireOnlyKeys(input, ["messages", "metadata", "resume"], "Client stream request");
-  let messages: Message[];
-  try {
-    messages = parseMessages(input.messages);
-  } catch {
-    throw new ClientProtocolError("Client stream request.messages must be Message[].", value);
-  }
+  requireOnlyKeys(
+    input,
+    ["type", "messages", "interactionId", "response", "metadata", "resume"],
+    "Client stream request",
+  );
+  requireOneOf(
+    input.type,
+    ["messages", "interaction_response"],
+    "Client stream request.type",
+    value,
+  );
   if (input.metadata !== undefined && !isJsonObject(input.metadata)) {
     throw new ClientProtocolError("Client stream request.metadata must be a JSON object.", value);
   }
-
-  const request: ClientStreamRequest = { messages };
+  let request: ClientStreamRequest;
+  if (input.type === "messages") {
+    if (input.interactionId !== undefined || input.response !== undefined) {
+      throw new ClientProtocolError(
+        "Messages requests cannot include interaction response fields.",
+        value,
+      );
+    }
+    let messages: Message[];
+    try {
+      messages = parseMessages(input.messages);
+    } catch {
+      throw new ClientProtocolError("Client stream request.messages must be Message[].", value);
+    }
+    request = { type: "messages", messages };
+  } else {
+    if (input.messages !== undefined || typeof input.interactionId !== "string") {
+      throw new ClientProtocolError(
+        "Interaction response requests require interactionId and cannot include messages.",
+        value,
+      );
+    }
+    try {
+      request = {
+        type: "interaction_response",
+        interactionId: input.interactionId,
+        response: parseAgentInteractionResponse(input.response),
+      };
+    } catch {
+      throw new ClientProtocolError("Client interaction response is invalid.", value);
+    }
+  }
   if (input.metadata !== undefined) request.metadata = input.metadata as JsonObject;
   if (input.resume !== undefined) {
     const resume = requireRecord(input.resume, "Client stream request.resume");
@@ -293,13 +328,13 @@ export function parseClientStreamEvent<
       requireEventKeys(event, ["toolCall"]);
       if (!isProviderToolCall(event.toolCall)) invalid("provider_tool_call.toolCall", value);
       break;
-    case "tool_approval":
-      requireEventKeys(event, ["approval"]);
-      if (!isToolApproval(event.approval)) invalid("tool_approval.approval", value);
-      break;
-    case "tool_question":
-      requireEventKeys(event, ["question"]);
-      if (!isToolQuestion(event.question)) invalid("tool_question.question", value);
+    case "interaction":
+      requireEventKeys(event, ["interaction"]);
+      try {
+        parseAgentInteractionRequest(event.interaction);
+      } catch {
+        invalid("interaction.interaction", value);
+      }
       break;
     case "guardrail_decision":
       requireEventKeys(event, ["decision"]);
@@ -372,7 +407,7 @@ export function parseClientStreamEvent<
       ]);
       requireOneOf(
         event.status,
-        ["completed", "blocked", "approval_required", "cancelled", "error"],
+        ["completed", "blocked", "suspended", "cancelled", "error"],
         "run_end.status",
         value,
       );
@@ -433,8 +468,11 @@ export function parseClientStreamFrame<
       ["type", "protocol", "streamId", "eventId", "resumable"],
       "stream_start frame",
     );
-    if (frame.protocol === "anvia.client.v1") {
-      throw new ClientProtocolError("Client stream protocol v1 is not supported.", value);
+    if (frame.protocol === "anvia.client.v1" || frame.protocol === "anvia.client.v2") {
+      throw new ClientProtocolError(
+        `Client stream protocol ${frame.protocol.slice(-2)} is not supported.`,
+        value,
+      );
     }
     if (
       frame.protocol !== CLIENT_STREAM_PROTOCOL ||
@@ -551,7 +589,7 @@ function isUIMessageGeneration(value: unknown): value is UIMessageGeneration {
   return (
     (value.runId === undefined || typeof value.runId === "string") &&
     (value.status === undefined ||
-      ["completed", "blocked", "approval_required", "cancelled", "error"].includes(
+      ["completed", "blocked", "suspended", "cancelled", "error"].includes(
         value.status as string,
       )) &&
     (value.usage === undefined || isUsage(value.usage)) &&
@@ -780,92 +818,6 @@ function isProviderToolCall(value: unknown): boolean {
     typeof value.name === "string" &&
     (value.status === undefined || typeof value.status === "string") &&
     (value.details === undefined || (isRecord(value.details) && isJsonValue(value.details)))
-  );
-}
-
-function isToolApproval(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  const optionalStrings = [
-    "runId",
-    "agentId",
-    "sessionId",
-    "callId",
-    "internalCallId",
-    "requestedAt",
-    "resolvedAt",
-    "reason",
-  ];
-  return (
-    hasOnlyKeys(value, ["id", "toolName", "input", "status", ...optionalStrings]) &&
-    typeof value.id === "string" &&
-    typeof value.toolName === "string" &&
-    optionalStrings.every((key) => value[key] === undefined || typeof value[key] === "string") &&
-    (value.input === undefined || isJsonValue(value.input)) &&
-    typeof value.status === "string" &&
-    ["pending", "approved", "rejected", "timed_out", "cancelled"].includes(value.status)
-  );
-}
-
-function isToolQuestion(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  const optionalStrings = [
-    "runId",
-    "agentId",
-    "sessionId",
-    "callId",
-    "internalCallId",
-    "requestedAt",
-    "answeredAt",
-    "cancelledAt",
-  ];
-  return (
-    hasOnlyKeys(value, [
-      "id",
-      "toolName",
-      "input",
-      "questions",
-      "status",
-      "answers",
-      ...optionalStrings,
-    ]) &&
-    typeof value.id === "string" &&
-    typeof value.toolName === "string" &&
-    optionalStrings.every((key) => value[key] === undefined || typeof value[key] === "string") &&
-    (value.input === undefined || isJsonValue(value.input)) &&
-    Array.isArray(value.questions) &&
-    value.questions.every(isToolQuestionPrompt) &&
-    typeof value.status === "string" &&
-    ["pending", "answered", "cancelled"].includes(value.status) &&
-    (value.answers === undefined ||
-      (Array.isArray(value.answers) && value.answers.every(isToolQuestionAnswer)))
-  );
-}
-
-function isToolQuestionPrompt(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    hasOnlyKeys(value, ["id", "question", "choices"]) &&
-    typeof value.id === "string" &&
-    typeof value.question === "string" &&
-    Array.isArray(value.choices) &&
-    value.choices.every(
-      (choice) =>
-        isRecord(choice) &&
-        hasOnlyKeys(choice, ["label", "value"]) &&
-        typeof choice.label === "string" &&
-        typeof choice.value === "string",
-    )
-  );
-}
-
-function isToolQuestionAnswer(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    hasOnlyKeys(value, ["questionId", "answer", "choice", "custom"]) &&
-    typeof value.questionId === "string" &&
-    typeof value.answer === "string" &&
-    (value.choice === undefined || typeof value.choice === "string") &&
-    (value.custom === undefined || typeof value.custom === "boolean")
   );
 }
 

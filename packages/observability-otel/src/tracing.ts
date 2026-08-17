@@ -16,6 +16,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import {
   type Attributes,
@@ -362,6 +363,17 @@ class OtelToolObserver implements AgentToolObserver {
   end(args: AgentToolEndArgs): void {
     this.endOpenChildren();
     this.tool.setAttributes(toolEndAttributes(args, this.options));
+    this.tool.setStatus({ code: SpanStatusCode.OK });
+    this.tool.end();
+  }
+
+  suspend(args: AgentToolSuspendedArgs): void {
+    this.endOpenChildren();
+    this.tool.setAttributes({
+      "anvia.tool.status": "suspended",
+      "anvia.tool.interaction.id": args.interaction.id,
+      "anvia.tool.interaction.type": args.interaction.type,
+    });
     this.tool.setStatus({ code: SpanStatusCode.OK });
     this.tool.end();
   }

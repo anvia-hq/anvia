@@ -11,10 +11,11 @@ import {
   cancelRun,
   createHook,
   createMiddleware,
+  createQuestionTool,
   createTool,
-  getAgentApprovalRequestDetails,
   MaxTurnsError,
   Message,
+  parseAgentContinuation,
   requestToolApproval,
   type ToolCallContext,
   ToolOutput,
@@ -580,7 +581,7 @@ describe("Agent execution", () => {
       agent.generate({ prompt: "add", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({ output: "done" });
 
-    expect(events).toEqual(["add:fc_1:7", "hook:stored:7"]);
+    expect(events).toEqual(["add:call_1:7", "hook:stored:7"]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -771,7 +772,7 @@ describe("Agent execution", () => {
     expect(events).toEqual([
       "completion_call:user:0",
       "completion_response:1",
-      'tool_call:add:fc_1:{"x":2,"y":5}',
+      'tool_call:add:call_1:{"x":2,"y":5}',
       "tool_result:add:7",
       "completion_call:tool:2",
       "completion_response:1",
@@ -1060,8 +1061,8 @@ describe("Agent execution", () => {
     await expect(
       agent.generate({ prompt: "run guarded", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({
-      status: "approval_required",
-      approval: { toolName: "guarded", reason: "Guarded action." },
+      status: "suspended",
+      interaction: { type: "tool-approval", toolName: "guarded", reason: "Guarded action." },
     });
     expect(executed).toBe(false);
     expect(model.requests).toHaveLength(1);
@@ -1094,8 +1095,15 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    if (pending.status !== "suspended" || pending.interaction.type !== "tool-approval") {
+      throw new Error("Expected approval suspension");
+    }
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       output: "done",
     });
     expect(executed).toBe(true);
@@ -1128,8 +1136,13 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    await expect(agent.resume(pending, { approved: false })).resolves.toMatchObject({
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: false },
+      }),
+    ).resolves.toMatchObject({
       output: "denied",
     });
     expect(executed).toBe(false);
@@ -1140,6 +1153,57 @@ describe("Agent execution", () => {
           id: "call_1",
           toolName: "guarded",
           content: [{ type: "text", text: "Rejected by hook." }],
+        },
+      ]),
+    );
+  });
+
+  it("runs resumed interaction outputs through middleware and result hooks", async () => {
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "A guarded tool",
+      inputSchema: z.object({}),
+      outputSchema: z.string(),
+      requiresApproval: true,
+      execute: () => "should not run",
+    });
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "guarded", {})]),
+      response([AssistantContent.text("denied")]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
+    const pending = await agent.generate({ prompt: "run guarded" });
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    const events: string[] = [];
+    const middleware = createMiddleware({
+      onToolOutput({ result, originalResult }) {
+        events.push(`middleware:${originalResult}`);
+        return { result: `recorded:${result}` };
+      },
+    });
+    const hook = createHook({
+      onToolResult({ result }) {
+        events.push(`hook:${result}`);
+      },
+    });
+
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: false, reason: "No access." },
+        middlewares: [middleware],
+        ...withInternalAgentRunOptions({}, { hook }),
+      }),
+    ).resolves.toMatchObject({ output: "denied" });
+
+    expect(events).toEqual(["middleware:No access.", "hook:recorded:No access."]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
+      Message.tool([
+        {
+          type: "tool_result",
+          id: "call_1",
+          toolName: "guarded",
+          content: [{ type: "text", text: "recorded:No access." }],
         },
       ]),
     );
@@ -1246,18 +1310,22 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    requests.push(getAgentApprovalRequestDetails(pending.approval));
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    requests.push(pending.interaction);
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       output: "done",
     });
     expect(executed).toBe(true);
     expect(requests).toMatchObject([
       {
         toolName: "guarded",
-        args: { amount: 250 },
+        input: { amount: 250 },
         reason: "Approve 250",
-        run: { agentId: "test-agent" },
       },
     ]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -1306,12 +1374,19 @@ describe("Agent execution", () => {
     const sequenceBeforeRun = sequence;
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    expect(pending.approval.input).toEqual(approvalInput);
+    if (pending.status !== "suspended" || pending.interaction.type !== "tool-approval") {
+      throw new Error("Expected approval suspension");
+    }
+    expect(pending.interaction.input).toEqual(approvalInput);
     expect(sequence).toBe(sequenceBeforeRun + 1);
     const approvedInput = approvalInput;
 
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       status: "completed",
       output: "done",
     });
@@ -1339,7 +1414,10 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    const continuation = parseAgentContinuation(JSON.parse(JSON.stringify(pending.continuation)));
+    expect(Object.isFrozen(continuation)).toBe(true);
+    expect(Object.isFrozen(continuation.state)).toBe(true);
     pending.usage.totalTokens = 999;
     const pendingUser = pending.messages[0];
     if (
@@ -1350,10 +1428,170 @@ describe("Agent execution", () => {
       (pendingUser.content[0] as { text: string }).text = "mutated";
     }
 
-    const result = await agent.resume(pending, { approved: true });
+    const result = await agent.generate({
+      continuation,
+      response: { type: "tool-approval", approved: true },
+    });
     if (result.status !== "completed") throw new Error("Expected completed result");
-    expect(result.usage.totalTokens).toBe(5);
-    expect(result.messages[0]).toEqual(Message.user("run guarded"));
+    expect(result.runId).not.toBe(pending.runId);
+    expect(result.resumedFrom).toEqual({
+      runId: pending.runId,
+      interactionId: pending.interaction.id,
+    });
+    expect(result.usage.totalTokens).toBe(0);
+    expect(result.messages[0]).toMatchObject({
+      role: "tool",
+      content: [expect.objectContaining({ type: "tool-approval-response" })],
+    });
+  });
+
+  it("uses first-class question interactions and validates exact answers before resuming", async () => {
+    const questionTool = createQuestionTool({
+      name: "ask_user",
+      description: "Ask the user for missing information.",
+    });
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "ask_user", {
+          questions: [
+            {
+              id: "format",
+              text: "Which format should I use?",
+              choices: [
+                { label: "PDF", value: "pdf" },
+                { label: "Markdown", value: "markdown" },
+              ],
+            },
+            { id: "details", text: "What details should be included?" },
+          ],
+        }),
+      ]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [questionTool] });
+
+    const pending = await agent.generate({ prompt: "prepare a report" });
+    if (pending.status !== "suspended" || pending.interaction.type !== "tool-question") {
+      throw new Error("Expected question suspension");
+    }
+    expect(pending.interaction.questions).toHaveLength(2);
+    const otherAgent = new Agent({ id: "other-agent", model: new QueueModel([]) });
+    expect(() =>
+      otherAgent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-question", answers: [] },
+      }),
+    ).toThrow(/belongs to "test-agent"/);
+    expect(() =>
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).toThrow(/does not match/);
+    expect(() =>
+      agent.generate({
+        continuation: pending.continuation,
+        response: {
+          type: "tool-question",
+          answers: [{ questionId: "format", value: "txt" }],
+        },
+      }),
+    ).toThrow(/answer every question|configured choices/);
+
+    const interactionOutputEvents: string[] = [];
+    const result = await agent.generate({
+      continuation: pending.continuation,
+      response: {
+        type: "tool-question",
+        answers: [
+          { questionId: "format", value: "pdf" },
+          { questionId: "details", value: "Include the incident timeline." },
+        ],
+      },
+      middlewares: [
+        createMiddleware({
+          onToolOutput({ toolName, result }) {
+            interactionOutputEvents.push(`middleware:${toolName}:${result}`);
+            return undefined;
+          },
+        }),
+      ],
+      ...withInternalAgentRunOptions(
+        {},
+        {
+          hook: createHook({
+            onToolResult({ toolName, result }) {
+              interactionOutputEvents.push(`hook:${toolName}:${result}`);
+            },
+          }),
+        },
+      ),
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      output: "done",
+      resumedFrom: { runId: pending.runId, interactionId: pending.interaction.id },
+    });
+    expect(interactionOutputEvents.map((event) => event.split(":", 2).join(":"))).toEqual([
+      "middleware:ask_user",
+      "hook:ask_user",
+    ]);
+    expect(model.requests[1]?.chatHistory.at(-1)).toEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "call_1",
+          toolName: "ask_user",
+          output: {
+            type: "json",
+            value: {
+              answers: [
+                { questionId: "format", value: "pdf" },
+                { questionId: "details", value: "Include the incident timeline." },
+              ],
+            },
+          },
+        },
+      ],
+    });
+  });
+
+  it("returns invalid question definitions to the model without suspending", async () => {
+    const questionTool = createQuestionTool({
+      name: "ask_user",
+      description: "Ask the user for missing information.",
+    });
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "ask_user", {
+          questions: [
+            { id: "duplicate", text: "First question" },
+            { id: "duplicate", text: "Second question" },
+          ],
+        }),
+      ]),
+      response([AssistantContent.text("I could not ask that question.")]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [questionTool] });
+
+    const result = await agent.generate({ prompt: "ask me" });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      output: "I could not ask that question.",
+    });
+    expect(model.requests[1]?.chatHistory.at(-1)).toMatchObject({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolName: "ask_user",
+          output: { type: "error-text" },
+        },
+      ],
+    });
   });
 
   it("returns invalid tool input to the model so it can recover", async () => {
@@ -1440,9 +1678,14 @@ describe("Agent execution", () => {
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    approvalRequests.push(getAgentApprovalRequestDetails(pending.approval));
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    approvalRequests.push(pending.interaction);
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       output: "done",
     });
 
@@ -1450,8 +1693,7 @@ describe("Agent execution", () => {
     expect(approvalRequests).toMatchObject([
       {
         toolName: "guarded",
-        args: { amount: 250 },
-        rawArgs: '{"amount":250}',
+        input: { amount: 250 },
         reason: "Approve 250",
       },
     ]);
@@ -1477,8 +1719,13 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    await expect(agent.resume(pending, { approved: false })).resolves.toMatchObject({
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: false },
+      }),
+    ).resolves.toMatchObject({
       output: "denied",
     });
     expect(executed).toBe(false);
@@ -1539,11 +1786,16 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
     expect(pending).toMatchObject({
-      status: "approval_required",
-      approval: { toolName: "guarded", input: {} },
+      status: "suspended",
+      interaction: { type: "tool-approval", toolName: "guarded", input: {} },
     });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       status: "completed",
       output: "done",
     });
@@ -1569,9 +1821,12 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
 
-    const result = await agent.resume(pending, { approved: false, reason: "Not allowed." });
+    const result = await agent.generate({
+      continuation: pending.continuation,
+      response: { type: "tool-approval", approved: false, reason: "Not allowed." },
+    });
     expect(result).toMatchObject({ status: "completed", output: "denied" });
     expect(executed).toBe(false);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(

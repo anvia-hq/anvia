@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAgentToolState } from "../src/agent/tool-state";
 import {
   Agent,
-  AgentRunCancelledError,
+  AgentToolSuspensionError,
   type AnyTool,
   AssistantContent,
   type CompletionModel,
@@ -547,7 +547,7 @@ describe("Agent.asTool", () => {
       model,
       description: "Answer support questions.",
     });
-    const tool = agent.asTool({ name: "ask_support" });
+    const tool = agent.asTool({ name: "ask_support", suspension: "reject" });
 
     await expect(Promise.resolve(tool.definition(""))).resolves.toEqual({
       name: "ask_support",
@@ -572,6 +572,7 @@ describe("Agent.asTool", () => {
     const tool = agent.asTool({
       name: "ask_agent",
       description: "Ask an agent.",
+      suspension: "reject",
     });
 
     await expect(tool.call({ prompt: "do work" })).resolves.toBe("delegated");
@@ -588,7 +589,7 @@ describe("Agent.asTool", () => {
       model,
       outputSchema: z.object({ answer: z.string() }),
     });
-    const tool = agent.asTool({ name: "ask_typed_agent" });
+    const tool = agent.asTool({ name: "ask_typed_agent", suspension: "reject" });
 
     const result = await tool.call({ prompt: "do work" });
     expectTypeOf(result).toEqualTypeOf<{ answer: string }>();
@@ -624,10 +625,10 @@ describe("Agent.asTool", () => {
       },
     });
 
-    await expect(agent.asTool({ name: "ask_child" }).call({ prompt: "run" })).rejects.toThrow(
-      "cannot suspend for tool approval",
-    );
-    expect(observedError).toBeInstanceOf(AgentRunCancelledError);
+    await expect(
+      agent.asTool({ name: "ask_child", suspension: "reject" }).call({ prompt: "run" }),
+    ).rejects.toBeInstanceOf(AgentToolSuspensionError);
+    expect(observedError).toBeUndefined();
   });
 
   it("applies maxTurns when provided", async () => {
@@ -637,7 +638,7 @@ describe("Agent.asTool", () => {
       response([AssistantContent.text("done")]),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 3 });
-    const tool = agent.asTool({ name: "ask_agent", maxTurns: 0 });
+    const tool = agent.asTool({ name: "ask_agent", maxTurns: 0, suspension: "reject" });
 
     await expect(tool.call({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
   });
@@ -646,11 +647,11 @@ describe("Agent.asTool", () => {
     const first = new Agent({
       id: "test-agent",
       model: new QueueModel([response([AssistantContent.text("one")])]),
-    }).asTool({ name: "ask_one" });
+    }).asTool({ name: "ask_one", suspension: "reject" });
     const second = new Agent({
       id: "test-agent",
       model: new QueueModel([response([AssistantContent.text("two")])]),
-    }).asTool({ name: "ask_two" });
+    }).asTool({ name: "ask_two", suspension: "reject" });
     await expect(first.call({ prompt: "run" })).resolves.toBe("one");
     await expect(second.call({ prompt: "run" })).resolves.toBe("two");
   });

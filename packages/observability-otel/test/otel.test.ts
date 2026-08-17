@@ -414,6 +414,7 @@ describe("otel", () => {
       toolCallId: "call-1",
     });
     await run?.end({
+      runId: "run-1",
       status: "completed",
       output: "Done",
       text: "Done",
@@ -507,6 +508,7 @@ describe("otel", () => {
       toolCallId: "call-1",
     });
     await run?.end({
+      runId: "run-1",
       status: "completed",
       output: "private output",
       text: "private output",
@@ -616,6 +618,7 @@ describe("otel", () => {
     expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run?.end({
+      runId: "run-1",
       status: "completed",
       output: "done",
       text: "done",

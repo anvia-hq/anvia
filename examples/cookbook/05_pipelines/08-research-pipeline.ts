@@ -71,7 +71,7 @@ const researchPipeline = new Pipeline({ id: "research", inputSchema: z.string() 
   .agent({
     id: "synthesize",
     agent: synthesizer,
-    approval: "reject",
+    suspension: "reject",
     request: ({ input: { notesJson: notes, qualityJson: quality } }) => ({
       prompt: [
         "Synthesize this research packet.",

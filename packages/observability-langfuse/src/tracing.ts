@@ -19,6 +19,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import {
@@ -817,14 +818,18 @@ class LangfuseRunObserver implements AgentRunObserver {
     const observedOutput =
       args.status === "completed"
         ? { status: args.status, output: args.output, text: args.text }
-        : { status: args.status, stage: args.stage, text: args.text };
+        : args.status === "blocked"
+          ? { status: args.status, stage: args.stage, text: args.text }
+          : { status: args.status, interaction: args.interaction, text: args.text };
     const redactedOutput = this.redactOutputValue(observedOutput);
     const metadata: Record<string, unknown> = {
+      runId: args.runId,
       status: args.status,
       usage: args.usage,
       messageCount: args.messages.length,
       sources: this.redactOutputValue(args.sources),
       providerToolCalls: this.redactOutputValue(args.providerToolCalls),
+      resumedFrom: this.redactOutputValue(args.resumedFrom),
     };
     if (this.captureMode === "full") {
       metadata.messages = this.redactTranscript(args.messages);
@@ -1287,6 +1292,26 @@ class LangfuseToolObserver implements AgentToolObserver {
       attributes.statusMessage = "Tool call skipped by hook";
     }
     this.tool.update(attributes).end();
+  }
+
+  suspend(args: AgentToolSuspendedArgs): void {
+    this.endOpenChildren();
+    this.tool
+      .update({
+        output: this.run.redactOutputValue({
+          status: "suspended",
+          interaction: args.interaction,
+        }),
+        metadata: {
+          turn: args.turn,
+          internalCallId: args.internalCallId,
+          interactionId: args.interaction.id,
+          interactionType: args.interaction.type,
+        },
+        level: "WARNING",
+        statusMessage: "Tool call suspended for human interaction",
+      })
+      .end();
   }
 
   error(args: AgentToolErrorArgs): void {

@@ -271,7 +271,14 @@ function toolMessageToGeminiContent(
 ): GeminiContent {
   return {
     role: "user",
-    parts: message.content.map((content) => toolContentToGeminiPart(content, toolNamesById)),
+    parts: message.content.map((content) => {
+      if (content.type !== "tool-result") {
+        throw new TypeError(
+          "Anvia interaction responses must be resolved by Agent before provider calls.",
+        );
+      }
+      return toolContentToGeminiPart(content, toolNamesById);
+    }),
   };
 }
 

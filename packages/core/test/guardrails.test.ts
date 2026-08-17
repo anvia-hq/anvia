@@ -381,7 +381,9 @@ describe("guardrails", () => {
         { type: "final", response: response([AssistantContent.text("secret second")]) },
       ],
     ]);
-    let steer: ((input: { prompt: string }) => boolean) | undefined;
+    let steer:
+      | ((input: { prompt: string }) => Readonly<{ id: string; status: "queued" }>)
+      | undefined;
     const outputGuardrail = defineOutputGuardrail({
       id: "stream-final-only",
       check(ctx, { rewrite }) {
@@ -395,7 +397,7 @@ describe("guardrails", () => {
     const hook = createHook({
       onTurnEnd({ turn }) {
         if (turn === 1) {
-          expect(steer?.({ prompt: "revise" })).toBe(true);
+          expect(steer?.({ prompt: "revise" })).toMatchObject({ status: "queued" });
         }
       },
     });

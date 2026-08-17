@@ -13,6 +13,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import type { LogContext, Logger } from "./types";
 
@@ -83,11 +84,13 @@ class LoggerRunObserver implements AgentRunObserver {
 
   end(args: AgentRunEndArgs): void {
     const context: LogContext = {
+      runId: args.runId,
       status: args.status,
       text: args.text,
       usage: args.usage,
       messageCount: args.messages.length,
     };
+    if (args.resumedFrom !== undefined) context.resumedFrom = args.resumedFrom;
     if (args.status === "blocked") context.blockedStage = args.stage;
     if (this.options.includeOutput === true && args.status === "completed") {
       context.output = args.output;
@@ -145,6 +148,13 @@ class LoggerToolObserver implements AgentToolObserver {
       }
     }
     this.logger.info("agent tool ended", context);
+  }
+
+  suspend(args: AgentToolSuspendedArgs): void {
+    this.logger.info("agent tool suspended", {
+      interactionId: args.interaction.id,
+      interactionType: args.interaction.type,
+    });
   }
 
   error(args: AgentToolErrorArgs): void {

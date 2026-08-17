@@ -1,6 +1,7 @@
 import type { CreateUIAttachment } from "@anvia/client";
 import type { Message, UserContentPart } from "@anvia/core/completion";
 import type {
+  AgentRunRequest,
   StudioModelRef,
   StudioModelSummary,
   StudioPipelineLogEntry,
@@ -21,17 +22,7 @@ export type PromptAttachment = {
   size: number;
 };
 
-export type StudioAgentRunRequest = {
-  agentId: string;
-  messages: readonly Message[];
-  sessionId?: string;
-  model?: StudioModelRef;
-  stream: true;
-  metadata: {
-    source: string;
-    studioModel?: string;
-  };
-};
+export type StudioAgentRunRequest = AgentRunRequest & { agentId: string };
 
 export function studioModelRefFromKey(value: string): StudioModelRef {
   const separator = value.indexOf(":");

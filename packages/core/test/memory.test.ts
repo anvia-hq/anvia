@@ -438,7 +438,7 @@ describe("agent memory", () => {
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toHaveLength(4);
   });
 
-  it("does not persist an orphaned assistant tool call while approval is pending", async () => {
+  it("persists the pending assistant tool call before suspension", async () => {
     const store = new RecordingMemoryStore();
     const guardedTool = createTool({
       name: "guarded",
@@ -459,21 +459,36 @@ describe("agent memory", () => {
     });
     const scope = { sessionId: "session_1" };
     const pending = await agent.generate({ prompt: "run guarded", session: scope });
-    expect(pending.status).toBe("approval_required");
+    expect(pending.status).toBe("suspended");
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
+      ["assistant"],
     ]);
-    await expect(store.load({ scope })).resolves.toEqual([Message.user("run guarded")]);
-    if (pending.status !== "approval_required") throw new Error("Expected approval");
+    await expect(store.load({ scope })).resolves.toHaveLength(2);
+    if (pending.status !== "suspended") throw new Error("Expected suspension");
 
-    await expect(agent.resume(pending, { approved: true })).resolves.toMatchObject({
+    await expect(
+      agent.generate({
+        continuation: pending.continuation,
+        response: { type: "tool-approval", approved: true },
+      }),
+    ).resolves.toMatchObject({
       status: "completed",
       output: "done",
     });
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
-      ["assistant", "tool"],
       ["assistant"],
+      ["tool"],
+      ["tool"],
+      ["assistant"],
+    ]);
+    await expect(store.load({ scope })).resolves.toMatchObject([
+      { role: "user" },
+      { role: "assistant" },
+      { role: "tool", content: [{ type: "tool-approval-response", approved: true }] },
+      { role: "tool", content: [{ type: "tool-result" }] },
+      { role: "assistant" },
     ]);
   });
 
@@ -849,7 +864,7 @@ describe("agent memory", () => {
       id: "parent",
       model: parentModel,
       memory: { store },
-      tools: [childAgent.asTool({ name: "ask_child", stream: true })],
+      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
     });
 
     for await (const _event of parentAgent.stream({
@@ -871,13 +886,13 @@ describe("agent memory", () => {
     const store = new RecordingMemoryStore();
     const model = new QueueModel([]);
     const agent = new Agent({ id: "test-agent", model, memory: { store } });
-    const generate = agent.generate as unknown as (input: {
-      messages: MessageType[];
-      session: MemoryScope;
-    }) => unknown;
-
     expect(() =>
-      generate({ messages: [Message.user("hello")], session: { sessionId: "session_1" } }),
+      (
+        agent.generate as unknown as (input: {
+          messages: MessageType[];
+          session: MemoryScope;
+        }) => unknown
+      )({ messages: [Message.user("hello")], session: { sessionId: "session_1" } }),
     ).toThrow("cannot be combined");
   });
 });

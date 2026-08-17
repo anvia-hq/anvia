@@ -1,3 +1,4 @@
+import type { AgentInteractionRequest, AgentInteractionResponse } from "@anvia/core/agent";
 import type {
   CompletionSource,
   ContextUsage,
@@ -14,7 +15,7 @@ import type {
 import type { GuardrailDecisionRecord } from "@anvia/core/guardrails";
 import type { MemoryCompactionInfo } from "@anvia/core/memory";
 
-export const CLIENT_STREAM_PROTOCOL = "anvia.client.v2" as const;
+export const CLIENT_STREAM_PROTOCOL = "anvia.client.v3" as const;
 
 export type ClientDataMap = Record<string, JsonValue>;
 export type ClientMetadata = JsonObject;
@@ -44,7 +45,7 @@ export type UIError = ClientStreamError;
 
 export type UIMessageGeneration = {
   runId?: string;
-  status?: "completed" | "blocked" | "approval_required" | "cancelled" | "error";
+  status?: "completed" | "blocked" | "suspended" | "cancelled" | "error";
   usage?: Usage;
   contextUsage?: ContextUsage;
   trace?: { observer: string; traceId?: string; observationId?: string };
@@ -141,11 +142,20 @@ export type ClientStreamCursor = {
   after: number;
 };
 
-export type ClientStreamRequest = {
-  messages: readonly Message[];
-  metadata?: JsonObject;
-  resume?: ClientStreamCursor;
-};
+export type ClientStreamRequest<Metadata extends JsonObject = JsonObject> =
+  | {
+      type: "messages";
+      messages: readonly Message[];
+      metadata?: Metadata;
+      resume?: ClientStreamCursor;
+    }
+  | {
+      type: "interaction_response";
+      interactionId: string;
+      response: AgentInteractionResponse;
+      metadata?: Metadata;
+      resume?: ClientStreamCursor;
+    };
 
 export type ClientCompletionRequest<Metadata extends JsonObject = JsonObject> = {
   prompt: string;
@@ -161,64 +171,11 @@ export type ClientStreamScope = {
   parentInternalToolCallId?: string;
 };
 
-export type ClientToolApprovalStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "timed_out"
-  | "cancelled";
-
-export type ToolApproval = {
-  id: string;
-  runId?: string;
-  agentId?: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId?: string;
-  input?: JsonValue;
-  status: ClientToolApprovalStatus;
-  requestedAt?: string;
-  resolvedAt?: string;
-  reason?: string;
-};
-
-export type ToolQuestionStatus = "pending" | "answered" | "cancelled";
-
-export type ToolQuestionChoice = {
-  label: string;
-  value: string;
-};
-
-export type ToolQuestionPrompt = {
-  id: string;
-  question: string;
-  choices: ToolQuestionChoice[];
-};
-
-export type ToolQuestionAnswer = {
-  questionId: string;
-  answer: string;
-  choice?: string;
-  custom?: boolean;
-};
-
-export type ToolQuestion = {
-  id: string;
-  runId?: string;
-  agentId?: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId?: string;
-  input?: JsonValue;
-  questions: ToolQuestionPrompt[];
-  status: ToolQuestionStatus;
-  requestedAt?: string;
-  answeredAt?: string;
-  cancelledAt?: string;
-  answers?: ToolQuestionAnswer[];
-};
+export type ClientInteraction = Readonly<{
+  request: AgentInteractionRequest;
+  runId: string;
+  status: "pending" | "responded" | "cancelled";
+}>;
 
 type ClientStreamEventBase = {
   runId: string;
@@ -341,8 +298,7 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
       attachment: UIAttachment;
     }
   | { type: "provider_tool_call"; toolCall: ProviderToolCall }
-  | { type: "tool_approval"; approval: ToolApproval }
-  | { type: "tool_question"; question: ToolQuestion }
+  | { type: "interaction"; interaction: AgentInteractionRequest }
   | { type: "guardrail_decision"; decision: GuardrailDecisionRecord }
   | ({ type: "memory_compaction" } & MemoryCompactionInfo)
   | {
@@ -363,7 +319,7 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
     }
   | {
       type: "run_end";
-      status: "completed" | "blocked" | "approval_required" | "cancelled" | "error";
+      status: "completed" | "blocked" | "suspended" | "cancelled" | "error";
       text?: string;
       output?: JsonValue;
       usage?: Usage;

@@ -1,16 +1,15 @@
 import type {
   ClientDataMap,
+  ClientInteraction,
   ClientMetadata,
   ClientStreamCursor,
   ClientStreamEvent,
   ClientStreamRequest,
   ClientTransport,
   CreateUIAttachment,
-  ToolApproval,
-  ToolQuestion,
-  ToolQuestionAnswer,
   UIMessage,
 } from "@anvia/client";
+import type { AgentInteractionResponse } from "@anvia/core/agent";
 import type { ContextUsage } from "@anvia/core/completion";
 
 export type AnyClientTransport = ClientTransport<
@@ -39,33 +38,12 @@ export type ChatResumeState<
   Metadata extends ClientMetadata = ClientMetadata,
   Data extends ClientDataMap = ClientDataMap,
 > = {
-  version: 2;
+  version: 3;
   streamId: string;
   lastEventId: number;
   messages: readonly UIMessage<Metadata, Data>[];
-};
-
-export type ToolApprovalDecisionInput = {
-  approvalId: string;
-  approved: boolean;
-  reason?: string;
-  approval?: ToolApproval;
-};
-
-export type ToolQuestionAnswerInput = {
-  questionId: string;
-  answers: readonly ToolQuestionAnswer[];
-  question?: ToolQuestion;
-};
-
-export type HumanInputOptions = {
-  decideApproval?: (decision: ToolApprovalDecisionInput) => Promise<ToolApproval | undefined>;
-  answerQuestion?: (answer: ToolQuestionAnswerInput) => Promise<ToolQuestion | undefined>;
-};
-
-export type HumanInputState = {
-  approvals: { all: readonly ToolApproval[]; pending: readonly ToolApproval[] };
-  questions: { all: readonly ToolQuestion[]; pending: readonly ToolQuestion[] };
+  interactions: readonly ClientInteraction[];
+  request: ClientStreamRequest<Metadata>;
 };
 
 export type ChatSuggestion<Metadata extends ClientMetadata = ClientMetadata> = {
@@ -81,13 +59,12 @@ export type SendMessageInput<Metadata extends ClientMetadata = ClientMetadata> =
   metadata?: Metadata;
 };
 
-export type UseChatStatus = "ready" | "submitted" | "streaming" | "error";
+export type UseChatStatus = "ready" | "submitted" | "streaming" | "waiting" | "error";
 
 export type UseChatOptions<Transport extends AnyClientTransport = ClientTransport> = {
   transport: Transport;
   initialMessages?: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
   resume?: ChatResumeOptions;
-  humanInput?: HumanInputOptions;
   suggestions?: readonly ChatSuggestion<TransportMetadata<Transport>>[];
   onEvent?(event: ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>): void;
   onError?(error: Error): void;
@@ -115,13 +92,13 @@ export type UseChatResult<Transport extends AnyClientTransport = ClientTransport
   streamId: string | undefined;
   isResuming: boolean;
   resume(): Promise<void>;
-  humanInput: HumanInputState;
-  decidingApprovals: ReadonlySet<string>;
-  answeringQuestions: ReadonlySet<string>;
-  approveTool(options: { approvalId: string; reason?: string }): Promise<void>;
-  rejectTool(options: { approvalId: string; reason?: string }): Promise<void>;
-  answerToolQuestion(options: {
-    questionId: string;
-    answers: readonly ToolQuestionAnswer[];
+  interactions: {
+    all: readonly ClientInteraction[];
+    pending: readonly ClientInteraction[];
+  };
+  respondingInteractions: ReadonlySet<string>;
+  respondToInteraction(options: {
+    interactionId: string;
+    response: AgentInteractionResponse;
   }): Promise<void>;
 };

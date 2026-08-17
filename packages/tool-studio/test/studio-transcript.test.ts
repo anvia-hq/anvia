@@ -126,6 +126,7 @@ describe("Studio transcript helpers", () => {
               id: "choice",
               question: "Continue?",
               choices: [{ label: "Yes", value: "yes" }],
+              allowCustom: false,
             },
           ],
         },

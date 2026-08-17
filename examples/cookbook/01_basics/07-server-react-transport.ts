@@ -42,7 +42,7 @@ const transport = createHttpClientTransport({
 
 let output = "";
 for await (const frame of transport.send({
-  request: { messages: [{ role: "user", content: "Hello" }] },
+  request: { type: "messages", messages: [{ role: "user", content: "Hello" }] },
 })) {
   if (frame.type !== "stream_event") continue;
   const event = frame.event;

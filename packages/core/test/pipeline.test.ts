@@ -4,7 +4,6 @@ import * as publicPipeline from "../src/pipeline";
 import {
   Agent,
   AgentRunBlockedError,
-  AgentRunCancelledError,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -14,7 +13,7 @@ import {
   defineGuardrailPolicy,
   defineInputGuardrail,
   Pipeline,
-  PipelineAgentApprovalError,
+  PipelineAgentSuspensionError,
   Usage,
 } from "./helpers/imports";
 
@@ -243,7 +242,7 @@ describe("Pipeline", () => {
     }).agent({
       id: "answer",
       agent,
-      approval: "reject",
+      suspension: "reject",
       request: ({ input }) => ({ prompt: `Question: ${input.q}` }),
     });
 
@@ -265,7 +264,7 @@ describe("Pipeline", () => {
     const pipeline = new Pipeline({ id: "typed-agent-stage", inputSchema: z.string() }).agent({
       id: "answer",
       agent,
-      approval: "reject",
+      suspension: "reject",
       request: ({ input }) => ({ prompt: input }),
     });
 
@@ -305,15 +304,15 @@ describe("Pipeline", () => {
     const pipeline = new Pipeline({ id: "approval-pipeline", inputSchema: z.string() }).agent({
       id: "guarded-agent",
       agent,
-      approval: "reject",
+      suspension: "reject",
       request: ({ input }) => ({ prompt: input }),
     });
 
     const error = await pipeline.run({ input: "run guarded tool" }).catch((failure) => failure);
 
-    expect(error).toBeInstanceOf(PipelineAgentApprovalError);
-    expect(error.result.status).toBe("approval_required");
-    expect(observedError).toBeInstanceOf(AgentRunCancelledError);
+    expect(error).toBeInstanceOf(PipelineAgentSuspensionError);
+    expect(error.result.status).toBe("suspended");
+    expect(observedError).toBeUndefined();
   });
 
   it("preserves blocked Agent errors", async () => {
@@ -331,7 +330,7 @@ describe("Pipeline", () => {
     const pipeline = new Pipeline({ id: "blocked-pipeline", inputSchema: z.string() }).agent({
       id: "blocked",
       agent,
-      approval: "reject",
+      suspension: "reject",
       request: ({ input }) => ({ prompt: input }),
     });
     await expect(pipeline.run({ input: "stop" })).rejects.toBeInstanceOf(AgentRunBlockedError);

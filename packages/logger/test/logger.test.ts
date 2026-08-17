@@ -153,6 +153,7 @@ describe("createLoggerObserver", () => {
 
     run.end({
       status: "completed",
+      runId: "run_1",
       output: "ok",
       text: "ok",
       usage: {

@@ -571,7 +571,14 @@ function messageToAnthropicMessages(message: MessageType): AnthropicMessage[] {
     return [
       {
         role: "user",
-        content: message.content.map(toolContentToAnthropicBlock),
+        content: message.content.map((content) => {
+          if (content.type !== "tool-result") {
+            throw new TypeError(
+              "Anvia interaction responses must be resolved by Agent before provider calls.",
+            );
+          }
+          return toolContentToAnthropicBlock(content);
+        }),
       },
     ];
   }

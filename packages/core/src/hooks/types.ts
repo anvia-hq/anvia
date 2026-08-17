@@ -92,7 +92,8 @@ export type CompletionErrorHookArgs = {
 
 export type ToolHookArgs = {
   toolName: string;
-  toolCallId?: string;
+  toolCallId: string;
+  callId?: string;
   internalCallId: string;
   args: string;
 };

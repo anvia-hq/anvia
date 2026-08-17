@@ -18,6 +18,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
   AgentTraceInfo,
 } from "./types";
 
@@ -236,6 +237,15 @@ export class ActiveToolObservers {
       this.observers,
       "tool.end",
       (observer) => observer.end(observerSnapshot(args)),
+      this.errorPolicy,
+    );
+  }
+
+  async suspend(args: AgentToolSuspendedArgs): Promise<void> {
+    await dispatchTerminalObservers(
+      this.observers,
+      "tool.suspend",
+      (observer) => observer.suspend?.(observerSnapshot(args)),
       this.errorPolicy,
     );
   }

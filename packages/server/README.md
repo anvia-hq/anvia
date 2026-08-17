@@ -12,6 +12,7 @@ import { streamCompletion } from "@anvia/core";
 import { createClientStreamResponse } from "@anvia/server";
 
 const body = parseClientStreamRequest(await request.json());
+if (body.type !== "messages") throw new Error("This completion endpoint accepts messages only.");
 const events = completionToClientStream({
   events: streamCompletion({ model, messages: body.messages }),
 });
@@ -21,7 +22,7 @@ return createClientStreamResponse({ events }); // JSONL by default
 
 `createClientStreamResponse({ events, ...options })` always emits `stream_start`, ordered
 `stream_event` frames, and `stream_end`, and sets
-`x-anvia-stream-protocol: anvia.client.v2`. Use `format: "sse"` for SSE framing.
+`x-anvia-stream-protocol: anvia.client.v3`. Use `format: "sse"` for SSE framing.
 
 For resumable streams, pass `{ resumable: { streamId, store } }` when creating the response and
 call `resumeClientStreamResponse({ streamId, after, store })` for a resume request.

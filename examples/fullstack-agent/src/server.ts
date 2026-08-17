@@ -26,6 +26,9 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.post("/api/completion", async (c) => {
   const body = parseClientStreamRequest(await c.req.json());
+  if (body.type !== "messages") {
+    return c.json({ error: "This completion endpoint does not accept Agent interactions." }, 400);
+  }
 
   return createClientStreamResponse({
     events: completionToClientStream({

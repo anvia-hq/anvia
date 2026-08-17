@@ -24,9 +24,8 @@ import {
   studioUiEntryPath,
 } from "../ui/routes";
 import { staticContextDocuments, vectorContexts } from "./agent-context";
-import { registerAgentRunRoute } from "./agent-runs";
+import { type PreparedAgentRun, registerAgentRunRoute } from "./agent-runs";
 import { cloneAgent } from "./agent-utils";
-import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
 import {
   agentConfig,
   agentRuntimeSummary,
@@ -36,6 +35,7 @@ import {
 } from "./config";
 import { registerEvalRoutes } from "./evals";
 import { errorResponse, unsupportedCapability } from "./http";
+import { createStudioContinuationRegistry } from "./interactions";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
 import { createStudioMemorySourceRegistry, registerMemoryRoutes } from "./memory";
@@ -47,7 +47,6 @@ import {
 } from "./observability";
 import type { StudioRuntimeOptions } from "./options";
 import { registerPipelineRoutes } from "./pipelines";
-import { createQuestionRuntime, registerQuestionRoutes } from "./questions";
 import { createStudioSandboxRegistry, registerSandboxRoutes } from "./sandboxes";
 import { registerSessionRoutes } from "./sessions";
 import { normalizeAgents, normalizePipelines, resolveStores } from "./shared";
@@ -319,8 +318,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
   const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
-  const approvalRuntime = createApprovalRuntime();
-  const questionRuntime = createQuestionRuntime();
+  const continuationRegistry = createStudioContinuationRegistry<PreparedAgentRun>();
   const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
@@ -380,8 +378,6 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   registerMcpRoutes(app, { agentMap });
   registerToolRoutes(app, { agentMap });
   registerSandboxRoutes(app, sandboxRegistry);
-  registerApprovalRoutes(app, approvalRuntime);
-  registerQuestionRoutes(app, questionRuntime);
   registerObservabilityRoutes(app, observabilityHub);
   registerEvalRoutes(app, {
     evals: options.evals,
@@ -402,8 +398,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     agentMap,
     stores,
     modelRegistry,
-    approvalRuntime,
-    questionRuntime,
+    continuationRegistry,
   });
 
   if (memorySources.size > 0 || stores.sessions !== undefined) {
@@ -439,7 +434,9 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     config(): StudioConfig {
       return buildConfig(options, agents, pipelines, stores, sandboxRegistry.size);
     },
-    close() {},
+    close() {
+      continuationRegistry.clear();
+    },
   };
   if (stores.sessions !== undefined) Object.assign(studio, { sessionStore: stores.sessions });
   if (stores.traces !== undefined) Object.assign(studio, { traceStore: stores.traces });

@@ -1,11 +1,4 @@
-import type {
-  AgentApprovalRequiredEvent,
-  AgentBlockedResult,
-  AgentResponse,
-  AgentResult,
-  AgentRunSettings,
-  AgentStream,
-} from "@anvia/core/agent";
+import type { AgentResult, AgentRunSettings, AgentStream } from "@anvia/core/agent";
 import type { Message as CoreMessage, JsonObject, UserMessage } from "@anvia/core/completion";
 import {
   type Agent,
@@ -15,15 +8,16 @@ import {
 import type { Context, Hono } from "hono";
 import type {
   AgentRunRequest,
+  AgentRunResponse,
   AgentRunStreamEvent,
   StudioAgent,
   StudioSession,
   StudioSessionStore,
 } from "../types";
 import { cloneAgent } from "./agent-utils";
-import type { ApprovalContext, createApprovalRuntime } from "./approvals";
 import { serializeError } from "./errors";
 import { errorResponse, unsupportedCapability } from "./http";
+import type { StudioContinuationRegistry } from "./interactions";
 import {
   type createStudioModelRegistry,
   ModelSelectionError,
@@ -33,16 +27,12 @@ import {
 } from "./models";
 import { rawObservedStore } from "./observability";
 import type { ResolvedStores } from "./options";
-import type { createQuestionRuntime } from "./questions";
 import {
-  AsyncEventQueue,
   assignTranscriptRunDuration,
   createPersistedStreamingSessionTranscript,
-  mergeRunAndApprovalEvents,
   optionalTitle,
   parseRunRequest,
   streamAgentRunEvents,
-  type TranslatedAgentStreamEvent,
   traceForRun,
   transcriptFromMessages,
 } from "./runs";
@@ -63,8 +53,7 @@ type AgentRunRouteProps = {
   agentMap: Map<string, StudioAgent>;
   stores: ResolvedStores;
   modelRegistry: ReturnType<typeof createStudioModelRegistry>;
-  approvalRuntime: ReturnType<typeof createApprovalRuntime>;
-  questionRuntime: ReturnType<typeof createQuestionRuntime>;
+  continuationRegistry: StudioContinuationRegistry<PreparedAgentRun>;
 };
 
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
@@ -73,10 +62,10 @@ type RunExecution = {
   stream(options: AgentRunSettings): AgentStream;
 };
 
-type PreparedAgentRun = {
+export type PreparedAgentRun = {
   agentId: string;
   agent: StudioAgent;
-  body: AgentRunRequest;
+  body: Extract<AgentRunRequest, { type: "messages" }>;
   memoryMetadata: JsonObject;
   execution: RunExecution;
   failureMessages: readonly CoreMessage[] | undefined;
@@ -85,6 +74,7 @@ type PreparedAgentRun = {
   runAgent: Agent;
   runId: string;
   runStartedAt: number;
+  generatedMessagesStartIndex: 0 | 1;
   selectedModel: SelectedModel;
   session: StudioSession | undefined;
   sessionStore: StudioSessionStore | undefined;
@@ -120,6 +110,59 @@ async function prepareAgentRun(
   const body = await parseRunRequest(c);
   if ("error" in body) {
     return body.error;
+  }
+
+  if (body.type === "interaction_response") {
+    const registration = props.continuationRegistry.take(
+      body.interactionId,
+      agentId,
+      body.response,
+    );
+    if (registration.status === "missing") {
+      return errorResponse(c, 404, "not_found", "Interaction continuation is unavailable");
+    }
+    if (registration.status === "claimed") {
+      return errorResponse(c, 409, "conflict", "Interaction response was already claimed");
+    }
+    if (registration.status === "invalid") {
+      return errorResponse(c, 400, "bad_request", registration.error.message);
+    }
+    const { registration: claimed } = registration;
+    const source = claimed.context;
+    const runId = globalThis.crypto.randomUUID();
+    const resumedBody: PreparedAgentRun["body"] = {
+      ...source.body,
+      ...(body.stream === undefined ? {} : { stream: body.stream }),
+      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+      ...(body.trace === undefined ? {} : { trace: body.trace }),
+    };
+    const runOptions = createRunOptions(resumedBody, agentId, source.session, c.req.raw.signal);
+    const execution: RunExecution = {
+      generate: (options) =>
+        source.runAgent.generate({
+          continuation: claimed.continuation,
+          response: body.response,
+          ...options,
+        }),
+      stream: (options) =>
+        source.runAgent.stream({
+          continuation: claimed.continuation,
+          response: body.response,
+          ...options,
+        }),
+    };
+    return {
+      ...source,
+      body: resumedBody,
+      execution,
+      failureMessages: undefined,
+      memoryCompactionLogged: false,
+      options: runOptions,
+      runId,
+      runStartedAt: Date.now(),
+      generatedMessagesStartIndex: 0,
+      shouldPersistSessionMessages: source.shouldPersistSessionMessages,
+    };
   }
 
   const session = await resolveRunSession(c, body, agentId, props.stores);
@@ -190,6 +233,7 @@ async function prepareAgentRun(
     runAgent,
     runId,
     runStartedAt,
+    generatedMessagesStartIndex: 1,
     selectedModel,
     session,
     sessionStore,
@@ -199,7 +243,7 @@ async function prepareAgentRun(
 
 async function resolveRunSession(
   c: Context,
-  body: AgentRunRequest,
+  body: Extract<AgentRunRequest, { type: "messages" }>,
   agentId: string,
   stores: ResolvedStores,
 ): Promise<StudioSession | undefined | Response> {
@@ -222,7 +266,7 @@ function selectRunModel(
   c: Context,
   props: AgentRunRouteProps,
   agent: StudioAgent,
-  body: AgentRunRequest,
+  body: Extract<AgentRunRequest, { type: "messages" }>,
   session: StudioSession | undefined,
 ): SelectedModel | Response {
   try {
@@ -241,7 +285,7 @@ function selectRunModel(
 
 async function recordRunReceived(props: {
   agentId: string;
-  body: AgentRunRequest;
+  body: Extract<AgentRunRequest, { type: "messages" }>;
   runId: string;
   selectedModel: SelectedModel;
   session: StudioSession | undefined;
@@ -305,7 +349,7 @@ async function recordSelectedModelWarnings(props: {
 
 function runMemoryMetadata(
   agentId: string,
-  body: AgentRunRequest,
+  body: Extract<AgentRunRequest, { type: "messages" }>,
   selectedModel: SelectedModel,
   runId: string,
 ): JsonObject {
@@ -318,7 +362,7 @@ function runMemoryMetadata(
 
 function createRunExecution(props: {
   agentId: string;
-  body: AgentRunRequest;
+  body: Extract<AgentRunRequest, { type: "messages" }>;
   memoryMetadata: JsonObject;
   promptMessage: UserMessage;
   runAgent: Agent;
@@ -357,8 +401,10 @@ function createRunOptions(
   abortSignal: AbortSignal,
 ): AgentRunSettings {
   const options: AgentRunSettings = { abortSignal };
-  if (body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
-  if (body.toolConcurrency !== undefined) options.toolConcurrency = body.toolConcurrency;
+  if (body.type === "messages" && body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
+  if (body.type === "messages" && body.toolConcurrency !== undefined) {
+    options.toolConcurrency = body.toolConcurrency;
+  }
   if (body.trace !== undefined) {
     options.trace = traceForRun(body.trace, agentId, session);
   } else if (session !== undefined) {
@@ -372,34 +418,11 @@ function handleStreamingAgentRun(
   run: PreparedAgentRun,
   props: AgentRunRouteProps,
 ): Response {
-  const runtimeEvents = new AsyncEventQueue<AgentRunStreamEvent>();
-  const approvalContext: ApprovalContext = {
-    runId: run.runId,
-    agentId: run.agentId,
-    emit: (event) => runtimeEvents.push(event),
-  };
-  if (run.session !== undefined) approvalContext.sessionId = run.session.id;
-  if (run.body.metadata !== undefined) approvalContext.metadata = run.body.metadata;
-  const questionContext: Parameters<typeof props.questionRuntime.createHook>[0] = {
-    runId: run.runId,
-    agentId: run.agentId,
-    emit: (event) => runtimeEvents.push(event),
-  };
-  if (run.session !== undefined) questionContext.sessionId = run.session.id;
-  if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
-  const effectiveHook = props.questionRuntime.createHook(questionContext);
-  const streamOptions = withInternalAgentRunOptions(
-    { ...run.options },
-    { hook: effectiveHook, runId: run.runId },
-  );
-  const runStream = mergeRunAndApprovalEvents(
-    resumeStreamingApprovals(
-      run.runAgent,
-      run.execution.stream(streamOptions),
-      props.approvalRuntime,
-      approvalContext,
-    ),
-    runtimeEvents,
+  const streamOptions = withInternalAgentRunOptions({ ...run.options }, { runId: run.runId });
+  const runStream = registerStreamingContinuation(
+    run.execution.stream(streamOptions),
+    props.continuationRegistry,
+    run,
   );
   let stream: AsyncIterable<AgentRunStreamEvent> = runStream;
   let persistedRun: ReturnType<typeof createPersistedStreamingSessionTranscript> | undefined;
@@ -418,6 +441,7 @@ function handleStreamingAgentRun(
       runId: run.runId,
       startedAt: run.runStartedAt,
       persistGeneratedMessages: run.shouldPersistSessionMessages,
+      generatedMessagesStartIndex: run.generatedMessagesStartIndex,
     });
     stream = persistedRun.events;
   }
@@ -425,8 +449,6 @@ function handleStreamingAgentRun(
   return streamAgentRunEvents(c, stream, {
     runId: run.runId,
     onCancel: async () => {
-      props.approvalRuntime.cancelRun(run.runId);
-      props.questionRuntime.cancelRun(run.runId);
       const persistence: Promise<unknown>[] = [];
       if (persistedRun !== undefined) {
         persistence.push(persistedRun.cancel());
@@ -450,39 +472,31 @@ async function handleBufferedAgentRun(
   props: AgentRunRouteProps,
 ): Promise<Response> {
   try {
-    const runtimeOptions = await startBufferedSessionRun(run, props);
-    let result = await run.execution.generate(runtimeOptions);
-    const approvalContext = createApprovalContext(run);
-    while (result.status === "approval_required") {
-      const decision = await props.approvalRuntime.request(approvalContext, result.approval);
-      result = await run.runAgent.resume(result, decision);
+    const runtimeOptions = await startBufferedSessionRun(run);
+    const result = await run.execution.generate(runtimeOptions);
+    if (result.status === "suspended") {
+      props.continuationRegistry.register({ continuation: result.continuation, context: run });
     }
-    const response = result;
-    await completeBufferedSessionRun(run, response);
-    return c.json(response);
+    await completeBufferedSessionRun(run, result);
+    return c.json(agentRunResponse(result));
   } catch (error) {
     await failBufferedSessionRun(run, error);
     return errorResponse(c, 500, "internal_error", "Agent run failed", serializeError(error));
   }
 }
 
-async function startBufferedSessionRun(
-  run: PreparedAgentRun,
-  props: AgentRunRouteProps,
-): Promise<AgentRunSettings> {
+function agentRunResponse(result: AgentResult): AgentRunResponse {
+  if (result.status !== "suspended") return result;
+  const { continuation: _continuation, messages: _messages, ...response } = result;
+  return response;
+}
+
+async function startBufferedSessionRun(run: PreparedAgentRun): Promise<AgentRunSettings> {
   if (run.session !== undefined) {
     await appendSessionLog(run.sessionStore, runStartedLog(run.session, run.runId));
     await appendSessionLog(run.sessionStore, memoryLoadedLog(run.session, run.runId));
   }
-  const questionContext: Parameters<typeof props.questionRuntime.createHook>[0] = {
-    runId: run.runId,
-    agentId: run.agentId,
-  };
-  if (run.session !== undefined) questionContext.sessionId = run.session.id;
-  if (run.body.metadata !== undefined) questionContext.metadata = run.body.metadata;
-  const effectiveHook = props.questionRuntime.createHook(questionContext);
   const internalOptions: InternalAgentRunOptions = {
-    hook: effectiveHook,
     onFailure: ({ messages }) => {
       run.failureMessages = structuredClone(messages);
     },
@@ -506,51 +520,28 @@ async function startBufferedSessionRun(
   return withInternalAgentRunOptions({ ...run.options }, internalOptions);
 }
 
-function createApprovalContext(
+async function* registerStreamingContinuation(
+  stream: AgentStream,
+  registry: StudioContinuationRegistry<PreparedAgentRun>,
   run: PreparedAgentRun,
-  emit?: (event: AgentRunStreamEvent) => void,
-): ApprovalContext {
-  const context: ApprovalContext = {
-    runId: run.runId,
-    agentId: run.agentId,
-  };
-  if (run.session !== undefined) context.sessionId = run.session.id;
-  if (run.body.metadata !== undefined) context.metadata = run.body.metadata;
-  if (emit !== undefined) context.emit = emit;
-  return context;
-}
-
-async function* resumeStreamingApprovals(
-  agent: Agent,
-  initialStream: AgentStream,
-  approvalRuntime: ReturnType<typeof createApprovalRuntime>,
-  context: ApprovalContext,
-): AsyncIterable<TranslatedAgentStreamEvent> {
-  let stream = initialStream;
-  while (true) {
-    let pending: AgentApprovalRequiredEvent | undefined;
-    for await (const event of stream) {
-      if (event.type === "approval_required") {
-        pending = event;
-        break;
-      }
-      yield event;
+): AsyncIterable<AgentRunStreamEvent> {
+  for await (const event of stream) {
+    if (event.type === "final" && event.result.status === "suspended") {
+      registry.register({ continuation: event.result.continuation, context: run });
     }
-    if (pending === undefined) return;
-    const decision = await approvalRuntime.request(context, pending.approval);
-    stream = agent.resume(pending, decision);
+    yield event;
   }
 }
 
 async function completeBufferedSessionRun(
   run: PreparedAgentRun,
-  response: AgentResponse | AgentBlockedResult,
+  response: AgentResult,
 ): Promise<void> {
   if (run.session === undefined || run.sessionStore === undefined) {
     return;
   }
   if (run.shouldPersistSessionMessages) {
-    const generatedMessages = response.messages.slice(1);
+    const generatedMessages = response.messages.slice(run.generatedMessagesStartIndex);
     if (generatedMessages.length > 0) {
       await run.sessionStore.append({
         scope: { sessionId: run.session.id, metadata: run.memoryMetadata },
@@ -568,7 +559,7 @@ async function completeBufferedSessionRun(
     runId: run.runId,
     ...optionalTitle(run.body.messages.at(-1) as UserMessage),
     transcript,
-    status: "success",
+    status: response.status === "suspended" ? "suspended" : "success",
   });
   if (response.memoryCompaction !== undefined && !run.memoryCompactionLogged) {
     await appendSessionLog(
@@ -583,15 +574,71 @@ async function completeBufferedSessionRun(
   }
   await appendSessionLog(
     run.sessionStore,
-    runCompletedLog({
+    response.status === "suspended"
+      ? {
+          sessionId: run.session.id,
+          runId: run.runId,
+          level: "info",
+          category: "run",
+          event: "run.suspended",
+          message: `Run suspended for ${response.interaction.type}`,
+          metadata: {
+            interactionId: response.interaction.id,
+            interactionType: response.interaction.type,
+            toolName: response.interaction.toolName,
+            sourceRunId: response.continuation.sourceRunId,
+          },
+        }
+      : runCompletedLog({
+          sessionId: run.session.id,
+          runId: run.runId,
+          durationMs,
+          usage: response.usage,
+          output: response.text,
+          messageCount: response.messages.length,
+        }),
+  );
+  if (response.resumedFrom !== undefined) {
+    const responseMessage = response.messages[0];
+    const responsePart = responseMessage?.role === "tool" ? responseMessage.content[0] : undefined;
+    if (responsePart !== undefined && responsePart.type !== "tool-result") {
+      const metadata: JsonObject = {
+        interactionId: responsePart.interactionId,
+        interactionType:
+          responsePart.type === "tool-approval-response" ? "tool-approval" : "tool-question",
+        toolName: responsePart.toolName,
+        sourceRunId: response.resumedFrom.runId,
+      };
+      if (responsePart.type === "tool-approval-response") {
+        metadata.approved = responsePart.approved;
+        metadata.hasReason = responsePart.reason !== undefined;
+      } else {
+        metadata.answerCount = responsePart.answers.length;
+      }
+      await appendSessionLog(run.sessionStore, {
+        sessionId: run.session.id,
+        runId: run.runId,
+        level: "info",
+        category: "run",
+        event: "interaction.responded",
+        message: `Interaction response received for ${responsePart.toolName}`,
+        metadata,
+      });
+    }
+    await appendSessionLog(run.sessionStore, {
       sessionId: run.session.id,
       runId: run.runId,
-      durationMs,
-      usage: response.usage,
-      output: response.text,
-      messageCount: response.messages.length,
-    }),
-  );
+      level: "info",
+      category: "run",
+      event: "interaction.resumed",
+      message: "Interaction resumed in a linked run",
+      metadata: {
+        interactionId: response.resumedFrom.interactionId,
+        sourceRunId: response.resumedFrom.runId,
+        resumedRunId: response.runId,
+      },
+    });
+  }
   await appendSessionLog(
     run.sessionStore,
     memorySavedLog({

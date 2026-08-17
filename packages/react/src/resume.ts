@@ -1,4 +1,12 @@
-import { type ClientDataMap, type ClientMetadata, parseUIMessages } from "@anvia/client";
+import {
+  type ClientDataMap,
+  type ClientInteraction,
+  type ClientMetadata,
+  type ClientStreamRequest,
+  parseClientStreamRequest,
+  parseUIMessages,
+} from "@anvia/client";
+import { parseAgentInteractionRequest } from "@anvia/core/agent";
 import type { ChatResumeOptions, ChatResumeState } from "./types";
 
 const storageKeyPrefix = "anvia:chat-resume:";
@@ -65,7 +73,7 @@ function parseChatResumeState<Metadata extends ClientMetadata, Data extends Clie
 ): ChatResumeState<Metadata, Data> | undefined {
   if (
     !isRecord(value) ||
-    value.version !== 2 ||
+    value.version !== 3 ||
     typeof value.streamId !== "string" ||
     typeof value.lastEventId !== "number" ||
     !Number.isSafeInteger(value.lastEventId) ||
@@ -75,14 +83,34 @@ function parseChatResumeState<Metadata extends ClientMetadata, Data extends Clie
   }
   try {
     return {
-      version: 2,
+      version: 3,
       streamId: value.streamId,
       lastEventId: value.lastEventId,
       messages: parseUIMessages<Metadata, Data>(value.messages),
+      interactions: parseInteractions(value.interactions),
+      request: parseClientStreamRequest(value.request) as ClientStreamRequest<Metadata>,
     };
   } catch {
     return undefined;
   }
+}
+
+function parseInteractions(value: unknown): readonly ClientInteraction[] {
+  if (!Array.isArray(value)) throw new TypeError("interactions must be an array");
+  return value.map((item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.runId !== "string" ||
+      (item.status !== "pending" && item.status !== "responded" && item.status !== "cancelled")
+    ) {
+      throw new TypeError("interaction state is invalid");
+    }
+    return {
+      request: parseAgentInteractionRequest(item.request),
+      runId: item.runId,
+      status: item.status,
+    };
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

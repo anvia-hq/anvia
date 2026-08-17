@@ -9,13 +9,16 @@ import { completionToClientStream, parseClientStreamRequest } from "@anvia/clien
 import { streamCompletion } from "@anvia/core";
 
 const request = parseClientStreamRequest(await httpRequest.json());
+if (request.type !== "messages") throw new Error("This endpoint does not resume interactions.");
 const events = completionToClientStream({
   events: streamCompletion({ model, messages: request.messages }),
 });
 ```
 
 The request carries core `Message[]`; client-side `UIMessage[]` never crosses the server boundary.
-The response uses `ClientStreamEvent` records inside an always-framed `anvia.client.v2` stream.
+The response uses `ClientStreamEvent` records inside an always-framed `anvia.client.v3` stream.
+Agent endpoints accept either a `messages` request or an `interaction_response` request, while
+keeping the matching `AgentContinuation` exclusively on the server.
 
 ## Public API
 

@@ -159,7 +159,7 @@ export function StudioBrowserView(props: {
         rfb.scaleViewport = true;
         rfb.resizeSession = false;
         rfb.viewOnly = leaseRef.current === undefined;
-        rfb.background = "rgb(18, 18, 18)";
+        rfb.background = "var(--background)";
         rfb.addEventListener("connect", () => {
           if (!controller.signal.aborted) setViewerStatus("connected");
         });
@@ -257,7 +257,7 @@ export function StudioBrowserView(props: {
   return (
     <StudioSurface
       className={cn(
-        "grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#121212]",
+        "grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background",
         props.className,
       )}
     >
@@ -308,7 +308,7 @@ export function StudioBrowserView(props: {
           )}
         </div>
       </div>
-      <div className="relative grid min-h-0 min-w-0 place-items-stretch overflow-hidden bg-[#121212]">
+      <div className="relative grid min-h-0 min-w-0 place-items-stretch overflow-hidden bg-background">
         <section
           aria-label="Live browser desktop"
           className="h-full min-h-0 min-w-0 overflow-hidden [&_canvas]:outline-none"
@@ -316,14 +316,14 @@ export function StudioBrowserView(props: {
           ref={targetRef}
         />
         {viewerStatus === "connecting" ? (
-          <div className="absolute inset-0 grid place-items-center bg-[#121212] text-sm text-white/60">
+          <div className="absolute inset-0 grid place-items-center bg-background text-sm text-muted-foreground">
             Connecting to browser…
           </div>
         ) : null}
         {viewerStatus === "error" || viewerStatus === "disconnected" ? (
-          <div className="absolute inset-0 grid place-items-center bg-[#121212] p-6 text-center">
+          <div className="absolute inset-0 grid place-items-center bg-background p-6 text-center">
             <div className="grid max-w-sm gap-3">
-              <p className="m-0 text-sm text-white/70">
+              <p className="m-0 text-sm text-muted-foreground">
                 {viewerError || "Browser desktop disconnected."}
               </p>
               <Button

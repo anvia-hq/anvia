@@ -43,6 +43,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
     return (
       <ToolEntry
         entry={props.entry}
+        live={props.live}
         decidingApprovals={props.decidingApprovals}
         answeringQuestions={props.answeringQuestions}
         onApprovalDecision={props.onApprovalDecision}
@@ -346,6 +347,7 @@ function hasMarkdownTable(text: string): boolean {
 
 function ToolEntry(props: {
   entry: ToolMessage;
+  live?: boolean | undefined;
   decidingApprovals: Set<string>;
   answeringQuestions: Set<string>;
   onApprovalDecision: (approvalId: string, approved: boolean) => void;
@@ -383,7 +385,7 @@ function ToolEntry(props: {
           ? "Rejected"
           : timedOutApproval
             ? "Timed out"
-            : props.entry.result === undefined
+            : props.live === true && props.entry.result === undefined
               ? "Running"
               : undefined;
 
@@ -403,10 +405,10 @@ function ToolEntry(props: {
           onClick={() => setCollapsed((current) => !current)}
         >
           <span
-            className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/80 bg-muted/35 text-muted-foreground"
+            className="grid size-6 shrink-0 place-items-center rounded-md border border-border/80 bg-muted/35 text-muted-foreground"
             data-tool-icon="action"
           >
-            <StudioIcon icon={Lightning} className="size-3.5" weight="fill" aria-hidden="true" />
+            <StudioIcon icon={Lightning} className="size-2.5" weight="fill" aria-hidden="true" />
           </span>
           <strong className="min-w-0 truncate font-mono text-sm font-medium text-foreground">
             {props.entry.toolName}

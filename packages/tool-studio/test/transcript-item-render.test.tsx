@@ -137,7 +137,7 @@ describe("TranscriptItem response actions", () => {
     expect(html).toContain("search_docs");
     expect(html).toContain('data-entry-kind="tool"');
     expect(html).toContain('data-tool-icon="action"');
-    expect(html).toContain("size-8 shrink-0 place-items-center rounded-lg border");
+    expect(html).toContain("size-6 shrink-0 place-items-center rounded-md border");
     expect(html).toContain("font-mono text-sm");
     expect(html).not.toContain("Completed");
     expect(html).not.toContain("size-1.5 rounded-full");
@@ -212,7 +212,7 @@ describe("TranscriptItem response actions", () => {
   });
 
   it("does not advertise disclosure for a payload-less tool call", () => {
-    render(
+    const html = render(
       <TranscriptItem
         entry={{ entryId: 7, kind: "tool", toolName: "lookup" }}
         decidingApprovals={new Set()}
@@ -223,10 +223,28 @@ describe("TranscriptItem response actions", () => {
       />,
     );
 
+    expect(html).not.toContain("Running");
     const toggle = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Expand lookup tool call"]',
     );
     expect(toggle).not.toBeNull();
     expect(toggle?.hasAttribute("aria-expanded")).toBe(false);
+  });
+
+  it("shows running only for the live tool call", () => {
+    const html = render(
+      <TranscriptItem
+        entry={{ entryId: 8, kind: "tool", toolName: "browser_navigate" }}
+        live
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Running");
+    expect(html).toContain("animate-pulse");
   });
 });

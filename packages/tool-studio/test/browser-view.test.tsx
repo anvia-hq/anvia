@@ -87,6 +87,7 @@ describe("StudioBrowserView", () => {
     expect(noVnc.constructions.mock.calls[0]?.[2]).toEqual({
       credentials: { username: "", password: "private-password", target: "" },
     });
+    expect(noVnc.constructions.mock.calls[0]?.[3].background).toBe("var(--background)");
     expect(container.textContent).toContain("Agent control");
     expect(container.textContent).not.toContain("private-password");
     expect(container.querySelector("iframe")).toBeNull();

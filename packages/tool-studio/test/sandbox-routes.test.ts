@@ -24,7 +24,8 @@ describe("Studio sandbox registration and routes", () => {
         workdir: "/workspace",
         agentIds: ["coder", "reviewer"],
         toolNames: ["list_files", "read_file"],
-        capabilities: { files: true, ports: true, processes: true },
+        capabilities: { files: true, ports: true, processes: true, views: false },
+        views: [],
       }),
     ]);
     expect(() => createStudioSandboxRegistry([], [{ inspector }])).not.toThrow();

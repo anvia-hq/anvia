@@ -60,6 +60,7 @@ export function usePlaygroundRun(props: {
   onRunStateChange: (runState: RunState) => void;
   onSessionTraceSummariesChange: (traceSummaries: StudioTraceSummary[]) => void;
   onStatus: (status: string) => void;
+  onToolCall: (toolName: string) => void;
 }) {
   const {
     attachments,
@@ -72,6 +73,7 @@ export function usePlaygroundRun(props: {
     onRunStateChange,
     onSessionTraceSummariesChange,
     onStatus,
+    onToolCall,
     promptRef,
     runState,
     selectedAgent,
@@ -337,6 +339,7 @@ export function usePlaygroundRun(props: {
       return true;
     }
     if (event.type === "tool_call_end") {
+      onToolCall(event.toolName);
       transcript.appendToolCall(
         event.toolName,
         formatToolValue(event.input),

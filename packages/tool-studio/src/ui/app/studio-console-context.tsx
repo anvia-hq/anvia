@@ -8,6 +8,7 @@ import type {
 } from "../../types";
 import type { PromptAttachment } from "./app-helpers";
 import type { ResolvedStudioTheme, StudioTheme } from "./app-theme";
+import type { BrowserWorkspace } from "./modules/playground/browser-workspace";
 import type { useStudioSessions } from "./modules/sessions/use-studio-sessions";
 import type { ActivePage, KnowledgeTab, RunState, TranscriptEntry } from "./modules/shared/types";
 import type { useTraces } from "./modules/tracing/use-traces";
@@ -20,6 +21,8 @@ export type StudioConsoleContextValue = {
   agents: StudioConfig["agents"];
   answeringQuestions: Set<string>;
   attachments: PromptAttachment[];
+  browserWorkspace: BrowserWorkspace | undefined;
+  browserWorkspaceOpen: boolean;
   decidingApprovals: Set<string>;
   deleteCandidate: StudioSessionSummary | undefined;
   hasAgents: boolean;
@@ -60,6 +63,8 @@ export type StudioConsoleContextValue = {
   navigatePage: (page: ActivePage) => void;
   navigateKnowledgeTab: (tab: KnowledgeTab) => void;
   setDeleteCandidate: (session: StudioSessionSummary | undefined) => void;
+  closeBrowserWorkspace: () => void;
+  openBrowserWorkspace: () => void;
   setError: (message: string) => void;
   setKnowledgeTab: (tab: KnowledgeTab) => void;
   setSelectedModelRef: (modelRef: string) => void;

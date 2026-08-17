@@ -5,6 +5,7 @@
   "fixed": [
     [
       "@anvia/anthropic",
+      "@anvia/browser",
       "@anvia/chroma",
       "@anvia/client",
       "@anvia/core",

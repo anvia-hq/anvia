@@ -956,11 +956,20 @@ function createRunArgs(options: {
   if (options.resources?.pidsLimit !== undefined) {
     args.push("--pids-limit", `${options.resources.pidsLimit}`);
   }
+  if (options.resources?.sharedMemoryMb !== undefined) {
+    args.push("--shm-size", `${options.resources.sharedMemoryMb}m`);
+  }
   if (options.security?.readonlyRootfs === true) args.push("--read-only");
   if (options.security?.noNewPrivileges ?? true)
     args.push("--security-opt", "no-new-privileges:true");
+  if (options.security?.seccompProfile !== undefined) {
+    args.push("--security-opt", `seccomp=${options.security.seccompProfile.path}`);
+  }
   for (const capability of options.security?.dropCapabilities ?? ["ALL"]) {
     args.push("--cap-drop", capability);
+  }
+  for (const capability of options.security?.addCapabilities ?? []) {
+    args.push("--cap-add", capability);
   }
   args.push(
     options.image,
@@ -1060,6 +1069,8 @@ function validateResources(resources: CreateDockerSandboxOptions["resources"]): 
   if (resources?.memoryMb !== undefined) assertPositiveSafeInteger(resources.memoryMb, "memoryMb");
   if (resources?.pidsLimit !== undefined)
     assertPositiveSafeInteger(resources.pidsLimit, "pidsLimit");
+  if (resources?.sharedMemoryMb !== undefined)
+    assertPositiveSafeInteger(resources.sharedMemoryMb, "sharedMemoryMb");
   if (resources?.cpus !== undefined && (!Number.isFinite(resources.cpus) || resources.cpus <= 0)) {
     throw new RangeError("cpus must be a positive finite number.");
   }
@@ -1072,17 +1083,39 @@ function validateSecurity(security: CreateDockerSandboxOptions["security"]): voi
   if (security?.dropCapabilities !== undefined && !Array.isArray(security.dropCapabilities)) {
     throw new TypeError("dropCapabilities must be an array.");
   }
+  if (security?.addCapabilities !== undefined && !Array.isArray(security.addCapabilities)) {
+    throw new TypeError("addCapabilities must be an array.");
+  }
   if (security?.readonlyRootfs !== undefined && typeof security.readonlyRootfs !== "boolean") {
     throw new TypeError("readonlyRootfs must be a boolean.");
   }
   if (security?.noNewPrivileges !== undefined && typeof security.noNewPrivileges !== "boolean") {
     throw new TypeError("noNewPrivileges must be a boolean.");
   }
+  if (security?.seccompProfile !== undefined) {
+    if (!isRecord(security.seccompProfile) || security.seccompProfile.type !== "path") {
+      throw new TypeError('seccompProfile must be a { type: "path", path } object.');
+    }
+    assertNonEmptyString(security.seccompProfile.path, "seccompProfile.path");
+    if (
+      !path.isAbsolute(security.seccompProfile.path) ||
+      security.seccompProfile.path.includes("\0")
+    ) {
+      throw new TypeError("seccompProfile.path must be an absolute host path.");
+    }
+  }
   const seen = new Set<string>();
   for (const capability of security?.dropCapabilities ?? []) {
     assertNonEmptyString(capability, "dropCapabilities value");
     if (seen.has(capability))
       throw new TypeError(`dropCapabilities contains a duplicate: ${capability}`);
+    seen.add(capability);
+  }
+  seen.clear();
+  for (const capability of security?.addCapabilities ?? []) {
+    assertNonEmptyString(capability, "addCapabilities value");
+    if (seen.has(capability))
+      throw new TypeError(`addCapabilities contains a duplicate: ${capability}`);
     seen.add(capability);
   }
 }
@@ -1168,10 +1201,18 @@ function snapshotCreateOptions(options: CreateDockerSandboxOptions): CreateDocke
       : {
           security: Object.freeze({
             ...options.security,
+            ...(options.security.seccompProfile === undefined
+              ? {}
+              : { seccompProfile: Object.freeze({ ...options.security.seccompProfile }) }),
             ...(options.security.dropCapabilities === undefined
               ? {}
               : {
                   dropCapabilities: Object.freeze([...options.security.dropCapabilities]),
+                }),
+            ...(options.security.addCapabilities === undefined
+              ? {}
+              : {
+                  addCapabilities: Object.freeze([...options.security.addCapabilities]),
                 }),
           }),
         }),

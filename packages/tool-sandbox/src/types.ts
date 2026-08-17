@@ -20,6 +20,7 @@ export type DockerSandboxResources = Readonly<{
   memoryMb?: number;
   cpus?: number;
   pidsLimit?: number;
+  sharedMemoryMb?: number;
 }>;
 
 export type DockerSandboxRuntimeLimits = Readonly<{
@@ -33,6 +34,11 @@ export type DockerSandboxSecurity = Readonly<{
   readonlyRootfs?: boolean;
   noNewPrivileges?: boolean;
   dropCapabilities?: readonly string[];
+  addCapabilities?: readonly string[];
+  seccompProfile?: Readonly<{
+    type: "path";
+    path: string;
+  }>;
 }>;
 
 export type CreateDockerSandboxOptions = Readonly<{

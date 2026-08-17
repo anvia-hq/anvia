@@ -1136,6 +1136,57 @@ describe("Anvia studio", () => {
     }
   });
 
+  it("preserves loopback connection metadata for local sandbox views", async () => {
+    const port = await availableLoopbackPort();
+    const studio = new Studio([], {
+      sandboxes: [
+        {
+          inspector: {
+            id: "browser",
+            provider: "docker",
+            workdir: "/workspace",
+            publishedPorts: [
+              { containerPort: 6080, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" },
+            ],
+          },
+          views: [
+            {
+              id: "desktop",
+              label: "Browser",
+              source: {
+                protocol: "novnc",
+                containerPort: 6080,
+                control: {
+                  snapshot: () => ({ mode: "agent" as const }),
+                  acquireHumanControl: async () => {
+                    throw new Error("Not used in this test.");
+                  },
+                },
+              },
+              access: { mode: "local" },
+              authentication: { type: "password", password: "password" },
+            },
+          ],
+        },
+      ],
+    }).start({ port, hostname: "127.0.0.1", log: false, handleSignals: false });
+
+    try {
+      const baseUrl = `http://127.0.0.1:${port}`;
+      const sandboxes = await fetchEventually(`${baseUrl}/sandboxes`);
+      const summary = (await sandboxes.json()) as { sandboxes: Array<{ ref: string }> };
+      const ref = summary.sandboxes[0]?.ref;
+      if (ref === undefined) throw new Error("Expected a sandbox reference.");
+      const control = await fetch(`${baseUrl}/sandboxes/${ref}/views/desktop/control`, {
+        headers: { origin: baseUrl },
+      });
+      expect(control.status).toBe(200);
+      await expect(control.json()).resolves.toEqual({ mode: "agent" });
+    } finally {
+      studio.close();
+    }
+  });
+
   it("serves until aborted and awaits shutdown cleanup", async () => {
     const controller = new AbortController();
     const agent = new Agent({ id: "support", model: new QueueModel([]) });
@@ -1454,6 +1505,9 @@ describe("Anvia studio", () => {
       id: "workspace_1",
       provider: "test-sandbox",
       workdir: "/workspace",
+      publishedPorts: [
+        { containerPort: 6080, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" },
+      ],
       listFiles: async () => [{ path: "notes.txt", type: "file" as const, size: 5 }],
       readFile: async () => new TextEncoder().encode("hello"),
     };
@@ -1476,6 +1530,24 @@ describe("Anvia studio", () => {
           inspector,
           agentIds: ["coder"],
           toolNames: ["list_files"],
+          views: [
+            {
+              id: "desktop",
+              label: "Browser",
+              source: {
+                protocol: "novnc",
+                containerPort: 6080,
+                control: {
+                  snapshot: () => ({ mode: "agent" as const }),
+                  acquireHumanControl: async () => {
+                    throw new Error("Not used in this test.");
+                  },
+                },
+              },
+              access: { mode: "local" },
+              authentication: { type: "password", password: "password" },
+            },
+          ],
         },
       ],
     });
@@ -1491,6 +1563,8 @@ describe("Anvia studio", () => {
           workdir: "/workspace",
           agentIds: ["coder"],
           toolNames: ["list_files"],
+          views: [{ id: "desktop", label: "Browser", protocol: "novnc" }],
+          capabilities: { views: true },
         },
       ],
     });
@@ -5027,5 +5101,33 @@ async function waitFor(predicate: () => boolean, ms = 1000): Promise<void> {
       throw new Error("Timed out waiting for condition");
     }
     await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+async function availableLoopbackPort(): Promise<number> {
+  const server = createServer();
+  const port = await new Promise<number>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (typeof address === "object" && address !== null) resolve(address.port);
+      else reject(new Error("Expected a TCP server address."));
+    });
+  });
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error === undefined ? resolve() : reject(error))),
+  );
+  return port;
+}
+
+async function fetchEventually(url: string): Promise<Response> {
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      return await fetch(url);
+    } catch (error) {
+      if (Date.now() - startedAt > 1000) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
   }
 }

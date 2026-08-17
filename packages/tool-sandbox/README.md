@@ -32,6 +32,11 @@ Networking is explicit. Use `{ mode: "none" }` or `{ mode: "bridge", ports: [...
 bind only to `127.0.0.1`. Runtime methods use object arguments, propagate abort signals, and expose
 command and process output as bytes. Tool wrappers decode UTF-8 strictly and return structured values.
 
+`resources.sharedMemoryMb` maps to a private Docker `/dev/shm` size. A security configuration may use
+explicit `dropCapabilities` and `addCapabilities` arrays, plus
+`seccompProfile: { type: "path", path }` with an absolute host path. These options are used by
+`@anvia/browser` to keep Chromium's own process sandbox enabled.
+
 Studio does not discover sandboxes through tool metadata. Register a read-only inspector explicitly:
 
 ```ts
@@ -47,4 +52,5 @@ const studio = new Studio([agent], {
 ```
 
 The `anvia-sandbox create-image` CLI only builds images. It does not create, resume, stop, or destroy
-sandboxes.
+sandboxes. Its `playwright` feature remains a general code-sandbox image; the visible Chromium/CDP/
+noVNC appliance is source-controlled and owned by `@anvia/browser`.

@@ -11,6 +11,7 @@ import type {
   StudioSandboxProcessStatus,
   StudioSandboxRegistration,
   StudioSandboxSummary,
+  StudioSandboxViewRegistration,
 } from "../types";
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
@@ -19,15 +20,16 @@ const maxFileResponseBytes = 10 * 1024 * 1024;
 const defaultProcessLogBytes = 64 * 1024;
 const maxProcessLogBytes = 1024 * 1024;
 
-type SandboxRegistryEntry = {
+export type StudioSandboxRegistryEntry = {
   inspector: StudioSandboxInspector;
   summary: StudioSandboxSummary;
+  views: ReadonlyMap<string, StudioSandboxViewRegistration>;
 };
 
 export class StudioSandboxRegistry {
-  private readonly entries: Map<string, SandboxRegistryEntry>;
+  private readonly entries: Map<string, StudioSandboxRegistryEntry>;
 
-  constructor(entries: SandboxRegistryEntry[]) {
+  constructor(entries: StudioSandboxRegistryEntry[]) {
     this.entries = new Map(entries.map((entry) => [entry.summary.ref, entry]));
   }
 
@@ -39,7 +41,7 @@ export class StudioSandboxRegistry {
     return [...this.entries.values()].map((entry) => copySummary(entry.summary));
   }
 
-  get(ref: string): SandboxRegistryEntry | undefined {
+  get(ref: string): StudioSandboxRegistryEntry | undefined {
     return this.entries.get(ref);
   }
 }
@@ -50,7 +52,7 @@ export function createStudioSandboxRegistry(
 ): StudioSandboxRegistry {
   const agentIds = new Set(agents.map((agent) => agent.id));
   const refs = new Set<string>();
-  const entries = registrations.map((registration, index): SandboxRegistryEntry => {
+  const entries = registrations.map((registration, index): StudioSandboxRegistryEntry => {
     validateRegistration(registration, index, agentIds);
     const inspector = registration.inspector;
     const ref = sandboxRef(inspector.provider, inspector.id);
@@ -60,8 +62,10 @@ export function createStudioSandboxRegistry(
       );
     }
     refs.add(ref);
+    const views = new Map((registration.views ?? []).map((view) => [view.id, view]));
     return {
       inspector,
+      views,
       summary: {
         ref,
         id: inspector.id,
@@ -69,10 +73,14 @@ export function createStudioSandboxRegistry(
         workdir: inspector.workdir,
         agentIds: sortedUnique(registration.agentIds ?? []),
         toolNames: sortedUnique(registration.toolNames ?? []),
+        views: [...views.values()]
+          .map((view) => ({ id: view.id, label: view.label, protocol: view.source.protocol }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
         capabilities: {
           files: supportsFiles(inspector),
           ports: supportsPorts(inspector),
           processes: supportsProcesses(inspector),
+          views: views.size > 0,
         },
       },
     };
@@ -265,6 +273,75 @@ function validateRegistration(
     }
   }
   sortedUnique(registration.toolNames ?? []);
+  validateViews(registration.views, inspector, index);
+}
+
+function validateViews(
+  views: readonly StudioSandboxViewRegistration[] | undefined,
+  inspector: StudioSandboxInspector,
+  registrationIndex: number,
+): void {
+  if (views === undefined) return;
+  if (!Array.isArray(views))
+    throw new TypeError(`sandboxes[${registrationIndex}].views must be an array.`);
+  if (!supportsPorts(inspector)) {
+    throw new TypeError(`sandboxes[${registrationIndex}] views require published port inspection.`);
+  }
+  const ids = new Set<string>();
+  for (const [viewIndex, view] of views.entries()) {
+    const prefix = `sandboxes[${registrationIndex}].views[${viewIndex}]`;
+    const candidate: unknown = view;
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.id !== "string" ||
+      !/^[a-z0-9](?:[a-z0-9_-]{0,62})$/.test(candidate.id)
+    ) {
+      throw new TypeError(`${prefix}.id must be a stable lowercase identifier.`);
+    }
+    if (ids.has(candidate.id)) throw new TypeError(`${prefix}.id is duplicated: ${candidate.id}`);
+    ids.add(candidate.id);
+    if (typeof candidate.label !== "string" || candidate.label.length === 0) {
+      throw new TypeError(`${prefix}.label must be a non-empty string.`);
+    }
+    const source = candidate.source;
+    if (
+      !isRecord(source) ||
+      source.protocol !== "novnc" ||
+      !isPort(source.containerPort) ||
+      !isRecord(source.control) ||
+      typeof source.control.snapshot !== "function" ||
+      typeof source.control.acquireHumanControl !== "function"
+    ) {
+      throw new TypeError(`${prefix}.source must be a valid noVNC view source.`);
+    }
+    const port = inspector.publishedPorts?.find(
+      (candidate) =>
+        candidate.containerPort === source.containerPort && candidate.protocol === "tcp",
+    );
+    if (port === undefined || !isLoopbackHost(port.host)) {
+      throw new TypeError(`${prefix}.source must resolve to a loopback-published TCP port.`);
+    }
+    const access = candidate.access;
+    if (!isRecord(access) || (access.mode !== "local" && access.mode !== "authorize")) {
+      throw new TypeError(`${prefix}.access must explicitly select local or authorize mode.`);
+    }
+    if (access.mode === "authorize" && typeof access.authorize !== "function") {
+      throw new TypeError(`${prefix}.access.authorize must be a function.`);
+    }
+    const authentication = candidate.authentication;
+    if (
+      !isRecord(authentication) ||
+      (authentication.type !== "none" && authentication.type !== "password")
+    ) {
+      throw new TypeError(`${prefix}.authentication must explicitly select none or password.`);
+    }
+    if (
+      authentication.type === "password" &&
+      (typeof authentication.password !== "string" || authentication.password.length === 0)
+    ) {
+      throw new TypeError(`${prefix}.authentication.password must be a non-empty string.`);
+    }
+  }
 }
 
 function isInspector(value: unknown): value is StudioSandboxInspector {
@@ -308,8 +385,13 @@ function copySummary(summary: StudioSandboxSummary): StudioSandboxSummary {
     ...summary,
     agentIds: [...summary.agentIds],
     toolNames: [...summary.toolNames],
+    views: summary.views.map((view) => ({ ...view })),
     capabilities: { ...summary.capabilities },
   };
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
 }
 
 async function listSandboxFiles(

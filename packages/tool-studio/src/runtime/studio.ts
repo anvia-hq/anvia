@@ -1,9 +1,10 @@
 import type { JsonObject } from "@anvia/core/completion";
 import { Agent, getAgentToolState } from "@anvia/core/internal/agent";
 import { Pipeline } from "@anvia/core/pipeline";
-import { serve } from "@hono/node-server";
+import { serve, type WebSocketServerLike } from "@hono/node-server";
 import type { Hono } from "hono";
 import { Hono as HonoApp } from "hono";
+import { WebSocketServer } from "ws";
 import { StudioTraceObserver } from "../traces/trace-observer";
 import type {
   AnviaStudio,
@@ -47,6 +48,7 @@ import {
 } from "./observability";
 import type { StudioRuntimeOptions } from "./options";
 import { registerPipelineRoutes } from "./pipelines";
+import { registerSandboxViewRoutes } from "./sandbox-views";
 import { createStudioSandboxRegistry, registerSandboxRoutes } from "./sandboxes";
 import { registerSessionRoutes } from "./sessions";
 import { normalizeAgents, normalizePipelines, resolveStores } from "./shared";
@@ -64,6 +66,7 @@ export class Studio implements AnviaStudio {
   private readonly options: StudioRuntimeOptions;
   private studio: StudioApp;
   private server: ReturnType<typeof serve> | undefined;
+  private websocketServer: WebSocketServer | undefined;
   private sigintHandler: (() => void) | undefined;
 
   constructor(targets: StudioTarget[] = [], options: StudioOptions = {}) {
@@ -95,8 +98,14 @@ export class Studio implements AnviaStudio {
 
     const port = serveOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
     const serverOptions: Parameters<typeof serve>[0] = {
-      fetch: (request) => this.fetch(request),
+      fetch: (request, env) => this.studio.app.fetch(request, env),
       port,
+    };
+    this.websocketServer = new WebSocketServer({ noServer: true });
+    serverOptions.websocket = {
+      // @types/ws overloads are stricter than Hono's structural adapter, while Hono officially
+      // supports ws.WebSocketServer. Keep the interop assertion at this single ownership boundary.
+      server: this.websocketServer as unknown as WebSocketServerLike,
     };
     if (serveOptions.hostname !== undefined) serverOptions.hostname = serveOptions.hostname;
     this.server = serve(serverOptions);
@@ -151,6 +160,8 @@ export class Studio implements AnviaStudio {
     }
     this.server?.close();
     this.server = undefined;
+    this.websocketServer?.close();
+    this.websocketServer = undefined;
     this.studio.close();
   }
 
@@ -248,6 +259,7 @@ function studioOptionsFromTargets(
       inspector: registration.inspector,
       ...(registration.agentIds === undefined ? {} : { agentIds: [...registration.agentIds] }),
       ...(registration.toolNames === undefined ? {} : { toolNames: [...registration.toolNames] }),
+      ...(registration.views === undefined ? {} : { views: [...registration.views] }),
     }));
   }
   return runtimeOptions;
@@ -378,6 +390,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   registerMcpRoutes(app, { agentMap });
   registerToolRoutes(app, { agentMap });
   registerSandboxRoutes(app, sandboxRegistry);
+  const closeSandboxViews = registerSandboxViewRoutes(app, sandboxRegistry);
   registerObservabilityRoutes(app, observabilityHub);
   registerEvalRoutes(app, {
     evals: options.evals,
@@ -436,6 +449,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     },
     close() {
       continuationRegistry.clear();
+      closeSandboxViews();
     },
   };
   if (stores.sessions !== undefined) Object.assign(studio, { sessionStore: stores.sessions });

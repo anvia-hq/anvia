@@ -1,4 +1,4 @@
-import { CaretDown, ChartBar, Check, Copy, Path, Wrench } from "@phosphor-icons/react";
+import { CaretDown, ChartBar, Check, Copy, Lightning, Path } from "@phosphor-icons/react";
 import { memo, useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -31,6 +31,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
       <article
         className="max-w-205 justify-self-start text-muted-foreground"
         data-entry-id={String(props.entry.entryId)}
+        data-entry-kind="reasoning"
       >
         <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Reasoning</div>
         <MarkdownText live={props.live} size="base" text={displayText} />
@@ -66,6 +67,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
       <article
         className="grid w-fit max-w-[min(64ch,82%)] justify-items-end justify-self-end self-start text-foreground"
         data-entry-id={String(props.entry.entryId)}
+        data-entry-kind="message"
       >
         {props.entry.text.trim().length === 0 ? null : (
           <div className="rounded-2xl bg-muted px-4 py-2.5">
@@ -88,6 +90,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
           cn("justify-self-start text-foreground", isError && "text-destructive"),
       )}
       data-entry-id={String(props.entry.entryId)}
+      data-entry-kind="message"
     >
       {isPending ? <AssistantLoadingIndicator /> : null}
       {displayText.trim().length === 0 ? null : (
@@ -388,20 +391,24 @@ function ToolEntry(props: {
     <article
       className="w-full justify-self-start text-foreground"
       data-entry-id={String(props.entry.entryId)}
+      data-entry-kind="tool"
     >
-      <div className="flex min-w-0 items-center gap-2 py-1.5">
+      <div className="flex min-w-0 items-center gap-2 py-0.5">
         <Button
           aria-expanded={hasPayload ? !collapsed : undefined}
           aria-label={`${collapsed ? "Expand" : "Collapse"} ${props.entry.toolName} tool call`}
-          className="h-auto min-h-8 min-w-0 flex-1 justify-start gap-2 border-0 bg-transparent p-0 text-left text-inherit shadow-none hover:bg-transparent hover:text-inherit"
+          className="h-auto min-h-9 min-w-0 flex-1 justify-start gap-2.5 rounded-lg border-0 bg-transparent px-1 py-0.5 text-left text-inherit shadow-none hover:bg-muted/35 hover:text-inherit"
           type="button"
           variant="ghost"
           onClick={() => setCollapsed((current) => !current)}
         >
-          <span className="grid size-6 shrink-0 place-items-center text-muted-foreground">
-            <StudioIcon icon={Wrench} className="size-4" aria-hidden="true" />
+          <span
+            className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/80 bg-muted/35 text-muted-foreground"
+            data-tool-icon="action"
+          >
+            <StudioIcon icon={Lightning} className="size-3.5" weight="fill" aria-hidden="true" />
           </span>
-          <strong className="min-w-0 truncate font-mono text-base font-medium text-foreground">
+          <strong className="min-w-0 truncate font-mono text-sm font-medium text-foreground">
             {props.entry.toolName}
           </strong>
           {status === undefined ? null : (

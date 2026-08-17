@@ -67,4 +67,32 @@ describe("DockerSandboxClient validation", () => {
       }),
     ).rejects.toMatchObject({ code: "file_too_large" });
   });
+
+  it("rejects invalid shared memory and seccomp configuration before Docker I/O", async () => {
+    const client = new DockerSandboxClient({ dockerPath: "/definitely/missing/docker" });
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        resources: { sharedMemoryMb: 0 },
+      }),
+    ).rejects.toThrow("sharedMemoryMb");
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        security: { seccompProfile: { type: "path", path: "relative.json" } },
+      }),
+    ).rejects.toThrow("absolute host path");
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        security: { addCapabilities: ["SYS_CHROOT", "SYS_CHROOT"] },
+      }),
+    ).rejects.toThrow("addCapabilities contains a duplicate");
+  });
 });

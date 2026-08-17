@@ -115,7 +115,7 @@ describe("TranscriptItem response actions", () => {
     expect(html).not.toContain("Working");
   });
 
-  it("renders a non-framed tool call disclosure without a completed indicator", () => {
+  it("renders a compact tool disclosure with a framed action icon", () => {
     const html = render(
       <TranscriptItem
         entry={{
@@ -135,6 +135,10 @@ describe("TranscriptItem response actions", () => {
 
     expect(html).toContain('aria-label="Expand search_docs tool call"');
     expect(html).toContain("search_docs");
+    expect(html).toContain('data-entry-kind="tool"');
+    expect(html).toContain('data-tool-icon="action"');
+    expect(html).toContain("size-8 shrink-0 place-items-center rounded-lg border");
+    expect(html).toContain("font-mono text-sm");
     expect(html).not.toContain("Completed");
     expect(html).not.toContain("size-1.5 rounded-full");
     expect(html).not.toContain("Show");

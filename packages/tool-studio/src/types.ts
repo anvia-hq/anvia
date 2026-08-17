@@ -309,6 +309,7 @@ export type StudioSandboxCapabilities = {
   files: boolean;
   ports: boolean;
   processes: boolean;
+  views: boolean;
 };
 
 export type StudioSandboxInspectorFileEntry = Readonly<{
@@ -361,11 +362,82 @@ export type StudioSandboxInspectorProcessLogs = Readonly<{
   stderrTruncated: boolean;
 }>;
 
+export type StudioSandboxViewControlSnapshot = Readonly<{
+  mode: "agent" | "human";
+  ownerId?: string;
+  expiresAt?: string;
+}>;
+
+export type StudioSandboxViewControlLease = Readonly<{
+  id: string;
+  ownerId: string;
+  expiresAt: string;
+  renew(options: Readonly<{ leaseTimeoutMs: number }>): StudioSandboxViewControlSnapshot;
+  release(): void;
+}>;
+
+export type StudioSandboxViewControl = Readonly<{
+  snapshot(): StudioSandboxViewControlSnapshot;
+  acquireHumanControl(
+    options: Readonly<{
+      ownerId: string;
+      leaseTimeoutMs: number;
+      abortSignal?: AbortSignal;
+    }>,
+  ): Promise<StudioSandboxViewControlLease>;
+}>;
+
+export type StudioSandboxViewSource = Readonly<{
+  protocol: "novnc";
+  containerPort: number;
+  control: StudioSandboxViewControl;
+}>;
+
+export type StudioSandboxViewAuthorizeArgs = Readonly<{
+  request: Request;
+  sandboxRef: string;
+  viewId: string;
+}>;
+
+export type StudioSandboxViewAccess =
+  | Readonly<{ mode: "local" }>
+  | Readonly<{
+      mode: "authorize";
+      authorize(args: StudioSandboxViewAuthorizeArgs): boolean | Promise<boolean>;
+    }>;
+
+export type StudioSandboxViewAuthentication =
+  | Readonly<{ type: "none" }>
+  | Readonly<{ type: "password"; password: string }>;
+
+export type StudioSandboxViewRegistration = Readonly<{
+  id: string;
+  label: string;
+  source: StudioSandboxViewSource;
+  access: StudioSandboxViewAccess;
+  authentication: StudioSandboxViewAuthentication;
+}>;
+
 export type StudioSandboxRegistration = Readonly<{
   inspector: StudioSandboxInspector;
   agentIds?: readonly string[];
   toolNames?: readonly string[];
+  views?: readonly StudioSandboxViewRegistration[];
 }>;
+
+export type StudioSandboxViewSummary = {
+  id: string;
+  label: string;
+  protocol: "novnc";
+};
+
+export type StudioSandboxViewConnection = {
+  sandboxRef: string;
+  viewId: string;
+  protocol: "novnc";
+  websocketPath: string;
+  authentication: StudioSandboxViewAuthentication;
+};
 
 export type StudioSandboxSummary = {
   ref: string;
@@ -374,6 +446,7 @@ export type StudioSandboxSummary = {
   workdir: string;
   agentIds: string[];
   toolNames: string[];
+  views: StudioSandboxViewSummary[];
   capabilities: StudioSandboxCapabilities;
 };
 
@@ -1191,6 +1264,7 @@ export type AgentRunStreamEvent =
 export type StudioErrorCode =
   | "bad_request"
   | "conflict"
+  | "forbidden"
   | "not_found"
   | "payload_too_large"
   | "unsupported_capability"

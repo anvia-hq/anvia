@@ -30,6 +30,7 @@ import {
 } from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 import { errorMessage } from "../shared/format";
+import { requestJson } from "../shared/request";
 
 const maxInlinePreviewBytes = 1024 * 1024;
 const textExtensions = new Set([
@@ -564,9 +565,13 @@ function SandboxOverview(props: { sandbox: StudioSandboxSummary; error: string }
         </div>
         <StudioStatusBadge>{props.sandbox.provider}</StudioStatusBadge>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+      <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
         <MetadataList label="Agents" values={props.sandbox.agentIds} />
         <MetadataList label="Sandbox tools" values={props.sandbox.toolNames} />
+        <MetadataList
+          label="Views"
+          values={props.sandbox.views.map((view) => `${view.label} (${view.protocol})`)}
+        />
       </div>
       {props.error.length > 0 ? (
         <p className="m-0 mt-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
@@ -804,19 +809,6 @@ function LogBlock(props: { label: string; text: string; truncated: boolean }) {
       </pre>
     </div>
   );
-}
-
-async function requestJson<T>(
-  url: string,
-  label: string,
-  signal: AbortSignal,
-  cache: RequestCache = "default",
-): Promise<T> {
-  const response = await fetch(url, { cache, signal });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, label));
-  }
-  return (await response.json()) as T;
 }
 
 function sandboxBreadcrumbs(filePath: string): Array<{ label: string; path: string }> {

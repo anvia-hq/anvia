@@ -21,14 +21,14 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | Section | Focus |
 | --- | --- |
 | `01_basics` | First text calls, memory-backed conversation context, static context, streaming, HTTP stream transports, `ReadableStream` output, and durable session memory. |
-| `02_tools` | Tool schemas, streamed tool events, hooks, concurrency, conditional tools, think tools, application state, memory with tools, guarded tools, dynamic tool selection, and Docker sandbox tools. |
+| `02_tools` | Tool schemas, streamed tool events, hooks, concurrency, conditional tools, think tools, application state, memory with tools, guarded tools, dynamic tool selection, Docker sandbox tools, and visible browser agents. |
 | `03_structured_output` | Schema-first extraction, agent output schemas, context, retries, and extraction with prior messages. |
 | `04_providers_and_multimodal` | Provider adapters, model capabilities, model listing, reasoning streams, image/PDF attachments, image generation, audio generation, and transcription. |
 | `05_pipelines` | Step transforms, async steps, composition, named parallel branches, batching, agents, extractors, and richer workflows. |
 | `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document chunking and PDF extraction, vector stores, and embedding provider variants. |
 | `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, and streaming agent-tools. |
 | `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, LLM judges, RAG quality, G-Eval, and conversational evals. |
-| `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool and sandbox inspection, MCP tools, SQLite persistence, multi-provider model selection, and UI route options. |
+| `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool and sandbox inspection, embedded browser desktops, MCP tools, SQLite persistence, multi-provider model selection, and UI route options. |
 | `10_integrations` | MCP tools, local skills, Langfuse and OpenTelemetry tracing, logging, and correlated eval reporting. |
 
 ## Environment
@@ -79,6 +79,7 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 - Image and audio generation examples write generated media files in the current working directory.
 - `providers:09` uses the bundled `assets/audio/voice.wav` sample by default. Set `ANVIA_AUDIO_FILE` to transcribe a different local audio file.
 - `tools:11` requires Docker and runs code in an ephemeral `@anvia/sandbox` container workspace.
+- `studio:16` requires Docker, a locally available `ANVIA_BROWSER_IMAGE`, and an exactly eight-character `ANVIA_BROWSER_VNC_PASSWORD`. Build `packages/tool-browser/image` or explicitly pull a published image first. The example connects browser tools to an Agent; matching tool calls open Studio's clean noVNC Playground panel automatically, with explicit human takeover when needed.
 
 ## Representative No-Network Checks
 

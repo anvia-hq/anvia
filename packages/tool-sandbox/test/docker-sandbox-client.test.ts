@@ -64,6 +64,37 @@ describe("DockerSandboxClient ownership", () => {
     ]);
   });
 
+  it("passes explicit shared memory and seccomp isolation to Docker", async () => {
+    const client = new DockerSandboxClient();
+    const sandbox = await client.createSandbox({
+      id: "browser-isolation",
+      image: "local:test",
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
+      resources: { sharedMemoryMb: 1024 },
+      security: {
+        dropCapabilities: ["ALL"],
+        addCapabilities: ["SYS_CHROOT"],
+        seccompProfile: { type: "path", path: "/opt/anvia/seccomp.json" },
+      },
+    });
+
+    const run = docker.assert.mock.calls.find(([args]) => args[0] === "run")?.[0];
+    expect(run).toEqual(
+      expect.arrayContaining([
+        "--shm-size",
+        "1024m",
+        "--security-opt",
+        "seccomp=/opt/anvia/seccomp.json",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "SYS_CHROOT",
+      ]),
+    );
+    await sandbox.destroy();
+  });
+
   it("only rolls back resources created before Docker run fails", async () => {
     docker.assert.mockImplementation(async (args) => {
       if (args[0] === "run") throw new Error("run failed");

@@ -16,8 +16,10 @@ const processMarkerPrefix = "ANVIA_PROCESS";
 const processLauncher = [
   'wrapper="$1"',
   "shift",
-  "if command -v setsid >/dev/null 2>&1; then",
-  '  exec setsid sh -c "$wrapper" "$@"',
+  // GNU setsid forks when it is already a process-group leader. `-w` keeps that launcher alive
+  // until the new session exits, so Docker does not detach from a still-running managed process.
+  "if command -v setsid >/dev/null 2>&1 && setsid -w true >/dev/null 2>&1; then",
+  '  exec setsid -w sh -c "$wrapper" "$@"',
   "fi",
   'exec sh -c "$wrapper" "$@"',
 ].join("\n");
@@ -314,7 +316,10 @@ export class DockerProcessManager {
     record.markerBuffer = Buffer.alloc(0);
     record.supervisorPid = supervisorPid;
     record.processGroupId = processGroupId;
-    record.child.stdin.end("start\n");
+    // Keep stdin attached for the lifetime of `docker exec -i`. Closing it makes the Docker CLI
+    // return successfully while the in-container process keeps running, which would orphan the
+    // process from status, logs, and lifecycle management.
+    record.child.stdin.write("start\n");
     record.resolveStarted();
   }
 

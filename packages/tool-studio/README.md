@@ -164,3 +164,41 @@ pnpm --filter @anvia/studio typecheck
 pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
 ```
+## Browser sandbox views
+
+Sandbox registrations may include explicit noVNC views. Studio resolves the upstream only through the
+inspector's loopback-published port and exposes an authorized, same-origin WebSocket bridge. Studio's
+programmatic noVNC client renders the desktop directly, so the stock noVNC splash, toolbar, and password
+prompt are not part of the UI.
+
+```ts
+const studio = new Studio([agent], {
+  sandboxes: [
+    {
+      inspector: browser.inspector({ files: true, ports: true, processes: true }),
+      views: [
+        {
+          id: "desktop",
+          label: "Browser",
+          source: browser.desktop,
+          access: { mode: "local" },
+          authentication: { type: "password", password },
+        },
+      ],
+    },
+  ],
+});
+```
+
+Local mode requires a loopback connection and a same-origin browser request. Remotely reachable Studio
+instances must instead provide `{ mode: "authorize", authorize }`; the application callback runs for
+the viewer connection, WebSocket upgrade, and every takeover operation. Studio does not provide or infer
+an application authentication system. View credentials are omitted from sandbox discovery metadata and
+URLs and returned only by the authorized, non-cacheable viewer-connection endpoint.
+
+When a registered agent emits a matching browser tool call, Playground replaces its Sessions sidebar
+with a larger resizable desktop panel. The embedded desktop remains view-only until the user explicitly
+takes control. That lease blocks Anvia browser tools, is renewed by the UI, and expires when abandoned.
+It is a coordination boundary rather than a replacement for application authorization. The Sandboxes
+page continues to expose the registered view as inspectable runtime metadata. Closing the Playground
+panel restores Sessions without forgetting the current browser; use **Open browser** to show it again.

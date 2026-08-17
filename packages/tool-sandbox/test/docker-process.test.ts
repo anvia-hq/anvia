@@ -13,6 +13,17 @@ afterEach(async () => {
 });
 
 describe("DockerProcessManager abort lifecycle", () => {
+  it("keeps the Docker exec session attached after acknowledging startup", async () => {
+    const dockerPath = await fakeDockerCli();
+    const manager = createManager(dockerPath);
+
+    const process = await manager.start({ command: "server" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(manager.list()).toEqual([process]);
+    await manager.dispose();
+  });
+
   it("does not retain the startup abort signal as process ownership", async () => {
     const dockerPath = await fakeDockerCli();
     const manager = createManager(dockerPath);
@@ -64,9 +75,16 @@ async function fakeDockerCli(): Promise<string> {
       "const marker = args[markerIndex];",
       'if (typeof marker !== "string" || !marker.startsWith("ANVIA_PROCESS:")) process.exit(1);',
       "const command = args[markerIndex + 1];",
+      'const launcher = args.find((value) => value.includes("exec setsid"));',
       "const announce = () => {",
       '  process.stdout.write("\\u001e" + marker + ":1:1\\u001e");',
-      "  process.stdin.once('data', () => setInterval(() => {}, 1000));",
+      "  process.stdin.once('data', () => {",
+      "    setInterval(() => {}, 1000);",
+      '    if (typeof launcher !== "string" || !launcher.includes("setsid -w")) {',
+      "      setTimeout(() => process.exit(0), 10);",
+      "    }",
+      "  });",
+      "  process.stdin.once('end', () => process.exit(0));",
       "  process.stdin.resume();",
       "};",
       'if (command === "delay-marker") setTimeout(announce, 500);',

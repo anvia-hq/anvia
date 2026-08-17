@@ -56,6 +56,12 @@ const defaultAddressResolver: McpAddressResolver = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
 
 export function parseAndValidateMcpUrl(url: string | URL): URL {
+  const parsed = parseMcpHttpUrl(url);
+  validateMcpHostname(parsed.hostname);
+  return parsed;
+}
+
+export function parseMcpHttpUrl(url: string | URL): URL {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -67,7 +73,6 @@ export function parseAndValidateMcpUrl(url: string | URL): URL {
     throw new Error(`MCP URL blocked: only HTTP(S) URLs are allowed (${parsed.protocol})`);
   }
 
-  validateMcpHostname(parsed.hostname);
   return parsed;
 }
 

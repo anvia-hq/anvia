@@ -8,7 +8,7 @@ import { abortError, throwIfAborted } from "../internal/abort";
 import { linkAbortSignal } from "./abort";
 import { createMcpTool } from "./tool";
 import type { McpClientOptions, McpConnectOptions, McpServer, McpServerInfo } from "./types";
-import { createSafeMcpFetch, parseAndValidateMcpUrl } from "./url-safety";
+import { createSafeMcpFetch, parseAndValidateMcpUrl, parseMcpHttpUrl } from "./url-safety";
 
 let coreClientVersion: string | undefined;
 
@@ -157,9 +157,18 @@ async function createTransport(
     return new StdioClientTransport(parameters);
   }
 
-  let parameters: ConstructorParameters<typeof StreamableHTTPClientTransport>[1] = {
-    fetch: createSafeMcpFetch(),
-  };
+  const ssrfProtection = transport.ssrfProtection ?? "strict";
+  if (ssrfProtection !== "strict" && ssrfProtection !== "disabled") {
+    throw new TypeError("MCP Streamable HTTP ssrfProtection must be strict or disabled");
+  }
+  let parameters: ConstructorParameters<typeof StreamableHTTPClientTransport>[1] = {};
+  let url: URL;
+  if (ssrfProtection === "strict") {
+    parameters = { fetch: createSafeMcpFetch() };
+    url = parseAndValidateMcpUrl(transport.url);
+  } else {
+    url = parseMcpHttpUrl(transport.url);
+  }
   if (transport.requestInit !== undefined) {
     parameters = { ...parameters, requestInit: transport.requestInit };
   }
@@ -172,9 +181,7 @@ async function createTransport(
   if (transport.sessionId !== undefined) {
     parameters = { ...parameters, sessionId: transport.sessionId };
   }
-  return asSdkTransport(
-    new StreamableHTTPClientTransport(parseAndValidateMcpUrl(transport.url), parameters),
-  );
+  return asSdkTransport(new StreamableHTTPClientTransport(url, parameters));
 }
 
 async function listAllTools(

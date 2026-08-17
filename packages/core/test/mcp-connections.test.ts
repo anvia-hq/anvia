@@ -188,6 +188,50 @@ describe("McpClient", () => {
     });
   });
 
+  it("allows an explicit SSRF protection opt-out for local Streamable HTTP", async () => {
+    const client = new McpClient({
+      name: "local",
+      transport: {
+        type: "streamableHttp",
+        url: "http://localhost:3000/mcp",
+        ssrfProtection: "disabled",
+      },
+    });
+
+    await client.connect();
+
+    expect(sdk.httpTransports[0]?.url.href).toBe("http://localhost:3000/mcp");
+    expect(sdk.httpTransports[0]?.options).not.toHaveProperty("fetch");
+  });
+
+  it("rejects an unknown Streamable HTTP SSRF policy at runtime", async () => {
+    const client = new McpClient({
+      name: "invalid",
+      transport: {
+        type: "streamableHttp",
+        url: "https://api.example.com/mcp",
+        ssrfProtection: "unknown",
+      } as never,
+    });
+
+    await expect(client.connect()).rejects.toThrow(
+      "MCP Streamable HTTP ssrfProtection must be strict or disabled",
+    );
+  });
+
+  it("still rejects non-HTTP URLs when SSRF protection is disabled", async () => {
+    const client = new McpClient({
+      name: "invalid-protocol",
+      transport: {
+        type: "streamableHttp",
+        url: "file:///tmp/mcp.sock",
+        ssrfProtection: "disabled",
+      },
+    });
+
+    await expect(client.connect()).rejects.toThrow("only HTTP(S) URLs are allowed");
+  });
+
   it("uses explicit caller-owned custom transports", async () => {
     const transport = { start: vi.fn(), send: vi.fn(), close: vi.fn() };
     const create = vi.fn((_options: { abortSignal?: AbortSignal | undefined }) => transport);

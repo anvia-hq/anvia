@@ -19,6 +19,7 @@ export type McpStdioTransport = {
 export type McpStreamableHttpTransport = {
   readonly type: "streamableHttp";
   readonly url: string | URL;
+  readonly ssrfProtection?: "strict" | "disabled" | undefined;
   readonly requestInit?: RequestInit | undefined;
   readonly authProvider?: OAuthClientProvider | undefined;
   readonly reconnectionOptions?: StreamableHTTPReconnectionOptions | undefined;

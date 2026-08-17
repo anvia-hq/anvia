@@ -483,9 +483,12 @@ try {
 
 Construction performs no I/O. `connect()` discovers every tool page once and returns a frozen
 registration snapshot. Reconnect and rebuild the Agent to adopt changed remote tools. Built-in
-Streamable HTTP connections enforce Anvia URL safety and do not accept a custom `fetch`; use the
-explicit caller-owned `custom` transport only when you intentionally own that security boundary.
-MCP server instructions remain inspectable metadata and are not added to Agent instructions.
+Streamable HTTP connections enforce Anvia URL safety by default and do not accept a custom `fetch`.
+For an intentionally local or private-network server, set `ssrfProtection: "disabled"` on that
+transport. This disables hostname and DNS restrictions for the complete transport, including
+redirects and OAuth discovery, while still requiring HTTP(S). Use it only when the application owns
+and trusts that network boundary. MCP server instructions remain inspectable metadata and are not
+added to Agent instructions.
 
 ## Public Areas
 

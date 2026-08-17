@@ -1,8 +1,5 @@
-export {
-  Agent,
-  createResolvedAgent,
-  getResolvedAgentOptions,
-} from "../agent/agent";
+export { Agent } from "../agent/agent";
+export { createResolvedAgent, getResolvedAgentOptions } from "../agent/resolved-agent";
 export { getAgentToolState } from "../agent/tool-state";
 export type { ResolvedAgentOptions } from "../agent/types";
 export { createHook } from "../hooks/control";

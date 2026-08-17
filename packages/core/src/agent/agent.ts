@@ -1,62 +1,38 @@
-import { z } from "zod";
 import { isStreamingCompletionModel } from "../completion/generate-completion";
-import type {
-  CompletionModel,
-  JsonObject,
-  JsonValue,
-  ProviderTool,
-  ToolChoice,
-} from "../completion/index";
-import { isProviderTool } from "../completion/types";
-import { appendGuardrailPolicies, type GuardrailPolicy } from "../guardrails";
+import type { CompletionModel, JsonObject, ToolChoice } from "../completion/index";
+import type { GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
-import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
-import { isMcpTool, type McpServer } from "../mcp";
-import { resolveMemoryOptions } from "../memory/options";
-import type { AgentObservabilityOptions, AgentObserverMap } from "../observability";
+import type { McpServer } from "../mcp";
+import type { AgentObservabilityOptions } from "../observability";
 import type { RetrySetting } from "../retry";
-import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
-import { createTool } from "../tool/create-tool";
-import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
+import type { ZodSchema } from "../schema/zod-schema";
 import { ToolNotFoundError } from "../tool/errors";
 import type { AgentMiddleware } from "../tool/middleware";
-import type {
-  AnyTool,
-  NormalizedToolOutput,
-  Tool,
-  ToolCallContext,
-  ToolCallStreamEvent,
-} from "../tool/tool";
-import type { VectorInspectRequest, VectorSearchResult } from "../vector-store";
-import { AgentRunBlockedError, AgentToolSuspensionError } from "./errors";
+import type { AnyTool, NormalizedToolOutput, Tool, ToolCallContext } from "../tool/tool";
+import { createAgentStream } from "./agent-stream";
+import { createAgentTool } from "./agent-tool";
 import { normalizeAgentId } from "./ids";
 import type { AgentLifecycle } from "./lifecycle";
-import type {
-  AgentResult,
-  AgentRunOptions,
-  AgentSteerInput,
-  AgentSteerReceipt,
-  AgentStream,
-  AgentStreamEvent,
-} from "./run-types";
-import { getAgentToolState, getRegisteredAgentTool, registerAgentToolState } from "./tool-state";
-import type {
-  AgentContextInput,
-  AgentMemory,
-  AgentOptions,
-  AgentToolOptions,
-  ResolvedAgentOptions,
-} from "./types";
-import { isVectorContext, type VectorContext } from "./vector-context";
+import { registerAgentProviderOutputSchema } from "./output-schema";
+import { resolveAgentOptions } from "./resolve-options";
+import type { AgentResult, AgentRunOptions, AgentStream, AgentStreamEvent } from "./run-types";
+import {
+  cloneFrozenPlainData,
+  snapshotAgentContext,
+  snapshotAgentMemory,
+  snapshotAgentObservability,
+  snapshotGuardrailPolicies,
+} from "./snapshot";
+import { prepareAgentTools } from "./tool-catalog";
+import { getRegisteredAgentTool, registerAgentToolState } from "./tool-state";
+import type { AgentContextInput, AgentMemory, AgentOptions, AgentToolOptions } from "./types";
 
 const DEFAULT_MAX_TURNS = 20;
 
 type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
-
-const providerOutputSchemas = new WeakMap<object, JsonObject>();
 
 export class Agent<
   Output = string,
@@ -91,38 +67,17 @@ export class Agent<
     this.description = resolved.description;
     this.model = resolved.model;
     this.instructions = resolved.instructions;
-    const context = (resolved.context ?? []).map(snapshotContextInput);
-    assertValidVectorContexts(context);
-    this.context = Object.freeze(context);
+    this.context = snapshotAgentContext(resolved.context);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
     this.providerOptions = cloneFrozenPlainData(resolved.providerOptions);
     this.retries = cloneFrozenPlainData(resolved.retries);
-    assertUniqueMcpServerNames(resolved.mcpServers ?? []);
-    this.mcpServers = Object.freeze((resolved.mcpServers ?? []).map(snapshotMcpServer));
-    const configuredTools = [...(resolved.tools ?? [])];
-    const staticTools = [...configuredTools, ...this.mcpServers.flatMap((server) => server.tools)];
-    const toolIndexes = (resolved.toolIndexes ?? []).map(snapshotToolIndex);
-    const providerTools = (resolved.providerTools ?? []).map(snapshotProviderTool);
-    assertUniqueAgentToolNames({
-      staticTools,
-      providerTools,
-      toolIndexes,
-    });
-    const toolsByName = new Map(staticTools.map((tool) => [tool.name, tool]));
-    for (const index of toolIndexes) {
-      for (const tool of index.tools) {
-        toolsByName.set(tool.name, tool);
-      }
-    }
-    this.tools = Object.freeze([...toolsByName.values()]);
-    const publicToolState = Object.freeze({
-      configuredTools: Object.freeze(configuredTools),
-      staticTools: Object.freeze(staticTools),
-      providerTools: Object.freeze(providerTools),
-      toolIndexes: Object.freeze(toolIndexes),
-    });
-    registerAgentToolState(this, publicToolState, toolsByName);
+
+    const preparedTools = prepareAgentTools(resolved);
+    this.mcpServers = preparedTools.mcpServers;
+    this.tools = preparedTools.tools;
+    registerAgentToolState(this, preparedTools.publicState, preparedTools.toolsByName);
+
     this.toolChoice = cloneFrozenPlainData(resolved.toolChoice);
     this.defaultMaxTurns = assertNonnegativeSafeInteger(
       resolved.defaultMaxTurns ?? DEFAULT_MAX_TURNS,
@@ -130,11 +85,9 @@ export class Agent<
     );
     this.lifecycle = resolved.lifecycle;
     this.outputSchema = resolved.outputSchema;
-    if (resolved.outputSchema !== undefined) {
-      providerOutputSchemas.set(this, toProviderJsonSchema(resolved.outputSchema));
-    }
+    registerAgentProviderOutputSchema(this, resolved.outputSchema);
     this.observability = snapshotAgentObservability(resolved.observability);
-    this.guardrails = Object.freeze((resolved.guardrails ?? []).map(snapshotGuardrailPolicy));
+    this.guardrails = snapshotGuardrailPolicies(resolved.guardrails);
     this.middlewares = Object.freeze([...(resolved.middlewares ?? [])]);
     this.memory = snapshotAgentMemory(resolved.memory);
   }
@@ -150,78 +103,11 @@ export class Agent<
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
       throw new Error("This completion model does not support streaming");
     }
-    return new DefaultAgentStream(run);
+    return createAgentStream(run);
   }
 
   asTool(options: AgentToolOptions): Tool<{ prompt: string }, Output> {
-    if (options.suspension !== "reject") {
-      throw new TypeError('Agent.asTool() requires suspension: "reject".');
-    }
-    const description =
-      options.description ?? this.description ?? `Prompt the ${options.name} agent.`;
-
-    return createTool({
-      name: options.name,
-      description,
-      inputSchema: z.object({
-        prompt: z.string().describe("The prompt to send to the agent."),
-      }),
-      execute: async ({ prompt }, context: ToolCallContext) => {
-        if (
-          options.stream === true &&
-          context.emitStreamEvent !== undefined &&
-          this.model.capabilities.streaming &&
-          isStreamingCompletionModel(this.model)
-        ) {
-          let completed = false;
-          let output!: Output;
-          const childStream = this.stream({
-            prompt,
-            maxTurns: options.maxTurns,
-            abortSignal: context.abortSignal,
-          });
-          for await (const event of childStream) {
-            const streamEvent: ToolCallStreamEvent = {
-              agentId: this.id,
-              event,
-            };
-            if (this.name !== undefined) {
-              streamEvent.agentName = this.name;
-            }
-            await context.emitStreamEvent(streamEvent);
-            if (event.type === "error") {
-              throw event.error;
-            }
-            if (event.type === "final") {
-              if (event.result.status === "suspended") {
-                throw new AgentToolSuspensionError(event.result);
-              }
-              if (event.result.status === "blocked") {
-                throw new AgentRunBlockedError(event.result);
-              }
-              output = event.result.output;
-              completed = true;
-            }
-          }
-          if (!completed) {
-            throw new Error(`Agent tool "${options.name}" ended without a final result.`);
-          }
-          return output;
-        }
-        const response = await this.generate({
-          prompt,
-          maxTurns: options.maxTurns,
-          abortSignal: context.abortSignal,
-        });
-        if (response.status === "suspended") {
-          throw new AgentToolSuspensionError(response);
-        }
-        if (response.status === "blocked") {
-          throw new AgentRunBlockedError(response);
-        }
-        return response.output;
-      },
-    });
+    return createAgentTool(this, options);
   }
 
   getTool(toolName: string): AnyTool | undefined {
@@ -237,445 +123,6 @@ export class Agent<
     if (tool === undefined) {
       throw new ToolNotFoundError(toolName);
     }
-
     return prepareToolCall(tool, args).call(context ?? {});
   }
-}
-
-const resolvedAgentOptions = Symbol("resolvedAgentOptions");
-
-type InternalAgentOptions<
-  Output,
-  M extends CompletionModel,
-  ContextDocument,
-> = ResolvedAgentOptions<Output, M, ContextDocument> & {
-  [resolvedAgentOptions]: true;
-};
-
-export function createResolvedAgent<
-  Output = string,
-  M extends CompletionModel = CompletionModel,
-  ContextDocument = unknown,
->(options: ResolvedAgentOptions<Output, M, ContextDocument>): Agent<Output, M, ContextDocument> {
-  return new Agent({
-    ...options,
-    [resolvedAgentOptions]: true,
-  } as unknown as AgentOptions<Output, M, ContextDocument>);
-}
-
-export function getResolvedAgentOptions<Output, M extends CompletionModel, ContextDocument>(
-  agent: Agent<Output, M, ContextDocument>,
-): ResolvedAgentOptions<Output, M, ContextDocument> {
-  const toolState = getAgentToolState(agent);
-  return {
-    id: agent.id,
-    name: agent.name,
-    description: agent.description,
-    model: agent.model,
-    instructions: agent.instructions,
-    context: [...agent.context],
-    temperature: agent.temperature,
-    maxTokens: agent.maxTokens,
-    providerOptions: agent.providerOptions,
-    retries: agent.retries,
-    tools: [...toolState.configuredTools],
-    mcpServers: [...agent.mcpServers],
-    providerTools: [...toolState.providerTools],
-    toolIndexes: [...toolState.toolIndexes],
-    toolChoice: agent.toolChoice,
-    defaultMaxTurns: agent.defaultMaxTurns,
-    lifecycle: agent.lifecycle,
-    outputSchema: agent.outputSchema,
-    observability: agent.observability,
-    guardrails: [...agent.guardrails],
-    middlewares: [...agent.middlewares],
-    memory: agent.memory,
-  };
-}
-
-export function getAgentProviderOutputSchema(agent: object): JsonObject | undefined {
-  return providerOutputSchemas.get(agent);
-}
-
-function resolveAgentOptions<Output, M extends CompletionModel, ContextDocument>(
-  options: AgentOptions<Output, M, ContextDocument>,
-): ResolvedAgentOptions<Output, M, ContextDocument> {
-  if (isInternalAgentOptions(options)) {
-    return options as unknown as ResolvedAgentOptions<Output, M, ContextDocument>;
-  }
-
-  const toolsByName = new Map<string, AnyTool>();
-  const providerTools: ProviderTool[] = [];
-  const toolIndexes: ToolIndex[] = [];
-  for (const tool of options.tools ?? []) {
-    if (isProviderTool(tool)) {
-      providerTools.push(tool);
-    } else if (isToolIndex(tool)) {
-      toolIndexes.push(tool);
-    } else if ((tool as { kind?: unknown }).kind === "tool-index") {
-      throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
-    } else if (isMcpTool(tool)) {
-      throw new TypeError(
-        `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not Agent.tools.`,
-      );
-    } else {
-      addUniqueTool(toolsByName, tool, "local tool");
-    }
-  }
-  if (options.skills !== undefined) {
-    for (const tool of options.skills.tools) {
-      if (isMcpTool(tool)) {
-        throw new TypeError(
-          `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not Agent.skills.`,
-        );
-      }
-      addUniqueTool(toolsByName, tool, "skill tool");
-    }
-  }
-  const memory = resolveAgentMemory(options);
-  const instructions = [options.instructions, options.skills?.instructions]
-    .filter((part): part is string => part !== undefined && part.length > 0)
-    .join("\n\n");
-
-  return {
-    id: options.id,
-    name: options.name,
-    description: options.description,
-    model: options.model,
-    instructions: instructions.length === 0 ? undefined : instructions,
-    context: [...(options.context ?? [])],
-    temperature: options.temperature,
-    maxTokens: options.maxTokens,
-    providerOptions: options.providerOptions,
-    retries: options.retries,
-    tools: [...toolsByName.values()],
-    mcpServers: [...(options.mcpServers ?? [])],
-    providerTools,
-    toolIndexes,
-    toolChoice: options.toolChoice,
-    defaultMaxTurns: options.maxTurns,
-    lifecycle: options.lifecycle,
-    outputSchema: options.outputSchema,
-    observability: options.observability,
-    guardrails:
-      options.guardrails === undefined ? [] : appendGuardrailPolicies([], options.guardrails),
-    middlewares: [...(options.middlewares ?? [])],
-    memory,
-  };
-}
-
-function assertUniqueAgentToolNames(options: {
-  staticTools: readonly AnyTool[];
-  providerTools: readonly ProviderTool[];
-  toolIndexes: readonly ToolIndex[];
-}): void {
-  const owners = new Map<string, string>();
-  for (const tool of options.staticTools) {
-    registerToolOwner(owners, tool.name, isMcpTool(tool) ? "MCP tool" : "local or skill tool");
-  }
-  for (const tool of options.providerTools) {
-    registerToolOwner(owners, tool.name, "provider tool");
-  }
-  for (const [indexPosition, index] of options.toolIndexes.entries()) {
-    if (!isToolIndex(index)) {
-      throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
-    }
-    assertPositiveSearchLimit(index.topK);
-    assertFiniteMinScore(index.minScore);
-    for (const tool of index.tools) {
-      if (isMcpTool(tool)) {
-        throw new TypeError(
-          `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not a tool index.`,
-        );
-      }
-      registerToolOwner(owners, tool.name, `tool index ${indexPosition + 1}`);
-    }
-  }
-}
-
-function registerToolOwner(owners: Map<string, string>, name: string, owner: string): void {
-  const existing = owners.get(name);
-  if (existing !== undefined) {
-    throw new TypeError(
-      `Tool name collision for "${name}" between ${existing} and ${owner}. Tool names must be unique across every Agent tool source.`,
-    );
-  }
-  owners.set(name, owner);
-}
-
-function addUniqueTool(tools: Map<string, AnyTool>, tool: AnyTool, source: string): void {
-  if (tools.has(tool.name)) {
-    throw new TypeError(`Duplicate ${source} name "${tool.name}".`);
-  }
-  tools.set(tool.name, tool);
-}
-
-function assertValidVectorContexts(inputs: readonly AgentContextInput[]): void {
-  for (const input of inputs) {
-    if (!isVectorContext(input)) continue;
-    assertPositiveSearchLimit(input.topK);
-    assertFiniteMinScore(input.minScore);
-  }
-}
-
-function snapshotAgentObservability(
-  observability: AgentObservabilityOptions | undefined,
-): AgentObservabilityOptions | undefined {
-  if (observability === undefined) return undefined;
-  const observers: Record<string, AgentObserverMap[string]> = {};
-  for (const [name, observer] of Object.entries(observability.observers)) {
-    if (name.trim().length === 0) {
-      throw new TypeError("Agent observer names must not be empty.");
-    }
-    if (
-      typeof observer !== "object" ||
-      observer === null ||
-      typeof observer.startRun !== "function"
-    ) {
-      throw new TypeError(`Agent observer "${name}" must implement startRun().`);
-    }
-    observers[name] = observer;
-  }
-  if (observability.primaryTrace !== undefined && !(observability.primaryTrace in observers)) {
-    throw new TypeError(
-      `Agent primaryTrace "${observability.primaryTrace}" must name a configured observer.`,
-    );
-  }
-  const errorPolicy = observability.errorPolicy ?? "ignore";
-  if (errorPolicy !== "ignore" && errorPolicy !== "throw") {
-    throw new TypeError('Agent observability.errorPolicy must be "ignore" or "throw".');
-  }
-  return Object.freeze({
-    observers: Object.freeze(observers),
-    ...(observability.primaryTrace === undefined
-      ? {}
-      : { primaryTrace: observability.primaryTrace }),
-    errorPolicy,
-  });
-}
-
-function isInternalAgentOptions<Output, M extends CompletionModel, ContextDocument>(
-  options: AgentOptions<Output, M, ContextDocument>,
-): boolean {
-  return (
-    (options as unknown as Partial<InternalAgentOptions<Output, M, ContextDocument>>)[
-      resolvedAgentOptions
-    ] === true
-  );
-}
-
-function resolveAgentMemory<Output, M extends CompletionModel, ContextDocument>(
-  options: AgentOptions<Output, M, ContextDocument>,
-): AgentMemory | undefined {
-  if (options.memory === undefined) {
-    return undefined;
-  }
-  const { store, ...memoryOptions } = options.memory;
-  const resolvedOptions = resolveMemoryOptions(memoryOptions);
-  if (resolvedOptions.compaction !== undefined && store.compaction === undefined) {
-    throw new TypeError(
-      "Memory compaction requires a store with the optional compaction capability.",
-    );
-  }
-  return { store, ...resolvedOptions };
-}
-
-class DefaultAgentStream<Output, M extends CompletionModel>
-  implements AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>>
-{
-  private consuming = false;
-  private completed = false;
-
-  constructor(private readonly run: AgentRun<Output, M>) {}
-
-  steer(input: AgentSteerInput): AgentSteerReceipt {
-    return this.run.steer(input);
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    return this.consume()[Symbol.asyncIterator]();
-  }
-
-  private async *consume(): AsyncIterableIterator<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    if (this.completed) {
-      throw new Error("Agent stream has already been consumed.");
-    }
-    if (this.consuming) {
-      throw new Error("Agent stream is already running.");
-    }
-    this.consuming = true;
-    try {
-      for await (const event of this.run.events()) {
-        yield event;
-      }
-    } finally {
-      if (!this.completed) {
-        this.run.cancel("Agent stream consumer closed the stream.");
-      }
-      this.consuming = false;
-      this.completed = true;
-    }
-  }
-}
-
-function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {
-  if (!isVectorContext(input)) {
-    return Object.freeze({
-      id: input.id,
-      text: input.text,
-      ...(input.additionalProps === undefined
-        ? {}
-        : { additionalProps: cloneFrozenPlainData(input.additionalProps) }),
-    });
-  }
-  const format = input.format;
-  const shared = {
-    kind: "vector-context" as const,
-    store: input.store,
-    topK: input.topK,
-    ...(input.minScore === undefined ? {} : { minScore: input.minScore }),
-    ...(input.filter === undefined ? {} : { filter: cloneFrozenPlainData(input.filter) }),
-    ...(input.retries === undefined ? {} : { retries: cloneFrozenPlainData(input.retries) }),
-    ...(format === undefined
-      ? {}
-      : { format: (result: VectorSearchResult<T>) => format.call(input, result) }),
-  };
-  return Object.freeze<VectorContext<T>>(
-    "models" in input && input.models !== undefined
-      ? {
-          ...shared,
-          store: input.store,
-          models: input.models,
-          ...(input.fusion === undefined ? {} : { fusion: input.fusion }),
-        }
-      : { ...shared, store: input.store, model: input.model },
-  );
-}
-
-function snapshotProviderTool(tool: ProviderTool): ProviderTool {
-  return Object.freeze({
-    ...tool,
-    ...(tool.configuration === undefined
-      ? {}
-      : { configuration: cloneFrozenPlainData(tool.configuration) }),
-  });
-}
-
-function snapshotMcpServer(server: McpServer): McpServer {
-  if (server.name.trim() === "") {
-    throw new TypeError("MCP server name must not be empty.");
-  }
-  for (const tool of server.tools) {
-    if (!isMcpTool(tool)) {
-      throw new TypeError(`MCP server "${server.name}" contains an invalid MCP tool.`);
-    }
-    if (tool.mcp.serverName !== server.name) {
-      throw new TypeError(
-        `MCP tool "${tool.name}" belongs to server "${tool.mcp.serverName}", not "${server.name}".`,
-      );
-    }
-  }
-  const tools = server.tools.map(snapshotMcpTool);
-  return Object.freeze({
-    name: server.name,
-    tools: Object.freeze(tools),
-    ...(server.serverInfo === undefined
-      ? {}
-      : { serverInfo: cloneFrozenPlainData(server.serverInfo) }),
-    ...(server.capabilities === undefined
-      ? {}
-      : { capabilities: cloneFrozenPlainData(server.capabilities) }),
-    ...(server.instructions === undefined ? {} : { instructions: server.instructions }),
-  });
-}
-
-function snapshotMcpTool(tool: McpServer["tools"][number]): McpServer["tools"][number] {
-  if (Object.isFrozen(tool) && Object.isFrozen(tool.mcp)) {
-    return tool;
-  }
-  const parseInput = tool.parseInput;
-  return Object.freeze({
-    name: tool.name,
-    mcp: Object.freeze({ ...tool.mcp }),
-    ...(tool.requiresApproval === undefined ? {} : { requiresApproval: tool.requiresApproval }),
-    definition: (prompt: string) => tool.definition(prompt),
-    call: (args: unknown, context?: ToolCallContext) => tool.call(args, context),
-    ...(parseInput === undefined
-      ? {}
-      : { parseInput: (args: JsonValue) => parseInput.call(tool, args) }),
-  });
-}
-
-function assertUniqueMcpServerNames(servers: readonly McpServer[]): void {
-  const names = new Set<string>();
-  for (const server of servers) {
-    if (names.has(server.name)) {
-      throw new TypeError(`Duplicate MCP server name "${server.name}".`);
-    }
-    names.add(server.name);
-  }
-}
-
-function snapshotToolIndex(index: ToolIndex): ToolIndex {
-  const inspect = index.inspect;
-  return Object.freeze({
-    kind: "tool-index" as const,
-    tools: Object.freeze([...index.tools]),
-    topK: index.topK,
-    ...(index.minScore === undefined ? {} : { minScore: index.minScore }),
-    ...(index.filter === undefined ? {} : { filter: cloneFrozenPlainData(index.filter) }),
-    search: (options: { query: string; abortSignal?: AbortSignal | undefined }) =>
-      index.search(options),
-    ...(inspect === undefined
-      ? {}
-      : { inspect: (request: VectorInspectRequest) => inspect.call(index, request) }),
-  });
-}
-
-function snapshotGuardrailPolicy(policy: GuardrailPolicy): GuardrailPolicy {
-  return Object.freeze({
-    ...policy,
-    input: Object.freeze([...policy.input]),
-    output: Object.freeze([...policy.output]),
-  }) as GuardrailPolicy;
-}
-
-function snapshotAgentMemory(memory: AgentMemory | undefined): AgentMemory | undefined {
-  if (memory === undefined) {
-    return undefined;
-  }
-  const compaction =
-    memory.compaction === undefined
-      ? undefined
-      : Object.freeze({
-          ...memory.compaction,
-          trigger: Object.freeze({ ...memory.compaction.trigger }),
-          retention: Object.freeze({ ...memory.compaction.retention }),
-          conflictRetries:
-            memory.compaction.conflictRetries === false
-              ? false
-              : Object.freeze({ ...memory.compaction.conflictRetries }),
-        });
-  return Object.freeze({
-    store: memory.store,
-    savePolicy: memory.savePolicy,
-    ...(compaction === undefined ? {} : { compaction }),
-  });
-}
-
-function cloneFrozenPlainData<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map(cloneFrozenPlainData)) as T;
-  }
-  if (typeof value !== "object" || value === null) {
-    return value;
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    return value;
-  }
-  const clone = Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, cloneFrozenPlainData(item)]),
-  );
-  return Object.freeze(clone) as T;
 }

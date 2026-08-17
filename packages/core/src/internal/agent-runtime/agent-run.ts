@@ -1,4 +1,4 @@
-import { type Agent, getAgentProviderOutputSchema } from "../../agent/agent";
+import type { Agent } from "../../agent/agent";
 import { AgentRunCancelledError, AgentStreamClosedError, MaxTurnsError } from "../../agent/errors";
 import {
   type AgentInteractionResponse,
@@ -12,6 +12,7 @@ import {
   composeAgentLifecycle,
   lifecycleSnapshot,
 } from "../../agent/lifecycle";
+import { getAgentProviderOutputSchema } from "../../agent/output-schema";
 import type {
   AgentBlockedResult,
   AgentInput,

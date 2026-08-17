@@ -123,12 +123,13 @@ function response(
   usage: CompletionResponse["usage"] = Usage.empty(),
   contextUsage?: ContextUsage,
 ): CompletionResponse {
-  return {
+  let response: CompletionResponse = {
     choice,
     usage,
-    ...(contextUsage === undefined ? {} : { contextUsage }),
     rawResponse: {},
   };
+  if (contextUsage !== undefined) response = { ...response, contextUsage };
+  return response;
 }
 
 const addTool = createTool({

@@ -47,15 +47,15 @@ export function webSearch(options: GrokWebSearchOptions = {}): GrokProviderTool 
   if (allowedDomains !== undefined) filters.allowed_domains = allowedDomains;
   if (excludedDomains !== undefined) filters.excluded_domains = excludedDomains;
 
-  return grokProviderTool("web_search", {
-    ...(Object.keys(filters).length === 0 ? {} : { filters }),
-    ...(options.enableImageUnderstanding === undefined
-      ? {}
-      : { enable_image_understanding: options.enableImageUnderstanding }),
-    ...(options.enableImageSearch === undefined
-      ? {}
-      : { enable_image_search: options.enableImageSearch }),
-  });
+  const configuration: JsonObject = {};
+  if (Object.keys(filters).length > 0) configuration.filters = filters;
+  if (options.enableImageUnderstanding !== undefined) {
+    configuration.enable_image_understanding = options.enableImageUnderstanding;
+  }
+  if (options.enableImageSearch !== undefined) {
+    configuration.enable_image_search = options.enableImageSearch;
+  }
+  return grokProviderTool("web_search", configuration);
 }
 
 export function xSearch(options: GrokXSearchOptions = {}): GrokProviderTool {
@@ -73,18 +73,18 @@ export function xSearch(options: GrokXSearchOptions = {}): GrokProviderTool {
     throw new TypeError("Grok X Search fromDate must not be after toDate.");
   }
 
-  return grokProviderTool("x_search", {
-    ...(allowedHandles === undefined ? {} : { allowed_x_handles: allowedHandles }),
-    ...(excludedHandles === undefined ? {} : { excluded_x_handles: excludedHandles }),
-    ...(fromDate === undefined ? {} : { from_date: fromDate }),
-    ...(toDate === undefined ? {} : { to_date: toDate }),
-    ...(options.enableImageUnderstanding === undefined
-      ? {}
-      : { enable_image_understanding: options.enableImageUnderstanding }),
-    ...(options.enableVideoUnderstanding === undefined
-      ? {}
-      : { enable_video_understanding: options.enableVideoUnderstanding }),
-  });
+  const configuration: JsonObject = {};
+  if (allowedHandles !== undefined) configuration.allowed_x_handles = allowedHandles;
+  if (excludedHandles !== undefined) configuration.excluded_x_handles = excludedHandles;
+  if (fromDate !== undefined) configuration.from_date = fromDate;
+  if (toDate !== undefined) configuration.to_date = toDate;
+  if (options.enableImageUnderstanding !== undefined) {
+    configuration.enable_image_understanding = options.enableImageUnderstanding;
+  }
+  if (options.enableVideoUnderstanding !== undefined) {
+    configuration.enable_video_understanding = options.enableVideoUnderstanding;
+  }
+  return grokProviderTool("x_search", configuration);
 }
 
 export function codeInterpreter(): GrokProviderTool {
@@ -106,10 +106,9 @@ export function fileSearch(options: GrokFileSearchOptions): GrokProviderTool {
   ) {
     throw new TypeError("Grok File Search maxNumResults must be a positive integer.");
   }
-  return grokProviderTool("file_search", {
-    vector_store_ids: vectorStoreIds,
-    ...(options.maxNumResults === undefined ? {} : { max_num_results: options.maxNumResults }),
-  });
+  const configuration: JsonObject = { vector_store_ids: vectorStoreIds };
+  if (options.maxNumResults !== undefined) configuration.max_num_results = options.maxNumResults;
+  return grokProviderTool("file_search", configuration);
 }
 
 export function mcp(options: GrokMcpOptions): GrokProviderTool {
@@ -138,23 +137,22 @@ export function mcp(options: GrokMcpOptions): GrokProviderTool {
           ]),
         );
 
-  return grokProviderTool("mcp", {
+  const configuration: JsonObject = {
     server_url: serverUrl.toString(),
     server_label: serverLabel,
-    ...(options.serverDescription === undefined
-      ? {}
-      : {
-          server_description: validateNonemptyString(
-            options.serverDescription,
-            "serverDescription",
-          ),
-        }),
-    ...(allowedTools === undefined ? {} : { allowed_tools: allowedTools }),
-    ...(options.authorization === undefined
-      ? {}
-      : { authorization: validateNonemptyString(options.authorization, "authorization") }),
-    ...(headers === undefined ? {} : { headers }),
-  });
+  };
+  if (options.serverDescription !== undefined) {
+    configuration.server_description = validateNonemptyString(
+      options.serverDescription,
+      "serverDescription",
+    );
+  }
+  if (allowedTools !== undefined) configuration.allowed_tools = allowedTools;
+  if (options.authorization !== undefined) {
+    configuration.authorization = validateNonemptyString(options.authorization, "authorization");
+  }
+  if (headers !== undefined) configuration.headers = headers;
+  return grokProviderTool("mcp", configuration);
 }
 
 export const tools = {
@@ -166,14 +164,15 @@ export const tools = {
 };
 
 function grokProviderTool(name: string, configuration?: JsonObject): GrokProviderTool {
-  return {
+  let tool: GrokProviderTool = {
     kind: "provider",
     provider: "grok",
     name,
-    ...(configuration === undefined || Object.keys(configuration).length === 0
-      ? {}
-      : { configuration }),
   };
+  if (configuration !== undefined && Object.keys(configuration).length > 0) {
+    tool = { ...tool, configuration };
+  }
+  return tool;
 }
 
 function validateExclusive(

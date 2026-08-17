@@ -139,22 +139,24 @@ export function App() {
             });
           },
           onToolCall: ({ id, callId, name, args }) => {
-            appendAssistantPart({
+            const part = {
               type: "tool_call",
               id,
               toolName: name,
               args,
-              ...(callId === undefined ? {} : { callId }),
-            });
+            } as const;
+            if (callId !== undefined) Object.assign(part, { callId });
+            appendAssistantPart(part);
           },
           onToolResult: ({ id, callId, name, result }) => {
-            appendAssistantPart({
+            const part = {
               type: "tool_result",
               id,
               toolName: name,
               result,
-              ...(callId === undefined ? {} : { callId }),
-            });
+            } as const;
+            if (callId !== undefined) Object.assign(part, { callId });
+            appendAssistantPart(part);
           },
         });
       } catch (caught) {

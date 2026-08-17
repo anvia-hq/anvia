@@ -312,11 +312,12 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       accumulatedResponse.providerToolCalls,
       response.providerToolCalls,
     );
-    return {
-      ...withMessageId,
-      ...(sources.length === 0 ? {} : { sources }),
-      ...(providerToolCalls.length === 0 ? {} : { providerToolCalls }),
-    };
+    let accumulated: CompletionResponse<RawResponse> = { ...withMessageId };
+    if (sources.length > 0) accumulated = { ...accumulated, sources };
+    if (providerToolCalls.length > 0) {
+      accumulated = { ...accumulated, providerToolCalls };
+    }
+    return accumulated;
   }
 
   private createTextKey(): string {
@@ -346,11 +347,12 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     const last = reasoning.details.at(-1);
     if (contentType === "text") {
       if (last?.type === "text") {
-        reasoning.details[reasoning.details.length - 1] = {
+        let detail: ReasoningDetail = {
           ...last,
           text: `${last.text}${event.delta}`,
-          ...(event.signature === undefined ? {} : { signature: event.signature }),
         };
+        if (event.signature !== undefined) detail = { ...detail, signature: event.signature };
+        reasoning.details[reasoning.details.length - 1] = detail;
       } else {
         reasoning.details.push(
           event.signature === undefined
@@ -421,14 +423,15 @@ function toolCallContent(toolCall: PartialToolCall, finalToolCall?: ToolCallPart
     finalToolCall !== undefined && !isEmptyToolArguments(finalToolCall.input)
       ? finalToolCall.input
       : parseToolArguments(toolCall.id, toolCall.argumentsText);
-  return {
+  let content: ToolCallPart = {
     type: "tool-call",
     toolCallId: toolCall.id,
     toolName: toolCall.name,
     input: argumentsValue,
-    ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
-    ...(toolCall.signature === undefined ? {} : { signature: toolCall.signature }),
   };
+  if (toolCall.callId !== undefined) content = { ...content, callId: toolCall.callId };
+  if (toolCall.signature !== undefined) content = { ...content, signature: toolCall.signature };
+  return content;
 }
 
 function matchingFinalToolCall(

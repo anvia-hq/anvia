@@ -12,6 +12,7 @@ import type {
   StudioConfig,
   StudioOptions,
   StudioPipeline,
+  StudioSandboxRegistration,
   StudioServeLifecycleOptions,
   StudioServeOptions,
   StudioSessionStore,
@@ -255,12 +256,19 @@ function studioOptionsFromTargets(
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
   if (options.ui !== undefined) runtimeOptions.ui = options.ui;
   if (options.sandboxes !== undefined) {
-    runtimeOptions.sandboxes = options.sandboxes.map((registration) => ({
-      inspector: registration.inspector,
-      ...(registration.agentIds === undefined ? {} : { agentIds: [...registration.agentIds] }),
-      ...(registration.toolNames === undefined ? {} : { toolNames: [...registration.toolNames] }),
-      ...(registration.views === undefined ? {} : { views: [...registration.views] }),
-    }));
+    runtimeOptions.sandboxes = options.sandboxes.map((registration) => {
+      let snapshot: StudioSandboxRegistration = { inspector: registration.inspector };
+      if (registration.agentIds !== undefined) {
+        snapshot = { ...snapshot, agentIds: [...registration.agentIds] };
+      }
+      if (registration.toolNames !== undefined) {
+        snapshot = { ...snapshot, toolNames: [...registration.toolNames] };
+      }
+      if (registration.views !== undefined) {
+        snapshot = { ...snapshot, views: [...registration.views] };
+      }
+      return snapshot;
+    });
   }
   return runtimeOptions;
 }

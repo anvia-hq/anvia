@@ -1,5 +1,5 @@
 import type { CompletionModel } from "@anvia/core";
-import { Agent, type AgentResponse, type AgentResult } from "@anvia/core/agent";
+import { Agent, type AgentOptions, type AgentResponse, type AgentResult } from "@anvia/core/agent";
 import { type AnyTool, createTool } from "@anvia/core/tool";
 import type { LangfuseClient, LangfuseObserverOptions } from "@anvia/langfuse";
 import { z } from "zod";
@@ -42,7 +42,7 @@ export function assertCompleted(result: AgentResult): asserts result is AgentRes
 
 export function buildSupportAgent(model: CompletionModel, options: BuildSupportAgentOptions = {}) {
   const tools = options.tools ?? [];
-  return new Agent({
+  const agentOptions: AgentOptions = {
     id: "support-agent",
     model,
     instructions:
@@ -50,15 +50,14 @@ export function buildSupportAgent(model: CompletionModel, options: BuildSupportA
       "Use tools when useful. Answer with a short engineering-focused summary.",
     tools,
     maxTurns: 2,
-    ...(options.tracing === undefined
-      ? {}
-      : {
-          observability: {
-            observers: {
-              langfuse: options.tracing.observer(options.observerOptions),
-            },
-            primaryTrace: "langfuse",
-          },
-        }),
-  });
+  };
+  if (options.tracing !== undefined) {
+    agentOptions.observability = {
+      observers: {
+        langfuse: options.tracing.observer(options.observerOptions),
+      },
+      primaryTrace: "langfuse",
+    };
+  }
+  return new Agent(agentOptions);
 }

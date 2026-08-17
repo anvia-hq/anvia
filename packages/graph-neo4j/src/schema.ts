@@ -67,15 +67,13 @@ export function defineNeo4jGraphSchema<const Options extends Neo4jGraphSchemaOpt
     ]),
   );
   const relationships = Object.fromEntries(
-    Object.entries(options.relationships).map(([type, definition]) => [
-      type,
-      Object.freeze({
-        ...definition,
-        ...(definition.identity === undefined
-          ? {}
-          : { identity: Object.freeze([...definition.identity]) }),
-      }),
-    ]),
+    Object.entries(options.relationships).map(([type, definition]) => {
+      const copy = { ...definition };
+      if (definition.identity !== undefined) {
+        Object.assign(copy, { identity: Object.freeze([...definition.identity]) });
+      }
+      return [type, Object.freeze(copy)];
+    }),
   );
   return Object.freeze({
     nodes: Object.freeze(nodes),

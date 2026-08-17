@@ -184,15 +184,19 @@ function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyToo
       assertCommandAllowed(command, options.exec?.commands);
       const effectiveTimeoutMs = timeoutMs ?? options.exec?.defaultTimeoutMs;
       assertTimeoutAllowed(effectiveTimeoutMs, options.exec?.maxTimeoutMs);
-      const execOptions: DockerSandboxExecOptions = {
+      let execOptions: DockerSandboxExecOptions = {
         command,
-        ...(args === undefined ? {} : { args }),
-        ...(cwd === undefined ? {} : { cwd }),
-        ...(env === undefined ? {} : { env }),
-        ...(effectiveTimeoutMs === undefined ? {} : { timeoutMs: effectiveTimeoutMs }),
-        ...(input === undefined ? {} : { input }),
-        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
       };
+      if (args !== undefined) execOptions = { ...execOptions, args };
+      if (cwd !== undefined) execOptions = { ...execOptions, cwd };
+      if (env !== undefined) execOptions = { ...execOptions, env };
+      if (effectiveTimeoutMs !== undefined) {
+        execOptions = { ...execOptions, timeoutMs: effectiveTimeoutMs };
+      }
+      if (input !== undefined) execOptions = { ...execOptions, input };
+      if (context.abortSignal !== undefined) {
+        execOptions = { ...execOptions, abortSignal: context.abortSignal };
+      }
       return serializeExecResult(await options.sandbox.exec(execOptions));
     },
   });
@@ -212,13 +216,16 @@ function createReadFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
           `File read line count exceeds policy (${effectiveLineCount} > ${limits.maxLineCount}).`,
         );
       }
-      return options.sandbox.readTextFilePage({
+      let readOptions: Parameters<typeof options.sandbox.readTextFilePage>[0] = {
         path,
         startLine: startLine ?? 1,
         lineCount: effectiveLineCount,
         maxBytes: limits.maxBytes,
-        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-      });
+      };
+      if (context.abortSignal !== undefined) {
+        readOptions = { ...readOptions, abortSignal: context.abortSignal };
+      }
+      return options.sandbox.readTextFilePage(readOptions);
     },
   });
 }
@@ -235,11 +242,14 @@ function createWriteFileTool(options: CreateDockerSandboxToolsOptions): AnyTool 
       if (maxBytes !== undefined && bytesWritten > maxBytes) {
         throw toolPolicyError(`File content exceeds policy (${bytesWritten} > ${maxBytes}).`);
       }
-      await options.sandbox.writeTextFile({
+      let writeOptions: Parameters<typeof options.sandbox.writeTextFile>[0] = {
         path,
         text: content,
-        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-      });
+      };
+      if (context.abortSignal !== undefined) {
+        writeOptions = { ...writeOptions, abortSignal: context.abortSignal };
+      }
+      await options.sandbox.writeTextFile(writeOptions);
       return { path, bytesWritten };
     },
   });
@@ -251,15 +261,14 @@ function createListFilesTool(sandbox: DockerSandboxRuntime): AnyTool {
     description: "List direct children of a directory in the sandbox workspace.",
     inputSchema: listFilesInput,
     outputSchema: listFilesOutput,
-    execute: async ({ path }, context) => ({
-      path: path ?? ".",
-      entries: [
-        ...(await sandbox.listFiles({
-          ...(path === undefined ? {} : { path }),
-          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-        })),
-      ],
-    }),
+    execute: async ({ path }, context) => {
+      let listOptions: Parameters<typeof sandbox.listFiles>[0] = {};
+      if (path !== undefined) listOptions = { ...listOptions, path };
+      if (context.abortSignal !== undefined) {
+        listOptions = { ...listOptions, abortSignal: context.abortSignal };
+      }
+      return { path: path ?? ".", entries: [...(await sandbox.listFiles(listOptions))] };
+    },
   });
 }
 
@@ -281,15 +290,14 @@ function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTo
     outputSchema: processInfoOutput,
     execute: async ({ command, args, cwd, env }, context) => {
       assertCommandAllowed(command, options.exec?.commands);
-      return serializeProcessInfo(
-        await options.sandbox.startProcess({
-          command,
-          ...(args === undefined ? {} : { args }),
-          ...(cwd === undefined ? {} : { cwd }),
-          ...(env === undefined ? {} : { env }),
-          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-        }),
-      );
+      let startOptions: Parameters<typeof options.sandbox.startProcess>[0] = { command };
+      if (args !== undefined) startOptions = { ...startOptions, args };
+      if (cwd !== undefined) startOptions = { ...startOptions, cwd };
+      if (env !== undefined) startOptions = { ...startOptions, env };
+      if (context.abortSignal !== undefined) {
+        startOptions = { ...startOptions, abortSignal: context.abortSignal };
+      }
+      return serializeProcessInfo(await options.sandbox.startProcess(startOptions));
     },
   });
 }
@@ -324,11 +332,14 @@ function createReadProcessLogsTool(options: CreateDockerSandboxToolsOptions): An
           `Process log request exceeds policy (${effectiveTailBytes} > ${maxLogBytes}).`,
         );
       }
-      const logs = await options.sandbox.readProcessLogs({
+      let readOptions: Parameters<typeof options.sandbox.readProcessLogs>[0] = {
         processId,
         tailBytes: effectiveTailBytes,
-        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-      });
+      };
+      if (context.abortSignal !== undefined) {
+        readOptions = { ...readOptions, abortSignal: context.abortSignal };
+      }
+      const logs = await options.sandbox.readProcessLogs(readOptions);
       return {
         processId,
         stdout: decodeUtf8(logs.stdout),
@@ -346,14 +357,16 @@ function createStopProcessTool(options: CreateDockerSandboxToolsOptions): AnyToo
     description: "Stop a process managed by this live sandbox handle.",
     inputSchema: processIdInput,
     outputSchema: processInfoOutput,
-    execute: async ({ processId }, context) =>
-      serializeProcessInfo(
-        await options.sandbox.stopProcess({
-          processId,
-          gracePeriodMs: options.process?.stopGracePeriodMs ?? 5_000,
-          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-        }),
-      ),
+    execute: async ({ processId }, context) => {
+      let stopOptions: Parameters<typeof options.sandbox.stopProcess>[0] = {
+        processId,
+        gracePeriodMs: options.process?.stopGracePeriodMs ?? 5_000,
+      };
+      if (context.abortSignal !== undefined) {
+        stopOptions = { ...stopOptions, abortSignal: context.abortSignal };
+      }
+      return serializeProcessInfo(await options.sandbox.stopProcess(stopOptions));
+    },
   });
 }
 
@@ -371,13 +384,14 @@ function createWaitForPortTool(options: CreateDockerSandboxToolsOptions): AnyToo
           `Port wait timeout exceeds policy (${effectiveTimeoutMs} > ${maxWaitTimeoutMs}).`,
         );
       }
-      return {
-        port: await options.sandbox.waitForPort({
-          containerPort,
-          timeoutMs: effectiveTimeoutMs,
-          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
-        }),
+      let waitOptions: Parameters<typeof options.sandbox.waitForPort>[0] = {
+        containerPort,
+        timeoutMs: effectiveTimeoutMs,
       };
+      if (context.abortSignal !== undefined) {
+        waitOptions = { ...waitOptions, abortSignal: context.abortSignal };
+      }
+      return { port: await options.sandbox.waitForPort(waitOptions) };
     },
   });
 }
@@ -396,17 +410,20 @@ function serializeExecResult(result: DockerSandboxExecResult) {
     : { ...output, status: "timed_out" as const };
 }
 
-function serializeProcessInfo(process: DockerSandboxProcessInfo) {
-  return {
+function serializeProcessInfo(
+  process: DockerSandboxProcessInfo,
+): z.infer<typeof processInfoOutput> {
+  let serialized: z.infer<typeof processInfoOutput> = {
     id: process.id,
     command: process.command,
     args: [...process.args],
     status: process.status,
     startedAt: process.startedAt,
-    ...(process.cwd === undefined ? {} : { cwd: process.cwd }),
-    ...(process.exitCode === undefined ? {} : { exitCode: process.exitCode }),
-    ...(process.endedAt === undefined ? {} : { endedAt: process.endedAt }),
   };
+  if (process.cwd !== undefined) serialized = { ...serialized, cwd: process.cwd };
+  if (process.exitCode !== undefined) serialized = { ...serialized, exitCode: process.exitCode };
+  if (process.endedAt !== undefined) serialized = { ...serialized, endedAt: process.endedAt };
+  return serialized;
 }
 
 function validateFactoryOptions(options: CreateDockerSandboxToolsOptions): void {
@@ -489,23 +506,25 @@ function snapshotFactoryOptions(
           mode: options.exec.commands.mode,
           values: Object.freeze([...options.exec.commands.values]),
         });
-  return Object.freeze({
+  let snapshot: CreateDockerSandboxToolsOptions = {
     sandbox: options.sandbox,
     tools: toolNames,
-    ...(options.exec === undefined
-      ? {}
-      : {
-          exec: Object.freeze({
-            ...options.exec,
-            ...(commands === undefined ? {} : { commands }),
-          }),
-        }),
-    ...(options.readFile === undefined ? {} : { readFile: Object.freeze({ ...options.readFile }) }),
-    ...(options.writeFile === undefined
-      ? {}
-      : { writeFile: Object.freeze({ ...options.writeFile }) }),
-    ...(options.process === undefined ? {} : { process: Object.freeze({ ...options.process }) }),
-  });
+  };
+  if (options.exec !== undefined) {
+    let exec = { ...options.exec };
+    if (commands !== undefined) exec = { ...exec, commands };
+    snapshot = { ...snapshot, exec: Object.freeze(exec) };
+  }
+  if (options.readFile !== undefined) {
+    snapshot = { ...snapshot, readFile: Object.freeze({ ...options.readFile }) };
+  }
+  if (options.writeFile !== undefined) {
+    snapshot = { ...snapshot, writeFile: Object.freeze({ ...options.writeFile }) };
+  }
+  if (options.process !== undefined) {
+    snapshot = { ...snapshot, process: Object.freeze({ ...options.process }) };
+  }
+  return Object.freeze(snapshot);
 }
 
 function validateCommandPolicy(policy: DockerSandboxCommandPolicy | undefined): void {

@@ -58,21 +58,25 @@ export async function streamAssistantResponse({
     }
 
     if (event.type === "tool_call") {
-      onToolCall?.({
+      const toolCall = {
         id: event.toolCall.toolCallId,
         name: event.toolCall.toolName,
         args: event.toolCall.input,
-        ...(event.toolCall.callId === undefined ? {} : { callId: event.toolCall.callId }),
-      });
+      };
+      if (event.toolCall.callId !== undefined) {
+        Object.assign(toolCall, { callId: event.toolCall.callId });
+      }
+      onToolCall?.(toolCall);
     }
 
     if (event.type === "tool_result") {
-      onToolResult?.({
+      const toolResult = {
         id: event.internalCallId,
         name: event.toolName,
         result: event.result,
-        ...(event.toolCallId === undefined ? {} : { callId: event.toolCallId }),
-      });
+      };
+      if (event.toolCallId !== undefined) Object.assign(toolResult, { callId: event.toolCallId });
+      onToolResult?.(toolResult);
     }
 
     if (event.type === "error") {

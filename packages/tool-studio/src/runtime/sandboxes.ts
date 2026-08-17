@@ -469,16 +469,17 @@ function normalizeProcesses(value: unknown): StudioSandboxProcess[] {
     ) {
       throw new TypeError("Sandbox listProcesses returned an invalid entry");
     }
-    return {
+    const process: StudioSandboxProcess = {
       id: item.id,
       command: item.command,
       args: [...item.args],
       status: item.status,
       startedAt: item.startedAt,
-      ...(typeof item.cwd === "string" ? { cwd: item.cwd } : {}),
-      ...(typeof item.exitCode === "number" ? { exitCode: item.exitCode } : {}),
-      ...(typeof item.endedAt === "string" ? { endedAt: item.endedAt } : {}),
     };
+    if (typeof item.cwd === "string") process.cwd = item.cwd;
+    if (typeof item.exitCode === "number") process.exitCode = item.exitCode;
+    if (typeof item.endedAt === "string") process.endedAt = item.endedAt;
+    return process;
   });
 }
 

@@ -78,19 +78,18 @@ export function parseContinuationState(
       );
     }
   }
-  return {
+  const state: AgentContinuationState = {
     kind: "anvia.agent-continuation",
     history,
     messages,
     pending,
     remainingToolCalls,
     steering,
-    ...(value.memoryScope === undefined
-      ? {}
-      : {
-          memoryScope: parseOptionalJsonObject(value.memoryScope, "memoryScope") as MemoryScope,
-        }),
   };
+  if (value.memoryScope !== undefined) {
+    state.memoryScope = parseOptionalJsonObject(value.memoryScope, "memoryScope") as MemoryScope;
+  }
+  return state;
 }
 
 export function questionResult(
@@ -106,13 +105,16 @@ function parsePending(value: unknown): PendingToolExecution {
   if (typeof value.effectiveArgs !== "string" || typeof value.internalCallId !== "string") {
     throw new TypeError("Agent continuation pending execution metadata is invalid.");
   }
-  return {
+  const pending: PendingToolExecution = {
     toolCall,
     effectiveArgs: value.effectiveArgs,
     input: parseJsonValue(value.input, "pending input"),
     internalCallId: value.internalCallId,
-    ...(typeof value.rejectMessage === "string" ? { rejectMessage: value.rejectMessage } : {}),
   };
+  if (typeof value.rejectMessage === "string") {
+    pending.rejectMessage = value.rejectMessage;
+  }
+  return pending;
 }
 
 function parseJsonValue(value: unknown, name: string): JsonValue {

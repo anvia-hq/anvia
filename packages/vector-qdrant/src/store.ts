@@ -122,13 +122,11 @@ export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetada
               : request.minScore,
         with_payload: true,
       };
+      const queryOptions = { ...common, query: request.vector };
+      if (this.mode === "hybrid") Object.assign(queryOptions, { using: this.denseVectorName });
       const response =
         client.query !== undefined
-          ? await client.query(this.options.collectionName, {
-              ...common,
-              query: request.vector,
-              ...(this.mode === "hybrid" ? { using: this.denseVectorName } : {}),
-            })
+          ? await client.query(this.options.collectionName, queryOptions)
           : client.search !== undefined
             ? await client.search(this.options.collectionName, {
                 ...common,
@@ -265,10 +263,11 @@ export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetada
             },
           }
         : { size: this.options.dimensions, distance: distanceName(this.options.metric) };
-    await client.createCollection(this.options.collectionName, {
-      vectors,
-      ...(this.mode === "hybrid" ? { sparse_vectors: { [this.sparseVectorName]: {} } } : {}),
-    });
+    const collectionOptions = { vectors };
+    if (this.mode === "hybrid") {
+      Object.assign(collectionOptions, { sparse_vectors: { [this.sparseVectorName]: {} } });
+    }
+    await client.createCollection(this.options.collectionName, collectionOptions);
   }
 }
 

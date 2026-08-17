@@ -65,12 +65,12 @@ export async function embedTools<Metadata extends VectorMetadata = VectorMetadat
     const content = options.content?.(tool, definition) ?? defaultToolEmbeddingText(definition);
     const texts = Array.isArray(content) ? content : [content];
     const metadata = options.metadata?.(tool, definition);
-    const document: ToolSearchDocument<Metadata> = {
+    let document: ToolSearchDocument<Metadata> = {
       toolName: tool.name,
       definition,
       text: texts.join("\n"),
-      ...(metadata === undefined ? {} : { metadata }),
     };
+    if (metadata !== undefined) document = { ...document, metadata };
     return { tool, document, texts, metadata };
   });
 

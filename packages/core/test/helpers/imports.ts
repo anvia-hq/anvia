@@ -51,7 +51,9 @@ export const AssistantContent = {
     return { type: "text", text };
   },
   reasoning(text: string, id?: string): ReasoningPart {
-    return { type: "reasoning", text, ...(id === undefined ? {} : { id }) };
+    let part: ReasoningPart = { type: "reasoning", text };
+    if (id !== undefined) part = { ...part, id };
+    return part;
   },
   reasoningFromContent(details: readonly ReasoningDetail[], id?: string): ReasoningPart {
     const text = details
@@ -59,24 +61,28 @@ export const AssistantContent = {
         detail.type === "text" || detail.type === "summary" ? [detail.text] : [],
       )
       .join("");
-    return { type: "reasoning", text, details, ...(id === undefined ? {} : { id }) };
+    let part: ReasoningPart = { type: "reasoning", text, details };
+    if (id !== undefined) part = { ...part, id };
+    return part;
   },
   reasoningSummary(text: string, id?: string): ReasoningPart {
-    return {
+    let part: ReasoningPart = {
       type: "reasoning",
       text,
       details: [{ type: "summary", text }],
-      ...(id === undefined ? {} : { id }),
     };
+    if (id !== undefined) part = { ...part, id };
+    return part;
   },
   toolCall(toolCallId: string, toolName: string, input: JsonValue, callId?: string): ToolCallPart {
-    return {
+    let part: ToolCallPart = {
       type: "tool-call",
       toolCallId,
       toolName,
       input,
-      ...(callId === undefined ? {} : { callId }),
     };
+    if (callId !== undefined) part = { ...part, callId };
+    return part;
   },
   imageBase64(data: string, mediaType: string): ImagePart {
     return { type: "image", image: { type: "data", data }, mediaType };
@@ -130,7 +136,7 @@ export const ToolContent = {
     const callId = typeof options === "string" ? options : options?.callId;
     const toolName =
       typeof options === "object" ? (options.toolName ?? "tool") : positionalToolName;
-    return {
+    let part: ToolResultPart = {
       type: "tool-result",
       toolCallId,
       toolName,
@@ -140,8 +146,9 @@ export const ToolContent = {
           : Array.isArray(value)
             ? { type: "content", value: value as unknown as readonly ToolResultContentPart[] }
             : { type: "json", value: value as JsonValue },
-      ...(callId === undefined ? {} : { callId }),
     };
+    if (callId !== undefined) part = { ...part, callId };
+    return part;
   },
 };
 
@@ -179,16 +186,16 @@ export const Message = {
     value: JsonValue | readonly ToolResultContentPart[],
     options?: { callId?: string; toolName?: string; metadata?: JsonObject },
   ): ToolMessage {
-    return {
-      role: "tool",
-      content: [
-        ToolContent.toolResult(toolCallId, value, {
-          ...(options?.callId === undefined ? {} : { callId: options.callId }),
-          toolName: options?.toolName ?? "tool",
-        }),
-      ],
-      ...(options?.metadata === undefined ? {} : { metadata: options.metadata }),
+    const toolResultOptions: { callId?: string; toolName: string } = {
+      toolName: options?.toolName ?? "tool",
     };
+    if (options?.callId !== undefined) toolResultOptions.callId = options.callId;
+    let message: ToolMessage = {
+      role: "tool",
+      content: [ToolContent.toolResult(toolCallId, value, toolResultOptions)],
+    };
+    if (options?.metadata !== undefined) message = { ...message, metadata: options.metadata };
+    return message;
   },
 };
 
@@ -238,13 +245,14 @@ function normalizeToolResult(value: unknown): ToolResultPart {
         : text !== undefined
           ? numericJsonOutput(text)
           : ({ type: "content", value: content } as const);
-  return {
+  let result: ToolResultPart = {
     type: "tool-result",
     toolCallId: legacy.id ?? "tool",
     toolName: legacy.toolName ?? "tool",
     output,
-    ...(legacy.callId === undefined ? {} : { callId: legacy.callId }),
   };
+  if (legacy.callId !== undefined) result = { ...result, callId: legacy.callId };
+  return result;
 }
 
 function numericJsonOutput(

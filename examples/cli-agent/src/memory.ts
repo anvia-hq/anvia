@@ -38,29 +38,29 @@ function assistantHistory(message: AssistantMessage) {
     }
 
     if (part.type === "tool_call") {
-      assistantContent.push({
+      const toolCall = {
         type: "tool-call",
         toolCallId: part.id,
         toolName: part.toolName,
         input: toJsonValue(part.args),
-        ...(part.callId === undefined ? {} : { callId: part.callId }),
-      });
+      } as const;
+      if (part.callId !== undefined) Object.assign(toolCall, { callId: part.callId });
+      assistantContent.push(toolCall);
       continue;
     }
 
     if (part.type === "tool_result") {
       flushAssistantContent();
+      const toolResult = {
+        type: "tool-result",
+        toolCallId: part.id,
+        toolName: part.toolName,
+        output: { type: "text", value: part.result },
+      } as const;
+      if (part.callId !== undefined) Object.assign(toolResult, { callId: part.callId });
       history.push({
         role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: part.id,
-            toolName: part.toolName,
-            output: { type: "text", value: part.result },
-            ...(part.callId === undefined ? {} : { callId: part.callId }),
-          },
-        ],
+        content: [toolResult],
       });
     }
   }

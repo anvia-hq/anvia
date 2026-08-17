@@ -152,9 +152,9 @@ export function StudioBrowserView(props: {
           connection.authentication.type === "password"
             ? { username: "", password: connection.authentication.password, target: "" }
             : undefined;
-        const rfb = new noVnc.default(target, websocketUrl.href, {
-          ...(credentials === undefined ? {} : { credentials }),
-        });
+        const rfbOptions: ConstructorParameters<typeof noVnc.default>[2] = {};
+        if (credentials !== undefined) rfbOptions.credentials = credentials;
+        const rfb = new noVnc.default(target, websocketUrl.href, rfbOptions);
         rfbRef.current = rfb;
         rfb.scaleViewport = true;
         rfb.resizeSession = false;

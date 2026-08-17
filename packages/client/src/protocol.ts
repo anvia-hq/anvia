@@ -58,18 +58,19 @@ export function parseUIMessage<
   if (message.generation !== undefined && !isUIMessageGeneration(message.generation)) {
     invalid("UI message.generation", value);
   }
-  return {
+  let parsed: UIMessage<Metadata, Data> = {
     id: message.id as string,
     role: message.role as UIMessage<Metadata, Data>["role"],
     parts,
-    ...(message.modelMessageId === undefined
-      ? {}
-      : { modelMessageId: message.modelMessageId as string }),
-    ...(metadata === undefined ? {} : { metadata }),
-    ...(message.generation === undefined
-      ? {}
-      : { generation: message.generation as UIMessageGeneration }),
   };
+  if (message.modelMessageId !== undefined) {
+    parsed = { ...parsed, modelMessageId: message.modelMessageId as string };
+  }
+  if (metadata !== undefined) parsed = { ...parsed, metadata };
+  if (message.generation !== undefined) {
+    parsed = { ...parsed, generation: message.generation as UIMessageGeneration };
+  }
+  return parsed;
 }
 
 export function parseUIMessages<

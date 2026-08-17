@@ -53,14 +53,15 @@ export function approvalInteraction(request: {
   if (!isJsonValue(request.args)) {
     throw new TypeError("Tool approval input must be strict JSON.");
   }
-  return {
+  let interaction: AgentToolApprovalRequest = {
     type: "tool-approval",
     id: request.id,
     toolName: request.toolName,
     toolCallId: request.toolCallId,
     internalCallId: request.internalCallId,
     input: request.args,
-    ...(request.callId === undefined ? {} : { callId: request.callId }),
-    ...(request.reason === undefined ? {} : { reason: request.reason }),
   };
+  if (request.callId !== undefined) interaction = { ...interaction, callId: request.callId };
+  if (request.reason !== undefined) interaction = { ...interaction, reason: request.reason };
+  return interaction;
 }

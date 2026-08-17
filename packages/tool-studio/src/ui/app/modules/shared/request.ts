@@ -7,11 +7,12 @@ export async function requestJson<T>(
   cache: RequestCache = "default",
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(url, {
+  const request: RequestInit = {
     ...init,
     cache,
-    ...(signal === undefined ? {} : { signal }),
-  });
+  };
+  if (signal !== undefined) request.signal = signal;
+  const response = await fetch(url, request);
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, label));
   }

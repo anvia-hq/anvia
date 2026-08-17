@@ -115,11 +115,12 @@ export class GeminiClient implements ModelListingClient {
 
   async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
+      const config = { pageSize: 1000 };
+      if (options.abortSignal !== undefined) {
+        Object.assign(config, { abortSignal: options.abortSignal });
+      }
       const response = await this.sdk.models.list({
-        config: disableGeminiNativeRetries({
-          pageSize: 1000,
-          ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-        }),
+        config: disableGeminiNativeRetries(config),
       });
       const data = (await collectModelsFromResponse(response))
         .map(toListedModel)
@@ -143,14 +144,15 @@ export function toGoogleGenAIOptions(options: GeminiClientOptions): GoogleGenAIO
     throw new TypeError("Injected Gemini clients do not have managed SDK options.");
   }
   if ("vertexAi" in options && options.vertexAi !== undefined) {
-    return {
+    const sdkOptions: GoogleGenAIOptions = {
       vertexai: true,
       project: requireOption(options.vertexAi.projectId, "projectId", "Vertex Gemini"),
       location: requireOption(options.vertexAi.location, "location", "Vertex Gemini"),
-      ...(options.vertexAi.googleAuthOptions === undefined
-        ? {}
-        : { googleAuthOptions: options.vertexAi.googleAuthOptions }),
     };
+    if (options.vertexAi.googleAuthOptions !== undefined) {
+      sdkOptions.googleAuthOptions = options.vertexAi.googleAuthOptions;
+    }
+    return sdkOptions;
   }
 
   return {

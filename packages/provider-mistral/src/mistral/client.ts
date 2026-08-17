@@ -82,10 +82,13 @@ export class MistralClient implements ModelListingClient {
 
   async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
-      const response = await this.sdk.models.list(undefined, {
-        ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+      const requestOptions: NonNullable<Parameters<typeof this.sdk.models.list>[1]> = {
         retries: { strategy: "none" },
-      });
+      };
+      if (options.abortSignal !== undefined) {
+        Object.assign(requestOptions, { signal: options.abortSignal });
+      }
+      const response = await this.sdk.models.list(undefined, requestOptions);
       const data = collectModelsFromResponse(response).map(toListedModel).filter(isListedModel);
       return { data };
     } catch (error) {

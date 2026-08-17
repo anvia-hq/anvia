@@ -30,15 +30,16 @@ app.post("/api/completion", async (c) => {
     return c.json({ error: "This completion endpoint does not accept Agent interactions." }, 400);
   }
 
-  return createClientStreamResponse({
-    events: completionToClientStream({
-      events: streamCompletion({
-        model,
-        messages: body.messages,
-        instructions,
-      }),
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
+  const streamOptions: Parameters<typeof completionToClientStream>[0] = {
+    events: streamCompletion({
+      model,
+      messages: body.messages,
+      instructions,
     }),
+  };
+  if (body.metadata !== undefined) streamOptions.metadata = body.metadata;
+  return createClientStreamResponse({
+    events: completionToClientStream(streamOptions),
     format: "jsonl",
   });
 });

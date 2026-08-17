@@ -142,8 +142,9 @@ export function toOpenAIChatCompletionParams(
   modelId: OpenAICompletionModelId,
   request: CompletionRequest,
 ): ChatCompletionParams {
+  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
   const params: ChatCompletionParams = {
-    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+    ...providerOptions,
     model: modelId,
     messages: requestMessages(request).flatMap(messageToChatMessages),
   };

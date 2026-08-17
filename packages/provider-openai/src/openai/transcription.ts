@@ -23,8 +23,9 @@ export class OpenAITranscriptionModel implements TranscriptionModel<unknown> {
     request: TranscriptionRequest,
     options?: ModelCallOptions,
   ): Promise<TranscriptionResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const params: Record<string, unknown> = {
-      ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+      ...providerOptions,
       model: this.modelId,
       file: await toFile(
         request.data,

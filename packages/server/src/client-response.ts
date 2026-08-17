@@ -242,10 +242,10 @@ function parseEvent<Metadata extends ClientMetadata, Data extends ClientDataMap>
   metadataSchema: ClientMetadataSchema<Metadata> | undefined,
   dataSchemas: ClientDataSchemas<Data> | undefined,
 ): ClientStreamEvent<Metadata, Data> {
-  return parseClientStreamEvent<Metadata, Data>(value, {
-    ...(metadataSchema === undefined ? {} : { metadataSchema }),
-    ...(dataSchemas === undefined ? {} : { dataSchemas }),
-  });
+  const options: Parameters<typeof parseClientStreamEvent<Metadata, Data>>[1] = {};
+  if (metadataSchema !== undefined) options.metadataSchema = metadataSchema;
+  if (dataSchemas !== undefined) options.dataSchemas = dataSchemas;
+  return parseClientStreamEvent<Metadata, Data>(value, options);
 }
 
 function startFrame<Metadata extends ClientMetadata, Data extends ClientDataMap>(
@@ -275,14 +275,15 @@ function clientResponse<Metadata extends ClientMetadata, Data extends ClientData
 ): Response {
   const headers = new Headers(options.headers);
   headers.set("x-anvia-stream-protocol", CLIENT_STREAM_PROTOCOL);
-  return encodeEventStreamResponse({
+  const responseOptions: Parameters<typeof encodeEventStreamResponse>[0] = {
     events: frames,
-    ...(options.format === undefined ? {} : { format: options.format }),
     headers,
-    ...(options.status === undefined ? {} : { status: options.status }),
-    ...(options.statusText === undefined ? {} : { statusText: options.statusText }),
-    ...(options.sse === undefined ? {} : { sse: options.sse }),
-  });
+  };
+  if (options.format !== undefined) responseOptions.format = options.format;
+  if (options.status !== undefined) responseOptions.status = options.status;
+  if (options.statusText !== undefined) responseOptions.statusText = options.statusText;
+  if (options.sse !== undefined) responseOptions.sse = options.sse;
+  return encodeEventStreamResponse(responseOptions);
 }
 
 function propagateCancellation<TSource, TOutput>(

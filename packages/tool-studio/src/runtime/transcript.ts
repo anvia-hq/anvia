@@ -33,13 +33,14 @@ export function transcriptFromMessages(messages: readonly Message[]): StudioTran
         }
       }
       if (!textEntryAdded && attachments.length > 0) {
-        transcript.push({
+        const entry: StudioTranscriptEntry = {
           entryId: transcript.length,
           kind: "message",
           role: "user",
           text: "",
           attachments,
-        });
+        };
+        transcript.push(entry);
       }
       continue;
     }
@@ -48,14 +49,15 @@ export function transcriptFromMessages(messages: readonly Message[]): StudioTran
         if (content.type !== "tool-result") {
           continue;
         }
-        transcript.push({
+        const entry: Extract<StudioTranscriptEntry, { kind: "tool" }> = {
           entryId: transcript.length,
           kind: "tool",
           toolName: content.toolName,
           callId: content.callId ?? content.toolCallId,
           result: toolResultText(content.output),
-          ...(content.output.type === "content" ? { structuredResult: content.output.value } : {}),
-        });
+        };
+        if (content.output.type === "content") entry.structuredResult = content.output.value;
+        transcript.push(entry);
       }
       continue;
     }

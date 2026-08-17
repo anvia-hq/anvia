@@ -113,13 +113,11 @@ const HumanInputApprove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
           return;
         }
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
+        const response = { type: "tool-approval" as const, approved: true };
+        if (decisionReason !== undefined) Object.assign(response, { reason: decisionReason });
         void chat.respondToInteraction({
           interactionId: approval.request.id,
-          response: {
-            type: "tool-approval",
-            approved: true,
-            ...(decisionReason === undefined ? {} : { reason: decisionReason }),
-          },
+          response,
         });
       },
       [approval.request.id, chat, disabled, onClick, reason],
@@ -156,13 +154,11 @@ const HumanInputReject = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
           return;
         }
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
+        const response = { type: "tool-approval" as const, approved: false };
+        if (decisionReason !== undefined) Object.assign(response, { reason: decisionReason });
         void chat.respondToInteraction({
           interactionId: approval.request.id,
-          response: {
-            type: "tool-approval",
-            approved: false,
-            ...(decisionReason === undefined ? {} : { reason: decisionReason }),
-          },
+          response,
         });
       },
       [approval.request.id, chat, disabled, onClick, reason],

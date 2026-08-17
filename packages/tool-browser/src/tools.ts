@@ -247,23 +247,27 @@ type BrowserTarget = z.infer<typeof targetSchema>;
 
 function locatorFor(page: Page, target: BrowserTarget): Locator {
   switch (target.by) {
-    case "role":
-      return page.getByRole(target.role as never, {
-        ...(target.name === undefined ? {} : { name: target.name }),
-        ...(target.exact === undefined ? {} : { exact: target.exact }),
-      });
-    case "text":
-      return page.getByText(target.text, {
-        ...(target.exact === undefined ? {} : { exact: target.exact }),
-      });
-    case "label":
-      return page.getByLabel(target.label, {
-        ...(target.exact === undefined ? {} : { exact: target.exact }),
-      });
-    case "placeholder":
-      return page.getByPlaceholder(target.placeholder, {
-        ...(target.exact === undefined ? {} : { exact: target.exact }),
-      });
+    case "role": {
+      const options: { name?: string; exact?: boolean } = {};
+      if (target.name !== undefined) options.name = target.name;
+      if (target.exact !== undefined) options.exact = target.exact;
+      return page.getByRole(target.role as never, options);
+    }
+    case "text": {
+      const options: { exact?: boolean } = {};
+      if (target.exact !== undefined) options.exact = target.exact;
+      return page.getByText(target.text, options);
+    }
+    case "label": {
+      const options: { exact?: boolean } = {};
+      if (target.exact !== undefined) options.exact = target.exact;
+      return page.getByLabel(target.label, options);
+    }
+    case "placeholder": {
+      const options: { exact?: boolean } = {};
+      if (target.exact !== undefined) options.exact = target.exact;
+      return page.getByPlaceholder(target.placeholder, options);
+    }
     case "test-id":
       return page.getByTestId(target.testId);
     case "css":

@@ -100,14 +100,17 @@ export function usePlaygroundRun(props: {
           throw new Error("Missing playground run request");
         }
         if (options.request.type === "interaction_response") {
+          const request = {
+            agentId: context.agentId,
+            ...options.request,
+            stream: true,
+          };
+          if (context.metadata !== undefined) {
+            Object.assign(request, { metadata: context.metadata });
+          }
           return studioAgentTransport.send({
             ...options,
-            request: {
-              agentId: context.agentId,
-              ...options.request,
-              stream: true,
-              ...(context.metadata === undefined ? {} : { metadata: context.metadata }),
-            },
+            request,
           });
         }
         const prompt = options.request.messages.at(-1);
@@ -366,14 +369,17 @@ export function usePlaygroundRun(props: {
     if (event.type === "interaction") {
       const requestedAt = new Date().toISOString();
       if (event.interaction.type === "tool-approval") {
-        transcript.updateToolApproval({
+        const approval = {
           id: event.interaction.id,
           toolName: event.interaction.toolName,
           callId: event.interaction.callId ?? event.interaction.toolCallId,
           status: "pending",
           requestedAt,
-          ...(event.interaction.reason === undefined ? {} : { reason: event.interaction.reason }),
-        });
+        } as const;
+        if (event.interaction.reason !== undefined) {
+          Object.assign(approval, { reason: event.interaction.reason });
+        }
+        transcript.updateToolApproval(approval);
       } else {
         transcript.updateToolQuestion({
           id: event.interaction.id,
@@ -457,9 +463,9 @@ function runRequestFromContext(
     agentId: context.agentId,
     type: "messages",
     messages: context.sessionId === undefined ? [...(context.history ?? []), message] : [message],
-    ...(context.stream === undefined ? {} : { stream: context.stream }),
-    ...(context.metadata === undefined ? {} : { metadata: context.metadata }),
   };
+  if (context.stream !== undefined) request.stream = context.stream;
+  if (context.metadata !== undefined) request.metadata = context.metadata;
   if (context.sessionId !== undefined) request.sessionId = context.sessionId;
   if (context.model !== undefined) request.model = context.model;
   return request;

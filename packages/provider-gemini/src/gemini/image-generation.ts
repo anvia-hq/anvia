@@ -32,19 +32,20 @@ export class GeminiImageGenerationModel implements ImageGenerationModel<unknown>
     const providerImageConfig = isPlainObject(providerConfig.imageConfig)
       ? providerConfig.imageConfig
       : {};
+    const config: Record<string, unknown> = {
+      ...providerConfig,
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: {
+        ...providerImageConfig,
+        aspectRatio: aspectRatio(request.width, request.height),
+      },
+    };
+    if (options?.abortSignal !== undefined) config.abortSignal = options.abortSignal;
     const params: Record<string, unknown> = {
       ...providerTopLevel,
       model: this.modelId,
       contents: request.prompt,
-      config: disableGeminiNativeRetries({
-        ...providerConfig,
-        responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: {
-          ...providerImageConfig,
-          aspectRatio: aspectRatio(request.width, request.height),
-        },
-        ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      }),
+      config: disableGeminiNativeRetries(config),
     };
 
     const response = await this.client.models.generateContent(params as never);
@@ -67,15 +68,16 @@ export class GeminiImagenGenerationModel implements ImageGenerationModel<unknown
     const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
     const providerConfig = isPlainObject(providerConfigValue) ? providerConfigValue : {};
+    const config: Record<string, unknown> = {
+      ...providerConfig,
+      aspectRatio: aspectRatio(request.width, request.height),
+    };
+    if (options?.abortSignal !== undefined) config.abortSignal = options.abortSignal;
     const params: Record<string, unknown> = {
       ...providerTopLevel,
       model: this.modelId,
       prompt: request.prompt,
-      config: disableGeminiNativeRetries({
-        ...providerConfig,
-        aspectRatio: aspectRatio(request.width, request.height),
-        ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      }),
+      config: disableGeminiNativeRetries(config),
     };
 
     const response = await this.client.models.generateImages(params as never);

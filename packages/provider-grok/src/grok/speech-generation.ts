@@ -36,12 +36,13 @@ export class GrokSpeechGenerationModel implements SpeechGenerationModel<unknown>
       voice_id: request.voice,
       language: typeof providerOptions.language === "string" ? providerOptions.language : "auto",
     };
-    const response = await grokFetch(this.http)(grokEndpoint(this.http, "tts"), {
+    const requestOptions: RequestInit = {
       method: "POST",
       headers: grokHeaders(this.http, { "Content-Type": "application/json" }),
       body: JSON.stringify(body),
-      ...(options?.abortSignal === undefined ? {} : { signal: options.abortSignal }),
-    });
+    };
+    if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+    const response = await grokFetch(this.http)(grokEndpoint(this.http, "tts"), requestOptions);
     if (!response.ok) {
       return throwGrokHttpError(response, "text-to-speech");
     }

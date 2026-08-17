@@ -110,13 +110,14 @@ export class McpClient {
       const serverInfo = copyServerInfo(client.getServerVersion());
       const capabilities = copyJsonObject(client.getServerCapabilities());
       const instructions = client.getInstructions();
-      const server = freezeServer({
+      let registration: McpServer = {
         name: this.name,
         tools,
-        ...(serverInfo === undefined ? {} : { serverInfo }),
-        ...(capabilities === undefined ? {} : { capabilities }),
-        ...(instructions === undefined ? {} : { instructions }),
-      });
+      };
+      if (serverInfo !== undefined) registration = { ...registration, serverInfo };
+      if (capabilities !== undefined) registration = { ...registration, capabilities };
+      if (instructions !== undefined) registration = { ...registration, instructions };
+      const server = freezeServer(registration);
       this.#server = server;
       return server;
     } catch (error) {
@@ -143,26 +144,36 @@ async function createTransport(
     return transport.create({ abortSignal: connectOptions.abortSignal });
   }
   if (transport.type === "stdio") {
-    return new StdioClientTransport({
+    let parameters: ConstructorParameters<typeof StdioClientTransport>[0] = {
       command: transport.command,
-      ...(transport.args === undefined ? {} : { args: transport.args }),
-      ...(transport.env === undefined ? {} : { env: transport.env }),
-      ...(transport.cwd === undefined ? {} : { cwd: transport.cwd }),
-      ...(transport.stderr === undefined ? {} : { stderr: transport.stderr }),
-      ...(transport.maxBufferSize === undefined ? {} : { maxBufferSize: transport.maxBufferSize }),
-    });
+    };
+    if (transport.args !== undefined) parameters = { ...parameters, args: transport.args };
+    if (transport.env !== undefined) parameters = { ...parameters, env: transport.env };
+    if (transport.cwd !== undefined) parameters = { ...parameters, cwd: transport.cwd };
+    if (transport.stderr !== undefined) parameters = { ...parameters, stderr: transport.stderr };
+    if (transport.maxBufferSize !== undefined) {
+      parameters = { ...parameters, maxBufferSize: transport.maxBufferSize };
+    }
+    return new StdioClientTransport(parameters);
   }
 
+  let parameters: ConstructorParameters<typeof StreamableHTTPClientTransport>[1] = {
+    fetch: createSafeMcpFetch(),
+  };
+  if (transport.requestInit !== undefined) {
+    parameters = { ...parameters, requestInit: transport.requestInit };
+  }
+  if (transport.authProvider !== undefined) {
+    parameters = { ...parameters, authProvider: transport.authProvider };
+  }
+  if (transport.reconnectionOptions !== undefined) {
+    parameters = { ...parameters, reconnectionOptions: transport.reconnectionOptions };
+  }
+  if (transport.sessionId !== undefined) {
+    parameters = { ...parameters, sessionId: transport.sessionId };
+  }
   return asSdkTransport(
-    new StreamableHTTPClientTransport(parseAndValidateMcpUrl(transport.url), {
-      ...(transport.requestInit === undefined ? {} : { requestInit: transport.requestInit }),
-      ...(transport.authProvider === undefined ? {} : { authProvider: transport.authProvider }),
-      ...(transport.reconnectionOptions === undefined
-        ? {}
-        : { reconnectionOptions: transport.reconnectionOptions }),
-      ...(transport.sessionId === undefined ? {} : { sessionId: transport.sessionId }),
-      fetch: createSafeMcpFetch(),
-    }),
+    new StreamableHTTPClientTransport(parseAndValidateMcpUrl(transport.url), parameters),
   );
 }
 

@@ -394,15 +394,14 @@ export function getAssistantGenerationMetadata(
   ) {
     return undefined;
   }
+  let usage: Usage = { ...generation.usage };
+  if (generation.usage.details !== undefined) {
+    usage = { ...usage, details: { ...generation.usage.details } };
+  }
   const metadata: AssistantGenerationMetadata = {
     provider: generation.provider,
     modelId: generation.modelId,
-    usage: {
-      ...generation.usage,
-      ...(generation.usage.details === undefined
-        ? {}
-        : { details: { ...generation.usage.details } }),
-    },
+    usage,
   };
   if (isContextUsageValue(generation.contextUsage)) {
     metadata.contextUsage = {
@@ -417,10 +416,13 @@ export function getAssistantGenerationMetadata(
     metadata.sources = generation.sources.map((source) => ({ ...source }));
   }
   if (isProviderToolCallArray(generation.providerToolCalls)) {
-    metadata.providerToolCalls = generation.providerToolCalls.map((toolCall) => ({
-      ...toolCall,
-      ...(toolCall.details === undefined ? {} : { details: { ...toolCall.details } }),
-    }));
+    metadata.providerToolCalls = generation.providerToolCalls.map((toolCall) => {
+      let copy: ProviderToolCall = { ...toolCall };
+      if (toolCall.details !== undefined) {
+        copy = { ...copy, details: { ...toolCall.details } };
+      }
+      return copy;
+    });
   }
   return metadata;
 }

@@ -5,6 +5,7 @@ import type {
   JsonObject,
   JsonValue,
   Message,
+  ToolCallPart,
   ToolResultOutput,
   ToolResultPart,
   UserContentPart,
@@ -69,21 +70,23 @@ export function uiMessagesToMessages<
         if (part.type === "text") {
           content.push(textContent(part.text, part.signature));
         } else if (part.type === "reasoning") {
-          content.push({
+          let reasoning: Extract<AssistantContentPart, { type: "reasoning" }> = {
             type: "reasoning",
             text: part.text,
-            ...(part.reasoningId === undefined ? {} : { id: part.reasoningId }),
-            ...(part.content === undefined ? {} : { details: part.content }),
-          });
+          };
+          if (part.reasoningId !== undefined) reasoning = { ...reasoning, id: part.reasoningId };
+          if (part.content !== undefined) reasoning = { ...reasoning, details: part.content };
+          content.push(reasoning);
         } else if (part.type === "tool") {
-          content.push({
+          let toolCall: ToolCallPart = {
             type: "tool-call",
             toolCallId: part.toolCallId,
-            ...(part.callId === undefined ? {} : { callId: part.callId }),
             toolName: part.toolName,
             input: part.input ?? {},
-            ...(part.signature === undefined ? {} : { signature: part.signature }),
-          });
+          };
+          if (part.callId !== undefined) toolCall = { ...toolCall, callId: part.callId };
+          if (part.signature !== undefined) toolCall = { ...toolCall, signature: part.signature };
+          content.push(toolCall);
           if (part.state === "output-available" || part.state === "error") {
             toolResults.push(toolResultFromPart(part));
           }
@@ -92,12 +95,15 @@ export function uiMessagesToMessages<
         }
       }
 
-      result.push({
+      let assistant: Extract<Message<Metadata>, { role: "assistant" }> = {
         role: "assistant",
         content,
-        ...(message.modelMessageId === undefined ? {} : { id: message.modelMessageId }),
         ...metadataField(message.metadata),
-      });
+      };
+      if (message.modelMessageId !== undefined) {
+        assistant = { ...assistant, id: message.modelMessageId };
+      }
+      result.push(assistant);
       if (toolResults.length > 0) {
         result.push({ role: "tool", content: toolResults });
       }
@@ -157,13 +163,13 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
           ? ([{ type: "text", text: message.content }] satisfies AssistantContentPart[])
           : message.content;
       const parts: UIMessagePart[] = content.map(assistantContentToUIMessagePart);
-      const uiMessage: UIMessage<Metadata> = {
+      let uiMessage: UIMessage<Metadata> = {
         id: createId("msg"),
         role: "assistant",
         parts,
-        ...(message.id === undefined ? {} : { modelMessageId: message.id }),
         ...metadataField(message.metadata),
       };
+      if (message.id !== undefined) uiMessage = { ...uiMessage, modelMessageId: message.id };
       const messageIndex = result.length;
       result.push(uiMessage);
       for (const [partIndex, part] of parts.entries()) {
@@ -210,12 +216,13 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
 
 function contentToUIMessagePart(content: UserContentPart): UIMessagePart {
   if (content.type === "text") {
-    return {
+    const part: Extract<UIMessagePart, { type: "text" }> = {
       id: createId("part"),
       type: "text",
       text: content.text,
-      ...(content.signature === undefined ? {} : { signature: content.signature }),
     };
+    if (content.signature !== undefined) part.signature = content.signature;
+    return part;
   }
   return {
     id: createId("part"),
@@ -227,25 +234,27 @@ function contentToUIMessagePart(content: UserContentPart): UIMessagePart {
 function assistantContentToUIMessagePart(content: AssistantContentPart): UIMessagePart {
   if (content.type === "text") return contentToUIMessagePart(content);
   if (content.type === "reasoning") {
-    return {
+    const part: Extract<UIMessagePart, { type: "reasoning" }> = {
       id: createId("part"),
       type: "reasoning",
       text: content.text,
-      ...(content.id === undefined ? {} : { reasoningId: content.id }),
-      ...(content.details === undefined ? {} : { content: content.details }),
     };
+    if (content.id !== undefined) part.reasoningId = content.id;
+    if (content.details !== undefined) part.content = content.details;
+    return part;
   }
   if (content.type === "tool-call") {
-    return {
+    const part: UIToolMessagePart = {
       id: toolPartId(content.toolCallId),
       type: "tool",
       toolName: content.toolName,
       toolCallId: content.toolCallId,
       state: "input-available",
       input: content.input,
-      ...(content.callId === undefined ? {} : { callId: content.callId }),
-      ...(content.signature === undefined ? {} : { signature: content.signature }),
     };
+    if (content.callId !== undefined) part.callId = content.callId;
+    if (content.signature !== undefined) part.signature = content.signature;
+    return part;
   }
   return {
     id: createId("part"),
@@ -259,13 +268,14 @@ function textContent(text: string, signature?: string): Extract<UserContentPart,
 }
 
 function toolResultFromPart(part: UIToolMessagePart): ToolResultPart {
-  return {
+  let result: ToolResultPart = {
     type: "tool-result",
     toolCallId: part.toolCallId,
-    ...(part.callId === undefined ? {} : { callId: part.callId }),
     toolName: part.toolName,
     output: toolOutputFromPart(part),
   };
+  if (part.callId !== undefined) result = { ...result, callId: part.callId };
+  return result;
 }
 
 function toolOutputFromPart(part: UIToolMessagePart): ToolResultOutput {
@@ -303,12 +313,13 @@ function attachmentToImageContent(attachment: UIAttachment): ImagePart {
         : (() => {
             throw new TypeError("Image attachments require a URL or base64 data.");
           })();
-  return {
+  let content: ImagePart = {
     type: "image",
     image,
-    ...(attachment.mediaType === undefined ? {} : { mediaType: attachment.mediaType }),
-    ...(attachment.detail === undefined ? {} : { detail: attachment.detail }),
   };
+  if (attachment.mediaType !== undefined) content = { ...content, mediaType: attachment.mediaType };
+  if (attachment.detail !== undefined) content = { ...content, detail: attachment.detail };
+  return content;
 }
 
 function attachmentToFileContent(attachment: UIAttachment): FilePart {
@@ -322,12 +333,13 @@ function attachmentToFileContent(attachment: UIAttachment): FilePart {
           : (() => {
               throw new TypeError("File attachments require a URL, base64 data, or text.");
             })();
-  return {
+  let content: FilePart = {
     type: "file",
     data,
     mediaType: attachment.mediaType ?? "application/octet-stream",
-    ...(attachment.name === undefined ? {} : { filename: attachment.name }),
   };
+  if (attachment.name !== undefined) content = { ...content, filename: attachment.name };
+  return content;
 }
 
 function contentToAttachment(content: ImagePart | FilePart): UIAttachment {
@@ -360,8 +372,8 @@ function toolResultToUIMessagePart(
     type: "tool" as const,
     toolName: content.toolName || fallbackToolName || "tool",
     toolCallId: content.toolCallId,
-    ...(content.callId === undefined ? {} : { callId: content.callId }),
   };
+  if (content.callId !== undefined) Object.assign(common, { callId: content.callId });
   if (output.type === "error-text" || output.type === "error-json") {
     return {
       ...common,
@@ -378,12 +390,13 @@ function toolResultToUIMessagePart(
       error: { message: output.reason ?? "Tool execution was denied." },
     };
   }
-  return {
+  const part: UIToolMessagePart = {
     ...common,
     state: "output-available",
     output: toolResultOutput(output),
-    ...(output.type === "content" ? { resultContent: output.value } : {}),
   };
+  if (output.type === "content") part.resultContent = output.value;
+  return part;
 }
 
 function toolResultOutput(output: ToolResultOutput): JsonValue {

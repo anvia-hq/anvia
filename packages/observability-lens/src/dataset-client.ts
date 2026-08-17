@@ -55,12 +55,13 @@ export function createLensDatasetClient(
         if (getOptions.version !== undefined) url.searchParams.set("version", getOptions.version);
         const response = await request(url, authorization, timeoutMs);
         const parsed = await parseDatasetResponse<Input, Expected>(response);
-        dataset ??= {
+        const nextDataset: Omit<LensDataset<Input, Expected>, "items"> = {
           name: parsed.name,
           version: parsed.version,
-          ...(parsed.description === undefined ? {} : { description: parsed.description }),
-          ...(parsed.metadata === undefined ? {} : { metadata: parsed.metadata }),
         };
+        if (parsed.description !== undefined) nextDataset.description = parsed.description;
+        if (parsed.metadata !== undefined) nextDataset.metadata = parsed.metadata;
+        dataset ??= nextDataset;
         if (dataset.name !== parsed.name || dataset.version !== parsed.version) {
           throw new LensDatasetError(
             "Lens returned inconsistent dataset pages",

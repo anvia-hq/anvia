@@ -182,11 +182,12 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       let streamError: Error | undefined;
       let accepted = false;
       try {
-        for await (const frame of transport.send({
+        const sendOptions: Parameters<typeof transport.send>[0] = {
           request: activeRequest,
           abortSignal: controller.signal,
-          ...(runOptions.resume === undefined ? {} : { resume: runOptions.resume }),
-        })) {
+        };
+        if (runOptions.resume !== undefined) sendOptions.resume = runOptions.resume;
+        for await (const frame of transport.send(sendOptions)) {
           if (abortRef.current !== controller || controller.signal.aborted) return accepted;
           if (frame.type === "stream_start") {
             accepted = true;

@@ -934,12 +934,16 @@ function partsStreamView(
   stream: NonNullable<ComponentProps<typeof Message.Parts>["stream"]>,
   filter?: ComponentProps<typeof Message.Parts>["filter"],
 ): ReactElement {
+  const partsProps: {
+    filter?: NonNullable<ComponentProps<typeof Message.Parts>["filter"]>;
+  } = {};
+  if (filter !== undefined) partsProps.filter = filter;
   return (
     <ChatProvider controller={createChatController({ messages: [message] })}>
       <Thread.Root>
         <Thread.Messages>
           <Message.Root>
-            <Message.Parts {...(filter === undefined ? {} : { filter })} stream={stream} />
+            <Message.Parts {...partsProps} stream={stream} />
           </Message.Root>
         </Thread.Messages>
       </Thread.Root>

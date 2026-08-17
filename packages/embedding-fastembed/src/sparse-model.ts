@@ -66,17 +66,18 @@ export async function loadFastEmbedSparseEmbeddingModel(
   options: LoadFastEmbedSparseEmbeddingModelOptions,
 ): Promise<FastEmbedSparseEmbeddingModelHandle> {
   validateLoadOptions(options);
-  const runtime = await SparseTextEmbedding.init({
+  const initOptions: Record<string, unknown> = {
     model: options.modelId as Exclude<FastEmbedSparseModel, FastEmbedSparseModel.CUSTOM>,
-    ...(options.executionProviders === undefined
-      ? {}
-      : { executionProviders: options.executionProviders }),
-    ...(options.maxLength === undefined ? {} : { maxLength: options.maxLength }),
-    ...(options.cacheDir === undefined ? {} : { cacheDir: options.cacheDir }),
-    ...(options.showDownloadProgress === undefined
-      ? {}
-      : { showDownloadProgress: options.showDownloadProgress }),
-  });
+  };
+  if (options.executionProviders !== undefined) {
+    initOptions.executionProviders = options.executionProviders;
+  }
+  if (options.maxLength !== undefined) initOptions.maxLength = options.maxLength;
+  if (options.cacheDir !== undefined) initOptions.cacheDir = options.cacheDir;
+  if (options.showDownloadProgress !== undefined) {
+    initOptions.showDownloadProgress = options.showDownloadProgress;
+  }
+  const runtime = await SparseTextEmbedding.init(initOptions as never);
   return new FastEmbedSparseEmbeddingModel(runtime, options);
 }
 

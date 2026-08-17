@@ -3,7 +3,11 @@ import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vec
 import type { AgentObservabilityOptions, AgentObserverMap } from "../observability";
 import type { VectorSearchResult } from "../vector-store";
 import type { AgentContextInput, AgentMemory } from "./types";
-import { isVectorContext, type VectorContext } from "./vector-context";
+import {
+  isVectorContext,
+  type VectorContext,
+  type VectorContextBaseOptions,
+} from "./vector-context";
 
 export function snapshotAgentContext<T>(
   inputs: readonly AgentContextInput<T>[] | undefined,
@@ -44,13 +48,14 @@ export function snapshotAgentObservability(
   if (errorPolicy !== "ignore" && errorPolicy !== "throw") {
     throw new TypeError('Agent observability.errorPolicy must be "ignore" or "throw".');
   }
-  return Object.freeze({
+  let snapshot: AgentObservabilityOptions = {
     observers: Object.freeze(observers),
-    ...(observability.primaryTrace === undefined
-      ? {}
-      : { primaryTrace: observability.primaryTrace }),
     errorPolicy,
-  });
+  };
+  if (observability.primaryTrace !== undefined) {
+    snapshot = { ...snapshot, primaryTrace: observability.primaryTrace };
+  }
+  return Object.freeze(snapshot);
 }
 
 export function snapshotGuardrailPolicies(
@@ -75,11 +80,14 @@ export function snapshotAgentMemory(memory: AgentMemory | undefined): AgentMemor
               ? false
               : Object.freeze({ ...memory.compaction.conflictRetries }),
         });
-  return Object.freeze({
+  let snapshot: AgentMemory = {
     store: memory.store,
     savePolicy: memory.savePolicy,
-    ...(compaction === undefined ? {} : { compaction }),
-  });
+  };
+  if (compaction !== undefined) {
+    snapshot = { ...snapshot, compaction };
+  }
+  return Object.freeze(snapshot);
 }
 
 export function cloneFrozenPlainData<T>(value: T): T {
@@ -101,36 +109,54 @@ export function cloneFrozenPlainData<T>(value: T): T {
 
 function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {
   if (!isVectorContext(input)) {
-    return Object.freeze({
+    let document: AgentContextInput<T> = {
       id: input.id,
       text: input.text,
-      ...(input.additionalProps === undefined
-        ? {}
-        : { additionalProps: cloneFrozenPlainData(input.additionalProps) }),
-    });
+    };
+    if (input.additionalProps !== undefined) {
+      document = {
+        ...document,
+        additionalProps: cloneFrozenPlainData(input.additionalProps),
+      };
+    }
+    return Object.freeze(document);
   }
   const format = input.format;
-  const shared = {
+  let shared: VectorContextBaseOptions<T> & {
+    kind: "vector-context";
+    store: VectorContext<T>["store"];
+  } = {
     kind: "vector-context" as const,
     store: input.store,
     topK: input.topK,
-    ...(input.minScore === undefined ? {} : { minScore: input.minScore }),
-    ...(input.filter === undefined ? {} : { filter: cloneFrozenPlainData(input.filter) }),
-    ...(input.retries === undefined ? {} : { retries: cloneFrozenPlainData(input.retries) }),
-    ...(format === undefined
-      ? {}
-      : { format: (result: VectorSearchResult<T>) => format.call(input, result) }),
   };
-  return Object.freeze<VectorContext<T>>(
-    "models" in input && input.models !== undefined
-      ? {
-          ...shared,
-          store: input.store,
-          models: input.models,
-          ...(input.fusion === undefined ? {} : { fusion: input.fusion }),
-        }
-      : { ...shared, store: input.store, model: input.model },
-  );
+  if (input.minScore !== undefined) {
+    shared = { ...shared, minScore: input.minScore };
+  }
+  if (input.filter !== undefined) {
+    shared = { ...shared, filter: cloneFrozenPlainData(input.filter) };
+  }
+  if (input.retries !== undefined) {
+    shared = { ...shared, retries: cloneFrozenPlainData(input.retries) };
+  }
+  if (format !== undefined) {
+    shared = {
+      ...shared,
+      format: (result: VectorSearchResult<T>) => format.call(input, result),
+    };
+  }
+  if (!("models" in input) || input.models === undefined) {
+    return Object.freeze<VectorContext<T>>({ ...shared, store: input.store, model: input.model });
+  }
+  let context: VectorContext<T> = {
+    ...shared,
+    store: input.store,
+    models: input.models,
+  };
+  if (input.fusion !== undefined) {
+    context = { ...context, fusion: input.fusion };
+  }
+  return Object.freeze(context);
 }
 
 function snapshotGuardrailPolicy(policy: GuardrailPolicy): GuardrailPolicy {

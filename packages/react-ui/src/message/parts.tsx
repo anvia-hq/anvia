@@ -94,14 +94,15 @@ type SmoothedMessagePartsProps = Omit<PrimitiveProps<"div">, "children"> & {
 
 const SmoothedMessageParts = forwardRef<HTMLDivElement, SmoothedMessagePartsProps>(
   function SmoothedMessageParts({ children, parts, stream, ...props }, ref) {
-    const smooth = useSmoothStreamItems(parts, {
+    const streamOptions = {
       adapter: messagePartStreamAdapter,
       isStreaming: stream.isStreaming,
       resetKey: stream.resetKey,
-      ...(stream.flushImmediately === undefined
-        ? {}
-        : { flushImmediately: stream.flushImmediately }),
-    });
+    };
+    if (stream.flushImmediately !== undefined) {
+      Object.assign(streamOptions, { flushImmediately: stream.flushImmediately });
+    }
+    const smooth = useSmoothStreamItems(parts, streamOptions);
 
     return renderPrimitive(
       "div",
@@ -186,13 +187,14 @@ type MessageTextContentProps = MessageTextProps & {
 const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
   function MessageTextContent({ content, partId, stream, streamControlled, ...props }, ref) {
     const ownsStream = stream !== undefined && !streamControlled && props.children === undefined;
-    const smooth = useSmoothStreamText(content, {
+    const streamOptions = {
       isStreaming: ownsStream ? stream.isStreaming : false,
       resetKey: ownsStream ? stream.resetKey : partId,
-      ...(ownsStream && stream.flushImmediately !== undefined
-        ? { flushImmediately: stream.flushImmediately }
-        : {}),
-    });
+    };
+    if (ownsStream && stream.flushImmediately !== undefined) {
+      Object.assign(streamOptions, { flushImmediately: stream.flushImmediately });
+    }
+    const smooth = useSmoothStreamText(content, streamOptions);
 
     return renderPrimitive(
       "span",
@@ -284,13 +286,14 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
     ref,
   ) {
     const ownsStream = stream !== undefined && !streamControlled;
-    const smooth = useSmoothStreamText(markdown, {
+    const streamOptions = {
       isStreaming: ownsStream ? stream.isStreaming : false,
       resetKey: ownsStream ? stream.resetKey : resetKey,
-      ...(ownsStream && stream.flushImmediately !== undefined
-        ? { flushImmediately: stream.flushImmediately }
-        : {}),
-    });
+    };
+    if (ownsStream && stream.flushImmediately !== undefined) {
+      Object.assign(streamOptions, { flushImmediately: stream.flushImmediately });
+    }
+    const smooth = useSmoothStreamText(markdown, streamOptions);
     const renderedMarkdown = ownsStream ? smooth.text : markdown;
     const renderedEntities = useMemo(
       () =>

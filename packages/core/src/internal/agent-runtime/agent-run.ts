@@ -337,8 +337,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             trace: runObservers.trace,
             guardrails: [...this.guardrailDecisions],
             ...this.memoryCompactionResult(),
-            ...(this.resumedFrom === undefined ? {} : { resumedFrom: this.resumedFrom }),
           };
+          if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
           this.runState = "closing";
           await this.runLifecycleFinish(result);
           await runObservers.end(result);
@@ -628,8 +628,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             trace: runObservers.trace,
             guardrails: [...this.guardrailDecisions],
             ...this.memoryCompactionResult(),
-            ...(this.resumedFrom === undefined ? {} : { resumedFrom: this.resumedFrom }),
           };
+          if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
           this.runState = "closing";
           await this.runLifecycleFinish(result);
           await runObservers.end(result);
@@ -769,11 +769,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         }
         const { firstDeltaMs, emittedToolCallIds } = completionState;
 
-        const generationEndArgs: AgentGenerationEndArgs = {
+        let generationEndArgs: AgentGenerationEndArgs = {
           turn: currentTurns,
           response,
-          ...(firstDeltaMs === undefined ? {} : { firstDeltaMs }),
         };
+        if (firstDeltaMs !== undefined) {
+          generationEndArgs = { ...generationEndArgs, firstDeltaMs };
+        }
         this.activeGeneration = undefined;
         await generationObservers.end(generationEndArgs);
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
@@ -1187,23 +1189,24 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
     this.runState = "closing";
 
+    const continuationState: AgentContinuationState = {
+      kind: "anvia.agent-continuation",
+      history: [...this.chatHistory],
+      messages: [...args.newMessages],
+      pending: args.suspension.pending,
+      remainingToolCalls: [...args.suspension.remainingToolCalls],
+      steering: this.steeringMessages.map((entry) => ({
+        id: entry.id,
+        messages: [...entry.messages],
+      })),
+    };
+    if (this.memoryScope !== undefined) continuationState.memoryScope = this.memoryScope;
     const continuation = parseAgentContinuation({
       version: 1,
       agentId: this.agent.id,
       sourceRunId: args.runId,
       interaction: args.suspension.interaction,
-      state: serializeContinuationState({
-        kind: "anvia.agent-continuation",
-        history: [...this.chatHistory],
-        messages: [...args.newMessages],
-        pending: args.suspension.pending,
-        remainingToolCalls: [...args.suspension.remainingToolCalls],
-        steering: this.steeringMessages.map((entry) => ({
-          id: entry.id,
-          messages: [...entry.messages],
-        })),
-        ...(this.memoryScope === undefined ? {} : { memoryScope: this.memoryScope }),
-      }),
+      state: serializeContinuationState(continuationState),
     });
     const result: AgentSuspendedResult = {
       status: "suspended",
@@ -1217,8 +1220,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       continuation,
       ...generationArtifacts([...this.chatHistory, ...args.newMessages]),
       ...this.memoryCompactionResult(),
-      ...(this.resumedFrom === undefined ? {} : { resumedFrom: this.resumedFrom }),
     };
+    if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
     await this.runLifecycleFinish(result);
     await args.runObservers.end(result);
     this.runState = "completed";
@@ -1231,26 +1234,24 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     response: CompletionResponse,
     _request: CompletionRequest,
   ): MessageType {
-    const metadata: JsonObject = {
-      anvia: {
-        generation: {
-          provider: this.agent.model.provider,
-          modelId: this.agent.model.modelId,
-          usage: { ...response.usage },
-          ...(response.contextUsage === undefined ? {} : { contextUsage: response.contextUsage }),
-          ...(response.sources === undefined ? {} : { sources: response.sources }),
-          ...(response.providerToolCalls === undefined
-            ? {}
-            : { providerToolCalls: response.providerToolCalls }),
-        },
-      },
+    const generation: JsonObject = {
+      provider: this.agent.model.provider,
+      modelId: this.agent.model.modelId,
+      usage: { ...response.usage },
     };
-    return {
+    if (response.contextUsage !== undefined) generation.contextUsage = response.contextUsage;
+    if (response.sources !== undefined) generation.sources = response.sources;
+    if (response.providerToolCalls !== undefined) {
+      generation.providerToolCalls = response.providerToolCalls;
+    }
+    const metadata: JsonObject = { anvia: { generation } };
+    let message: MessageType = {
       role: "assistant",
       content: response.choice,
-      ...(response.messageId === undefined ? {} : { id: response.messageId }),
       metadata,
     };
+    if (response.messageId !== undefined) message = { ...message, id: response.messageId };
+    return message;
   }
 
   private providerTraceRequest(
@@ -1271,7 +1272,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     request: CompletionRequest,
     providerRequest: JsonObject | undefined,
   ): AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } {
-    return {
+    let args: AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } = {
       turn,
       request,
       modelInfo: {
@@ -1279,8 +1280,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         modelId: this.agent.model.modelId,
         capabilities: this.agent.model.capabilities,
       },
-      ...(providerRequest === undefined ? {} : { providerRequest }),
     };
+    if (providerRequest !== undefined) args = { ...args, providerRequest };
+    return args;
   }
 
   private retryOptionsForFailure(
@@ -1375,16 +1377,17 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     const executor = this.createToolExecutor(runId, newMessages);
     const results: ToolResultPart[] = [];
     if (response.type === "tool-approval") {
+      const attributes: JsonObject = {
+        approvalId: interaction.interactionId,
+        toolName: pending.toolCall.toolName,
+        toolCallId: pending.toolCall.toolCallId,
+        internalCallId: pending.internalCallId,
+        approved: response.approved,
+      };
+      if (response.reason !== undefined) attributes.decisionReason = response.reason;
       await observation.runObservers.event({
         name: "tool.approval_resolved",
-        attributes: {
-          approvalId: interaction.interactionId,
-          toolName: pending.toolCall.toolName,
-          toolCallId: pending.toolCall.toolCallId,
-          internalCallId: pending.internalCallId,
-          approved: response.approved,
-          ...(response.reason === undefined ? {} : { decisionReason: response.reason }),
-        },
+        attributes,
       });
       if (response.approved) {
         results.push(await executor.executeResumed(pending, onResult, onStreamEvent, observation));
@@ -1485,10 +1488,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       text: result.text,
       usage: lifecycleSnapshot(result.usage),
       messages: lifecycleSnapshot(result.messages),
-      ...(result.memoryCompaction === undefined
-        ? {}
-        : { memoryCompaction: lifecycleSnapshot(result.memoryCompaction) }),
     };
+    if (result.memoryCompaction !== undefined) {
+      Object.assign(common, { memoryCompaction: lifecycleSnapshot(result.memoryCompaction) });
+    }
     const event =
       result.status === "completed"
         ? {
@@ -1625,8 +1628,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       guardrails: [...this.guardrailDecisions],
       ...generationArtifacts(messages),
       ...this.memoryCompactionResult(),
-      ...(this.resumedFrom === undefined ? {} : { resumedFrom: this.resumedFrom }),
     };
+    if (this.resumedFrom !== undefined) Object.assign(common, { resumedFrom: this.resumedFrom });
     if (blocked) {
       return { ...common, status: "blocked", stage: "output" };
     }
@@ -2035,40 +2038,41 @@ function normalizeAgentInput(
     const response = parseAgentInteractionResponse(input.response);
     assertAgentInteractionResponse(continuation.interaction, response);
     const state = parseContinuationState(continuation.state, continuation.interaction);
-    const responsePart: ToolInteractionResponsePart =
-      response.type === "tool-approval"
-        ? {
-            type: "tool-approval-response",
-            interactionId: continuation.interaction.id,
-            toolCallId: continuation.interaction.toolCallId,
-            toolName: continuation.interaction.toolName,
-            approved: response.approved,
-            ...(continuation.interaction.callId === undefined
-              ? {}
-              : { callId: continuation.interaction.callId }),
-            ...(response.reason === undefined ? {} : { reason: response.reason }),
-          }
-        : {
-            type: "tool-question-response",
-            interactionId: continuation.interaction.id,
-            toolCallId: continuation.interaction.toolCallId,
-            toolName: continuation.interaction.toolName,
-            answers: response.answers,
-            ...(continuation.interaction.callId === undefined
-              ? {}
-              : { callId: continuation.interaction.callId }),
-          };
-    return {
+    let responsePart: ToolInteractionResponsePart;
+    if (response.type === "tool-approval") {
+      responsePart = {
+        type: "tool-approval-response",
+        interactionId: continuation.interaction.id,
+        toolCallId: continuation.interaction.toolCallId,
+        toolName: continuation.interaction.toolName,
+        approved: response.approved,
+      };
+      if (response.reason !== undefined)
+        responsePart = { ...responsePart, reason: response.reason };
+    } else {
+      responsePart = {
+        type: "tool-question-response",
+        interactionId: continuation.interaction.id,
+        toolCallId: continuation.interaction.toolCallId,
+        toolName: continuation.interaction.toolName,
+        answers: response.answers,
+      };
+    }
+    if (continuation.interaction.callId !== undefined) {
+      responsePart = { ...responsePart, callId: continuation.interaction.callId };
+    }
+    const normalized = {
       prompt: parseMessage({ role: "tool", content: [responsePart] }),
       history: [...state.history, ...state.messages],
       continuationState: state,
       interactionResponse: response,
       sourceRunId: continuation.sourceRunId,
       interactionId: continuation.interaction.id,
-      ...(state.memoryScope === undefined
-        ? {}
-        : { scope: normalizeMemoryScope(state.memoryScope) }),
     };
+    if (state.memoryScope !== undefined) {
+      Object.assign(normalized, { scope: normalizeMemoryScope(state.memoryScope) });
+    }
+    return normalized;
   }
   if (hasPrompt) {
     const prompt = input.prompt;
@@ -2084,11 +2088,14 @@ function normalizeAgentInput(
     if (parsedPrompt.role !== "user") {
       throw new TypeError("Agent prompt must be text or a user message.");
     }
-    return {
+    const normalized = {
       prompt: parsedPrompt,
       history: [],
-      ...(input.session === undefined ? {} : { scope: normalizeMemoryScope(input.session) }),
     };
+    if (input.session !== undefined) {
+      Object.assign(normalized, { scope: normalizeMemoryScope(input.session) });
+    }
+    return normalized;
   }
   if (input.session !== undefined) {
     throw new TypeError("Agent messages cannot be combined with a persisted session.");
@@ -2154,11 +2161,12 @@ function normalizeMemoryScope(scope: MemoryScope): MemoryScope {
   if (typeof scope.sessionId !== "string" || scope.sessionId.trim().length === 0) {
     throw new TypeError("Agent sessionId must be a non-empty string.");
   }
-  return lifecycleSnapshot({
+  const normalized: MemoryScope = {
     sessionId: scope.sessionId.trim(),
-    ...(scope.userId === undefined ? {} : { userId: scope.userId }),
-    ...(scope.metadata === undefined ? {} : { metadata: scope.metadata }),
-  });
+  };
+  if (scope.userId !== undefined) normalized.userId = scope.userId;
+  if (scope.metadata !== undefined) normalized.metadata = scope.metadata;
+  return lifecycleSnapshot(normalized);
 }
 
 function normalizeRequestedRunId(runId: string | undefined): string | undefined {
@@ -2243,11 +2251,17 @@ function generationArtifacts(messages: MessageType[]): {
       providerToolCalls.set(toolCall.id, toolCall);
     }
   }
-  return {
-    ...(sources.size === 0 ? {} : { sources: [...sources.values()] }),
-    ...(providerToolCalls.size === 0 ? {} : { providerToolCalls: [...providerToolCalls.values()] }),
-    ...(contextUsage === undefined ? {} : { contextUsage }),
-  };
+  const artifacts: {
+    sources?: CompletionSource[];
+    providerToolCalls?: ProviderToolCall[];
+    contextUsage?: import("../../completion/index").ContextUsage;
+  } = {};
+  if (sources.size > 0) artifacts.sources = [...sources.values()];
+  if (providerToolCalls.size > 0) {
+    artifacts.providerToolCalls = [...providerToolCalls.values()];
+  }
+  if (contextUsage !== undefined) artifacts.contextUsage = contextUsage;
+  return artifacts;
 }
 
 type ReasoningDeltaEvent = Extract<AgentStreamEvent, { type: "reasoning_delta" }>;

@@ -47,12 +47,15 @@ export function createVectorContext<T>(
 ): VectorContext<T> {
   const topK = assertPositiveSearchLimit(options.topK);
   const minScore = assertFiniteMinScore(options.minScore);
-  return Object.freeze({
+  let context: VectorContext<T> = {
     ...options,
     topK,
-    ...(minScore === undefined ? {} : { minScore }),
     kind: "vector-context" as const,
-  });
+  };
+  if (minScore !== undefined) {
+    context = { ...context, minScore };
+  }
+  return Object.freeze(context);
 }
 
 export function isVectorContext(value: unknown): value is VectorContext {

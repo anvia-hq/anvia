@@ -14,27 +14,26 @@ export function createTracing(options: CreateTracingOptions = {}): LangfuseClien
     options.scoreBatchSize !== undefined ||
     options.scoreFlushIntervalMs !== undefined ||
     options.scoreMaxAttempts !== undefined;
-  return new LangfuseClient({
+  const clientOptions: ConstructorParameters<typeof LangfuseClient>[0] = {
     publicKey: env.publicKey,
     secretKey: env.secretKey,
     baseUrl: env.baseUrl,
     environment: env.environment,
     release: env.release,
     serviceName: options.name ?? env.serviceName ?? "langfuse-ops",
-    ...(hasScoreOptions
-      ? {
-          scores: {
-            ...(options.scoreBatchSize !== undefined ? { batchSize: options.scoreBatchSize } : {}),
-            ...(options.scoreFlushIntervalMs !== undefined
-              ? { flushIntervalMs: options.scoreFlushIntervalMs }
-              : {}),
-            ...(options.scoreMaxAttempts !== undefined
-              ? { retries: { maxAttempts: options.scoreMaxAttempts } }
-              : {}),
-          },
-        }
-      : {}),
-  });
+  };
+  if (hasScoreOptions) {
+    const scores: NonNullable<(typeof clientOptions)["scores"]> = {};
+    if (options.scoreBatchSize !== undefined) scores.batchSize = options.scoreBatchSize;
+    if (options.scoreFlushIntervalMs !== undefined) {
+      scores.flushIntervalMs = options.scoreFlushIntervalMs;
+    }
+    if (options.scoreMaxAttempts !== undefined) {
+      scores.retries = { maxAttempts: options.scoreMaxAttempts };
+    }
+    clientOptions.scores = scores;
+  }
+  return new LangfuseClient(clientOptions);
 }
 
 // Re-exported for convenience so demo scripts only need one import path.

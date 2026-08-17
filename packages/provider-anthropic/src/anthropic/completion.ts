@@ -276,10 +276,9 @@ function mergeUsage(base: Usage, stream: Usage, fields: AnthropicStreamUsageFiel
 }
 
 function copyUsage(usage: Usage): Usage {
-  return {
-    ...usage,
-    ...(usage.details === undefined ? {} : { details: { ...usage.details } }),
-  };
+  let copy: Usage = { ...usage };
+  if (usage.details !== undefined) copy = { ...copy, details: { ...usage.details } };
+  return copy;
 }
 
 export function toAnthropicMessagesParams(
@@ -288,8 +287,9 @@ export function toAnthropicMessagesParams(
 ): AnthropicCreateParams {
   const messages = requestMessages(request);
   const system = systemFromMessages(request, messages);
+  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
   const params: AnthropicCreateParams = {
-    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+    ...providerOptions,
     model: modelId,
     max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
     messages: messages.flatMap(messageToAnthropicMessages),

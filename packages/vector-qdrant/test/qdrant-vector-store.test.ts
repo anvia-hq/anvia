@@ -137,36 +137,35 @@ describe("QdrantVectorClient", () => {
 
   it("expands physical candidates until topK logical documents are available", async () => {
     const client = fixture();
-    client.query = vi.fn(async (_collection, options) => ({
-      result: {
-        points: [
+    client.query = vi.fn(async (_collection, options) => {
+      const points = [
+        {
+          id: "a-1",
+          score: 0.9,
+          payload: { __anvia_document_id: "a", __anvia_document: "A" },
+        },
+        {
+          id: "a-2",
+          score: 0.8,
+          payload: { __anvia_document_id: "a", __anvia_document: "A" },
+        },
+      ];
+      if (options.limit !== 2) {
+        points.push(
           {
-            id: "a-1",
-            score: 0.9,
-            payload: { __anvia_document_id: "a", __anvia_document: "A" },
+            id: "b",
+            score: 0.7,
+            payload: { __anvia_document_id: "b", __anvia_document: "B" },
           },
           {
-            id: "a-2",
-            score: 0.8,
-            payload: { __anvia_document_id: "a", __anvia_document: "A" },
+            id: "c",
+            score: 0.6,
+            payload: { __anvia_document_id: "c", __anvia_document: "C" },
           },
-          ...(options.limit === 2
-            ? []
-            : [
-                {
-                  id: "b",
-                  score: 0.7,
-                  payload: { __anvia_document_id: "b", __anvia_document: "B" },
-                },
-                {
-                  id: "c",
-                  score: 0.6,
-                  payload: { __anvia_document_id: "c", __anvia_document: "C" },
-                },
-              ]),
-        ],
-      },
-    }));
+        );
+      }
+      return { result: { points } };
+    });
     const store = new QdrantVectorClient({ client }).vectorStore<string>({
       collectionName: "docs",
       dimensions: 2,

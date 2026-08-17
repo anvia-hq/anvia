@@ -194,24 +194,25 @@ function expectationMismatches(
   expectations?: EvalExpectations,
 ): string[] {
   if (expectations === undefined) return [];
-  return [
-    ...(expectations.totals === undefined ? [] : totalMismatches(result, expectations.totals)),
-    ...(expectations.outcomes === undefined
-      ? []
-      : outcomeMismatches(result, expectations.outcomes)),
-  ];
+  const mismatches: string[] = [];
+  if (expectations.totals !== undefined) {
+    mismatches.push(...totalMismatches(result, expectations.totals));
+  }
+  if (expectations.outcomes !== undefined) {
+    mismatches.push(...outcomeMismatches(result, expectations.outcomes));
+  }
+  return mismatches;
 }
 
 function totalMismatches(
   result: EvalSuiteResult<unknown, unknown, unknown>,
   expected: EvalExpectedTotals,
 ): string[] {
-  const directMetrics = {
-    ...(expected.total === undefined ? {} : { total: expected.total }),
-    ...(expected.passed === undefined ? {} : { passed: expected.passed }),
-    ...(expected.failed === undefined ? {} : { failed: expected.failed }),
-    ...(expected.invalid === undefined ? {} : { invalid: expected.invalid }),
-  };
+  const directMetrics: Partial<EvalTotals> = {};
+  if (expected.total !== undefined) directMetrics.total = expected.total;
+  if (expected.passed !== undefined) directMetrics.passed = expected.passed;
+  if (expected.failed !== undefined) directMetrics.failed = expected.failed;
+  if (expected.invalid !== undefined) directMetrics.invalid = expected.invalid;
   return [
     ...totalsGroupMismatches("metrics", result.metrics, {
       ...directMetrics,

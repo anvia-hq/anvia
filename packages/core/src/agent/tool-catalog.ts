@@ -82,12 +82,13 @@ function registerToolOwner(owners: Map<string, string>, name: string, owner: str
 }
 
 function snapshotProviderTool(tool: ProviderTool): ProviderTool {
-  return Object.freeze({
+  let snapshot: ProviderTool = {
     ...tool,
-    ...(tool.configuration === undefined
-      ? {}
-      : { configuration: cloneFrozenPlainData(tool.configuration) }),
-  });
+  };
+  if (tool.configuration !== undefined) {
+    snapshot = { ...snapshot, configuration: cloneFrozenPlainData(tool.configuration) };
+  }
+  return Object.freeze(snapshot);
 }
 
 function snapshotMcpServer(server: McpServer): McpServer {
@@ -105,17 +106,20 @@ function snapshotMcpServer(server: McpServer): McpServer {
     }
   }
   const tools = server.tools.map(snapshotMcpTool);
-  return Object.freeze({
+  let snapshot: McpServer = {
     name: server.name,
     tools: Object.freeze(tools),
-    ...(server.serverInfo === undefined
-      ? {}
-      : { serverInfo: cloneFrozenPlainData(server.serverInfo) }),
-    ...(server.capabilities === undefined
-      ? {}
-      : { capabilities: cloneFrozenPlainData(server.capabilities) }),
-    ...(server.instructions === undefined ? {} : { instructions: server.instructions }),
-  });
+  };
+  if (server.serverInfo !== undefined) {
+    snapshot = { ...snapshot, serverInfo: cloneFrozenPlainData(server.serverInfo) };
+  }
+  if (server.capabilities !== undefined) {
+    snapshot = { ...snapshot, capabilities: cloneFrozenPlainData(server.capabilities) };
+  }
+  if (server.instructions !== undefined) {
+    snapshot = { ...snapshot, instructions: server.instructions };
+  }
+  return Object.freeze(snapshot);
 }
 
 function snapshotMcpTool(tool: McpServer["tools"][number]): McpServer["tools"][number] {
@@ -123,16 +127,22 @@ function snapshotMcpTool(tool: McpServer["tools"][number]): McpServer["tools"][n
     return tool;
   }
   const parseInput = tool.parseInput;
-  return Object.freeze({
+  let snapshot: McpServer["tools"][number] = {
     name: tool.name,
     mcp: Object.freeze({ ...tool.mcp }),
-    ...(tool.requiresApproval === undefined ? {} : { requiresApproval: tool.requiresApproval }),
     definition: (prompt: string) => tool.definition(prompt),
     call: (args: unknown, context?: ToolCallContext) => tool.call(args, context),
-    ...(parseInput === undefined
-      ? {}
-      : { parseInput: (args: JsonValue) => parseInput.call(tool, args) }),
-  });
+  };
+  if (tool.requiresApproval !== undefined) {
+    snapshot = { ...snapshot, requiresApproval: tool.requiresApproval };
+  }
+  if (parseInput !== undefined) {
+    snapshot = {
+      ...snapshot,
+      parseInput: (args: JsonValue) => parseInput.call(tool, args),
+    };
+  }
+  return Object.freeze(snapshot);
 }
 
 function assertUniqueMcpServerNames(servers: readonly McpServer[]): void {
@@ -147,16 +157,24 @@ function assertUniqueMcpServerNames(servers: readonly McpServer[]): void {
 
 function snapshotToolIndex(index: ToolIndex): ToolIndex {
   const inspect = index.inspect;
-  return Object.freeze({
+  let snapshot: ToolIndex = {
     kind: "tool-index" as const,
     tools: Object.freeze([...index.tools]),
     topK: index.topK,
-    ...(index.minScore === undefined ? {} : { minScore: index.minScore }),
-    ...(index.filter === undefined ? {} : { filter: cloneFrozenPlainData(index.filter) }),
     search: (options: { query: string; abortSignal?: AbortSignal | undefined }) =>
       index.search(options),
-    ...(inspect === undefined
-      ? {}
-      : { inspect: (request: VectorInspectRequest) => inspect.call(index, request) }),
-  });
+  };
+  if (index.minScore !== undefined) {
+    snapshot = { ...snapshot, minScore: index.minScore };
+  }
+  if (index.filter !== undefined) {
+    snapshot = { ...snapshot, filter: cloneFrozenPlainData(index.filter) };
+  }
+  if (inspect !== undefined) {
+    snapshot = {
+      ...snapshot,
+      inspect: (request: VectorInspectRequest) => inspect.call(index, request),
+    };
+  }
+  return Object.freeze(snapshot);
 }

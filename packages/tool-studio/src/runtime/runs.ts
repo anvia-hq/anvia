@@ -449,12 +449,13 @@ function acceptTranscriptStreamEvent(
       interaction.callId ?? interaction.toolCallId,
     );
     if (matched !== undefined && interaction.type === "tool-approval") {
-      matched.approval = {
+      const approval: NonNullable<typeof matched.approval> = {
         id: interaction.id,
         status: "pending",
         requestedAt: new Date().toISOString(),
-        ...(interaction.reason === undefined ? {} : { reason: interaction.reason }),
       };
+      if (interaction.reason !== undefined) approval.reason = interaction.reason;
+      matched.approval = approval;
     }
     if (matched !== undefined && interaction.type === "tool-question") {
       matched.question = {
@@ -479,12 +480,13 @@ function acceptTranscriptStreamEvent(
     );
     const respondedAt = new Date().toISOString();
     if (matched?.approval !== undefined && response.type === "tool-approval-response") {
-      matched.approval = {
+      const approval: NonNullable<typeof matched.approval> = {
         ...matched.approval,
         status: response.approved ? "approved" : "rejected",
         resolvedAt: respondedAt,
-        ...(response.reason === undefined ? {} : { reason: response.reason }),
       };
+      if (response.reason !== undefined) approval.reason = response.reason;
+      matched.approval = approval;
     }
     if (matched?.question !== undefined && response.type === "tool-question-response") {
       matched.question = {

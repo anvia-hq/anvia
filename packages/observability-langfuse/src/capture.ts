@@ -92,11 +92,12 @@ function sanitizeValue(value: unknown, depth: number, seen: WeakSet<object>): un
 }
 
 function omitted(reason: OmittedTraceValue["reason"], originalBytes?: number): OmittedTraceValue {
-  return {
+  const value: OmittedTraceValue = {
     anviaTraceValue: "omitted",
     reason,
-    ...(originalBytes === undefined ? {} : { originalBytes }),
   };
+  if (originalBytes !== undefined) value.originalBytes = originalBytes;
+  return value;
 }
 
 function boundedPreview(value: string, originalBytes: number, maxBytes: number): string {

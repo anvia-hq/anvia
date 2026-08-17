@@ -18,18 +18,16 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
   }
 
   switch (event.type) {
-    case "message_start":
-      return messages.some((message) => message.id === event.messageId)
-        ? messages
-        : [
-            ...messages,
-            {
-              id: event.messageId,
-              role: event.role,
-              parts: [],
-              ...(event.metadata === undefined ? {} : { metadata: event.metadata }),
-            },
-          ];
+    case "message_start": {
+      if (messages.some((message) => message.id === event.messageId)) return messages;
+      let message: UIMessage<Metadata, Data> = {
+        id: event.messageId,
+        role: event.role,
+        parts: [],
+      };
+      if (event.metadata !== undefined) message = { ...message, metadata: event.metadata };
+      return [...messages, message];
+    }
     case "text_start":
       return upsertPart(messages, event.messageId, {
         id: event.partId,
@@ -52,23 +50,25 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         if (event.signature !== undefined) next.signature = event.signature;
         return next;
       });
-    case "reasoning_start":
-      return upsertPart(messages, event.messageId, {
+    case "reasoning_start": {
+      const reasoning: Extract<UIMessagePart, { type: "reasoning" }> = {
         id: event.partId,
         type: "reasoning",
         text: "",
-        ...(event.reasoningId === undefined ? {} : { reasoningId: event.reasoningId }),
-      });
+      };
+      if (event.reasoningId !== undefined) reasoning.reasoningId = event.reasoningId;
+      return upsertPart(messages, event.messageId, reasoning);
+    }
     case "reasoning_delta":
       return updatePart(messages, event.messageId, event.partId, (part) => {
         const reasoning: Extract<UIMessagePart, { type: "reasoning" }> = {
           id: event.partId,
           type: "reasoning",
           text: part?.type === "reasoning" ? `${part.text}${event.delta}` : event.delta,
-          ...(part?.type === "reasoning" && part.reasoningId !== undefined
-            ? { reasoningId: part.reasoningId }
-            : {}),
         };
+        if (part?.type === "reasoning" && part.reasoningId !== undefined) {
+          reasoning.reasoningId = part.reasoningId;
+        }
         const content = appendReasoningContent(
           part?.type === "reasoning" ? part.content : undefined,
           event,
@@ -77,19 +77,22 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         return reasoning;
       });
     case "reasoning_end":
-      return updatePart(messages, event.messageId, event.partId, (part) => ({
-        id: event.partId,
-        type: "reasoning",
-        text: event.text ?? (part?.type === "reasoning" ? part.text : ""),
-        ...(part?.type === "reasoning" && part.reasoningId !== undefined
-          ? { reasoningId: part.reasoningId }
-          : {}),
-        ...(event.content !== undefined
-          ? { content: event.content }
-          : part?.type === "reasoning" && part.content !== undefined
-            ? { content: part.content }
-            : {}),
-      }));
+      return updatePart(messages, event.messageId, event.partId, (part) => {
+        const reasoning: Extract<UIMessagePart, { type: "reasoning" }> = {
+          id: event.partId,
+          type: "reasoning",
+          text: event.text ?? (part?.type === "reasoning" ? part.text : ""),
+        };
+        if (part?.type === "reasoning" && part.reasoningId !== undefined) {
+          reasoning.reasoningId = part.reasoningId;
+        }
+        if (event.content !== undefined) {
+          reasoning.content = event.content;
+        } else if (part?.type === "reasoning" && part.content !== undefined) {
+          reasoning.content = part.content;
+        }
+        return reasoning;
+      });
     case "tool_call_start": {
       const part: UIToolMessagePart = {
         id: event.partId,
@@ -188,32 +191,40 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
       return messages.map((message) => {
         if (message.id !== event.messageId) return message;
         const metadata = mergeMetadata(message.metadata, event.metadata);
-        const generation = mergeGeneration(message.generation, {
+        const generationUpdate: UIMessageGeneration = {
           runId: event.runId,
-          ...(event.usage === undefined ? {} : { usage: event.usage }),
-          ...(event.contextUsage === undefined ? {} : { contextUsage: event.contextUsage }),
-        });
-        return {
+        };
+        if (event.usage !== undefined) generationUpdate.usage = event.usage;
+        if (event.contextUsage !== undefined) {
+          generationUpdate.contextUsage = event.contextUsage;
+        }
+        const generation = mergeGeneration(message.generation, generationUpdate);
+        let updated: UIMessage<Metadata, Data> = {
           ...message,
-          ...(event.parts === undefined
-            ? {}
-            : { parts: reconcileFinalParts(message.parts, event.parts) }),
-          ...(event.modelMessageId === undefined ? {} : { modelMessageId: event.modelMessageId }),
-          ...(metadata === undefined ? {} : { metadata }),
           generation,
         };
+        if (event.parts !== undefined) {
+          updated = { ...updated, parts: reconcileFinalParts(message.parts, event.parts) };
+        }
+        if (event.modelMessageId !== undefined) {
+          updated = { ...updated, modelMessageId: event.modelMessageId };
+        }
+        if (metadata !== undefined) updated = { ...updated, metadata };
+        return updated;
       });
-    case "run_end":
-      return updateLastAssistantGeneration(messages, {
+    case "run_end": {
+      const generation: UIMessageGeneration = {
         runId: event.runId,
         status: event.status,
-        ...(event.usage === undefined ? {} : { usage: event.usage }),
-        ...(event.contextUsage === undefined ? {} : { contextUsage: event.contextUsage }),
-        ...(event.trace === undefined ? {} : { trace: event.trace }),
-        ...(event.memoryCompaction === undefined
-          ? {}
-          : { memoryCompaction: event.memoryCompaction }),
-      });
+      };
+      if (event.usage !== undefined) generation.usage = event.usage;
+      if (event.contextUsage !== undefined) generation.contextUsage = event.contextUsage;
+      if (event.trace !== undefined) generation.trace = event.trace;
+      if (event.memoryCompaction !== undefined) {
+        generation.memoryCompaction = event.memoryCompaction;
+      }
+      return updateLastAssistantGeneration(messages, generation);
+    }
     case "error":
       return appendToLastAssistant(messages, {
         id: createClientId("error"),
@@ -247,11 +258,15 @@ function appendReasoningContent(
     if (last?.type === "text" && last.signature === event.signature) {
       next[next.length - 1] = { ...last, text: `${last.text}${event.delta}` };
     } else {
-      next.push({
+      let detail: Extract<
+        NonNullable<Extract<UIMessagePart, { type: "reasoning" }>["content"]>[number],
+        { type: "text" }
+      > = {
         type,
         text: event.delta,
-        ...(event.signature === undefined ? {} : { signature: event.signature }),
-      });
+      };
+      if (event.signature !== undefined) detail = { ...detail, signature: event.signature };
+      next.push(detail);
     }
     return next;
   }

@@ -67,8 +67,8 @@ describe("MilvusVectorClient", () => {
 
   it("expands physical candidates until topK logical documents are available", async () => {
     const client = fixture();
-    client.search = vi.fn(async (options) => ({
-      results: [
+    client.search = vi.fn(async (options) => {
+      const results = [
         {
           id: "a-1",
           score: 0.9,
@@ -81,24 +81,25 @@ describe("MilvusVectorClient", () => {
           __anvia_document_id: "a",
           __anvia_document: "A",
         },
-        ...(options.limit === 2
-          ? []
-          : [
-              {
-                id: "b",
-                score: 0.7,
-                __anvia_document_id: "b",
-                __anvia_document: "B",
-              },
-              {
-                id: "c",
-                score: 0.6,
-                __anvia_document_id: "c",
-                __anvia_document: "C",
-              },
-            ]),
-      ],
-    }));
+      ];
+      if (options.limit !== 2) {
+        results.push(
+          {
+            id: "b",
+            score: 0.7,
+            __anvia_document_id: "b",
+            __anvia_document: "B",
+          },
+          {
+            id: "c",
+            score: 0.6,
+            __anvia_document_id: "c",
+            __anvia_document: "C",
+          },
+        );
+      }
+      return { results };
+    });
     const store = new MilvusVectorClient({ client }).vectorStore<string>({
       collectionName: "docs",
       dimensions: 2,

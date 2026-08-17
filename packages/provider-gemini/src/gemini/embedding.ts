@@ -55,13 +55,14 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
       return [];
     }
 
+    const config = { ...this.embeddingConfig() };
+    if (options?.abortSignal !== undefined) {
+      Object.assign(config, { abortSignal: options.abortSignal });
+    }
     const response = await this.client.models.embedContent({
       model: this.modelId,
       contents: texts,
-      config: disableGeminiNativeRetries({
-        ...this.embeddingConfig(),
-        ...(options?.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      }),
+      config: disableGeminiNativeRetries(config),
     } as never);
     const rawEmbeddings = embeddingsFromResponse(response);
     if (rawEmbeddings.length !== texts.length) {

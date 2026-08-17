@@ -23,8 +23,9 @@ export class OpenAISpeechGenerationModel implements SpeechGenerationModel<unknow
     request: SpeechGenerationRequest,
     options?: ModelCallOptions,
   ): Promise<SpeechGenerationResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const params: Record<string, unknown> = {
-      ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+      ...providerOptions,
       model: this.modelId,
       input: request.text,
       voice: request.voice,

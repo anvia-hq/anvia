@@ -46,10 +46,11 @@ export class DockerBrowserClient {
 
   async pullImage(options: PullDockerBrowserImageOptions = {}): Promise<void> {
     assertOptionsObject(options);
-    await this.sandboxClient.pullImage({
-      image: this.image,
-      ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-    });
+    let pullOptions: Parameters<typeof this.sandboxClient.pullImage>[0] = { image: this.image };
+    if (options.abortSignal !== undefined) {
+      pullOptions = { ...pullOptions, abortSignal: options.abortSignal };
+    }
+    await this.sandboxClient.pullImage(pullOptions);
   }
 
   async createBrowser(options: CreateDockerBrowserOptions): Promise<DockerBrowser> {
@@ -59,8 +60,7 @@ export class DockerBrowserClient {
       ...options.resources,
       sharedMemoryMb: options.resources?.sharedMemoryMb ?? defaultSharedMemoryMb,
     };
-    const sandbox = await this.sandboxClient.createSandbox({
-      ...(options.id === undefined ? {} : { id: options.id }),
+    let sandboxOptions: Parameters<typeof this.sandboxClient.createSandbox>[0] = {
       image: this.image,
       workdir: "/workspace",
       workspace: options.workspace,
@@ -70,15 +70,21 @@ export class DockerBrowserClient {
         "anvia.browser.schema": browserSchema,
       },
       resources,
-      ...(options.runtime === undefined ? {} : { runtime: options.runtime }),
       security: {
         noNewPrivileges: true,
         dropCapabilities: ["ALL"],
         addCapabilities: ["SYS_CHROOT"],
         seccompProfile: { type: "path", path: seccompProfilePath },
       },
-      ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-    });
+    };
+    if (options.id !== undefined) sandboxOptions = { ...sandboxOptions, id: options.id };
+    if (options.runtime !== undefined) {
+      sandboxOptions = { ...sandboxOptions, runtime: options.runtime };
+    }
+    if (options.abortSignal !== undefined) {
+      sandboxOptions = { ...sandboxOptions, abortSignal: options.abortSignal };
+    }
+    const sandbox = await this.sandboxClient.createSandbox(sandboxOptions);
 
     try {
       await configureBrowser(sandbox, options);
@@ -171,11 +177,14 @@ class DockerBrowserHandle implements DockerBrowser {
     assertOptionsObject(options);
     this.assertRunning();
     try {
-      const connection = await connectPlaywrightBrowser({
+      let connectOptions: Parameters<typeof connectPlaywrightBrowser>[0] = {
         endpointUrl: endpointFor(this.sandbox, cdpPort),
         control: this.control,
-        ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      });
+      };
+      if (options.abortSignal !== undefined) {
+        connectOptions = { ...connectOptions, abortSignal: options.abortSignal };
+      }
+      const connection = await connectPlaywrightBrowser(connectOptions);
       this.connections.add(connection);
       return connection;
     } catch (error) {
@@ -227,15 +236,18 @@ async function configureBrowser(
   sandbox: DockerSandbox,
   options: CreateDockerBrowserOptions,
 ): Promise<void> {
-  const result = await sandbox.runtime.exec({
+  let execOptions: Parameters<typeof sandbox.runtime.exec>[0] = {
     command: "/usr/local/bin/anvia-browser-configure",
     input: JSON.stringify({
       password: options.desktop.password,
       width: options.desktop.viewport.width,
       height: options.desktop.viewport.height,
     }),
-    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-  });
+  };
+  if (options.abortSignal !== undefined) {
+    execOptions = { ...execOptions, abortSignal: options.abortSignal };
+  }
+  const result = await sandbox.runtime.exec(execOptions);
   if (result.status !== "exited" || result.exitCode !== 0) {
     throw new Error("Browser image rejected its runtime configuration.");
   }
@@ -245,10 +257,11 @@ async function assertBrowserImage(
   sandbox: DockerSandbox,
   abortSignal?: AbortSignal,
 ): Promise<void> {
-  const result = await sandbox.runtime.exec({
+  let execOptions: Parameters<typeof sandbox.runtime.exec>[0] = {
     command: "/usr/local/bin/anvia-browser-version",
-    ...(abortSignal === undefined ? {} : { abortSignal }),
-  });
+  };
+  if (abortSignal !== undefined) execOptions = { ...execOptions, abortSignal };
+  const result = await sandbox.runtime.exec(execOptions);
   if (
     result.status !== "exited" ||
     result.exitCode !== 0 ||
@@ -262,10 +275,11 @@ async function startBrowserServices(
   sandbox: DockerSandbox,
   abortSignal?: AbortSignal,
 ): Promise<void> {
-  await sandbox.runtime.startProcess({
+  let startOptions: Parameters<typeof sandbox.runtime.startProcess>[0] = {
     command: "/usr/local/bin/anvia-browser-start",
-    ...(abortSignal === undefined ? {} : { abortSignal }),
-  });
+  };
+  if (abortSignal !== undefined) startOptions = { ...startOptions, abortSignal };
+  await sandbox.runtime.startProcess(startOptions);
 }
 
 async function assertHttpReady(url: string, abortSignal: AbortSignal): Promise<void> {

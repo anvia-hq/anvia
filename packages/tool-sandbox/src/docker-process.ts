@@ -584,16 +584,17 @@ function isProcessId(value: number): boolean {
 }
 
 function copyProcessInfo(info: DockerSandboxProcessInfo): DockerSandboxProcessInfo {
-  return {
+  let copy: DockerSandboxProcessInfo = {
     id: info.id,
     command: info.command,
     args: [...info.args],
     status: info.status,
     startedAt: info.startedAt,
-    ...(info.cwd === undefined ? {} : { cwd: info.cwd }),
-    ...(info.exitCode === undefined ? {} : { exitCode: info.exitCode }),
-    ...(info.endedAt === undefined ? {} : { endedAt: info.endedAt }),
   };
+  if (info.cwd !== undefined) copy = { ...copy, cwd: info.cwd };
+  if (info.exitCode !== undefined) copy = { ...copy, exitCode: info.exitCode };
+  if (info.endedAt !== undefined) copy = { ...copy, endedAt: info.endedAt };
+  return copy;
 }
 
 async function waitForPromise(

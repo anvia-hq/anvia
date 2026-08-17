@@ -28,10 +28,8 @@ export class GrokCompletionModel implements StreamingCompletionModel<unknown> {
       api,
       contextLimits,
     });
-    this.capabilities = {
-      ...this.delegate.capabilities,
-      ...(api === "responses" ? { providerTools: true } : {}),
-    };
+    this.capabilities = { ...this.delegate.capabilities };
+    if (api === "responses") this.capabilities = { ...this.capabilities, providerTools: true };
   }
 
   traceRequest(

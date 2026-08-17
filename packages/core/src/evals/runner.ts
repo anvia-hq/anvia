@@ -100,25 +100,26 @@ export async function runEvalSuite<
     metrics: aggregates.metrics,
     cases: aggregates.cases,
     usage: aggregates.usage,
-    ...(aggregates.cost === undefined ? {} : { cost: aggregates.cost }),
     durationMs: Date.now() - startedAtMs,
     reporterErrors,
   };
+  if (aggregates.cost !== undefined) {
+    result.cost = aggregates.cost;
+  }
+  const runEndArgs: EvalRunEndArgs = {
+    ...lifecycle,
+    status: "completed",
+    completedAt,
+    durationMs: result.durationMs,
+    metrics: result.metrics,
+    cases: result.cases,
+    usage: result.usage,
+  };
+  if (result.cost !== undefined) {
+    runEndArgs.cost = result.cost;
+  }
   result.reporterErrors.push(
-    ...(await notifyRunEnd(
-      reporters,
-      {
-        ...lifecycle,
-        status: "completed",
-        completedAt,
-        durationMs: result.durationMs,
-        metrics: result.metrics,
-        cases: result.cases,
-        usage: result.usage,
-        ...(result.cost === undefined ? {} : { cost: result.cost }),
-      },
-      options.reporterErrorPolicy ?? "collect",
-    )),
+    ...(await notifyRunEnd(reporters, runEndArgs, options.reporterErrorPolicy ?? "collect")),
   );
   return result;
 }
@@ -313,15 +314,14 @@ function resolveRun<Input, Output, Expected>(
       throw new TypeError(`Evaluation run ${label} must contain 1 to 256 characters`);
     }
   }
-  return {
+  const run: EvalRunContext = {
     id,
     startedAt: new Date(startedAtMs).toISOString(),
-    ...(options.run?.datasetName === undefined ? {} : { datasetName: options.run.datasetName }),
-    ...(options.run?.datasetVersion === undefined
-      ? {}
-      : { datasetVersion: options.run.datasetVersion }),
-    ...(options.run?.metadata === undefined ? {} : { metadata: options.run.metadata }),
   };
+  if (options.run?.datasetName !== undefined) run.datasetName = options.run.datasetName;
+  if (options.run?.datasetVersion !== undefined) run.datasetVersion = options.run.datasetVersion;
+  if (options.run?.metadata !== undefined) run.metadata = options.run.metadata;
+  return run;
 }
 
 async function notifyRunStart<Input, Output, Expected>(

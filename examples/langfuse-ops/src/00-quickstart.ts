@@ -61,19 +61,22 @@ async function main(): Promise<void> {
     });
   }
 
-  const evalCase = {
+  const evalCase: {
+    id: string;
+    input: string;
+    expected: string;
+    metadata?: { traceId: string; observationId: string | undefined };
+  } = {
     id: "q-1",
     input: "How long do refunds stay available?",
     expected: "30 days",
-    ...(response.trace?.traceId === undefined
-      ? {}
-      : {
-          metadata: {
-            traceId: response.trace.traceId,
-            observationId: response.trace.observationId,
-          },
-        }),
   };
+  if (response.trace?.traceId !== undefined) {
+    evalCase.metadata = {
+      traceId: response.trace.traceId,
+      observationId: response.trace.observationId,
+    };
+  }
   const evalAgent = new Agent({
     id: "eval-target",
     model: client.completionModel({ modelId: defaultModelId(), api: "responses" }),

@@ -5,6 +5,7 @@ import { type ResolvedRetryOptions, resolveRetryOptions, runWithRetries } from "
 import type {
   EmbedDocumentsOptions,
   EmbedDocumentsResult,
+  EmbeddedDocument,
   Embedding,
   EmbeddingOperationOptions,
   EmbedHybridDocumentsOptions,
@@ -230,14 +231,19 @@ function embeddedDocument<T, Metadata extends VectorMetadata>(
   item: { id: string; document: T; metadata: Metadata | undefined },
   embeddings: Embedding[],
   sparseEmbeddings?: SparseEmbedding[],
-) {
-  return {
+): EmbeddedDocument<T, Metadata> {
+  let result: EmbeddedDocument<T, Metadata> = {
     id: item.id,
     document: item.document,
-    ...(item.metadata === undefined ? {} : { metadata: item.metadata }),
     embeddings,
-    ...(sparseEmbeddings === undefined ? {} : { sparseEmbeddings }),
   };
+  if (item.metadata !== undefined) {
+    result = { ...result, metadata: item.metadata };
+  }
+  if (sparseEmbeddings !== undefined) {
+    result = { ...result, sparseEmbeddings };
+  }
+  return result;
 }
 
 function groupEmbeddings<E>(

@@ -103,14 +103,15 @@ export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMeta
         if (score === undefined || (request.minScore !== undefined && score < request.minScore)) {
           return [];
         }
-        return [
-          {
-            score,
-            id: document.id,
-            document: document.document,
-            ...(document.metadata === undefined ? {} : { metadata: document.metadata }),
-          },
-        ];
+        let result: VectorSearchResult<T, Metadata> = {
+          score,
+          id: document.id,
+          document: document.document,
+        };
+        if (document.metadata !== undefined) {
+          result = { ...result, metadata: document.metadata };
+        }
+        return [result];
       })
       .sort((left, right) => right.score - left.score)
       .slice(0, request.topK);
@@ -128,13 +129,16 @@ export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMeta
     const page = documents.slice(start, start + limit);
     const nextOffset = start + page.length;
     const result: VectorInspectPage<T, Metadata> = {
-      items: page.map(
-        (document): VectorInspectItem<T, Metadata> => ({
+      items: page.map((document): VectorInspectItem<T, Metadata> => {
+        let item: VectorInspectItem<T, Metadata> = {
           id: document.id,
           document: document.document,
-          ...(document.metadata === undefined ? {} : { metadata: document.metadata }),
-        }),
-      ),
+        };
+        if (document.metadata !== undefined) {
+          item = { ...item, metadata: document.metadata };
+        }
+        return item;
+      }),
       totalCount: documents.length,
     };
     if (nextOffset < documents.length) result.nextCursor = String(nextOffset);

@@ -30,12 +30,13 @@ export function createUserMessage<
       attachment: normalizeAttachment(attachment),
     });
   }
-  return {
+  let message: UIMessage<Metadata, Data> = {
     id: createClientId("msg"),
     role: "user",
     parts,
-    ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
   };
+  if (input.metadata !== undefined) message = { ...message, metadata: input.metadata };
+  return message;
 }
 
 function normalizeAttachment(attachment: CreateUIAttachment): UIAttachment {

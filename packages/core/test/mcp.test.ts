@@ -297,11 +297,12 @@ function fakeMcpServer(instructions?: string, toolName = "mcp_add"): McpServer {
     ...base,
     mcp: Object.freeze({ serverName: "math", remoteName: "add" }),
   });
-  return Object.freeze({
+  let server: McpServer = {
     name: "math",
     tools: Object.freeze([tool]),
-    ...(instructions === undefined ? {} : { instructions }),
-  });
+  };
+  if (instructions !== undefined) server = { ...server, instructions };
+  return Object.freeze(server);
 }
 
 function createNamedTool(name: string) {

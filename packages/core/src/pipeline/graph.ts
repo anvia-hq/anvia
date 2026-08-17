@@ -1,6 +1,7 @@
 import type { JsonObject } from "../completion";
 import type {
   PipelineGraph,
+  PipelineGraphEdge,
   PipelineGraphNode,
   PipelineNodePath,
   PipelineStageKind,
@@ -146,12 +147,13 @@ function appendChildGraph(
       continue;
     }
     const target = [...parentPath, ...edge.target];
-    childEdges.push({
+    let childEdge: PipelineGraphEdge = {
       id: `edge_${nextEdgeIndex}`,
       source,
       target,
-      ...(edge.label === undefined ? {} : { label: edge.label }),
-    });
+    };
+    if (edge.label !== undefined) childEdge = { ...childEdge, label: edge.label };
+    childEdges.push(childEdge);
     nextEdgeIndex += 1;
   }
 

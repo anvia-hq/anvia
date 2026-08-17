@@ -145,16 +145,18 @@ export class ToolCallExecutor {
       );
       const toolMetadata = toolTraceMetadata(tool);
 
-      const toolStartArgs: AgentToolStartArgs = {
+      let toolStartArgs: AgentToolStartArgs = {
         turn: observation?.turn ?? 0,
         toolCall,
         toolName: toolCall.toolName,
         internalCallId,
         args,
-        ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
-        ...(toolDefinition === undefined ? {} : { toolDefinition }),
-        ...(toolMetadata === undefined ? {} : { toolMetadata }),
       };
+      if (toolCall.callId !== undefined) {
+        toolStartArgs = { ...toolStartArgs, toolCallId: toolCall.callId };
+      }
+      if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
+      if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
       const toolObservers = await observation?.runObservers.startTool(toolStartArgs);
       const toolObservation = new ToolObserverScope(toolObservers);
 
@@ -203,15 +205,18 @@ export class ToolCallExecutor {
                 const questions = parseAgentQuestionPrompts(
                   (prepared.input as { questions?: unknown }).questions,
                 );
-                throw new AgentInteractionSignal({
+                const interaction = {
                   type: "tool-question",
                   id: globalThis.crypto.randomUUID(),
                   toolName: toolCall.toolName,
                   toolCallId: toolCall.toolCallId,
                   internalCallId,
                   questions,
-                  ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
-                });
+                } as const;
+                if (toolCall.callId !== undefined) {
+                  Object.assign(interaction, { callId: toolCall.callId });
+                }
+                throw new AgentInteractionSignal(interaction);
               } catch (error) {
                 if (error instanceof AgentInteractionSignal) throw error;
                 const outcome = await this.handleToolError(
@@ -250,8 +255,10 @@ export class ToolCallExecutor {
                   step,
                   toolName: toolCall.toolName,
                   input: lifecycleSnapshot(prepared.input),
-                  ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
                 };
+                if (toolCall.callId !== undefined) {
+                  Object.assign(lifecycleEvent, { toolCallId: toolCall.callId });
+                }
                 await this.lifecycle?.onToolStart?.(lifecycleEvent);
                 const startedAt = Date.now();
                 const outcome = await this.runApprovedToolCall(
@@ -353,19 +360,22 @@ export class ToolCallExecutor {
           output,
           result,
           structuredResult,
-          ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
         };
+        if (toolCall.callId !== undefined) resultPayload.callId = toolCall.callId;
         onResult?.(resultPayload);
-        return {
+        let resultPart: ToolResultPart = {
           type: "tool-result" as const,
           toolCallId: toolCall.toolCallId,
           toolName: toolCall.toolName,
           output,
-          ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
         };
+        if (toolCall.callId !== undefined) {
+          resultPart = { ...resultPart, callId: toolCall.callId };
+        }
+        return resultPart;
       } catch (error) {
         if (error instanceof AgentInteractionSignal) {
-          throw new ToolExecutionSuspension(error.interaction, {
+          const pending: PendingToolExecution = {
             toolCall,
             effectiveArgs,
             input:
@@ -373,8 +383,9 @@ export class ToolCallExecutor {
                 ? error.interaction.input
                 : parseToolArgs(effectiveArgs),
             internalCallId,
-            ...(error.rejectMessage === undefined ? {} : { rejectMessage: error.rejectMessage }),
-          });
+          };
+          if (error.rejectMessage !== undefined) pending.rejectMessage = error.rejectMessage;
+          throw new ToolExecutionSuspension(error.interaction, pending);
         }
         await toolObservation.error(
           toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
@@ -424,21 +435,24 @@ export class ToolCallExecutor {
       toolCallId: toolCall.toolCallId,
       internalCallId,
       args: effectiveArgs,
-      ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
     };
+    if (toolCall.callId !== undefined) hookArgs.callId = toolCall.callId;
     const toolDefinition = observation?.toolDefinitions?.find(
       (definition) => definition.name === toolCall.toolName,
     );
-    const toolStartArgs: AgentToolStartArgs = {
+    const toolMetadata = toolTraceMetadata(tool);
+    let toolStartArgs: AgentToolStartArgs = {
       turn: observation?.turn ?? 0,
       toolCall,
       toolName: toolCall.toolName,
       internalCallId,
       args: effectiveArgs,
-      ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
-      ...(toolDefinition === undefined ? {} : { toolDefinition }),
-      ...(toolTraceMetadata(tool) === undefined ? {} : { toolMetadata: toolTraceMetadata(tool) }),
     };
+    if (toolCall.callId !== undefined) {
+      toolStartArgs = { ...toolStartArgs, toolCallId: toolCall.callId };
+    }
+    if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
+    if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
     const observers = await observation?.runObservers.startTool(toolStartArgs);
     const toolObservation = new ToolObserverScope(observers);
     let output: NormalizedToolOutput;
@@ -452,8 +466,10 @@ export class ToolCallExecutor {
         step,
         toolName: toolCall.toolName,
         input: lifecycleSnapshot(prepared.input),
-        ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
       };
+      if (toolCall.callId !== undefined) {
+        Object.assign(lifecycleEvent, { toolCallId: toolCall.callId });
+      }
       await this.lifecycle?.onToolStart?.(lifecycleEvent);
       const startedAt = Date.now();
       const outcome = await this.runApprovedToolCall(
@@ -524,7 +540,7 @@ export class ToolCallExecutor {
       if (resultAction?.type === "terminate") {
         throw this.cancel(resultAction.reason);
       }
-      onResult?.({
+      const resultPayload: ToolResultEventPayload = {
         type: "tool_result",
         toolName: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
@@ -533,15 +549,17 @@ export class ToolCallExecutor {
         output,
         result,
         structuredResult,
-        ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
-      });
-      return {
+      };
+      if (toolCall.callId !== undefined) resultPayload.callId = toolCall.callId;
+      onResult?.(resultPayload);
+      let resultPart: ToolResultPart = {
         type: "tool-result",
         toolName: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
         output,
-        ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
       };
+      if (toolCall.callId !== undefined) resultPart = { ...resultPart, callId: toolCall.callId };
+      return resultPart;
     } catch (error) {
       await toolObservation.error(
         toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
@@ -570,21 +588,24 @@ export class ToolCallExecutor {
       toolCallId: toolCall.toolCallId,
       internalCallId,
       args: effectiveArgs,
-      ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
     };
+    if (toolCall.callId !== undefined) hookArgs.callId = toolCall.callId;
     const toolDefinition = observation?.toolDefinitions?.find(
       (definition) => definition.name === toolCall.toolName,
     );
-    const toolStartArgs: AgentToolStartArgs = {
+    const toolMetadata = toolTraceMetadata(tool);
+    let toolStartArgs: AgentToolStartArgs = {
       turn: observation?.turn ?? 0,
       toolCall,
       toolName: toolCall.toolName,
       internalCallId,
       args: effectiveArgs,
-      ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
-      ...(toolDefinition === undefined ? {} : { toolDefinition }),
-      ...(toolTraceMetadata(tool) === undefined ? {} : { toolMetadata: toolTraceMetadata(tool) }),
     };
+    if (toolCall.callId !== undefined) {
+      toolStartArgs = { ...toolStartArgs, toolCallId: toolCall.callId };
+    }
+    if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
+    if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
     const observers = await observation?.runObservers.startTool(toolStartArgs);
     const toolObservation = new ToolObserverScope(observers);
 
@@ -628,7 +649,7 @@ export class ToolCallExecutor {
       if (resultAction?.type === "terminate") {
         throw this.cancel(resultAction.reason);
       }
-      onResult?.({
+      const resultPayload: ToolResultEventPayload = {
         type: "tool_result",
         toolName: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
@@ -637,15 +658,17 @@ export class ToolCallExecutor {
         output,
         result,
         structuredResult,
-        ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
-      });
-      return {
+      };
+      if (toolCall.callId !== undefined) resultPayload.callId = toolCall.callId;
+      onResult?.(resultPayload);
+      let resultPart: ToolResultPart = {
         type: "tool-result",
         toolName: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
         output,
-        ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
       };
+      if (toolCall.callId !== undefined) resultPart = { ...resultPart, callId: toolCall.callId };
+      return resultPart;
     } catch (error) {
       await toolObservation.error(
         toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
@@ -670,15 +693,17 @@ export class ToolCallExecutor {
       const toolContext: ToolCallContext = {
         abortSignal: this.abortSignal,
         emitStreamEvent: async (event) => {
-          const streamEventArgs: AgentToolStreamEventArgs = {
+          let streamEventArgs: AgentToolStreamEventArgs = {
             turn: observation?.turn ?? 0,
             toolCall,
             toolName: toolCall.toolName,
             internalCallId: hookArgs.internalCallId,
             args: effectiveArgs,
             event,
-            ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
           };
+          if (toolCall.callId !== undefined) {
+            streamEventArgs = { ...streamEventArgs, toolCallId: toolCall.callId };
+          }
           await toolObservation.streamEvent(streamEventArgs);
           const payload = agentToolEventPayload(toolCall, hookArgs.internalCallId, event);
           if (payload !== undefined) {
@@ -853,13 +878,14 @@ export class ToolCallExecutor {
       });
       throw error;
     }
+    const attributes: JsonObject = {
+      ...approvalEventAttributes(request, observation?.turn ?? 0),
+      approved: decision.approved,
+    };
+    if (decision.reason !== undefined) attributes.decisionReason = decision.reason;
     await observation?.runObservers.event({
       name: "tool.approval_resolved",
-      attributes: {
-        ...approvalEventAttributes(request, observation.turn),
-        approved: decision.approved,
-        ...(decision.reason === undefined ? {} : { decisionReason: decision.reason }),
-      },
+      attributes,
     });
     if (decision.approved) {
       return { approved: true };
@@ -946,15 +972,17 @@ function toolErrorArgs(
   args: string,
   error: unknown,
 ): AgentToolErrorArgs {
-  const observerArgs: AgentToolErrorArgs = {
+  let observerArgs: AgentToolErrorArgs = {
     turn,
     toolCall,
     toolName: toolCall.toolName,
     internalCallId,
     args,
     error,
-    ...(toolCall.callId === undefined ? {} : { toolCallId: toolCall.callId }),
   };
+  if (toolCall.callId !== undefined) {
+    observerArgs = { ...observerArgs, toolCallId: toolCall.callId };
+  }
   return observerArgs;
 }
 

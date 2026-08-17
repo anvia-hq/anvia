@@ -38,10 +38,11 @@ export class MilvusVectorClient {
 
   private async createClient(): Promise<MilvusClientLike> {
     const { MilvusClient } = await import("@zilliz/milvus2-sdk-node");
-    return new MilvusClient({
+    const options: { address: string; token?: string } = {
       address: this.options.address ?? "localhost:19530",
-      ...(this.options.token === undefined ? {} : { token: this.options.token }),
-    }) as unknown as MilvusClientLike;
+    };
+    if (this.options.token !== undefined) options.token = this.options.token;
+    return new MilvusClient(options) as unknown as MilvusClientLike;
   }
 
   private assertOpen(): void {

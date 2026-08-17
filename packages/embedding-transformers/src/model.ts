@@ -118,13 +118,19 @@ export async function loadTransformersEmbeddingModel(
   const normalized = normalizeRuntimeOptions(options);
   let runtime: TransformersFeatureExtractionPipeline | undefined;
   try {
-    runtime = (await transformersPipeline("feature-extraction", normalized.modelId, {
-      ...(options.device === undefined ? {} : { device: options.device }),
-      ...(options.dtype === undefined ? {} : { dtype: options.dtype }),
-      ...(options.cacheDir === undefined ? {} : { cache_dir: options.cacheDir }),
-      ...(options.localFilesOnly === undefined ? {} : { local_files_only: options.localFilesOnly }),
-      ...(options.revision === undefined ? {} : { revision: options.revision }),
-    } as never)) as TransformersFeatureExtractionPipeline;
+    const runtimeOptions: Record<string, unknown> = {};
+    if (options.device !== undefined) runtimeOptions.device = options.device;
+    if (options.dtype !== undefined) runtimeOptions.dtype = options.dtype;
+    if (options.cacheDir !== undefined) runtimeOptions.cache_dir = options.cacheDir;
+    if (options.localFilesOnly !== undefined) {
+      runtimeOptions.local_files_only = options.localFilesOnly;
+    }
+    if (options.revision !== undefined) runtimeOptions.revision = options.revision;
+    runtime = (await transformersPipeline(
+      "feature-extraction",
+      normalized.modelId,
+      runtimeOptions as never,
+    )) as TransformersFeatureExtractionPipeline;
     return new OwnedTransformersEmbeddingModel(runtime, normalized);
   } catch (error) {
     await runtime?.dispose();

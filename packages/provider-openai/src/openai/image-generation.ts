@@ -27,8 +27,9 @@ export class OpenAIImageGenerationModel implements ImageGenerationModel<unknown>
     request: ImageGenerationRequest,
     options?: ModelCallOptions,
   ): Promise<ImageGenerationResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const params: Record<string, unknown> = {
-      ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+      ...providerOptions,
       model: this.modelId,
       prompt: request.prompt,
       size: `${request.width}x${request.height}`,

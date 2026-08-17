@@ -154,20 +154,23 @@ class StudioRunTraceObserver implements AgentRunObserver {
   }
 
   async end(args: AgentRunEndArgs): Promise<void> {
+    const result: JsonObject = {
+      runId: this.props.args.runId,
+      status: args.status,
+      text: args.text,
+    };
+    if (args.resumedFrom !== undefined) result.resumedFrom = args.resumedFrom;
+    if (args.status === "completed") {
+      result.output = toJsonValue(args.output);
+    } else if (args.status === "blocked") {
+      result.stage = args.stage;
+    } else {
+      result.interaction = toJsonValue(args.interaction);
+    }
     await this.save(args.status === "suspended" ? "suspended" : "success", {
       endedAt: new Date(),
       output: args.status === "completed" ? traceOutput(args.output) : args.text,
-      result: {
-        runId: this.props.args.runId,
-        status: args.status,
-        text: args.text,
-        ...(args.resumedFrom === undefined ? {} : { resumedFrom: args.resumedFrom }),
-        ...(args.status === "completed"
-          ? { output: toJsonValue(args.output) }
-          : args.status === "blocked"
-            ? { stage: args.stage }
-            : { interaction: toJsonValue(args.interaction) }),
-      },
+      result,
       usage: args.usage,
       messages: toJsonValue(args.messages),
     });

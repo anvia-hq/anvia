@@ -81,11 +81,14 @@ export function createDirectClientTransport<
       if (resume !== undefined) {
         throw new ClientProtocolError("Direct client transports do not support resume cursors.");
       }
-      const events = await options.handler({
+      const handlerOptions: Parameters<typeof options.handler>[0] = {
         request: sendOptions.request,
-        ...(sendOptions.abortSignal === undefined ? {} : { abortSignal: sendOptions.abortSignal }),
-        ...(sendOptions.headers === undefined ? {} : { headers: sendOptions.headers }),
-      });
+      };
+      if (sendOptions.abortSignal !== undefined) {
+        handlerOptions.abortSignal = sendOptions.abortSignal;
+      }
+      if (sendOptions.headers !== undefined) handlerOptions.headers = sendOptions.headers;
+      const events = await options.handler(handlerOptions);
       const iterator = events[Symbol.asyncIterator]();
       const streamId = createClientId("stream");
       let eventId = 0;
@@ -180,10 +183,13 @@ function protocolOptions<Metadata extends JsonObject, Data extends ClientDataMap
   metadataSchema?: ClientMetadataSchema<Metadata>;
   dataSchemas?: ClientDataSchemas<Data>;
 } {
-  return {
-    ...(options.metadataSchema === undefined ? {} : { metadataSchema: options.metadataSchema }),
-    ...(options.dataSchemas === undefined ? {} : { dataSchemas: options.dataSchemas }),
-  };
+  const result: {
+    metadataSchema?: ClientMetadataSchema<Metadata>;
+    dataSchemas?: ClientDataSchemas<Data>;
+  } = {};
+  if (options.metadataSchema !== undefined) result.metadataSchema = options.metadataSchema;
+  if (options.dataSchemas !== undefined) result.dataSchemas = options.dataSchemas;
+  return result;
 }
 
 function resumeCursorFromRequest(value: unknown): ClientStreamCursor | undefined {

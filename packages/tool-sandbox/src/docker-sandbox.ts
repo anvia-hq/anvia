@@ -342,24 +342,28 @@ class DockerSandboxHandle implements DockerSandbox {
     if (options.files !== true && options.ports !== true && options.processes !== true) {
       throw new TypeError("Sandbox inspector must enable at least one capability.");
     }
-    const inspector: DockerSandboxInspector = {
+    let inspector: DockerSandboxInspector = {
       id: this.id,
       provider: "docker",
       workdir: this.configuration.workdir,
-      ...(options.files === true
-        ? {
-            listFiles: this.runtime.listFiles.bind(this.runtime),
-            readFile: this.runtime.readFile.bind(this.runtime),
-          }
-        : {}),
-      ...(options.ports === true ? { publishedPorts: this.runtime.publishedPorts } : {}),
-      ...(options.processes === true
-        ? {
-            listProcesses: this.runtime.listProcesses.bind(this.runtime),
-            readProcessLogs: this.runtime.readProcessLogs.bind(this.runtime),
-          }
-        : {}),
     };
+    if (options.files === true) {
+      inspector = {
+        ...inspector,
+        listFiles: this.runtime.listFiles.bind(this.runtime),
+        readFile: this.runtime.readFile.bind(this.runtime),
+      };
+    }
+    if (options.ports === true) {
+      inspector = { ...inspector, publishedPorts: this.runtime.publishedPorts };
+    }
+    if (options.processes === true) {
+      inspector = {
+        ...inspector,
+        listProcesses: this.runtime.listProcesses.bind(this.runtime),
+        readProcessLogs: this.runtime.readProcessLogs.bind(this.runtime),
+      };
+    }
     return Object.freeze(inspector);
   }
 
@@ -618,10 +622,13 @@ class DockerSandboxRuntimeImpl {
     assertPositiveSafeInteger(startLine, "startLine");
     assertPositiveSafeInteger(lineCount, "lineCount");
     assertPositiveSafeInteger(maxBytes, "maxBytes");
-    const text = await this.readTextFile({
+    let readOptions: DockerSandboxReadFileOptions = {
       path: options.path,
-      ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-    });
+    };
+    if (options.abortSignal !== undefined) {
+      readOptions = { ...readOptions, abortSignal: options.abortSignal };
+    }
+    const text = await this.readTextFile(readOptions);
     return createTextFilePage(text, { startLine, lineCount, maxBytes });
   }
 
@@ -887,17 +894,23 @@ async function applyInitialContent(
   }
   for (const [filePath, content] of Object.entries(options.files ?? {})) {
     if (typeof content === "string") {
-      await runtime.writeTextFile({
+      let writeOptions: DockerSandboxWriteTextFileOptions = {
         path: filePath,
         text: content,
-        ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      });
+      };
+      if (options.abortSignal !== undefined) {
+        writeOptions = { ...writeOptions, abortSignal: options.abortSignal };
+      }
+      await runtime.writeTextFile(writeOptions);
     } else {
-      await runtime.writeFile({
+      let writeOptions: DockerSandboxWriteFileOptions = {
         path: filePath,
         data: content,
-        ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-      });
+      };
+      if (options.abortSignal !== undefined) {
+        writeOptions = { ...writeOptions, abortSignal: options.abortSignal };
+      }
+      await runtime.writeFile(writeOptions);
     }
   }
 }
@@ -1179,45 +1192,58 @@ function snapshotCreateOptions(options: CreateDockerSandboxOptions): CreateDocke
   }
   const workspace = copyWorkspace(options.workspace);
   const network = copyNetwork(options.network);
-  return Object.freeze({
+  let snapshot: CreateDockerSandboxOptions = {
     image: options.image,
     workspace,
     network,
-    ...(options.id === undefined ? {} : { id: options.id }),
-    ...(options.workdir === undefined ? {} : { workdir: options.workdir }),
-    ...(options.files === undefined ? {} : { files: Object.freeze(files) }),
-    ...(options.directories === undefined
-      ? {}
-      : { directories: Object.freeze([...options.directories]) }),
-    ...(options.env === undefined ? {} : { env: Object.freeze({ ...options.env }) }),
-    ...(options.user === undefined ? {} : { user: options.user }),
-    ...(options.labels === undefined ? {} : { labels: Object.freeze({ ...options.labels }) }),
-    ...(options.resources === undefined
-      ? {}
-      : { resources: Object.freeze({ ...options.resources }) }),
-    ...(options.runtime === undefined ? {} : { runtime: Object.freeze({ ...options.runtime }) }),
-    ...(options.security === undefined
-      ? {}
-      : {
-          security: Object.freeze({
-            ...options.security,
-            ...(options.security.seccompProfile === undefined
-              ? {}
-              : { seccompProfile: Object.freeze({ ...options.security.seccompProfile }) }),
-            ...(options.security.dropCapabilities === undefined
-              ? {}
-              : {
-                  dropCapabilities: Object.freeze([...options.security.dropCapabilities]),
-                }),
-            ...(options.security.addCapabilities === undefined
-              ? {}
-              : {
-                  addCapabilities: Object.freeze([...options.security.addCapabilities]),
-                }),
-          }),
-        }),
-    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-  });
+  };
+  if (options.id !== undefined) snapshot = { ...snapshot, id: options.id };
+  if (options.workdir !== undefined) snapshot = { ...snapshot, workdir: options.workdir };
+  if (options.files !== undefined) snapshot = { ...snapshot, files: Object.freeze(files) };
+  if (options.directories !== undefined) {
+    snapshot = { ...snapshot, directories: Object.freeze([...options.directories]) };
+  }
+  if (options.env !== undefined) {
+    snapshot = { ...snapshot, env: Object.freeze({ ...options.env }) };
+  }
+  if (options.user !== undefined) snapshot = { ...snapshot, user: options.user };
+  if (options.labels !== undefined) {
+    snapshot = { ...snapshot, labels: Object.freeze({ ...options.labels }) };
+  }
+  if (options.resources !== undefined) {
+    snapshot = { ...snapshot, resources: Object.freeze({ ...options.resources }) };
+  }
+  if (options.runtime !== undefined) {
+    snapshot = { ...snapshot, runtime: Object.freeze({ ...options.runtime }) };
+  }
+  if (options.security !== undefined) {
+    let security: NonNullable<CreateDockerSandboxOptions["security"]> = {
+      ...options.security,
+    };
+    if (options.security.seccompProfile !== undefined) {
+      security = {
+        ...security,
+        seccompProfile: Object.freeze({ ...options.security.seccompProfile }),
+      };
+    }
+    if (options.security.dropCapabilities !== undefined) {
+      security = {
+        ...security,
+        dropCapabilities: Object.freeze([...options.security.dropCapabilities]),
+      };
+    }
+    if (options.security.addCapabilities !== undefined) {
+      security = {
+        ...security,
+        addCapabilities: Object.freeze([...options.security.addCapabilities]),
+      };
+    }
+    snapshot = { ...snapshot, security: Object.freeze(security) };
+  }
+  if (options.abortSignal !== undefined) {
+    snapshot = { ...snapshot, abortSignal: options.abortSignal };
+  }
+  return Object.freeze(snapshot);
 }
 
 function configurationFromInspection(
@@ -1403,11 +1429,14 @@ function parseFindEntry(line: string, workdir: string): DockerSandboxFileEntry {
   const relativePath = path.posix.relative(workdir, absolutePath);
   const size = Number(rawSize);
   const type = mapFindType(rawType);
-  return {
+  let entry: DockerSandboxFileEntry = {
     path: normalizeSandboxPath(relativePath),
     type,
-    ...(type === "file" && Number.isSafeInteger(size) && size >= 0 ? { size } : {}),
   };
+  if (type === "file" && Number.isSafeInteger(size) && size >= 0) {
+    entry = { ...entry, size };
+  }
+  return entry;
 }
 
 function mapFindType(value: string): DockerSandboxFileType {

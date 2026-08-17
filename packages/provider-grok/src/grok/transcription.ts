@@ -46,12 +46,13 @@ export class GrokTranscriptionModel implements TranscriptionModel<unknown> {
       request.filename,
     );
 
-    const response = await grokFetch(this.http)(grokEndpoint(this.http, "stt"), {
+    const requestOptions: RequestInit = {
       method: "POST",
       headers: grokHeaders(this.http),
       body: form,
-      ...(options?.abortSignal === undefined ? {} : { signal: options.abortSignal }),
-    });
+    };
+    if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+    const response = await grokFetch(this.http)(grokEndpoint(this.http, "stt"), requestOptions);
     if (!response.ok) {
       return throwGrokHttpError(response, "speech-to-text");
     }

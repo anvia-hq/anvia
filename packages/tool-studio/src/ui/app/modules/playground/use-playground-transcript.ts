@@ -82,14 +82,15 @@ function resolveToolApproval(
   for (let index = next.length - 1; index >= 0; index -= 1) {
     const entry = next[index];
     if (entry?.kind !== "tool" || entry.approval?.id !== id) continue;
+    const approval = {
+      ...entry.approval,
+      status: approved ? ("approved" as const) : ("rejected" as const),
+      resolvedAt: new Date().toISOString(),
+    };
+    if (reason !== undefined) Object.assign(approval, { reason });
     next[index] = {
       ...entry,
-      approval: {
-        ...entry.approval,
-        status: approved ? "approved" : "rejected",
-        resolvedAt: new Date().toISOString(),
-        ...(reason === undefined ? {} : { reason }),
-      },
+      approval,
     };
     break;
   }

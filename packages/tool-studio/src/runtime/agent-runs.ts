@@ -130,12 +130,12 @@ async function prepareAgentRun(
     const { registration: claimed } = registration;
     const source = claimed.context;
     const runId = globalThis.crypto.randomUUID();
-    const resumedBody: PreparedAgentRun["body"] = {
+    let resumedBody: PreparedAgentRun["body"] = {
       ...source.body,
-      ...(body.stream === undefined ? {} : { stream: body.stream }),
-      ...(body.metadata === undefined ? {} : { metadata: body.metadata }),
-      ...(body.trace === undefined ? {} : { trace: body.trace }),
     };
+    if (body.stream !== undefined) resumedBody = { ...resumedBody, stream: body.stream };
+    if (body.metadata !== undefined) resumedBody = { ...resumedBody, metadata: body.metadata };
+    if (body.trace !== undefined) resumedBody = { ...resumedBody, trace: body.trace };
     const runOptions = createRunOptions(resumedBody, agentId, source.session, c.req.raw.signal);
     const execution: RunExecution = {
       generate: (options) =>

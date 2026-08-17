@@ -111,6 +111,10 @@ type AgentAdapterRuntime = {
 
 type WithoutEventBase<T> = T extends unknown ? Omit<T, "runId" | "turn" | "scope"> : never;
 type ClientEventPayload = WithoutEventBase<ClientStreamEvent>;
+type ClientEventOf<Type extends ClientEventPayload["type"]> = Extract<
+  ClientEventPayload,
+  { type: Type }
+>;
 
 export function completionToClientStream<
   Output = string,
@@ -127,11 +131,12 @@ export function completionToClientStream<
   return propagateCancellation(events, (source) => ({
     async *[Symbol.asyncIterator]() {
       const state = createMessageState({ runId });
-      yield clientEvent(state, {
+      const runStart: ClientEventOf<"run_start"> = {
         type: "run_start",
         source: "completion",
-        ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
-      });
+      };
+      if (options.metadata !== undefined) runStart.metadata = options.metadata;
+      yield clientEvent(state, runStart);
       if (options.model !== undefined) {
         yield clientEvent(state, { type: "generation_start", model: options.model });
       }
@@ -166,23 +171,27 @@ export function completionToClientStream<
             case "final": {
               const result = event.result;
               if (result.messageId !== undefined) state.modelMessageId = result.messageId;
-              yield* finishMessage(state, result.content, {
+              const finalMetadata: FinalMessageMetadata = {
                 usage: result.usage,
-                ...(result.contextUsage === undefined ? {} : { contextUsage: result.contextUsage }),
-                ...(result.sources === undefined ? {} : { sources: result.sources }),
-                ...(result.providerToolCalls === undefined
-                  ? {}
-                  : { providerToolCalls: result.providerToolCalls }),
-              });
+              };
+              if (result.contextUsage !== undefined) {
+                finalMetadata.contextUsage = result.contextUsage;
+              }
+              if (result.sources !== undefined) finalMetadata.sources = result.sources;
+              if (result.providerToolCalls !== undefined) {
+                finalMetadata.providerToolCalls = result.providerToolCalls;
+              }
+              yield* finishMessage(state, result.content, finalMetadata);
               const output = clientOutput(result.output, options.mapOutput);
-              yield clientEvent(state, {
+              const runEnd: ClientEventOf<"run_end"> = {
                 type: "run_end",
                 status: "completed",
                 text: result.text,
-                ...(output === undefined ? {} : { output }),
                 usage: result.usage,
-                ...(result.contextUsage === undefined ? {} : { contextUsage: result.contextUsage }),
-              });
+              };
+              if (output !== undefined) runEnd.output = output;
+              if (result.contextUsage !== undefined) runEnd.contextUsage = result.contextUsage;
+              yield clientEvent(state, runEnd);
               terminal = true;
               break;
             }
@@ -227,11 +236,12 @@ export function agentToClientStream<
         messages: new Map(),
         startedScopes: new Set(["root"]),
       };
-      yield rootEvent(runId, {
+      const runStart: ClientEventOf<"run_start"> = {
         type: "run_start",
         source: "agent",
-        ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
-      });
+      };
+      if (options.metadata !== undefined) runStart.metadata = options.metadata;
+      yield rootEvent(runId, runStart);
 
       let terminal = false;
       try {
@@ -288,12 +298,12 @@ async function* translateAgentEvent(
   if (event.type === "agent_tool_event") {
     const childScope: ClientStreamScope = {
       agentId: event.agentId,
-      ...(event.agentName === undefined ? {} : { agentName: event.agentName }),
       parentRunId: runtime.runId,
       parentToolName: event.toolName,
       parentToolCallId: event.toolCallId ?? event.internalCallId,
       parentInternalToolCallId: event.internalCallId,
     };
+    if (event.agentName !== undefined) childScope.agentName = event.agentName;
     const key = scopeKey(childScope);
     if (!runtime.startedScopes.has(key)) {
       runtime.startedScopes.add(key);
@@ -376,41 +386,44 @@ async function* translateAgentEvent(
         event.internalCallId,
       );
       tool.result = clientToolResult(event.output, event.result);
-      yield clientEvent(state, {
+      const resultEvent: ClientEventOf<"tool_result"> = {
         type: "tool_result",
         messageId: state.messageId,
         partId: tool.partId,
         toolCallId: tool.toolCallId,
-        ...(tool.callId === undefined ? {} : { callId: tool.callId }),
         internalCallId: event.internalCallId,
         toolName: event.toolName,
         input: parseJsonOrString(event.args),
         result: tool.result,
-      });
+      };
+      if (tool.callId !== undefined) resultEvent.callId = tool.callId;
+      yield clientEvent(state, resultEvent);
       return;
     }
     case "turn_end": {
       const state = getAgentMessage(runtime, event.turn, scope);
       yield* startMessage(state);
       if (event.response.messageId !== undefined) state.modelMessageId = event.response.messageId;
-      yield* finishMessage(state, event.response.choice, {
+      const finalMetadata: FinalMessageMetadata = {
         usage: event.response.usage,
-        ...(event.response.contextUsage === undefined
-          ? {}
-          : { contextUsage: event.response.contextUsage }),
-        ...(event.response.sources === undefined ? {} : { sources: event.response.sources }),
-        ...(event.response.providerToolCalls === undefined
-          ? {}
-          : { providerToolCalls: event.response.providerToolCalls }),
-      });
-      yield scopedEvent(runtime.runId, event.turn, scope, {
+      };
+      if (event.response.contextUsage !== undefined) {
+        finalMetadata.contextUsage = event.response.contextUsage;
+      }
+      if (event.response.sources !== undefined) finalMetadata.sources = event.response.sources;
+      if (event.response.providerToolCalls !== undefined) {
+        finalMetadata.providerToolCalls = event.response.providerToolCalls;
+      }
+      yield* finishMessage(state, event.response.choice, finalMetadata);
+      const turnEnd: ClientEventOf<"turn_end"> = {
         type: "turn_end",
         usage: event.response.usage,
-        ...(event.response.contextUsage === undefined
-          ? {}
-          : { contextUsage: event.response.contextUsage }),
-        ...(event.firstDeltaMs === undefined ? {} : { firstDeltaMs: event.firstDeltaMs }),
-      });
+      };
+      if (event.response.contextUsage !== undefined) {
+        turnEnd.contextUsage = event.response.contextUsage;
+      }
+      if (event.firstDeltaMs !== undefined) turnEnd.firstDeltaMs = event.firstDeltaMs;
+      yield scopedEvent(runtime.runId, event.turn, scope, turnEnd);
       return;
     }
     case "guardrail_decision":
@@ -431,19 +444,20 @@ async function* translateAgentEvent(
         result.status === "completed"
           ? clientOutput(result.output, runtime.options.mapOutput)
           : undefined;
-      yield scopedEvent(runtime.runId, turn, scope, {
+      const runEnd: ClientEventOf<"run_end"> = {
         type: "run_end",
         status: result.status,
         text: result.text,
-        ...(output === undefined ? {} : { output }),
         usage: result.usage,
-        ...(result.contextUsage === undefined ? {} : { contextUsage: result.contextUsage }),
-        ...(result.trace === undefined ? {} : { trace: clientTrace(result.trace) }),
-        ...(result.memoryCompaction === undefined
-          ? {}
-          : { memoryCompaction: result.memoryCompaction }),
-        ...(runtime.options.metadata === undefined ? {} : { metadata: runtime.options.metadata }),
-      });
+      };
+      if (output !== undefined) runEnd.output = output;
+      if (result.contextUsage !== undefined) runEnd.contextUsage = result.contextUsage;
+      if (result.trace !== undefined) runEnd.trace = clientTrace(result.trace);
+      if (result.memoryCompaction !== undefined) {
+        runEnd.memoryCompaction = result.memoryCompaction;
+      }
+      if (runtime.options.metadata !== undefined) runEnd.metadata = runtime.options.metadata;
+      yield scopedEvent(runtime.runId, turn, scope, runEnd);
       return;
     }
     case "error": {
@@ -457,11 +471,12 @@ async function* translateAgentEvent(
       return;
     }
     default: {
-      const mapped = runtime.options.mapCustomEvent?.(event as unknown, {
+      const context: { runId: string; turn?: number; scope?: ClientStreamScope } = {
         runId: runtime.runId,
-        ...(turn === undefined ? {} : { turn }),
-        ...(scope === undefined ? {} : { scope }),
-      });
+      };
+      if (turn !== undefined) context.turn = turn;
+      if (scope !== undefined) context.scope = scope;
+      const mapped = runtime.options.mapCustomEvent?.(event as unknown, context);
       if (mapped === undefined) return;
       if (Array.isArray(mapped)) {
         yield* mapped;
@@ -477,11 +492,9 @@ function createMessageState(input: {
   turn?: number;
   scope?: ClientStreamScope;
 }): MessageState {
-  return {
+  const state: MessageState = {
     runId: input.runId,
     messageId: createClientId("msg"),
-    ...(input.turn === undefined ? {} : { turn: input.turn }),
-    ...(input.scope === undefined ? {} : { scope: input.scope }),
     started: false,
     ended: false,
     textPartId: createClientId("text"),
@@ -493,6 +506,9 @@ function createMessageState(input: {
     sourceFingerprints: new Set(),
     providerToolCallFingerprints: new Set(),
   };
+  if (input.turn !== undefined) state.turn = input.turn;
+  if (input.scope !== undefined) state.scope = input.scope;
+  return state;
 }
 
 function getAgentMessage(
@@ -503,11 +519,12 @@ function getAgentMessage(
   const key = `${scopeKey(scope)}:${turn}`;
   const current = runtime.messages.get(key);
   if (current !== undefined) return current;
-  const created = createMessageState({
+  const input: { runId: string; turn: number; scope?: ClientStreamScope } = {
     runId: runtime.runId,
     turn,
-    ...(scope === undefined ? {} : { scope }),
-  });
+  };
+  if (scope !== undefined) input.scope = scope;
+  const created = createMessageState(input);
   runtime.messages.set(key, created);
   return created;
 }
@@ -579,27 +596,29 @@ async function* appendReasoning(
   if (reasoning === undefined) {
     reasoning = {
       partId: createClientId("reasoning"),
-      ...(event.id === undefined ? {} : { reasoningId: event.id }),
       text: "",
       ended: false,
     };
+    if (event.id !== undefined) reasoning.reasoningId = event.id;
     state.reasoning.set(key, reasoning);
-    yield clientEvent(state, {
+    const reasoningStart: ClientEventOf<"reasoning_start"> = {
       type: "reasoning_start",
       messageId: state.messageId,
       partId: reasoning.partId,
-      ...(event.id === undefined ? {} : { reasoningId: event.id }),
-    });
+    };
+    if (event.id !== undefined) reasoningStart.reasoningId = event.id;
+    yield clientEvent(state, reasoningStart);
   }
   reasoning.text += event.delta;
-  yield clientEvent(state, {
+  const reasoningDelta: ClientEventOf<"reasoning_delta"> = {
     type: "reasoning_delta",
     messageId: state.messageId,
     partId: reasoning.partId,
     delta: event.delta,
-    ...(event.contentType === undefined ? {} : { contentType: event.contentType }),
-    ...(event.signature === undefined ? {} : { signature: event.signature }),
-  });
+  };
+  if (event.contentType !== undefined) reasoningDelta.contentType = event.contentType;
+  if (event.signature !== undefined) reasoningDelta.signature = event.signature;
+  yield clientEvent(state, reasoningDelta);
 }
 
 async function* appendToolCall(
@@ -616,14 +635,15 @@ async function* appendToolCall(
   const tool = getToolState(state, event.id, event.name);
   if (!tool.started) {
     tool.started = true;
-    yield clientEvent(state, {
+    const toolCallStart: ClientEventOf<"tool_call_start"> = {
       type: "tool_call_start",
       messageId: state.messageId,
       partId: tool.partId,
       toolCallId: event.id,
-      ...(event.callId === undefined ? {} : { callId: event.callId }),
-      ...(event.name === undefined ? {} : { toolName: event.name }),
-    });
+    };
+    if (event.callId !== undefined) toolCallStart.callId = event.callId;
+    if (event.name !== undefined) toolCallStart.toolName = event.name;
+    yield clientEvent(state, toolCallStart);
   }
   if (event.callId !== undefined) tool.callId = event.callId;
   if (event.name !== undefined) tool.toolName = event.name;
@@ -632,17 +652,18 @@ async function* appendToolCall(
   const mode = event.argumentsMode ?? "append";
   const prior = typeof tool.input === "string" ? tool.input : "";
   tool.input = mode === "replace" ? event.argumentsDelta : `${prior}${event.argumentsDelta}`;
-  yield clientEvent(state, {
+  const toolCallDelta: ClientEventOf<"tool_call_delta"> = {
     type: "tool_call_delta",
     messageId: state.messageId,
     partId: tool.partId,
     toolCallId: event.id,
-    ...(event.callId === undefined ? {} : { callId: event.callId }),
-    ...(event.name === undefined ? {} : { toolName: event.name }),
     delta: event.argumentsDelta,
     mode,
-    ...(event.signature === undefined ? {} : { signature: event.signature }),
-  });
+  };
+  if (event.callId !== undefined) toolCallDelta.callId = event.callId;
+  if (event.name !== undefined) toolCallDelta.toolName = event.name;
+  if (event.signature !== undefined) toolCallDelta.signature = event.signature;
+  yield clientEvent(state, toolCallDelta);
 }
 
 async function* finishToolCall(
@@ -653,14 +674,15 @@ async function* finishToolCall(
   const wasEnded = tool.ended;
   if (!tool.started) {
     tool.started = true;
-    yield clientEvent(state, {
+    const toolCallStart: ClientEventOf<"tool_call_start"> = {
       type: "tool_call_start",
       messageId: state.messageId,
       partId: tool.partId,
       toolCallId: toolCall.toolCallId,
-      ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
       toolName: toolCall.toolName,
-    });
+    };
+    if (toolCall.callId !== undefined) toolCallStart.callId = toolCall.callId;
+    yield clientEvent(state, toolCallStart);
   }
   if (toolCall.callId === undefined) delete tool.callId;
   else tool.callId = toolCall.callId;
@@ -670,16 +692,17 @@ async function* finishToolCall(
   else tool.signature = toolCall.signature;
   if (wasEnded) return;
   tool.ended = true;
-  yield clientEvent(state, {
+  const toolCallEnd: ClientEventOf<"tool_call_end"> = {
     type: "tool_call_end",
     messageId: state.messageId,
     partId: tool.partId,
     toolCallId: toolCall.toolCallId,
-    ...(toolCall.callId === undefined ? {} : { callId: toolCall.callId }),
     toolName: toolCall.toolName,
     input: toolCall.input,
-    ...(toolCall.signature === undefined ? {} : { signature: toolCall.signature }),
-  });
+  };
+  if (toolCall.callId !== undefined) toolCallEnd.callId = toolCall.callId;
+  if (toolCall.signature !== undefined) toolCallEnd.signature = toolCall.signature;
+  yield clientEvent(state, toolCallEnd);
 }
 
 async function* finishMessage(
@@ -703,15 +726,16 @@ async function* finishMessage(
     }
     state.text = text;
     state.textEnded = true;
-    yield clientEvent(state, {
+    const textEnd: ClientEventOf<"text_end"> = {
       type: "text_end",
       messageId: state.messageId,
       partId: state.textPartId,
       text,
-      ...(textContent.length === 1 && textContent[0]?.signature !== undefined
-        ? { signature: textContent[0].signature }
-        : {}),
-    });
+    };
+    if (textContent.length === 1 && textContent[0]?.signature !== undefined) {
+      textEnd.signature = textContent[0].signature;
+    }
+    yield clientEvent(state, textEnd);
   }
 
   const finalReasoning = content.filter(
@@ -730,23 +754,25 @@ async function* finishMessage(
     const current = existing ?? createReasoningState(reasoning.id);
     if (existing === undefined) {
       state.reasoning.set(reasoning.id ?? `final:${index}`, current);
-      yield clientEvent(state, {
+      const reasoningStart: ClientEventOf<"reasoning_start"> = {
         type: "reasoning_start",
         messageId: state.messageId,
         partId: current.partId,
-        ...(reasoning.id === undefined ? {} : { reasoningId: reasoning.id }),
-      });
+      };
+      if (reasoning.id !== undefined) reasoningStart.reasoningId = reasoning.id;
+      yield clientEvent(state, reasoningStart);
     }
     if (!current.ended) {
       current.ended = true;
       current.text = reasoning.text;
-      yield clientEvent(state, {
+      const reasoningEnd: ClientEventOf<"reasoning_end"> = {
         type: "reasoning_end",
         messageId: state.messageId,
         partId: current.partId,
         text: reasoning.text,
-        ...(reasoning.details === undefined ? {} : { content: reasoning.details }),
-      });
+      };
+      if (reasoning.details !== undefined) reasoningEnd.content = reasoning.details;
+      yield clientEvent(state, reasoningEnd);
     }
   }
   for (const reasoning of state.reasoning.values()) {
@@ -779,14 +805,15 @@ async function* finishMessage(
   }
 
   state.ended = true;
-  yield clientEvent(state, {
+  const messageEnd: ClientEventOf<"message_end"> = {
     type: "message_end",
     messageId: state.messageId,
-    ...(state.modelMessageId === undefined ? {} : { modelMessageId: state.modelMessageId }),
     parts: contentToUIMessageParts(content, state),
     usage: metadata.usage,
-    ...(metadata.contextUsage === undefined ? {} : { contextUsage: metadata.contextUsage }),
-  });
+  };
+  if (state.modelMessageId !== undefined) messageEnd.modelMessageId = state.modelMessageId;
+  if (metadata.contextUsage !== undefined) messageEnd.contextUsage = metadata.contextUsage;
+  yield clientEvent(state, messageEnd);
 }
 
 async function* finishErroredRun(
@@ -805,25 +832,28 @@ async function* finishErroredRun(
       text: state.text,
     });
   }
-  yield clientEvent(state, {
+  const errorEvent: ClientEventOf<"error"> = {
     type: "error",
     error: mapped,
-    ...(usage === undefined ? {} : { usage }),
-  });
+  };
+  if (usage !== undefined) errorEvent.usage = usage;
+  yield clientEvent(state, errorEvent);
   if (!state.ended) {
     state.ended = true;
-    yield clientEvent(state, {
+    const messageEnd: ClientEventOf<"message_end"> = {
       type: "message_end",
       messageId: state.messageId,
-      ...(state.modelMessageId === undefined ? {} : { modelMessageId: state.modelMessageId }),
-      ...(usage === undefined ? {} : { usage }),
-    });
+    };
+    if (state.modelMessageId !== undefined) messageEnd.modelMessageId = state.modelMessageId;
+    if (usage !== undefined) messageEnd.usage = usage;
+    yield clientEvent(state, messageEnd);
   }
-  yield clientEvent(state, {
+  const runEnd: ClientEventOf<"run_end"> = {
     type: "run_end",
     status: "error",
-    ...(usage === undefined ? {} : { usage }),
-  });
+  };
+  if (usage !== undefined) runEnd.usage = usage;
+  yield clientEvent(state, runEnd);
 }
 
 function contentToUIMessageParts(
@@ -902,11 +932,11 @@ function getToolState(state: MessageState, id: string, name?: string): ToolState
     tool = {
       partId: createClientId("tool"),
       toolCallId: id,
-      ...(name === undefined ? {} : { toolName: name }),
       input: "",
       started: false,
       ended: false,
     };
+    if (name !== undefined) tool.toolName = name;
     state.tools.set(id, tool);
   } else if (name !== undefined) {
     tool.toolName = name;
@@ -934,12 +964,13 @@ function getToolResultState(
 }
 
 function createReasoningState(id?: string): ReasoningState {
-  return {
+  const state: ReasoningState = {
     partId: createClientId("reasoning"),
-    ...(id === undefined ? {} : { reasoningId: id }),
     text: "",
     ended: false,
   };
+  if (id !== undefined) state.reasoningId = id;
+  return state;
 }
 
 function contentAttachment(
@@ -1042,11 +1073,12 @@ function clientTrace(trace: {
   readonly traceId?: string | undefined;
   readonly observationId?: string | undefined;
 }): { observer: string; traceId?: string; observationId?: string } {
-  return {
+  const result: { observer: string; traceId?: string; observationId?: string } = {
     observer: trace.observer,
-    ...(trace.traceId === undefined ? {} : { traceId: trace.traceId }),
-    ...(trace.observationId === undefined ? {} : { observationId: trace.observationId }),
   };
+  if (trace.traceId !== undefined) result.traceId = trace.traceId;
+  if (trace.observationId !== undefined) result.observationId = trace.observationId;
+  return result;
 }
 
 function mapClientError(error: unknown, mapper: ClientErrorMapper | undefined): ClientStreamError {
@@ -1078,12 +1110,10 @@ function scopedEvent(
   scope: ClientStreamScope | undefined,
   event: ClientEventPayload,
 ): ClientStreamEvent {
-  return {
-    runId,
-    ...(turn === undefined ? {} : { turn }),
-    ...(scope === undefined ? {} : { scope }),
-    ...event,
-  } as ClientStreamEvent;
+  let scoped = { runId, ...event } as ClientStreamEvent;
+  if (turn !== undefined) scoped = { ...scoped, turn };
+  if (scope !== undefined) scoped = { ...scoped, scope };
+  return scoped;
 }
 
 function scopeKey(scope: ClientStreamScope | undefined): string {

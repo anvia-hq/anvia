@@ -100,8 +100,9 @@ export function toMistralChatParams(
   modelId: MistralCompletionModelId,
   request: CompletionRequest,
 ): MistralChatParams {
+  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
   const params: MistralChatParams = {
-    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+    ...providerOptions,
     model: modelId,
     messages: requestMessages(request).flatMap(messageToMistralMessages),
   };

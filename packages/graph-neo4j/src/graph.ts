@@ -3,6 +3,7 @@ import {
   type ManagedTransaction,
   type Record as Neo4jRecord,
   type QueryResult,
+  type SessionConfig,
 } from "neo4j-driver";
 import type { Neo4jClient } from "./client.js";
 import {
@@ -121,10 +122,13 @@ export abstract class Neo4jKnowledgeGraphBase<
     run: (transaction: GraphTransaction) => Promise<T>,
   ): Promise<T> {
     throwIfAborted(abortSignal);
-    const session = this.owner.nativeDriver().session({
-      ...(this.owner.database === undefined ? {} : { database: this.owner.database }),
+    const sessionOptions: SessionConfig = {
       defaultAccessMode: access === "read" ? "READ" : "WRITE",
-    });
+    };
+    if (this.owner.database !== undefined) {
+      Object.assign(sessionOptions, { database: this.owner.database });
+    }
+    const session = this.owner.nativeDriver().session(sessionOptions);
     const transaction = session.beginTransaction();
     let rejectAbort: ((error: Error) => void) | undefined;
     const aborted = new Promise<never>((_resolve, reject) => {
@@ -202,40 +206,44 @@ export class ManagedNeo4jKnowledgeGraph<
     assertName(options.name, "Managed Neo4j graph name");
     this.name = options.name;
     this.resources = validateManagedResources(options.resources);
+    let chunks: SeedRegistration = {
+      labels: Object.freeze([this.resources.labels.chunk]),
+      vectorIndex: Object.freeze({
+        ...this.resources.indexes.chunks.vector,
+        property: "__anvia_embedding",
+      }),
+      entryRelationshipType: "ANVIA_MENTIONS",
+    };
+    if (this.resources.indexes.chunks.fulltext !== undefined) {
+      chunks = {
+        ...chunks,
+        fulltextIndex: Object.freeze({
+          ...this.resources.indexes.chunks.fulltext,
+          properties: Object.freeze(["__anvia_text"]),
+        }),
+      };
+    }
+    let entities: SeedRegistration = {
+      labels: Object.freeze([this.resources.labels.entity]),
+      vectorIndex: Object.freeze({
+        ...this.resources.indexes.entities.vector,
+        property: "__anvia_embedding",
+      }),
+    };
+    if (this.resources.indexes.entities.fulltext !== undefined) {
+      entities = {
+        ...entities,
+        fulltextIndex: Object.freeze({
+          ...this.resources.indexes.entities.fulltext,
+          properties: Object.freeze([
+            ...(this.resources.indexes.entities.fulltext.properties ?? []),
+          ]),
+        }),
+      };
+    }
     this.seeds = Object.freeze({
-      chunks: Object.freeze({
-        labels: Object.freeze([this.resources.labels.chunk]),
-        vectorIndex: Object.freeze({
-          ...this.resources.indexes.chunks.vector,
-          property: "__anvia_embedding",
-        }),
-        entryRelationshipType: "ANVIA_MENTIONS",
-        ...(this.resources.indexes.chunks.fulltext === undefined
-          ? {}
-          : {
-              fulltextIndex: Object.freeze({
-                ...this.resources.indexes.chunks.fulltext,
-                properties: Object.freeze(["__anvia_text"]),
-              }),
-            }),
-      }),
-      entities: Object.freeze({
-        labels: Object.freeze([this.resources.labels.entity]),
-        vectorIndex: Object.freeze({
-          ...this.resources.indexes.entities.vector,
-          property: "__anvia_embedding",
-        }),
-        ...(this.resources.indexes.entities.fulltext === undefined
-          ? {}
-          : {
-              fulltextIndex: Object.freeze({
-                ...this.resources.indexes.entities.fulltext,
-                properties: Object.freeze([
-                  ...(this.resources.indexes.entities.fulltext.properties ?? []),
-                ]),
-              }),
-            }),
-      }),
+      chunks: Object.freeze(chunks),
+      entities: Object.freeze(entities),
     });
   }
 
@@ -256,19 +264,19 @@ export class ManagedNeo4jKnowledgeGraph<
       ),
       vectorIndex(indexes.chunks.vector, labels.chunk),
       vectorIndex(indexes.entities.vector, labels.entity),
-      ...(indexes.chunks.fulltext === undefined
-        ? []
-        : [fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, ["__anvia_text"])]),
-      ...(indexes.entities.fulltext === undefined
-        ? []
-        : [
-            fulltextIndex(
-              indexes.entities.fulltext.name,
-              labels.entity,
-              indexes.entities.fulltext.properties ?? [],
-            ),
-          ]),
     ];
+    if (indexes.chunks.fulltext !== undefined) {
+      statements.push(fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, ["__anvia_text"]));
+    }
+    if (indexes.entities.fulltext !== undefined) {
+      statements.push(
+        fulltextIndex(
+          indexes.entities.fulltext.name,
+          labels.entity,
+          indexes.entities.fulltext.properties ?? [],
+        ),
+      );
+    }
     for (const statement of statements)
       await this.query(statement, {}, options.abortSignal, "write");
     await this.query(
@@ -434,18 +442,20 @@ function validateExistingSeed(schema: Neo4jGraphSchema, seed: ExistingNeo4jSeed)
   if (seed.fulltextIndex !== undefined) {
     validateFulltextIndex(seed.fulltextIndex, "Existing Neo4j full-text index");
   }
-  return Object.freeze({
+  let registration: SeedRegistration = {
     labels: Object.freeze([...seed.nodeTypes]),
     vectorIndex: Object.freeze({ ...seed.vectorIndex }),
-    ...(seed.fulltextIndex === undefined
-      ? {}
-      : {
-          fulltextIndex: Object.freeze({
-            ...seed.fulltextIndex,
-            properties: Object.freeze([...seed.fulltextIndex.properties]),
-          }),
-        }),
-  });
+  };
+  if (seed.fulltextIndex !== undefined) {
+    registration = {
+      ...registration,
+      fulltextIndex: Object.freeze({
+        ...seed.fulltextIndex,
+        properties: Object.freeze([...seed.fulltextIndex.properties]),
+      }),
+    };
+  }
+  return Object.freeze(registration);
 }
 
 function validateManagedResources<Schema extends Neo4jGraphSchema>(
@@ -485,28 +495,36 @@ function validateManagedResources<Schema extends Neo4jGraphSchema>(
       "Entity full-text index",
     );
   }
-  const copyFulltext = (fulltext: Neo4jFulltextIndex) =>
-    Object.freeze({
-      ...fulltext,
-      ...(fulltext.properties === undefined
-        ? {}
-        : { properties: Object.freeze([...fulltext.properties]) }),
+  const copyFulltext = (fulltext: Neo4jFulltextIndex): Neo4jFulltextIndex => {
+    let copy: Neo4jFulltextIndex = { ...fulltext };
+    if (fulltext.properties !== undefined) {
+      copy = { ...copy, properties: Object.freeze([...fulltext.properties]) };
+    }
+    return Object.freeze(copy);
+  };
+  let chunks: (typeof resources)["indexes"]["chunks"] = Object.freeze({
+    vector: Object.freeze({ ...resources.indexes.chunks.vector }),
+  });
+  if (resources.indexes.chunks.fulltext !== undefined) {
+    chunks = Object.freeze({
+      ...chunks,
+      fulltext: copyFulltext(resources.indexes.chunks.fulltext),
     });
+  }
+  let entities: (typeof resources)["indexes"]["entities"] = Object.freeze({
+    vector: Object.freeze({ ...resources.indexes.entities.vector }),
+  });
+  if (resources.indexes.entities.fulltext !== undefined) {
+    entities = Object.freeze({
+      ...entities,
+      fulltext: copyFulltext(resources.indexes.entities.fulltext),
+    });
+  }
   return Object.freeze({
     labels: Object.freeze({ ...resources.labels }),
     indexes: Object.freeze({
-      chunks: Object.freeze({
-        vector: Object.freeze({ ...resources.indexes.chunks.vector }),
-        ...(resources.indexes.chunks.fulltext === undefined
-          ? {}
-          : { fulltext: copyFulltext(resources.indexes.chunks.fulltext) }),
-      }),
-      entities: Object.freeze({
-        vector: Object.freeze({ ...resources.indexes.entities.vector }),
-        ...(resources.indexes.entities.fulltext === undefined
-          ? {}
-          : { fulltext: copyFulltext(resources.indexes.entities.fulltext) }),
-      }),
+      chunks,
+      entities,
     }),
   });
 }

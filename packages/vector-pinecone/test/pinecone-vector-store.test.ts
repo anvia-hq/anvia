@@ -93,8 +93,8 @@ describe("PineconeVectorClient", () => {
   });
 
   it("expands physical candidates until topK logical documents are available", async () => {
-    const query = vi.fn(async (options: Record<string, unknown>) => ({
-      matches: [
+    const query = vi.fn(async (options: Record<string, unknown>) => {
+      const matches = [
         {
           id: "a-1",
           score: 0.9,
@@ -105,22 +105,23 @@ describe("PineconeVectorClient", () => {
           score: 0.8,
           metadata: { __anvia_document_id: "a", __anvia_document: "A" },
         },
-        ...(options.topK === 2
-          ? []
-          : [
-              {
-                id: "b",
-                score: 0.7,
-                metadata: { __anvia_document_id: "b", __anvia_document: "B" },
-              },
-              {
-                id: "c",
-                score: 0.6,
-                metadata: { __anvia_document_id: "c", __anvia_document: "C" },
-              },
-            ]),
-      ],
-    }));
+      ];
+      if (options.topK !== 2) {
+        matches.push(
+          {
+            id: "b",
+            score: 0.7,
+            metadata: { __anvia_document_id: "b", __anvia_document: "B" },
+          },
+          {
+            id: "c",
+            score: 0.6,
+            metadata: { __anvia_document_id: "c", __anvia_document: "C" },
+          },
+        );
+      }
+      return { matches };
+    });
     const namespace: PineconeNamespaceLike = {
       deleteMany: vi.fn(async () => undefined),
       upsert: vi.fn(async () => undefined),

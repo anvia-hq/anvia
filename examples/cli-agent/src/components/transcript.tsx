@@ -30,10 +30,9 @@ export function TranscriptLineView({ line }: { line: TranscriptLine }) {
     return <MarkdownLine>{line.content}</MarkdownLine>;
   }
 
-  const textProps = {
-    ...(line.dimColor === undefined ? {} : { dimColor: line.dimColor }),
-    ...(line.color === undefined ? {} : { color: line.color }),
-  };
+  const textProps = {};
+  if (line.dimColor !== undefined) Object.assign(textProps, { dimColor: line.dimColor });
+  if (line.color !== undefined) Object.assign(textProps, { color: line.color });
 
   return <Text {...textProps}>{line.content}</Text>;
 }

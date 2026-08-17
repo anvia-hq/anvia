@@ -550,25 +550,27 @@ function assistantContentFromGeminiResponse(
         });
       } else {
         const signature = thoughtSignatureFrom(part);
-        choice.push({
+        let text: Extract<AssistantContentPart, { type: "text" }> = {
           type: "text",
           text: part.text,
-          ...(signature === undefined ? {} : { signature }),
-        });
+        };
+        if (signature !== undefined) text = { ...text, signature };
+        choice.push(text);
       }
     }
     if (isPlainObject(part.functionCall)) {
       const call = functionCallFromGeminiPart(part.functionCall, part);
       if (call !== undefined) {
         const toolCallId = call.id ?? crypto.randomUUID();
-        choice.push({
+        let toolCall: Extract<AssistantContentPart, { type: "tool-call" }> = {
           type: "tool-call",
           toolCallId,
-          ...(call.id === undefined ? {} : { callId: call.id }),
           toolName: call.name,
           input: call.args,
-          ...(call.signature === undefined ? {} : { signature: call.signature }),
-        });
+        };
+        if (call.id !== undefined) toolCall = { ...toolCall, callId: call.id };
+        if (call.signature !== undefined) toolCall = { ...toolCall, signature: call.signature };
+        choice.push(toolCall);
       }
     }
   }

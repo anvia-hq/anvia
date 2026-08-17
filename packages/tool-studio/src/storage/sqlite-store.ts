@@ -1311,36 +1311,36 @@ function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
     throw new TypeError("Stored Studio message metadata is not a strict JSON object.");
   }
   if (row.role === "system") {
-    const message: Extract<Message, { role: "system" }> = {
+    let message: Extract<Message, { role: "system" }> = {
       role: "system",
       content: systemContentFromParts(parts),
-      ...(metadata === undefined ? {} : { metadata }),
     };
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
   if (row.role === "user") {
-    const message: Extract<Message, { role: "user" }> = {
+    let message: Extract<Message, { role: "user" }> = {
       role: "user",
       content: parts as Extract<Message, { role: "user" }>["content"],
-      ...(metadata === undefined ? {} : { metadata }),
     };
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
   if (row.role === "assistant") {
-    const message: Extract<Message, { role: "assistant" }> = {
+    let message: Extract<Message, { role: "assistant" }> = {
       role: "assistant",
       content: parts as Extract<Message, { role: "assistant" }>["content"],
-      ...(row.message_id === null ? {} : { id: row.message_id }),
-      ...(metadata === undefined ? {} : { metadata }),
     };
+    if (row.message_id !== null) message = { ...message, id: row.message_id };
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
   if (row.role === "tool") {
-    const message: Extract<Message, { role: "tool" }> = {
+    let message: Extract<Message, { role: "tool" }> = {
       role: "tool",
       content: parts as Extract<Message, { role: "tool" }>["content"],
-      ...(metadata === undefined ? {} : { metadata }),
     };
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
 

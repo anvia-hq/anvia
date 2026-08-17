@@ -19,6 +19,7 @@ import {
   type ReasoningDetail,
   type ReasoningPart,
   type StreamingCompletionModel,
+  type ToolCallPart,
   type ToolChoice,
   type ToolDefinition,
   type ToolResultContentPart,
@@ -118,8 +119,9 @@ export function toOpenAIResponsesParams(
   modelId: OpenAICompletionModelId,
   request: CompletionRequest,
 ): ResponsesCreateParams {
+  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
   const params: ResponsesCreateParams = {
-    ...(isPlainObject(request.providerOptions) ? request.providerOptions : {}),
+    ...providerOptions,
     model: modelId,
     input: requestMessages(request).flatMap(messageToResponsesInput),
   };
@@ -265,13 +267,14 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
       const callId = typeof item.call_id === "string" ? item.call_id : undefined;
       const name = typeof item.name === "string" ? item.name : "";
       const argsText = typeof item.arguments === "string" ? item.arguments : "{}";
-      choice.push({
+      let toolCall: ToolCallPart = {
         type: "tool-call",
         toolCallId: id,
-        ...(callId === undefined ? {} : { callId }),
         toolName: name,
         input: parseToolArguments(id, argsText),
-      });
+      };
+      if (callId !== undefined) toolCall = { ...toolCall, callId };
+      choice.push(toolCall);
     }
 
     if (item.type === "reasoning") {
@@ -383,15 +386,16 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
     if (item.type === "function_call") {
       const id = stringFrom(item.id) ?? crypto.randomUUID();
       const callId = stringFrom(item.call_id);
+      let toolCall: ToolCallPart = {
+        type: "tool-call",
+        toolCallId: id,
+        toolName: stringFrom(item.name) ?? "",
+        input: parseToolArguments(id, typeof item.arguments === "string" ? item.arguments : "{}"),
+      };
+      if (callId !== undefined) toolCall = { ...toolCall, callId };
       return {
         type: "tool_call",
-        toolCall: {
-          type: "tool-call",
-          toolCallId: id,
-          ...(callId === undefined ? {} : { callId }),
-          toolName: stringFrom(item.name) ?? "",
-          input: parseToolArguments(id, typeof item.arguments === "string" ? item.arguments : "{}"),
-        },
+        toolCall,
       };
     }
     const providerToolCall = providerToolCallFromOutputItem(item);
@@ -563,12 +567,13 @@ function reasoningItemToAssistantContent(item: Record<string, unknown>): Reasoni
   const text = content
     .flatMap((detail) => (detail.type === "text" || detail.type === "summary" ? [detail.text] : []))
     .join("");
-  return {
+  let reasoning: ReasoningPart = {
     type: "reasoning",
     text,
-    ...(id === undefined ? {} : { id }),
-    ...(content.length === 0 ? {} : { details: content }),
   };
+  if (id !== undefined) reasoning = { ...reasoning, id };
+  if (content.length > 0) reasoning = { ...reasoning, details: content };
+  return reasoning;
 }
 
 function reasoningContentFromOpenAIItem(item: Record<string, unknown>): ReasoningDetail[] {

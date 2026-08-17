@@ -18,6 +18,7 @@
       "@anvia/logger": ["../../packages/logger/src/index.ts"],
       "@anvia/milvus": ["../../packages/vector-milvus/src/index.ts"],
       "@anvia/mistral": ["../../packages/provider-mistral/src/index.ts"],
+      "@anvia/neo4j": ["../../packages/graph-neo4j/src/index.ts"],
       "@anvia/openai": ["../../packages/provider-openai/src/index.ts"],
       "@anvia/otel": ["../../packages/observability-otel/src/index.ts"],
       "@anvia/pgvector": ["../../packages/vector-pgvector/src/index.ts"],

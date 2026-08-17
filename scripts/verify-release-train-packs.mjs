@@ -10,6 +10,7 @@ const representativePackages = new Set([
   "@anvia/grok",
   "@anvia/lens",
   "@anvia/memory-sqlite",
+  "@anvia/neo4j",
   "@anvia/openai",
   "@anvia/otel",
   "@anvia/pgvector",

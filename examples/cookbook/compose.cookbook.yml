@@ -81,8 +81,24 @@ services:
       timeout: 3s
       retries: 30
 
+  neo4j:
+    image: neo4j:2026.01-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/anvia-neo4j
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p anvia-neo4j 'RETURN 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
 volumes:
   chroma-data:
   qdrant-data:
   pgvector-data:
   milvus-data:
+  neo4j-data:

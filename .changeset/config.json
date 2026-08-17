@@ -22,6 +22,7 @@
       "@anvia/memory-sqlite",
       "@anvia/milvus",
       "@anvia/mistral",
+      "@anvia/neo4j",
       "@anvia/openai",
       "@anvia/otel",
       "@anvia/pgvector",

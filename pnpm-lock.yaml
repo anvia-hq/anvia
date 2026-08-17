@@ -128,6 +128,9 @@ importers:
       '@anvia/mistral':
         specifier: workspace:*
         version: link:../../packages/provider-mistral
+      '@anvia/neo4j':
+        specifier: workspace:*
+        version: link:../../packages/graph-neo4j
       '@anvia/openai':
         specifier: workspace:*
         version: link:../../packages/provider-openai
@@ -380,6 +383,31 @@ importers:
       '@huggingface/transformers':
         specifier: ^4.2.0
         version: 4.2.0
+    devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.12.2
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.8
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.1.0(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/graph-neo4j:
+    dependencies:
+      neo4j-driver:
+        specifier: ^6.0.1
+        version: 6.2.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@anvia/core':
         specifier: workspace:*
@@ -5697,6 +5725,16 @@ packages:
     resolution: {integrity: sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==}
     engines: {node: '>= 0.6'}
 
+  neo4j-driver-bolt-connection@6.2.0:
+    resolution: {integrity: sha512-SEnFSBfumleDxmDAZKkjXxZ5LgL2iZSTx08sO+qXX45ZKaxZJOcg9oxwoXACXZ1RbIq3XbDfHU8I5tExanYEOA==}
+
+  neo4j-driver-core@6.2.0:
+    resolution: {integrity: sha512-U8PSdvDECWmCgSWyhqNNVzMONXFHWPcTd5gqi12+EDxxt0aETA0m+XCXf9H7q6qQXdisc40rUJEOcVQOu6peEA==}
+
+  neo4j-driver@6.2.0:
+    resolution: {integrity: sha512-9W/Tk7EyjZHtv87NFpqoIbl0mlQx8bX8phUFzAM9xmeJrRpGDvqkpdQzc11DjwzywQCdhifaZPSvokSnAp7YTg==}
+    engines: {node: '>=18.0.0'}
+
   nice-grpc-client-middleware-retry@3.1.15:
     resolution: {integrity: sha512-fXfNNdtjCQzc3O/w3WsK1AOU+xdE1V7FCm4FEQWS/UUVsV1616S2oryvWqsZAF8aOvuMir8lFtNmgH3DeP+PBg==}
 
@@ -6306,6 +6344,9 @@ packages:
 
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
+
+  rxjs@7.8.2:
+    resolution: {integrity: sha512-dhKf903U/PQZY6boNNtAGdWbG85WAbjT/1xYoZIC7FAY0yWapOBQVsVrDl58W86//e1VpMNBtRV4MaXfdMySFA==}
 
   safe-buffer@5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
@@ -11519,6 +11560,20 @@ snapshots:
 
   negotiator@1.0.0: {}
 
+  neo4j-driver-bolt-connection@6.2.0:
+    dependencies:
+      buffer: 6.0.3
+      neo4j-driver-core: 6.2.0
+      string_decoder: 1.3.0
+
+  neo4j-driver-core@6.2.0: {}
+
+  neo4j-driver@6.2.0:
+    dependencies:
+      neo4j-driver-bolt-connection: 6.2.0
+      neo4j-driver-core: 6.2.0
+      rxjs: 7.8.2
+
   nice-grpc-client-middleware-retry@3.1.15:
     dependencies:
       abort-controller-x: 0.5.0
@@ -12249,6 +12304,10 @@ snapshots:
   run-parallel@1.2.0:
     dependencies:
       queue-microtask: 1.2.3
+
+  rxjs@7.8.2:
+    dependencies:
+      tslib: 2.8.1
 
   safe-buffer@5.2.1: {}
 

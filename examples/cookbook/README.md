@@ -25,7 +25,7 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | `03_structured_output` | Schema-first extraction, agent output schemas, context, retries, and extraction with prior messages. |
 | `04_providers_and_multimodal` | Provider adapters, model capabilities, model listing, reasoning streams, image/PDF attachments, image generation, audio generation, and transcription. |
 | `05_pipelines` | Step transforms, async steps, composition, named parallel branches, batching, agents, extractors, and richer workflows. |
-| `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document chunking and PDF extraction, vector stores, and embedding provider variants. |
+| `06_retrieval` | Embeddings, in-memory search, metadata filters, RAG context, document chunking and PDF extraction, vector stores, GraphRAG, and embedding provider variants. |
 | `07_multi_agent` | Basic agent-tools, pipeline-backed parallel specialists, and streaming agent-tools. |
 | `08_evals` | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, LLM judges, RAG quality, G-Eval, and conversational evals. |
 | `09_studio` | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool and sandbox inspection, embedded browser desktops, MCP tools, SQLite persistence, multi-provider model selection, and UI route options. |
@@ -59,7 +59,7 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 
 ## External Services and Side Effects
 
-- Chroma, Qdrant, pgvector, and Milvus examples use `compose.cookbook.yml` from the cookbook directory:
+- Chroma, Qdrant, pgvector, Milvus, and Neo4j examples use `compose.cookbook.yml` from the cookbook directory:
 
   ```sh
   docker compose -f examples/cookbook/compose.cookbook.yml up -d
@@ -68,10 +68,12 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
   pnpm cookbook:retrieval:07
   pnpm cookbook:retrieval:08
   pnpm cookbook:retrieval:12
+  pnpm cookbook:retrieval:14
   ```
 
 - `retrieval:08` uses the compose pgvector connection on host port `5439` by default. Set `DATABASE_URL` to point it at another Postgres database.
 - `retrieval:13` uses a hosted Pinecone index. Create a 384-dimension index first, then set `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, and optionally `PINECONE_NAMESPACE`.
+- `retrieval:14` requires Neo4j 2026.01 or newer. It explicitly extracts graph facts, embeds chunks and entities, replaces document-scoped graph state, and exposes bounded graph retrieval as an Agent tool.
 - Langfuse examples need Langfuse credentials and live in `10_integrations`.
 - `integrations:06` logs agent lifecycle events with Pino through `@anvia/logger`; `integrations:07` shows the built-in console logger.
 - Studio examples start a local HTTP server and keep Studio state in memory by default. `studio:10` shows explicit SQLite store wiring for sessions, traces, pipeline logs, and pipeline run history. `studio:13` shows the Studio message-composer model selector across OpenAI and Anthropic. `studio:14` shows MCP tools in Studio. `studio:15` requires Docker and explicitly registers an ephemeral sandbox's read-only inspector, published preview port, and managed processes; Ctrl+C destroys the sandbox.

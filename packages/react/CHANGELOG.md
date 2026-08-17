@@ -1,5 +1,21 @@
 # @anvia/react
 
+## 1.0.0-rc.3
+
+### Patch Changes
+
+- 475ae22: Replace process-local approval continuations and Studio-only questions with JSON-safe Agent
+  interactions resumed through `generate()` or `stream()`. Add first-class question tools, explicit
+  interaction response message parts, linked phase-local runs, suspension-aware nested composition,
+  queued steering receipts, and eval responders. Upgrade the Client protocol to v3, unify React and
+  Studio interaction handling, preserve suspensions through memory, traces, and resumable streams,
+  and reject unresolved interaction parts at provider boundaries.
+- Updated dependencies [475ae22]
+- Updated dependencies [9cb661c]
+- Updated dependencies [5ec61e3]
+  - @anvia/core@1.0.0-rc.3
+  - @anvia/client@1.0.0-rc.3
+
 ## 1.0.0-rc.2
 
 ### Patch Changes

@@ -1,5 +1,31 @@
 # @anvia/studio
 
+## 1.0.0-rc.3
+
+### Patch Changes
+
+- f0ffa43: Add the explicit Docker-backed Chromium browser runtime, semantic browser tools, noVNC desktop,
+  Studio's clean resizable Playground viewer, and a human-control lease. Add the shared-memory and seccomp
+  options required to keep Chromium's process sandbox enabled, including explicit capability additions
+  for its namespace sandbox.
+- 475ae22: Replace process-local approval continuations and Studio-only questions with JSON-safe Agent
+  interactions resumed through `generate()` or `stream()`. Add first-class question tools, explicit
+  interaction response message parts, linked phase-local runs, suspension-aware nested composition,
+  queued steering receipts, and eval responders. Upgrade the Client protocol to v3, unify React and
+  Studio interaction handling, preserve suspensions through memory, traces, and resumable streams,
+  and reject unresolved interaction parts at provider boundaries.
+- eaecb75: Replace stateful sandbox sessions with an explicit Docker client, owned sandbox handles, resumable
+  containers, object-only byte-oriented runtime operations, structured opt-in tools, and explicit
+  read-only Studio inspector registrations.
+- Updated dependencies [475ae22]
+- Updated dependencies [9cb661c]
+- Updated dependencies [5ec61e3]
+  - @anvia/core@1.0.0-rc.3
+  - @anvia/client@1.0.0-rc.3
+  - @anvia/server@1.0.0-rc.3
+  - @anvia/react@1.0.0-rc.3
+  - @anvia/react-ui@1.0.0-rc.3
+
 ## 1.0.0-rc.2
 
 ### Patch Changes

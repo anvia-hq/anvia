@@ -1,5 +1,23 @@
 # @anvia/core
 
+## 1.0.0-rc.3
+
+### Patch Changes
+
+- 475ae22: Replace process-local approval continuations and Studio-only questions with JSON-safe Agent
+  interactions resumed through `generate()` or `stream()`. Add first-class question tools, explicit
+  interaction response message parts, linked phase-local runs, suspension-aware nested composition,
+  queued steering receipts, and eval responders. Upgrade the Client protocol to v3, unify React and
+  Studio interaction handling, preserve suspensions through memory, traces, and resumable streams,
+  and reject unresolved interaction parts at provider boundaries.
+- 9cb661c: Replace the stateful filesystem and PDF loader API with explicit in-memory `chunkText` strategies
+  and abortable `extractPdfText` parsing under `@anvia/core/documents`. Applications now own file
+  discovery, reads, source metadata, document mapping, and error policy.
+- 5ec61e3: Allow applications to explicitly disable Streamable HTTP SSRF protection for trusted local or
+  private-network MCP servers while retaining strict public-only validation by default. Replace the
+  arbitrary `requestInit` escape hatch with strictly validated string `headers` scoped to the exact MCP
+  endpoint while keeping protocol-owned request fields and OAuth traffic isolated.
+
 ## 1.0.0-rc.2
 
 ### Patch Changes

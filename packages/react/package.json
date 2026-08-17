@@ -1,6 +1,6 @@
 {
   "name": "@anvia/react",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "description": "React hooks for the explicit Anvia client stream protocol.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

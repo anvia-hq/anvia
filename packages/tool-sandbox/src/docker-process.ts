@@ -1,38 +1,36 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { runDockerCli } from "./docker-cli";
-import {
-  SandboxDockerCommandError,
-  SandboxDockerUnavailableError,
-  SandboxProcessError,
-  SandboxTimeoutError,
-} from "./errors";
+import { decodeUtf8, runDockerCli } from "./docker-cli";
+import { DockerSandboxError } from "./errors";
 import { containerPath } from "./path";
 import type {
-  SandboxProcessInfo,
-  SandboxProcessLogs,
-  SandboxProcessLogsOptions,
-  SandboxProcessStartOptions,
-  SandboxProcessStopOptions,
+  DockerSandboxProcessInfo,
+  DockerSandboxProcessLogs,
+  DockerSandboxProcessStartOptions,
 } from "./types";
 
 const processMarkerPrefix = "ANVIA_PROCESS";
-// Report the supervisor, direct-child, and process-group PIDs through a private stdout marker. Use
-// a dedicated session when setsid is available; Docker exec otherwise gives the supervisor its own
-// process group. User-provided command arguments remain positional rather than shell-interpolated.
+// Establish a killable process group and report it before starting the user command. The wrapper
+// waits for a host acknowledgement, so cancelling startup before the marker is accepted can only
+// leave an idle wrapper that exits when Docker closes stdin, never an untracked user process.
+const processLauncher = [
+  'wrapper="$1"',
+  "shift",
+  "if command -v setsid >/dev/null 2>&1; then",
+  '  exec setsid sh -c "$wrapper" "$@"',
+  "fi",
+  'exec sh -c "$wrapper" "$@"',
+].join("\n");
+
 const processWrapper = [
   'marker="$1"',
   "shift",
-  "if command -v setsid >/dev/null 2>&1; then",
-  '  setsid "$@" &',
-  "  child=$!",
-  "  group=$child",
-  "else",
-  '  "$@" &',
-  "  child=$!",
-  "  group=$$",
-  "fi",
-  `printf '\\036%s:%s:%s:%s\\036' "$marker" "$$" "$child" "$group"`,
+  "group=$$",
+  `printf '\\036%s:%s:%s\\036' "$marker" "$$" "$group"`,
+  "IFS= read -r ready || exit 125",
+  '[ "$ready" = "start" ] || exit 125',
+  '"$@" &',
+  "child=$!",
   "terminate() {",
   '  wait "$child" 2>/dev/null || true',
   "  exit 143",
@@ -50,29 +48,31 @@ interface DockerProcessManagerOptions {
   maxOutputBytes: number;
   maxProcesses: number;
   startupTimeoutMs: number;
-  onStart?: (process: SandboxProcessInfo) => void | Promise<void>;
-  onExit?: (
-    process: SandboxProcessInfo,
-    logs: SandboxProcessLogs,
-    durationMs: number,
-  ) => void | Promise<void>;
 }
 
+type MutableProcessInfo = {
+  id: string;
+  command: string;
+  args: string[];
+  cwd?: string;
+  status: "running" | "exited" | "stopped";
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+};
+
 interface ManagedProcessRecord {
-  info: SandboxProcessInfo;
-  startedAtMs: number;
+  info: MutableProcessInfo;
   child: ChildProcessWithoutNullStreams;
   stdout: TailOutputCollector;
   stderr: TailOutputCollector;
   markerStart: Buffer;
   markerBuffer: Buffer;
   supervisorPid?: number;
-  childPid?: number;
   processGroupId?: number;
   spawnFailed: boolean;
   stopRequested: boolean;
   startResolved: boolean;
-  exitNotified: boolean;
   resolveStarted: () => void;
   rejectStarted: (error: unknown) => void;
   started: Promise<void>;
@@ -86,24 +86,25 @@ export class DockerProcessManager {
 
   constructor(private readonly options: DockerProcessManagerOptions) {
     if (!Number.isInteger(options.maxProcesses) || options.maxProcesses < 0) {
-      throw new SandboxProcessError("Sandbox maxProcesses must be a non-negative integer.");
+      throw processError("Sandbox maxProcesses must be a non-negative integer.");
     }
     if (!Number.isInteger(options.maxOutputBytes) || options.maxOutputBytes < 0) {
-      throw new SandboxProcessError("Sandbox maxOutputBytes must be a non-negative integer.");
+      throw processError("Sandbox maxOutputBytes must be a non-negative integer.");
     }
     if (!Number.isInteger(options.startupTimeoutMs) || options.startupTimeoutMs <= 0) {
-      throw new SandboxProcessError("Sandbox process startup timeout must be a positive integer.");
+      throw processError("Sandbox process startup timeout must be a positive integer.");
     }
   }
 
-  async start(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo> {
+  async start(options: DockerSandboxProcessStartOptions): Promise<DockerSandboxProcessInfo> {
     this.assertActive();
     assertStartOptions(options);
-    await this.pruneCompletedRecords();
+    options.abortSignal?.throwIfAborted();
+    await this.pruneCompletedRecords(options.abortSignal);
 
     const trackedCount = this.records.size;
     if (trackedCount >= this.options.maxProcesses) {
-      throw new SandboxProcessError(
+      throw processError(
         `Sandbox process limit reached (${trackedCount} >= ${this.options.maxProcesses}).`,
       );
     }
@@ -114,7 +115,6 @@ export class DockerProcessManager {
     const child = spawn(this.options.dockerPath, dockerArgs, {
       stdio: ["pipe", "pipe", "pipe"],
     });
-    child.stdin.end();
 
     let resolveStarted!: () => void;
     let rejectStarted!: (error: unknown) => void;
@@ -127,7 +127,7 @@ export class DockerProcessManager {
       resolveClosed = resolve;
     });
 
-    const info: SandboxProcessInfo = {
+    const info: MutableProcessInfo = {
       id,
       command: options.command,
       args: [...(options.args ?? [])],
@@ -138,7 +138,6 @@ export class DockerProcessManager {
 
     const record: ManagedProcessRecord = {
       info,
-      startedAtMs: Date.now(),
       child,
       stdout: new TailOutputCollector(this.options.maxOutputBytes),
       stderr: new TailOutputCollector(this.options.maxOutputBytes),
@@ -147,7 +146,6 @@ export class DockerProcessManager {
       spawnFailed: false,
       stopRequested: false,
       startResolved: false,
-      exitNotified: false,
       resolveStarted,
       rejectStarted,
       started,
@@ -158,10 +156,8 @@ export class DockerProcessManager {
     this.observe(record);
 
     try {
-      await this.waitForStart(record);
-      await this.options.onStart?.(copyProcessInfo(record.info));
+      await this.waitForStart(record, options.abortSignal);
       record.startResolved = true;
-      if (record.info.status !== "running") this.notifyExit(record);
       return copyProcessInfo(record.info);
     } catch (error) {
       if (await this.cleanupFailedStart(record)) this.records.delete(id);
@@ -169,19 +165,19 @@ export class DockerProcessManager {
     }
   }
 
-  list(): SandboxProcessInfo[] {
+  list(): DockerSandboxProcessInfo[] {
     this.assertActive();
     return [...this.records.values()].map((record) => copyProcessInfo(record.info));
   }
 
-  logs(processId: string, options: SandboxProcessLogsOptions = {}): SandboxProcessLogs {
+  logs(processId: string, tailBytes?: number): DockerSandboxProcessLogs {
     this.assertActive();
     const record = this.getRecord(processId);
-    const stdout = record.stdout.snapshot(options.tailBytes);
-    const stderr = record.stderr.snapshot(options.tailBytes);
+    const stdout = record.stdout.snapshot(tailBytes);
+    const stderr = record.stderr.snapshot(tailBytes);
     return {
-      stdout: stdout.text,
-      stderr: stderr.text,
+      stdout: stdout.bytes,
+      stderr: stderr.bytes,
       stdoutTruncated: stdout.truncated,
       stderrTruncated: stderr.truncated,
     };
@@ -189,18 +185,18 @@ export class DockerProcessManager {
 
   async stop(
     processId: string,
-    options: SandboxProcessStopOptions = {},
-  ): Promise<SandboxProcessInfo> {
+    gracePeriodMs = 5_000,
+    abortSignal?: AbortSignal,
+  ): Promise<DockerSandboxProcessInfo> {
     this.assertActive();
     const record = this.getRecord(processId);
-    const gracePeriodMs = options.gracePeriodMs ?? 5_000;
     if (!Number.isInteger(gracePeriodMs) || gracePeriodMs < 0) {
-      throw new SandboxProcessError("Process gracePeriodMs must be a non-negative integer.");
+      throw processError("Process gracePeriodMs must be a non-negative integer.");
     }
 
     try {
-      if (!(await this.terminateRecord(record, gracePeriodMs))) {
-        throw new SandboxProcessError(`Sandbox process did not stop: ${processId}`);
+      if (!(await this.terminateRecord(record, gracePeriodMs, abortSignal))) {
+        throw processError(`Sandbox process did not stop: ${processId}`);
       }
     } catch (error) {
       if (record.info.status === "running") record.stopRequested = false;
@@ -210,19 +206,22 @@ export class DockerProcessManager {
     return copyProcessInfo(record.info);
   }
 
-  async dispose(): Promise<void> {
+  async dispose(abortSignal?: AbortSignal): Promise<void> {
     if (this.disposed) return;
-    this.disposed = true;
+    abortSignal?.throwIfAborted();
 
     await Promise.all(
       [...this.records.values()].map(async (record) => {
-        await this.terminateRecord(record, 1_000).catch(() => false);
+        if (!(await this.terminateRecord(record, 1_000, abortSignal))) {
+          throw processError(`Sandbox process did not stop: ${record.info.id}`);
+        }
       }),
     );
+    this.disposed = true;
   }
 
-  private createExecArgs(options: SandboxProcessStartOptions, marker: string): string[] {
-    const args = ["exec", "-w", containerPath(this.options.workdir, options.cwd ?? ".")];
+  private createExecArgs(options: DockerSandboxProcessStartOptions, marker: string): string[] {
+    const args = ["exec", "-i", "-w", containerPath(this.options.workdir, options.cwd ?? ".")];
     for (const [key, value] of Object.entries({ ...this.options.env, ...options.env })) {
       args.push("-e", `${key}=${value}`);
     }
@@ -230,6 +229,8 @@ export class DockerProcessManager {
       this.options.containerName,
       "sh",
       "-c",
+      processLauncher,
+      "anvia-process-launcher",
       processWrapper,
       "anvia-managed-process",
       marker,
@@ -247,7 +248,9 @@ export class DockerProcessManager {
       record.spawnFailed = true;
       const normalized =
         (error as NodeJS.ErrnoException).code === "ENOENT"
-          ? new SandboxDockerUnavailableError("Docker CLI was not found.", error)
+          ? new DockerSandboxError("Docker CLI was not found.", "docker_unavailable", undefined, {
+              cause: error,
+            })
           : error;
       record.rejectStarted(normalized);
     });
@@ -261,13 +264,9 @@ export class DockerProcessManager {
       record.info.exitCode = code ?? 1;
       record.info.endedAt = new Date().toISOString();
       record.rejectStarted(
-        new SandboxProcessError(
-          `Sandbox process exited before startup completed: ${record.info.id}`,
-        ),
+        processError(`Sandbox process exited before startup completed: ${record.info.id}`),
       );
       record.resolveClosed();
-
-      if (record.startResolved) this.notifyExit(record);
     });
   }
 
@@ -298,17 +297,13 @@ export class DockerProcessManager {
       return;
     }
 
-    const rawPids = record.markerBuffer
-      .subarray(start + record.markerStart.length, end)
-      .toString("utf8")
-      .split(":");
+    const rawPids = decodeUtf8(
+      record.markerBuffer.subarray(start + record.markerStart.length, end),
+    ).split(":");
     const supervisorPid = Number(rawPids[0]);
-    const childPid = Number(rawPids[1]);
-    const processGroupId = Number(rawPids[2]);
-    if (!isProcessId(supervisorPid) || !isProcessId(childPid) || !isProcessId(processGroupId)) {
-      record.rejectStarted(
-        new SandboxProcessError("Sandbox process returned invalid process IDs."),
-      );
+    const processGroupId = Number(rawPids[1]);
+    if (!isProcessId(supervisorPid) || !isProcessId(processGroupId) || rawPids.length !== 2) {
+      record.rejectStarted(processError("Sandbox process returned invalid process IDs."));
       return;
     }
 
@@ -318,31 +313,44 @@ export class DockerProcessManager {
     }
     record.markerBuffer = Buffer.alloc(0);
     record.supervisorPid = supervisorPid;
-    record.childPid = childPid;
     record.processGroupId = processGroupId;
+    record.child.stdin.end("start\n");
     record.resolveStarted();
   }
 
-  private async waitForStart(record: ManagedProcessRecord) {
+  private async waitForStart(
+    record: ManagedProcessRecord,
+    abortSignal: AbortSignal | undefined,
+  ): Promise<void> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let abort: (() => void) | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
-        reject(new SandboxTimeoutError("Starting sandbox process timed out."));
+        reject(new DockerSandboxError("Starting sandbox process timed out.", "timeout"));
       }, this.options.startupTimeoutMs);
       timeout.unref?.();
     });
 
     try {
-      await Promise.race([record.started, timeoutPromise]);
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (abortSignal === undefined) return;
+        abort = () => reject(abortSignal.reason ?? new DOMException("Aborted", "AbortError"));
+        if (abortSignal.aborted) abort();
+        else abortSignal.addEventListener("abort", abort, { once: true });
+      });
+      await Promise.race([record.started, timeoutPromise, abortPromise]);
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
+      if (abort !== undefined) abortSignal?.removeEventListener("abort", abort);
     }
   }
 
   private async cleanupFailedStart(record: ManagedProcessRecord): Promise<boolean> {
     record.stopRequested = true;
     if (record.processGroupId === undefined && record.info.status === "running") {
-      await waitForPromise(record.closed, 250);
+      record.child.stdin.destroy();
+      record.child.kill("SIGKILL");
+      await waitForPromise(record.closed, 1_000);
     }
 
     try {
@@ -355,27 +363,29 @@ export class DockerProcessManager {
   private async terminateRecord(
     record: ManagedProcessRecord,
     gracePeriodMs: number,
+    abortSignal?: AbortSignal,
   ): Promise<boolean> {
+    abortSignal?.throwIfAborted();
     record.stopRequested = true;
 
     if (record.processGroupId === undefined) {
       if (record.info.status === "running") {
-        await waitForPromise(record.closed, Math.min(gracePeriodMs, 250));
+        await waitForPromise(record.closed, Math.min(gracePeriodMs, 250), abortSignal);
       }
       if (record.processGroupId === undefined) {
-        return record.spawnFailed && record.info.status !== "running";
+        return record.info.status !== "running";
       }
     }
 
-    if (!(await this.isProcessGroupRunning(record))) {
-      return this.finishAfterGroupExit(record);
+    if (!(await this.isProcessGroupRunning(record, abortSignal))) {
+      return this.finishAfterGroupExit(record, abortSignal);
     }
 
-    await this.signal(record, "TERM");
-    if (await this.waitForRecordExit(record, gracePeriodMs)) return true;
+    await this.signal(record, "TERM", abortSignal);
+    if (await this.waitForRecordExit(record, gracePeriodMs, abortSignal)) return true;
 
-    await this.signal(record, "KILL");
-    if (await this.waitForRecordExit(record, 1_000)) return true;
+    await this.signal(record, "KILL", abortSignal);
+    if (await this.waitForRecordExit(record, 1_000, abortSignal)) return true;
 
     return false;
   }
@@ -383,31 +393,39 @@ export class DockerProcessManager {
   private async waitForRecordExit(
     record: ManagedProcessRecord,
     timeoutMs: number,
+    abortSignal?: AbortSignal,
   ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (true) {
-      if (!(await this.isProcessGroupRunning(record))) {
-        return this.finishAfterGroupExit(record);
+      abortSignal?.throwIfAborted();
+      if (!(await this.isProcessGroupRunning(record, abortSignal))) {
+        return this.finishAfterGroupExit(record, abortSignal);
       }
 
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) return false;
       const intervalMs = Math.min(50, remainingMs);
       if (record.info.status === "running") {
-        await waitForPromise(record.closed, intervalMs);
+        await waitForPromise(record.closed, intervalMs, abortSignal);
       } else {
-        await waitForDelay(intervalMs);
+        await waitForDelay(intervalMs, abortSignal);
       }
     }
   }
 
-  private async finishAfterGroupExit(record: ManagedProcessRecord): Promise<boolean> {
+  private async finishAfterGroupExit(
+    record: ManagedProcessRecord,
+    abortSignal?: AbortSignal,
+  ): Promise<boolean> {
     if (record.info.status !== "running") return true;
     record.child.kill("SIGKILL");
-    return waitForPromise(record.closed, 1_000);
+    return waitForPromise(record.closed, 1_000, abortSignal);
   }
 
-  private async isProcessGroupRunning(record: ManagedProcessRecord): Promise<boolean> {
+  private async isProcessGroupRunning(
+    record: ManagedProcessRecord,
+    abortSignal?: AbortSignal,
+  ): Promise<boolean> {
     if (record.processGroupId === undefined) return false;
     const result = await runDockerCli(
       [
@@ -417,18 +435,23 @@ export class DockerProcessManager {
         "-c",
         'kill -0 "-$1" 2>/dev/null',
         "anvia-process-group-check",
-        String(record.processGroupId),
+        `${record.processGroupId}`,
       ],
       {
         dockerPath: this.options.dockerPath,
         timeoutMs: 5_000,
         maxOutputBytes: this.options.maxOutputBytes,
+        signal: abortSignal,
       },
     );
     return result.exitCode === 0;
   }
 
-  private async signal(record: ManagedProcessRecord, signal: "TERM" | "KILL"): Promise<void> {
+  private async signal(
+    record: ManagedProcessRecord,
+    dockerSignal: "TERM" | "KILL",
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
     if (record.processGroupId === undefined) return;
     const result = await runDockerCli(
       [
@@ -438,18 +461,20 @@ export class DockerProcessManager {
         "-c",
         'kill "-$2" "-$1" 2>/dev/null || ! kill -0 "-$1" 2>/dev/null',
         "anvia-process-signal",
-        String(record.processGroupId),
-        signal,
+        `${record.processGroupId}`,
+        dockerSignal,
       ],
       {
         dockerPath: this.options.dockerPath,
         timeoutMs: 5_000,
         maxOutputBytes: this.options.maxOutputBytes,
+        signal: abortSignal,
       },
     );
     if (result.exitCode !== 0) {
-      throw new SandboxDockerCommandError(
+      throw new DockerSandboxError(
         `Unable to stop sandbox process: ${record.info.id}`,
+        "docker_command_failed",
         result,
       );
     }
@@ -458,47 +483,27 @@ export class DockerProcessManager {
   private getRecord(processId: string): ManagedProcessRecord {
     const record = this.records.get(processId);
     if (record === undefined) {
-      throw new SandboxProcessError(`Unknown sandbox process: ${processId}`);
+      throw processError(`Unknown sandbox process: ${processId}`);
     }
     return record;
   }
 
-  private async pruneCompletedRecords(): Promise<void> {
+  private async pruneCompletedRecords(abortSignal?: AbortSignal): Promise<void> {
     for (const [id, record] of this.records) {
       if (this.records.size < this.options.maxProcesses) return;
       const cleanupConfirmed =
         record.processGroupId === undefined
           ? record.spawnFailed
-          : !(await this.isProcessGroupRunning(record));
+          : !(await this.isProcessGroupRunning(record, abortSignal));
       if (record.info.status !== "running" && cleanupConfirmed) {
         this.records.delete(id);
       }
     }
   }
 
-  private logsUnsafe(record: ManagedProcessRecord): SandboxProcessLogs {
-    const stdout = record.stdout.snapshot();
-    const stderr = record.stderr.snapshot();
-    return {
-      stdout: stdout.text,
-      stderr: stderr.text,
-      stdoutTruncated: stdout.truncated,
-      stderrTruncated: stderr.truncated,
-    };
-  }
-
-  private notifyExit(record: ManagedProcessRecord): void {
-    if (record.exitNotified) return;
-    record.exitNotified = true;
-    const durationMs = Date.now() - record.startedAtMs;
-    const notify = async () =>
-      this.options.onExit?.(copyProcessInfo(record.info), this.logsUnsafe(record), durationMs);
-    void notify().catch(() => undefined);
-  }
-
   private assertActive(): void {
     if (this.disposed) {
-      throw new SandboxProcessError("Sandbox process manager has been disposed.");
+      throw processError("Sandbox process manager has been disposed.");
     }
   }
 }
@@ -541,9 +546,9 @@ class TailOutputCollector {
     }
   }
 
-  snapshot(tailBytes?: number): { text: string; truncated: boolean } {
+  snapshot(tailBytes?: number): { bytes: Uint8Array; truncated: boolean } {
     if (tailBytes !== undefined && (!Number.isInteger(tailBytes) || tailBytes < 0)) {
-      throw new SandboxProcessError("Process tailBytes must be a non-negative integer.");
+      throw processError("Process tailBytes must be a non-negative integer.");
     }
     const bytes = Buffer.concat(this.chunks, this.length);
     const selected =
@@ -553,15 +558,19 @@ class TailOutputCollector {
           ? bytes
           : bytes.subarray(bytes.length - tailBytes);
     return {
-      text: selected.toString("utf8"),
+      bytes: new Uint8Array(selected.buffer, selected.byteOffset, selected.byteLength).slice(),
       truncated: this.didTruncate || selected.length < bytes.length,
     };
   }
 }
 
-function assertStartOptions(options: SandboxProcessStartOptions): void {
+function processError(message: string): DockerSandboxError {
+  return new DockerSandboxError(message, "process");
+}
+
+function assertStartOptions(options: DockerSandboxProcessStartOptions): void {
   if (options.command.trim().length === 0) {
-    throw new SandboxProcessError("Sandbox process command cannot be empty.");
+    throw processError("Sandbox process command cannot be empty.");
   }
 }
 
@@ -569,22 +578,27 @@ function isProcessId(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
 }
 
-function copyProcessInfo(info: SandboxProcessInfo): SandboxProcessInfo {
-  const copy: SandboxProcessInfo = {
+function copyProcessInfo(info: DockerSandboxProcessInfo): DockerSandboxProcessInfo {
+  return {
     id: info.id,
     command: info.command,
     args: [...info.args],
     status: info.status,
     startedAt: info.startedAt,
+    ...(info.cwd === undefined ? {} : { cwd: info.cwd }),
+    ...(info.exitCode === undefined ? {} : { exitCode: info.exitCode }),
+    ...(info.endedAt === undefined ? {} : { endedAt: info.endedAt }),
   };
-  if (info.cwd !== undefined) copy.cwd = info.cwd;
-  if (info.exitCode !== undefined) copy.exitCode = info.exitCode;
-  if (info.endedAt !== undefined) copy.endedAt = info.endedAt;
-  return copy;
 }
 
-async function waitForPromise(promise: Promise<void>, timeoutMs: number): Promise<boolean> {
+async function waitForPromise(
+  promise: Promise<void>,
+  timeoutMs: number,
+  abortSignal?: AbortSignal,
+): Promise<boolean> {
+  abortSignal?.throwIfAborted();
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
   try {
     return await Promise.race([
       promise.then(() => true),
@@ -592,15 +606,26 @@ async function waitForPromise(promise: Promise<void>, timeoutMs: number): Promis
         timeout = setTimeout(() => resolve(false), timeoutMs);
         timeout.unref?.();
       }),
+      new Promise<boolean>((_, reject) => {
+        if (abortSignal === undefined) return;
+        abort = () => reject(abortSignal.reason ?? new DOMException("Aborted", "AbortError"));
+        if (abortSignal.aborted) abort();
+        else abortSignal.addEventListener("abort", abort, { once: true });
+      }),
     ]);
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
+    if (abort !== undefined) abortSignal?.removeEventListener("abort", abort);
   }
 }
 
-async function waitForDelay(timeoutMs: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(resolve, timeoutMs);
-    timeout.unref?.();
-  });
+async function waitForDelay(timeoutMs: number, abortSignal?: AbortSignal): Promise<void> {
+  await waitForPromise(
+    new Promise<void>((resolve) => {
+      const timeout = setTimeout(resolve, timeoutMs);
+      timeout.unref?.();
+    }),
+    timeoutMs,
+    abortSignal,
+  );
 }

@@ -94,7 +94,13 @@ describe("anvia-sandbox CLI", () => {
       features: ["playwright"],
     });
     expect(output.logs.join("\n")).toContain('image: "anvia-sandbox-browser:latest"');
-    expect(output.logs.join("\n")).toContain('pull: "never"');
+    expect(output.logs.join("\n")).toContain("new DockerSandboxClient()");
+    expect(output.logs.join("\n")).toContain(
+      'import { DockerSandboxClient } from "@anvia/sandbox"',
+    );
+    expect(output.logs.join("\n")).toContain("await using sandbox = await client.createSandbox");
+    expect(output.logs.join("\n")).toContain('workspace: { type: "ephemeral" }');
+    expect(output.logs.join("\n")).toContain('network: { mode: "none" }');
   });
 
   it("generates without building and prints the deferred command", async () => {

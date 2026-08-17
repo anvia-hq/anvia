@@ -1,28 +1,70 @@
 import { describe, expect, it } from "vitest";
-import { DockerSandbox } from "../src/docker-sandbox";
-import { SandboxPortError } from "../src/errors";
+import { DockerSandboxClient } from "../src/docker-sandbox";
+import { DockerSandboxError } from "../src/errors";
 
-describe("DockerSandbox port validation", () => {
-  it("rejects published ports while networking is disabled", async () => {
-    const sandbox = new DockerSandbox({ pull: "never", network: false });
-
-    await expect(sandbox.createSession({ ports: [5173] })).rejects.toThrow(SandboxPortError);
+describe("DockerSandboxClient validation", () => {
+  it("constructs without Docker I/O", () => {
+    expect(
+      () => new DockerSandboxClient({ dockerPath: "/definitely/missing/docker" }),
+    ).not.toThrow();
   });
 
-  it("rejects invalid and duplicate published ports before using Docker", async () => {
-    const sandbox = new DockerSandbox({ pull: "never", network: true });
+  it("rejects invalid workspace and network combinations before Docker I/O", async () => {
+    const client = new DockerSandboxClient({ dockerPath: "/definitely/missing/docker" });
 
-    await expect(sandbox.createSession({ ports: [0] })).rejects.toThrow("1 to 65535");
-    await expect(sandbox.createSession({ ports: [65_536] })).rejects.toThrow("1 to 65535");
-    await expect(sandbox.createSession({ ports: [5173, 5173] })).rejects.toThrow("duplicated");
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "legacy" },
+        network: { mode: "none" },
+      } as never),
+    ).rejects.toThrow("workspace");
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "bridge", ports: [0] },
+      }),
+    ).rejects.toMatchObject({ code: "port" });
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "bridge", ports: [5173, 5173] },
+      }),
+    ).rejects.toThrow("duplicated");
   });
 
-  it("rejects Docker network modes that cannot publish ports", async () => {
-    for (const network of ["none", "host", "container:another"] as const) {
-      const sandbox = new DockerSandbox({ pull: "never", network });
-      await expect(sandbox.createSession({ ports: [5173] })).rejects.toThrow(
-        "bridge-capable Docker network",
-      );
-    }
+  it("rejects reserved labels and unsafe initial paths before Docker I/O", async () => {
+    const client = new DockerSandboxClient({ dockerPath: "/definitely/missing/docker" });
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        labels: { "anvia.sandbox.id": "spoofed" },
+      }),
+    ).rejects.toThrow("reserved");
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        files: { "../secret": "no" },
+      }),
+    ).rejects.toBeInstanceOf(DockerSandboxError);
+  });
+
+  it("rejects oversized initial files before provisioning", async () => {
+    const client = new DockerSandboxClient({ dockerPath: "/definitely/missing/docker" });
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        runtime: { maxFileBytes: 1 },
+        files: { "large.txt": "xx" },
+      }),
+    ).rejects.toMatchObject({ code: "file_too_large" });
   });
 });

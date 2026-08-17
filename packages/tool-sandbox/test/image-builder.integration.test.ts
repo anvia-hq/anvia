@@ -4,7 +4,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { runCli } from "../src/cli";
 import { runDockerCli } from "../src/docker-cli";
-import { DockerSandbox } from "../src/docker-sandbox";
+import { DockerSandboxClient } from "../src/docker-sandbox";
+import type { DockerSandbox } from "../src/types";
 
 const runDockerTests = process.env.ANVIA_SANDBOX_DOCKER_TESTS === "1";
 
@@ -12,7 +13,7 @@ describe.skipIf(!runDockerTests)("sandbox image builder integration", () => {
   it("builds and runs the complete runtime and artifact toolchain", async () => {
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "anvia-sandbox-image-"));
     const imageTag = `anvia-sandbox-integration:${Date.now()}`;
-    let session: Awaited<ReturnType<DockerSandbox["createSession"]>> | undefined;
+    let sandbox: DockerSandbox | undefined;
 
     try {
       const exitCode = await runCli(
@@ -43,41 +44,39 @@ describe.skipIf(!runDockerTests)("sandbox image builder integration", () => {
       );
       expect(exitCode).toBe(0);
 
-      const sandbox = new DockerSandbox({
-        image: imageTag,
-        pull: "never",
-        network: false,
-        limits: { timeoutMs: 120_000, maxOutputBytes: 256_000 },
-      });
-      session = await sandbox.createSession({
+      const client = new DockerSandboxClient();
+      sandbox = await client.createSandbox({
         id: `image-builder-${Date.now()}`,
-        manifest: {
-          files: {
-            "artifacts.py": pythonArtifactScript,
-            "browser.mjs": playwrightScript,
-          },
+        image: imageTag,
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        runtime: { commandTimeoutMs: 120_000, maxOutputBytes: 256_000 },
+        files: {
+          "artifacts.py": pythonArtifactScript,
+          "browser.mjs": playwrightScript,
         },
       });
 
-      const versions = await session.exec({
+      const versions = await sandbox.runtime.exec({
         command: "sh",
         args: [
           "-lc",
           "node --version && pnpm --version && bun --version && python --version && uv --version",
         ],
       });
-      expect(versions.exitCode, versions.stderr).toBe(0);
-      expect(versions.stdout).toContain("v24.18.0");
-      expect(versions.stdout).toContain("11.0.4");
-      expect(versions.stdout).toContain("1.3.14");
-      expect(versions.stdout).toContain("Python 3.13.14");
+      expect(versions.status).toBe("exited");
+      const versionOutput = new TextDecoder("utf-8", { fatal: true }).decode(versions.stdout);
+      expect(versionOutput).toContain("v24.18.0");
+      expect(versionOutput).toContain("11.0.4");
+      expect(versionOutput).toContain("1.3.14");
+      expect(versionOutput).toContain("Python 3.13.14");
 
-      const artifacts = await session.exec({ command: "python", args: ["artifacts.py"] });
-      expect(artifacts.exitCode, artifacts.stderr).toBe(0);
-      const browser = await session.exec({ command: "node", args: ["browser.mjs"] });
-      expect(browser.exitCode, browser.stderr).toBe(0);
+      const artifacts = await sandbox.runtime.exec({ command: "python", args: ["artifacts.py"] });
+      expect(artifacts.status).toBe("exited");
+      const browser = await sandbox.runtime.exec({ command: "node", args: ["browser.mjs"] });
+      expect(browser.status).toBe("exited");
 
-      const files = await session.listFiles("output");
+      const files = await sandbox.runtime.listFiles({ path: "output" });
       expect(files.map((file) => file.path).sort()).toEqual([
         "output/chart.png",
         "output/report.pdf",
@@ -85,7 +84,7 @@ describe.skipIf(!runDockerTests)("sandbox image builder integration", () => {
         "output/workbook.xlsx",
       ]);
     } finally {
-      await session?.destroy();
+      await sandbox?.destroy();
       await runDockerCli(["image", "rm", imageTag], { dockerPath: "docker" });
       await rm(temporaryDirectory, { recursive: true, force: true });
     }

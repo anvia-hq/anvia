@@ -1,4 +1,4 @@
-import type { SandboxTextFileReadResult } from "./types";
+import type { DockerSandboxTextFilePage } from "./types";
 
 interface CreateTextFilePageOptions {
   startLine: number;
@@ -10,7 +10,7 @@ interface CreateTextFilePageOptions {
 export function createTextFilePage(
   text: string,
   options: CreateTextFilePageOptions,
-): SandboxTextFileReadResult {
+): DockerSandboxTextFilePage {
   const contentStartLine = options.contentStartLine ?? 1;
   const relativeStart = Math.max(0, options.startLine - contentStartLine);
   const lines = splitLines(text).slice(relativeStart, relativeStart + options.lineCount + 1);

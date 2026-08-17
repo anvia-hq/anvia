@@ -1,23 +1,22 @@
 import { spawn } from "node:child_process";
-import { SandboxDockerCommandError, SandboxDockerUnavailableError } from "./errors";
+import { DockerSandboxError } from "./errors";
 
 export interface DockerCliResult {
-  stdout: string;
-  stderr: string;
+  stdout: Uint8Array;
+  stderr: Uint8Array;
   exitCode: number;
   durationMs: number;
   timedOut: boolean;
-  aborted: boolean;
   stdoutTruncated: boolean;
   stderrTruncated: boolean;
 }
 
 export interface DockerCliOptions {
   dockerPath: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-  input?: string | Uint8Array;
-  signal?: AbortSignal;
+  timeoutMs?: number | undefined;
+  maxOutputBytes?: number | undefined;
+  input?: string | Uint8Array | undefined;
+  signal?: AbortSignal | undefined;
   onStdout?: (chunk: Uint8Array) => void;
   onStderr?: (chunk: Uint8Array) => void;
 }
@@ -39,7 +38,6 @@ export async function runDockerCli(
     });
 
     let timedOut = false;
-    let aborted = false;
     let settled = false;
 
     const timeout =
@@ -51,7 +49,6 @@ export async function runDockerCli(
           }, options.timeoutMs);
 
     const abort = () => {
-      aborted = true;
       child.kill("SIGKILL");
     };
 
@@ -73,7 +70,11 @@ export async function runDockerCli(
       options.signal?.removeEventListener("abort", abort);
 
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        reject(new SandboxDockerUnavailableError("Docker CLI was not found.", error));
+        reject(
+          new DockerSandboxError("Docker CLI was not found.", "docker_unavailable", undefined, {
+            cause: error,
+          }),
+        );
         return;
       }
 
@@ -88,13 +89,17 @@ export async function runDockerCli(
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abort);
 
+      if (options.signal?.aborted === true) {
+        reject(options.signal.reason ?? new DOMException("Aborted", "AbortError"));
+        return;
+      }
+
       resolve({
-        stdout: stdout.text(),
-        stderr: stderr.text(),
+        stdout: stdout.bytes(),
+        stderr: stderr.bytes(),
         exitCode: code ?? 1,
         durationMs: Date.now() - startedAt,
         timedOut,
-        aborted,
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated,
       });
@@ -108,14 +113,16 @@ export async function runDockerCli(
   });
 }
 
-export async function assertDockerCli(args: string[], options: DockerCliOptions): Promise<string> {
+export async function assertDockerCli(args: string[], options: DockerCliOptions): Promise<void> {
   const result = await runDockerCli(args, options);
 
   if (result.exitCode !== 0) {
-    throw new SandboxDockerCommandError(`Docker command failed: docker ${args.join(" ")}`, result);
+    throw new DockerSandboxError(
+      `Docker command failed: docker ${args.join(" ")}`,
+      "docker_command_failed",
+      result,
+    );
   }
-
-  return result.stdout.trim();
 }
 
 function createOutputCollector(maxBytes: number, onChunk?: (chunk: Uint8Array) => void) {
@@ -144,8 +151,13 @@ function createOutputCollector(maxBytes: number, onChunk?: (chunk: Uint8Array) =
         truncated = true;
       }
     },
-    text() {
-      return Buffer.concat(chunks, length).toString("utf8");
+    bytes() {
+      const bytes = Buffer.concat(chunks, length);
+      return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength).slice();
     },
   };
+}
+
+export function decodeUtf8(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }

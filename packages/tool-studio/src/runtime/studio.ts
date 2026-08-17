@@ -244,6 +244,13 @@ function studioOptionsFromTargets(
   if (options.models !== undefined) runtimeOptions.models = options.models;
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
   if (options.ui !== undefined) runtimeOptions.ui = options.ui;
+  if (options.sandboxes !== undefined) {
+    runtimeOptions.sandboxes = options.sandboxes.map((registration) => ({
+      inspector: registration.inspector,
+      ...(registration.agentIds === undefined ? {} : { agentIds: [...registration.agentIds] }),
+      ...(registration.toolNames === undefined ? {} : { toolNames: [...registration.toolNames] }),
+    }));
+  }
   return runtimeOptions;
 }
 
@@ -314,7 +321,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
   const approvalRuntime = createApprovalRuntime();
   const questionRuntime = createQuestionRuntime();
-  const sandboxRegistry = createStudioSandboxRegistry(agents);
+  const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;

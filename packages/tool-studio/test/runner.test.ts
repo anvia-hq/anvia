@@ -1444,12 +1444,12 @@ describe("Anvia studio", () => {
     });
   });
 
-  it("automatically exposes sandbox sessions bound to agent tools", async () => {
-    const session = {
+  it("exposes only explicitly registered sandbox inspectors", async () => {
+    const inspector = {
       id: "workspace_1",
       provider: "test-sandbox",
       workdir: "/workspace",
-      listFiles: async () => [{ path: "notes.txt", type: "file", size: 5 }],
+      listFiles: async () => [{ path: "notes.txt", type: "file" as const, size: 5 }],
       readFile: async () => new TextEncoder().encode("hello"),
     };
     const tool: Tool<Record<string, never>, string> = {
@@ -1461,12 +1461,19 @@ describe("Anvia studio", () => {
       }),
       call: () => "notes.txt",
     };
-    Object.defineProperty(tool, Symbol.for("anvia.sandbox.tool.metadata"), {
-      value: { session },
-      enumerable: false,
-    });
     const agent = new Agent({ id: "coder", model: new QueueModel([]), tools: [tool] });
-    const runner = new Studio([agent]);
+    const implicit = new Studio([agent]);
+    expect(implicit.config().capabilities.sandboxes).toBeUndefined();
+
+    const runner = new Studio([agent], {
+      sandboxes: [
+        {
+          inspector,
+          agentIds: ["coder"],
+          toolNames: ["list_files"],
+        },
+      ],
+    });
 
     expect(runner.config().capabilities.sandboxes).toEqual({ enabled: true });
     const sandboxes = await runner.fetch(new Request("http://runner.test/sandboxes"));

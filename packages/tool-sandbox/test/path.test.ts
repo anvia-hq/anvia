@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SandboxPathError } from "../src/errors";
+import { DockerSandboxError } from "../src/errors";
 import { containerPath, normalizeSandboxPath, parentSandboxPath } from "../src/path";
 
 describe("sandbox path handling", () => {
@@ -14,11 +14,11 @@ describe("sandbox path handling", () => {
   });
 
   it("rejects unsafe paths", () => {
-    expect(() => normalizeSandboxPath("")).toThrow(SandboxPathError);
-    expect(() => normalizeSandboxPath("/etc/passwd")).toThrow(SandboxPathError);
-    expect(() => normalizeSandboxPath("../secret")).toThrow(SandboxPathError);
-    expect(() => normalizeSandboxPath("safe/../../secret")).toThrow(SandboxPathError);
-    expect(() => normalizeSandboxPath("bad\0path")).toThrow(SandboxPathError);
+    expect(() => normalizeSandboxPath("")).toThrow(DockerSandboxError);
+    expect(() => normalizeSandboxPath("/etc/passwd")).toThrow(DockerSandboxError);
+    expect(() => normalizeSandboxPath("../secret")).toThrow(DockerSandboxError);
+    expect(() => normalizeSandboxPath("safe/../../secret")).toThrow(DockerSandboxError);
+    expect(() => normalizeSandboxPath("bad\0path")).toThrow(DockerSandboxError);
   });
 
   it("resolves container and parent paths", () => {

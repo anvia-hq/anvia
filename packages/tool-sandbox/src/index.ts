@@ -1,5 +1,47 @@
-export * from "./capabilities";
-export * from "./docker-sandbox";
-export * from "./errors";
-export * from "./tools";
-export * from "./types";
+export { DockerSandboxClient } from "./docker-sandbox";
+export { DockerSandboxError, type DockerSandboxErrorCode } from "./errors";
+export { createDockerSandboxTools } from "./tools";
+export type {
+  CreateDockerSandboxOptions,
+  CreateDockerSandboxToolsOptions,
+  DockerSandbox,
+  DockerSandboxClientOptions,
+  DockerSandboxCommandPolicy,
+  DockerSandboxExecOptions,
+  DockerSandboxExecResult,
+  DockerSandboxExecStreamEvent,
+  DockerSandboxExecToolPolicy,
+  DockerSandboxFileEntry,
+  DockerSandboxFileToolPolicy,
+  DockerSandboxFileType,
+  DockerSandboxInspectionOptions,
+  DockerSandboxInspector,
+  DockerSandboxListFilesOptions,
+  DockerSandboxListProcessesOptions,
+  DockerSandboxNetwork,
+  DockerSandboxProcessInfo,
+  DockerSandboxProcessLogs,
+  DockerSandboxProcessStartOptions,
+  DockerSandboxProcessStatus,
+  DockerSandboxProcessToolPolicy,
+  DockerSandboxPublishedPort,
+  DockerSandboxReadFileOptions,
+  DockerSandboxReadFileToolPolicy,
+  DockerSandboxReadProcessLogsOptions,
+  DockerSandboxReadTextFilePageOptions,
+  DockerSandboxResources,
+  DockerSandboxRuntime,
+  DockerSandboxRuntimeLimits,
+  DockerSandboxSecurity,
+  DockerSandboxState,
+  DockerSandboxStopProcessOptions,
+  DockerSandboxTextFilePage,
+  DockerSandboxToolName,
+  DockerSandboxWaitForPortOptions,
+  DockerSandboxWorkspace,
+  DockerSandboxWriteFileOptions,
+  DockerSandboxWriteTextFileOptions,
+  PullDockerImageOptions,
+  ResumeDockerSandboxOptions,
+  StopDockerSandboxOptions,
+} from "./types";

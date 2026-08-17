@@ -300,10 +300,66 @@ export type StudioAgentToolsSummary = {
 };
 
 export type StudioSandboxCapabilities = {
-  files: true;
+  files: boolean;
   ports: boolean;
   processes: boolean;
 };
+
+export type StudioSandboxInspectorFileEntry = Readonly<{
+  path: string;
+  type: StudioSandboxFileType;
+  size?: number;
+}>;
+
+export type StudioSandboxInspectorPort = Readonly<{
+  containerPort: number;
+  host: string;
+  hostPort: number;
+  protocol: string;
+}>;
+
+export type StudioSandboxInspectorProcess = Readonly<{
+  id: string;
+  command: string;
+  args: readonly string[];
+  cwd?: string;
+  status: StudioSandboxProcessStatus;
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+}>;
+
+export type StudioSandboxInspector = Readonly<{
+  id: string;
+  provider: string;
+  workdir: string;
+  listFiles?: (
+    options?: Readonly<{ path?: string; abortSignal?: AbortSignal }>,
+  ) => Promise<readonly StudioSandboxInspectorFileEntry[]>;
+  readFile?: (
+    options: Readonly<{ path: string; abortSignal?: AbortSignal }>,
+  ) => Promise<Uint8Array>;
+  publishedPorts?: readonly StudioSandboxInspectorPort[];
+  listProcesses?: (
+    options?: Readonly<{ abortSignal?: AbortSignal }>,
+  ) => Promise<readonly StudioSandboxInspectorProcess[]>;
+  readProcessLogs?: (
+    options: Readonly<{ processId: string; tailBytes?: number; abortSignal?: AbortSignal }>,
+  ) => Promise<StudioSandboxInspectorProcessLogs>;
+}>;
+
+export type StudioSandboxInspectorProcessLogs = Readonly<{
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+}>;
+
+export type StudioSandboxRegistration = Readonly<{
+  inspector: StudioSandboxInspector;
+  agentIds?: readonly string[];
+  toolNames?: readonly string[];
+}>;
 
 export type StudioSandboxSummary = {
   ref: string;
@@ -894,6 +950,7 @@ export type StudioOptions = {
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
   models?: StudioModelConfig;
+  sandboxes?: readonly StudioSandboxRegistration[];
 };
 
 export type StudioServeOptions = {

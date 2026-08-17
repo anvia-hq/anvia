@@ -228,7 +228,7 @@ async function promptForImage(
           : "Use 1-63 lowercase letters, numbers, or hyphens.",
     }));
   if (prompts.isCancel(nameResult)) return cancelPrompt(prompts);
-  const name = String(nameResult);
+  const name = promptString(nameResult, "Image name");
 
   let runtimes = [...options.runtimes];
   let features = [...options.features];
@@ -309,9 +309,9 @@ async function promptForImage(
     apt: aptResult,
     npm: npmResult,
     uv: uvResult,
-    tag: String(tagResult),
-    output: String(outputResult),
-    build: Boolean(buildResult),
+    tag: promptString(tagResult, "Docker image tag"),
+    output: promptString(outputResult, "Generated source directory"),
+    build: promptBoolean(buildResult, "Build selection"),
   };
 }
 
@@ -460,9 +460,13 @@ function printDryRun(
 function printUsageSnippet(tag: string, io: SandboxImageCliIo): void {
   io.log("");
   io.log("Use with @anvia/sandbox:");
-  io.log("  const sandbox = new DockerSandbox({");
+  io.log('  import { DockerSandboxClient } from "@anvia/sandbox";');
+  io.log("");
+  io.log("  const client = new DockerSandboxClient();");
+  io.log("  await using sandbox = await client.createSandbox({");
   io.log(`    image: ${JSON.stringify(tag)},`);
-  io.log('    pull: "never",');
+  io.log('    workspace: { type: "ephemeral" },');
+  io.log('    network: { mode: "none" },');
   io.log("  });");
 }
 
@@ -643,8 +647,18 @@ function required<T>(value: T | undefined, message: string): T {
   return value;
 }
 
+function promptString(value: unknown, name: string): string {
+  if (typeof value !== "string") throw new TypeError(`${name} must be a string.`);
+  return value;
+}
+
+function promptBoolean(value: unknown, name: string): boolean {
+  if (typeof value !== "boolean") throw new TypeError(`${name} must be a boolean.`);
+  return value;
+}
+
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? error.message : "Unknown sandbox CLI error";
 }
 
 function helpText(): string {

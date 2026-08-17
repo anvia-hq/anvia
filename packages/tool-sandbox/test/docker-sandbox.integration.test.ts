@@ -1,342 +1,143 @@
 import { describe, expect, it } from "vitest";
-import { DockerSandbox } from "../src/docker-sandbox";
+import { DockerSandboxClient } from "../src/docker-sandbox";
 
 const runDockerTests = process.env.ANVIA_SANDBOX_DOCKER_TESTS === "1";
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
-describe.skipIf(!runDockerTests)("DockerSandbox integration", () => {
-  it("creates an ephemeral workspace, runs commands, and cleans up", async () => {
-    const sandbox = new DockerSandbox({
+describe.skipIf(!runDockerTests)("Docker sandbox integration", () => {
+  it("creates, operates, resumes, and destroys an ephemeral sandbox", async () => {
+    const id = `vitest-${Date.now()}`;
+    const client = new DockerSandboxClient();
+    await client.pullImage({ image: "node:22-bookworm" });
+    let sandbox = await client.createSandbox({
+      id,
       image: "node:22-bookworm",
-      pull: "missing",
-      limits: {
-        timeoutMs: 10_000,
-        maxOutputBytes: 64_000,
-      },
-    });
-    const session = await sandbox.createSession({
-      id: `vitest-${Date.now()}`,
-      manifest: {
-        directories: ["src"],
-        files: {
-          "src/index.js": "console.log('hello sandbox')",
-        },
-      },
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
+      directories: ["src"],
+      files: { "src/index.js": "console.log('hello sandbox')" },
+      runtime: { commandTimeoutMs: 10_000, maxOutputBytes: 64_000 },
     });
 
     try {
-      const result = await session.exec({
-        command: "node",
-        args: ["src/index.js"],
-      });
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout.trim()).toBe("hello sandbox");
-
-      await session.writeTextFile("out/result.txt", "done");
-      await expect(session.readTextFile("out/result.txt")).resolves.toBe("done");
-      await session.writeTextFile("out/lines.txt", "one\ntwo\nthree\nfour\n");
       await expect(
-        session.readTextFilePage("out/lines.txt", {
-          startLine: 2,
-          lineCount: 2,
-          maxBytes: 1_024,
+        client.createSandbox({
+          id,
+          image: "node:22-bookworm",
+          workspace: { type: "ephemeral" },
+          network: { mode: "none" },
         }),
-      ).resolves.toEqual({
-        content: "two\nthree\n",
-        startLine: 2,
-        endLine: 3,
-        nextStartLine: 4,
-        truncated: true,
-        truncatedBy: "lines",
+      ).rejects.toMatchObject({ code: "invalid_state" });
+
+      const result = await sandbox.runtime.exec({ command: "node", args: ["src/index.js"] });
+      expect(result.status).toBe("exited");
+      expect(decoder.decode(result.stdout).trim()).toBe("hello sandbox");
+
+      await sandbox.runtime.exec({ command: "ln", args: ["-s", "/etc/hostname", "host-leak"] });
+      await expect(sandbox.runtime.readFile({ path: "host-leak" })).rejects.toMatchObject({
+        code: "invalid_path",
       });
-      await expect(session.listFiles("out")).resolves.toEqual([
-        { path: "out/result.txt", type: "file", size: 4 },
-        { path: "out/lines.txt", type: "file", size: 19 },
-      ]);
+
+      await sandbox.runtime.writeTextFile({ path: "state.txt", text: "kept" });
+      await sandbox.stop();
+      expect(sandbox.state).toBe("stopped");
+
+      sandbox = await client.resumeSandbox({ id });
+      await expect(sandbox.runtime.readTextFile({ path: "state.txt" })).resolves.toBe("kept");
+      await expect(sandbox.runtime.listProcesses()).resolves.toEqual([]);
     } finally {
-      await session.destroy();
+      await sandbox.destroy();
     }
-  }, 60_000);
+    expect(sandbox.state).toBe("destroyed");
+    await expect(client.resumeSandbox({ id })).rejects.toMatchObject({ code: "sandbox_not_found" });
+  }, 120_000);
 
-  it("reports command timeout", async () => {
-    const sandbox = new DockerSandbox({
+  it("streams byte output, reports timeout, and manages a published port", async () => {
+    const client = new DockerSandboxClient();
+    await client.pullImage({ image: "node:22-bookworm" });
+    const id = `vitest-port-${Date.now()}`;
+    let sandbox = await client.createSandbox({
+      id,
       image: "node:22-bookworm",
-      pull: "missing",
-      limits: {
-        timeoutMs: 10_000,
-      },
+      workspace: { type: "ephemeral" },
+      network: { mode: "bridge", ports: [4310] },
+      runtime: { commandTimeoutMs: 10_000, maxProcesses: 1 },
     });
-    const session = await sandbox.createSession({ id: `timeout-${Date.now()}` });
-
-    try {
-      const result = await session.exec({
-        command: "node",
-        args: ["-e", "setTimeout(() => {}, 10_000)"],
-        timeoutMs: 500,
-      });
-      expect(result.timedOut).toBe(true);
-      expect(result.exitCode).not.toBe(0);
-    } finally {
-      await session.destroy();
-    }
-  }, 60_000);
-
-  it("streams command output and enforces file size limits", async () => {
-    const sandbox = new DockerSandbox({
-      image: "node:22-bookworm",
-      pull: "missing",
-      limits: {
-        timeoutMs: 10_000,
-        maxFileBytes: 4,
-      },
-    });
-    const session = await sandbox.createSession({ id: `stream-${Date.now()}` });
 
     try {
       const events = [];
-
-      for await (const event of session.execStream({
+      for await (const event of sandbox.runtime.execStream({
         command: "node",
         args: ["-e", "console.log('one'); console.error('two')"],
       })) {
         events.push(event);
       }
+      expect(events.at(-1)?.type).toBe("result");
 
-      expect(events.at(-1)?.type).toBe("exit");
-      expect(
-        events
-          .slice(0, -1)
-          .map((event) => event.type)
-          .sort(),
-      ).toEqual(["stderr", "stdout"]);
-      expect(events.find((event) => event.type === "stdout")?.text.trim()).toBe("one");
-      expect(events.find((event) => event.type === "stderr")?.text.trim()).toBe("two");
-      await expect(session.writeTextFile("too-large.txt", "12345")).rejects.toThrow("maxFileBytes");
-    } finally {
-      await session.destroy();
-    }
-  }, 60_000);
+      const timedOut = await sandbox.runtime.exec({
+        command: "node",
+        args: ["-e", "setTimeout(() => {}, 10000)"],
+        timeoutMs: 100,
+      });
+      expect(timedOut.status).toBe("timed_out");
 
-  it("emits hooks for public sandbox operations", async () => {
-    const events: string[] = [];
-    const sandbox = new DockerSandbox({
-      image: "node:22-bookworm",
-      pull: "missing",
-      hooks: {
-        onSessionCreate: (event) => {
-          events.push(`create:${event.sessionId}`);
-        },
-        onExecStart: (event) => {
-          events.push(`exec:start:${event.command}`);
-        },
-        onExecEnd: (event) => {
-          events.push(`exec:end:${event.result.exitCode}`);
-        },
-        onFileWrite: (event) => {
-          events.push(`write:${event.path}:${event.size}`);
-        },
-        onDestroy: (event) => {
-          events.push(`destroy:${event.sessionId}`);
-        },
-      },
-    });
-    const session = await sandbox.createSession({ id: `hooks-${Date.now()}` });
+      const process = await sandbox.runtime.startProcess({
+        command: "node",
+        args: [
+          "-e",
+          'require("node:http").createServer((_q,r)=>r.end("ok")).listen(4310,"0.0.0.0")',
+        ],
+      });
+      const port = await sandbox.runtime.waitForPort({ containerPort: 4310, timeoutMs: 10_000 });
+      expect(await (await fetch(`http://${port.host}:${port.hostPort}`)).text()).toBe("ok");
+      await sandbox.runtime.stopProcess({ processId: process.id, gracePeriodMs: 2_000 });
 
-    await session.writeTextFile("out/result.txt", "ok");
-    await session.listFiles("out");
-    await session.exec({ command: "node", args: ["-e", "console.log('hook')"] });
-    const eventsBeforeRejectedStart = [...events];
-    await expect(session.startProcess({ command: " " })).rejects.toThrow("cannot be empty");
-    expect(events).toEqual(eventsBeforeRejectedStart);
-    const process = await session.startProcess({
-      command: "node",
-      args: ["-e", "console.log('managed hook')"],
-    });
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      if ((await session.listProcesses())[0]?.status === "exited") break;
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    expect((await session.listProcesses())[0]?.status).toBe("exited");
-    expect((await session.readProcessLogs(process.id)).stdout).toContain("managed hook");
-    await session.destroy();
+      await sandbox.stop();
+      sandbox = await client.resumeSandbox({ id });
+      expect(sandbox.runtime.publishedPorts).toHaveLength(1);
+      expect(sandbox.runtime.publishedPorts[0]?.containerPort).toBe(4310);
 
-    expect(events).toEqual([
-      `create:${session.id}`,
-      "write:out/result.txt:2",
-      "exec:start:node",
-      "exec:end:0",
-      "exec:start:node",
-      "exec:end:0",
-      `destroy:${session.id}`,
-    ]);
-  }, 60_000);
-
-  it("publishes a preview port and manages a long-running server", async () => {
-    const containerPort = 4310;
-    const lifecycleEvents: string[] = [];
-    const sandbox = DockerSandbox.node({
-      pull: "missing",
-      network: true,
-      limits: {
+      const resumedProcess = await sandbox.runtime.startProcess({
+        command: "node",
+        args: [
+          "-e",
+          'require("node:http").createServer((_q,r)=>r.end("resumed")).listen(4310,"0.0.0.0")',
+        ],
+      });
+      const resumedPort = await sandbox.runtime.waitForPort({
+        containerPort: 4310,
         timeoutMs: 10_000,
-        maxOutputBytes: 64_000,
-        maxProcesses: 1,
-      },
-      hooks: {
-        onExecStart: () => {
-          lifecycleEvents.push("start");
-        },
-        onExecEnd: () => {
-          lifecycleEvents.push("end");
-        },
-      },
-    });
-    const session = await sandbox.createSession({
-      id: `preview-${Date.now()}`,
-      ports: [containerPort],
-    });
-
-    try {
-      expect(session.publishedPorts).toHaveLength(1);
-      expect(session.publishedPorts[0]).toMatchObject({
-        containerPort,
-        host: "127.0.0.1",
-        protocol: "tcp",
       });
-
-      const process = await session.startProcess({
-        command: "node",
-        args: [
-          "-e",
-          [
-            'const http = require("node:http");',
-            `http.createServer((_request, response) => response.end("sandbox preview"))`,
-            `.listen(${containerPort}, "0.0.0.0", () => console.log("preview-ready"));`,
-          ].join(""),
-        ],
-      });
-      expect(process.status).toBe("running");
-      expect(lifecycleEvents).toEqual(["start"]);
-
-      const publishedPort = await session.waitForPort(containerPort, { timeoutMs: 10_000 });
-      const running = await session.listProcesses();
-      const startupLogs = await session.readProcessLogs(process.id);
-      expect(running[0]?.status, JSON.stringify(startupLogs)).toBe("running");
-      const response = await fetch(`http://${publishedPort.host}:${publishedPort.hostPort}`).catch(
-        (error: unknown) => {
-          throw new Error(
-            `Unable to fetch sandbox preview: ${JSON.stringify({ running, startupLogs })}`,
-            { cause: error },
-          );
-        },
+      expect(await (await fetch(`http://${resumedPort.host}:${resumedPort.hostPort}`)).text()).toBe(
+        "resumed",
       );
-      expect(await response.text()).toBe("sandbox preview");
-
-      const logs = await session.readProcessLogs(process.id);
-      expect(logs.stdout).toContain("preview-ready");
-      const tailLogs = await session.readProcessLogs(process.id, { tailBytes: 5 });
-      expect(tailLogs.stdout).toBe("eady\n");
-      expect(tailLogs.stdoutTruncated).toBe(true);
-      const emptyLogs = await session.readProcessLogs(process.id, { tailBytes: 0 });
-      expect(emptyLogs.stdout).toBe("");
-      expect(emptyLogs.stdoutTruncated).toBe(true);
-      await expect(
-        session.startProcess({ command: "node", args: ["-e", "setInterval(() => {}, 1000)"] }),
-      ).rejects.toThrow("process limit");
-      expect(lifecycleEvents).toEqual(["start"]);
-
-      const stopped = await session.stopProcess(process.id, { gracePeriodMs: 2_000 });
-      expect(stopped.status).toBe("stopped");
-      expect(await session.listProcesses()).toEqual([stopped]);
-
-      const grandchildServer = [
-        'const http = require("node:http");',
-        `http.createServer((_request, response) => response.end("grandchild"))`,
-        `.listen(${containerPort}, "0.0.0.0");`,
-      ].join("");
-      const grandchild = await session.startProcess({
-        command: "node",
-        args: [
-          "-e",
-          [
-            'const { spawn } = require("node:child_process");',
-            `spawn(process.execPath, ["-e", ${JSON.stringify(grandchildServer)}], { stdio: "inherit" });`,
-            "setInterval(() => {}, 1000);",
-          ].join(""),
-        ],
-      });
-      await session.waitForPort(containerPort, { timeoutMs: 10_000 });
-      await session.stopProcess(grandchild.id, { gracePeriodMs: 2_000 });
-      await expect(
-        session.waitForPort(containerPort, { timeoutMs: 500, intervalMs: 50 }),
-      ).rejects.toThrow("timed out");
-
-      const loopbackOnly = await session.startProcess({
-        command: "node",
-        args: [
-          "-e",
-          `require("node:http").createServer(() => {}).listen(${containerPort}, "127.0.0.1");`,
-        ],
-      });
-      await expect(
-        session.waitForPort(containerPort, { timeoutMs: 500, intervalMs: 50 }),
-      ).rejects.toThrow("timed out");
-      await session.stopProcess(loopbackOnly.id, { gracePeriodMs: 2_000 });
-      await expect(session.waitForPort(9999)).rejects.toThrow("not published");
+      await sandbox.runtime.stopProcess({ processId: resumedProcess.id, gracePeriodMs: 2_000 });
     } finally {
-      await session.destroy();
+      await sandbox.destroy();
     }
-  }, 60_000);
+  }, 120_000);
 
-  it("applies idle cleanup while a managed process is running", async () => {
-    const sandbox = DockerSandbox.node({
-      pull: "missing",
-      lifecycle: { idleTimeoutMs: 250 },
-      limits: { timeoutMs: 10_000 },
-    });
-    const session = await sandbox.createSession({ id: `process-idle-${Date.now()}` });
-
-    try {
-      await session.startProcess({
-        command: "node",
-        args: ["-e", "setInterval(() => {}, 1000)"],
-      });
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      await expect(session.listProcesses()).rejects.toThrow("has been destroyed");
-    } finally {
-      await session.destroy();
-    }
-  }, 60_000);
-
-  it("can reuse an explicit persistent workspace", async () => {
-    const workspaceId = `vitest-persistent-${Date.now()}`;
-    const sandbox = new DockerSandbox({
+  it("does not launch a process when startup is aborted before acknowledgement", async () => {
+    const client = new DockerSandboxClient();
+    await client.pullImage({ image: "node:22-bookworm" });
+    await using sandbox = await client.createSandbox({
+      id: `vitest-process-abort-${Date.now()}`,
       image: "node:22-bookworm",
-      pull: "missing",
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
     });
-    const first = await sandbox.createSession({
-      id: `${workspaceId}-first`,
-      workspace: {
-        mode: "persistent",
-        id: workspaceId,
-      },
+    const controller = new AbortController();
+    const starting = sandbox.runtime.startProcess({
+      command: "sh",
+      args: ["-c", "touch should-not-exist; sleep 999"],
+      abortSignal: controller.signal,
     });
+    setTimeout(() => controller.abort(new DOMException("cancelled", "AbortError")), 1);
 
-    await first.writeTextFile("state.txt", "kept");
-    await first.destroy();
-
-    const second = await sandbox.createSession({
-      id: `${workspaceId}-second`,
-      workspace: {
-        mode: "persistent",
-        id: workspaceId,
-        destroyOnSessionDestroy: true,
-      },
-    });
-
-    try {
-      await expect(second.readTextFile("state.txt")).resolves.toBe("kept");
-    } finally {
-      await second.destroy();
-    }
-  }, 60_000);
+    await expect(starting).rejects.toMatchObject({ name: "AbortError" });
+    await expect(sandbox.runtime.listFiles({ path: "." })).resolves.not.toContainEqual(
+      expect.objectContaining({ path: "should-not-exist" }),
+    );
+    await expect(sandbox.runtime.listProcesses()).resolves.toEqual([]);
+  }, 120_000);
 });

@@ -1,196 +1,126 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSandboxTools } from "../src/tools";
-import type { DockerSandboxSession, SandboxSession } from "../src/types";
+import { createDockerSandboxTools } from "../src/tools";
+import type { DockerSandboxRuntime } from "../src/types";
 
-describe("createSandboxTools", () => {
-  it("marks tools with non-enumerable Studio discovery metadata", () => {
-    const session = createSession();
-    const [tool] = createSandboxTools(session, { include: ["list_files"] });
-    const key = Symbol.for("anvia.sandbox.tool.metadata");
-
-    expect(tool).toBeDefined();
-    expect((tool as { [key]?: unknown })[key]).toEqual({ session });
-    expect(Object.getOwnPropertyDescriptor(tool, key)).toMatchObject({
-      enumerable: false,
-      value: { session },
+describe("createDockerSandboxTools", () => {
+  it("requires an explicit, ordered, non-empty tool selection", () => {
+    const sandbox = createRuntime();
+    const tools = createDockerSandboxTools({
+      sandbox,
+      tools: ["list_files", "exec_command"],
     });
-    expect(Object.keys(tool ?? {})).not.toContain("session");
+
+    expect(tools.map((tool) => tool.name)).toEqual(["list_files", "exec_command"]);
+    expect(Object.isFrozen(tools)).toBe(true);
+    expect(() => createDockerSandboxTools({ sandbox, tools: [] } as never)).toThrow("non-empty");
+    expect(() => createDockerSandboxTools({ sandbox, tools: ["read_file", "read_file"] })).toThrow(
+      "duplicate",
+    );
+    expect(() => createDockerSandboxTools({ sandbox, tools: ["legacy"] } as never)).toThrow(
+      "unsupported",
+    );
   });
 
-  it("creates the default sandbox tool bundle", () => {
-    const tools = createSandboxTools(createSession());
+  it("returns structured command output and propagates abort", async () => {
+    const sandbox = createRuntime();
+    const [tool] = createDockerSandboxTools({
+      sandbox,
+      tools: ["exec_command"],
+      exec: { defaultTimeoutMs: 1_234 },
+    });
+    if (tool === undefined) throw new Error("Expected exec_command tool.");
+    const controller = new AbortController();
 
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "exec_command",
-      "read_file",
-      "write_file",
-      "list_files",
-    ]);
-  });
-
-  it("allows selecting a subset of tools", () => {
-    const tools = createSandboxTools(createSession(), { include: ["read_file"] });
-
-    expect(tools.map((tool) => tool.name)).toEqual(["read_file"]);
-  });
-
-  it("supports allow as a tool selection alias", () => {
-    const tools = createSandboxTools(createSession(), { allow: ["list_files"] });
-
-    expect(tools.map((tool) => tool.name)).toEqual(["list_files"]);
-  });
-
-  it("exec_command calls the sandbox session with structured args", async () => {
-    const session = createSession();
-    const [tool] = createSandboxTools(session, { include: ["exec_command"], execTimeoutMs: 1234 });
-    if (tool === undefined) {
-      throw new Error("Expected exec_command tool.");
-    }
-
-    const output = await tool.call({
+    await expect(
+      tool.call(
+        { command: "node", args: ["index.js"], cwd: "src", input: "hello" },
+        { abortSignal: controller.signal },
+      ),
+    ).resolves.toEqual({
+      status: "exited",
+      exitCode: 0,
+      stdout: "ok\n",
+      stderr: "",
+      durationMs: 10,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    });
+    expect(sandbox.exec).toHaveBeenCalledWith({
       command: "node",
       args: ["index.js"],
       cwd: "src",
       input: "hello",
+      timeoutMs: 1_234,
+      abortSignal: controller.signal,
     });
-
-    expect(session.exec).toHaveBeenCalledWith({
-      command: "node",
-      args: ["index.js"],
-      cwd: "src",
-      timeoutMs: 1234,
-      input: "hello",
-    });
-    expect(output).toContain("exit_code: 0");
-    expect(output).toContain("stdout:");
   });
 
-  it("enforces exec command policy", async () => {
-    const session = createSession();
-    const [tool] = createSandboxTools(session, {
-      allow: ["exec_command"],
+  it("enforces discriminated command and timeout policies", async () => {
+    const [tool] = createDockerSandboxTools({
+      sandbox: createRuntime(),
+      tools: ["exec_command"],
       exec: {
-        allowedCommands: ["node"],
-        maxTimeoutMs: 1000,
+        commands: { mode: "allow", values: ["node"] },
+        maxTimeoutMs: 1_000,
       },
     });
-    if (tool === undefined) {
-      throw new Error("Expected exec_command tool.");
-    }
+    if (tool === undefined) throw new Error("Expected exec_command tool.");
 
-    await expect(tool.call({ command: "python" })).rejects.toThrow(
-      "Command is not allowed by sandbox tool policy",
-    );
-    await expect(tool.call({ command: "node", timeoutMs: 2000 })).rejects.toThrow(
-      "Command timeout exceeds sandbox tool policy",
+    await expect(tool.call({ command: "python" })).rejects.toMatchObject({
+      code: "tool_policy",
+    });
+    await expect(tool.call({ command: "node", timeoutMs: 1_001 })).rejects.toThrow(
+      "exceeds policy",
     );
   });
 
-  it("applies bounded read and write file policies", async () => {
-    const session = createSession();
-    const tools = Object.fromEntries(
-      createSandboxTools(session, {
-        readFile: { maxBytes: 4 },
-        writeFile: { maxBytes: 4 },
-      }).map((tool) => [tool.name, tool] as const),
+  it("delegates text file tools with bounded structured results", async () => {
+    const sandbox = createRuntime();
+    const tools = toolMap(
+      createDockerSandboxTools({
+        sandbox,
+        tools: ["read_file", "write_file", "list_files"],
+        readFile: { defaultLineCount: 20, maxLineCount: 50, maxBytes: 1_024 },
+        writeFile: { maxBytes: 8 },
+      }),
     );
 
-    await tools.read_file?.call({ path: "a.txt" });
-    expect(session.readTextFilePage).toHaveBeenCalledWith("a.txt", {
-      startLine: 1,
-      lineCount: 500,
-      maxBytes: 4,
-    });
-    await expect(tools.write_file?.call({ path: "a.txt", content: "content" })).rejects.toThrow(
-      "File content exceeds sandbox tool policy",
-    );
-  });
-
-  it("enforces read_file line policies", async () => {
-    const [tool] = createSandboxTools(createSession(), {
-      include: ["read_file"],
-      readFile: { defaultLineCount: 20, maxLineCount: 50 },
-    });
-    if (tool === undefined) throw new Error("Expected read_file tool.");
-
-    await tool.call({ path: "a.txt" });
-    await expect(tool.call({ path: "a.txt", lineCount: 51 })).rejects.toThrow(
-      "File read line count exceeds sandbox tool policy",
-    );
-  });
-
-  it("read_file, write_file, and list_files delegate to the session", async () => {
-    const session = createSession();
-    const tools = Object.fromEntries(
-      createSandboxTools(session).map((tool) => [tool.name, tool] as const),
-    );
-
-    await tools.write_file?.call({ path: "a.txt", content: "content" });
-    const read = await tools.read_file?.call({ path: "a.txt", startLine: 6, lineCount: 10 });
-    const list = await tools.list_files?.call({ path: "." });
-
-    expect(session.writeTextFile).toHaveBeenCalledWith("a.txt", "content");
-    expect(session.readTextFilePage).toHaveBeenCalledWith("a.txt", {
-      startLine: 6,
-      lineCount: 10,
-      maxBytes: 64 * 1024,
-    });
-    expect(session.listFiles).toHaveBeenCalledWith(".");
-    expect(read).toEqual({
+    await expect(tools.read_file?.call({ path: "a.txt" })).resolves.toEqual({
       content: "file content",
-      startLine: 6,
-      endLine: 6,
+      startLine: 1,
+      endLine: 1,
       nextStartLine: null,
       truncated: false,
       truncatedBy: null,
     });
-    expect(list).toContain("file 12b\ta.txt");
-  });
-
-  it("falls back to bounded in-memory pagination for custom sessions", async () => {
-    const session = createSession();
-    delete session.readTextFilePage;
-    vi.mocked(session.readTextFile).mockResolvedValue("one\ntwo\nthree\nfour\n");
-    const [tool] = createSandboxTools(session, { include: ["read_file"] });
-    if (tool === undefined) throw new Error("Expected read_file tool.");
-
-    await expect(tool.call({ path: "a.txt", startLine: 2, lineCount: 2 })).resolves.toEqual({
-      content: "two\nthree\n",
-      startLine: 2,
-      endLine: 3,
-      nextStartLine: 4,
-      truncated: true,
-      truncatedBy: "lines",
+    await expect(tools.write_file?.call({ path: "a.txt", content: "hello" })).resolves.toEqual({
+      path: "a.txt",
+      bytesWritten: 5,
     });
-  });
-
-  it("creates opt-in published port and managed process tools", () => {
-    const tools = createSandboxTools(createManagedSession(), {
-      include: [
-        "list_ports",
-        "start_process",
-        "list_processes",
-        "read_process_logs",
-        "stop_process",
-        "wait_for_port",
-      ],
+    await expect(tools.list_files?.call({ path: "." })).resolves.toEqual({
+      path: ".",
+      entries: [{ path: "a.txt", type: "file", size: 12 }],
     });
-
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "list_ports",
-      "start_process",
-      "list_processes",
-      "read_process_logs",
-      "stop_process",
-      "wait_for_port",
-    ]);
+    expect(sandbox.readTextFilePage).toHaveBeenCalledWith({
+      path: "a.txt",
+      startLine: 1,
+      lineCount: 20,
+      maxBytes: 1_024,
+    });
+    await expect(tools.read_file?.call({ path: "a.txt", lineCount: 51 })).rejects.toThrow(
+      "exceeds policy",
+    );
+    await expect(tools.write_file?.call({ path: "a.txt", content: "123456789" })).rejects.toThrow(
+      "exceeds policy",
+    );
   });
 
-  it("delegates managed process and port tools with structured input", async () => {
-    const session = createManagedSession();
-    const tools = Object.fromEntries(
-      createSandboxTools(session, {
-        include: [
+  it("delegates process and port tools with structured results", async () => {
+    const sandbox = createRuntime();
+    const tools = toolMap(
+      createDockerSandboxTools({
+        sandbox,
+        tools: [
           "list_ports",
           "start_process",
           "list_processes",
@@ -198,103 +128,143 @@ describe("createSandboxTools", () => {
           "stop_process",
           "wait_for_port",
         ],
-        exec: { allowedCommands: ["pnpm"] },
+        exec: { commands: { mode: "block", values: ["curl"] } },
         process: {
-          maxLogBytes: 1024,
-          defaultWaitTimeoutMs: 1234,
+          maxLogBytes: 1_024,
+          defaultWaitTimeoutMs: 1_234,
           stopGracePeriodMs: 250,
         },
-      }).map((tool) => [tool.name, tool] as const),
+      }),
     );
 
-    const ports = await tools.list_ports?.call({});
-    const started = await tools.start_process?.call({
-      command: "pnpm",
-      args: ["dev"],
-      cwd: "site",
+    await expect(tools.list_ports?.call({})).resolves.toEqual({
+      ports: [{ containerPort: 5173, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" }],
     });
-    await tools.list_processes?.call({});
-    const logs = await tools.read_process_logs?.call({ processId: "process_1", tailBytes: 512 });
-    await tools.stop_process?.call({ processId: "process_1" });
-    const ready = await tools.wait_for_port?.call({ containerPort: 5173 });
-
-    expect(ports).toContain("5173/tcp");
-    expect(started).toContain("process_id: process_1");
-    expect(logs).toContain("stdout:");
-    expect(ready).toContain("ready: 5173/tcp");
-    expect(session.startProcess).toHaveBeenCalledWith({
-      command: "pnpm",
-      args: ["dev"],
-      cwd: "site",
-    });
-    expect(session.readProcessLogs).toHaveBeenCalledWith("process_1", { tailBytes: 512 });
-    expect(session.stopProcess).toHaveBeenCalledWith("process_1", { gracePeriodMs: 250 });
-    expect(session.waitForPort).toHaveBeenCalledWith(5173, { timeoutMs: 1234 });
-  });
-
-  it("applies command and log policies to managed process tools", async () => {
-    const tools = Object.fromEntries(
-      createSandboxTools(createManagedSession(), {
-        include: ["start_process", "read_process_logs"],
-        exec: { allowedCommands: ["node"] },
-        process: { maxLogBytes: 128 },
-      }).map((tool) => [tool.name, tool] as const),
+    await expect(tools.start_process?.call({ command: "pnpm", args: ["dev"] })).resolves.toEqual(
+      processInfo,
     );
-
-    await expect(tools.start_process?.call({ command: "pnpm" })).rejects.toThrow(
-      "Command is not allowed",
-    );
+    await expect(tools.list_processes?.call({})).resolves.toEqual({ processes: [processInfo] });
     await expect(
-      tools.read_process_logs?.call({ processId: "process_1", tailBytes: 129 }),
-    ).rejects.toThrow("exceeds sandbox tool policy");
+      tools.read_process_logs?.call({ processId: "process_1", tailBytes: 512 }),
+    ).resolves.toEqual({
+      processId: "process_1",
+      stdout: "ready\n",
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    });
+    await expect(tools.stop_process?.call({ processId: "process_1" })).resolves.toEqual(
+      processInfo,
+    );
+    await expect(tools.wait_for_port?.call({ containerPort: 5173 })).resolves.toEqual({
+      port: { containerPort: 5173, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" },
+    });
+    expect(sandbox.stopProcess).toHaveBeenCalledWith({
+      processId: "process_1",
+      gracePeriodMs: 250,
+    });
+    expect(sandbox.waitForPort).toHaveBeenCalledWith({
+      containerPort: 5173,
+      timeoutMs: 1_234,
+    });
   });
 
-  it("rejects process tools for sessions without the capability", () => {
-    expect(() => createSandboxTools(createSession(), { include: ["start_process"] })).toThrow(
-      "does not support managed process tools",
-    );
-    expect(() => createSandboxTools(createSession(), { include: ["list_ports"] })).toThrow(
-      "does not support published port tools",
-    );
+  it("rejects invalid policy combinations eagerly", () => {
+    const sandbox = createRuntime();
+    expect(() =>
+      createDockerSandboxTools({
+        sandbox,
+        tools: ["read_file"],
+        readFile: { defaultLineCount: 2, maxLineCount: 1 },
+      }),
+    ).toThrow("cannot exceed");
+    expect(() =>
+      createDockerSandboxTools({
+        sandbox,
+        tools: ["exec_command"],
+        exec: { commands: { mode: "allow", values: ["node", "node"] } },
+      }),
+    ).toThrow("duplicate");
+  });
+
+  it("snapshots selection and command policy inputs", async () => {
+    const selected: ["exec_command"] = ["exec_command"];
+    const allowed = ["node"];
+    const tools = createDockerSandboxTools({
+      sandbox: createRuntime(),
+      tools: selected,
+      exec: { commands: { mode: "allow", values: allowed } },
+    });
+    selected[0] = "exec_command";
+    allowed[0] = "python";
+
+    await expect(tools[0]?.call({ command: "node" })).resolves.toMatchObject({
+      status: "exited",
+    });
+    await expect(tools[0]?.call({ command: "python" })).rejects.toMatchObject({
+      code: "tool_policy",
+    });
+  });
+
+  it("rejects malformed UTF-8 process logs instead of coercing them", async () => {
+    const sandbox = createRuntime();
+    vi.mocked(sandbox.readProcessLogs).mockResolvedValueOnce({
+      stdout: new Uint8Array([0xff]),
+      stderr: new Uint8Array(),
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    });
+    const [tool] = createDockerSandboxTools({
+      sandbox,
+      tools: ["read_process_logs"],
+    });
+    await expect(tool?.call({ processId: "process_1" })).rejects.toThrow();
   });
 });
 
-function createSession(): SandboxSession {
+const processInfo = {
+  id: "process_1",
+  command: "pnpm",
+  args: ["dev"],
+  status: "running" as const,
+  startedAt: "2026-01-01T00:00:00.000Z",
+};
+
+function createRuntime(): DockerSandboxRuntime {
   return {
-    id: "session_1",
-    provider: "test",
+    id: "sandbox_1",
+    provider: "docker",
     workdir: "/workspace",
+    publishedPorts: [{ containerPort: 5173, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" }],
     exec: vi.fn(async () => ({
-      stdout: "ok\n",
-      stderr: "",
+      status: "exited" as const,
       exitCode: 0,
+      stdout: new TextEncoder().encode("ok\n"),
+      stderr: new Uint8Array(),
       durationMs: 10,
-      timedOut: false,
-      aborted: false,
       stdoutTruncated: false,
       stderrTruncated: false,
     })),
     execStream: vi.fn(async function* () {
       yield {
-        type: "exit" as const,
+        type: "result" as const,
         result: {
-          stdout: "ok\n",
-          stderr: "",
+          status: "exited" as const,
           exitCode: 0,
-          durationMs: 10,
-          timedOut: false,
-          aborted: false,
+          stdout: new Uint8Array(),
+          stderr: new Uint8Array(),
+          durationMs: 1,
           stdoutTruncated: false,
           stderrTruncated: false,
         },
       };
     }),
-    readFile: vi.fn(async () => new TextEncoder().encode("file content")),
+    readFile: vi.fn(async () => new Uint8Array()),
     readTextFile: vi.fn(async () => "file content"),
-    readTextFilePage: vi.fn(async (_path, options) => ({
+    readTextFilePage: vi.fn(async (options) => ({
       content: "file content",
-      startLine: options?.startLine ?? 1,
-      endLine: options?.startLine ?? 1,
+      startLine: options.startLine ?? 1,
+      endLine: options.startLine ?? 1,
       nextStartLine: null,
       truncated: false,
       truncatedBy: null,
@@ -302,55 +272,24 @@ function createSession(): SandboxSession {
     writeFile: vi.fn(async () => undefined),
     writeTextFile: vi.fn(async () => undefined),
     listFiles: vi.fn(async () => [{ path: "a.txt", type: "file" as const, size: 12 }]),
-    destroy: vi.fn(async () => undefined),
-  };
-}
-
-function createManagedSession(): DockerSandboxSession {
-  const session = createSession();
-  if (session.readTextFilePage === undefined) {
-    throw new Error("Expected paginated text reader.");
-  }
-  return {
-    ...session,
-    readTextFilePage: session.readTextFilePage,
-    publishedPorts: [{ containerPort: 5173, host: "127.0.0.1", hostPort: 49_152, protocol: "tcp" }],
-    waitForPort: vi.fn(async () => ({
-      containerPort: 5173,
-      host: "127.0.0.1" as const,
-      hostPort: 49_152,
-      protocol: "tcp" as const,
-    })),
-    startProcess: vi.fn(async () => ({
-      id: "process_1",
-      command: "pnpm",
-      args: ["dev"],
-      status: "running" as const,
-      startedAt: "2026-07-15T00:00:00.000Z",
-    })),
-    listProcesses: vi.fn(async () => [
-      {
-        id: "process_1",
-        command: "pnpm",
-        args: ["dev"],
-        status: "running" as const,
-        startedAt: "2026-07-15T00:00:00.000Z",
-      },
-    ]),
+    startProcess: vi.fn(async () => processInfo),
+    listProcesses: vi.fn(async () => [processInfo]),
     readProcessLogs: vi.fn(async () => ({
-      stdout: "ready\n",
-      stderr: "",
+      stdout: new TextEncoder().encode("ready\n"),
+      stderr: new Uint8Array(),
       stdoutTruncated: false,
       stderrTruncated: false,
     })),
-    stopProcess: vi.fn(async () => ({
-      id: "process_1",
-      command: "pnpm",
-      args: ["dev"],
-      status: "stopped" as const,
-      exitCode: 143,
-      startedAt: "2026-07-15T00:00:00.000Z",
-      endedAt: "2026-07-15T00:00:01.000Z",
+    stopProcess: vi.fn(async () => processInfo),
+    waitForPort: vi.fn(async () => ({
+      containerPort: 5173,
+      host: "127.0.0.1" as const,
+      hostPort: 49152,
+      protocol: "tcp" as const,
     })),
   };
+}
+
+function toolMap(tools: readonly { name: string; call: (input: unknown) => unknown }[]) {
+  return Object.fromEntries(tools.map((tool) => [tool.name, tool] as const));
 }

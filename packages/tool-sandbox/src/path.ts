@@ -1,28 +1,32 @@
 import path from "node:path";
-import { SandboxPathError } from "./errors";
+import { DockerSandboxError } from "./errors";
 
 export function normalizeSandboxPath(input: string, options: { allowRoot?: boolean } = {}): string {
   if (input.length === 0) {
-    throw new SandboxPathError("Sandbox path cannot be empty.");
+    throw new DockerSandboxError("Sandbox path cannot be empty.", "invalid_path");
   }
 
   if (input.includes("\0")) {
-    throw new SandboxPathError("Sandbox path cannot contain null bytes.");
+    throw new DockerSandboxError("Sandbox path cannot contain null bytes.", "invalid_path");
   }
 
   const normalized = path.posix.normalize(input.replaceAll("\\", "/"));
 
   if (path.posix.isAbsolute(normalized)) {
-    throw new SandboxPathError(`Sandbox path must be relative: ${input}`);
+    throw new DockerSandboxError(`Sandbox path must be relative: ${input}`, "invalid_path");
   }
 
   if (normalized === ".." || normalized.startsWith("../")) {
-    throw new SandboxPathError(`Sandbox path cannot leave the workspace: ${input}`);
+    throw new DockerSandboxError(
+      `Sandbox path cannot leave the workspace: ${input}`,
+      "invalid_path",
+    );
   }
 
   if (normalized === "." && options.allowRoot !== true) {
-    throw new SandboxPathError(
+    throw new DockerSandboxError(
       "Sandbox path must refer to a file or directory inside the workspace.",
+      "invalid_path",
     );
   }
 

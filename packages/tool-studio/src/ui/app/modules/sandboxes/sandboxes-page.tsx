@@ -101,6 +101,7 @@ export function SandboxesPage(props: {
   const selectedRef = props.initialSandboxRef ?? sandboxes[0]?.ref ?? "";
   const selectedSandbox = sandboxes.find((sandbox) => sandbox.ref === selectedRef);
   const selectedSandboxRef = selectedSandbox?.ref;
+  const supportsFiles = selectedSandbox?.capabilities.files ?? false;
   const supportsPorts = selectedSandbox?.capabilities.ports ?? false;
   const supportsProcesses = selectedSandbox?.capabilities.processes ?? false;
 
@@ -156,7 +157,9 @@ export function SandboxesPage(props: {
   }, [selectedRef]);
 
   useEffect(() => {
-    if (selectedSandboxRef === undefined) {
+    if (selectedSandboxRef === undefined || !supportsFiles) {
+      setFiles([]);
+      setFileLoadState("idle");
       return;
     }
     const controller = new AbortController();
@@ -179,7 +182,7 @@ export function SandboxesPage(props: {
         if (!controller.signal.aborted) setFileLoadState("idle");
       });
     return () => controller.abort();
-  }, [currentPath, refreshSequence, reportError, selectedSandboxRef]);
+  }, [currentPath, refreshSequence, reportError, selectedSandboxRef, supportsFiles]);
 
   useEffect(() => {
     if (selectedSandboxRef === undefined) {
@@ -323,12 +326,12 @@ export function SandboxesPage(props: {
       <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Sandboxes">
         <StudioPageHeader
           title="Sandboxes"
-          description="Read-only files, published ports, and managed processes discovered from agent tools."
+          description="Read-only sandbox inspectors explicitly registered by the application."
         />
         <StudioPageContent className="overflow-auto">
           <StudioEmptyState
             title="No sandbox workspaces"
-            text="Add tools created by createSandboxTools(session) to an agent to inspect its live workspace here."
+            text="Register a sandbox inspector in the Studio options to inspect it here."
           />
         </StudioPageContent>
       </StudioPageShell>
@@ -339,7 +342,7 @@ export function SandboxesPage(props: {
     <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Sandboxes">
       <StudioPageHeader
         title="Sandboxes"
-        description="Read-only files, published ports, and managed processes discovered from agent tools."
+        description="Read-only sandbox inspectors explicitly registered by the application."
         action={
           <Button
             disabled={summaryLoadState === "loading"}
@@ -364,7 +367,7 @@ export function SandboxesPage(props: {
             text={
               summaryLoadState === "loading"
                 ? "Reading live sandbox workspaces."
-                : "Studio discovers sessions automatically from tools returned by createSandboxTools(session)."
+                : "Register live sandbox inspectors in the Studio options."
             }
           />
         ) : (
@@ -374,20 +377,27 @@ export function SandboxesPage(props: {
               selectedRef={selectedRef}
               onSelect={props.onSelectSandbox}
             />
-            <FileBrowser
-              currentPath={currentPath}
-              files={files}
-              loading={fileLoadState === "loading"}
-              onOpenDirectory={(filePath) => {
-                clearPreview();
-                setCurrentPath(filePath);
-              }}
-              onOpenFile={(file) => void openFile(file)}
-              onSelectPath={(filePath) => {
-                clearPreview();
-                setCurrentPath(filePath);
-              }}
-            />
+            {supportsFiles ? (
+              <FileBrowser
+                currentPath={currentPath}
+                files={files}
+                loading={fileLoadState === "loading"}
+                onOpenDirectory={(filePath) => {
+                  clearPreview();
+                  setCurrentPath(filePath);
+                }}
+                onOpenFile={(file) => void openFile(file)}
+                onSelectPath={(filePath) => {
+                  clearPreview();
+                  setCurrentPath(filePath);
+                }}
+              />
+            ) : (
+              <StudioEmptyState
+                title="Files unavailable"
+                text="This registration did not expose file inspection."
+              />
+            )}
             <div className="grid min-h-0 gap-3 overflow-y-auto pr-1">
               {selectedSandbox === undefined ? (
                 <StudioEmptyState

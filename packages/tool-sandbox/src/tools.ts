@@ -1,116 +1,65 @@
 import { type AnyTool, createTool } from "@anvia/core/tool";
 import { z } from "zod";
-import { isSandboxPortSession, isSandboxProcessSession } from "./capabilities";
-import { SandboxToolPolicyError } from "./errors";
-import { createTextFilePage } from "./text-file";
+import { decodeUtf8 } from "./docker-cli";
+import { DockerSandboxError } from "./errors";
 import type {
-  SandboxExecOptions,
-  SandboxExecResult,
-  SandboxPortSession,
-  SandboxProcessInfo,
-  SandboxProcessSession,
-  SandboxProcessStartOptions,
-  SandboxSession,
-  SandboxToolName,
-  SandboxToolsOptions,
+  CreateDockerSandboxToolsOptions,
+  DockerSandboxCommandPolicy,
+  DockerSandboxExecOptions,
+  DockerSandboxExecResult,
+  DockerSandboxProcessInfo,
+  DockerSandboxRuntime,
+  DockerSandboxToolName,
 } from "./types";
 
+const allToolNames = [
+  "exec_command",
+  "read_file",
+  "write_file",
+  "list_files",
+  "list_ports",
+  "start_process",
+  "list_processes",
+  "read_process_logs",
+  "stop_process",
+  "wait_for_port",
+] as const satisfies readonly DockerSandboxToolName[];
+
 const execCommandInput = z.object({
-  command: z.string().min(1).describe("Executable to run inside the sandbox workspace."),
-  args: z.array(z.string()).optional().describe("Command arguments."),
-  cwd: z.string().optional().describe("Relative working directory inside the sandbox."),
-  env: z
-    .record(z.string(), z.string())
-    .optional()
-    .describe("Environment variables for this command."),
-  timeoutMs: z
-    .number()
-    .int()
-    .positive()
-    .max(300_000)
-    .optional()
-    .describe("Optional command timeout in milliseconds."),
-  input: z.string().optional().describe("Optional stdin text to pass to the command."),
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  cwd: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  timeoutMs: z.number().int().positive().max(300_000).optional(),
+  input: z.string().optional(),
 });
+
+const execResultOutput = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("exited"),
+    exitCode: z.number().int(),
+    stdout: z.string(),
+    stderr: z.string(),
+    durationMs: z.number().nonnegative(),
+    stdoutTruncated: z.boolean(),
+    stderrTruncated: z.boolean(),
+  }),
+  z.object({
+    status: z.literal("timed_out"),
+    stdout: z.string(),
+    stderr: z.string(),
+    durationMs: z.number().nonnegative(),
+    stdoutTruncated: z.boolean(),
+    stderrTruncated: z.boolean(),
+  }),
+]);
 
 const readFileInput = z.object({
-  path: z.string().min(1).describe("Relative file path inside the sandbox."),
-  startLine: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe("One-based first line to read. Defaults to 1."),
-  lineCount: z
-    .number()
-    .int()
-    .positive()
-    .max(10_000)
-    .optional()
-    .describe("Maximum lines to return. Defaults to 500."),
+  path: z.string().min(1),
+  startLine: z.number().int().positive().optional(),
+  lineCount: z.number().int().positive().max(10_000).optional(),
 });
 
-const writeFileInput = z.object({
-  path: z.string().min(1).describe("Relative file path inside the sandbox."),
-  content: z.string().describe("Complete text content to write."),
-});
-
-const listFilesInput = z.object({
-  path: z
-    .string()
-    .optional()
-    .describe("Relative directory path inside the sandbox. Defaults to root."),
-});
-
-const emptyInput = z.object({});
-
-const startProcessInput = z.object({
-  command: z.string().min(1).describe("Executable to run as a managed sandbox process."),
-  args: z.array(z.string()).optional().describe("Command arguments."),
-  cwd: z.string().optional().describe("Relative working directory inside the sandbox."),
-  env: z
-    .record(z.string(), z.string())
-    .optional()
-    .describe("Environment variables for this process."),
-});
-
-const processIdInput = z.object({
-  processId: z.string().min(1).describe("Managed process identifier."),
-});
-
-const readProcessLogsInput = processIdInput.extend({
-  tailBytes: z
-    .number()
-    .int()
-    .nonnegative()
-    .max(1024 * 1024)
-    .optional()
-    .describe("Maximum trailing bytes to return from each output stream."),
-});
-
-const waitForPortInput = z.object({
-  containerPort: z
-    .number()
-    .int()
-    .min(1)
-    .max(65_535)
-    .describe("Pre-authorized TCP port inside the sandbox container."),
-  timeoutMs: z
-    .number()
-    .int()
-    .positive()
-    .max(300_000)
-    .optional()
-    .describe("Maximum time to wait for the port to accept connections."),
-});
-
-const textOutput = z.string();
-const maxToolLogBytes = 1024 * 1024;
-const defaultReadFileLineCount = 500;
-const defaultReadFileMaxLineCount = 2_000;
-const defaultReadFileMaxBytes = 64 * 1024;
-const maxToolReadFileBytes = 1024 * 1024;
-const maxToolReadFileLines = 10_000;
 const readFileOutput = z.object({
   content: z.string(),
   startLine: z.number().int().positive(),
@@ -119,459 +68,550 @@ const readFileOutput = z.object({
   truncated: z.boolean(),
   truncatedBy: z.enum(["lines", "bytes"]).nullable(),
 });
-const sandboxToolMetadataKey = Symbol.for("anvia.sandbox.tool.metadata");
 
-export function createSandboxTools(
-  session: SandboxSession,
-  options: SandboxToolsOptions = {},
-): AnyTool[] {
-  const include = new Set<SandboxToolName>(
-    options.allow ?? options.include ?? ["exec_command", "read_file", "write_file", "list_files"],
-  );
+const writeFileInput = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+});
+
+const writeFileOutput = z.object({
+  path: z.string(),
+  bytesWritten: z.number().int().nonnegative(),
+});
+
+const listFilesInput = z.object({ path: z.string().optional() });
+const fileEntryOutput = z.object({
+  path: z.string(),
+  type: z.enum(["file", "directory", "symlink", "other"]),
+  size: z.number().int().nonnegative().optional(),
+});
+const listFilesOutput = z.object({
+  path: z.string(),
+  entries: z.array(fileEntryOutput),
+});
+
+const emptyInput = z.object({});
+const publishedPortOutput = z.object({
+  containerPort: z.number().int(),
+  host: z.literal("127.0.0.1"),
+  hostPort: z.number().int(),
+  protocol: z.literal("tcp"),
+});
+const listPortsOutput = z.object({ ports: z.array(publishedPortOutput) });
+
+const startProcessInput = z.object({
+  command: z.string().min(1),
+  args: z.array(z.string()).optional(),
+  cwd: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+const processInfoOutput = z.object({
+  id: z.string(),
+  command: z.string(),
+  args: z.array(z.string()),
+  cwd: z.string().optional(),
+  status: z.enum(["running", "exited", "stopped"]),
+  exitCode: z.number().int().optional(),
+  startedAt: z.string(),
+  endedAt: z.string().optional(),
+});
+const listProcessesOutput = z.object({ processes: z.array(processInfoOutput) });
+
+const processIdInput = z.object({ processId: z.string().min(1) });
+const readProcessLogsInput = processIdInput.extend({
+  tailBytes: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(1024 * 1024)
+    .optional(),
+});
+const processLogsOutput = z.object({
+  processId: z.string(),
+  stdout: z.string(),
+  stderr: z.string(),
+  stdoutTruncated: z.boolean(),
+  stderrTruncated: z.boolean(),
+});
+
+const waitForPortInput = z.object({
+  containerPort: z.number().int().min(1).max(65_535),
+  timeoutMs: z.number().int().positive().max(300_000).optional(),
+});
+const waitForPortOutput = z.object({ port: publishedPortOutput });
+
+const defaultReadFileLineCount = 500;
+const defaultReadFileMaxLineCount = 2_000;
+const defaultReadFileMaxBytes = 64 * 1024;
+const maxToolReadFileLines = 10_000;
+const maxToolBytes = 1024 * 1024;
+const maxToolTimeoutMs = 300_000;
+
+export function createDockerSandboxTools(
+  options: CreateDockerSandboxToolsOptions,
+): readonly AnyTool[] {
+  validateFactoryOptions(options);
+  options = snapshotFactoryOptions(options);
+  const selected = new Set(options.tools);
   const tools: AnyTool[] = [];
 
-  if (include.has("exec_command")) {
-    tools.push(createExecCommandTool(session, options));
+  for (const name of options.tools) {
+    if (name === "exec_command") tools.push(createExecCommandTool(options));
+    else if (name === "read_file") tools.push(createReadFileTool(options));
+    else if (name === "write_file") tools.push(createWriteFileTool(options));
+    else if (name === "list_files") tools.push(createListFilesTool(options.sandbox));
+    else if (name === "list_ports") tools.push(createListPortsTool(options.sandbox));
+    else if (name === "start_process") tools.push(createStartProcessTool(options));
+    else if (name === "list_processes") tools.push(createListProcessesTool(options.sandbox));
+    else if (name === "read_process_logs") tools.push(createReadProcessLogsTool(options));
+    else if (name === "stop_process") tools.push(createStopProcessTool(options));
+    else if (name === "wait_for_port") tools.push(createWaitForPortTool(options));
   }
 
-  if (include.has("read_file")) {
-    tools.push(createReadFileTool(session, options));
+  if (tools.length !== selected.size) {
+    throw toolPolicyError("Sandbox tool selection contains an unsupported tool name.");
   }
-
-  if (include.has("write_file")) {
-    tools.push(createWriteFileTool(session, options));
-  }
-
-  if (include.has("list_files")) {
-    tools.push(createListFilesTool(session));
-  }
-
-  const portToolsRequested = include.has("list_ports") || include.has("wait_for_port");
-  const portSession = portToolsRequested ? requirePortSession(session) : undefined;
-  if (include.has("list_ports") && portSession !== undefined) {
-    tools.push(createListPortsTool(portSession));
-  }
-
-  const processToolsRequested =
-    include.has("start_process") ||
-    include.has("list_processes") ||
-    include.has("read_process_logs") ||
-    include.has("stop_process");
-  if (include.has("wait_for_port") || processToolsRequested) assertProcessToolPolicy(options);
-  const processSession = processToolsRequested ? requireProcessSession(session) : undefined;
-  if (include.has("start_process") && processSession !== undefined) {
-    tools.push(createStartProcessTool(processSession, options));
-  }
-
-  if (include.has("list_processes") && processSession !== undefined) {
-    tools.push(createListProcessesTool(processSession));
-  }
-
-  if (include.has("read_process_logs") && processSession !== undefined) {
-    tools.push(createReadProcessLogsTool(processSession, options));
-  }
-
-  if (include.has("stop_process") && processSession !== undefined) {
-    tools.push(createStopProcessTool(processSession, options));
-  }
-
-  if (include.has("wait_for_port") && portSession !== undefined) {
-    tools.push(createWaitForPortTool(portSession, options));
-  }
-
-  for (const tool of tools) {
-    Object.defineProperty(tool, sandboxToolMetadataKey, {
-      value: { session },
-      enumerable: false,
-    });
-  }
-
-  return tools;
+  return Object.freeze(tools);
 }
 
-function createExecCommandTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
-  const policy = options.exec ?? {};
-
+function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "exec_command",
-    description:
-      "Run a command inside the sandbox workspace. Use structured args instead of shell quoting.",
+    description: "Run one executable inside the sandbox with structured arguments.",
     inputSchema: execCommandInput,
-    outputSchema: textOutput,
-    execute: async ({ command, args, cwd, env, timeoutMs, input }) => {
-      assertCommandAllowed(command, options);
-
-      const execOptions: SandboxExecOptions = {
+    outputSchema: execResultOutput,
+    execute: async ({ command, args, cwd, env, timeoutMs, input }, context) => {
+      assertCommandAllowed(command, options.exec?.commands);
+      const effectiveTimeoutMs = timeoutMs ?? options.exec?.defaultTimeoutMs;
+      assertTimeoutAllowed(effectiveTimeoutMs, options.exec?.maxTimeoutMs);
+      const execOptions: DockerSandboxExecOptions = {
         command,
+        ...(args === undefined ? {} : { args }),
+        ...(cwd === undefined ? {} : { cwd }),
+        ...(env === undefined ? {} : { env }),
+        ...(effectiveTimeoutMs === undefined ? {} : { timeoutMs: effectiveTimeoutMs }),
+        ...(input === undefined ? {} : { input }),
+        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
       };
-
-      if (args !== undefined) {
-        execOptions.args = args;
-      }
-      if (cwd !== undefined) {
-        execOptions.cwd = cwd;
-      }
-      if (env !== undefined) {
-        execOptions.env = env;
-      }
-      const effectiveTimeoutMs = timeoutMs ?? policy.defaultTimeoutMs ?? options.execTimeoutMs;
-      if (effectiveTimeoutMs !== undefined) {
-        assertTimeoutAllowed(effectiveTimeoutMs, options);
-        execOptions.timeoutMs = effectiveTimeoutMs;
-      }
-      if (input !== undefined) {
-        execOptions.input = input;
-      }
-
-      const result = await session.exec(execOptions);
-
-      return formatExecResult(result);
+      return serializeExecResult(await options.sandbox.exec(execOptions));
     },
   });
 }
 
-function createReadFileTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
+function createReadFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+  const limits = resolveReadFileLimits(options);
   return createTool({
     name: "read_file",
-    description:
-      "Read a bounded page of a text file from the sandbox workspace. Continue with nextStartLine when provided.",
+    description: "Read a bounded page of a UTF-8 text file from the sandbox workspace.",
     inputSchema: readFileInput,
     outputSchema: readFileOutput,
-    execute: async ({ path, startLine, lineCount }) => {
-      const limits = resolveReadFileLimits(options);
-      const effectiveStartLine = startLine ?? 1;
+    execute: async ({ path, startLine, lineCount }, context) => {
       const effectiveLineCount = lineCount ?? limits.defaultLineCount;
-
       if (effectiveLineCount > limits.maxLineCount) {
-        throw new SandboxToolPolicyError(
-          `File read line count exceeds sandbox tool policy (${effectiveLineCount} > ${limits.maxLineCount}).`,
+        throw toolPolicyError(
+          `File read line count exceeds policy (${effectiveLineCount} > ${limits.maxLineCount}).`,
         );
       }
-
-      if (session.readTextFilePage !== undefined) {
-        return session.readTextFilePage(path, {
-          startLine: effectiveStartLine,
-          lineCount: effectiveLineCount,
-          maxBytes: limits.maxBytes,
-        });
-      }
-
-      return createTextFilePage(await session.readTextFile(path), {
-        startLine: effectiveStartLine,
+      return options.sandbox.readTextFilePage({
+        path,
+        startLine: startLine ?? 1,
         lineCount: effectiveLineCount,
         maxBytes: limits.maxBytes,
+        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
       });
     },
   });
 }
 
-function createWriteFileTool(session: SandboxSession, options: SandboxToolsOptions): AnyTool {
+function createWriteFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "write_file",
-    description: "Write a text file inside the sandbox workspace. Creates parent directories.",
+    description: "Write a complete UTF-8 text file inside the sandbox workspace.",
     inputSchema: writeFileInput,
-    outputSchema: textOutput,
-    execute: async ({ path, content }) => {
-      assertContentAllowed(content, options);
-      await session.writeTextFile(path, content);
-      return `Wrote ${path}`;
+    outputSchema: writeFileOutput,
+    execute: async ({ path, content }, context) => {
+      const bytesWritten = new TextEncoder().encode(content).byteLength;
+      const maxBytes = options.writeFile?.maxBytes;
+      if (maxBytes !== undefined && bytesWritten > maxBytes) {
+        throw toolPolicyError(`File content exceeds policy (${bytesWritten} > ${maxBytes}).`);
+      }
+      await options.sandbox.writeTextFile({
+        path,
+        text: content,
+        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
+      });
+      return { path, bytesWritten };
     },
   });
 }
 
-function createListFilesTool(session: SandboxSession): AnyTool {
+function createListFilesTool(sandbox: DockerSandboxRuntime): AnyTool {
   return createTool({
     name: "list_files",
-    description: "List files and directories inside the sandbox workspace.",
+    description: "List direct children of a directory in the sandbox workspace.",
     inputSchema: listFilesInput,
-    outputSchema: textOutput,
-    execute: async ({ path }) => {
-      const entries = await session.listFiles(path);
-
-      if (entries.length === 0) {
-        return "No files found.";
-      }
-
-      return entries
-        .map((entry) => {
-          const size = entry.size === undefined ? "" : ` ${entry.size}b`;
-          return `${entry.type}${size}\t${entry.path}`;
-        })
-        .join("\n");
-    },
+    outputSchema: listFilesOutput,
+    execute: async ({ path }, context) => ({
+      path: path ?? ".",
+      entries: [
+        ...(await sandbox.listFiles({
+          ...(path === undefined ? {} : { path }),
+          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
+        })),
+      ],
+    }),
   });
 }
 
-function createListPortsTool(session: SandboxPortSession): AnyTool {
+function createListPortsTool(sandbox: DockerSandboxRuntime): AnyTool {
   return createTool({
     name: "list_ports",
-    description:
-      "List pre-authorized sandbox preview ports. Servers must bind to 0.0.0.0 on a listed container port.",
+    description: "List explicitly published localhost TCP ports for the sandbox.",
     inputSchema: emptyInput,
-    outputSchema: textOutput,
-    execute: async () => {
-      if (session.publishedPorts.length === 0) {
-        return "No sandbox ports are published.";
-      }
-      return session.publishedPorts
-        .map((port) => `${port.containerPort}/${port.protocol}\t${port.host}:${port.hostPort}`)
-        .join("\n");
-    },
+    outputSchema: listPortsOutput,
+    execute: async () => ({ ports: [...sandbox.publishedPorts] }),
   });
 }
 
-function createStartProcessTool(
-  session: SandboxProcessSession,
-  options: SandboxToolsOptions,
-): AnyTool {
+function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "start_process",
-    description:
-      "Start a managed long-running process inside the sandbox. Use list_ports first and bind web servers to 0.0.0.0.",
+    description: "Start a managed long-running process inside the sandbox.",
     inputSchema: startProcessInput,
-    outputSchema: textOutput,
-    execute: async ({ command, args, cwd, env }) => {
-      assertCommandAllowed(command, options);
-      const processOptions: SandboxProcessStartOptions = { command };
-      if (args !== undefined) processOptions.args = args;
-      if (cwd !== undefined) processOptions.cwd = cwd;
-      if (env !== undefined) processOptions.env = env;
-      return formatProcessInfo(await session.startProcess(processOptions));
+    outputSchema: processInfoOutput,
+    execute: async ({ command, args, cwd, env }, context) => {
+      assertCommandAllowed(command, options.exec?.commands);
+      return serializeProcessInfo(
+        await options.sandbox.startProcess({
+          command,
+          ...(args === undefined ? {} : { args }),
+          ...(cwd === undefined ? {} : { cwd }),
+          ...(env === undefined ? {} : { env }),
+          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
+        }),
+      );
     },
   });
 }
 
-function createListProcessesTool(session: SandboxProcessSession): AnyTool {
+function createListProcessesTool(sandbox: DockerSandboxRuntime): AnyTool {
   return createTool({
     name: "list_processes",
-    description: "List managed sandbox processes and their current status.",
+    description: "List processes managed by this live sandbox handle.",
     inputSchema: emptyInput,
-    outputSchema: textOutput,
-    execute: async () => {
-      const processes = await session.listProcesses();
-      if (processes.length === 0) return "No managed processes.";
-      return processes.map(formatProcessInfo).join("\n\n");
-    },
+    outputSchema: listProcessesOutput,
+    execute: async (_, context) => ({
+      processes: (
+        await sandbox.listProcesses(
+          context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal },
+        )
+      ).map(serializeProcessInfo),
+    }),
   });
 }
 
-function createReadProcessLogsTool(
-  session: SandboxProcessSession,
-  options: SandboxToolsOptions,
-): AnyTool {
+function createReadProcessLogsTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+  const maxLogBytes = options.process?.maxLogBytes ?? 64 * 1024;
   return createTool({
     name: "read_process_logs",
-    description: "Read recent stdout and stderr from a managed sandbox process.",
+    description: "Read bounded UTF-8 output from a managed sandbox process.",
     inputSchema: readProcessLogsInput,
-    outputSchema: textOutput,
-    execute: async ({ processId, tailBytes }) => {
-      const configuredMaxLogBytes = options.process?.maxLogBytes ?? 64 * 1024;
-      if (!Number.isInteger(configuredMaxLogBytes) || configuredMaxLogBytes < 0) {
-        throw new SandboxToolPolicyError("Process maxLogBytes must be a non-negative integer.");
-      }
-      const maxLogBytes = Math.min(configuredMaxLogBytes, maxToolLogBytes);
+    outputSchema: processLogsOutput,
+    execute: async ({ processId, tailBytes }, context) => {
       const effectiveTailBytes = tailBytes ?? maxLogBytes;
       if (effectiveTailBytes > maxLogBytes) {
-        throw new SandboxToolPolicyError(
-          `Process log request exceeds sandbox tool policy (${effectiveTailBytes} > ${maxLogBytes}).`,
+        throw toolPolicyError(
+          `Process log request exceeds policy (${effectiveTailBytes} > ${maxLogBytes}).`,
         );
       }
-      const logs = await session.readProcessLogs(processId, {
+      const logs = await options.sandbox.readProcessLogs({
+        processId,
         tailBytes: effectiveTailBytes,
+        ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
       });
-      const parts: string[] = [];
-      if (logs.stdout.length > 0) parts.push(`stdout:\n${logs.stdout.trimEnd()}`);
-      if (logs.stderr.length > 0) parts.push(`stderr:\n${logs.stderr.trimEnd()}`);
-      if (logs.stdoutTruncated || logs.stderrTruncated) parts.push("output_truncated: true");
-      return parts.length > 0 ? parts.join("\n\n") : "No process output.";
+      return {
+        processId,
+        stdout: decodeUtf8(logs.stdout),
+        stderr: decodeUtf8(logs.stderr),
+        stdoutTruncated: logs.stdoutTruncated,
+        stderrTruncated: logs.stderrTruncated,
+      };
     },
   });
 }
 
-function createStopProcessTool(
-  session: SandboxProcessSession,
-  options: SandboxToolsOptions,
-): AnyTool {
+function createStopProcessTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "stop_process",
-    description: "Stop a managed sandbox process.",
+    description: "Stop a process managed by this live sandbox handle.",
     inputSchema: processIdInput,
-    outputSchema: textOutput,
-    execute: async ({ processId }) =>
-      formatProcessInfo(
-        await session.stopProcess(processId, {
+    outputSchema: processInfoOutput,
+    execute: async ({ processId }, context) =>
+      serializeProcessInfo(
+        await options.sandbox.stopProcess({
+          processId,
           gracePeriodMs: options.process?.stopGracePeriodMs ?? 5_000,
+          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
         }),
       ),
   });
 }
 
-function createWaitForPortTool(session: SandboxPortSession, options: SandboxToolsOptions): AnyTool {
+function createWaitForPortTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "wait_for_port",
-    description: "Wait until a pre-authorized sandbox TCP port is accepting connections.",
+    description: "Wait until an explicitly published sandbox TCP port is listening.",
     inputSchema: waitForPortInput,
-    outputSchema: textOutput,
-    execute: async ({ containerPort, timeoutMs }) => {
+    outputSchema: waitForPortOutput,
+    execute: async ({ containerPort, timeoutMs }, context) => {
       const effectiveTimeoutMs = timeoutMs ?? options.process?.defaultWaitTimeoutMs ?? 30_000;
-      const maxWaitTimeoutMs = options.process?.maxWaitTimeoutMs ?? 300_000;
+      const maxWaitTimeoutMs = options.process?.maxWaitTimeoutMs ?? maxToolTimeoutMs;
       if (effectiveTimeoutMs > maxWaitTimeoutMs) {
-        throw new SandboxToolPolicyError(
-          `Port wait timeout exceeds sandbox tool policy (${effectiveTimeoutMs} > ${maxWaitTimeoutMs}).`,
+        throw toolPolicyError(
+          `Port wait timeout exceeds policy (${effectiveTimeoutMs} > ${maxWaitTimeoutMs}).`,
         );
       }
-      const port = await session.waitForPort(containerPort, {
-        timeoutMs: effectiveTimeoutMs,
-      });
-      return `ready: ${port.containerPort}/${port.protocol} -> ${port.host}:${port.hostPort}`;
+      return {
+        port: await options.sandbox.waitForPort({
+          containerPort,
+          timeoutMs: effectiveTimeoutMs,
+          ...(context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal }),
+        }),
+      };
     },
   });
 }
 
-function formatExecResult(result: SandboxExecResult): string {
-  const parts = [`exit_code: ${result.exitCode}`];
-
-  if (result.timedOut) {
-    parts.push("timed_out: true");
-  }
-
-  if (result.aborted) {
-    parts.push("aborted: true");
-  }
-
-  if (result.stdout.length > 0) {
-    parts.push(`stdout:\n${result.stdout.trimEnd()}`);
-  }
-
-  if (result.stderr.length > 0) {
-    parts.push(`stderr:\n${result.stderr.trimEnd()}`);
-  }
-
-  if (result.stdoutTruncated || result.stderrTruncated) {
-    parts.push("output_truncated: true");
-  }
-
-  return parts.join("\n\n");
+function serializeExecResult(result: DockerSandboxExecResult) {
+  const output = {
+    status: result.status,
+    stdout: decodeUtf8(result.stdout),
+    stderr: decodeUtf8(result.stderr),
+    durationMs: result.durationMs,
+    stdoutTruncated: result.stdoutTruncated,
+    stderrTruncated: result.stderrTruncated,
+  };
+  return result.status === "exited"
+    ? { ...output, status: "exited" as const, exitCode: result.exitCode }
+    : { ...output, status: "timed_out" as const };
 }
 
-function formatProcessInfo(process: SandboxProcessInfo): string {
-  const parts = [
-    `process_id: ${process.id}`,
-    `status: ${process.status}`,
-    `command: ${[process.command, ...process.args].join(" ")}`,
+function serializeProcessInfo(process: DockerSandboxProcessInfo) {
+  return {
+    id: process.id,
+    command: process.command,
+    args: [...process.args],
+    status: process.status,
+    startedAt: process.startedAt,
+    ...(process.cwd === undefined ? {} : { cwd: process.cwd }),
+    ...(process.exitCode === undefined ? {} : { exitCode: process.exitCode }),
+    ...(process.endedAt === undefined ? {} : { endedAt: process.endedAt }),
+  };
+}
+
+function validateFactoryOptions(options: CreateDockerSandboxToolsOptions): void {
+  if (!isRecord(options)) {
+    throw new TypeError("options must be an object.");
+  }
+  if (!isDockerSandboxRuntime(options.sandbox)) {
+    throw new TypeError("sandbox must be a DockerSandboxRuntime.");
+  }
+  if (!Array.isArray(options.tools) || options.tools.length === 0) {
+    throw new TypeError("tools must be a non-empty array.");
+  }
+  const known = new Set<string>(allToolNames);
+  const seen = new Set<string>();
+  for (const name of options.tools as readonly unknown[]) {
+    if (typeof name !== "string" || !known.has(name)) {
+      throw new TypeError("tools contains an unsupported sandbox tool name.");
+    }
+    if (seen.has(name)) throw new TypeError(`tools contains a duplicate: ${name}`);
+    seen.add(name);
+  }
+  for (const [name, policy] of [
+    ["exec", options.exec],
+    ["readFile", options.readFile],
+    ["writeFile", options.writeFile],
+    ["process", options.process],
+  ] as const) {
+    if (policy !== undefined && !isRecord(policy)) {
+      throw new TypeError(`${name} must be an object.`);
+    }
+  }
+  validateCommandPolicy(options.exec?.commands);
+  assertOptionalPositiveInteger(options.exec?.defaultTimeoutMs, "exec.defaultTimeoutMs");
+  assertOptionalPositiveInteger(options.exec?.maxTimeoutMs, "exec.maxTimeoutMs");
+  if (
+    (options.exec?.defaultTimeoutMs ?? 0) > maxToolTimeoutMs ||
+    (options.exec?.maxTimeoutMs ?? 0) > maxToolTimeoutMs
+  ) {
+    throw toolPolicyError(`Sandbox tool command timeouts cannot exceed ${maxToolTimeoutMs}.`);
+  }
+  if (
+    options.exec?.defaultTimeoutMs !== undefined &&
+    options.exec.maxTimeoutMs !== undefined &&
+    options.exec.defaultTimeoutMs > options.exec.maxTimeoutMs
+  ) {
+    throw toolPolicyError("exec.defaultTimeoutMs cannot exceed exec.maxTimeoutMs.");
+  }
+  assertOptionalBoundedPositiveInteger(options.readFile?.maxBytes, "readFile.maxBytes");
+  assertOptionalPositiveInteger(options.readFile?.defaultLineCount, "readFile.defaultLineCount");
+  assertOptionalPositiveInteger(options.readFile?.maxLineCount, "readFile.maxLineCount");
+  assertOptionalBoundedNonNegativeInteger(options.writeFile?.maxBytes, "writeFile.maxBytes");
+  assertOptionalBoundedNonNegativeInteger(options.process?.maxLogBytes, "process.maxLogBytes");
+  assertOptionalPositiveInteger(
+    options.process?.defaultWaitTimeoutMs,
+    "process.defaultWaitTimeoutMs",
+  );
+  assertOptionalPositiveInteger(options.process?.maxWaitTimeoutMs, "process.maxWaitTimeoutMs");
+  assertOptionalNonNegativeInteger(options.process?.stopGracePeriodMs, "process.stopGracePeriodMs");
+  const defaultWaitTimeoutMs = options.process?.defaultWaitTimeoutMs;
+  const maxWaitTimeoutMs = options.process?.maxWaitTimeoutMs ?? maxToolTimeoutMs;
+  if (maxWaitTimeoutMs > maxToolTimeoutMs) {
+    throw toolPolicyError(`process.maxWaitTimeoutMs cannot exceed ${maxToolTimeoutMs}.`);
+  }
+  if (defaultWaitTimeoutMs !== undefined && defaultWaitTimeoutMs > maxWaitTimeoutMs) {
+    throw toolPolicyError("process.defaultWaitTimeoutMs cannot exceed process.maxWaitTimeoutMs.");
+  }
+}
+
+function snapshotFactoryOptions(
+  options: CreateDockerSandboxToolsOptions,
+): CreateDockerSandboxToolsOptions {
+  const toolNames = Object.freeze([...options.tools]) as unknown as readonly [
+    DockerSandboxToolName,
+    ...DockerSandboxToolName[],
   ];
-  if (process.exitCode !== undefined) parts.push(`exit_code: ${process.exitCode}`);
-  return parts.join("\n");
+  const commands =
+    options.exec?.commands === undefined
+      ? undefined
+      : Object.freeze({
+          mode: options.exec.commands.mode,
+          values: Object.freeze([...options.exec.commands.values]),
+        });
+  return Object.freeze({
+    sandbox: options.sandbox,
+    tools: toolNames,
+    ...(options.exec === undefined
+      ? {}
+      : {
+          exec: Object.freeze({
+            ...options.exec,
+            ...(commands === undefined ? {} : { commands }),
+          }),
+        }),
+    ...(options.readFile === undefined ? {} : { readFile: Object.freeze({ ...options.readFile }) }),
+    ...(options.writeFile === undefined
+      ? {}
+      : { writeFile: Object.freeze({ ...options.writeFile }) }),
+    ...(options.process === undefined ? {} : { process: Object.freeze({ ...options.process }) }),
+  });
 }
 
-function requirePortSession(session: SandboxSession): SandboxPortSession {
-  if (!isSandboxPortSession(session)) {
-    throw new SandboxToolPolicyError("The sandbox session does not support published port tools.");
-  }
-  return session;
-}
-
-function requireProcessSession(session: SandboxSession): SandboxProcessSession {
-  if (!isSandboxProcessSession(session)) {
-    throw new SandboxToolPolicyError("The sandbox session does not support managed process tools.");
-  }
-  return session;
-}
-
-function assertProcessToolPolicy(options: SandboxToolsOptions): void {
-  const policy = options.process;
+function validateCommandPolicy(policy: DockerSandboxCommandPolicy | undefined): void {
   if (policy === undefined) return;
-  if (
-    policy.maxLogBytes !== undefined &&
-    (!Number.isInteger(policy.maxLogBytes) ||
-      policy.maxLogBytes < 0 ||
-      policy.maxLogBytes > maxToolLogBytes)
-  ) {
-    throw new SandboxToolPolicyError(
-      `Process maxLogBytes must be an integer from 0 to ${maxToolLogBytes}.`,
-    );
+  if (!isRecord(policy)) throw toolPolicyError("exec.commands must be an object.");
+  if (policy.mode !== "allow" && policy.mode !== "block") {
+    throw toolPolicyError("exec.commands must use mode allow or block.");
   }
-  const maxWaitTimeoutMs = policy.maxWaitTimeoutMs ?? 300_000;
-  if (!Number.isInteger(maxWaitTimeoutMs) || maxWaitTimeoutMs <= 0 || maxWaitTimeoutMs > 300_000) {
-    throw new SandboxToolPolicyError(
-      "Process maxWaitTimeoutMs must be an integer from 1 to 300000.",
-    );
-  }
-  if (
-    policy.defaultWaitTimeoutMs !== undefined &&
-    (!Number.isInteger(policy.defaultWaitTimeoutMs) ||
-      policy.defaultWaitTimeoutMs <= 0 ||
-      policy.defaultWaitTimeoutMs > maxWaitTimeoutMs)
-  ) {
-    throw new SandboxToolPolicyError(
-      "Process defaultWaitTimeoutMs must be positive and no greater than maxWaitTimeoutMs.",
-    );
-  }
-  if (
-    policy.stopGracePeriodMs !== undefined &&
-    (!Number.isInteger(policy.stopGracePeriodMs) || policy.stopGracePeriodMs < 0)
-  ) {
-    throw new SandboxToolPolicyError("Process stopGracePeriodMs must be a non-negative integer.");
+  if (!Array.isArray(policy.values))
+    throw toolPolicyError("exec.commands.values must be an array.");
+  const seen = new Set<string>();
+  for (const value of policy.values as readonly unknown[]) {
+    if (typeof value !== "string" || value.length === 0) {
+      throw toolPolicyError("exec.commands.values must contain non-empty strings.");
+    }
+    if (seen.has(value))
+      throw toolPolicyError(`exec.commands.values contains a duplicate: ${value}`);
+    seen.add(value);
   }
 }
 
-function assertCommandAllowed(command: string, options: SandboxToolsOptions): void {
-  const policy = options.exec;
-
-  if (policy?.blockedCommands?.includes(command)) {
-    throw new SandboxToolPolicyError(`Command is blocked by sandbox tool policy: ${command}`);
-  }
-
-  if (policy?.allowedCommands !== undefined && !policy.allowedCommands.includes(command)) {
-    throw new SandboxToolPolicyError(`Command is not allowed by sandbox tool policy: ${command}`);
-  }
-}
-
-function assertTimeoutAllowed(timeoutMs: number, options: SandboxToolsOptions): void {
-  const maxTimeoutMs = options.exec?.maxTimeoutMs;
-
-  if (maxTimeoutMs !== undefined && timeoutMs > maxTimeoutMs) {
-    throw new SandboxToolPolicyError(
-      `Command timeout exceeds sandbox tool policy (${timeoutMs} > ${maxTimeoutMs}).`,
-    );
+function assertCommandAllowed(
+  command: string,
+  policy: DockerSandboxCommandPolicy | undefined,
+): void {
+  if (policy === undefined) return;
+  const included = policy.values.includes(command);
+  if ((policy.mode === "allow" && !included) || (policy.mode === "block" && included)) {
+    throw toolPolicyError(`Command is rejected by sandbox tool policy: ${command}`);
   }
 }
 
-function assertContentAllowed(content: string, options: SandboxToolsOptions): void {
-  const maxBytes = options.writeFile?.maxBytes;
-
-  if (maxBytes !== undefined && Buffer.byteLength(content) > maxBytes) {
-    throw new SandboxToolPolicyError("File content exceeds sandbox tool policy.");
+function assertTimeoutAllowed(timeoutMs: number | undefined, maxTimeoutMs: number | undefined) {
+  if (timeoutMs !== undefined && maxTimeoutMs !== undefined && timeoutMs > maxTimeoutMs) {
+    throw toolPolicyError(`Command timeout exceeds policy (${timeoutMs} > ${maxTimeoutMs}).`);
   }
 }
 
-function resolveReadFileLimits(options: SandboxToolsOptions): {
-  defaultLineCount: number;
-  maxLineCount: number;
-  maxBytes: number;
-} {
+function resolveReadFileLimits(options: CreateDockerSandboxToolsOptions) {
   const defaultLineCount = options.readFile?.defaultLineCount ?? defaultReadFileLineCount;
   const maxLineCount = options.readFile?.maxLineCount ?? defaultReadFileMaxLineCount;
   const maxBytes = options.readFile?.maxBytes ?? defaultReadFileMaxBytes;
-
-  if (!Number.isInteger(defaultLineCount) || defaultLineCount <= 0) {
-    throw new SandboxToolPolicyError("File defaultLineCount must be a positive integer.");
-  }
-  if (!Number.isInteger(maxLineCount) || maxLineCount <= 0 || maxLineCount > maxToolReadFileLines) {
-    throw new SandboxToolPolicyError(
-      `File maxLineCount must be a positive integer no greater than ${maxToolReadFileLines}.`,
-    );
-  }
   if (defaultLineCount > maxLineCount) {
-    throw new SandboxToolPolicyError(
-      `File defaultLineCount exceeds maxLineCount (${defaultLineCount} > ${maxLineCount}).`,
-    );
+    throw toolPolicyError("readFile.defaultLineCount cannot exceed readFile.maxLineCount.");
   }
-  if (!Number.isInteger(maxBytes) || maxBytes <= 0 || maxBytes > maxToolReadFileBytes) {
-    throw new SandboxToolPolicyError(
-      `File maxBytes must be a positive integer no greater than ${maxToolReadFileBytes}.`,
-    );
+  if (maxLineCount > maxToolReadFileLines) {
+    throw toolPolicyError(`readFile.maxLineCount cannot exceed ${maxToolReadFileLines}.`);
   }
-
   return { defaultLineCount, maxLineCount, maxBytes };
+}
+
+function assertOptionalPositiveInteger(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw toolPolicyError(`${name} must be a positive safe integer.`);
+  }
+}
+
+function assertOptionalNonNegativeInteger(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw toolPolicyError(`${name} must be a non-negative safe integer.`);
+  }
+}
+
+function assertOptionalBoundedNonNegativeInteger(value: number | undefined, name: string): void {
+  assertOptionalNonNegativeInteger(value, name);
+  if (value !== undefined && value > maxToolBytes) {
+    throw toolPolicyError(`${name} cannot exceed ${maxToolBytes}.`);
+  }
+}
+
+function assertOptionalBoundedPositiveInteger(value: number | undefined, name: string): void {
+  assertOptionalPositiveInteger(value, name);
+  if (value !== undefined && value > maxToolBytes) {
+    throw toolPolicyError(`${name} cannot exceed ${maxToolBytes}.`);
+  }
+}
+
+function isDockerSandboxRuntime(value: unknown): value is DockerSandboxRuntime {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    value.provider === "docker" &&
+    typeof value.workdir === "string" &&
+    Array.isArray(value.publishedPorts) &&
+    [
+      "exec",
+      "execStream",
+      "readFile",
+      "readTextFile",
+      "readTextFilePage",
+      "writeFile",
+      "writeTextFile",
+      "listFiles",
+      "startProcess",
+      "listProcesses",
+      "readProcessLogs",
+      "stopProcess",
+      "waitForPort",
+    ].every((name) => typeof value[name] === "function")
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toolPolicyError(message: string): DockerSandboxError {
+  return new DockerSandboxError(message, "tool_policy");
 }

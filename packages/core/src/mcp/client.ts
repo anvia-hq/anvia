@@ -17,6 +17,18 @@ type ClientResource = {
   closePromise?: Promise<void> | undefined;
 };
 
+type McpFetch = NonNullable<
+  NonNullable<ConstructorParameters<typeof StreamableHTTPClientTransport>[1]>["fetch"]
+>;
+
+const transportOwnedHttpHeaders = new Set([
+  "accept",
+  "content-type",
+  "last-event-id",
+  "mcp-protocol-version",
+  "mcp-session-id",
+]);
+
 export class McpClient {
   readonly name: string;
 
@@ -163,15 +175,19 @@ async function createTransport(
   }
   let parameters: ConstructorParameters<typeof StreamableHTTPClientTransport>[1] = {};
   let url: URL;
+  let transportFetch: McpFetch | undefined;
   if (ssrfProtection === "strict") {
-    parameters = { fetch: createSafeMcpFetch() };
+    transportFetch = createSafeMcpFetch();
     url = parseAndValidateMcpUrl(transport.url);
   } else {
     url = parseMcpHttpUrl(transport.url);
   }
-  if (transport.requestInit !== undefined) {
-    parameters = { ...parameters, requestInit: transport.requestInit };
+  if (transport.headers !== undefined) {
+    const headers = copyMcpHeaders(transport.headers, transport.authProvider !== undefined);
+    const fetchRequest = transportFetch ?? defaultMcpFetch;
+    transportFetch = createMcpEndpointFetch(url, headers, fetchRequest);
   }
+  if (transportFetch !== undefined) parameters = { ...parameters, fetch: transportFetch };
   if (transport.authProvider !== undefined) {
     parameters = { ...parameters, authProvider: transport.authProvider };
   }
@@ -183,6 +199,57 @@ async function createTransport(
   }
   return asSdkTransport(new StreamableHTTPClientTransport(url, parameters));
 }
+
+function copyMcpHeaders(
+  value: Readonly<Record<string, string>>,
+  hasAuthProvider: boolean,
+): Headers {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("MCP Streamable HTTP headers must be a plain object");
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("MCP Streamable HTTP headers must be a plain object");
+  }
+  const headers = new Headers();
+  for (const [name, headerValue] of Object.entries(value)) {
+    if (typeof headerValue !== "string") {
+      throw new TypeError(`MCP Streamable HTTP header ${name} must be a string`);
+    }
+    const normalizedName = name.toLowerCase();
+    if (transportOwnedHttpHeaders.has(normalizedName)) {
+      throw new TypeError(`MCP Streamable HTTP header ${name} is owned by the transport`);
+    }
+    if (hasAuthProvider && normalizedName === "authorization") {
+      throw new TypeError(
+        "MCP Streamable HTTP authorization header cannot be combined with authProvider",
+      );
+    }
+    headers.set(name, headerValue);
+  }
+  return headers;
+}
+
+function createMcpEndpointFetch(
+  endpoint: URL,
+  configuredHeaders: Headers,
+  fetchRequest: McpFetch,
+): McpFetch {
+  return (input, init) => {
+    const requestUrl = input instanceof Request ? new URL(input.url) : new URL(input);
+    if (requestUrl.href !== endpoint.href) return fetchRequest(input, init);
+
+    const requestHeaders = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    configuredHeaders.forEach((value, name) => {
+      requestHeaders.set(name, value);
+    });
+    return fetchRequest(input, { ...init, headers: requestHeaders, redirect: "error" });
+  };
+}
+
+const defaultMcpFetch: McpFetch = (input, init) => globalThis.fetch(input, init);
 
 async function listAllTools(
   client: Client,

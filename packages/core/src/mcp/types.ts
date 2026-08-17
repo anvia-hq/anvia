@@ -20,7 +20,7 @@ export type McpStreamableHttpTransport = {
   readonly type: "streamableHttp";
   readonly url: string | URL;
   readonly ssrfProtection?: "strict" | "disabled" | undefined;
-  readonly requestInit?: RequestInit | undefined;
+  readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly authProvider?: OAuthClientProvider | undefined;
   readonly reconnectionOptions?: StreamableHTTPReconnectionOptions | undefined;
   readonly sessionId?: string | undefined;

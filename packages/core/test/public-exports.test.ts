@@ -316,6 +316,15 @@ describe("public exports", () => {
         },
       });
       new mcp.McpClient({
+        name: "legacy-request-init",
+        transport: {
+          type: "streamableHttp",
+          url: "https://example.com/mcp",
+          // @ts-expect-error Built-in HTTP exposes explicit headers, not arbitrary Fetch options.
+          requestInit: {},
+        },
+      });
+      new mcp.McpClient({
         name: "invalid-policy",
         transport: {
           type: "streamableHttp",

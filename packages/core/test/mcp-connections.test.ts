@@ -161,7 +161,7 @@ describe("McpClient", () => {
       transport: {
         type: "streamableHttp",
         url: "https://api.example.com/mcp",
-        requestInit: { headers: { authorization: "Bearer test" } },
+        headers: { authorization: "Bearer test" },
         reconnectionOptions: {
           maxReconnectionDelay: 30_000,
           initialReconnectionDelay: 1_000,
@@ -176,7 +176,6 @@ describe("McpClient", () => {
 
     expect(sdk.httpTransports[0]?.url.href).toBe("https://api.example.com/mcp");
     expect(sdk.httpTransports[0]?.options).toMatchObject({
-      requestInit: { headers: { authorization: "Bearer test" } },
       reconnectionOptions: {
         maxReconnectionDelay: 30_000,
         initialReconnectionDelay: 1_000,
@@ -186,6 +185,105 @@ describe("McpClient", () => {
       sessionId: "session-1",
       fetch: expect.any(Function),
     });
+    expect(sdk.httpTransports[0]?.options).not.toHaveProperty("requestInit");
+  });
+
+  it("scopes configured headers to the exact MCP endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, {
+        status: 204,
+      }),
+    );
+    const client = new McpClient({
+      name: "local",
+      transport: {
+        type: "streamableHttp",
+        url: "http://localhost:3000/mcp",
+        ssrfProtection: "disabled",
+        headers: { "x-api-key": "secret" },
+      },
+    });
+
+    await client.connect();
+    const fetchRequest = sdk.httpTransports[0]?.options.fetch as typeof fetch;
+    await fetchRequest("http://localhost:3000/mcp", { headers: { "x-request": "mcp" } });
+    await fetchRequest("https://auth.example.com/.well-known/oauth-authorization-server");
+
+    const endpointInit = fetchMock.mock.calls[0]?.[1];
+    expect(Object.fromEntries(new Headers(endpointInit?.headers))).toEqual({
+      "x-api-key": "secret",
+      "x-request": "mcp",
+    });
+    expect(endpointInit?.redirect).toBe("error");
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toBeUndefined();
+    fetchMock.mockRestore();
+  });
+
+  it("rejects non-string Streamable HTTP headers without coercion", async () => {
+    const client = new McpClient({
+      name: "invalid-headers",
+      transport: {
+        type: "streamableHttp",
+        url: "https://api.example.com/mcp",
+        headers: { authorization: 123 },
+      } as never,
+    });
+
+    await expect(client.connect()).rejects.toThrow(
+      "MCP Streamable HTTP header authorization must be a string",
+    );
+  });
+
+  it("rejects non-record Streamable HTTP header containers", async () => {
+    const client = new McpClient({
+      name: "invalid-header-container",
+      transport: {
+        type: "streamableHttp",
+        url: "https://api.example.com/mcp",
+        headers: new Headers({ authorization: "Bearer test" }),
+      } as never,
+    });
+
+    await expect(client.connect()).rejects.toThrow(
+      "MCP Streamable HTTP headers must be a plain object",
+    );
+  });
+
+  it.each([
+    "accept",
+    "Content-Type",
+    "last-event-id",
+    "MCP-Protocol-Version",
+    "mcp-session-id",
+  ])("rejects transport-owned Streamable HTTP header %s", async (header) => {
+    const client = new McpClient({
+      name: "reserved-header",
+      transport: {
+        type: "streamableHttp",
+        url: "https://api.example.com/mcp",
+        headers: { [header]: "override" },
+      },
+    });
+
+    await expect(client.connect()).rejects.toThrow(
+      `MCP Streamable HTTP header ${header} is owned by the transport`,
+    );
+  });
+
+  it("rejects a static authorization header combined with OAuth", async () => {
+    const client = new McpClient({
+      name: "conflicting-auth",
+      transport: {
+        type: "streamableHttp",
+        url: "https://api.example.com/mcp",
+        headers: { Authorization: "Bearer static" },
+        authProvider: {} as never,
+      },
+    });
+
+    await expect(client.connect()).rejects.toThrow(
+      "MCP Streamable HTTP authorization header cannot be combined with authProvider",
+    );
   });
 
   it("allows an explicit SSRF protection opt-out for local Streamable HTTP", async () => {

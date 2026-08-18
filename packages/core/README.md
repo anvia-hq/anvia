@@ -12,9 +12,16 @@ The package is dependency-injection oriented: create provider models, typed tool
 
 ## Installation
 
+Anvia 1.0 is currently published on npm under the `rc` tag. The unqualified `latest` tag remains
+on the maintenance-only v0 line until 1.0 reaches general availability. Keep Core and every Anvia
+adapter on the same release channel.
+
 ```sh
-pnpm add @anvia/core
+pnpm add @anvia/core@rc
 ```
+
+See the repository's [1.0 release policy](../../docs/releases/v1.md) for channel and support
+details.
 
 In this monorepo, the package is available through the workspace:
 

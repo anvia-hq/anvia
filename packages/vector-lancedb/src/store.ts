@@ -5,8 +5,8 @@ import type {
   VectorStore,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
+import { matchesVectorFilter } from "@anvia/core/vector-store";
 import type { LanceDBVectorClient } from "./client.js";
-import { filterToLanceExpr } from "./filters.js";
 import { lanceRows, parseQueryResults } from "./helpers.js";
 import {
   documentColumn,
@@ -86,12 +86,10 @@ export class LanceDBVectorStore<T, Metadata extends VectorMetadata = VectorMetad
     const table = await (await this.owner.nativeClient()).openTable(this.options.tableName);
     let candidateLimit = request.topK;
     for (;;) {
-      let query = table
+      const query = table
         .search(request.vector)
         .distanceType(metricName(this.options.metric))
         .limit(candidateLimit);
-      const filter = filterToLanceExpr(request.filter);
-      if (filter !== undefined) query = query.where(filter);
       const response = await query.toArray();
       throwIfAborted(request.abortSignal);
       const unfiltered = parseQueryResults<T, Metadata>(response, undefined, this.options.metric);
@@ -114,6 +112,7 @@ function selectResults<T, Metadata extends VectorMetadata>(
   request: VectorSearchRequest,
 ): Array<VectorSearchResult<T, Metadata>> {
   return results
+    .filter((result) => matchesVectorFilter(result.metadata, request.filter))
     .filter((result) => request.minScore === undefined || result.score >= request.minScore)
     .sort((left, right) => right.score - left.score)
     .slice(0, request.topK);

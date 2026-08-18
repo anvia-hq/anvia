@@ -136,6 +136,11 @@ describe("public exports", () => {
     expect("isVectorContext" in publicAgent).toBe(true);
   });
 
+  it("exposes provider-neutral vector filter matching from the vector-store subpath", () => {
+    expect("matchesVectorFilter" in vectorStore).toBe(true);
+    expect("matchesVectorFilter" in publicCore).toBe(false);
+  });
+
   it("exposes middleware helpers from public entrypoints", () => {
     expect("createMiddleware" in publicCore).toBe(true);
     expect("createToolMiddleware" in publicCore).toBe(false);

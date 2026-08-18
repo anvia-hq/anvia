@@ -23,7 +23,7 @@ import type {
   VectorStoreUpsertOptions,
 } from "./types";
 
-export { vectorFilter } from "./filter";
+export { matchesVectorFilter, vectorFilter } from "./filter";
 export { retrieveDocuments } from "./retrieve";
 export type * from "./types";
 

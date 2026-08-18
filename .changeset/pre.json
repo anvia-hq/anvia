@@ -45,6 +45,7 @@
     "add-neo4j-graphrag",
     "anvia-v1-release-train",
     "explicit-client-stream-boundary",
+    "fix-browser-interaction-boundary",
     "fix-lancedb-metadata-filters",
     "public-rc-ready",
     "redesign-agent-interactions",
@@ -59,6 +60,7 @@
     "redesign-provider-model-construction",
     "redesign-type-safe-message-boundaries",
     "redesign-vector-clients",
+    "robust-structured-output",
     "tidy-agent-builder-registration",
     "unify-generation-public-api",
     "update-upstream-runtime-dependencies"

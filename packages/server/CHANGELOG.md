@@ -1,5 +1,12 @@
 # @anvia/server
 
+## 1.0.0-rc.5
+
+### Patch Changes
+
+- Updated dependencies [e96d038]
+  - @anvia/client@1.0.0-rc.5
+
 ## 1.0.0-rc.4
 
 ### Patch Changes

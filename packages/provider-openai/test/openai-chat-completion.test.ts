@@ -179,6 +179,32 @@ describe("OpenAI chat-completions client path", () => {
     expect(params.messages).toEqual([{ role: "assistant", content: "visible response" }]);
   });
 
+  it("keeps strict json_schema response formatting for structured output", () => {
+    const schema = {
+      type: "object",
+      properties: { phase: { type: "string" } },
+      required: ["phase"],
+      additionalProperties: false,
+      title: "hypothesis_response",
+    };
+
+    const params = toOpenAIChatCompletionParams("custom-chat-model", {
+      chatHistory: [Message.user("Create hypotheses")],
+      documents: [],
+      tools: [],
+      outputSchema: schema,
+    });
+
+    expect(params.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "hypothesis_response",
+        strict: true,
+        schema,
+      },
+    });
+  });
+
   it("adds compatible content to empty assistant history", () => {
     const params = toOpenAIChatCompletionParams("deepseek-v4-flash", {
       chatHistory: [Message.assistant([])],

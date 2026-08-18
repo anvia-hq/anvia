@@ -2,7 +2,7 @@ import {
   type AgentContinuation,
   type AgentInteractionResponse,
   assertAgentInteractionResponse,
-} from "@anvia/core/agent";
+} from "@anvia/core/agent/interactions";
 
 export type StudioContinuationRegistration<Context> = Readonly<{
   continuation: AgentContinuation;

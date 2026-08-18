@@ -1,5 +1,8 @@
 import type { ClientInteraction, UIMessage } from "@anvia/client";
-import type { AgentToolApprovalRequest, AgentToolQuestionRequest } from "@anvia/core/agent";
+import type {
+  AgentToolApprovalRequest,
+  AgentToolQuestionRequest,
+} from "@anvia/core/agent/interactions";
 import type { UseChatResult, UseCompletionResult } from "@anvia/react";
 import { vi } from "vitest";
 

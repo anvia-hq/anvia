@@ -1,10 +1,5 @@
-import type {
-  Agent,
-  AgentInteractionResponse,
-  AgentResult,
-  AgentStreamEvent,
-  AgentSuspendedResult,
-} from "@anvia/core/agent";
+import type { Agent, AgentResult, AgentStreamEvent, AgentSuspendedResult } from "@anvia/core/agent";
+import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type {
   CompletionModel,
   CompletionModelCapabilities,

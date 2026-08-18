@@ -1,29 +1,13 @@
 export { Agent } from "./agent/agent";
+export type { AgentStructuredOutputFormat, AgentStructuredOutputPhase } from "./agent/errors";
 export {
   AgentRunBlockedError,
   AgentRunCancelledError,
   AgentStreamClosedError,
+  AgentStructuredOutputError,
   AgentToolSuspensionError,
   MaxTurnsError,
 } from "./agent/errors";
-export type {
-  AgentContinuation,
-  AgentInteractionRequest,
-  AgentInteractionResponse,
-  AgentQuestionAnswer,
-  AgentQuestionChoice,
-  AgentQuestionPrompt,
-  AgentToolApprovalRequest,
-  AgentToolQuestionRequest,
-} from "./agent/interactions";
-export {
-  agentContinuationSchema,
-  agentInteractionRequestSchema,
-  agentInteractionResponseSchema,
-  parseAgentContinuation,
-  parseAgentInteractionRequest,
-  parseAgentInteractionResponse,
-} from "./agent/interactions";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,

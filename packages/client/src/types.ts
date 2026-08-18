@@ -1,4 +1,7 @@
-import type { AgentInteractionRequest, AgentInteractionResponse } from "@anvia/core/agent";
+import type {
+  AgentInteractionRequest,
+  AgentInteractionResponse,
+} from "@anvia/core/agent/interactions";
 import type {
   CompletionSource,
   ContextUsage,

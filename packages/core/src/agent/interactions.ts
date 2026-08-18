@@ -1,10 +1,6 @@
 import { z } from "zod";
-import {
-  isJsonValue,
-  type JsonObject,
-  type JsonValue,
-  type ToolQuestionAnswer,
-} from "../completion";
+import { isJsonValue } from "../completion/json";
+import type { JsonObject, JsonValue, ToolQuestionAnswer } from "../completion/types";
 
 export type AgentQuestionChoice = Readonly<{
   label: string;

@@ -191,15 +191,62 @@ function generationEndContext(
   return context;
 }
 
-function serializeError(error: unknown): unknown {
+const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 16;
+
+function serializeError(error: unknown, seen = new Set<object>(), depth = 0): unknown {
   if (error instanceof Error) {
-    return {
+    if (seen.has(error)) return "[Circular error cause]";
+    if (depth >= MAX_SERIALIZED_ERROR_CAUSE_DEPTH) return "[Error cause depth limit]";
+    seen.add(error);
+    const serialized: Record<string, unknown> = {
       name: error.name,
       message: error.message,
       stack: error.stack,
-      cause: error.cause,
     };
+    if (error.name === "AgentStructuredOutputError") {
+      addStructuredOutputMetadata(serialized, error);
+    }
+    if (error.cause !== undefined) {
+      if (error.name === "AgentStructuredOutputError") {
+        serialized.cause = structuredOutputCauseMetadata(error.cause);
+      } else {
+        serialized.cause = serializeError(error.cause, seen, depth + 1);
+      }
+    }
+    return serialized;
   }
 
   return error;
+}
+
+function addStructuredOutputMetadata(serialized: Record<string, unknown>, error: Error): void {
+  const details = error as unknown as Record<string, unknown>;
+  if (details.phase === "parse" || details.phase === "schema") {
+    serialized.phase = details.phase;
+  }
+  for (const name of ["attempt", "maxAttempts", "outputLength", "normalizedLength"] as const) {
+    const value = details[name];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+      serialized[name] = value;
+    }
+  }
+  if (
+    details.outputFormat === "raw" ||
+    details.outputFormat === "json-fence" ||
+    details.outputFormat === "unlabeled-fence"
+  ) {
+    serialized.outputFormat = details.outputFormat;
+  }
+}
+
+function structuredOutputCauseMetadata(cause: unknown): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    message: "Structured-output cause details redacted.",
+  };
+  if (cause instanceof Error) {
+    metadata.name = cause.name;
+  } else {
+    metadata.type = cause === null ? "null" : typeof cause;
+  }
+  return metadata;
 }

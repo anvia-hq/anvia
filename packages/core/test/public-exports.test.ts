@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   AgentContextInput,
@@ -15,6 +16,12 @@ import type {
   VectorContext,
 } from "../src/agent";
 import * as publicAgent from "../src/agent";
+import type {
+  AgentContinuation as PublicAgentContinuation,
+  AgentInteractionRequest as PublicAgentInteractionRequest,
+  AgentInteractionResponse as PublicAgentInteractionResponse,
+} from "../src/agent/interactions/index";
+import * as publicAgentInteractions from "../src/agent/interactions/index";
 import * as completion from "../src/completion";
 import * as documents from "../src/documents";
 import * as embeddings from "../src/embeddings";
@@ -92,6 +99,10 @@ type RemovedPdfFileLoader = import("../src/documents").PdfFileLoader;
 type RemovedApprovalRequiredResult = import("../src/agent").AgentApprovalRequiredResult;
 // @ts-expect-error Approval decisions were replaced by AgentInteractionResponse.
 type RemovedApprovalDecision = import("../src/agent").AgentApprovalDecision;
+// @ts-expect-error Agent interaction contracts have a dedicated browser-safe subpath.
+type RemovedAgentInteractionResponse = import("../src/agent").AgentInteractionResponse;
+// @ts-expect-error Agent interaction contracts are not exported from the root server barrel.
+type RemovedRootAgentInteractionResponse = import("../src/index").AgentInteractionResponse;
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
@@ -106,6 +117,11 @@ describe("public exports", () => {
     expectTypeOf<RemovedRootAgentSession>().toBeAny();
     expectTypeOf<RemovedApprovalRequiredResult>().toBeAny();
     expectTypeOf<RemovedApprovalDecision>().toBeAny();
+    expectTypeOf<RemovedAgentInteractionResponse>().toBeAny();
+    expectTypeOf<RemovedRootAgentInteractionResponse>().toBeAny();
+    expectTypeOf<PublicAgentContinuation>().not.toBeNever();
+    expectTypeOf<PublicAgentInteractionRequest>().not.toBeNever();
+    expectTypeOf<PublicAgentInteractionResponse>().not.toBeNever();
     expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
     expectTypeOf<Parameters<PublicAgentType["generate"]>["length"]>().toEqualTypeOf<1>();
     expectTypeOf<Parameters<PublicAgentType["stream"]>["length"]>().toEqualTypeOf<1>();
@@ -117,7 +133,7 @@ describe("public exports", () => {
       agent.stream("hello");
       // @ts-expect-error Continuation runs cannot override prompt or session.
       agent.generate({
-        continuation: {} as import("../src/agent").AgentContinuation,
+        continuation: {} as PublicAgentContinuation,
         response: { type: "tool-approval" as const, approved: true },
         prompt: "not allowed",
       });
@@ -156,8 +172,29 @@ describe("public exports", () => {
     expect("AgentSession" in publicAgent).toBe(false);
     expect(publicAgent.Agent.prototype).not.toHaveProperty("session");
     expect(publicAgent.Agent.prototype).not.toHaveProperty("resume");
-    expect(publicAgent).toHaveProperty("parseAgentContinuation");
-    expect(publicAgent).toHaveProperty("parseAgentInteractionResponse");
+    expect(publicAgent).not.toHaveProperty("parseAgentContinuation");
+    expect(publicAgent).not.toHaveProperty("parseAgentInteractionResponse");
+    expect(publicCore).not.toHaveProperty("parseAgentContinuation");
+    expect(publicCore).not.toHaveProperty("parseAgentInteractionResponse");
+  });
+
+  it("isolates Agent interaction contracts on the browser-safe subpath", async () => {
+    expect(Object.keys(publicAgentInteractions).sort()).toEqual([
+      "agentContinuationSchema",
+      "agentInteractionRequestSchema",
+      "agentInteractionResponseSchema",
+      "assertAgentInteractionResponse",
+      "parseAgentContinuation",
+      "parseAgentInteractionRequest",
+      "parseAgentInteractionResponse",
+    ]);
+    const packageJson = JSON.parse(
+      await readFile(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { exports?: Record<string, unknown> };
+    expect(packageJson.exports).toHaveProperty("./agent/interactions", {
+      types: "./dist/agent/interactions/index.d.ts",
+      import: "./dist/agent/interactions/index.js",
+    });
   });
 
   it("exposes only the internal Agent integration contract", () => {
@@ -178,6 +215,8 @@ describe("public exports", () => {
     expect("skipTool" in publicAgent).toBe(false);
     expect("AgentRunCancelledError" in publicAgent).toBe(true);
     expect("AgentRunBlockedError" in publicAgent).toBe(true);
+    expect("AgentStructuredOutputError" in publicAgent).toBe(true);
+    expect("AgentStructuredOutputError" in publicCore).toBe(true);
     expect("MaxTurnsError" in publicAgent).toBe(true);
     expect("ToolApprovalRequiredError" in publicAgent).toBe(false);
     expect("AgentToolSuspensionError" in publicAgent).toBe(true);

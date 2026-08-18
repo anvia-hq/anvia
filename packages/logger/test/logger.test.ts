@@ -1,3 +1,4 @@
+import { AgentStructuredOutputError, Usage } from "@anvia/core";
 import type { AgentRunObserver, AgentToolObserver } from "@anvia/core/observability";
 import { describe, expect, it } from "vitest";
 import { createConsoleLogger, createLoggerObserver, createPinoLogger, type Logger } from "../src";
@@ -192,7 +193,124 @@ describe("createLoggerObserver", () => {
     });
     expect(logger.records[5]?.context).not.toHaveProperty("output");
   });
+
+  it("serializes nested Error causes before handing them to Pino", async () => {
+    const lines: Array<Record<string, unknown>> = [];
+    const logger = createPinoLogger({
+      level: "error",
+      destination: {
+        write: (line: string) => {
+          lines.push(JSON.parse(line) as Record<string, unknown>);
+        },
+      },
+    });
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_error",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    const rootCause = new SyntaxError("Unexpected token");
+    const nestedCause = new Error("Invalid JSON", { cause: rootCause });
+    const error = new Error("Structured output failed", { cause: nestedCause });
+
+    run.error?.({
+      error,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      messages: [],
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.error).toMatchObject({
+      name: "Error",
+      message: "Structured output failed",
+      stack: expect.any(String),
+      cause: {
+        name: "Error",
+        message: "Invalid JSON",
+        stack: expect.any(String),
+        cause: {
+          name: "SyntaxError",
+          message: "Unexpected token",
+          stack: expect.any(String),
+        },
+      },
+    });
+  });
+
+  it("redacts structured-output cause details while retaining safe diagnostics", async () => {
+    const rejectedOutput = "customer-secret-structured-output";
+    const error = new AgentStructuredOutputError({
+      phase: "parse",
+      attempt: 2,
+      maxAttempts: 2,
+      outputLength: rejectedOutput.length,
+      normalizedLength: rejectedOutput.length,
+      outputFormat: "raw",
+      usage: Usage.empty(),
+      cause: new SyntaxError(`Unexpected token in ${rejectedOutput}`),
+    });
+
+    const record = await recordPinoRunError(error);
+
+    expect(JSON.stringify(record)).not.toContain(rejectedOutput);
+    expect(record.error).toMatchObject({
+      name: "AgentStructuredOutputError",
+      phase: "parse",
+      attempt: 2,
+      maxAttempts: 2,
+      outputLength: rejectedOutput.length,
+      normalizedLength: rejectedOutput.length,
+      outputFormat: "raw",
+      cause: {
+        name: "SyntaxError",
+        message: "Structured-output cause details redacted.",
+      },
+    });
+  });
+
+  it("bounds deeply nested error-cause serialization", async () => {
+    let error: Error = new Error("root cause");
+    for (let depth = 0; depth < 100; depth += 1) {
+      error = new Error(`cause ${depth}`, { cause: error });
+    }
+
+    const record = await recordPinoRunError(error);
+
+    expect(JSON.stringify(record)).toContain("[Error cause depth limit]");
+  });
 });
+
+async function recordPinoRunError(error: Error): Promise<Record<string, unknown>> {
+  const lines: Array<Record<string, unknown>> = [];
+  const observer = createLoggerObserver({
+    logger: createPinoLogger({
+      level: "error",
+      destination: {
+        write: (line: string) => {
+          lines.push(JSON.parse(line) as Record<string, unknown>);
+        },
+      },
+    }),
+  });
+  const run = (await observer.startRun({
+    runId: "run_error",
+    prompt: { role: "user", content: "hello" },
+    history: [],
+    maxTurns: 1,
+  })) as AgentRunObserver;
+  run.error?.({ error, usage: Usage.empty(), messages: [] });
+  const record = lines[0];
+  if (record === undefined) throw new Error("Expected Pino error record.");
+  return record;
+}
 
 class RecordingLogger implements Logger {
   readonly records: { level: string; message: string; context: Record<string, unknown> }[];

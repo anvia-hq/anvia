@@ -19,6 +19,8 @@ The request carries core `Message[]`; client-side `UIMessage[]` never crosses th
 The response uses `ClientStreamEvent` records inside an always-framed `anvia.client.v3` stream.
 Agent endpoints accept either a `messages` request or an `interaction_response` request, while
 keeping the matching `AgentContinuation` exclusively on the server.
+Agent interaction wire contracts come from the browser-safe `@anvia/core/agent/interactions`
+subpath; importing Client does not load the Agent runtime or its infrastructure dependencies.
 
 ## Public API
 

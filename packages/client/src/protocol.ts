@@ -1,4 +1,7 @@
-import { parseAgentInteractionRequest, parseAgentInteractionResponse } from "@anvia/core/agent";
+import {
+  parseAgentInteractionRequest,
+  parseAgentInteractionResponse,
+} from "@anvia/core/agent/interactions";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import { isJsonValue, parseMessages } from "@anvia/core/completion";
 import {

@@ -1,32 +1,15 @@
 export type { ModelCallOptions } from "../model-call-options";
 export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
 export { Agent } from "./agent";
+export type { AgentStructuredOutputFormat, AgentStructuredOutputPhase } from "./errors";
 export {
   AgentRunBlockedError,
   AgentRunCancelledError,
   AgentStreamClosedError,
+  AgentStructuredOutputError,
   AgentToolSuspensionError,
   MaxTurnsError,
 } from "./errors";
-export type {
-  AgentContinuation,
-  AgentInteractionRequest,
-  AgentInteractionResponse,
-  AgentQuestionAnswer,
-  AgentQuestionChoice,
-  AgentQuestionPrompt,
-  AgentToolApprovalRequest,
-  AgentToolQuestionRequest,
-} from "./interactions";
-export {
-  agentContinuationSchema,
-  agentInteractionRequestSchema,
-  agentInteractionResponseSchema,
-  assertAgentInteractionResponse,
-  parseAgentContinuation,
-  parseAgentInteractionRequest,
-  parseAgentInteractionResponse,
-} from "./interactions";
 export type {
   AgentErrorEvent,
   AgentFinishEvent,

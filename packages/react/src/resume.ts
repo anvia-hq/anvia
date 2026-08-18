@@ -6,7 +6,7 @@ import {
   parseClientStreamRequest,
   parseUIMessages,
 } from "@anvia/client";
-import { parseAgentInteractionRequest } from "@anvia/core/agent";
+import { parseAgentInteractionRequest } from "@anvia/core/agent/interactions";
 import type { ChatResumeOptions, ChatResumeState } from "./types";
 
 const storageKeyPrefix = "anvia:chat-resume:";

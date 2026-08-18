@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- 007b132: Apply LanceDB metadata filters through Core's provider-neutral matcher instead of generating SQL
+  against the adapter's serialized metadata column. This fixes filtering with LanceDB 0.37, prevents
+  filter keys or values from becoming SQL, and removes the unsupported `filterToLanceExpr` export.
+
 ## 1.0.0-rc.3
 
 ### Patch Changes

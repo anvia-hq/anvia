@@ -23,6 +23,8 @@ if (!/^[A-Za-z0-9_-]+$/.test(environment.ANVIA_LENS_PUBLIC_KEY)) {
   throw new Error("ANVIA_LENS_PUBLIC_KEY contains unsupported characters");
 }
 
+const publicKey = sqlLiteral(environment.ANVIA_LENS_PUBLIC_KEY);
+
 if (options.has("--rebuild")) {
   run("docker", ["compose", "up", "-d", "--build"], { cwd: lensRoot });
 } else {
@@ -41,11 +43,12 @@ const projectId = compose([
   "-d",
   "lens",
   "-Atc",
-  `SELECT project_id FROM project_api_keys WHERE public_key = '${environment.ANVIA_LENS_PUBLIC_KEY}' AND revoked_at IS NULL LIMIT 1`,
+  `SELECT project_id FROM project_api_keys WHERE public_key = ${publicKey} AND revoked_at IS NULL LIMIT 1`,
 ]).trim();
 if (!/^[0-9a-f-]{36}$/.test(projectId)) {
   throw new Error("The configured public key does not resolve to an active Lens project");
 }
+const projectIdLiteral = sqlLiteral(projectId);
 
 const smoke = run("pnpm", ["--filter", "cookbook", "integrations:08"], {
   cwd: root,
@@ -65,6 +68,8 @@ if (!/^[0-9a-f]{32}$/.test(traceId ?? "") || !/^[0-9a-f]{16}$/.test(observationI
 if (typeof runId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(runId)) {
   throw new Error("The native smoke example did not return an evaluation run ID");
 }
+const traceIdLiteral = sqlLiteral(traceId);
+const runIdLiteral = sqlLiteral(runId);
 if (payload.outcome !== "pass")
   throw new Error(`Expected a passing evaluation, got ${payload.outcome}`);
 
@@ -72,11 +77,11 @@ await waitFor(async () => {
   const [traces, evaluations, runs] = clickhouse(
     `SELECT
       (SELECT count() FROM trace_summaries FINAL
-        WHERE project_id='${projectId}' AND trace_id='${traceId}'),
+        WHERE project_id=${projectIdLiteral} AND trace_id=${traceIdLiteral}),
       (SELECT count() FROM evaluation_results FINAL
-        WHERE project_id='${projectId}' AND trace_id='${traceId}' AND run_id='${runId}'),
+        WHERE project_id=${projectIdLiteral} AND trace_id=${traceIdLiteral} AND run_id=${runIdLiteral}),
       (SELECT count() FROM evaluation_runs FINAL
-        WHERE project_id='${projectId}' AND id='${runId}' AND status='completed')
+        WHERE project_id=${projectIdLiteral} AND id=${runIdLiteral} AND status='completed')
       FORMAT TabSeparatedRaw`,
   )
     .trim()
@@ -90,7 +95,7 @@ const evaluation = JSON.parse(
     `SELECT run_id, trace_id, observation_id, suite_name, case_id, metric_name, outcome,
       service_name, environment, release, payload, payload_status
       FROM evaluation_results FINAL
-      WHERE project_id='${projectId}' AND trace_id='${traceId}'
+      WHERE project_id=${projectIdLiteral} AND trace_id=${traceIdLiteral}
       ORDER BY timestamp DESC LIMIT 1
       FORMAT JSONEachRow`,
   ).trim(),
@@ -116,7 +121,7 @@ if (
 
 const capturedPayloads = Number(
   clickhouse(
-    `SELECT countIf(input IS NOT NULL OR output IS NOT NULL) FROM spans FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' FORMAT TabSeparatedRaw`,
+    `SELECT countIf(input IS NOT NULL OR output IS NOT NULL) FROM spans FINAL WHERE project_id=${projectIdLiteral} AND trace_id=${traceIdLiteral} FORMAT TabSeparatedRaw`,
   ).trim(),
 );
 if (capturedPayloads !== 0) throw new Error("Safe capture exported an input or output payload");
@@ -130,7 +135,7 @@ if (options.has("--durability")) {
     async () =>
       Number(
         clickhouse(
-          `SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' FORMAT TabSeparatedRaw`,
+          `SELECT count() FROM evaluation_results FINAL WHERE project_id=${projectIdLiteral} AND trace_id=${traceIdLiteral} FORMAT TabSeparatedRaw`,
         ).trim(),
       ) === 1,
     "evaluation durability after ClickHouse restart",
@@ -239,6 +244,13 @@ async function waitFor(check, label) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
   }
   throw new Error(`Timed out waiting for ${label}`, { cause: lastError });
+}
+
+function sqlLiteral(value) {
+  if (typeof value !== "string") {
+    throw new Error("SQL literal must be a string");
+  }
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function loadEnvironment(source) {

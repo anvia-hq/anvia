@@ -1,4 +1,4 @@
-import type { AgentQuestionAnswer, AgentQuestionPrompt } from "@anvia/core/agent";
+import type { AgentQuestionAnswer, AgentQuestionPrompt } from "@anvia/core/agent/interactions";
 import {
   type ChangeEvent,
   forwardRef,

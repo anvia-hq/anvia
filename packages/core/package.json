@@ -1,6 +1,6 @@
 {
   "name": "@anvia/core",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0-rc.5",
   "description": "Core runtime primitives for context-aware Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -28,6 +28,10 @@
     "./agent": {
       "types": "./dist/agent/index.d.ts",
       "import": "./dist/agent/index.js"
+    },
+    "./agent/interactions": {
+      "types": "./dist/agent/interactions/index.d.ts",
+      "import": "./dist/agent/interactions/index.js"
     },
     "./internal/agent": {
       "types": "./dist/internal/agent.d.ts",
@@ -107,7 +111,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/agent/index.ts src/internal/agent.ts src/speech-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/documents/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/agent/index.ts src/agent/interactions/index.ts src/internal/agent.ts src/speech-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/documents/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

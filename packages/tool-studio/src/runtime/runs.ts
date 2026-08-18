@@ -4,7 +4,7 @@ import {
   customAgentEventsToClientStream,
 } from "@anvia/client";
 import type { AgentStreamEvent } from "@anvia/core/agent";
-import { parseAgentInteractionResponse } from "@anvia/core/agent";
+import { parseAgentInteractionResponse } from "@anvia/core/agent/interactions";
 import {
   isJsonValue,
   type JsonObject,

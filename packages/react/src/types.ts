@@ -9,7 +9,7 @@ import type {
   CreateUIAttachment,
   UIMessage,
 } from "@anvia/client";
-import type { AgentInteractionResponse } from "@anvia/core/agent";
+import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ContextUsage } from "@anvia/core/completion";
 
 export type AnyClientTransport = ClientTransport<

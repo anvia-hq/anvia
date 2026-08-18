@@ -1,6 +1,6 @@
 {
   "name": "@anvia/redis",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0-rc.5",
   "description": "Redis vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

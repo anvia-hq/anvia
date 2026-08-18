@@ -15,7 +15,7 @@ import {
   type AgentInteractionResponse,
   assertAgentInteractionResponse,
   parseAgentInteractionResponse,
-} from "@anvia/core/agent";
+} from "@anvia/core/agent/interactions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
 import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";

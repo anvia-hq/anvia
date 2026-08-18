@@ -49,6 +49,12 @@ if (result.status === "completed") console.log(result.output);
 
 The logger observer omits final outputs, full model requests, model responses, and tool results by default. Pass `LoggerObserverOptions` to opt in when your data policy allows those payloads in logs.
 
+Agent errors are serialized before reaching the configured logger. Nested `Error.cause` chains keep
+their `name`, `message`, and `stack`, including when the destination is Pino. Cause traversal is
+bounded. Structured-output causes are reduced to safe type metadata because parser and schema error
+messages can contain rejected model content; the outer error still records its phase, attempts,
+lengths, and detected format.
+
 For local development without Pino output, use the console logger:
 
 ```ts

@@ -1,5 +1,16 @@
 # @anvia/react-ui
 
+## 1.0.0-rc.5
+
+### Patch Changes
+
+- e96d038: Move Agent interaction contracts and parsers to the browser-safe
+  `@anvia/core/agent/interactions` subpath. Prevent Client and React bundles from loading the Agent
+  runtime, MCP stdio, Node built-ins, or undici through Core's server barrels.
+- Updated dependencies [e96d038]
+  - @anvia/client@1.0.0-rc.5
+  - @anvia/react@1.0.0-rc.5
+
 ## 1.0.0-rc.4
 
 ### Patch Changes

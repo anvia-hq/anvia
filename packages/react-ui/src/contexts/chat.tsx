@@ -4,7 +4,10 @@ import type {
   ClientStreamRequest,
   ClientTransport,
 } from "@anvia/client";
-import type { AgentToolApprovalRequest, AgentToolQuestionRequest } from "@anvia/core/agent";
+import type {
+  AgentToolApprovalRequest,
+  AgentToolQuestionRequest,
+} from "@anvia/core/agent/interactions";
 import type { UseChatResult } from "@anvia/react";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 

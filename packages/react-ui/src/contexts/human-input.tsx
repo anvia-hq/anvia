@@ -4,7 +4,7 @@ import type {
   AgentQuestionPrompt,
   AgentToolApprovalRequest,
   AgentToolQuestionRequest,
-} from "@anvia/core/agent";
+} from "@anvia/core/agent/interactions";
 import {
   createContext,
   createElement,

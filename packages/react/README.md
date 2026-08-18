@@ -47,6 +47,8 @@ useChat({
 
 Import transports, protocol types, `UIMessage`, and conversion helpers from `@anvia/client`.
 `@anvia/react` deliberately does not re-export them.
+Import Agent interaction types directly from `@anvia/core/agent/interactions` when an application
+needs to name them.
 
 `useChat`:
 

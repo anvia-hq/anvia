@@ -33,6 +33,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429]);
 const RETRYABLE_NUMERIC_ERROR_CODES = new Set([4, 8, 14]);
 const RETRYABLE_ERROR_NAMES = new Set([
+  "AgentStructuredOutputError",
   "APIConnectionError",
   "APIConnectionTimeoutError",
   "TimeoutError",

@@ -1,4 +1,5 @@
 export * from "../../src/agent";
+export * from "../../src/agent/interactions/index";
 export * from "../../src/completion";
 export * from "../../src/embeddings";
 export * from "../../src/evals";

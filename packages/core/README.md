@@ -191,7 +191,9 @@ keys. Cancellation is forwarded to provider SDK calls and is never retried.
 
 Agents own their default retry policy. A run with no `retries` value inherits the Agent setting;
 `false` disables it for that run; an object replaces it for that run. Retries apply to the current
-provider call only, so completed tools and earlier turns are never replayed.
+completion only, so completed tools and earlier turns are never replayed. `maxAttempts` is the
+total number of model attempts for that completion, including the initial attempt; it is not the
+number of additional retries.
 
 ```ts
 const agent = new Agent({
@@ -207,6 +209,19 @@ await agent.generate({
   retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
 });
 ```
+
+When an Agent has `outputSchema`, JSON parsing and schema-validation failures use the same retry
+budget when retries are explicitly enabled. A correction request includes the rejected response in
+the provider transcript and asks for raw JSON matching the schema, without Markdown or commentary.
+Transport failures and structured-output failures therefore cannot exceed `maxAttempts` in total.
+
+Structured output remains strict: Core trims surrounding whitespace, parses JSON, and validates the
+result with the configured Zod schema. As a compatibility fallback for OpenAI-compatible providers
+that violate strict JSON mode, Core also accepts a response consisting entirely of one lowercase
+`json` Markdown fence or one unlabeled Markdown fence. It does not search prose for JSON, accept
+content before or after a fence, or bypass schema validation. `AgentStructuredOutputError` reports
+the `parse` or `schema` phase, attempt counts, output length/format metadata, cumulative attempt
+usage, and the original `cause`; its message never contains the rejected model response.
 
 Agent results are discriminated by `status`. Completed results include typed `output` and `text`;
 guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approvals and first-class
@@ -239,6 +254,17 @@ Keep continuations server-side. A resumed phase receives a new `runId`; Core val
 continuation and current Agent/tool registration but does not provide a durable continuation store
 or exactly-once execution. Use `createQuestionTool({ name, description })` when a model must ask for
 structured free-text or choice answers.
+
+Import JSON-safe interaction contracts and parsers from their browser-safe subpath. This entrypoint
+does not load the Agent runtime, MCP clients, or Node infrastructure:
+
+```ts
+import {
+  type AgentInteractionResponse,
+  parseAgentInteractionRequest,
+  parseAgentInteractionResponse,
+} from "@anvia/core/agent/interactions";
+```
 
 An Agent with `outputSchema` carries that output type through `generate`, `stream`, `asTool`, and
 Pipeline Agent stages. Agent stream finals use the same result shape:
@@ -504,7 +530,8 @@ added to Agent instructions.
 
 ## Public Areas
 
-- `agent`: typed Agent runtime, continuations, interactions, retries, and stream events
+- `agent`: typed Agent runtime, retries, and stream events
+- `agent/interactions`: browser-safe interaction contracts, schemas, assertions, and parsers
 - `tool`: typed tool creation and tool sets
 - `completion`: direct completion helpers and provider-neutral model contracts
 - `memory`: durable session memory interfaces and in-memory store

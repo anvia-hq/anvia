@@ -1,5 +1,10 @@
 import type { Agent } from "../../agent/agent";
-import { AgentRunCancelledError, AgentStreamClosedError, MaxTurnsError } from "../../agent/errors";
+import {
+  AgentRunCancelledError,
+  AgentStreamClosedError,
+  AgentStructuredOutputError,
+  MaxTurnsError,
+} from "../../agent/errors";
 import {
   type AgentInteractionResponse,
   assertAgentInteractionResponse,
@@ -104,6 +109,7 @@ import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
+import { normalizeStructuredOutput, STRUCTURED_OUTPUT_RETRY_PROMPT } from "./structured-output";
 import {
   type AgentToolEventPayload,
   ToolCallExecutor,
@@ -169,6 +175,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private currentMessages: MessageType[] = [];
   private cancellationError: AgentRunCancelledError | undefined;
   private activeGeneration: { turn: number; observers: ActiveGenerationObservers } | undefined;
+  private validatedStructuredOutput: { text: string; output: Output } | undefined;
+  private failedCompletionUsage = Usage.empty();
   private readonly abortController = new AbortController();
   private removeExternalAbortListener: (() => void) | undefined;
 
@@ -548,6 +556,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
         usage = Usage.add(usage, error.usage);
       }
+      const failedCompletionUsage = this.takeFailedCompletionUsage();
+      if (error instanceof AgentStructuredOutputError) {
+        usage = Usage.add(usage, error.usage);
+      } else {
+        usage = Usage.add(usage, failedCompletionUsage);
+      }
       this.runState = "closing";
       const runError = this.normalizeRunError(error);
       const reportedError = await this.reportRunFailure(
@@ -731,7 +745,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           request,
           modelInfo: generationStartArgs.modelInfo,
         };
-        const bufferResponseEvents = this.shouldBufferStreamResponseEvents();
+        const bufferResponseEvents =
+          this.shouldBufferStreamResponseEvents() || this.agent.outputSchema !== undefined;
         const completionState: StreamingCompletionState = {
           response: undefined,
           firstDeltaMs: undefined,
@@ -925,6 +940,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
         usage = Usage.add(usage, error.usage);
       }
+      if (error instanceof AgentStructuredOutputError) {
+        usage = Usage.add(usage, error.usage);
+      }
       this.runState = "closing";
       const runError = this.normalizeRunError(error);
       const reportedError = await this.reportRunFailure(
@@ -959,16 +977,20 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     runObservers: ActiveAgentRunObservers,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this.agent.model, request);
+    this.validatedStructuredOutput = undefined;
+    this.failedCompletionUsage = Usage.empty();
     const providerRequest = this.providerTraceRequest(request);
     const generationObservers = await runObservers.startGeneration(
       this.generationStartArgs(turn, request, providerRequest),
     );
+    let currentRequest = request;
+    let structuredRetryUsage = Usage.empty();
     try {
       for (let attempt = 1; ; attempt += 1) {
         let response: CompletionResponse;
         try {
           this.throwIfCancelled();
-          response = await this.agent.model.completion(request, this.modelCallOptions());
+          response = await this.agent.model.completion(currentRequest, this.modelCallOptions());
         } catch (error) {
           const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
           if (retryOptions === undefined) {
@@ -984,8 +1006,36 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           );
           continue;
         }
-        await generationObservers.end({ turn, response });
-        return response;
+
+        const cumulativeUsage = Usage.add(structuredRetryUsage, response.usage);
+        try {
+          this.validateStructuredResponse(response, attempt, cumulativeUsage);
+        } catch (error) {
+          const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
+          if (retryOptions === undefined) {
+            throw error;
+          }
+          structuredRetryUsage = cumulativeUsage;
+          this.failedCompletionUsage = structuredRetryUsage;
+          currentRequest = structuredOutputRetryRequest(currentRequest, response);
+          await this.scheduleCompletionRetry(
+            error,
+            attempt,
+            turn,
+            false,
+            retryOptions,
+            runObservers,
+          );
+          continue;
+        }
+
+        const finalResponse =
+          structuredRetryUsage.totalTokens === 0
+            ? response
+            : { ...response, usage: cumulativeUsage };
+        await generationObservers.end({ turn, response: finalResponse });
+        this.failedCompletionUsage = Usage.empty();
+        return finalResponse;
       }
     } catch (error) {
       await settleFailureCleanup([() => generationObservers.error({ turn, error })]);
@@ -1029,12 +1079,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (!isStreamingCompletionModel(model)) {
       throw new TypeError("Streaming completion requires a streaming-capable model.");
     }
-    const accumulator = new CompletionStreamAccumulator();
+    this.validatedStructuredOutput = undefined;
+    let currentRequest = args.request;
     for (let attempt = 1; ; attempt += 1) {
+      const accumulator = new CompletionStreamAccumulator();
       let hasProviderProgress = false;
       try {
         this.throwIfCancelled();
-        for await (const event of model.streamCompletion(args.request, this.modelCallOptions())) {
+        for await (const event of model.streamCompletion(currentRequest, this.modelCallOptions())) {
           if (event.type === "error") {
             if (event.usage !== undefined) {
               args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, event.usage);
@@ -1063,7 +1115,37 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             }
           }
         }
-        args.state.response = accumulator.response();
+        const response = accumulator.response();
+        const cumulativeStructuredUsage = Usage.add(args.state.providerErrorUsage, response.usage);
+        try {
+          this.validateStructuredResponse(response, attempt, cumulativeStructuredUsage);
+        } catch (error) {
+          const retryOptions = this.retryOptionsForFailure(error, attempt, args.turn, true);
+          if (retryOptions === undefined) {
+            if (error instanceof AgentStructuredOutputError) {
+              args.state.providerErrorUsage = Usage.empty();
+            }
+            throw error;
+          }
+          args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, response.usage);
+          args.state.firstDeltaMs = undefined;
+          args.state.emittedToolCallIds.clear();
+          currentRequest = structuredOutputRetryRequest(currentRequest, response);
+          await this.scheduleCompletionRetry(
+            error,
+            attempt,
+            args.turn,
+            true,
+            retryOptions,
+            args.runObservers,
+          );
+          continue;
+        }
+        args.state.response =
+          args.state.providerErrorUsage.totalTokens === 0
+            ? response
+            : { ...response, usage: cumulativeStructuredUsage };
+        args.state.providerErrorUsage = Usage.empty();
         return;
       } catch (error) {
         const retryOptions = hasProviderProgress
@@ -1640,16 +1722,66 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     };
   }
 
-  private parseOutput(text: string): Output {
+  private validateStructuredResponse(
+    response: CompletionResponse,
+    attempt: number,
+    usage: Usage,
+  ): void {
+    if (this.agent.outputSchema === undefined) return;
+    if (response.choice.some((item) => item.type === "tool-call")) return;
+    const text = textFromAssistantContent(response.choice);
+    const output = this.parseOutput(text, attempt, usage, { useValidatedOutput: false });
+    this.validatedStructuredOutput = { text, output };
+  }
+
+  private takeFailedCompletionUsage(): Usage {
+    const usage = this.failedCompletionUsage;
+    this.failedCompletionUsage = Usage.empty();
+    return usage;
+  }
+
+  private parseOutput(
+    text: string,
+    attempt = 1,
+    usage = Usage.empty(),
+    options: { useValidatedOutput?: boolean } = {},
+  ): Output {
     const schema = this.agent.outputSchema;
     if (schema === undefined) return text as Output;
+    if (options.useValidatedOutput !== false && this.validatedStructuredOutput?.text === text) {
+      return this.validatedStructuredOutput.output;
+    }
+    const normalized = normalizeStructuredOutput(text);
+    const maxAttempts = this.completionRetryOptions?.maxAttempts ?? 1;
     let json: unknown;
     try {
-      json = JSON.parse(text);
+      json = JSON.parse(normalized.text);
     } catch (error) {
-      throw new Error("Agent expected the model response to be valid JSON.", { cause: error });
+      throw new AgentStructuredOutputError({
+        phase: "parse",
+        attempt,
+        maxAttempts,
+        outputLength: text.length,
+        normalizedLength: normalized.text.length,
+        outputFormat: normalized.format,
+        usage,
+        cause: error,
+      });
     }
-    return schema.parse(json);
+    try {
+      return schema.parse(json);
+    } catch (error) {
+      throw new AgentStructuredOutputError({
+        phase: "schema",
+        attempt,
+        maxAttempts,
+        outputLength: text.length,
+        normalizedLength: normalized.text.length,
+        outputFormat: normalized.format,
+        usage,
+        cause: error,
+      });
+    }
   }
 
   private memoryCompactionResult(): {
@@ -2322,6 +2454,24 @@ function latestAssistantText(messages: readonly MessageType[]): string {
     }
   }
   return "";
+}
+
+function structuredOutputRetryRequest(
+  request: CompletionRequest,
+  response: CompletionResponse,
+): CompletionRequest {
+  const invalidResponse: MessageType = {
+    role: "assistant",
+    content: [...response.choice],
+  };
+  const correction: MessageType = {
+    role: "user",
+    content: STRUCTURED_OUTPUT_RETRY_PROMPT,
+  };
+  return {
+    ...request,
+    chatHistory: [...request.chatHistory, invalidResponse, correction],
+  };
 }
 
 function providerMessages(messages: readonly MessageType[]): MessageType[] {

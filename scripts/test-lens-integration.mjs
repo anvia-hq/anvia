@@ -246,6 +246,17 @@ async function waitFor(check, label) {
   throw new Error(`Timed out waiting for ${label}`, { cause: lastError });
 }
 
+/**
+ * Escape a value for safe interpolation into a SQL string literal.
+ *
+ * Wraps the input in single quotes and doubles any internal single quotes
+ * using the standard SQL escaping rule (`'` → `''`), so the result can be
+ * embedded directly into a query without risk of breaking out of the literal.
+ *
+ * @param {string} value - The value to escape.
+ * @returns {string} A safely-quoted SQL string literal (e.g. `'hello'`, `'it''s'`).
+ * @throws {Error} If `value` is not a string.
+ */
 function sqlLiteral(value) {
   if (typeof value !== "string") {
     throw new Error("SQL literal must be a string");

@@ -45,6 +45,7 @@
     "add-neo4j-graphrag",
     "anvia-v1-release-train",
     "explicit-client-stream-boundary",
+    "fix-lancedb-metadata-filters",
     "public-rc-ready",
     "redesign-agent-interactions",
     "redesign-agent-memory-compaction",

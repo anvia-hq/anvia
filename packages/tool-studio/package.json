@@ -1,6 +1,6 @@
 {
   "name": "@anvia/studio",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.6",
   "description": "Studio UI and HTTP runtime for Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

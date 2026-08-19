@@ -1,6 +1,6 @@
 {
   "name": "@anvia/weaviate",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.6",
   "description": "Weaviate vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

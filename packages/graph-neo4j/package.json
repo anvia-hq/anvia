@@ -1,6 +1,6 @@
 {
   "name": "@anvia/neo4j",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.6",
   "description": "Schema-first Neo4j GraphRAG integration for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

@@ -2,6 +2,7 @@ import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
@@ -17,6 +18,7 @@ import {
   type ToolChoice,
   type ToolDefinition,
   type ToolResultPart,
+  Usage,
   type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
@@ -135,6 +137,13 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel<unkno
       }
     }
     streamState.assertComplete();
+    const finalEvent = streamState.finalEvent();
+    if (finalEvent !== undefined) {
+      yield {
+        ...finalEvent,
+        response: withContextUsage(finalEvent.response, this.modelInfo()),
+      };
+    }
   }
 }
 
@@ -302,6 +311,7 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     usage: usageFromOpenAIChatCompletion(raw.usage),
     rawResponse: response,
   };
+  applyOpenAIChatFinishReason(result, firstChoice?.finish_reason);
 
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
@@ -387,6 +397,11 @@ function mapOpenAIChatCompletionStreamChunk(
   };
   if (mapping.hasFinishReason) {
     mapping.finishReason = choice?.finish_reason;
+    for (const event of mapping.events) {
+      if (event.type === "final") {
+        applyOpenAIChatFinishReason(event.response, mapping.finishReason);
+      }
+    }
   }
   return mapping;
 }
@@ -395,16 +410,26 @@ class OpenAIChatCompletionStreamState {
   private readonly reasoningId = crypto.randomUUID();
   private hasToolCalls = false;
   private hasFinishReason = false;
+  private hasFinalResponse = false;
   private finishReason: unknown;
+  private terminalChunk: unknown;
 
   mapChunk(chunk: unknown): ChatCompletionStreamChunkMapping {
     const mapping = mapOpenAIChatCompletionStreamChunk(chunk, this.reasoningId);
-    this.accept(mapping);
+    this.accept(mapping, chunk);
+    if (this.hasFinishReason) {
+      for (const event of mapping.events) {
+        if (event.type === "final") {
+          applyOpenAIChatFinishReason(event.response, this.finishReason);
+        }
+      }
+    }
     return mapping;
   }
 
-  private accept(mapping: ChatCompletionStreamChunkMapping): void {
+  private accept(mapping: ChatCompletionStreamChunkMapping, chunk: unknown): void {
     this.hasToolCalls ||= mapping.hasToolCalls;
+    this.hasFinalResponse ||= mapping.events.some((event) => event.type === "final");
     if (!mapping.hasFinishReason) {
       return;
     }
@@ -413,9 +438,24 @@ class OpenAIChatCompletionStreamState {
     }
     this.hasFinishReason = true;
     this.finishReason = mapping.finishReason;
+    this.terminalChunk = chunk;
     if (this.hasToolCalls) {
       this.assertSupportedFinishReason();
     }
+  }
+
+  finalEvent(): Extract<CompletionModelStreamEvent, { type: "final" }> | undefined {
+    if (!this.hasFinishReason || this.hasFinalResponse) return undefined;
+    const response: CompletionResponse = {
+      choice: [],
+      usage: Usage.empty(),
+      rawResponse: this.terminalChunk,
+    };
+    applyOpenAIChatFinishReason(response, this.finishReason);
+    if (isPlainObject(this.terminalChunk) && typeof this.terminalChunk.id === "string") {
+      response.messageId = this.terminalChunk.id;
+    }
+    return { type: "final", response };
   }
 
   assertComplete(): void {
@@ -443,6 +483,20 @@ class OpenAIChatCompletionStreamState {
       throw new Error(UNSUPPORTED_TOOL_FINISH_ERROR);
     }
   }
+}
+
+function applyOpenAIChatFinishReason(response: CompletionResponse, value: unknown): void {
+  if (!isTerminalFinishReason(value)) return;
+  response.finishReason = openAIChatFinishReason(value);
+  if (typeof value === "string") response.providerFinishReason = value;
+}
+
+function openAIChatFinishReason(value: unknown): CompletionFinishReason {
+  if (value === "stop") return "stop";
+  if (value === "length") return "length";
+  if (value === "content_filter") return "content-filter";
+  if (value === "tool_calls" || value === "function_call") return "tool-calls";
+  return "other";
 }
 
 function primaryStreamChoice(value: unknown): Record<string, unknown> | undefined {

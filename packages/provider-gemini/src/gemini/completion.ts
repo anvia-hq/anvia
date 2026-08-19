@@ -2,6 +2,7 @@ import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
@@ -478,11 +479,41 @@ export function fromGeminiGenerateContentResponse(response: unknown): Completion
     usage: usageFromGemini(raw.usageMetadata),
     rawResponse: response,
   };
+  applyGeminiFinishReason(result, raw);
   const id = stringFrom(raw.responseId) ?? stringFrom(raw.id);
   if (id !== undefined) {
     result.messageId = id;
   }
   return result;
+}
+
+function applyGeminiFinishReason(response: CompletionResponse, raw: Record<string, unknown>): void {
+  const value = stringFrom(primaryGeminiCandidate(raw)?.finishReason);
+  if (value === undefined) return;
+  response.finishReason = geminiFinishReason(value, response.choice);
+  response.providerFinishReason = value;
+}
+
+function geminiFinishReason(
+  value: string,
+  choice: readonly AssistantContentPart[],
+): CompletionFinishReason {
+  if (value === "MAX_TOKENS") return "length";
+  if (
+    value === "SAFETY" ||
+    value === "RECITATION" ||
+    value === "BLOCKLIST" ||
+    value === "PROHIBITED_CONTENT" ||
+    value === "SPII" ||
+    value === "IMAGE_SAFETY" ||
+    value === "IMAGE_PROHIBITED_CONTENT"
+  ) {
+    return "content-filter";
+  }
+  if (value === "STOP") {
+    return choice.some((part) => part.type === "tool-call") ? "tool-calls" : "stop";
+  }
+  return "other";
 }
 
 export function fromGeminiGenerateContentStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
@@ -656,6 +687,15 @@ function candidateParts(response: Record<string, unknown>): Array<Record<string,
       ? candidate.content.parts.filter(isPlainObject)
       : [];
   });
+}
+
+function primaryGeminiCandidate(
+  response: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const candidates = Array.isArray(response.candidates)
+    ? response.candidates.filter(isPlainObject)
+    : [];
+  return candidates.find((candidate) => candidate.index === 0) ?? candidates[0];
 }
 
 function usageFromGemini(usage: unknown): Usage {

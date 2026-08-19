@@ -297,6 +297,65 @@ describe("agent observability", () => {
     expect(JSON.stringify(observer.events[2])).not.toContain("private provider detail");
   });
 
+  it("records structured truncation retry diagnostics without response content", async () => {
+    const observer = new RecordingObserver();
+    const truncated = response([AssistantContent.text('{"answer":"private partial')]);
+    truncated.finishReason = "length";
+    truncated.providerFinishReason = "length";
+    truncated.usage = {
+      ...Usage.empty(),
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+    };
+    const model = new QueueModel([
+      truncated,
+      response([AssistantContent.text('{"answer":"short"}')]),
+    ]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      outputSchema: z.object({ answer: z.string() }),
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await agent.generate({ prompt: "hello" });
+
+    const retry = observer.events.find(
+      (event): event is { type: "run_event"; args: AgentRunEventArgs } =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "run_event" &&
+        "args" in event &&
+        typeof event.args === "object" &&
+        event.args !== null &&
+        "name" in event.args &&
+        event.args.name === "completion.retry",
+    );
+    expect(retry).toMatchObject({
+      type: "run_event",
+      args: {
+        level: "WARNING",
+        attributes: {
+          attempt: 1,
+          maxAttempts: 2,
+          failurePhase: "truncated",
+          finishReason: "length",
+          providerFinishReason: "length",
+          outputLength: 26,
+          normalizedLength: 26,
+          attemptUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+          cumulativeUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+          previousResponse: "omitted",
+          includedOutputLength: 0,
+        },
+      },
+    });
+    expect(JSON.stringify(retry)).not.toContain("private partial");
+  });
+
   it("records multiple turns and tool calls", async () => {
     const observer = new RecordingObserver();
     const model = new QueueModel([

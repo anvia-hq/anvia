@@ -2,6 +2,7 @@ import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
@@ -83,8 +84,13 @@ export class MistralCompletionModel implements StreamingCompletionModel<unknown>
       params as never,
       mistralRequestOptions(options) as never,
     );
+    let providerFinishReason: string | undefined;
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
+      providerFinishReason = mistralProviderFinishReason(chunk) ?? providerFinishReason;
       for (const event of fromMistralChatStreamChunk(chunk)) {
+        if (event.type === "final") {
+          applyMistralFinishReason(event.response, providerFinishReason);
+        }
         yield event.type === "final"
           ? {
               ...event,
@@ -224,6 +230,7 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
     usage: usageFromMistral(raw.usage),
     rawResponse: response,
   };
+  applyMistralFinishReason(result, mistralProviderFinishReason(response));
 
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
@@ -279,10 +286,31 @@ export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStrea
     if (typeof chunk.id === "string") {
       response.messageId = chunk.id;
     }
+    applyMistralFinishReason(response, mistralProviderFinishReason(chunk));
     events.push({ type: "final", response });
   }
 
   return events;
+}
+
+function mistralProviderFinishReason(value: unknown): string | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const choices = Array.isArray(value.choices) ? value.choices.filter(isPlainObject) : [];
+  const choice = choices.find((candidate) => candidate.index === 0) ?? choices[0];
+  return stringFrom(choice?.finishReason) ?? stringFrom(choice?.finish_reason);
+}
+
+function applyMistralFinishReason(response: CompletionResponse, value: string | undefined): void {
+  if (value === undefined) return;
+  response.finishReason = mistralFinishReason(value);
+  response.providerFinishReason = value;
+}
+
+function mistralFinishReason(value: string): CompletionFinishReason {
+  if (value === "stop") return "stop";
+  if (value === "length" || value === "model_length") return "length";
+  if (value === "tool_calls" || value === "function_call") return "tool-calls";
+  return "other";
 }
 
 function usageFromMistral(usage: unknown): Usage {

@@ -7,6 +7,7 @@ import {
   type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
+  CompletionStructuredOutputError,
   generateCompletion,
   type StreamingCompletionModel,
   streamCompletion,
@@ -92,8 +93,42 @@ describe("direct completion retries", () => {
         outputSchema: z.object({ ok: z.boolean() }),
         retries: { initialDelayMs: 0, maxDelayMs: 0 },
       }),
-    ).rejects.toThrow("valid JSON");
+    ).rejects.toMatchObject({
+      name: "CompletionStructuredOutputError",
+      phase: "parse",
+    });
     expect(model.requests).toHaveLength(1);
+  });
+
+  it("reports truncated structured output distinctly and preserves ordinary partial text", async () => {
+    const partial = response('{"ok":');
+    partial.finishReason = "length";
+    partial.providerFinishReason = "length";
+    const structuredModel = new CompletionQueueModel([partial]);
+
+    const error = await generateCompletion({
+      model: structuredModel,
+      prompt: "hello",
+      outputSchema: z.object({ ok: z.boolean() }),
+    }).catch((value) => value);
+
+    expect(error).toBeInstanceOf(CompletionStructuredOutputError);
+    expect(error).toMatchObject({
+      phase: "truncated",
+      outputLength: 6,
+      finishReason: "length",
+      providerFinishReason: "length",
+    });
+
+    const ordinaryModel = new CompletionQueueModel([partial]);
+    await expect(
+      generateCompletion({ model: ordinaryModel, prompt: "hello" }),
+    ).resolves.toMatchObject({
+      text: '{"ok":',
+      output: '{"ok":',
+      finishReason: "length",
+      providerFinishReason: "length",
+    });
   });
 
   it("retries a stream error before exposing events and aggregates usage", async () => {
@@ -120,6 +155,31 @@ describe("direct completion retries", () => {
     });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
+  });
+
+  it("emits a dedicated error for a length-terminated structured stream", async () => {
+    const partial = response('{"ok":');
+    partial.finishReason = "length";
+    partial.providerFinishReason = "length";
+    const model = new StreamQueueModel([[{ type: "final", response: partial }]]);
+
+    const events = await collect(
+      streamCompletion({
+        model,
+        prompt: "hello",
+        outputSchema: z.object({ ok: z.boolean() }),
+      }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "error",
+      error: {
+        name: "CompletionStructuredOutputError",
+        phase: "truncated",
+        finishReason: "length",
+      },
+    });
   });
 
   it("closes a failed stream attempt before waiting to retry", async () => {

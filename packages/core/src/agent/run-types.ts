@@ -1,4 +1,5 @@
 import type {
+  CompletionFinishReason,
   CompletionRequest,
   CompletionResponse,
   CompletionSource,
@@ -82,6 +83,8 @@ export type AgentResultBase = {
   runId: string;
   text: string;
   usage: Usage;
+  finishReason?: CompletionFinishReason | undefined;
+  providerFinishReason?: string | undefined;
   contextUsage?: ContextUsage | undefined;
   messages: MessageType[];
   trace?: AgentTraceInfo | undefined;

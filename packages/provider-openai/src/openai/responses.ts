@@ -2,6 +2,7 @@ import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
@@ -293,6 +294,7 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
     usage: usageFromOpenAIResponse(raw.usage),
     rawResponse: response,
   };
+  applyOpenAIResponseFinishReason(result, raw);
 
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
@@ -305,6 +307,36 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
   }
 
   return result;
+}
+
+function applyOpenAIResponseFinishReason(
+  response: CompletionResponse,
+  raw: Record<string, unknown>,
+): void {
+  const status = stringFrom(raw.status);
+  const incompleteDetails = isPlainObject(raw.incomplete_details) ? raw.incomplete_details : {};
+  const incompleteReason = stringFrom(incompleteDetails.reason);
+  const providerFinishReason = incompleteReason ?? status;
+  if (providerFinishReason === undefined) return;
+
+  let finishReason: CompletionFinishReason;
+  if (status === "incomplete") {
+    if (incompleteReason === "max_output_tokens") {
+      finishReason = "length";
+    } else if (incompleteReason === "content_filter") {
+      finishReason = "content-filter";
+    } else {
+      finishReason = "other";
+    }
+  } else if (response.choice.some((part) => part.type === "tool-call")) {
+    finishReason = "tool-calls";
+  } else if (status === "completed") {
+    finishReason = "stop";
+  } else {
+    finishReason = "other";
+  }
+  response.finishReason = finishReason;
+  response.providerFinishReason = providerFinishReason;
 }
 
 export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEvent | undefined {

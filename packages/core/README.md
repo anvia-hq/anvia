@@ -126,7 +126,17 @@ console.log(result.output.priority); // fully typed
 ```
 
 `CompletionResult` consistently contains `output`, the original `text`, normalized `content`,
-`usage`, and `rawResponse`, plus optional message, context, source, and provider-tool metadata.
+`usage`, and `rawResponse`, plus optional message, context, source, provider-tool, and finish-reason
+metadata. First-party adapters normalize provider termination into `finishReason` (`stop`, `length`,
+`content-filter`, `tool-calls`, or `other`) while preserving the provider value separately as
+`providerFinishReason`.
+
+Schema-backed completion detects `finishReason: "length"` before JSON parsing and throws
+`CompletionStructuredOutputError` with `phase: "truncated"`. Ordinary text completion remains
+intentional: partial text is returned unchanged with its finish reason so the application decides
+whether to display, continue, or discard it. A direct structured stream can similarly end with one
+typed error event after any already-emitted deltas; it does not silently retract public stream
+progress.
 
 Use `streamCompletion` for the streaming form:
 
@@ -210,18 +220,24 @@ await agent.generate({
 });
 ```
 
-When an Agent has `outputSchema`, JSON parsing and schema-validation failures use the same retry
-budget when retries are explicitly enabled. A correction request includes the rejected response in
-the provider transcript and asks for raw JSON matching the schema, without Markdown or commentary.
+When an Agent has `outputSchema`, truncation, JSON parsing, and schema-validation failures use the
+same retry budget when retries are explicitly enabled. Each retry starts from the original request
+rather than recursively accumulating failed attempts. Truncated output and reasoning are omitted;
+parse and schema repairs include only a bounded, text-only preview of the latest failed response.
+The correction asks for shorter raw JSON matching the schema, without Markdown or commentary.
 Transport failures and structured-output failures therefore cannot exceed `maxAttempts` in total.
+Completed Agent results expose the last generation's `finishReason` and `providerFinishReason`, and
+the same fields remain attached to each assistant message's Anvia generation metadata.
 
 Structured output remains strict: Core trims surrounding whitespace, parses JSON, and validates the
 result with the configured Zod schema. As a compatibility fallback for OpenAI-compatible providers
 that violate strict JSON mode, Core also accepts a response consisting entirely of one lowercase
 `json` Markdown fence or one unlabeled Markdown fence. It does not search prose for JSON, accept
 content before or after a fence, or bypass schema validation. `AgentStructuredOutputError` reports
-the `parse` or `schema` phase, attempt counts, output length/format metadata, cumulative attempt
-usage, and the original `cause`; its message never contains the rejected model response.
+the `truncated`, `parse`, or `schema` phase, attempt counts, output length/format metadata, per-attempt
+and cumulative usage, finish reasons, and the original `cause` when one exists; its message never
+contains the rejected model response. The `completion.retry` observer event records the same safe
+diagnostics and whether failed output was omitted or previewed, never the model output itself.
 
 Agent results are discriminated by `status`. Completed results include typed `output` and `text`;
 guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approvals and first-class

@@ -4,6 +4,7 @@ import type { ModelContextLimits } from "@anvia/core/completion";
 import {
   type AssistantContentPart,
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
@@ -105,6 +106,7 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
     const streamUsageFields = emptyAnthropicStreamUsageFields();
     let hasStreamUsage = false;
     let streamMessageId: string | undefined;
+    let streamProviderFinishReason: string | undefined;
     for await (const event of stream as unknown as AsyncIterable<unknown>) {
       if (isPlainObject(event) && event.type === "content_block_start") {
         const index = numberFrom(event.index);
@@ -120,6 +122,12 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
       if (isPlainObject(event)) {
         if (event.type === "message_start" && isPlainObject(event.message)) {
           streamMessageId = stringFrom(event.message.id) ?? streamMessageId;
+          streamProviderFinishReason =
+            stringFrom(event.message.stop_reason) ?? streamProviderFinishReason;
+        }
+        if (event.type === "message_delta" && isPlainObject(event.delta)) {
+          streamProviderFinishReason =
+            stringFrom(event.delta.stop_reason) ?? streamProviderFinishReason;
         }
         hasStreamUsage =
           applyAnthropicStreamUsage(event, streamUsage, streamUsageFields) || hasStreamUsage;
@@ -135,6 +143,9 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
                 },
               }
             : mapped;
+        if (usageMapped.type === "final") {
+          applyAnthropicFinishReason(usageMapped.response, streamProviderFinishReason);
+        }
         const streamMapped =
           usageMapped.type === "final"
             ? {
@@ -167,6 +178,7 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
         if (streamMessageId !== undefined) {
           response.messageId = streamMessageId;
         }
+        applyAnthropicFinishReason(response, streamProviderFinishReason);
         yield {
           type: "final",
           response: withContextUsage(response, this.modelInfo()),
@@ -437,12 +449,27 @@ export function fromAnthropicMessage(response: unknown): CompletionResponse {
     usage,
     rawResponse: response,
   };
+  applyAnthropicFinishReason(result, raw.stop_reason);
 
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
   }
 
   return result;
+}
+
+function applyAnthropicFinishReason(response: CompletionResponse, value: unknown): void {
+  if (typeof value !== "string") return;
+  response.finishReason = anthropicFinishReason(value);
+  response.providerFinishReason = value;
+}
+
+function anthropicFinishReason(value: string): CompletionFinishReason {
+  if (value === "end_turn" || value === "stop_sequence") return "stop";
+  if (value === "max_tokens" || value === "model_context_window_exceeded") return "length";
+  if (value === "tool_use") return "tool-calls";
+  if (value === "refusal") return "content-filter";
+  return "other";
 }
 
 function anthropicUsage(

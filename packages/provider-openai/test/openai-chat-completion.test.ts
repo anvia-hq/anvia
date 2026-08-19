@@ -80,6 +80,24 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
+  it("preserves normalized and provider finish reasons for non-streaming responses", () => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "length",
+          message: { role: "assistant", content: '{"answer":"partial' },
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "length",
+    });
+  });
+
   it("keeps protocol selection explicit for custom base URLs", () => {
     const openai = new OpenAIClient({
       apiKey: "test",
@@ -378,7 +396,76 @@ describe("OpenAI chat-completions client path", () => {
       done: false,
       value: { type: "text_delta", delta: " world" },
     });
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: "final",
+        response: {
+          finishReason: "stop",
+          providerFinishReason: "stop",
+        },
+      },
+    });
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it("preserves a length finish reason for text-only streams", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          choices: [
+            { index: 0, finish_reason: "length", delta: { content: '{"answer":"partial' } },
+          ],
+        },
+        { choices: [], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } },
+      ],
+    ]);
+
+    const events = await collectStreamEvents(model);
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      response: {
+        finishReason: "length",
+        providerFinishReason: "length",
+      },
+    });
+  });
+
+  it("preserves a terminal finish reason when an OpenAI-compatible stream omits usage", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          id: "cmpl_without_usage",
+          choices: [
+            { index: 0, finish_reason: "length", delta: { content: '{"answer":"partial' } },
+          ],
+        },
+      ],
+    ]);
+
+    const events = await collectStreamEvents(model);
+    expect(events.at(-1)).toEqual({
+      type: "final",
+      response: {
+        choice: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+        finishReason: "length",
+        providerFinishReason: "length",
+        rawResponse: {
+          id: "cmpl_without_usage",
+          choices: [
+            { index: 0, finish_reason: "length", delta: { content: '{"answer":"partial' } },
+          ],
+        },
+        messageId: "cmpl_without_usage",
+      },
+    });
   });
 
   it("rejects malformed non-streaming tool arguments", () => {

@@ -56,6 +56,7 @@ export type {
   AssistantGenerationMetadata,
   AssistantMessage,
   CompletionBaseOptions,
+  CompletionFinishReason,
   CompletionInput,
   CompletionModel,
   CompletionModelInfo,
@@ -65,6 +66,7 @@ export type {
   CompletionResult,
   CompletionSource,
   CompletionStreamEvent,
+  CompletionStructuredOutputPhase,
   CompletionTool,
   ContextUsage,
   Document,
@@ -100,6 +102,7 @@ export type {
   UserMessage,
 } from "./completion/index";
 export {
+  CompletionStructuredOutputError,
   calculateContextUsage,
   createMessageSchema,
   generateCompletion,

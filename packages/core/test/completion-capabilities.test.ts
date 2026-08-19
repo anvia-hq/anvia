@@ -341,7 +341,7 @@ describe("generateCompletion", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: "error",
-      error: { message: "generateCompletion expected the model response to be valid JSON." },
+      error: { name: "CompletionStructuredOutputError", phase: "parse" },
     });
   });
 
@@ -437,7 +437,7 @@ describe("generateCompletion", () => {
         prompt: "hello",
         outputSchema: z.object({ title: z.string() }),
       }),
-    ).rejects.toThrow("generateCompletion expected the model response to be valid JSON.");
+    ).rejects.toMatchObject({ name: "CompletionStructuredOutputError", phase: "parse" });
   });
 });
 

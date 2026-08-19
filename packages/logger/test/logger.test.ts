@@ -194,6 +194,82 @@ describe("createLoggerObserver", () => {
     expect(logger.records[5]?.context).not.toHaveProperty("output");
   });
 
+  it("logs completion retry events with diagnostics and without model output", async () => {
+    const logger = new RecordingLogger();
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_retry",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.event?.({
+      name: "completion.retry",
+      level: "WARNING",
+      attributes: {
+        attempt: 1,
+        maxAttempts: 2,
+        failurePhase: "truncated",
+        finishReason: "length",
+        outputLength: 140_542,
+        attemptUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+        cumulativeUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+        previousResponse: "omitted",
+        includedOutputLength: 0,
+      },
+    });
+
+    expect(logger.records.at(-1)).toMatchObject({
+      level: "warn",
+      message: "agent event",
+      context: {
+        eventName: "completion.retry",
+        eventLevel: "WARNING",
+        attempt: 1,
+        maxAttempts: 2,
+        failurePhase: "truncated",
+        finishReason: "length",
+        outputLength: 140_542,
+        previousResponse: "omitted",
+        includedOutputLength: 0,
+      },
+    });
+    expect(JSON.stringify(logger.records.at(-1))).not.toContain("model output");
+  });
+
+  it("does not log arbitrary observer event attributes by default", async () => {
+    const logger = new RecordingLogger();
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_event",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.event?.({
+      name: "guardrail.decision",
+      level: "WARNING",
+      attributes: {
+        decision: "deny",
+        reason: "customer-secret-guardrail-reason",
+      },
+    });
+
+    expect(logger.records.at(-1)).toMatchObject({
+      level: "warn",
+      message: "agent event",
+      context: {
+        eventName: "guardrail.decision",
+        eventLevel: "WARNING",
+      },
+    });
+    expect(JSON.stringify(logger.records.at(-1))).not.toContain("customer-secret");
+    expect(logger.records.at(-1)?.context).not.toHaveProperty("decision");
+    expect(logger.records.at(-1)?.context).not.toHaveProperty("reason");
+  });
+
   it("serializes nested Error causes before handing them to Pino", async () => {
     const lines: Array<Record<string, unknown>> = [];
     const logger = createPinoLogger({
@@ -254,6 +330,7 @@ describe("createLoggerObserver", () => {
       outputLength: rejectedOutput.length,
       normalizedLength: rejectedOutput.length,
       outputFormat: "raw",
+      attemptUsage: Usage.empty(),
       usage: Usage.empty(),
       cause: new SyntaxError(`Unexpected token in ${rejectedOutput}`),
     });

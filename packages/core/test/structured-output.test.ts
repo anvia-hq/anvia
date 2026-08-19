@@ -42,14 +42,14 @@ class QueueModel implements CompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly outputs: Array<string | Error>) {}
+  constructor(private readonly outputs: Array<string | Error | CompletionResponse>) {}
 
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const output = this.outputs.shift();
     if (output === undefined) throw new Error("No queued model output.");
     if (output instanceof Error) throw output;
-    return response(output);
+    return typeof output === "string" ? response(output) : output;
   }
 }
 
@@ -100,6 +100,93 @@ describe("Agent structured output", () => {
       output: { phase: "hypotheses", hypotheses: [] },
       text: output,
     });
+  });
+
+  it("reports provider truncation before attempting to parse partial JSON", async () => {
+    const partial = '{"phase":"hypotheses","hypotheses":["unfinished';
+    const modelResponse = response(partial);
+    modelResponse.finishReason = "length";
+    modelResponse.providerFinishReason = "length";
+    const agent = new Agent({
+      id: "structured",
+      model: new QueueModel([modelResponse]),
+      outputSchema: structuredSchema,
+    });
+
+    const error = await agent.generate({ prompt: "Create hypotheses." }).catch((value) => value);
+
+    expect(error).toBeInstanceOf(AgentStructuredOutputError);
+    expect(error).toMatchObject({
+      phase: "truncated",
+      outputLength: partial.length,
+      normalizedLength: partial.length,
+      finishReason: "length",
+      providerFinishReason: "length",
+      attemptUsage: { totalTokens: 1 },
+      usage: { totalTokens: 1 },
+    });
+    expect(error.cause).toBeUndefined();
+  });
+
+  it("retries truncation from the original request without replaying partial output", async () => {
+    const partial = '{"phase":"hypotheses","hypotheses":["private partial';
+    const truncated = response(partial);
+    truncated.finishReason = "length";
+    truncated.providerFinishReason = "length";
+    const model = new QueueModel([truncated, rawJson]);
+    const agent = new Agent({
+      id: "structured",
+      model,
+      outputSchema: structuredSchema,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await expect(agent.generate({ prompt: "Create hypotheses." })).resolves.toMatchObject({
+      output: { phase: "hypotheses", hypotheses: [] },
+      usage: { totalTokens: 2 },
+    });
+    expect(JSON.stringify(model.requests[1])).not.toContain("private partial");
+    expect(model.requests[1]?.chatHistory).toEqual([
+      { role: "user", content: "Create hypotheses." },
+      {
+        role: "user",
+        content:
+          "Your previous response exceeded the provider output limit. Return substantially shorter raw JSON that matches the supplied JSON schema. Do not use Markdown fences or include commentary.",
+      },
+    ]);
+  });
+
+  it("bounds repair previews, excludes reasoning, and never accumulates failed attempts", async () => {
+    const firstText = `first-private-${"a".repeat(12_000)}`;
+    const secondText = `second-private-${"b".repeat(12_000)}`;
+    const first = response(firstText);
+    first.choice.unshift({ type: "reasoning", text: "first-secret-reasoning" });
+    const second = response(secondText);
+    second.choice.unshift({ type: "reasoning", text: "second-secret-reasoning" });
+    const model = new QueueModel([first, second, rawJson]);
+    const agent = new Agent({
+      id: "structured",
+      model,
+      outputSchema: structuredSchema,
+      retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await agent.generate({ prompt: "Create hypotheses." });
+
+    expect(model.requests).toHaveLength(3);
+    for (const request of model.requests.slice(1)) {
+      expect(request.chatHistory).toHaveLength(3);
+      expect(JSON.stringify(request)).not.toContain("secret-reasoning");
+      const repair = request.chatHistory[1];
+      expect(repair?.role).toBe("assistant");
+      if (repair?.role !== "assistant" || typeof repair.content === "string") {
+        throw new Error("Expected a text-only repair preview.");
+      }
+      const text = repair.content.find((part) => part.type === "text")?.text;
+      expect(text?.length).toBeLessThanOrEqual(8_192);
+    }
+    expect(JSON.stringify(model.requests[2])).toContain("second-private");
+    expect(JSON.stringify(model.requests[2])).not.toContain("first-private");
   });
 
   it.each([
@@ -302,6 +389,31 @@ describe("Agent structured output", () => {
     });
   });
 
+  it("retries a length-terminated structured stream without exposing or replaying it", async () => {
+    const partial = response('{"phase":"hypotheses","hypotheses":["stream-private');
+    partial.finishReason = "length";
+    partial.providerFinishReason = "length";
+    const model = new StreamingQueueModel([[{ type: "final", response: partial }], rawJson]);
+    const agent = new Agent({
+      id: "structured",
+      model,
+      outputSchema: structuredSchema,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+    const events = [];
+
+    for await (const event of agent.stream({ prompt: "Create hypotheses." })) {
+      events.push(event);
+    }
+
+    expect(JSON.stringify(events)).not.toContain("stream-private");
+    expect(JSON.stringify(model.requests[1])).not.toContain("stream-private");
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: { output: { phase: "hypotheses", hypotheses: [] } },
+    });
+  });
+
   it("replays buffered reasoning and text on structured tool-call turns", async () => {
     const toolCall = AssistantContent.toolCall("call_1", "lookup", {});
     const model = new StreamingQueueModel([
@@ -349,12 +461,30 @@ describe("Agent structured output", () => {
   });
 
   it("leaves ordinary non-structured Agent output unchanged", async () => {
-    const model = new QueueModel([fencedJson]);
+    const partial = response(fencedJson);
+    partial.finishReason = "length";
+    partial.providerFinishReason = "length";
+    const model = new QueueModel([partial]);
     const agent = new Agent({ id: "ordinary", model });
 
     await expect(agent.generate({ prompt: "Answer normally." })).resolves.toMatchObject({
       output: fencedJson,
       text: fencedJson,
+      finishReason: "length",
+      providerFinishReason: "length",
+      messages: [
+        expect.anything(),
+        expect.objectContaining({
+          metadata: {
+            anvia: {
+              generation: expect.objectContaining({
+                finishReason: "length",
+                providerFinishReason: "length",
+              }),
+            },
+          },
+        }),
+      ],
     });
     expect(model.requests).toHaveLength(1);
   });

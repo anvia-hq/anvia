@@ -345,6 +345,19 @@ describe("Anthropic Messages mapping", () => {
     expect(response.messageId).toBe("msg_1");
   });
 
+  it("maps Anthropic output limits to the normalized length reason", () => {
+    const response = fromAnthropicMessage({
+      stop_reason: "max_tokens",
+      content: [{ type: "text", text: '{"answer":"partial' }],
+      usage: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "max_tokens",
+    });
+  });
+
   it("maps Anthropic thinking and redacted thinking blocks", () => {
     const response = fromAnthropicMessage({
       content: [
@@ -525,7 +538,11 @@ describe("Anthropic Messages mapping", () => {
     });
     expect(events.find((event) => event.type === "turn_end")).toMatchObject({
       type: "turn_end",
-      response: { messageId: "msg_1" },
+      response: {
+        messageId: "msg_1",
+        finishReason: "stop",
+        providerFinishReason: "end_turn",
+      },
     });
   });
 

@@ -11,6 +11,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   generateCompletion,
+  type JsonObject,
   Message,
   type StreamingCompletionModel,
   streamCompletion,
@@ -248,6 +249,49 @@ describe("generateCompletion", () => {
     await expect(generateCompletion({ model, messages: [] })).rejects.toThrow(
       "input must contain at least one Message.",
     );
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("rejects provider options that are not strict JSON objects", async () => {
+    const model = new QueueModel();
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    class JsonArraySubclass extends Array<unknown> {}
+    const customPrototypeArray = ["value"];
+    Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
+    // @ts-expect-error Undefined object properties are not strict JSON.
+    const invalidJsonObject: JsonObject = { missing: undefined };
+    expect(invalidJsonObject).toHaveProperty("missing", undefined);
+    const immutableProviderOptions = {
+      stop: ["END"],
+      reasoning: { enabled: true },
+    } as const satisfies JsonObject;
+    expect(immutableProviderOptions.stop).toEqual(["END"]);
+    const includeLimit = false;
+    const omittedOptionalProperty: JsonObject = {};
+    if (includeLimit) omittedOptionalProperty.limit = 10;
+    expect(omittedOptionalProperty).toEqual({});
+
+    for (const providerOptions of [
+      { nested: { missing: undefined } },
+      { value: Number.POSITIVE_INFINITY },
+      cyclic,
+      [],
+      null,
+      "provider-options",
+      1,
+      true,
+      { value: new JsonArraySubclass("nested") },
+      { value: customPrototypeArray },
+    ]) {
+      await expect(
+        generateCompletion({
+          model,
+          prompt: "hello",
+          providerOptions: providerOptions as never,
+        }),
+      ).rejects.toThrow("providerOptions must be a JSON object.");
+    }
     expect(model.requests).toHaveLength(0);
   });
 

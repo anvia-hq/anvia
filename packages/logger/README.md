@@ -50,10 +50,10 @@ if (result.status === "completed") console.log(result.output);
 The logger observer omits final outputs, full model requests, model responses, and tool results by
 default. It records named Core observer events at their requested log level without copying their
 free-form attributes. In particular,
-`completion.retry` includes attempts, failure phase, finish reason, output lengths, per-attempt and
-cumulative usage, and whether rejected output was omitted or represented by a bounded preview; it
-never logs that output. Pass `LoggerObserverOptions` to opt in when your data policy allows the
-other payloads in logs.
+`completion.retry` includes attempts, structured-output or provider-output classification, finish
+reason, output lengths, per-attempt and cumulative usage, and whether rejected output was omitted
+or represented by a bounded preview; it never logs that output or malformed tool arguments. Pass
+`LoggerObserverOptions` to opt in when your data policy allows the other payloads in logs.
 
 Agent errors are serialized before reaching the configured logger. Nested `Error.cause` chains keep
 their `name`, `message`, and `stack`, including when the destination is Pino. Cause traversal is

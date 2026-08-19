@@ -38,6 +38,10 @@ subpath; importing Client does not load the Agent runtime or its infrastructure 
 - `parseUIMessage` and `parseUIMessages` validate externally loaded UI state.
 
 Tool-call start, delta, and end events are automatic when the provider exposes streamed arguments.
+`UIToolMessagePart` states are exact: `input-streaming` carries raw partial text,
+`input-available` carries parsed JSON input, and terminal `output-available` or `error` parts retain
+that input with their result. `uiMessagesToMessages()` rejects partial calls instead of replaying
+incomplete JSON or inventing empty arguments.
 Errors are masked by default. Use `mapError` only at the server adapter boundary when an application
 intentionally exposes a safe error shape. Non-JSON outputs require an explicit `mapOutput`; returning
 `undefined` intentionally omits the output, while returning `null` exposes JSON `null`.

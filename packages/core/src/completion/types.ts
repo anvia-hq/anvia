@@ -2,8 +2,8 @@ import type { ModelCallOptions } from "../model-call-options";
 import { isJsonValue } from "./json";
 
 export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
-export type JsonObject = { [key: string]: JsonValue | undefined };
+export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
+export type JsonObject = { [key: string]: JsonValue };
 
 export type Document = {
   id: string;
@@ -347,6 +347,12 @@ export const Usage = {
       result.details = details;
     }
     return result;
+  },
+  isEmpty(usage: Usage): boolean {
+    return (
+      isEmptyUsage(usage) &&
+      (usage.details === undefined || Object.values(usage.details).every((value) => value === 0))
+    );
   },
 };
 

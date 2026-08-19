@@ -159,8 +159,26 @@ class StreamingQueueModel implements StreamingCompletionModel {
     if (response === undefined) {
       throw new Error("No queued stream response");
     }
+    let hasFinal = false;
+    let hasToolCall = false;
     for await (const event of response) {
+      hasFinal ||= event.type === "final";
+      hasToolCall ||=
+        event.type === "tool_call" ||
+        event.type === "tool_call_delta" ||
+        event.type === "provider_tool_call";
       yield event;
+    }
+    if (!hasFinal) {
+      yield {
+        type: "final",
+        response: {
+          choice: [],
+          usage: Usage.empty(),
+          rawResponse: {},
+          finishReason: hasToolCall ? "tool-calls" : "stop",
+        },
+      };
     }
   }
 }
@@ -199,6 +217,15 @@ class GatedReasoningModel implements StreamingCompletionModel {
       this.releaseText = resolve;
     });
     yield { type: "text_delta", delta: "done" };
+    yield {
+      type: "final",
+      response: {
+        choice: [],
+        usage: Usage.empty(),
+        rawResponse: {},
+        finishReason: "stop",
+      },
+    };
   }
 }
 

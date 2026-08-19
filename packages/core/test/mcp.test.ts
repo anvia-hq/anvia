@@ -78,6 +78,19 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
   return { choice, usage: Usage.empty(), rawResponse: {} };
 }
 
+function successfulTextStream(text: string): CompletionModelStreamEvent[] {
+  return [
+    { type: "text_delta", delta: text },
+    {
+      type: "final",
+      response: {
+        ...response([AssistantContent.text(text)]),
+        finishReason: "stop",
+      },
+    },
+  ];
+}
+
 describe("Agent MCP registrations", () => {
   it("registers immutable MCP snapshots and executes their tools", async () => {
     const model = new QueueModel([
@@ -164,8 +177,15 @@ describe("Agent MCP registrations", () => {
           name: "mcp_add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        {
+          type: "final",
+          response: {
+            ...response([AssistantContent.toolCall("call_1", "mcp_add", { x: 2, y: 5 })]),
+            finishReason: "tool-calls",
+          },
+        },
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const events: string[] = [];
     const hook = createHook({

@@ -1,5 +1,6 @@
 import type { JsonObject } from "../completion/types";
 import { throwIfAborted } from "../internal/abort";
+import { assertJsonObject } from "../internal/json-object";
 import type { ModelCallOptions } from "../model-call-options";
 import {
   type ResolvedRetryOptions,
@@ -38,7 +39,10 @@ export async function generateSpeech<Model extends SpeechGenerationModel>(
   }
 
   const request: SpeechGenerationRequest = { text: options.text, voice: options.voice, speed };
-  if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
+  if (options.providerOptions !== undefined) {
+    assertJsonObject(options.providerOptions, "providerOptions");
+    request.providerOptions = options.providerOptions;
+  }
   return runWithRetries(
     () => {
       throwIfAborted(options.abortSignal);

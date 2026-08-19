@@ -27,6 +27,7 @@ import {
   assertCompleted,
   type CompletionModel,
   type CompletionModelStreamEvent,
+  CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
   createHook,
@@ -295,6 +296,71 @@ describe("agent observability", () => {
       },
     });
     expect(JSON.stringify(observer.events[2])).not.toContain("private provider detail");
+  });
+
+  it("records provider-output retry classification and cumulative failed usage", async () => {
+    const observer = new RecordingObserver();
+    const failedUsage = {
+      ...Usage.empty(),
+      inputTokens: 4,
+      outputTokens: 6,
+      totalTokens: 10,
+    };
+    let attempts = 0;
+    const model: CompletionModel = {
+      provider: "test",
+      modelId: "test",
+      capabilities: new QueueModel([]).capabilities,
+      async completion() {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new CompletionProviderOutputError({
+            kind: "malformed-tool-arguments",
+            toolCallId: "tool_0",
+            usage: failedUsage,
+          });
+        }
+        return response([AssistantContent.text("recovered")]);
+      },
+    };
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
+
+    await expect(
+      agent.generate({
+        prompt: "hello",
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    ).resolves.toMatchObject({ usage: { totalTokens: 10 } });
+
+    const retry = observer.events.find(
+      (event): event is { type: "run_event"; args: AgentRunEventArgs } =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "run_event" &&
+        "args" in event &&
+        typeof event.args === "object" &&
+        event.args !== null &&
+        "name" in event.args &&
+        event.args.name === "completion.retry",
+    );
+    expect(retry).toMatchObject({
+      type: "run_event",
+      args: {
+        attributes: {
+          errorName: "CompletionProviderOutputError",
+          errorCode: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+          providerOutputKind: "malformed-tool-arguments",
+          attemptUsage: { totalTokens: 10 },
+          cumulativeUsage: { totalTokens: 10 },
+        },
+      },
+    });
+    expect(JSON.stringify(retry)).not.toContain("tool_0");
   });
 
   it("records structured truncation retry diagnostics without response content", async () => {
@@ -567,10 +633,18 @@ describe("agent observability", () => {
           name: "add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        {
+          type: "final",
+          response: {
+            ...response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
+            finishReason: "tool-calls",
+          },
+        },
       ],
       [
         { type: "text_delta", delta: "he" },
         { type: "text_delta", delta: "llo" },
+        successfulTextFinal("hello"),
       ],
     ]);
     const agent = new Agent({
@@ -670,6 +744,7 @@ describe("agent observability", () => {
       [
         { type: "text_delta", delta: "he" },
         { type: "text_delta", delta: "llo" },
+        successfulTextFinal("hello"),
       ],
     ]);
     const agent = new Agent({
@@ -721,7 +796,9 @@ describe("agent observability", () => {
         };
       },
     };
-    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hi" }]]);
+    const model = new StreamingQueueModel([
+      [{ type: "text_delta", delta: "hi" }, successfulTextFinal("hi")],
+    ]);
     const agent = new Agent({
       id: "test-agent",
       model,
@@ -1503,6 +1580,16 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
     choice,
     usage: Usage.empty(),
     rawResponse: {},
+  };
+}
+
+function successfulTextFinal(text: string): CompletionModelStreamEvent {
+  return {
+    type: "final",
+    response: {
+      ...response([AssistantContent.text(text)]),
+      finishReason: "stop",
+    },
   };
 }
 

@@ -60,8 +60,9 @@ wrappers are useful for layout.
 
 `Composer.Input` is a Tiptap-backed rich composer. Configure `Composer.Root` with `triggers` to
 support inline `@`, `/`, `$`, or other entity chips; selected entities are submitted under
-`metadata.composer.entities`. Use `Composer.TextareaInput` when you need the previous native
-textarea behavior.
+`metadata.composer.entities`. Entity `data` must be finite strict JSON; class instances, sparse or
+custom-prototype arrays, accessors, symbols, cycles, `undefined`, and non-finite numbers are
+rejected. Use `Composer.TextareaInput` when you need the previous native textarea behavior.
 
 Streaming smoothing is opt-in and display-only. Keep `useChat` as the owner of transport and
 `UIMessage[]` state. Keep the lifecycle mounted after streaming stops so its buffered tail drains;

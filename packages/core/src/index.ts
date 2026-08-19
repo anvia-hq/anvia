@@ -61,6 +61,8 @@ export type {
   CompletionModel,
   CompletionModelInfo,
   CompletionModelStreamEvent,
+  CompletionProviderOutputErrorKind,
+  CompletionProviderOutputErrorOptions,
   CompletionRequest,
   CompletionResponse,
   CompletionResult,
@@ -102,6 +104,8 @@ export type {
   UserMessage,
 } from "./completion/index";
 export {
+  COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+  CompletionProviderOutputError,
   CompletionStructuredOutputError,
   calculateContextUsage,
   createMessageSchema,

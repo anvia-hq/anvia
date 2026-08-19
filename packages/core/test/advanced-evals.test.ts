@@ -202,6 +202,17 @@ describe("advanced eval metrics", () => {
     expect(result.results[1]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0 });
   });
 
+  it("rejects parsed numbers outside the JSON value contract", async () => {
+    const result = await runEvalSuite({
+      name: "finite-json",
+      cases: [{ id: "non-finite", input: "non-finite" }],
+      target: () => '{"value":1e400}',
+      metrics: [jsonCorrectness({ schema: z.object({ value: z.any() }) })],
+    });
+
+    expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0 });
+  });
+
   it("scores hallucination as lower-is-better and reads context from EvalCase", async () => {
     const model = new QueueJudgeModel([
       judgeResponse({
@@ -358,6 +369,29 @@ describe("advanced eval metrics", () => {
     expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({ outcome: "pass", score: 0.8 });
     expect(result.results[1]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0.4 });
     expect(model.requests).toHaveLength(3);
+  });
+
+  it("rejects non-JSON G-Eval expected output without calling the judge", async () => {
+    const model = new QueueJudgeModel([]);
+    const result = await runEvalSuite({
+      name: "g-eval-json-boundary",
+      cases: [{ id: "case", input: "Question", expected: { value: Number.POSITIVE_INFINITY } }],
+      target: () => "Answer",
+      metrics: [
+        gEval({
+          name: "correctness",
+          model,
+          evaluationParams: ["expectedOutput"],
+          evaluationSteps: ["Compare the output."],
+        }),
+      ],
+    });
+
+    expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({
+      outcome: "invalid",
+      reason: "G-Eval expectedOutput must be a JSON value.",
+    });
+    expect(model.requests).toHaveLength(0);
   });
 
   it("scores turn relevancy from EvalTurn arrays and native AgentResponse messages", async () => {

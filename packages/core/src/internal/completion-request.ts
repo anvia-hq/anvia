@@ -9,6 +9,7 @@ import type {
   ToolDefinition,
 } from "../completion/types";
 import { isProviderTool } from "../completion/types";
+import { assertJsonObject } from "./json-object";
 
 export type CompletionRequestOptions = {
   instructions?: string | undefined;
@@ -43,7 +44,10 @@ export function createCompletionRequest(
   if (options.maxTokens !== undefined) request.maxTokens = options.maxTokens;
   if (options.toolChoice !== undefined) request.toolChoice = options.toolChoice;
   if (options.outputSchema !== undefined) request.outputSchema = options.outputSchema;
-  if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
+  if (options.providerOptions !== undefined) {
+    assertJsonObject(options.providerOptions, "providerOptions");
+    request.providerOptions = options.providerOptions;
+  }
 
   return request;
 }

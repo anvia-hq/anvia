@@ -547,7 +547,25 @@ describe("McpClient", () => {
     });
     const invalidDirect = await stdioClient("invalid-direct").connect();
     await expect(invalidDirect.tools[0]?.call({})).rejects.toThrow(
-      "MCP tool results must be JSON-serializable",
+      "MCP tool results must be strict JSON values",
+    );
+
+    sdk.behaviors.push({
+      pages: [{ tools: [toolDefinition("invalid-direct-json")] }],
+      result: { toolResult: { amount: Number.NaN } },
+    });
+    const invalidDirectJson = await stdioClient("invalid-direct-json").connect();
+    await expect(invalidDirectJson.tools[0]?.call({})).rejects.toThrow(
+      "MCP tool results must be strict JSON values",
+    );
+
+    sdk.behaviors.push({
+      pages: [{ tools: [toolDefinition("invalid-structured-json")] }],
+      result: { content: [], structuredContent: { missing: undefined } },
+    });
+    const invalidStructuredJson = await stdioClient("invalid-structured-json").connect();
+    await expect(invalidStructuredJson.tools[0]?.call({})).rejects.toThrow(
+      "MCP tool results must be strict JSON values",
     );
 
     sdk.behaviors.push({
@@ -579,13 +597,18 @@ describe("McpClient", () => {
     sdk.behaviors.push({ pages: [{ tools: [toolDefinition("args")] }] });
     const server = await stdioClient("args").connect();
 
-    await expect(server.tools[0]?.call(null)).resolves.toEqual(
+    await expect(server.tools[0]?.call(undefined)).resolves.toEqual(
       ToolOutput.content([{ type: "text", text: "ok" }]),
     );
     expect(sdk.clients[0]?.callToolCalls[0]?.params).toEqual({ name: "args" });
-    await expect(server.tools[0]?.call("invalid")).rejects.toThrow(
-      "MCP tool arguments must be a JSON object",
+    expect(() => server.tools[0]?.parseInput?.(null)).toThrow(
+      "MCP tool arguments must be a strict JSON object",
     );
+    for (const input of [null, "invalid", [], new Date(), { value: undefined }]) {
+      await expect(server.tools[0]?.call(input)).rejects.toThrow(
+        "MCP tool arguments must be a strict JSON object",
+      );
+    }
   });
 });
 

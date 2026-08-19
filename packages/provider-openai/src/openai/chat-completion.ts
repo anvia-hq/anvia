@@ -6,10 +6,12 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
+  CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
   type FilePart,
   type ImagePart,
+  isJsonValue,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
@@ -41,23 +43,17 @@ type ChatCompletionStreamChunkMapping = {
   events: CompletionModelStreamEvent[];
   hasToolCalls: boolean;
   hasFinishReason: boolean;
+  hasChoices: boolean;
+  hasPrimaryChoice: boolean;
   finishReason?: unknown;
 };
 
-const INVALID_TOOL_INDEX_ERROR =
-  "OpenAI Chat Completions stream returned a tool call with an invalid index; expected a finite nonnegative integer.";
-const AMBIGUOUS_CHOICE_ERROR =
-  "OpenAI Chat Completions stream returned ambiguous completion choices without valid indices; provider output cannot be assembled safely.";
-const MISSING_TOOL_FINISH_ERROR =
-  "OpenAI Chat Completions tool-call stream ended without a terminal finish reason; provider output may be incomplete.";
-const LENGTH_TOOL_FINISH_ERROR =
-  'OpenAI Chat Completions tool-call stream ended with finish_reason "length"; provider output may be incomplete.';
-const CONTENT_FILTER_TOOL_FINISH_ERROR =
-  'OpenAI Chat Completions tool-call stream ended with finish_reason "content_filter"; tool calls will not be executed.';
-const UNSUPPORTED_TOOL_FINISH_ERROR =
-  "OpenAI Chat Completions tool-call stream ended with an unsupported finish reason; provider output cannot be assembled safely.";
-const CONFLICTING_TOOL_FINISH_ERROR =
-  "OpenAI Chat Completions tool-call stream returned conflicting terminal finish reasons; provider output cannot be assembled safely.";
+type StreamedChatToolCall = {
+  id: string;
+  callId?: string | undefined;
+  name?: string | undefined;
+  argumentsText: string;
+};
 
 export class OpenAIChatCompletionModel implements StreamingCompletionModel<unknown> {
   readonly provider = "openai";
@@ -128,12 +124,7 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel<unkno
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
       const mapping = streamState.mapChunk(chunk);
       for (const event of mapping.events) {
-        yield event.type === "final"
-          ? {
-              ...event,
-              response: withContextUsage(event.response, this.modelInfo()),
-            }
-          : event;
+        if (event.type !== "final") yield event;
       }
     }
     streamState.assertComplete();
@@ -151,7 +142,13 @@ export function toOpenAIChatCompletionParams(
   modelId: OpenAICompletionModelId,
   request: CompletionRequest,
 ): ChatCompletionParams {
-  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
+  if (
+    request.providerOptions !== undefined &&
+    (!isPlainObject(request.providerOptions) || !isJsonValue(request.providerOptions))
+  ) {
+    throw new TypeError("OpenAI Chat Completions providerOptions must be a JSON object.");
+  }
+  const providerOptions = request.providerOptions ?? {};
   const params: ChatCompletionParams = {
     ...providerOptions,
     model: modelId,
@@ -231,30 +228,12 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
 function compactJsonObject(values: Record<string, unknown>): JsonObject {
   return Object.fromEntries(
     Object.entries(values).flatMap(([key, value]) => {
-      if (value === undefined) {
+      if (!isJsonValue(value)) {
         return [];
       }
-      return [[key, toJsonValue(value)]];
+      return [[key, value]];
     }),
   ) as JsonObject;
-}
-
-function toJsonValue(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => toJsonValue(item));
-  }
-  if (isPlainObject(value)) {
-    return compactJsonObject(value);
-  }
-  return String(value);
 }
 
 function requestMessages(request: CompletionRequest): MessageType[] {
@@ -262,12 +241,15 @@ function requestMessages(request: CompletionRequest): MessageType[] {
 }
 
 export function fromOpenAIChatCompletionResponse(response: unknown): CompletionResponse {
-  const raw = response as Record<string, unknown>;
-  const choices = Array.isArray(raw.choices) ? raw.choices : [];
-  const firstChoice =
-    choices.find((choice) => isPlainObject(choice) && choice.index === 0) ??
-    choices.find(isPlainObject);
-  const message = isPlainObject(firstChoice?.message) ? firstChoice.message : {};
+  if (!isPlainObject(response)) throw invalidToolCallError();
+  const raw = response;
+  const usage = usageFromOpenAIChatCompletion(raw.usage);
+  const errorUsage = isPlainObject(raw.usage) ? usage : undefined;
+  const firstChoice = primaryStreamChoice(raw.choices);
+  if (firstChoice === undefined || !isPlainObject(firstChoice.message)) {
+    throw invalidToolCallError(undefined, errorUsage);
+  }
+  const message = firstChoice.message;
   const choice: AssistantContentPart[] = [];
 
   const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
@@ -287,28 +269,39 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     choice.push({ type: "text", text: message.refusal });
   }
 
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const hasRawToolCall =
+    message.tool_calls !== undefined &&
+    (!Array.isArray(message.tool_calls) || message.tool_calls.length > 0);
+  assertSafeOpenAIChatToolFinishReason(firstChoice?.finish_reason, hasRawToolCall, errorUsage);
+  if (message.tool_calls !== undefined && !Array.isArray(message.tool_calls)) {
+    throw invalidToolCallError(undefined, errorUsage);
+  }
+  const toolCalls = message.tool_calls ?? [];
   for (const toolCall of toolCalls) {
     if (!isPlainObject(toolCall)) {
-      continue;
+      throw invalidToolCallError(undefined, errorUsage);
     }
 
-    const fn = isPlainObject(toolCall.function) ? toolCall.function : {};
-    const id = typeof toolCall.id === "string" ? toolCall.id : crypto.randomUUID();
-    const name = typeof fn.name === "string" ? fn.name : "";
-    const argsText = typeof fn.arguments === "string" ? fn.arguments : "{}";
+    if (!isPlainObject(toolCall.function)) {
+      throw invalidToolCallError(toolCall.id, errorUsage);
+    }
+    assertFunctionToolCallType(toolCall.type, toolCall.id, errorUsage, false);
+    const fn = toolCall.function;
+    const id = requiredToolCallString(toolCall.id, undefined, errorUsage);
+    const name = requiredToolCallString(fn.name, id, errorUsage);
+    const input = parseTerminalToolArguments(id, fn.arguments, errorUsage);
     choice.push({
       type: "tool-call",
       toolCallId: id,
       callId: id,
       toolName: name,
-      input: parseToolArguments(id, argsText),
+      input,
     });
   }
 
   const result: CompletionResponse = {
     choice,
-    usage: usageFromOpenAIChatCompletion(raw.usage),
+    usage,
     rawResponse: response,
   };
   applyOpenAIChatFinishReason(result, firstChoice?.finish_reason);
@@ -327,17 +320,38 @@ export function fromOpenAIChatCompletionStreamChunk(chunk: unknown): CompletionM
 function mapOpenAIChatCompletionStreamChunk(
   chunk: unknown,
   reasoningId?: string,
+  options: Readonly<{ deferUnsafeToolFinish?: boolean }> = {},
 ): ChatCompletionStreamChunkMapping {
   if (!isPlainObject(chunk)) {
-    return { events: [], hasToolCalls: false, hasFinishReason: false };
+    return {
+      events: [],
+      hasToolCalls: false,
+      hasFinishReason: false,
+      hasChoices: false,
+      hasPrimaryChoice: false,
+    };
   }
 
   const events: CompletionModelStreamEvent[] = [];
   const choice = primaryStreamChoice(chunk.choices);
-  let hasToolCalls = false;
+  const rawToolMarker =
+    choice !== undefined && isPlainObject(choice.delta) && choice.delta.tool_calls !== undefined;
+  const hasUnsafeToolFinish =
+    rawToolMarker &&
+    (choice?.finish_reason === "length" || choice?.finish_reason === "content_filter");
+  if (hasUnsafeToolFinish && options.deferUnsafeToolFinish !== true) {
+    throw unsafeOpenAIChatToolFinishError(
+      choice?.finish_reason,
+      isPlainObject(chunk.usage) ? usageFromOpenAIChatCompletion(chunk.usage) : undefined,
+    );
+  }
+  let hasToolCalls = hasUnsafeToolFinish;
 
-  if (choice !== undefined && isPlainObject(choice.delta)) {
+  if (!hasUnsafeToolFinish && choice !== undefined && isPlainObject(choice.delta)) {
     const delta = choice.delta;
+    if (delta.tool_calls !== undefined && !Array.isArray(delta.tool_calls)) {
+      throw invalidToolCallError();
+    }
     const reasoning = stringFrom(delta.reasoning) ?? stringFrom(delta.reasoning_content);
     if (reasoning !== undefined && reasoning.length > 0) {
       const event: CompletionModelStreamEvent = { type: "reasoning_delta", delta: reasoning };
@@ -358,12 +372,19 @@ function mapOpenAIChatCompletionStreamChunk(
     const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
     for (const toolCall of toolCalls) {
       if (!isPlainObject(toolCall)) {
-        continue;
+        throw invalidToolCallError();
       }
       hasToolCalls = true;
-      const fn = isPlainObject(toolCall.function) ? toolCall.function : {};
+      if (!isPlainObject(toolCall.function)) {
+        throw invalidToolCallError(toolCall.id);
+      }
+      assertFunctionToolCallType(toolCall.type, toolCall.id, undefined, true);
+      const fn = toolCall.function;
+      assertOptionalToolCallString(toolCall.id);
+      assertOptionalToolCallString(fn.name);
       const index = toolCallIndex(toolCall.index);
       const id = `tool_${index}`;
+      assertOptionalToolArguments(id, fn.arguments);
       events.push(
         toolCallDelta(id, {
           callId: stringFrom(toolCall.id),
@@ -394,6 +415,8 @@ function mapOpenAIChatCompletionStreamChunk(
     events,
     hasToolCalls,
     hasFinishReason: choice !== undefined && isTerminalFinishReason(choice.finish_reason),
+    hasChoices: Array.isArray(chunk.choices) && chunk.choices.length > 0,
+    hasPrimaryChoice: choice !== undefined,
   };
   if (mapping.hasFinishReason) {
     mapping.finishReason = choice?.finish_reason;
@@ -408,14 +431,20 @@ function mapOpenAIChatCompletionStreamChunk(
 
 class OpenAIChatCompletionStreamState {
   private readonly reasoningId = crypto.randomUUID();
+  private readonly toolCalls = new Map<string, StreamedChatToolCall>();
+  private readonly toolCallIdsByCallId = new Map<string, string>();
   private hasToolCalls = false;
   private hasFinishReason = false;
-  private hasFinalResponse = false;
+  private hasChoices = false;
+  private hasPrimaryChoice = false;
+  private finalResponse: CompletionResponse | undefined;
   private finishReason: unknown;
   private terminalChunk: unknown;
 
   mapChunk(chunk: unknown): ChatCompletionStreamChunkMapping {
-    const mapping = mapOpenAIChatCompletionStreamChunk(chunk, this.reasoningId);
+    const mapping = mapOpenAIChatCompletionStreamChunk(chunk, this.reasoningId, {
+      deferUnsafeToolFinish: true,
+    });
     this.accept(mapping, chunk);
     if (this.hasFinishReason) {
       for (const event of mapping.events) {
@@ -428,25 +457,42 @@ class OpenAIChatCompletionStreamState {
   }
 
   private accept(mapping: ChatCompletionStreamChunkMapping, chunk: unknown): void {
+    const hasSemanticProgress = mapping.events.some(
+      (event) =>
+        event.type === "text_delta" ||
+        event.type === "reasoning_delta" ||
+        event.type === "tool_call_delta" ||
+        event.type === "tool_call" ||
+        event.type === "source" ||
+        event.type === "provider_tool_call",
+    );
+    if (this.hasFinishReason && hasSemanticProgress) {
+      throw invalidToolCallError();
+    }
     this.hasToolCalls ||= mapping.hasToolCalls;
-    this.hasFinalResponse ||= mapping.events.some((event) => event.type === "final");
+    this.hasChoices ||= mapping.hasChoices;
+    this.hasPrimaryChoice ||= mapping.hasPrimaryChoice;
+    for (const event of mapping.events) {
+      if (event.type === "tool_call_delta") this.acceptToolCallDelta(event);
+      if (event.type === "final") {
+        if (this.finalResponse !== undefined) throw invalidToolCallError();
+        this.finalResponse = event.response;
+      }
+    }
     if (!mapping.hasFinishReason) {
       return;
     }
     if (this.hasFinishReason && mapping.finishReason !== this.finishReason) {
-      throw new Error(CONFLICTING_TOOL_FINISH_ERROR);
+      throw invalidToolCallError(undefined, this.errorUsage());
     }
     this.hasFinishReason = true;
     this.finishReason = mapping.finishReason;
     this.terminalChunk = chunk;
-    if (this.hasToolCalls) {
-      this.assertSupportedFinishReason();
-    }
   }
 
   finalEvent(): Extract<CompletionModelStreamEvent, { type: "final" }> | undefined {
-    if (!this.hasFinishReason || this.hasFinalResponse) return undefined;
-    const response: CompletionResponse = {
+    if (!this.hasFinishReason && this.finalResponse === undefined) return undefined;
+    const response: CompletionResponse = this.finalResponse ?? {
       choice: [],
       usage: Usage.empty(),
       rawResponse: this.terminalChunk,
@@ -459,30 +505,137 @@ class OpenAIChatCompletionStreamState {
   }
 
   assertComplete(): void {
+    if (this.hasChoices && !this.hasPrimaryChoice) {
+      throw invalidToolCallError(undefined, this.errorUsage());
+    }
     if (!this.hasToolCalls) {
       return;
     }
     if (!this.hasFinishReason) {
-      throw new Error(MISSING_TOOL_FINISH_ERROR);
+      throw new CompletionProviderOutputError({
+        kind: "incomplete-tool-call",
+        usage: this.errorUsage(),
+      });
     }
     this.assertSupportedFinishReason();
+    for (const toolCall of this.toolCalls.values()) {
+      if (toolCall.callId === undefined || toolCall.name === undefined) {
+        throw new CompletionProviderOutputError({
+          kind: "incomplete-tool-call",
+          toolCallId: toolCall.id,
+          usage: this.errorUsage(),
+        });
+      }
+      parseToolArguments(toolCall.id, toolCall.argumentsText, this.errorUsage());
+    }
   }
 
   private assertSupportedFinishReason(): void {
     if (this.finishReason === "length") {
-      throw new Error(LENGTH_TOOL_FINISH_ERROR);
+      throw new CompletionProviderOutputError({
+        kind: "truncated-tool-call",
+        finishReason: "length",
+        usage: this.errorUsage(),
+      });
     }
     if (this.finishReason === "content_filter") {
-      throw new Error(CONTENT_FILTER_TOOL_FINISH_ERROR);
+      throw new CompletionProviderOutputError({
+        kind: "filtered-tool-call",
+        finishReason: "content-filter",
+        usage: this.errorUsage(),
+      });
     }
     if (
       this.finishReason !== "tool_calls" &&
       this.finishReason !== "stop" &&
       this.finishReason !== "function_call"
     ) {
-      throw new Error(UNSUPPORTED_TOOL_FINISH_ERROR);
+      throw invalidToolCallError(undefined, this.errorUsage());
     }
   }
+
+  private acceptToolCallDelta(
+    event: Extract<CompletionModelStreamEvent, { type: "tool_call_delta" }>,
+  ): void {
+    const existing = this.toolCalls.get(event.id);
+    const toolCall = existing ?? { id: event.id, argumentsText: "" };
+    if (event.callId !== undefined) {
+      if (!isNonblankString(event.callId)) throw invalidToolCallError(event.id, this.errorUsage());
+      if (toolCall.callId !== undefined && toolCall.callId !== event.callId) {
+        throw invalidToolCallError(event.id, this.errorUsage());
+      }
+      const existingId = this.toolCallIdsByCallId.get(event.callId);
+      if (existingId !== undefined && existingId !== event.id) {
+        throw invalidToolCallError(event.id, this.errorUsage());
+      }
+      toolCall.callId = event.callId;
+      this.toolCallIdsByCallId.set(event.callId, event.id);
+    }
+    if (event.name !== undefined) {
+      if (!isNonblankString(event.name)) throw invalidToolCallError(event.id, this.errorUsage());
+      if (toolCall.name !== undefined && toolCall.name !== event.name) {
+        throw invalidToolCallError(event.id, this.errorUsage());
+      }
+      toolCall.name = event.name;
+    }
+    if (event.argumentsDelta !== undefined) toolCall.argumentsText += event.argumentsDelta;
+    this.toolCalls.set(event.id, toolCall);
+  }
+
+  private errorUsage(): Usage | undefined {
+    return this.finalResponse?.usage;
+  }
+}
+
+function assertSafeOpenAIChatToolFinishReason(
+  value: unknown,
+  hasToolCalls: boolean,
+  usage: Usage | undefined,
+): void {
+  if (!hasToolCalls) return;
+  if (!isTerminalFinishReason(value)) {
+    throw new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
+  }
+  if (value === "length") {
+    throw new CompletionProviderOutputError({
+      kind: "truncated-tool-call",
+      finishReason: "length",
+      usage,
+    });
+  }
+  if (value === "content_filter") {
+    throw new CompletionProviderOutputError({
+      kind: "filtered-tool-call",
+      finishReason: "content-filter",
+      usage,
+    });
+  }
+  if (
+    isTerminalFinishReason(value) &&
+    value !== "tool_calls" &&
+    value !== "stop" &&
+    value !== "function_call"
+  ) {
+    throw invalidToolCallError(undefined, usage);
+  }
+}
+
+function unsafeOpenAIChatToolFinishError(
+  value: unknown,
+  usage: Usage | undefined,
+): CompletionProviderOutputError {
+  if (value === "length") {
+    return new CompletionProviderOutputError({
+      kind: "truncated-tool-call",
+      finishReason: "length",
+      usage,
+    });
+  }
+  return new CompletionProviderOutputError({
+    kind: "filtered-tool-call",
+    finishReason: "content-filter",
+    usage,
+  });
 }
 
 function applyOpenAIChatFinishReason(response: CompletionResponse, value: unknown): void {
@@ -500,7 +653,11 @@ function openAIChatFinishReason(value: unknown): CompletionFinishReason {
 }
 
 function primaryStreamChoice(value: unknown): Record<string, unknown> | undefined {
-  const choices = Array.isArray(value) ? value.filter(isPlainObject) : [];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every(isPlainObject)) {
+    throw invalidToolCallError();
+  }
+  const choices = value;
   if (choices.length === 0) {
     return undefined;
   }
@@ -513,28 +670,28 @@ function primaryStreamChoice(value: unknown): Record<string, unknown> | undefine
       continue;
     }
     if (!isStreamIndex(choice.index)) {
-      throw new Error(AMBIGUOUS_CHOICE_ERROR);
+      throw invalidToolCallError();
     }
     indexedChoices.push({ choice, index: choice.index });
   }
 
   if (unindexedChoices.length > 0) {
     if (indexedChoices.length > 0 || unindexedChoices.length > 1) {
-      throw new Error(AMBIGUOUS_CHOICE_ERROR);
+      throw invalidToolCallError();
     }
     return unindexedChoices[0];
   }
 
   const primaryChoices = indexedChoices.filter(({ index }) => index === 0);
   if (primaryChoices.length > 1) {
-    throw new Error(AMBIGUOUS_CHOICE_ERROR);
+    throw invalidToolCallError();
   }
   return primaryChoices[0]?.choice;
 }
 
 function toolCallIndex(value: unknown): number {
   if (!isStreamIndex(value)) {
-    throw new Error(INVALID_TOOL_INDEX_ERROR);
+    throw invalidToolCallError();
   }
   return value;
 }
@@ -547,6 +704,61 @@ function isStreamIndex(value: unknown): value is number {
 
 function isTerminalFinishReason(value: unknown): boolean {
   return value !== undefined && value !== null;
+}
+
+function requiredToolCallString(value: unknown, toolCallId?: unknown, usage?: Usage): string {
+  if (!isNonblankString(value)) {
+    throw invalidToolCallError(toolCallId, usage);
+  }
+  return value;
+}
+
+function assertOptionalToolCallString(value: unknown): void {
+  if (value !== undefined && typeof value !== "string") {
+    throw invalidToolCallError();
+  }
+}
+
+function assertOptionalToolArguments(toolCallId: string, value: unknown): void {
+  if (value !== undefined && typeof value !== "string") {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-arguments",
+      toolCallId,
+    });
+  }
+}
+
+function assertFunctionToolCallType(
+  value: unknown,
+  toolCallId: unknown,
+  usage: Usage | undefined,
+  allowMissing: boolean,
+): void {
+  if (value === "function" || (allowMissing && value === undefined)) return;
+  throw invalidToolCallError(toolCallId, usage);
+}
+
+function parseTerminalToolArguments(toolCallId: string, value: unknown, usage?: Usage): JsonValue {
+  if (typeof value !== "string") {
+    throw new CompletionProviderOutputError({
+      kind: value === undefined ? "incomplete-tool-call" : "invalid-tool-arguments",
+      toolCallId,
+      usage,
+    });
+  }
+  return parseToolArguments(toolCallId, value, usage);
+}
+
+function invalidToolCallError(toolCallId?: unknown, usage?: Usage): CompletionProviderOutputError {
+  return new CompletionProviderOutputError({
+    kind: "invalid-tool-call",
+    toolCallId: isNonblankString(toolCallId) ? toolCallId : undefined,
+    usage,
+  });
+}
+
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function usageFromOpenAIChatCompletion(usage: unknown) {

@@ -892,30 +892,43 @@ function contentToUIMessageParts(
     }
     if (contentPart.type === "tool-call") {
       const tool = getToolState(state, contentPart.toolCallId, contentPart.toolName);
-      const part: UIToolMessagePart = {
+      const partBase = {
         id: tool.partId,
-        type: "tool",
+        type: "tool" as const,
         toolName: contentPart.toolName,
         toolCallId: contentPart.toolCallId,
-        state:
-          tool.result?.status === "error"
-            ? "error"
-            : tool.result
-              ? "output-available"
-              : "input-available",
+      };
+      if (contentPart.callId !== undefined) Object.assign(partBase, { callId: contentPart.callId });
+      if (tool.internalCallId !== undefined) {
+        Object.assign(partBase, { internalCallId: tool.internalCallId });
+      }
+      if (state.turn !== undefined) Object.assign(partBase, { turn: state.turn });
+      if (contentPart.signature !== undefined) {
+        Object.assign(partBase, { signature: contentPart.signature });
+      }
+      if (tool.result?.status === "success") {
+        const part: Extract<UIToolMessagePart, { state: "output-available" }> = {
+          ...partBase,
+          state: "output-available",
+          input: contentPart.input,
+          output: tool.result.output,
+        };
+        if (tool.result.content !== undefined) part.resultContent = tool.result.content;
+        return part;
+      }
+      if (tool.result?.status === "error") {
+        return {
+          ...partBase,
+          state: "error",
+          input: contentPart.input,
+          error: tool.result.error,
+        };
+      }
+      return {
+        ...partBase,
+        state: "input-available",
         input: contentPart.input,
       };
-      if (contentPart.callId !== undefined) part.callId = contentPart.callId;
-      if (tool.internalCallId !== undefined) part.internalCallId = tool.internalCallId;
-      if (state.turn !== undefined) part.turn = state.turn;
-      if (contentPart.signature !== undefined) part.signature = contentPart.signature;
-      if (tool.result?.status === "success") {
-        part.output = tool.result.output;
-        if (tool.result.content !== undefined) part.resultContent = tool.result.content;
-      } else if (tool.result?.status === "error") {
-        part.error = tool.result.error;
-      }
-      return part;
     }
     const attachment = contentAttachment(contentPart);
     return {

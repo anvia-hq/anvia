@@ -132,6 +132,20 @@ function response(
   return response;
 }
 
+function successfulTextStream(...deltas: string[]): CompletionModelStreamEvent[] {
+  const text = deltas.join("");
+  return [
+    ...deltas.map((delta): CompletionModelStreamEvent => ({ type: "text_delta", delta })),
+    {
+      type: "final",
+      response: {
+        ...response([AssistantContent.text(text)]),
+        finishReason: "stop",
+      },
+    },
+  ];
+}
+
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
@@ -298,7 +312,7 @@ describe("agent memory", () => {
   it("exposes stored history before a streaming run without loading it twice", async () => {
     const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
     const store = new RecordingMemoryStore({ session_1: previous });
-    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const model = new StreamingQueueModel([successfulTextStream("done")]);
     let lifecycleHistory: unknown;
     let observerHistory: readonly unknown[] | undefined;
     let guardrailHistory: MessageType[] | undefined;
@@ -635,6 +649,13 @@ describe("agent memory", () => {
           name: "ExecCommand",
           argumentsDelta: '{"command":"pwd"',
         },
+        {
+          type: "final",
+          response: {
+            ...response([]),
+            finishReason: "tool-calls",
+          },
+        },
       ],
       [{ type: "text_delta", delta: "recovered" }],
     ]);
@@ -685,15 +706,14 @@ describe("agent memory", () => {
     expect(malformedEvents.at(-1)).toMatchObject({
       type: "error",
       error: {
-        message:
-          'Completion returned tool call "tool_1" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+        message: 'Completion provider returned tool call "tool_1" with malformed JSON arguments.',
       },
     });
 
     expect(probeExecutions).toBe(0);
     expect(commandExecutions).toBe(0);
     expect(completionErrors).toEqual([
-      'Completion returned tool call "tool_1" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+      'Completion provider returned tool call "tool_1" with malformed JSON arguments.',
     ]);
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
@@ -771,7 +791,7 @@ describe("agent memory", () => {
     const model: CompletionModel =
       mode === "buffered"
         ? new QueueModel([response([AssistantContent.text("done")])])
-        : new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+        : new StreamingQueueModel([successfulTextStream("done")]);
     const agent = new Agent({
       id: "test-agent",
       model,
@@ -845,21 +865,26 @@ describe("agent memory", () => {
 
   it("does not save nested streaming agent-tool events as memory messages", async () => {
     const store = new RecordingMemoryStore();
+    const parentCall = AssistantContent.toolCall("call_child", "ask_child", {
+      prompt: "inspect",
+    });
     const parentModel = new StreamingQueueModel([
       [
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "inspect" }),
+          toolCall: parentCall,
+        },
+        {
+          type: "final",
+          response: {
+            ...response([parentCall]),
+            finishReason: "tool-calls",
+          },
         },
       ],
-      [{ type: "text_delta", delta: "parent done" }],
+      successfulTextStream("parent done"),
     ]);
-    const childModel = new StreamingQueueModel([
-      [
-        { type: "text_delta", delta: "child " },
-        { type: "text_delta", delta: "done" },
-      ],
-    ]);
+    const childModel = new StreamingQueueModel([successfulTextStream("child ", "done")]);
     const childAgent = new Agent({ id: "child", model: childModel });
     const parentAgent = new Agent({
       id: "parent",

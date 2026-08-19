@@ -141,6 +141,19 @@ function response(
   };
 }
 
+function successfulTextStream(text: string): CompletionModelStreamEvent[] {
+  return [
+    { type: "text_delta", delta: text },
+    {
+      type: "final",
+      response: {
+        ...response(text),
+        finishReason: "stop",
+      },
+    },
+  ];
+}
+
 const scope: MemoryScope = { sessionId: "session-1" };
 
 describe("memory compaction", () => {
@@ -565,7 +578,7 @@ describe("memory compaction", () => {
       Message.user("recent"),
       Message.assistant("recent answer"),
     ]);
-    const mainModel = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const mainModel = new StreamingQueueModel([successfulTextStream("done")]);
     const agent = new Agent({
       id: "test",
       model: mainModel,

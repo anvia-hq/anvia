@@ -56,9 +56,9 @@ describe("public entrypoints", () => {
     expectTypeOf<MessageToolPart>().toMatchTypeOf<{ type: "tool" }>();
     expectTypeOf<MessageAttachmentPart>().toMatchTypeOf<{ type: "attachment" }>();
     expectTypeOf<MessageEntityProps>().toMatchTypeOf<{ entity: ComposerEntity }>();
-    expectTypeOf<ComposerMessageMetadata>().toMatchTypeOf<{
-      composer: { entities: ComposerEntity[] };
-    }>();
+    expectTypeOf<ComposerMessageMetadata["composer"]["entities"]>().toMatchTypeOf<
+      readonly object[]
+    >();
     expectTypeOf<File>().toMatchTypeOf<ComposerAttachmentInput>();
     expectTypeOf<
       Array<{ id: string; type: "image" | "document" | "file" }>

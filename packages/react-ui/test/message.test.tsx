@@ -1,4 +1,4 @@
-import type { UIMessage } from "@anvia/client";
+import type { ClientMetadata, UIMessage } from "@anvia/client";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { type ComponentProps, type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -137,6 +137,7 @@ describe("Message primitives", () => {
           toolCallId: "call_1",
           toolName: "search",
           state: "input-available",
+          input: {},
         },
       ],
     };
@@ -173,6 +174,7 @@ describe("Message primitives", () => {
           toolCallId: "call_1",
           toolName: "search",
           state: "input-available",
+          input: {},
         },
       ],
     };
@@ -218,7 +220,9 @@ describe("Message primitives", () => {
                             <section data-testid="tool-card">
                               <h2>{tool.toolName}</h2>
                               <div>Input: {JSON.stringify(tool.input)}</div>
-                              <div>Output: {JSON.stringify(tool.output)}</div>
+                              <div>
+                                Output: {JSON.stringify("output" in tool ? tool.output : undefined)}
+                              </div>
                             </section>
                           )}
                         </Message.Tool>
@@ -558,6 +562,27 @@ describe("Message primitives", () => {
     expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
   });
 
+  it("falls back to ordinary text for entities with non-JSON data", () => {
+    const text = "Open @Guide.pdf.";
+    const sparse: unknown[] = [];
+    sparse.length = 1;
+    const customPrototypeArray = ["document"];
+    Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
+    const symbolObject = { kind: "document", [Symbol("private")]: true };
+    const accessorObject = Object.defineProperty({}, "kind", {
+      enumerable: true,
+      get: () => "document",
+    });
+
+    for (const data of [sparse, customPrototypeArray, symbolObject, accessorObject]) {
+      const entity = { ...composerEntity(text, "@Guide.pdf", "document-1"), data } as never;
+      const { container, unmount } = render(markdownEntityView(text, [entity]));
+      expect(container.querySelector("[data-anvia-message-entity]")).toBeNull();
+      expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+      unmount();
+    }
+  });
+
   it("supports renderEntity and components.span overrides", () => {
     const text = "See @Guide.pdf.";
     const entity = composerEntity(text, "@Guide.pdf", "document-1");
@@ -599,7 +624,7 @@ describe("Message primitives", () => {
         { id: "part_1", type: "text", text: first },
         { id: "part_2", type: "text", text: second },
       ],
-      metadata: { composer: { entities: [entity] } },
+      metadata: { composer: { entities: entityMetadata([entity]) } },
     };
     const { container } = render(
       <ChatProvider controller={createChatController({ messages: [message] })}>
@@ -958,7 +983,7 @@ function markdownEntityView(
 ): ReactElement {
   const message = {
     ...textMessage("msg_1", "user", markdown),
-    metadata: { composer: { entities } },
+    metadata: { composer: { entities: entityMetadata(entities) } },
   };
   return (
     <ChatProvider controller={createChatController({ messages: [message] })}>
@@ -988,6 +1013,21 @@ function composerEntity(
     range: { from, to: from + entityText.length },
     data: { kind: "document", documentId: id },
   };
+}
+
+function entityMetadata(entities: readonly ComposerEntity[]): ClientMetadata[] {
+  return entities.map((entity) => {
+    const metadata: ClientMetadata = {
+      id: entity.id,
+      triggerId: entity.triggerId,
+      trigger: entity.trigger,
+      label: entity.label,
+      text: entity.text,
+      range: { from: entity.range.from, to: entity.range.to },
+    };
+    if (entity.data !== undefined) metadata.data = entity.data;
+    return metadata;
+  });
 }
 
 function collectNodeTypes(value: unknown, types: string[]): void {

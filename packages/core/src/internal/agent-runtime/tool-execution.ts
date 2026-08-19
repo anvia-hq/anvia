@@ -4,13 +4,14 @@ import { type AgentLifecycle, lifecycleSnapshot } from "../../agent/lifecycle";
 import type { AgentChildStreamEvent } from "../../agent/run-types";
 import type {
   JsonObject,
-  JsonValue,
   ToolCallPart,
   ToolDefinition,
   ToolResultContentPart,
   ToolResultOutput,
   ToolResultPart,
 } from "../../completion";
+import { isJsonValue, Usage } from "../../completion";
+import { assertCompletionResponseIntegrity } from "../../completion/provider-output-error";
 import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
 import { runControl, toolCallControl } from "../../hooks";
 import { isMcpTool } from "../../mcp";
@@ -31,7 +32,12 @@ import type {
   ToolCallStreamEvent,
   ToolRequiresApproval,
 } from "../../tool";
-import { parseToolArgs, toolResultContentToText } from "../../tool";
+import {
+  normalizeToolResultOutput,
+  parseToolArgs,
+  ToolOutput,
+  toolResultContentToText,
+} from "../../tool";
 import type {
   AgentMiddleware,
   ToolOutputMiddlewareArgs,
@@ -118,13 +124,13 @@ export class ToolCallExecutor {
     onStreamEvent?: (event: AgentToolEventPayload) => void,
     observation?: ToolExecutionObservation,
   ): Promise<ToolResultPart[]> {
-    for (const toolCall of toolCalls) {
-      if (toolCall.toolName.length === 0) {
-        throw new Error(
-          `Completion returned tool call "${toolCall.toolCallId}" with an empty tool name; this indicates invalid provider output or provider mapping.`,
-        );
-      }
-    }
+    assertCompletionResponseIntegrity({
+      response: {
+        choice: [...toolCalls],
+        usage: Usage.empty(),
+        rawResponse: undefined,
+      },
+    });
 
     const executeOne = async (toolCall: ToolCallPart): Promise<ToolResultPart> => {
       throwIfAborted(this.abortSignal);
@@ -814,10 +820,14 @@ export class ToolCallExecutor {
         args: current,
       });
       if (replacement?.args !== undefined) {
-        current =
-          typeof replacement.args === "string"
-            ? replacement.args
-            : JSON.stringify(replacement.args);
+        if (typeof replacement.args === "string") {
+          current = replacement.args;
+        } else {
+          if (!isJsonValue(replacement.args)) {
+            throw new TypeError("Tool input middleware args must be a strict JSON value.");
+          }
+          current = JSON.stringify(replacement.args);
+        }
       }
     }
     return current;
@@ -927,18 +937,16 @@ function createApprovalContext(
   return context;
 }
 
-function approvalEventAttributes(
-  request: ToolApprovalRequest,
-  turn: number,
-): Record<string, JsonValue | undefined> {
-  return {
+function approvalEventAttributes(request: ToolApprovalRequest, turn: number): JsonObject {
+  const attributes: JsonObject = {
     turn,
     approvalId: request.id,
     toolName: request.toolName,
-    toolCallId: request.toolCallId,
     internalCallId: request.internalCallId,
-    reason: request.reason,
   };
+  if (request.toolCallId !== undefined) attributes.toolCallId = request.toolCallId;
+  if (request.reason !== undefined) attributes.reason = request.reason;
+  return attributes;
 }
 
 function normalizeToolOutputMiddlewareResult(result: ToolOutputMiddlewareResult): {
@@ -948,7 +956,44 @@ function normalizeToolOutputMiddlewareResult(result: ToolOutputMiddlewareResult)
   if (typeof result === "string") {
     return { result };
   }
-  return result ?? {};
+  if (typeof result !== "object" || result === null) {
+    throw new TypeError("Tool output middleware must return text or structured content.");
+  }
+  const prototype = Object.getPrototypeOf(result);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("Tool output middleware must return text or structured content.");
+  }
+  const keys = Reflect.ownKeys(result);
+  const hasResult = keys.includes("result");
+  const hasStructuredResult = keys.includes("structuredResult");
+  if (
+    hasResult === hasStructuredResult ||
+    keys.some((key) => key !== "result" && key !== "structuredResult")
+  ) {
+    throw new TypeError(
+      "Tool output middleware must return exactly one of result or structuredResult.",
+    );
+  }
+  if (hasResult) {
+    const descriptor = Object.getOwnPropertyDescriptor(result, "result");
+    if (
+      descriptor === undefined ||
+      !("value" in descriptor) ||
+      typeof descriptor.value !== "string"
+    ) {
+      throw new TypeError("Tool output middleware result must be a string.");
+    }
+    return { result: descriptor.value };
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(result, "structuredResult");
+  if (descriptor === undefined || !("value" in descriptor)) {
+    throw new TypeError("Tool output middleware structuredResult must be valid tool content.");
+  }
+  const normalized = normalizeToolResultOutput(ToolOutput.content(descriptor.value as never));
+  if (normalized.type !== "content") {
+    throw new TypeError("Tool output middleware structuredResult must be valid tool content.");
+  }
+  return { structuredResult: normalized.value };
 }
 
 function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {

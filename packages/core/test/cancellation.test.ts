@@ -126,6 +126,56 @@ describe("model call cancellation", () => {
     expect(calls).toBe(1);
   });
 
+  it("normalizes an aborted direct call when retries are disabled", async () => {
+    const controller = new AbortController();
+    const model: CompletionModel = {
+      provider: "test",
+      modelId: "test",
+      capabilities: { ...capabilities, streaming: false },
+      async completion() {
+        controller.abort("stop");
+        throw Object.assign(new Error("provider unavailable"), { status: 503 });
+      },
+    };
+
+    await expect(
+      generateCompletion({
+        model,
+        prompt: "hello",
+        abortSignal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("normalizes a streamed provider error emitted after abort", async () => {
+    const controller = new AbortController();
+    const model: StreamingCompletionModel = {
+      provider: "test",
+      modelId: "test",
+      capabilities,
+      async completion() {
+        return response("done");
+      },
+      async *streamCompletion() {
+        controller.abort("stop");
+        yield {
+          type: "error",
+          error: Object.assign(new Error("provider unavailable"), { status: 503 }),
+        };
+      },
+    };
+
+    const events = await collect(
+      streamCompletion({ model, prompt: "hello", abortSignal: controller.signal }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "error",
+      error: { name: "AbortError" },
+    });
+  });
+
   it("links Agent cancellation to providers and never retries the aborted turn", async () => {
     const controller = new AbortController();
     const providerSignals: AbortSignal[] = [];

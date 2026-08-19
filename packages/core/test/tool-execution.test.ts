@@ -113,6 +113,25 @@ describe("Agent tool execution", () => {
     await expect(agent.callTool("add", "{")).rejects.toBeInstanceOf(ToolJsonError);
   });
 
+  it("rejects non-finite parsed arguments before a tool executes", async () => {
+    let executions = 0;
+    const tool = createTool({
+      name: "permissive",
+      description: "Accept any input",
+      inputSchema: z.any(),
+      execute: () => {
+        executions += 1;
+        return "unexpected";
+      },
+    });
+    const agent = agentWithTools([tool]);
+
+    await expect(agent.callTool("permissive", '{"value":1e400}')).rejects.toBeInstanceOf(
+      ToolJsonError,
+    );
+    expect(executions).toBe(0);
+  });
+
   it("serializes string outputs without JSON quotes", async () => {
     const agent = agentWithTools([
       createTool({

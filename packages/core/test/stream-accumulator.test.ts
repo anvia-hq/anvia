@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Usage } from "../src/completion";
-import { CompletionStreamAccumulator } from "../src/internal/agent-runtime/stream-accumulator";
+import { CompletionStreamAccumulator } from "../src/completion/stream-accumulator";
 import { AssistantContent } from "./helpers/imports";
 
 describe("CompletionStreamAccumulator", () => {
@@ -28,6 +28,7 @@ describe("CompletionStreamAccumulator", () => {
     });
     accumulator.accept({ type: "text_delta", delta: "answer" });
     accumulator.accept({ type: "reasoning_delta", id: "r2", delta: "think after" });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.reasoning("think before", "r1"),
@@ -48,6 +49,7 @@ describe("CompletionStreamAccumulator", () => {
       argumentsDelta: '{"query":"x"}',
     });
     accumulator.accept({ type: "text_delta", delta: "after" });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.text("before"),
@@ -61,8 +63,140 @@ describe("CompletionStreamAccumulator", () => {
 
     accumulator.accept({ type: "text_delta", delta: "hel" });
     accumulator.accept({ type: "text_delta", delta: "lo" });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([AssistantContent.text("hello")]);
+  });
+
+  it("uses a complete terminal text snapshot only when it agrees with streamed text", () => {
+    const matching = new CompletionStreamAccumulator();
+    matching.accept({ type: "text_delta", delta: "complete" });
+    matching.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.text("complete")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+    expect(matching.response().choice).toEqual([AssistantContent.text("complete")]);
+
+    const conflicting = new CompletionStreamAccumulator();
+    conflicting.accept({ type: "text_delta", delta: "partial" });
+    conflicting.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.text("complete")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+    expect(() => conflicting.response()).toThrowError(
+      expect.objectContaining({ kind: "invalid-stream-event" }),
+    );
+  });
+
+  it("preserves non-tool content that exists only in the terminal snapshot", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.text("complete")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    expect(accumulator.response().choice).toEqual([AssistantContent.text("complete")]);
+  });
+
+  it("rejects runtime-invalid text and reasoning deltas without coercion", () => {
+    const textAccumulator = new CompletionStreamAccumulator();
+    expect(() =>
+      textAccumulator.accept({ type: "text_delta", delta: { secret: true } } as never),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-stream-event" }));
+
+    const reasoningAccumulator = new CompletionStreamAccumulator();
+    expect(() =>
+      reasoningAccumulator.accept({ type: "reasoning_delta", delta: 42 } as never),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-stream-event" }));
+  });
+
+  it("rejects runtime-invalid tool argument deltas and modes without coercion", () => {
+    const argumentsAccumulator = new CompletionStreamAccumulator();
+    expect(() =>
+      argumentsAccumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        name: "lookup",
+        argumentsDelta: 123,
+      } as never),
+    ).toThrowError(
+      expect.objectContaining({ kind: "invalid-tool-arguments", toolCallId: "tool_0" }),
+    );
+
+    const modeAccumulator = new CompletionStreamAccumulator();
+    expect(() =>
+      modeAccumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        name: "lookup",
+        argumentsDelta: "{}",
+        argumentsMode: "merge",
+      } as never),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-stream-event", toolCallId: "tool_0" }));
+  });
+
+  it("rejects conflicting argument snapshots and deltas after a snapshot", () => {
+    const conflicting = new CompletionStreamAccumulator();
+    conflicting.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "lookup",
+      argumentsDelta: '{"query":"first"}',
+      argumentsMode: "replace",
+    });
+    expect(() =>
+      conflicting.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        argumentsDelta: '{"query":"second"}',
+        argumentsMode: "replace",
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-tool-call" }));
+
+    const postSnapshot = new CompletionStreamAccumulator();
+    postSnapshot.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "lookup",
+      argumentsDelta: "{}",
+      argumentsMode: "replace",
+    });
+    expect(() =>
+      postSnapshot.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        argumentsDelta: " ",
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-tool-call" }));
+  });
+
+  it("rejects an empty provider stream without a terminal response", () => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({ kind: "incomplete-stream" }),
+    );
+  });
+
+  it("rejects a partial text stream without a terminal response", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({ type: "text_delta", delta: "partial" });
+
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({ kind: "incomplete-stream" }),
+    );
   });
 
   it("merges same-id reasoning deltas at the reasoning part's first position", () => {
@@ -76,6 +210,7 @@ describe("CompletionStreamAccumulator", () => {
       argumentsDelta: '{"query":"x"}',
     });
     accumulator.accept({ type: "reasoning_delta", id: "r1", delta: " two" });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.reasoning("one two", "r1"),
@@ -94,6 +229,7 @@ describe("CompletionStreamAccumulator", () => {
       argumentsDelta: '{"query":"x"}',
     });
     accumulator.accept({ type: "reasoning_delta", delta: "after" });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.reasoning("before"),
@@ -112,6 +248,7 @@ describe("CompletionStreamAccumulator", () => {
       id: "tool_1",
       argumentsDelta: '{"query":"x"}',
     });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.toolCall("tool_1", "lookup", { query: "x" }),
@@ -133,6 +270,7 @@ describe("CompletionStreamAccumulator", () => {
       id: "tool_0",
       argumentsDelta: '"pwd"}',
     });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }),
@@ -154,6 +292,7 @@ describe("CompletionStreamAccumulator", () => {
       argumentsDelta: '{"command":"pwd"}',
       argumentsMode: "replace",
     });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }),
@@ -169,6 +308,7 @@ describe("CompletionStreamAccumulator", () => {
       name: "Echo",
       argumentsDelta: '"hello"',
     });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       AssistantContent.toolCall("tool_0", "Echo", "hello"),
@@ -178,7 +318,7 @@ describe("CompletionStreamAccumulator", () => {
   it.each([
     ["empty", ""],
     ["whitespace-only", " \n\t"],
-  ])("normalizes %s streamed tool arguments to an empty object", (_label, argumentsDelta) => {
+  ])("rejects %s streamed tool arguments", (_label, argumentsDelta) => {
     const accumulator = new CompletionStreamAccumulator();
 
     accumulator.accept({
@@ -187,13 +327,34 @@ describe("CompletionStreamAccumulator", () => {
       name: "NoOp",
       argumentsDelta,
     });
+    finish(accumulator);
 
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall("tool_0", "NoOp", {}),
-    ]);
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({
+        kind: "malformed-tool-arguments",
+        toolCallId: "tool_0",
+      }),
+    );
   });
 
-  it("does not replace accumulated tool metadata with empty continuation placeholders", () => {
+  it("rejects a complete-looking tool call when the provider stream has no terminal event", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "lookup",
+      argumentsDelta: '{"query":"anvia"}',
+    });
+
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({
+        kind: "incomplete-tool-call",
+        toolCallId: "tool_0",
+      }),
+    );
+  });
+
+  it("rejects blank continuation metadata instead of silently discarding it", () => {
     const accumulator = new CompletionStreamAccumulator();
 
     accumulator.accept({
@@ -202,17 +363,15 @@ describe("CompletionStreamAccumulator", () => {
       callId: "call_abc",
       name: "ExecCommand",
     });
-    accumulator.accept({
-      type: "tool_call_delta",
-      id: "tool_0",
-      callId: "",
-      name: "",
-      argumentsDelta: '{"command":"pwd"}',
-    });
-
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }, "call_abc"),
-    ]);
+    expect(() =>
+      accumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "",
+        name: "",
+        argumentsDelta: '{"command":"pwd"}',
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-tool-call" }));
   });
 
   it("preserves accumulated order when the final choice is empty", () => {
@@ -250,7 +409,7 @@ describe("CompletionStreamAccumulator", () => {
     });
   });
 
-  it("uses stream order when a non-empty final choice is grouped differently", () => {
+  it("uses authoritative final order when its non-tool content agrees with the stream", () => {
     const accumulator = new CompletionStreamAccumulator();
 
     accumulator.accept({ type: "reasoning_delta", id: "r1", delta: "think" });
@@ -267,7 +426,7 @@ describe("CompletionStreamAccumulator", () => {
         choice: [
           AssistantContent.text("answer"),
           AssistantContent.reasoning("think", "r1"),
-          AssistantContent.toolCall("tool_1", "lookup", {}),
+          AssistantContent.toolCall("tool_1", "lookup", { query: "x" }),
         ],
         usage: Usage.empty(),
         rawResponse: {},
@@ -275,111 +434,53 @@ describe("CompletionStreamAccumulator", () => {
     });
 
     expect(accumulator.response().choice).toEqual([
+      AssistantContent.text("answer"),
       AssistantContent.reasoning("think", "r1"),
       AssistantContent.toolCall("tool_1", "lookup", { query: "x" }),
-      AssistantContent.text("answer"),
     ]);
   });
 
-  it("preserves accumulated streamed tool arguments when the final tool input is empty", () => {
+  it("accepts matching final tool arguments when object key order differs", () => {
     const accumulator = new CompletionStreamAccumulator();
-    const rawResponse = { provider: "minimax" };
+    const rawResponse = { provider: "test" };
+    const finalInput = {
+      options: { modes: ["safe", "fast"], overwrite: true },
+      file_path: "src/main.tsx",
+    };
 
-    accumulator.accept({
-      type: "message_id",
-      id: "msg_1",
-    });
     accumulator.accept({
       type: "tool_call_delta",
       id: "toolu_1",
       name: "Write",
-    });
-    accumulator.accept({
-      type: "tool_call_delta",
-      id: "toolu_1",
-      argumentsDelta: '{"file_path":"src/main.tsx","content":"hello"}',
+      argumentsDelta:
+        '{"file_path":"src/main.tsx","options":{"overwrite":true,"modes":["safe","fast"]}}',
     });
     accumulator.accept({
       type: "final",
       response: {
-        choice: [AssistantContent.toolCall("toolu_1", "Write", {})],
+        choice: [AssistantContent.toolCall("toolu_1", "Write", finalInput)],
         usage: { ...Usage.empty(), inputTokens: 2, outputTokens: 1, totalTokens: 3 },
         rawResponse,
-        messageId: "msg_1",
       },
     });
 
-    expect(accumulator.response()).toEqual({
+    const response = accumulator.response();
+    expect(response).toEqual({
       choice: [
         AssistantContent.toolCall("toolu_1", "Write", {
           file_path: "src/main.tsx",
-          content: "hello",
+          options: { overwrite: true, modes: ["safe", "fast"] },
         }),
       ],
       usage: { ...Usage.empty(), inputTokens: 2, outputTokens: 1, totalTokens: 3 },
       rawResponse,
-      messageId: "msg_1",
     });
+    expect(response.choice[0]?.type === "tool-call" && response.choice[0].input).not.toBe(
+      finalInput,
+    );
   });
 
-  it("preserves accumulated start-block tool input when the final tool input is empty", () => {
-    const accumulator = new CompletionStreamAccumulator();
-
-    accumulator.accept({
-      type: "tool_call_delta",
-      id: "toolu_1",
-      name: "Write",
-      argumentsDelta: '{"file_path":"src/main.tsx","content":"hello"}',
-    });
-    accumulator.accept({
-      type: "final",
-      response: {
-        choice: [AssistantContent.toolCall("toolu_1", "Write", {})],
-        usage: Usage.empty(),
-        rawResponse: {},
-      },
-    });
-
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall("toolu_1", "Write", {
-        file_path: "src/main.tsx",
-        content: "hello",
-      }),
-    ]);
-  });
-
-  it("keeps non-empty final tool arguments over accumulated streamed arguments", () => {
-    const accumulator = new CompletionStreamAccumulator();
-
-    accumulator.accept({
-      type: "tool_call_delta",
-      id: "toolu_1",
-      name: "Write",
-      argumentsDelta: '{"file_path":"src/main.tsx","content":"streamed"}',
-    });
-    accumulator.accept({
-      type: "final",
-      response: {
-        choice: [
-          AssistantContent.toolCall("toolu_1", "Write", {
-            file_path: "src/main.tsx",
-            content: "final",
-          }),
-        ],
-        usage: Usage.empty(),
-        rawResponse: {},
-      },
-    });
-
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall("toolu_1", "Write", {
-        file_path: "src/main.tsx",
-        content: "final",
-      }),
-    ]);
-  });
-
-  it("fills empty final tool arguments by matching accumulated calls by provider call id", () => {
+  it("rejects a changed tool call id even when the provider call id is stable", () => {
     const accumulator = new CompletionStreamAccumulator();
 
     accumulator.accept({
@@ -392,26 +493,25 @@ describe("CompletionStreamAccumulator", () => {
     accumulator.accept({
       type: "final",
       response: {
-        choice: [AssistantContent.toolCall("provider_tool_1", "Write", {}, "call_1")],
+        choice: [
+          AssistantContent.toolCall(
+            "provider_tool_1",
+            "Write",
+            { content: "hello", file_path: "src/main.tsx" },
+            "call_1",
+          ),
+        ],
         usage: Usage.empty(),
         rawResponse: {},
       },
     });
 
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall(
-        "provider_tool_1",
-        "Write",
-        {
-          file_path: "src/main.tsx",
-          content: "hello",
-        },
-        "call_1",
-      ),
-    ]);
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({ kind: "invalid-tool-call", toolCallId: "tool_1" }),
+    );
   });
 
-  it("appends final-only tool calls after accumulated streamed parts", () => {
+  it("rejects a non-empty final snapshot that omits streamed non-tool content", () => {
     const accumulator = new CompletionStreamAccumulator();
 
     accumulator.accept({ type: "text_delta", delta: "answer" });
@@ -424,10 +524,9 @@ describe("CompletionStreamAccumulator", () => {
       },
     });
 
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.text("answer"),
-      AssistantContent.toolCall("tool_1", "lookup", { query: "x" }),
-    ]);
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({ kind: "invalid-stream-event" }),
+    );
   });
 
   it.each([
@@ -435,41 +534,10 @@ describe("CompletionStreamAccumulator", () => {
     ["blank string", "  "],
     ["empty array", []],
     ["empty object", {}],
-  ])("uses streamed arguments when final tool arguments are %s", (_label, finalArguments) => {
-    const accumulator = new CompletionStreamAccumulator();
-    accumulator.accept({
-      type: "tool_call_delta",
-      id: "tool_1",
-      callId: "call_1",
-      name: "lookup",
-      signature: "signed",
-      argumentsDelta: '{"query":"anvia"}',
-    });
-    accumulator.accept({
-      type: "final",
-      response: {
-        choice: [AssistantContent.toolCall("tool_1", "lookup", finalArguments, "call_1")],
-        usage: Usage.empty(),
-        rawResponse: {},
-      },
-    });
-
-    expect(accumulator.response().choice).toEqual([
-      {
-        type: "tool-call",
-        toolCallId: "tool_1",
-        callId: "call_1",
-        signature: "signed",
-        toolName: "lookup",
-        input: { query: "anvia" },
-      },
-    ]);
-  });
-
-  it.each([
     ["false", false],
     ["zero", 0],
-  ])("keeps meaningful scalar final tool arguments for %s", (_label, finalArguments) => {
+    ["different object", { query: "different" }],
+  ])("rejects %s final tool arguments that disagree with streamed arguments", (_label, input) => {
     const accumulator = new CompletionStreamAccumulator();
     accumulator.accept({
       type: "tool_call_delta",
@@ -480,15 +548,19 @@ describe("CompletionStreamAccumulator", () => {
     accumulator.accept({
       type: "final",
       response: {
-        choice: [AssistantContent.toolCall("tool_1", "lookup", finalArguments)],
-        usage: Usage.empty(),
+        choice: [AssistantContent.toolCall("tool_1", "lookup", input)],
+        usage: { ...Usage.empty(), outputTokens: 4, totalTokens: 4 },
         rawResponse: {},
       },
     });
 
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall("tool_1", "lookup", finalArguments),
-    ]);
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({
+        kind: "invalid-tool-call",
+        toolCallId: "tool_1",
+        usage: expect.objectContaining({ outputTokens: 4, totalTokens: 4 }),
+      }),
+    );
   });
 
   it("rejects malformed streamed tool arguments during response finalization", () => {
@@ -510,7 +582,7 @@ describe("CompletionStreamAccumulator", () => {
     });
 
     expect(() => accumulator.response()).toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+      'Completion provider returned tool call "tool_0" with malformed JSON arguments.',
     );
   });
 
@@ -528,13 +600,124 @@ describe("CompletionStreamAccumulator", () => {
         argumentsDelta,
       });
     }
+    finish(accumulator);
 
     expect(() => accumulator.response()).toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+      'Completion provider returned tool call "tool_0" with malformed JSON arguments.',
     );
   });
 
-  it("uses a valid completed tool call when streamed argument fragments are malformed", () => {
+  it("rejects parsed arguments that are not valid JSON values", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "calculate",
+      argumentsDelta: '{"value":1e400}',
+    });
+    finish(accumulator);
+
+    expect(() => accumulator.response()).toThrow(
+      'Completion provider returned tool call "tool_0" with arguments that are not a JSON value.',
+    );
+  });
+
+  it("rejects conflicting streamed tool identities", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      callId: "call_0",
+      name: "lookup",
+    });
+
+    expect(() =>
+      accumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "call_1",
+        name: "delete_all",
+      }),
+    ).toThrow('Completion provider returned an invalid tool call "tool_0".');
+  });
+
+  it("rejects conflicting streamed tool signatures", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "lookup",
+      signature: "signature_1",
+    });
+
+    expect(() =>
+      accumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        signature: "signature_2",
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-tool-call" }));
+  });
+
+  it("preserves a streamed signature when the matching full call omits it", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "lookup",
+      argumentsDelta: "{}",
+      signature: "signature_1",
+    });
+    accumulator.accept({
+      type: "tool_call",
+      toolCall: AssistantContent.toolCall("tool_0", "lookup", {}),
+    });
+    finish(accumulator);
+
+    expect(accumulator.response().choice).toEqual([
+      { ...AssistantContent.toolCall("tool_0", "lookup", {}), signature: "signature_1" },
+    ]);
+  });
+
+  it.each([
+    ["blank provider call id", { callId: " " }],
+    ["blank tool name", { name: "\t" }],
+  ])("rejects a %s instead of silently discarding it", (_label, identity) => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    expect(() =>
+      accumulator.accept({
+        type: "tool_call_delta",
+        id: "tool_0",
+        ...identity,
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "invalid-tool-call" }));
+  });
+
+  it("rejects final tool identity changes before execution", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      callId: "call_0",
+      name: "lookup",
+      argumentsDelta: '{"query":"anvia"}',
+    });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [AssistantContent.toolCall("tool_0", "delete_all", { query: "anvia" }, "call_0")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({ kind: "invalid-tool-call", toolCallId: "tool_0" }),
+    );
+  });
+
+  it("rejects malformed streamed arguments even when the final snapshot is valid", () => {
     const accumulator = new CompletionStreamAccumulator();
     accumulator.accept({
       type: "tool_call_delta",
@@ -551,9 +734,57 @@ describe("CompletionStreamAccumulator", () => {
       },
     });
 
-    expect(accumulator.response().choice).toEqual([
-      AssistantContent.toolCall("tool_0", "ExecCommand", { command: "pwd" }),
-    ]);
+    expect(() => accumulator.response()).toThrowError(
+      expect.objectContaining({
+        kind: "malformed-tool-arguments",
+        toolCallId: "tool_0",
+      }),
+    );
+  });
+
+  it("rejects a full tool-call snapshot that conflicts with streamed arguments", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "lookup",
+      argumentsDelta: '{"query":"first"}',
+    });
+
+    expect(() =>
+      accumulator.accept({
+        type: "tool_call",
+        toolCall: AssistantContent.toolCall("tool_0", "lookup", { query: "second" }),
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        kind: "invalid-tool-call",
+        toolCallId: "tool_0",
+      }),
+    );
+  });
+
+  it("rejects duplicate full tool-call snapshots", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    const toolCall = AssistantContent.toolCall("tool_0", "lookup", { query: "anvia" });
+    accumulator.accept({ type: "tool_call", toolCall });
+
+    expect(() => accumulator.accept({ type: "tool_call", toolCall })).toThrowError(
+      expect.objectContaining({ kind: "invalid-tool-call", toolCallId: "tool_0" }),
+    );
+  });
+
+  it("accepts a full tool-call snapshot after an identity-only delta", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    const toolCall = AssistantContent.toolCall("tool_0", "lookup", {});
+    accumulator.accept({ type: "tool_call_delta", id: "tool_0", name: "lookup" });
+
+    expect(accumulator.accept({ type: "tool_call", toolCall })).toEqual({
+      type: "tool_call",
+      toolCall,
+    });
+    finish(accumulator);
+    expect(accumulator.response().choice).toEqual([toolCall]);
   });
 
   it("preserves structured reasoning segments in their streamed order", () => {
@@ -583,6 +814,7 @@ describe("CompletionStreamAccumulator", () => {
       contentType: "redacted",
       delta: "redacted-data",
     });
+    finish(accumulator);
 
     expect(accumulator.response().choice).toEqual([
       {
@@ -615,3 +847,14 @@ describe("CompletionStreamAccumulator", () => {
     expect(accumulator.response()).toMatchObject({ messageId: "stream_message" });
   });
 });
+
+function finish(accumulator: CompletionStreamAccumulator): void {
+  accumulator.accept({
+    type: "final",
+    response: {
+      choice: [],
+      usage: Usage.empty(),
+      rawResponse: {},
+    },
+  });
+}

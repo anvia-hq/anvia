@@ -136,6 +136,7 @@ const COMPLETION_RETRY_SCALAR_ATTRIBUTES = [
   "errorName",
   "statusCode",
   "errorCode",
+  "providerOutputKind",
   "failurePhase",
   "outputLength",
   "normalizedLength",
@@ -245,19 +246,38 @@ function generationEndContext(
 }
 
 const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 16;
+const COMPLETION_PROVIDER_OUTPUT_ERROR_CODE = "ANVIA_COMPLETION_PROVIDER_OUTPUT";
+const COMPLETION_PROVIDER_OUTPUT_ERROR_KINDS = new Set([
+  "malformed-tool-arguments",
+  "invalid-tool-arguments",
+  "incomplete-stream",
+  "incomplete-tool-call",
+  "invalid-tool-call",
+  "truncated-tool-call",
+  "filtered-tool-call",
+]);
 
 function serializeError(error: unknown, seen = new Set<object>(), depth = 0): unknown {
   if (error instanceof Error) {
     if (seen.has(error)) return "[Circular error cause]";
     if (depth >= MAX_SERIALIZED_ERROR_CAUSE_DEPTH) return "[Error cause depth limit]";
     seen.add(error);
-    const serialized: Record<string, unknown> = {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
+    const providerOutputError = isCompletionProviderOutputError(error);
+    const serialized: Record<string, unknown> = providerOutputError
+      ? {
+          name: error.name,
+          message: "Completion provider returned incomplete or unsafe output.",
+        }
+      : {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        };
     if (isStructuredOutputError(error)) {
       addStructuredOutputMetadata(serialized, error);
+    }
+    if (providerOutputError) {
+      addCompletionProviderOutputMetadata(serialized, error);
     }
     if (error.cause !== undefined) {
       if (isStructuredOutputError(error)) {
@@ -272,9 +292,42 @@ function serializeError(error: unknown, seen = new Set<object>(), depth = 0): un
   return error;
 }
 
+function addCompletionProviderOutputMetadata(
+  serialized: Record<string, unknown>,
+  error: Error,
+): void {
+  const details = error as unknown as Record<string, unknown>;
+  serialized.code = COMPLETION_PROVIDER_OUTPUT_ERROR_CODE;
+  serialized.kind = details.kind;
+  if (
+    details.finishReason === "stop" ||
+    details.finishReason === "length" ||
+    details.finishReason === "content-filter" ||
+    details.finishReason === "tool-calls" ||
+    details.finishReason === "other"
+  ) {
+    serialized.finishReason = details.finishReason;
+  }
+}
+
+function isCompletionProviderOutputError(error: Error): boolean {
+  const details = error as unknown as Record<string, unknown>;
+  return (
+    error.name === "CompletionProviderOutputError" &&
+    details.code === COMPLETION_PROVIDER_OUTPUT_ERROR_CODE &&
+    typeof details.kind === "string" &&
+    COMPLETION_PROVIDER_OUTPUT_ERROR_KINDS.has(details.kind)
+  );
+}
+
 function addStructuredOutputMetadata(serialized: Record<string, unknown>, error: Error): void {
   const details = error as unknown as Record<string, unknown>;
-  if (details.phase === "truncated" || details.phase === "parse" || details.phase === "schema") {
+  if (
+    details.phase === "truncated" ||
+    details.phase === "content-filter" ||
+    details.phase === "parse" ||
+    details.phase === "schema"
+  ) {
     serialized.phase = details.phase;
   }
   for (const name of ["attempt", "maxAttempts", "outputLength", "normalizedLength"] as const) {

@@ -323,6 +323,31 @@ describe("Agent construction", () => {
     expect(Object.isFrozen(agent.providerOptions as object)).toBe(true);
   });
 
+  it("rejects non-JSON provider options when constructing an Agent", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    for (const providerOptions of [
+      { nested: { missing: undefined } },
+      { value: Number.NaN },
+      cyclic,
+      [],
+      null,
+      "provider-options",
+      1,
+      true,
+    ]) {
+      expect(
+        () =>
+          new Agent({
+            id: "agent",
+            model: new QueueModel([]),
+            providerOptions: providerOptions as never,
+          }),
+      ).toThrow("Agent providerOptions must be a JSON object.");
+    }
+  });
+
   it("snapshots tool-index registration metadata", () => {
     const indexedTool = { ...addTool, name: "indexed" };
     const index = emptyToolIndex([indexedTool], 2);

@@ -1,5 +1,6 @@
 import type { UIMessagePart } from "@anvia/client";
 import type { ComposerEntity } from "./contexts/composer";
+import { isComposerEntityData } from "./strict-json";
 
 export type MessageTextSegment = {
   part: Extract<UIMessagePart, { type: "text" }>;
@@ -34,9 +35,10 @@ export function messageTextLayout(parts: readonly UIMessagePart[]): MessageTextL
 
 export function validComposerEntities(text: string, metadata: unknown): ComposerEntity[] {
   const candidates = composerEntityCandidates(metadata);
-  const individuallyValid = candidates.flatMap((entity, index) =>
-    isValidComposerEntity(entity, text) ? [{ entity, index }] : [],
-  );
+  const individuallyValid = candidates.flatMap((candidate, index) => {
+    const entity = parseComposerEntity(candidate, text);
+    return entity === undefined ? [] : [{ entity, index }];
+  });
   individuallyValid.sort(
     (left, right) =>
       left.entity.range.from - right.entity.range.from ||
@@ -116,9 +118,9 @@ function composerEntityCandidates(metadata: unknown): unknown[] {
   return Array.isArray(metadata.composer.entities) ? metadata.composer.entities : [];
 }
 
-function isValidComposerEntity(value: unknown, text: string): value is ComposerEntity {
+function parseComposerEntity(value: unknown, text: string): ComposerEntity | undefined {
   if (!isRecord(value) || !isRecord(value.range)) {
-    return false;
+    return undefined;
   }
   if (
     !isNonEmptyString(value.id) ||
@@ -127,19 +129,32 @@ function isValidComposerEntity(value: unknown, text: string): value is ComposerE
     !isNonEmptyString(value.label) ||
     !isNonEmptyString(value.text)
   ) {
-    return false;
+    return undefined;
   }
   const { from, to } = value.range;
-  return (
-    typeof from === "number" &&
-    typeof to === "number" &&
-    Number.isInteger(from) &&
-    Number.isInteger(to) &&
-    from >= 0 &&
-    to > from &&
-    to <= text.length &&
-    text.slice(from, to) === value.text
-  );
+  if (
+    typeof from !== "number" ||
+    typeof to !== "number" ||
+    !Number.isInteger(from) ||
+    !Number.isInteger(to) ||
+    from < 0 ||
+    to <= from ||
+    to > text.length ||
+    text.slice(from, to) !== value.text
+  ) {
+    return undefined;
+  }
+  if (value.data !== undefined && !isComposerEntityData(value.data)) return undefined;
+  const entity: ComposerEntity = {
+    id: value.id,
+    triggerId: value.triggerId,
+    trigger: value.trigger,
+    label: value.label,
+    text: value.text,
+    range: { from, to },
+  };
+  if (value.data !== undefined) entity.data = value.data;
+  return entity;
 }
 
 function isNonEmptyString(value: unknown): value is string {

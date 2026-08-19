@@ -1,4 +1,9 @@
-import { type CompletionRequest, Usage } from "@anvia/core/completion";
+import {
+  type CompletionModelStreamEvent,
+  type CompletionRequest,
+  streamCompletion,
+  Usage,
+} from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
 import {
   AssistantContent,
@@ -246,6 +251,7 @@ describe("Mistral completion mapping", () => {
       fromMistralChatResponse({
         choices: [
           {
+            finishReason: "tool_calls",
             message: {
               toolCalls: [
                 {
@@ -257,18 +263,576 @@ describe("Mistral completion mapping", () => {
           },
         ],
       }),
-    ).toThrow('Mistral returned tool call "call_1" with malformed JSON arguments');
+    ).toThrow('Completion provider returned tool call "call_1" with malformed JSON arguments.');
   });
 
-  it("derives deterministic ids for tool calls missing an id", () => {
+  it.each(["", "   ", "\n\t"])("rejects blank tool arguments (%j)", (argumentsValue) => {
+    expect(() =>
+      fromMistralChatResponse({
+        choices: [
+          {
+            finishReason: "tool_calls",
+            message: {
+              toolCalls: [
+                {
+                  id: "call_1",
+                  function: { name: "lookup", arguments: argumentsValue },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "CompletionProviderOutputError",
+        kind: "malformed-tool-arguments",
+        toolCallId: "call_1",
+      }),
+    );
+  });
+
+  it("accepts strict native object tool arguments", () => {
+    const response = fromMistralChatResponse({
+      id: "cmpl_1",
+      choices: [
+        {
+          finishReason: "tool_calls",
+          message: {
+            toolCalls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "lookup", arguments: { query: "anvia" } },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("call_1", "lookup", { query: "anvia" }, "call_1"),
+    ]);
+  });
+
+  it("rejects parsed and native arguments outside the JSON object contract", () => {
+    for (const argumentsValue of [
+      '{"value":1e400}',
+      { value: Number.NaN },
+      { value: undefined },
+      [],
+      null,
+      1,
+      undefined,
+    ]) {
+      expect(() =>
+        fromMistralChatResponse({
+          choices: [
+            {
+              finishReason: "tool_calls",
+              message: {
+                toolCalls: [
+                  {
+                    id: "call_1",
+                    function: { name: "lookup", arguments: argumentsValue },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          name: "CompletionProviderOutputError",
+          kind: "invalid-tool-arguments",
+          toolCallId: "call_1",
+        }),
+      );
+    }
+  });
+
+  it("selects only the primary non-streaming choice", () => {
+    const response = fromMistralChatResponse({
+      choices: [
+        {
+          index: 1,
+          finishReason: "tool_calls",
+          message: {
+            toolCalls: [
+              {
+                id: "call_delete",
+                function: { name: "delete_all", arguments: "{}" },
+              },
+            ],
+          },
+        },
+        {
+          index: 0,
+          finishReason: "tool_calls",
+          message: {
+            toolCalls: [
+              {
+                id: "call_lookup",
+                function: { name: "lookup", arguments: '{"query":"anvia"}' },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("call_lookup", "lookup", { query: "anvia" }, "call_lookup"),
+    ]);
+  });
+
+  it("selects only the primary streaming choice", () => {
+    expect(
+      fromMistralChatStreamChunk({
+        choices: [
+          {
+            index: 1,
+            delta: {
+              toolCalls: [
+                {
+                  index: 0,
+                  id: "call_delete",
+                  function: { name: "delete_all", arguments: "{}" },
+                },
+              ],
+            },
+          },
+          {
+            index: 0,
+            delta: {
+              toolCalls: [
+                {
+                  index: 0,
+                  id: "call_lookup",
+                  function: { name: "lookup", arguments: '{"query":"anvia"}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "call_lookup",
+        name: "lookup",
+        argumentsDelta: '{"query":"anvia"}',
+      },
+    ]);
+  });
+
+  it("rejects an alternate-only stream instead of treating it as an empty response", async () => {
+    const model = mistralModelWithChunks([
+      {
+        choices: [
+          {
+            index: 1,
+            finishReason: "tool_calls",
+            delta: {
+              toolCalls: [
+                {
+                  index: 0,
+                  id: "call_delete",
+                  function: { name: "delete_all", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { promptTokens: 3, completionTokens: 5 },
+      },
+    ]);
+
+    const { error, events } = await collectMistralStreamError(model);
+    expect(events.some((event) => event.type === "tool_call_delta")).toBe(false);
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      usage: expect.objectContaining({ inputTokens: 3, outputTokens: 5 }),
+    });
+  });
+
+  it("rejects invalid streamed choices with usage from the same chunk", async () => {
+    const model = mistralModelWithChunks([
+      {
+        choices: [null],
+        usage: { promptTokens: 7, completionTokens: 11 },
+      },
+    ]);
+
+    const { error, events } = await collectMistralStreamError(model);
+    expect(events).toEqual([]);
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      usage: expect.objectContaining({ inputTokens: 7, outputTokens: 11 }),
+    });
+  });
+
+  it("rejects a stream that never produces a primary choice", async () => {
+    const model = mistralModelWithChunks([
+      {
+        choices: [],
+        usage: { promptTokens: 19, completionTokens: 23 },
+      },
+    ]);
+
+    const { error, events } = await collectMistralStreamError(model);
+    expect(events).toEqual([]);
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "incomplete-stream",
+      usage: expect.objectContaining({ inputTokens: 19, outputTokens: 23 }),
+    });
+  });
+
+  it("rejects an empty provider stream", async () => {
+    const { error, events } = await collectMistralStreamError(mistralModelWithChunks([]));
+    expect(events).toEqual([]);
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "incomplete-stream",
+    });
+  });
+
+  it("rejects unsafe terminal reasons before consuming tool arguments", () => {
+    for (const [providerFinishReason, kind] of [
+      ["length", "truncated-tool-call"],
+      ["content_filter", "filtered-tool-call"],
+    ] as const) {
+      expect(() =>
+        fromMistralChatResponse({
+          choices: [
+            {
+              index: 0,
+              finishReason: providerFinishReason,
+              message: {
+                toolCalls: [
+                  {
+                    id: "call_1",
+                    function: { name: "lookup", arguments: '{"query":' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { promptTokens: 2, completionTokens: 3 },
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          name: "CompletionProviderOutputError",
+          kind,
+          usage: expect.objectContaining({ totalTokens: 5 }),
+        }),
+      );
+    }
+  });
+
+  it("does not treat an empty non-streaming tool-call array as tool progress", () => {
+    expect(
+      fromMistralChatResponse({
+        choices: [{ index: 0, finishReason: "stop", message: { toolCalls: [] } }],
+        usage: {},
+      }),
+    ).toMatchObject({ choice: [], finishReason: "stop" });
+  });
+
+  it("rejects invalid streamed tool indexes and argument fragments", () => {
+    for (const toolCall of [{ index: -1, function: { name: "lookup", arguments: "{}" } }]) {
+      expect(() =>
+        fromMistralChatStreamChunk({
+          choices: [{ index: 0, delta: { toolCalls: [toolCall] } }],
+        }),
+      ).toThrowError(expect.objectContaining({ name: "CompletionProviderOutputError" }));
+    }
+  });
+
+  it("maps strict native streamed arguments as a replace snapshot", () => {
+    expect(
+      fromMistralChatStreamChunk({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              toolCalls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  type: "function",
+                  function: { name: "lookup", arguments: { query: "anvia" } },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "call_1",
+        name: "lookup",
+        argumentsDelta: '{"query":"anvia"}',
+        argumentsMode: "replace",
+      },
+    ]);
+  });
+
+  it("rejects invalid native streamed argument objects", () => {
+    for (const argumentsValue of [{ query: Number.NaN }, { query: undefined }, [], null, 1]) {
+      expect(() =>
+        fromMistralChatStreamChunk({
+          choices: [
+            {
+              index: 0,
+              delta: {
+                toolCalls: [
+                  {
+                    index: 0,
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "lookup", arguments: argumentsValue },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ).toThrowError(
+        expect.objectContaining({
+          name: "CompletionProviderOutputError",
+          kind: "invalid-tool-arguments",
+          toolCallId: "call_1",
+        }),
+      );
+    }
+  });
+
+  it("rejects non-function tool-call discriminants", () => {
+    expect(() =>
+      fromMistralChatResponse({
+        choices: [
+          {
+            finishReason: "tool_calls",
+            message: {
+              toolCalls: [
+                {
+                  id: "call_1",
+                  type: "builtin",
+                  function: { name: "lookup", arguments: {} },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "CompletionProviderOutputError",
+        kind: "invalid-tool-call",
+        toolCallId: "call_1",
+      }),
+    );
+
+    expect(() =>
+      fromMistralChatStreamChunk({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              toolCalls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  type: "builtin",
+                  function: { name: "lookup", arguments: {} },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "CompletionProviderOutputError",
+        kind: "invalid-tool-call",
+        toolCallId: "call_1",
+      }),
+    );
+  });
+
+  it("requires a native terminal marker after streamed tool progress", async () => {
+    const model = new MistralCompletionModel(
+      {
+        chat: {
+          stream: async () =>
+            (async function* () {
+              yield {
+                data: {
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        toolCalls: [
+                          {
+                            index: 0,
+                            id: "call_1",
+                            function: { name: "lookup", arguments: "{}" },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              };
+            })(),
+        },
+      } as never,
+      "mistral-test",
+    );
+
+    const consume = async () => {
+      for await (const _event of model.streamCompletion({
+        chatHistory: [Message.user("lookup")],
+        documents: [],
+        tools: [],
+      })) {
+        // Exhaust the provider stream.
+      }
+    };
+
+    await expect(consume()).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "incomplete-tool-call",
+    });
+  });
+
+  it("rejects a non-streaming tool call without a finish reason", () => {
+    expect(() =>
+      fromMistralChatResponse({
+        choices: [
+          {
+            message: {
+              toolCalls: [{ id: "call_1", function: { name: "lookup", arguments: "{}" } }],
+            },
+          },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        name: "CompletionProviderOutputError",
+        kind: "incomplete-tool-call",
+      }),
+    );
+  });
+
+  it("rejects conflicting streamed finish reasons", async () => {
+    const model = mistralModelWithChunks([
+      {
+        choices: [
+          {
+            index: 0,
+            finishReason: "tool_calls",
+            delta: {
+              toolCalls: [
+                {
+                  index: 0,
+                  id: "call_1",
+                  function: { name: "lookup", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+        usage: {},
+      },
+      {
+        choices: [{ index: 0, finishReason: "length", delta: {} }],
+        usage: { promptTokens: 7, completionTokens: 11 },
+      },
+    ]);
+
+    const { error } = await collectMistralStreamError(model);
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      usage: expect.objectContaining({ inputTokens: 7, outputTokens: 11 }),
+    });
+  });
+
+  it("rejects semantic progress after a streamed finish reason", async () => {
+    const model = mistralModelWithChunks([
+      { choices: [{ index: 0, finishReason: "stop", delta: { content: "done" } }] },
+      {
+        choices: [{ index: 0, delta: { content: "late" } }],
+        usage: { promptTokens: 13, completionTokens: 17 },
+      },
+    ]);
+
+    const { error, events } = await collectMistralStreamError(model);
+    expect(events).toContainEqual({ type: "text_delta", delta: "done" });
+    expect(events).not.toContainEqual({ type: "text_delta", delta: "late" });
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      usage: expect.objectContaining({ inputTokens: 13, outputTokens: 17 }),
+    });
+  });
+
+  it.each([
+    ["length", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+    ["unexpected_reason", "invalid-tool-call", "other"],
+  ] as const)("gives %s precedence over invalid native streamed tool fields", async (providerFinishReason, kind, finishReason) => {
+    const model = mistralModelWithChunks([
+      {
+        choices: [
+          {
+            index: 0,
+            finishReason: providerFinishReason,
+            delta: {
+              toolCalls: [
+                {
+                  index: -1,
+                  id: "call_1",
+                  function: { name: "lookup", arguments: { query: "anvia" } },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { promptTokens: 2, completionTokens: 3 },
+      },
+    ]);
+
+    const { error, events } = await collectMistralStreamError(model);
+    expect(events).toEqual([]);
+    expect(error).toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind,
+      finishReason,
+      usage: expect.objectContaining({ inputTokens: 2, outputTokens: 3 }),
+    });
+  });
+
+  it("derives deterministic ids for absent and SDK-placeholder tool-call ids", () => {
     const response = fromMistralChatResponse({
       id: "cmpl_9",
       choices: [
         {
+          finishReason: "tool_calls",
           message: {
             toolCalls: [
               { function: { name: "first", arguments: "{}" } },
-              { function: { name: "second", arguments: "{}" } },
+              { id: null, function: { name: "second", arguments: "{}" } },
+              { id: "null", function: { name: "third", arguments: "{}" } },
             ],
           },
         },
@@ -278,6 +842,7 @@ describe("Mistral completion mapping", () => {
     expect(response.choice).toEqual([
       AssistantContent.toolCall("cmpl_9-tool-0", "first", {}, "cmpl_9-tool-0"),
       AssistantContent.toolCall("cmpl_9-tool-1", "second", {}, "cmpl_9-tool-1"),
+      AssistantContent.toolCall("cmpl_9-tool-2", "third", {}, "cmpl_9-tool-2"),
     ]);
   });
 
@@ -308,6 +873,7 @@ describe("Mistral completion mapping", () => {
       id: "cmpl_1",
       choices: [
         {
+          finishReason: "tool_calls",
           message: {
             content: "Use a reset link.",
             toolCalls: [
@@ -371,7 +937,7 @@ describe("Mistral completion mapping", () => {
         id: "cmpl_1",
         choices: [
           {
-            finishReason: "length",
+            finishReason: "tool_calls",
             delta: {
               content: "Hello",
               toolCalls: [
@@ -403,8 +969,8 @@ describe("Mistral completion mapping", () => {
         type: "final",
         response: expect.objectContaining({
           messageId: "cmpl_1",
-          finishReason: "length",
-          providerFinishReason: "length",
+          finishReason: "tool-calls",
+          providerFinishReason: "tool_calls",
           usage: {
             ...Usage.empty(),
             inputTokens: 1,
@@ -419,6 +985,98 @@ describe("Mistral completion mapping", () => {
         }),
       },
     ]);
+  });
+
+  it("unwraps Mistral SDK completion event envelopes", async () => {
+    const model = mistralModelWithChunks([
+      {
+        id: "cmpl_1",
+        choices: [{ index: 0, delta: { content: "Hello" } }],
+      },
+      {
+        id: "cmpl_1",
+        choices: [{ index: 0, finishReason: "stop", delta: {} }],
+        usage: { promptTokens: 2, completionTokens: 1 },
+      },
+    ]);
+
+    const events: CompletionModelStreamEvent[] = [];
+    for await (const event of model.streamCompletion({
+      chatHistory: [Message.user("hello")],
+      documents: [],
+      tools: [],
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "text_delta", delta: "Hello" },
+      { type: "message_id", id: "cmpl_1" },
+      { type: "message_id", id: "cmpl_1" },
+      {
+        type: "final",
+        response: expect.objectContaining({
+          messageId: "cmpl_1",
+          finishReason: "stop",
+          providerFinishReason: "stop",
+          usage: expect.objectContaining({ inputTokens: 2, outputTokens: 1, totalTokens: 3 }),
+        }),
+      },
+    ]);
+  });
+
+  it("assembles the SDK placeholder-id and empty-name continuation shape", async () => {
+    const model = mistralModelWithChunks([
+      {
+        id: "cmpl_1",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              toolCalls: [
+                {
+                  id: "tc-1",
+                  index: 0,
+                  type: "function",
+                  function: { name: "lookup", arguments: '{"query"' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: "cmpl_1",
+        choices: [
+          {
+            index: 0,
+            finishReason: "tool_calls",
+            delta: {
+              toolCalls: [
+                {
+                  id: "null",
+                  index: 0,
+                  type: "function",
+                  function: { name: "", arguments: ':"anvia"}' },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { promptTokens: 2, completionTokens: 3 },
+      },
+    ]);
+
+    const events: unknown[] = [];
+    for await (const event of streamCompletion({ model, prompt: "lookup" })) events.push(event);
+
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: {
+        content: [AssistantContent.toolCall("tool_0", "lookup", { query: "anvia" }, "tc-1")],
+        finishReason: "tool-calls",
+      },
+    });
   });
 
   it("creates Mistral chat completion models", async () => {
@@ -451,3 +1109,37 @@ describe("Mistral completion mapping", () => {
     ]);
   });
 });
+
+function mistralModelWithChunks(chunks: unknown[]): MistralCompletionModel {
+  return new MistralCompletionModel(
+    {
+      chat: {
+        stream: async () =>
+          (async function* () {
+            for (const chunk of chunks) yield { data: chunk };
+          })(),
+      },
+    } as never,
+    "mistral-test",
+  );
+}
+
+async function collectMistralStreamError(model: MistralCompletionModel): Promise<{
+  error: unknown;
+  events: CompletionModelStreamEvent[];
+}> {
+  const events: CompletionModelStreamEvent[] = [];
+  let error: unknown;
+  try {
+    for await (const event of model.streamCompletion({
+      chatHistory: [Message.user("lookup")],
+      documents: [],
+      tools: [],
+    })) {
+      events.push(event);
+    }
+  } catch (caught) {
+    error = caught;
+  }
+  return { error, events };
+}

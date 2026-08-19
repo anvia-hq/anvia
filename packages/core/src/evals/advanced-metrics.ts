@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CompletionModel, JsonObject, JsonValue, Message, Usage } from "../completion";
-import { Usage as UsageValue } from "../completion";
+import { isJsonValue, Usage as UsageValue } from "../completion";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type { ZodSchema } from "../schema";
 import { errorMessage, formatValue } from "./format";
@@ -111,13 +111,14 @@ export function answerRelevancy<
         verdicts.length === 0
           ? 1
           : verdicts.filter((verdict) => verdict.verdict !== "no").length / verdicts.length;
+      const serializedVerdicts = serializeVerdicts(verdicts);
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "answer relevancy",
         score,
-        evidence: { input, verdicts },
+        evidence: { input, verdicts: serializedVerdicts },
       });
       usage = addUsage(usage, reasonResult.usage);
       return higherOutcome({
@@ -125,7 +126,7 @@ export function answerRelevancy<
         threshold: config.threshold,
         strictMode: config.strictMode,
         comment: reasonResult.reason,
-        details: { statements, verdicts },
+        details: { statements, verdicts: serializedVerdicts },
         usage,
       });
     } catch (error) {
@@ -234,6 +235,9 @@ export function jsonCorrectness<
         let validationError: string | undefined;
         try {
           parsed = JSON.parse(actual);
+          if (!isJsonValue(parsed)) {
+            throw new TypeError("Generated output is not a JSON value.");
+          }
           const result = options.schema.safeParse(parsed);
           if (!result.success) {
             validationError = z.prettifyError(result.error);
@@ -436,13 +440,14 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           verdict.verdict === "yes" || (verdict.verdict === "idk" && !penalizeAmbiguousClaims),
       ).length;
       const score = verdicts.length === 0 ? 1 : supported / verdicts.length;
+      const serializedVerdicts = serializeVerdicts(verdicts);
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "faithfulness",
         score,
-        evidence: { verdicts, penalizeAmbiguousClaims },
+        evidence: { verdicts: serializedVerdicts, penalizeAmbiguousClaims },
       });
       usage = addUsage(usage, reasonResult.usage);
       return higherOutcome({
@@ -450,7 +455,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
         threshold: config.threshold,
         strictMode: config.strictMode,
         comment: reasonResult.reason,
-        details: { truths, claims, verdicts, penalizeAmbiguousClaims },
+        details: { truths, claims, verdicts: serializedVerdicts, penalizeAmbiguousClaims },
         usage,
       });
     } catch (error) {
@@ -683,13 +688,19 @@ export function summarization<
       });
       const coverageScore = coverageTotal === 0 ? 0 : coverageMatched / coverageTotal;
       const score = Math.min(alignmentScore, coverageScore);
+      const serializedAlignmentVerdicts = serializeVerdicts(alignmentVerdicts);
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "summarization",
         score,
-        evidence: { alignmentVerdicts, coverageVerdicts, alignmentScore, coverageScore },
+        evidence: {
+          alignmentVerdicts: serializedAlignmentVerdicts,
+          coverageVerdicts,
+          alignmentScore,
+          coverageScore,
+        },
       });
       const usage = addUsage(
         truthResult.usage,
@@ -709,7 +720,7 @@ export function summarization<
           truths,
           claims,
           assessmentQuestions: questions,
-          alignmentVerdicts,
+          alignmentVerdicts: serializedAlignmentVerdicts,
           coverageVerdicts,
           scoreBreakdown: { alignment: alignmentScore, coverage: coverageScore },
         },
@@ -1287,16 +1298,36 @@ function assertSameLength(label: string, inputs: unknown[], outputs: unknown[]):
   }
 }
 
+function serializeVerdicts(verdicts: readonly Verdict[]): JsonObject[] {
+  return verdicts.map((verdict) => {
+    const serialized: JsonObject = { verdict: verdict.verdict };
+    if (verdict.reason !== undefined) serialized.reason = verdict.reason;
+    return serialized;
+  });
+}
+
 function jsonPrompt(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
 function toJsonValue(value: unknown): JsonValue {
-  try {
-    return JSON.parse(JSON.stringify(value)) as JsonValue;
-  } catch {
-    return String(value);
+  if (!isJsonValue(value)) {
+    throw new TypeError("G-Eval expectedOutput must be a JSON value.");
   }
+  return cloneJsonValue(value);
+}
+
+function cloneJsonValue(value: JsonValue): JsonValue {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(cloneJsonValue);
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (item === undefined) {
+        throw new TypeError("G-Eval expectedOutput must be a JSON value.");
+      }
+      return [key, cloneJsonValue(item)];
+    }),
+  );
 }
 
 type ConversationSource = EvalTurn[] | Message[];

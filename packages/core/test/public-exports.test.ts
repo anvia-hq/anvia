@@ -22,6 +22,10 @@ import type {
   AgentInteractionResponse as PublicAgentInteractionResponse,
 } from "../src/agent/interactions/index";
 import * as publicAgentInteractions from "../src/agent/interactions/index";
+import type {
+  CompletionProviderOutputErrorKind,
+  CompletionProviderOutputErrorOptions,
+} from "../src/completion";
 import * as completion from "../src/completion";
 import * as documents from "../src/documents";
 import * as embeddings from "../src/embeddings";
@@ -39,6 +43,8 @@ import type {
   AgentStreamEvent as RootAgentStreamEvent,
   AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
   AgentToolOptions as RootAgentToolOptions,
+  CompletionProviderOutputErrorKind as RootCompletionProviderOutputErrorKind,
+  CompletionProviderOutputErrorOptions as RootCompletionProviderOutputErrorOptions,
   RetryContext as RootRetryContext,
   RetryOptions as RootRetryOptions,
 } from "../src/index";
@@ -276,6 +282,21 @@ describe("public exports", () => {
     expect(completion).toHaveProperty("streamCompletion");
     expect(completion).toHaveProperty("CompletionStructuredOutputError");
     expect(publicCore).toHaveProperty("CompletionStructuredOutputError");
+    expect(completion).toHaveProperty("CompletionProviderOutputError");
+    expect(publicCore).toHaveProperty("CompletionProviderOutputError");
+    expect(completion).toHaveProperty(
+      "COMPLETION_PROVIDER_OUTPUT_ERROR_CODE",
+      "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+    );
+    expect(publicCore).toHaveProperty(
+      "COMPLETION_PROVIDER_OUTPUT_ERROR_CODE",
+      "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+    );
+    expect(publicAgent).not.toHaveProperty("CompletionProviderOutputError");
+    expectTypeOf<CompletionProviderOutputErrorKind>().not.toBeNever();
+    expectTypeOf<CompletionProviderOutputErrorOptions>().not.toBeNever();
+    expectTypeOf<RootCompletionProviderOutputErrorKind>().toEqualTypeOf<CompletionProviderOutputErrorKind>();
+    expectTypeOf<RootCompletionProviderOutputErrorOptions>().toEqualTypeOf<CompletionProviderOutputErrorOptions>();
     expect(completion).not.toHaveProperty("createCompletion");
     expect(completion).not.toHaveProperty("createParsedCompletion");
     expect(completion).not.toHaveProperty("createCompletionStream");

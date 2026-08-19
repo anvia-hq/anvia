@@ -1,5 +1,4 @@
-import type { ToolResultContentPart } from "../completion/index";
-import { isRecord } from "../internal/record";
+import { isJsonValue, type JsonObject, type ToolResultContentPart } from "../completion/index";
 
 type McpResultContent =
   | { type: "text"; text: string }
@@ -32,15 +31,22 @@ export function createCallToolParams(
   name: string,
   args: unknown,
 ): { name: string; arguments?: Record<string, unknown> } {
-  if (args === null || args === undefined) {
+  if (args === undefined) {
     return { name };
   }
 
-  if (!isRecord(args)) {
-    throw new Error("MCP tool arguments must be a JSON object");
-  }
+  return { name, arguments: parseMcpToolArguments(args) };
+}
 
-  return { name, arguments: args };
+export function parseMcpToolArguments(args: unknown): JsonObject {
+  if (!isMcpJsonObject(args)) {
+    throw new TypeError("MCP tool arguments must be a strict JSON object");
+  }
+  return args;
+}
+
+function isMcpJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && isJsonValue(value);
 }
 
 export function mapMcpToolResult(result: McpToolCallResult): readonly ToolResultContentPart[] {
@@ -109,14 +115,18 @@ function serializeMcpValue(value: unknown): string {
     return value;
   }
 
+  if (!isJsonValue(value)) {
+    throw new TypeError("MCP tool results must be strict JSON values.");
+  }
+
   let serialized: string | undefined;
   try {
     serialized = JSON.stringify(value);
   } catch (error) {
-    throw new TypeError("MCP tool results must be JSON-serializable.", { cause: error });
+    throw new TypeError("MCP tool results must be strict JSON values.", { cause: error });
   }
   if (serialized === undefined) {
-    throw new TypeError("MCP tool results must be JSON-serializable.");
+    throw new TypeError("MCP tool results must be strict JSON values.");
   }
   return serialized;
 }

@@ -40,8 +40,8 @@ import {
   type CompletionResponse,
   type CompletionSource,
   getAssistantGenerationMetadata,
+  isJsonValue,
   type JsonObject,
-  type JsonValue,
   type Message as MessageType,
   type ProviderToolCall,
   parseMessage,
@@ -52,6 +52,8 @@ import {
   textFromAssistantContent,
   Usage,
 } from "../../completion/index";
+import { assertCompletionResponseIntegrity } from "../../completion/provider-output-error";
+import { CompletionStreamAccumulator } from "../../completion/stream-accumulator";
 import {
   appendGuardrailPolicies,
   type GuardrailDecisionRecord,
@@ -78,6 +80,7 @@ import type {
   AgentTraceOptions,
 } from "../../observability/types";
 import {
+  completionProviderOutputErrorUsage,
   type ResolvedRetryOptions,
   resolveRetryOptions,
   retryDelayMs,
@@ -90,6 +93,7 @@ import { isQuestionTool } from "../../tool/question-tool";
 import { abortError, throwIfAborted } from "../abort";
 import { createAsyncQueue } from "../async-queue";
 import { createCompletionRequest } from "../completion-request";
+import { assertJsonObject } from "../json-object";
 import { extractRagText } from "../rag-text";
 import { toolMayRequireApproval } from "./approval-requirement";
 import {
@@ -108,7 +112,6 @@ import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
 import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
-import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
 import {
   normalizeStructuredOutput,
@@ -373,13 +376,19 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
       if (this.continuationState !== undefined) {
+        const interactionAttributes: JsonObject = {};
+        if (this.resumedFrom?.runId !== undefined) {
+          interactionAttributes.sourceRunId = this.resumedFrom.runId;
+        }
+        if (this.resumedFrom?.interactionId !== undefined) {
+          interactionAttributes.interactionId = this.resumedFrom.interactionId;
+        }
+        if (this.interactionResponse?.type !== undefined) {
+          interactionAttributes.interactionType = this.interactionResponse.type;
+        }
         await runObservers.event({
           name: "agent.interaction_response",
-          attributes: {
-            sourceRunId: this.resumedFrom?.runId,
-            interactionId: this.resumedFrom?.interactionId,
-            interactionType: this.interactionResponse?.type,
-          },
+          attributes: interactionAttributes,
         });
         try {
           const toolResults = await this.resolveContinuationTools(
@@ -438,6 +447,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           throw error;
         }
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
+        try {
+          assertCompletionResponseIntegrity({ response });
+        } catch (error) {
+          const providerOutputUsage = completionProviderOutputErrorUsage(error);
+          if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
+          throw error;
+        }
         usage = Usage.add(usage, response.usage);
         this.updateRunProgress(newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
@@ -806,6 +822,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.activeGeneration = undefined;
         await generationObservers.end(generationEndArgs);
         response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
+        try {
+          assertCompletionResponseIntegrity({ response });
+        } catch (error) {
+          const providerOutputUsage = completionProviderOutputErrorUsage(error);
+          if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
+          throw error;
+        }
         usage = Usage.add(usage, response.usage);
         this.updateRunProgress(newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
@@ -996,14 +1019,20 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       this.generationStartArgs(turn, request, providerRequest),
     );
     let currentRequest = request;
-    let structuredRetryUsage = Usage.empty();
+    let failedAttemptUsage = Usage.empty();
     try {
       for (let attempt = 1; ; attempt += 1) {
         let response: CompletionResponse;
         try {
           this.throwIfCancelled();
           response = await this.agent.model.completion(currentRequest, this.modelCallOptions());
+          assertCompletionResponseIntegrity({ response });
         } catch (error) {
+          const attemptUsage = completionProviderOutputErrorUsage(error);
+          if (attemptUsage !== undefined) {
+            failedAttemptUsage = Usage.add(failedAttemptUsage, attemptUsage);
+            this.failedCompletionUsage = failedAttemptUsage;
+          }
           const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
           if (retryOptions === undefined) {
             throw error;
@@ -1015,11 +1044,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             false,
             retryOptions,
             runObservers,
+            providerOutputRetryEventAttributes(error, failedAttemptUsage),
           );
           continue;
         }
 
-        const cumulativeUsage = Usage.add(structuredRetryUsage, response.usage);
+        const cumulativeUsage = Usage.add(failedAttemptUsage, response.usage);
         try {
           this.validateStructuredResponse(response, attempt, cumulativeUsage);
         } catch (error) {
@@ -1027,8 +1057,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (retryOptions === undefined) {
             throw error;
           }
-          structuredRetryUsage = cumulativeUsage;
-          this.failedCompletionUsage = structuredRetryUsage;
+          failedAttemptUsage = cumulativeUsage;
+          this.failedCompletionUsage = failedAttemptUsage;
           const retryRequest = structuredOutputRetryRequest(request, response, error);
           currentRequest = retryRequest.request;
           await this.scheduleCompletionRetry(
@@ -1043,10 +1073,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           continue;
         }
 
-        const finalResponse =
-          structuredRetryUsage.totalTokens === 0
-            ? response
-            : { ...response, usage: cumulativeUsage };
+        const finalResponse = Usage.isEmpty(failedAttemptUsage)
+          ? response
+          : { ...response, usage: cumulativeUsage };
         await generationObservers.end({ turn, response: finalResponse });
         this.failedCompletionUsage = Usage.empty();
         return finalResponse;
@@ -1098,20 +1127,28 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     for (let attempt = 1; ; attempt += 1) {
       const accumulator = new CompletionStreamAccumulator();
       let hasProviderProgress = false;
+      let recordedErrorUsage = false;
+      let attemptErrorUsage: Usage | undefined;
       try {
         this.throwIfCancelled();
         for await (const event of model.streamCompletion(currentRequest, this.modelCallOptions())) {
           if (event.type === "error") {
-            if (event.usage !== undefined) {
-              args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, event.usage);
+            const eventUsage = event.usage ?? completionProviderOutputErrorUsage(event.error);
+            if (eventUsage !== undefined) {
+              args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, eventUsage);
+              recordedErrorUsage = true;
+              attemptErrorUsage = eventUsage;
             }
             throw event.error;
           }
-          hasProviderProgress = true;
+          const mapped = accumulator.accept(event);
+          if (event.type === "final") break;
+          if (event.type === "tool_call_delta" || mapped !== undefined) {
+            hasProviderProgress = true;
+          }
           if (args.state.firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
             args.state.firstDeltaMs = Date.now() - args.generationStartedAt;
           }
-          const mapped = accumulator.accept(event);
           if (event.type === "tool_call_delta") {
             yield addTurnToToolCallDelta(args.turn, event);
           }
@@ -1130,6 +1167,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           }
         }
         const response = accumulator.response();
+        assertCompletionResponseIntegrity({ response });
         const cumulativeStructuredUsage = Usage.add(args.state.providerErrorUsage, response.usage);
         try {
           this.validateStructuredResponse(response, attempt, cumulativeStructuredUsage);
@@ -1157,13 +1195,19 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           );
           continue;
         }
-        args.state.response =
-          args.state.providerErrorUsage.totalTokens === 0
-            ? response
-            : { ...response, usage: cumulativeStructuredUsage };
+        args.state.response = Usage.isEmpty(args.state.providerErrorUsage)
+          ? response
+          : { ...response, usage: cumulativeStructuredUsage };
         args.state.providerErrorUsage = Usage.empty();
         return;
       } catch (error) {
+        if (!recordedErrorUsage) {
+          const attemptUsage = completionProviderOutputErrorUsage(error);
+          if (attemptUsage !== undefined) {
+            args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, attemptUsage);
+            attemptErrorUsage = attemptUsage;
+          }
+        }
         const retryOptions = hasProviderProgress
           ? undefined
           : this.retryOptionsForFailure(error, attempt, args.turn, true);
@@ -1177,6 +1221,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           true,
           retryOptions,
           args.runObservers,
+          providerOutputRetryEventAttributes(
+            error,
+            args.state.providerErrorUsage,
+            attemptErrorUsage,
+          ),
         );
       }
     }
@@ -1756,6 +1805,20 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (response.choice.some((item) => item.type === "tool-call")) return;
     const text = textFromAssistantContent(response.choice);
     const normalized = normalizeStructuredOutput(text);
+    if (response.finishReason === "content-filter") {
+      throw new AgentStructuredOutputError({
+        phase: "content-filter",
+        attempt,
+        maxAttempts: this.completionRetryOptions?.maxAttempts ?? 1,
+        outputLength: text.length,
+        normalizedLength: normalized.text.length,
+        outputFormat: normalized.format,
+        attemptUsage: response.usage,
+        usage,
+        finishReason: response.finishReason,
+        providerFinishReason: response.providerFinishReason,
+      });
+    }
     if (response.finishReason === "length") {
       throw new AgentStructuredOutputError({
         phase: "truncated",
@@ -1806,6 +1869,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     let json: unknown;
     try {
       json = JSON.parse(normalized.text);
+      if (!isJsonValue(json)) {
+        throw new TypeError("Agent structured output is not a JSON value.");
+      }
     } catch (error) {
       throw new AgentStructuredOutputError({
         phase: "parse",
@@ -2032,6 +2098,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       });
       if (replacement?.request !== undefined) {
         current = replacement.request;
+        if (current.providerOptions !== undefined) {
+          assertJsonObject(current.providerOptions, "providerOptions");
+        }
       }
     }
     return current;
@@ -2592,6 +2661,19 @@ function structuredOutputRetryEventAttributes(
   return attributes;
 }
 
+function providerOutputRetryEventAttributes(
+  error: unknown,
+  cumulativeUsage: Usage,
+  attemptUsage?: Usage | undefined,
+): JsonObject | undefined {
+  const resolvedAttemptUsage = attemptUsage ?? completionProviderOutputErrorUsage(error);
+  if (resolvedAttemptUsage === undefined) return undefined;
+  return {
+    attemptUsage: usageEventValue(resolvedAttemptUsage),
+    cumulativeUsage: usageEventValue(cumulativeUsage),
+  };
+}
+
 function usageEventValue(usage: Usage): JsonObject {
   const value: JsonObject = {
     inputTokens: usage.inputTokens,
@@ -2619,10 +2701,8 @@ function providerMessages(messages: readonly MessageType[]): MessageType[] {
   return providerMessages;
 }
 
-function guardrailDecisionAttributes(
-  decision: GuardrailDecisionRecord,
-): Record<string, JsonValue | undefined> {
-  const attributes: Record<string, JsonValue | undefined> = {
+function guardrailDecisionAttributes(decision: GuardrailDecisionRecord): JsonObject {
+  const attributes: JsonObject = {
     policyId: decision.policyId,
     guardrailId: decision.guardrailId,
     boundary: decision.boundary,

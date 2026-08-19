@@ -181,6 +181,53 @@ describe("direct multimodal model APIs", () => {
     ).rejects.toThrow("non-empty string");
   });
 
+  it("rejects non-JSON provider options before calling media models", async () => {
+    const imageCalls: unknown[] = [];
+    const speechCalls: unknown[] = [];
+    const transcriptionCalls: unknown[] = [];
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    for (const providerOptions of [
+      { nested: { missing: undefined } },
+      { value: Number.POSITIVE_INFINITY },
+      cyclic,
+      [],
+      null,
+      "provider-options",
+      1,
+      true,
+      new Date(),
+    ]) {
+      await expect(
+        generateImage({
+          model: fakeImageModel(imageCalls),
+          prompt: "draw",
+          providerOptions: providerOptions as never,
+        }),
+      ).rejects.toThrow("providerOptions must be a JSON object.");
+      await expect(
+        generateSpeech({
+          model: fakeAudioModel(speechCalls),
+          text: "hello",
+          voice: "alloy",
+          providerOptions: providerOptions as never,
+        }),
+      ).rejects.toThrow("providerOptions must be a JSON object.");
+      await expect(
+        transcribe({
+          model: fakeTranscriptionModel(transcriptionCalls),
+          audio: { data: new Uint8Array([1]), filename: "audio.mp3" },
+          providerOptions: providerOptions as never,
+        }),
+      ).rejects.toThrow("providerOptions must be a JSON object.");
+    }
+
+    expect(imageCalls).toHaveLength(0);
+    expect(speechCalls).toHaveLength(0);
+    expect(transcriptionCalls).toHaveLength(0);
+  });
+
   it.each([
     [
       "image",
@@ -235,11 +282,12 @@ function fakeAudioModel(calls: unknown[] = []): SpeechGenerationModel {
   };
 }
 
-function fakeTranscriptionModel(): TranscriptionModel {
+function fakeTranscriptionModel(calls: unknown[] = []): TranscriptionModel {
   return {
     provider: "test",
     modelId: "test-transcription",
-    async transcription() {
+    async transcription(request) {
+      calls.push(request);
       return { text: "done", rawResponse: {} };
     },
   };

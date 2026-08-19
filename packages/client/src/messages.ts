@@ -78,11 +78,12 @@ export function uiMessagesToMessages<
           if (part.content !== undefined) reasoning = { ...reasoning, details: part.content };
           content.push(reasoning);
         } else if (part.type === "tool") {
+          assertReplayableToolPart(part);
           let toolCall: ToolCallPart = {
             type: "tool-call",
             toolCallId: part.toolCallId,
             toolName: part.toolName,
-            input: part.input ?? {},
+            input: part.input,
           };
           if (part.callId !== undefined) toolCall = { ...toolCall, callId: part.callId };
           if (part.signature !== undefined) toolCall = { ...toolCall, signature: part.signature };
@@ -111,11 +112,12 @@ export function uiMessagesToMessages<
     }
 
     assertOnlyParts(message, ["tool", "data", "error"]);
-    const content = message.parts.flatMap((part) =>
-      part.type === "tool" && (part.state === "output-available" || part.state === "error")
-        ? [toolResultFromPart(part)]
-        : [],
-    );
+    const content: ToolResultPart[] = [];
+    for (const part of message.parts) {
+      if (part.type !== "tool") continue;
+      assertToolResultPart(part);
+      content.push(toolResultFromPart(part));
+    }
     result.push({ role: "tool", content, ...metadataField(message.metadata) });
   }
 
@@ -187,7 +189,13 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
       const location =
         (content.callId === undefined ? undefined : byCallId.get(content.callId)) ??
         byToolCallId.get(content.toolCallId);
-      const part = toolResultToUIMessagePart(content, toolNameAt(result, location));
+      const ownerPart = toolPartAt(result, location);
+      if (ownerPart === undefined || ownerPart.state === "input-streaming") {
+        throw new TypeError(
+          `Tool result "${content.toolCallId}" requires a matching completed tool call.`,
+        );
+      }
+      const part = toolResultToUIMessagePart(content, ownerPart.toolName, ownerPart.input);
 
       if (message.metadata === undefined && location !== undefined) {
         const owner = result[location.messageIndex];
@@ -267,7 +275,9 @@ function textContent(text: string, signature?: string): Extract<UserContentPart,
   return signature === undefined ? { type: "text", text } : { type: "text", text, signature };
 }
 
-function toolResultFromPart(part: UIToolMessagePart): ToolResultPart {
+function toolResultFromPart(
+  part: Extract<UIToolMessagePart, { state: "output-available" | "error" }>,
+): ToolResultPart {
   let result: ToolResultPart = {
     type: "tool-result",
     toolCallId: part.toolCallId,
@@ -278,14 +288,16 @@ function toolResultFromPart(part: UIToolMessagePart): ToolResultPart {
   return result;
 }
 
-function toolOutputFromPart(part: UIToolMessagePart): ToolResultOutput {
+function toolOutputFromPart(
+  part: Extract<UIToolMessagePart, { state: "output-available" | "error" }>,
+): ToolResultOutput {
   if (part.state === "error") {
-    return { type: "error-text", value: part.error?.message ?? "Tool execution failed." };
+    return { type: "error-text", value: part.error.message };
   }
   if (part.resultContent !== undefined) {
     return { type: "content", value: part.resultContent };
   }
-  const output = part.output ?? null;
+  const output = part.output;
   return typeof output === "string"
     ? { type: "text", value: output }
     : { type: "json", value: output };
@@ -364,14 +376,16 @@ function contentToAttachment(content: ImagePart | FilePart): UIAttachment {
 
 function toolResultToUIMessagePart(
   content: ToolResultPart,
-  fallbackToolName: string | undefined,
+  fallbackToolName: string,
+  input: JsonValue,
 ): UIToolMessagePart {
   const output = content.output;
   const common = {
     id: toolPartId(content.toolCallId),
     type: "tool" as const,
-    toolName: content.toolName || fallbackToolName || "tool",
+    toolName: content.toolName || fallbackToolName,
     toolCallId: content.toolCallId,
+    input,
   };
   if (content.callId !== undefined) Object.assign(common, { callId: content.callId });
   if (output.type === "error-text" || output.type === "error-json") {
@@ -410,13 +424,37 @@ function toolResultOutput(output: ToolResultOutput): JsonValue {
       );
 }
 
-function toolNameAt(
+function toolPartAt(
   messages: readonly UIMessage[],
   location: ToolLocation | undefined,
-): string | undefined {
+): UIToolMessagePart | undefined {
   if (location === undefined) return undefined;
   const part = messages[location.messageIndex]?.parts[location.partIndex];
-  return part?.type === "tool" ? part.toolName : undefined;
+  return part?.type === "tool" ? part : undefined;
+}
+
+function assertReplayableToolPart(
+  part: UIToolMessagePart,
+): asserts part is Exclude<UIToolMessagePart, { state: "input-streaming" }> {
+  if (part.state === "input-streaming") {
+    throw new TypeError(
+      `Tool call "${part.toolCallId}" is still streaming and cannot be converted to a model message.`,
+    );
+  }
+  if (!isJsonValue(part.input)) {
+    throw new TypeError(`Tool call "${part.toolCallId}" input must be a strict JSON value.`);
+  }
+}
+
+function assertToolResultPart(
+  part: UIToolMessagePart,
+): asserts part is Extract<UIToolMessagePart, { state: "output-available" | "error" }> {
+  assertReplayableToolPart(part);
+  if (part.state === "input-available") {
+    throw new TypeError(
+      `Tool message part "${part.toolCallId}" requires an output or execution error.`,
+    );
+  }
 }
 
 function textFromParts(parts: readonly UIMessagePart[]): string {

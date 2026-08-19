@@ -1,7 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { JsonObject, ToolDefinition } from "../completion/index";
 import { ToolOutput } from "../tool";
-import { createCallToolParams, mapMcpToolResult } from "./result";
+import { createCallToolParams, mapMcpToolResult, parseMcpToolArguments } from "./result";
 import type { McpTool } from "./types";
 
 type SdkMcpToolDefinition = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
@@ -28,6 +28,9 @@ export function createMcpTool(options: {
     mcp: provenance,
     definition(): ToolDefinition {
       return toolDefinition;
+    },
+    parseInput(args) {
+      return parseMcpToolArguments(args);
     },
     async call(args, context) {
       const result = await client.callTool(

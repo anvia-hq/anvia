@@ -1,4 +1,4 @@
-import type { JsonValue } from "./completion/types";
+import type { JsonObject, Usage } from "./completion/types";
 import { abortError, isAbortError, waitForAbortableDelay } from "./internal/abort";
 
 export type RetryContext = {
@@ -33,11 +33,33 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429]);
 const RETRYABLE_NUMERIC_ERROR_CODES = new Set([4, 8, 14]);
 const RETRYABLE_ERROR_NAMES = new Set([
-  "AgentStructuredOutputError",
   "APIConnectionError",
   "APIConnectionTimeoutError",
   "TimeoutError",
 ]);
+const RETRYABLE_STRUCTURED_OUTPUT_PHASES = new Set(["truncated", "parse", "schema"]);
+const RETRYABLE_PROVIDER_OUTPUT_KINDS = new Set([
+  "malformed-tool-arguments",
+  "invalid-tool-arguments",
+  "invalid-stream-event",
+  "incomplete-stream",
+  "incomplete-tool-call",
+  "invalid-tool-call",
+  "truncated-tool-call",
+]);
+const PROVIDER_OUTPUT_KINDS = new Set([
+  ...RETRYABLE_PROVIDER_OUTPUT_KINDS,
+  "filtered-tool-call",
+  "invalid-response",
+]);
+const PROVIDER_OUTPUT_FINISH_REASONS = new Set([
+  "stop",
+  "length",
+  "content-filter",
+  "tool-calls",
+  "other",
+]);
+const COMPLETION_PROVIDER_OUTPUT_ERROR_CODE = "ANVIA_COMPLETION_PROVIDER_OUTPUT";
 const RETRYABLE_ERROR_CODES = new Set([
   "DEADLINE_EXCEEDED",
   "EAI_AGAIN",
@@ -86,7 +108,7 @@ export function retryDelayMs(options: ResolvedRetryOptions, failedAttempt: numbe
   return Math.random() * cappedDelay;
 }
 
-export function retryErrorAttributes(error: unknown): Record<string, JsonValue | undefined> {
+export function retryErrorAttributes(error: unknown): JsonObject {
   const errors = errorChain(error);
   const errorName = errors
     .map((candidate) => stringProperty(candidate, "name"))
@@ -96,7 +118,29 @@ export function retryErrorAttributes(error: unknown): Record<string, JsonValue |
     .map((candidate) => errorCodeProperty(candidate))
     .find((value) => value !== undefined);
 
-  return { errorName, statusCode, errorCode };
+  const attributes: JsonObject = {};
+  if (errorName !== undefined) attributes.errorName = errorName;
+  if (statusCode !== undefined) attributes.statusCode = statusCode;
+  if (errorCode !== undefined) attributes.errorCode = errorCode;
+  const providerOutputError = errors.find(isCompletionProviderOutputErrorRecord);
+  if (providerOutputError !== undefined) {
+    const kind = stringProperty(providerOutputError, "kind");
+    if (kind !== undefined) attributes.providerOutputKind = kind;
+    const finishReason = stringProperty(providerOutputError, "finishReason");
+    if (finishReason !== undefined) attributes.finishReason = finishReason;
+    const usage = usageProperty(providerOutputError);
+    if (usage !== undefined) attributes.attemptUsage = usageEventValue(usage);
+  }
+  return attributes;
+}
+
+export function completionProviderOutputErrorUsage(error: unknown): Usage | undefined {
+  for (const candidate of errorChain(error)) {
+    if (!isCompletionProviderOutputErrorRecord(candidate)) continue;
+    const usage = usageProperty(candidate);
+    if (usage !== undefined) return usage;
+  }
+  return undefined;
 }
 
 export async function waitForRetry(
@@ -146,6 +190,21 @@ function defaultShouldRetry(context: RetryContext): boolean {
   const errors = errorChain(context.error);
   if (isAbortError(context.error)) return false;
 
+  const providerOutputErrorMarker = errors.find(isCompletionProviderOutputErrorMarker);
+  if (providerOutputErrorMarker !== undefined) {
+    if (!isCompletionProviderOutputErrorRecord(providerOutputErrorMarker)) return false;
+    const kind = stringProperty(providerOutputErrorMarker, "kind");
+    return kind !== undefined && RETRYABLE_PROVIDER_OUTPUT_KINDS.has(kind);
+  }
+
+  const structuredOutputError = errors.find(
+    (error) => stringProperty(error, "name") === "AgentStructuredOutputError",
+  );
+  if (structuredOutputError !== undefined) {
+    const phase = stringProperty(structuredOutputError, "phase");
+    return phase !== undefined && RETRYABLE_STRUCTURED_OUTPUT_PHASES.has(phase);
+  }
+
   const statusCode = firstStatusCode(errors);
   if (statusCode !== undefined) {
     return RETRYABLE_STATUS_CODES.has(statusCode) || (statusCode >= 500 && statusCode <= 599);
@@ -159,6 +218,86 @@ function defaultShouldRetry(context: RetryContext): boolean {
     const numericCode = numberProperty(error, "code");
     return numericCode !== undefined && RETRYABLE_NUMERIC_ERROR_CODES.has(numericCode);
   });
+}
+
+function isCompletionProviderOutputErrorRecord(error: Record<string, unknown>): boolean {
+  const kind = stringProperty(error, "kind");
+  return (
+    isCompletionProviderOutputErrorMarker(error) &&
+    kind !== undefined &&
+    PROVIDER_OUTPUT_KINDS.has(kind) &&
+    hasConsistentProviderOutputFinish(error, kind)
+  );
+}
+
+function isCompletionProviderOutputErrorMarker(error: Record<string, unknown>): boolean {
+  return (
+    stringProperty(error, "name") === "CompletionProviderOutputError" &&
+    stringProperty(error, "code") === COMPLETION_PROVIDER_OUTPUT_ERROR_CODE
+  );
+}
+
+function hasConsistentProviderOutputFinish(error: Record<string, unknown>, kind: string): boolean {
+  const rawFinishReason = property(error, "finishReason");
+  if (
+    rawFinishReason !== undefined &&
+    (typeof rawFinishReason !== "string" || !PROVIDER_OUTPUT_FINISH_REASONS.has(rawFinishReason))
+  ) {
+    return false;
+  }
+  const finishReason = rawFinishReason as string | undefined;
+  if (kind === "truncated-tool-call") return finishReason === "length";
+  if (kind === "filtered-tool-call") return finishReason === "content-filter";
+  return finishReason !== "length" && finishReason !== "content-filter";
+}
+
+function usageProperty(value: Record<string, unknown>): Usage | undefined {
+  const usage = property(value, "usage");
+  if (!isObject(usage)) return undefined;
+  const inputTokens = nonnegativeNumberProperty(usage, "inputTokens");
+  const outputTokens = nonnegativeNumberProperty(usage, "outputTokens");
+  const totalTokens = nonnegativeNumberProperty(usage, "totalTokens");
+  const cachedInputTokens = nonnegativeNumberProperty(usage, "cachedInputTokens");
+  const cacheCreationInputTokens = nonnegativeNumberProperty(usage, "cacheCreationInputTokens");
+  if (
+    inputTokens === undefined ||
+    outputTokens === undefined ||
+    totalTokens === undefined ||
+    cachedInputTokens === undefined ||
+    cacheCreationInputTokens === undefined
+  ) {
+    return undefined;
+  }
+  const result: Usage = {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedInputTokens,
+    cacheCreationInputTokens,
+  };
+  const details = property(usage, "details");
+  if (details !== undefined) {
+    if (!isObject(details)) return undefined;
+    const copiedDetails: Record<string, number> = {};
+    for (const [key, detail] of Object.entries(details)) {
+      if (typeof detail !== "number" || !Number.isFinite(detail) || detail < 0) return undefined;
+      copiedDetails[key] = detail;
+    }
+    result.details = copiedDetails;
+  }
+  return result;
+}
+
+function usageEventValue(usage: Usage): JsonObject {
+  const value: JsonObject = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+  };
+  if (usage.details !== undefined) value.details = { ...usage.details };
+  return value;
 }
 
 function firstStatusCode(errors: Record<string, unknown>[]): number | undefined {
@@ -194,6 +333,14 @@ function assertDelay(value: number, name: string): void {
 function numberProperty(value: Record<string, unknown>, name: string): number | undefined {
   const candidate = property(value, name);
   return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : undefined;
+}
+
+function nonnegativeNumberProperty(
+  value: Record<string, unknown>,
+  name: string,
+): number | undefined {
+  const candidate = numberProperty(value, name);
+  return candidate !== undefined && candidate >= 0 ? candidate : undefined;
 }
 
 function stringProperty(value: Record<string, unknown>, name: string): string | undefined {

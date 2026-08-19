@@ -1,28 +1,42 @@
-import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import {
+  CompletionProviderOutputError,
+  isJsonValue,
+  type JsonObject,
+  type JsonValue,
+  type Usage,
+} from "@anvia/core/completion";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function numberFrom(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 export function stringFrom(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-export function parseToolArguments(toolCallId: string, text: string): JsonValue {
-  if (text.trim().length === 0) {
-    return {};
-  }
+export function parseToolArguments(toolCallId: string, text: string, usage?: Usage): JsonValue {
+  let value: unknown;
   try {
-    return JSON.parse(text) as JsonValue;
+    value = JSON.parse(text);
   } catch {
-    throw new Error(
-      `Mistral returned tool call "${toolCallId}" with malformed JSON arguments; this indicates invalid provider output.`,
-    );
+    throw new CompletionProviderOutputError({
+      kind: "malformed-tool-arguments",
+      toolCallId,
+      usage,
+    });
   }
+  if (!isJsonValue(value)) {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-arguments",
+      toolCallId,
+      usage,
+    });
+  }
+  return value;
 }
 
 export function schemaName(schema: JsonObject): string {

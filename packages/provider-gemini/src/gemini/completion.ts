@@ -6,8 +6,10 @@ import {
   type CompletionModelCapabilities,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
+  CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
+  isJsonValue,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
@@ -33,6 +35,26 @@ type GeminiContent = {
   parts: GeminiPart[];
 };
 type GeminiPart = Record<string, unknown>;
+type IndexedGeminiPart = Readonly<{
+  index: number;
+  part: GeminiPart;
+}>;
+type GeminiFunctionCall = Readonly<{
+  toolCallId: string;
+  callId?: string | undefined;
+  name: string;
+  args: JsonObject;
+  signature?: string | undefined;
+  partIndex: number;
+}>;
+type GeminiStreamChunkMapping = Readonly<{
+  events: CompletionModelStreamEvent[];
+  toolCalls: Extract<AssistantContentPart, { type: "tool-call" }>[];
+  hasToolCallMarker: boolean;
+  hasSyntheticToolCalls: boolean;
+  providerFinishReason?: string | undefined;
+  terminalError?: CompletionProviderOutputError | undefined;
+}>;
 
 export class GeminiCompletionModel implements StreamingCompletionModel<unknown> {
   readonly provider = "gemini";
@@ -85,15 +107,23 @@ export class GeminiCompletionModel implements StreamingCompletionModel<unknown> 
     const params = toGeminiGenerateContentParams(this.modelId, request);
     applyAbortSignal(params, options);
     const stream = await this.client.models.generateContentStream(params as never);
+    const streamState = new GeminiCompletionStreamState();
     for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
-      for (const event of fromGeminiGenerateContentStreamChunk(chunk)) {
-        yield event.type === "final"
-          ? {
-              ...event,
-              response: withContextUsage(event.response, this.modelInfo()),
-            }
-          : event;
+      const mapping = mapGeminiGenerateContentStreamChunk(chunk);
+      streamState.accept(chunk, mapping);
+      for (const event of mapping.events) {
+        if (event.type !== "final") {
+          yield event;
+        }
       }
+    }
+    streamState.assertComplete();
+    const finalEvent = streamState.finalEvent();
+    if (finalEvent !== undefined) {
+      yield {
+        ...finalEvent,
+        response: withContextUsage(finalEvent.response, this.modelInfo()),
+      };
     }
   }
 }
@@ -103,9 +133,18 @@ export function toGeminiGenerateContentParams(
   request: CompletionRequest,
 ): GeminiGenerateParams {
   const messages = requestMessages(request);
-  const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
+  if (
+    request.providerOptions !== undefined &&
+    (!isPlainObject(request.providerOptions) || !isJsonValue(request.providerOptions))
+  ) {
+    throw new TypeError("Gemini providerOptions must be a JSON object.");
+  }
+  const providerOptions = request.providerOptions ?? {};
   const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
-  const providerConfig = isPlainObject(providerConfigValue) ? { ...providerConfigValue } : {};
+  if (providerConfigValue !== undefined && !isPlainObject(providerConfigValue)) {
+    throw new TypeError("Gemini providerOptions.config must be a JSON object.");
+  }
+  const providerConfig = providerConfigValue === undefined ? {} : { ...providerConfigValue };
   delete providerConfig.tools;
   const config = disableGeminiNativeRetries({
     ...providerConfig,
@@ -167,10 +206,10 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
 function compactJsonObject(values: Record<string, unknown>): JsonObject {
   return Object.fromEntries(
     Object.entries(values).flatMap(([key, value]) => {
-      if (value === undefined) {
+      if (!isJsonValue(value)) {
         return [];
       }
-      return [[key, toJsonValue(value)]];
+      return [[key, value]];
     }),
   ) as JsonObject;
 }
@@ -471,12 +510,21 @@ function toolChoiceToGemini(toolChoice: ToolChoice): GeminiPart {
 }
 
 export function fromGeminiGenerateContentResponse(response: unknown): CompletionResponse {
-  const raw = response as Record<string, unknown>;
-  const choice = assistantContentFromGeminiResponse(raw);
+  const raw = isPlainObject(response) ? response : {};
+  const usage = usageFromGemini(raw.usageMetadata);
+  const parts = candidateParts(raw, usage);
+  const providerFinishReason = providerFinishReasonFromGeminiResponse(raw);
+  const finishError = geminiToolFinishError(
+    providerFinishReason,
+    hasGeminiFunctionCallMarker(raw, parts),
+    usage,
+  );
+  if (finishError !== undefined) throw finishError;
+  const choice = assistantContentFromGeminiResponse(raw, usage);
 
   const result: CompletionResponse = {
     choice,
-    usage: usageFromGemini(raw.usageMetadata),
+    usage,
     rawResponse: response,
   };
   applyGeminiFinishReason(result, raw);
@@ -484,20 +532,33 @@ export function fromGeminiGenerateContentResponse(response: unknown): Completion
   if (id !== undefined) {
     result.messageId = id;
   }
+  assertSafeGeminiCompletionResponse(result);
   return result;
 }
 
-function applyGeminiFinishReason(response: CompletionResponse, raw: Record<string, unknown>): void {
-  const value = stringFrom(primaryGeminiCandidate(raw)?.finishReason);
+function applyGeminiFinishReason(
+  response: CompletionResponse,
+  raw: Record<string, unknown>,
+  hasStreamedToolCalls = false,
+): void {
+  const value = providerFinishReasonFromGeminiResponse(raw);
   if (value === undefined) return;
-  response.finishReason = geminiFinishReason(value, response.choice);
+  applyGeminiFinishReasonValue(response, value, hasStreamedToolCalls);
+}
+
+function applyGeminiFinishReasonValue(
+  response: CompletionResponse,
+  value: string,
+  hasStreamedToolCalls: boolean,
+): void {
+  response.finishReason = geminiFinishReason(
+    value,
+    hasStreamedToolCalls || response.choice.some((part) => part.type === "tool-call"),
+  );
   response.providerFinishReason = value;
 }
 
-function geminiFinishReason(
-  value: string,
-  choice: readonly AssistantContentPart[],
-): CompletionFinishReason {
+function geminiFinishReason(value: string, hasToolCalls: boolean): CompletionFinishReason {
   if (value === "MAX_TOKENS") return "length";
   if (
     value === "SAFETY" ||
@@ -511,22 +572,43 @@ function geminiFinishReason(
     return "content-filter";
   }
   if (value === "STOP") {
-    return choice.some((part) => part.type === "tool-call") ? "tool-calls" : "stop";
+    return hasToolCalls ? "tool-calls" : "stop";
   }
   return "other";
 }
 
 export function fromGeminiGenerateContentStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
+  const mapping = mapGeminiGenerateContentStreamChunk(chunk);
+  if (mapping.terminalError !== undefined) throw mapping.terminalError;
+  return mapping.events;
+}
+
+function mapGeminiGenerateContentStreamChunk(chunk: unknown): GeminiStreamChunkMapping {
   if (!isPlainObject(chunk)) {
-    return [];
+    return {
+      events: [],
+      toolCalls: [],
+      hasToolCallMarker: false,
+      hasSyntheticToolCalls: false,
+    };
   }
 
   const events: CompletionModelStreamEvent[] = [];
-  const directText = typeof chunk.text === "string" ? chunk.text : "";
-  if (directText.length > 0 && candidateParts(chunk).length === 0) {
+  const usage = usageFromGemini(chunk.usageMetadata);
+  const parts = candidateParts(chunk, usage);
+  const providerFinishReason = providerFinishReasonFromGeminiResponse(chunk);
+  const hasToolCallMarker = hasGeminiFunctionCallMarker(chunk, parts);
+  const terminalError =
+    providerFinishReason === undefined
+      ? undefined
+      : geminiToolFinishError(providerFinishReason, hasToolCallMarker, usage);
+  const calls =
+    terminalError === undefined ? functionCallsFromGeminiResponse(chunk, parts, usage) : [];
+  const directText = textFromGeminiResponse(chunk, parts);
+  if (terminalError === undefined && directText.length > 0 && parts.length === 0) {
     events.push({ type: "text_delta", delta: directText });
   }
-  for (const part of candidateParts(chunk)) {
+  for (const { part } of terminalError === undefined ? parts : []) {
     if (typeof part.text === "string" && part.text.length > 0) {
       if (part.thought === true) {
         events.push({ type: "reasoning_delta", delta: part.text, contentType: "summary" });
@@ -535,18 +617,22 @@ export function fromGeminiGenerateContentStreamChunk(chunk: unknown): Completion
       }
     }
   }
-  for (const call of functionCallsFromGeminiResponse(chunk)) {
+  for (const call of calls) {
     events.push(
-      toolCallDelta(call.id ?? call.name, {
-        callId: call.id,
+      toolCallDelta(call.toolCallId, {
+        callId: call.callId,
         name: call.name,
         signature: call.signature,
       }),
     );
+    const argumentsDelta = JSON.stringify(call.args);
+    if (argumentsDelta === undefined) {
+      throw invalidGeminiToolCallArguments(call.toolCallId, usage);
+    }
     events.push(
-      toolCallDelta(call.id ?? call.name, {
-        callId: call.id,
-        argumentsDelta: JSON.stringify(call.args ?? {}),
+      toolCallDelta(call.toolCallId, {
+        callId: call.callId,
+        argumentsDelta,
         argumentsMode: "replace",
       }),
     );
@@ -556,22 +642,228 @@ export function fromGeminiGenerateContentStreamChunk(chunk: unknown): Completion
     events.push({ type: "message_id", id });
   }
   if (isPlainObject(chunk.usageMetadata)) {
-    events.push({ type: "final", response: fromGeminiGenerateContentResponse(chunk) });
+    if (terminalError === undefined) {
+      events.push({ type: "final", response: fromGeminiGenerateContentResponse(chunk) });
+    } else {
+      const response: CompletionResponse = { choice: [], usage, rawResponse: chunk };
+      if (providerFinishReason !== undefined) {
+        applyGeminiFinishReasonValue(response, providerFinishReason, true);
+      }
+      events.push({ type: "final", response });
+    }
   }
-  return events;
+  return providerFinishReason === undefined
+    ? {
+        events,
+        toolCalls: calls.map(toolCallFromGeminiFunctionCall),
+        hasToolCallMarker,
+        hasSyntheticToolCalls: calls.some((call) => call.callId === undefined),
+        terminalError,
+      }
+    : {
+        events,
+        toolCalls: calls.map(toolCallFromGeminiFunctionCall),
+        hasToolCallMarker,
+        hasSyntheticToolCalls: calls.some((call) => call.callId === undefined),
+        providerFinishReason,
+        terminalError,
+      };
+}
+
+class GeminiCompletionStreamState {
+  private readonly toolCalls = new Map<
+    string,
+    Extract<AssistantContentPart, { type: "tool-call" }>
+  >();
+  private providerFinishReason: string | undefined;
+  private terminalChunk: unknown;
+  private finalResponse: CompletionResponse | undefined;
+  private sawToolCallMarker = false;
+  private sawSyntheticToolCallChunk = false;
+  private terminalError: CompletionProviderOutputError | undefined;
+
+  accept(chunk: unknown, mapping: GeminiStreamChunkMapping): void {
+    if (mapping.hasSyntheticToolCalls && this.sawSyntheticToolCallChunk) {
+      const toolCallId = mapping.toolCalls.find(
+        (toolCall) => toolCall.callId === undefined,
+      )?.toolCallId;
+      throw toolCallId === undefined
+        ? new CompletionProviderOutputError({
+            kind: "invalid-tool-call",
+            usage: this.currentUsage(),
+          })
+        : invalidGeminiToolCall(toolCallId, this.currentUsage());
+    }
+    if (
+      this.providerFinishReason !== undefined &&
+      (mapping.hasToolCallMarker || hasGeminiSemanticProgress(mapping.events))
+    ) {
+      throw new CompletionProviderOutputError({
+        kind: "invalid-tool-call",
+        finishReason: "other",
+        usage: this.currentUsage(),
+      });
+    }
+    for (const toolCall of mapping.toolCalls) {
+      const existing = this.toolCalls.get(toolCall.toolCallId);
+      if (existing !== undefined) {
+        if (
+          existing.callId === undefined ||
+          toolCall.callId === undefined ||
+          !sameGeminiToolCall(existing, toolCall)
+        ) {
+          throw invalidGeminiToolCall(toolCall.toolCallId, this.currentUsage());
+        }
+        continue;
+      }
+      this.toolCalls.set(toolCall.toolCallId, toolCall);
+    }
+    this.sawToolCallMarker ||= mapping.hasToolCallMarker;
+    this.sawSyntheticToolCallChunk ||= mapping.hasSyntheticToolCalls;
+    for (const event of mapping.events) {
+      if (event.type === "final") {
+        this.finalResponse = event.response;
+      }
+    }
+    this.terminalError ??= mapping.terminalError;
+
+    if (mapping.providerFinishReason !== undefined) {
+      if (
+        this.providerFinishReason !== undefined &&
+        this.providerFinishReason !== mapping.providerFinishReason
+      ) {
+        throw new CompletionProviderOutputError({
+          kind: "invalid-tool-call",
+          finishReason: "other",
+          usage: this.currentUsage(),
+        });
+      }
+      this.providerFinishReason = mapping.providerFinishReason;
+      this.terminalChunk = chunk;
+    }
+  }
+
+  assertComplete(): void {
+    if (this.terminalError !== undefined) {
+      throw geminiProviderOutputErrorWithUsage(this.terminalError, this.currentUsage());
+    }
+    if (!this.sawToolCallMarker && this.toolCalls.size === 0) return;
+    if (this.providerFinishReason !== undefined) {
+      assertSafeGeminiToolFinishReason(this.providerFinishReason, this.currentUsage());
+      return;
+    }
+    const toolCallId = this.toolCalls.keys().next().value as string | undefined;
+    throw new CompletionProviderOutputError(
+      toolCallId === undefined
+        ? { kind: "incomplete-tool-call", usage: this.currentUsage() }
+        : { kind: "incomplete-tool-call", toolCallId, usage: this.currentUsage() },
+    );
+  }
+
+  finalEvent(): Extract<CompletionModelStreamEvent, { type: "final" }> | undefined {
+    let response = this.finalResponse;
+    if (response === undefined) {
+      if (this.terminalChunk === undefined) {
+        return undefined;
+      }
+      const raw = isPlainObject(this.terminalChunk) ? this.terminalChunk : {};
+      response = {
+        choice: [],
+        usage: usageFromGemini(raw.usageMetadata),
+        rawResponse: this.terminalChunk,
+      };
+      const messageId = stringFrom(raw.responseId) ?? stringFrom(raw.id);
+      if (messageId !== undefined) response.messageId = messageId;
+    }
+
+    response = mergeGeminiStreamToolCalls(response, [...this.toolCalls.values()]);
+    if (this.providerFinishReason !== undefined) {
+      applyGeminiFinishReasonValue(response, this.providerFinishReason, this.toolCalls.size > 0);
+    }
+    assertSafeGeminiCompletionResponse(response);
+    return { type: "final", response };
+  }
+
+  private currentUsage(): Usage {
+    if (this.finalResponse !== undefined) {
+      return this.finalResponse.usage;
+    }
+    const raw = isPlainObject(this.terminalChunk) ? this.terminalChunk : {};
+    return usageFromGemini(raw.usageMetadata);
+  }
+}
+
+function hasGeminiSemanticProgress(events: readonly CompletionModelStreamEvent[]): boolean {
+  return events.some(
+    (event) =>
+      event.type === "text_delta" ||
+      event.type === "reasoning_delta" ||
+      event.type === "tool_call_delta" ||
+      event.type === "tool_call" ||
+      event.type === "provider_tool_call",
+  );
+}
+
+function sameGeminiToolCall(
+  left: Extract<AssistantContentPart, { type: "tool-call" }>,
+  right: Extract<AssistantContentPart, { type: "tool-call" }>,
+): boolean {
+  return (
+    left.toolName === right.toolName &&
+    left.callId === right.callId &&
+    left.signature === right.signature &&
+    sameJsonValue(left.input, right.input)
+  );
+}
+
+function sameJsonValue(left: JsonValue, right: JsonValue): boolean {
+  if (Object.is(left, right)) return true;
+  if (isJsonArray(left) || isJsonArray(right)) {
+    return (
+      isJsonArray(left) &&
+      isJsonArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => {
+        const rightValue = right[index];
+        return rightValue !== undefined && sameJsonValue(value, rightValue);
+      })
+    );
+  }
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(right, key) && sameJsonValue(left[key] as JsonValue, right[key] as JsonValue),
+    )
+  );
+}
+
+function isJsonArray(value: JsonValue): value is readonly JsonValue[] {
+  return Array.isArray(value);
 }
 
 function assistantContentFromGeminiResponse(
   response: Record<string, unknown>,
+  usage: Usage,
 ): AssistantContentPart[] {
-  const parts = candidateParts(response);
+  const parts = candidateParts(response, usage);
+  const calls = functionCallsFromGeminiResponse(response, parts, usage);
   if (parts.length === 0) {
-    const text = textFromGeminiResponse(response);
-    return text.length > 0 ? [{ type: "text", text }] : [];
+    const choice: AssistantContentPart[] = [];
+    const text = textFromGeminiResponse(response, parts);
+    if (text.length > 0) choice.push({ type: "text", text });
+    choice.push(...calls.map(toolCallFromGeminiFunctionCall));
+    return choice;
   }
 
+  const callsByPartIndex = new Map(calls.map((call) => [call.partIndex, call]));
   const choice: AssistantContentPart[] = [];
-  for (const part of parts) {
+  for (const { index, part } of parts) {
     if (typeof part.text === "string" && part.text.length > 0) {
       if (part.thought === true) {
         choice.push({
@@ -589,113 +881,425 @@ function assistantContentFromGeminiResponse(
         choice.push(text);
       }
     }
-    if (isPlainObject(part.functionCall)) {
-      const call = functionCallFromGeminiPart(part.functionCall, part);
-      if (call !== undefined) {
-        const toolCallId = call.id ?? crypto.randomUUID();
-        let toolCall: Extract<AssistantContentPart, { type: "tool-call" }> = {
-          type: "tool-call",
-          toolCallId,
-          toolName: call.name,
-          input: call.args,
-        };
-        if (call.id !== undefined) toolCall = { ...toolCall, callId: call.id };
-        if (call.signature !== undefined) toolCall = { ...toolCall, signature: call.signature };
-        choice.push(toolCall);
-      }
+    const call = callsByPartIndex.get(index);
+    if (call !== undefined) {
+      choice.push(toolCallFromGeminiFunctionCall(call));
     }
   }
   return choice;
 }
 
-function textFromGeminiResponse(response: Record<string, unknown>): string {
-  if (typeof response.text === "string") {
-    return response.text;
+function textFromGeminiResponse(
+  response: Record<string, unknown>,
+  parts = candidateParts(response),
+): string {
+  if (parts.length > 0) {
+    return parts
+      .flatMap(({ part }) =>
+        part.thought !== true && typeof part.text === "string" ? [part.text] : [],
+      )
+      .join("");
   }
-  return candidateParts(response)
-    .flatMap((part) => (part.thought !== true && typeof part.text === "string" ? [part.text] : []))
-    .join("");
+  if (hasGeminiCandidatePayload(response)) {
+    return "";
+  }
+  const directText = ownDataProperty(response, "text");
+  return typeof directText === "string" ? directText : "";
 }
 
 function functionCallsFromGeminiResponse(
   response: Record<string, unknown>,
-): Array<{ id?: string | undefined; name: string; args: JsonValue; signature?: string }> {
-  const directCalls = Array.isArray(response.functionCalls)
-    ? response.functionCalls
-    : Array.isArray(response.function_calls)
-      ? response.function_calls
+  parts: IndexedGeminiPart[],
+  usage: Usage,
+): GeminiFunctionCall[] {
+  if (parts.length > 0) {
+    const calls = parts.flatMap(({ index, part }) => {
+      if (part.functionCall === undefined) {
+        return [];
+      }
+      if (!isPlainObject(part.functionCall)) {
+        throw invalidGeminiToolCall(deterministicGeminiToolCallId(index), usage);
+      }
+      return [functionCallFromGeminiPart(part.functionCall, part, index, usage)];
+    });
+    assertDistinctGeminiFunctionCalls(calls, usage);
+    return calls;
+  }
+  if (hasGeminiCandidatePayload(response)) {
+    return [];
+  }
+
+  const camelCaseCalls = ownDataProperty(response, "functionCalls");
+  const snakeCaseCalls = ownDataProperty(response, "function_calls");
+  const directCalls = Array.isArray(camelCaseCalls)
+    ? camelCaseCalls
+    : Array.isArray(snakeCaseCalls)
+      ? snakeCaseCalls
       : [];
-  const partCalls = candidateParts(response).flatMap((part) => {
-    if (!isPlainObject(part.functionCall)) {
-      return [];
+  const calls = directCalls.map((call, index) => {
+    if (!isPlainObject(call)) {
+      throw invalidGeminiToolCall(deterministicGeminiToolCallId(index), usage);
     }
-    const call = functionCallFromGeminiPart(part.functionCall, part);
-    return call === undefined ? [] : [call];
+    return functionCallFromGeminiPart(call, call, index, usage);
   });
-
-  const normalizedDirectCalls = directCalls.flatMap((call) => {
-    if (!isPlainObject(call) || typeof call.name !== "string") {
-      return [];
-    }
-    const normalized: { id?: string; name: string; args: JsonValue; signature?: string } = {
-      name: call.name,
-      args: toJsonValue(call.args ?? {}),
-    };
-    const id = stringFrom(call.id);
-    const signature = thoughtSignatureFrom(call);
-    if (id !== undefined) {
-      normalized.id = id;
-    }
-    if (signature !== undefined) {
-      normalized.signature = signature;
-    }
-    return [normalized];
-  });
-
-  return [...normalizedDirectCalls, ...partCalls];
+  assertDistinctGeminiFunctionCalls(calls, usage);
+  return calls;
 }
 
 function functionCallFromGeminiPart(
   call: Record<string, unknown>,
   part: Record<string, unknown>,
-): { id?: string | undefined; name: string; args: JsonValue; signature?: string } | undefined {
-  if (typeof call.name !== "string") {
-    return undefined;
+  partIndex: number,
+  usage: Usage,
+): GeminiFunctionCall {
+  const fallbackId = deterministicGeminiToolCallId(partIndex);
+  const rawCallId = call.id;
+  const callId = isNonblankString(rawCallId) ? rawCallId : undefined;
+  const toolCallId = callId ?? fallbackId;
+  if (rawCallId !== undefined && callId === undefined) {
+    throw invalidGeminiToolCall(toolCallId, usage);
   }
-  const normalized: { id?: string; name: string; args: JsonValue; signature?: string } = {
-    name: call.name,
-    args: toJsonValue(call.args ?? {}),
+  if (
+    call.partialArgs !== undefined ||
+    call.partial_args !== undefined ||
+    call.willContinue !== undefined ||
+    call.will_continue !== undefined
+  ) {
+    throw new CompletionProviderOutputError({
+      kind: "incomplete-tool-call",
+      toolCallId,
+      usage,
+    });
+  }
+  const name = call.name;
+  if (!isNonblankString(name)) {
+    throw invalidGeminiToolCall(toolCallId, usage);
+  }
+  const args = call.args;
+  if (!isPlainObject(args) || !isJsonValue(args)) {
+    throw invalidGeminiToolCallArguments(toolCallId, usage);
+  }
+
+  const normalized: GeminiFunctionCall = {
+    toolCallId,
+    name,
+    args,
+    partIndex,
   };
-  const id = stringFrom(call.id);
   const signature = thoughtSignatureFrom(part) ?? thoughtSignatureFrom(call);
-  if (id !== undefined) {
-    normalized.id = id;
+  if (callId !== undefined) {
+    return signature === undefined
+      ? { ...normalized, callId }
+      : { ...normalized, callId, signature };
   }
-  if (signature !== undefined) {
-    normalized.signature = signature;
-  }
-  return normalized;
+  return signature === undefined ? normalized : { ...normalized, signature };
 }
 
-function candidateParts(response: Record<string, unknown>): Array<Record<string, unknown>> {
-  const candidates = Array.isArray(response.candidates) ? response.candidates : [];
-  return candidates.flatMap((candidate) => {
-    if (!isPlainObject(candidate) || !isPlainObject(candidate.content)) {
-      return [];
-    }
-    return Array.isArray(candidate.content.parts)
-      ? candidate.content.parts.filter(isPlainObject)
-      : [];
-  });
+function candidateParts(response: Record<string, unknown>, usage?: Usage): IndexedGeminiPart[] {
+  const candidate = primaryGeminiCandidate(response);
+  if (candidate === undefined || candidate.content === undefined) {
+    return [];
+  }
+  if (!isPlainObject(candidate.content)) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
+  }
+  if (candidate.content.parts === undefined) return [];
+  if (!Array.isArray(candidate.content.parts)) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
+  }
+  if (candidate.content.parts.some((part) => !isPlainObject(part))) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
+  }
+  return candidate.content.parts.map((part, index) => ({
+    index,
+    part: part as Record<string, unknown>,
+  }));
 }
 
 function primaryGeminiCandidate(
   response: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
-  const candidates = Array.isArray(response.candidates)
-    ? response.candidates.filter(isPlainObject)
-    : [];
-  return candidates.find((candidate) => candidate.index === 0) ?? candidates[0];
+  if (response.candidates === undefined) return undefined;
+  if (!Array.isArray(response.candidates)) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
+  }
+  const candidates = response.candidates;
+  if (
+    candidates.some(
+      (candidate) =>
+        !isPlainObject(candidate) ||
+        (candidate.index !== undefined &&
+          (!Number.isSafeInteger(candidate.index) || (candidate.index as number) < 0)),
+    )
+  ) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
+  }
+  const primaryCandidates = candidates.filter(
+    (candidate): candidate is Record<string, unknown> =>
+      isPlainObject(candidate) && candidate.index === 0,
+  );
+  if (primaryCandidates.length === 1) {
+    return primaryCandidates[0];
+  }
+  if (primaryCandidates.length > 1) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
+  }
+  if (candidates.length === 0) return undefined;
+  if (candidates.length !== 1) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
+  }
+  const candidate = candidates[0] as Record<string, unknown>;
+  if (candidate.index !== undefined && candidate.index !== 0) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
+  }
+  return candidate;
+}
+
+function providerFinishReasonFromGeminiResponse(
+  response: Record<string, unknown>,
+): string | undefined {
+  const candidateFinishReason = stringFrom(primaryGeminiCandidate(response)?.finishReason);
+  if (candidateFinishReason !== undefined) return candidateFinishReason;
+  const promptFeedback = response.promptFeedback ?? response.prompt_feedback;
+  if (promptFeedback === undefined) return undefined;
+  if (!isPlainObject(promptFeedback)) {
+    throw new CompletionProviderOutputError({ kind: "invalid-response" });
+  }
+  const blockReason = promptFeedback.blockReason ?? promptFeedback.block_reason;
+  if (blockReason === undefined) return undefined;
+  if (typeof blockReason !== "string" || blockReason.length === 0) {
+    throw new CompletionProviderOutputError({ kind: "invalid-response" });
+  }
+  return blockReason;
+}
+
+function hasGeminiCandidatePayload(response: Record<string, unknown>): boolean {
+  return Array.isArray(response.candidates) && response.candidates.length > 0;
+}
+
+function hasGeminiFunctionCallMarker(
+  response: Record<string, unknown>,
+  parts: readonly IndexedGeminiPart[],
+): boolean {
+  if (parts.some(({ part }) => ownDataProperty(part, "functionCall") !== undefined)) {
+    return true;
+  }
+  if (hasGeminiCandidatePayload(response)) return false;
+  const camelCaseCalls = ownDataProperty(response, "functionCalls");
+  const snakeCaseCalls = ownDataProperty(response, "function_calls");
+  return (
+    (Array.isArray(camelCaseCalls) && camelCaseCalls.length > 0) ||
+    (Array.isArray(snakeCaseCalls) && snakeCaseCalls.length > 0)
+  );
+}
+
+function deterministicGeminiToolCallId(partIndex: number): string {
+  return `gemini-tool-${partIndex.toString()}`;
+}
+
+function toolCallFromGeminiFunctionCall(
+  call: GeminiFunctionCall,
+): Extract<AssistantContentPart, { type: "tool-call" }> {
+  let toolCall: Extract<AssistantContentPart, { type: "tool-call" }> = {
+    type: "tool-call",
+    toolCallId: call.toolCallId,
+    toolName: call.name,
+    input: call.args,
+  };
+  if (call.callId !== undefined) toolCall = { ...toolCall, callId: call.callId };
+  if (call.signature !== undefined) toolCall = { ...toolCall, signature: call.signature };
+  return toolCall;
+}
+
+function mergeGeminiStreamToolCalls(
+  response: CompletionResponse,
+  toolCalls: readonly Extract<AssistantContentPart, { type: "tool-call" }>[],
+): CompletionResponse {
+  if (toolCalls.length === 0) return response;
+  const finalIds = new Set(
+    response.choice.flatMap((part) => (part.type === "tool-call" ? [part.toolCallId] : [])),
+  );
+  const missing = toolCalls.filter((toolCall) => !finalIds.has(toolCall.toolCallId));
+  return missing.length === 0
+    ? response
+    : { ...response, choice: [...response.choice, ...missing] };
+}
+
+function assertSafeGeminiToolFinishReason(value: string, usage: Usage): void {
+  const error = geminiToolFinishError(value, true, usage);
+  if (error !== undefined) throw error;
+}
+
+function geminiToolFinishError(
+  value: string | undefined,
+  hasToolCalls: boolean,
+  usage: Usage,
+): CompletionProviderOutputError | undefined {
+  if (value === "MALFORMED_FUNCTION_CALL") {
+    return new CompletionProviderOutputError({ kind: "malformed-tool-arguments", usage });
+  }
+  if (value === "UNEXPECTED_TOOL_CALL" || value === "TOO_MANY_TOOL_CALLS") {
+    return new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
+  }
+  if (!hasToolCalls) return undefined;
+  if (value === undefined) {
+    return new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
+  }
+  const finishReason = geminiFinishReason(value, true);
+  if (finishReason === "tool-calls") return undefined;
+  if (finishReason === "length") {
+    return new CompletionProviderOutputError({
+      kind: "truncated-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+  if (finishReason === "content-filter") {
+    return new CompletionProviderOutputError({
+      kind: "filtered-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+  return new CompletionProviderOutputError({ kind: "invalid-tool-call", finishReason, usage });
+}
+
+function assertSafeGeminiCompletionResponse(response: CompletionResponse): void {
+  const toolCalls = response.choice.filter(
+    (part): part is Extract<AssistantContentPart, { type: "tool-call" }> =>
+      part.type === "tool-call",
+  );
+  if (toolCalls.length > 0) {
+    if (response.finishReason === undefined) {
+      throw new CompletionProviderOutputError({
+        kind: "incomplete-tool-call",
+        usage: response.usage,
+      });
+    }
+    assertNormalizedGeminiToolFinishReason(response.finishReason, response.usage);
+  } else if (toolCalls.length === 0 && response.finishReason === "tool-calls") {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-call",
+      finishReason: response.finishReason,
+      usage: response.usage,
+    });
+  }
+
+  const toolCallIds = new Set<string>();
+  const callIds = new Set<string>();
+  for (const toolCall of toolCalls) {
+    if (toolCallIds.has(toolCall.toolCallId)) {
+      throw invalidGeminiToolCall(toolCall.toolCallId, response.usage);
+    }
+    toolCallIds.add(toolCall.toolCallId);
+    if (toolCall.callId !== undefined) {
+      if (callIds.has(toolCall.callId)) {
+        throw invalidGeminiToolCall(toolCall.toolCallId, response.usage);
+      }
+      callIds.add(toolCall.callId);
+    }
+  }
+}
+
+function assertDistinctGeminiFunctionCalls(
+  calls: readonly GeminiFunctionCall[],
+  usage: Usage,
+): void {
+  const toolCallIds = new Set<string>();
+  const callIds = new Set<string>();
+  for (const call of calls) {
+    if (toolCallIds.has(call.toolCallId)) {
+      throw invalidGeminiToolCall(call.toolCallId, usage);
+    }
+    toolCallIds.add(call.toolCallId);
+    if (call.callId !== undefined) {
+      if (callIds.has(call.callId)) {
+        throw invalidGeminiToolCall(call.toolCallId, usage);
+      }
+      callIds.add(call.callId);
+    }
+  }
+}
+
+function assertNormalizedGeminiToolFinishReason(
+  finishReason: CompletionFinishReason,
+  usage: Usage,
+): void {
+  if (finishReason === "stop" || finishReason === "tool-calls") return;
+  if (finishReason === "length") {
+    throw new CompletionProviderOutputError({
+      kind: "truncated-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+  if (finishReason === "content-filter") {
+    throw new CompletionProviderOutputError({
+      kind: "filtered-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+  throw new CompletionProviderOutputError({ kind: "invalid-tool-call", finishReason, usage });
+}
+
+function geminiProviderOutputErrorWithUsage(
+  error: CompletionProviderOutputError,
+  usage: Usage,
+): CompletionProviderOutputError {
+  if (error.kind === "truncated-tool-call") {
+    return new CompletionProviderOutputError({
+      kind: error.kind,
+      finishReason: "length",
+      toolCallId: error.toolCallId,
+      usage,
+    });
+  }
+  if (error.kind === "filtered-tool-call") {
+    return new CompletionProviderOutputError({
+      kind: error.kind,
+      finishReason: "content-filter",
+      toolCallId: error.toolCallId,
+      usage,
+    });
+  }
+  if (error.finishReason === "length" || error.finishReason === "content-filter") {
+    throw error;
+  }
+  return new CompletionProviderOutputError({
+    kind: error.kind,
+    finishReason: error.finishReason,
+    toolCallId: error.toolCallId,
+    usage,
+  });
+}
+
+function invalidGeminiToolCall(toolCallId: string, usage: Usage): CompletionProviderOutputError {
+  return new CompletionProviderOutputError({ kind: "invalid-tool-call", toolCallId, usage });
+}
+
+function invalidGeminiToolCallArguments(
+  toolCallId: string,
+  usage: Usage,
+): CompletionProviderOutputError {
+  return new CompletionProviderOutputError({
+    kind: "invalid-tool-arguments",
+    toolCallId,
+    usage,
+  });
+}
+
+function ownDataProperty(value: Record<string, unknown>, key: string): unknown {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function usageFromGemini(usage: unknown): Usage {
@@ -725,27 +1329,12 @@ function usageFromGemini(usage: unknown): Usage {
   };
 }
 
-function toJsonValue(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    Array.isArray(value) ||
-    isPlainObject(value)
-  ) {
-    return value as JsonValue;
-  }
-
-  return String(value);
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function numberFrom(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function stringFrom(value: unknown): string | undefined {

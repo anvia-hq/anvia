@@ -54,6 +54,7 @@ import {
 } from "../contexts";
 import { shiftComposerEntityRanges } from "../entities";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
+import { isComposerEntityData } from "../strict-json";
 
 type ComposerRootProps = PrimitiveProps<"form"> & {
   attachments?: UIAttachment[];
@@ -238,6 +239,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     ) {
       return;
     }
+    assertComposerEntitiesData(entities);
     if (submitMessage !== undefined) {
       await submitMessage({
         input: prompt,
@@ -746,12 +748,15 @@ const ComposerEntityExtension = Mention.extend<
             : { "data-text": String(attributes.text) },
       },
       data: {
-        default: null,
+        default: undefined,
         parseHTML: (element) => dataFromAttribute(element.getAttribute("data-entity-data")),
-        renderHTML: (attributes) =>
-          attributes.data === undefined || attributes.data === null
-            ? {}
-            : { "data-entity-data": JSON.stringify(attributes.data) },
+        renderHTML: (attributes) => {
+          if (attributes.data === undefined) return {};
+          if (!isComposerEntityData(attributes.data)) {
+            throw new TypeError("Composer entity data must be a JSON value.");
+          }
+          return { "data-entity-data": JSON.stringify(attributes.data) };
+        },
       },
     };
   },
@@ -979,6 +984,9 @@ function triggerItemToEntityAttrs(
   trigger: ComposerTriggerDefinition,
   item: ComposerTriggerItemValue,
 ): ComposerEntityAttrs {
+  if (item.data !== undefined && !isComposerEntityData(item.data)) {
+    throw new TypeError("Composer trigger item data must be a JSON value.");
+  }
   return {
     id: item.id,
     label: item.label,
@@ -1114,7 +1122,7 @@ function composerEntityFromAttrs(
   const previous = previousEntities.find(
     (entity) => entity.id === id && entity.triggerId === triggerId && entity.trigger === trigger,
   );
-  const data = attrs?.data ?? previous?.data;
+  const data = attrs?.data === undefined ? previous?.data : attrs.data;
   const entity: ComposerEntity = {
     id,
     triggerId,
@@ -1143,14 +1151,15 @@ function stringAttr(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function dataFromAttribute(value: string | null): ComposerEntityData | null {
+function dataFromAttribute(value: string | null): ComposerEntityData | undefined {
   if (value === null) {
-    return null;
+    return undefined;
   }
   try {
-    return JSON.parse(value) as ComposerEntityData;
+    const parsed: unknown = JSON.parse(value);
+    return isComposerEntityData(parsed) ? parsed : undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -1237,10 +1246,10 @@ function normalizeQuote(quote: ComposerQuote | undefined): ComposerQuote | undef
   };
 }
 
-type ComposerSubmitMetadata = {
+type ComposerSubmitMetadata = ClientMetadata & {
   quote?: ComposerQuote;
-  composer?: {
-    entities: ComposerEntity[];
+  composer?: ClientMetadata & {
+    entities: readonly ClientMetadata[];
   };
 };
 
@@ -1253,7 +1262,32 @@ function composerSubmitMetadata(
   }
   const metadata: ComposerSubmitMetadata = {};
   if (quote !== undefined) metadata.quote = quote;
-  if (entities.length > 0) metadata.composer = { entities };
+  if (entities.length > 0) {
+    metadata.composer = { entities: entities.map(composerEntityMetadata) };
+  }
+  return metadata;
+}
+
+function assertComposerEntitiesData(entities: readonly ComposerEntity[]): void {
+  for (const entity of entities) {
+    if (entity.data !== undefined && !isComposerEntityData(entity.data)) {
+      throw new TypeError("Composer entity data must be a JSON value.");
+    }
+  }
+}
+
+function composerEntityMetadata(entity: ComposerEntity): ClientMetadata {
+  const metadata: ClientMetadata = {
+    id: entity.id,
+    triggerId: entity.triggerId,
+    trigger: entity.trigger,
+    label: entity.label,
+    text: entity.text,
+    range: { from: entity.range.from, to: entity.range.to },
+  };
+  if (entity.data !== undefined) {
+    metadata.data = entity.data;
+  }
   return metadata;
 }
 

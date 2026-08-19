@@ -62,10 +62,11 @@ export type ToolOutputMiddlewareArgs = ToolResultMiddlewareArgs;
 
 export type ToolOutputMiddlewareResult =
   | string
-  | {
-      result?: string | undefined;
-      structuredResult?: readonly ToolResultContentPart[] | undefined;
-    }
+  | Readonly<{ result: string; structuredResult?: never }>
+  | Readonly<{
+      structuredResult: readonly ToolResultContentPart[];
+      result?: never;
+    }>
   | undefined;
 
 export interface AgentMiddleware<RawResponse = unknown> {

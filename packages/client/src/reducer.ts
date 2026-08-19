@@ -108,24 +108,26 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
     }
     case "tool_call_delta":
       return updatePart(messages, event.messageId, event.partId, (current) => {
-        const part: UIToolMessagePart =
+        const part =
           current?.type === "tool"
-            ? { ...current }
+            ? toolPartBase(current)
             : {
                 id: event.partId,
-                type: "tool",
+                type: "tool" as const,
                 toolName: event.toolName ?? "",
                 toolCallId: event.toolCallId,
-                state: "input-streaming",
               };
-        const previous = typeof part.input === "string" ? part.input : "";
-        part.input = event.mode === "replace" ? event.delta : `${previous}${event.delta}`;
-        part.state = "input-streaming";
+        const previous =
+          current?.type === "tool" && typeof current.input === "string" ? current.input : "";
         if (event.toolName !== undefined) part.toolName = event.toolName;
         if (event.callId !== undefined) part.callId = event.callId;
         if (event.signature !== undefined) part.signature = event.signature;
         if (event.turn !== undefined) part.turn = event.turn;
-        return part;
+        return {
+          ...part,
+          state: "input-streaming",
+          input: event.mode === "replace" ? event.delta : `${previous}${event.delta}`,
+        };
       });
     case "tool_call_end": {
       const part: UIToolMessagePart = {
@@ -143,29 +145,34 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
     }
     case "tool_result":
       return updatePart(messages, event.messageId, event.partId, (current) => {
-        const part: UIToolMessagePart =
+        const part =
           current?.type === "tool"
-            ? { ...current }
+            ? toolPartBase(current)
             : {
                 id: event.partId,
-                type: "tool",
+                type: "tool" as const,
                 toolName: event.toolName,
                 toolCallId: event.toolCallId,
-                state: "input-available",
               };
         if (event.callId !== undefined) part.callId = event.callId;
         if (event.internalCallId !== undefined) part.internalCallId = event.internalCallId;
-        if (event.input !== undefined) part.input = event.input;
         if (event.turn !== undefined) part.turn = event.turn;
         if (event.result.status === "error") {
-          part.state = "error";
-          part.error = event.result.error;
-        } else {
-          part.state = "output-available";
-          part.output = event.result.output;
-          if (event.result.content !== undefined) part.resultContent = event.result.content;
+          return {
+            ...part,
+            state: "error",
+            input: event.input,
+            error: event.result.error,
+          };
         }
-        return part;
+        const completed: Extract<UIToolMessagePart, { state: "output-available" }> = {
+          ...part,
+          state: "output-available",
+          input: event.input,
+          output: event.result.output,
+        };
+        if (event.result.content !== undefined) completed.resultContent = event.result.content;
+        return completed;
       });
     case "source":
       return upsertPart(messages, event.messageId, {
@@ -234,6 +241,24 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
     default:
       return messages;
   }
+}
+
+function toolPartBase(
+  part: UIToolMessagePart,
+): Omit<UIToolMessagePart, "state" | "input" | "output" | "resultContent" | "error"> {
+  const base = {
+    id: part.id,
+    type: part.type,
+    toolName: part.toolName,
+    toolCallId: part.toolCallId,
+  };
+  if (part.callId !== undefined) Object.assign(base, { callId: part.callId });
+  if (part.internalCallId !== undefined) {
+    Object.assign(base, { internalCallId: part.internalCallId });
+  }
+  if (part.turn !== undefined) Object.assign(base, { turn: part.turn });
+  if (part.signature !== undefined) Object.assign(base, { signature: part.signature });
+  return base;
 }
 
 function reconcileFinalParts<Data extends ClientDataMap>(

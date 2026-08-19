@@ -4,6 +4,7 @@ import type { GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
+import { assertJsonObject } from "../internal/json-object";
 import type { McpServer } from "../mcp";
 import type { AgentObservabilityOptions } from "../observability";
 import type { RetrySetting } from "../retry";
@@ -70,6 +71,9 @@ export class Agent<
     this.context = snapshotAgentContext(resolved.context);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
+    if (resolved.providerOptions !== undefined) {
+      assertJsonObject(resolved.providerOptions, "Agent providerOptions");
+    }
     this.providerOptions = cloneFrozenPlainData(resolved.providerOptions);
     this.retries = cloneFrozenPlainData(resolved.retries);
 

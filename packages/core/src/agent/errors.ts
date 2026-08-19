@@ -1,7 +1,7 @@
 import type { CompletionFinishReason, Message, Usage } from "../completion/index";
 import type { AgentBlockedResult, AgentSuspendedResult } from "./run-types";
 
-export type AgentStructuredOutputPhase = "truncated" | "parse" | "schema";
+export type AgentStructuredOutputPhase = "truncated" | "content-filter" | "parse" | "schema";
 
 export type AgentStructuredOutputFormat = "raw" | "json-fence" | "unlabeled-fence";
 
@@ -33,9 +33,11 @@ export class AgentStructuredOutputError extends Error {
     const failure =
       options.phase === "truncated"
         ? "because the provider reached its output limit"
-        : options.phase === "parse"
-          ? "during JSON parsing"
-          : "during schema validation";
+        : options.phase === "content-filter"
+          ? "because the provider filtered the response"
+          : options.phase === "parse"
+            ? "during JSON parsing"
+            : "during schema validation";
     const errorOptions = options.cause === undefined ? undefined : { cause: options.cause };
     super(
       `Agent structured output failed ${failure} on attempt ${options.attempt} of ${options.maxAttempts}.`,

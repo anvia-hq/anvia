@@ -231,6 +231,9 @@ describe("message validation", () => {
 
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
+    class JsonArraySubclass extends Array<unknown> {}
+    const customPrototypeArray = ["value"];
+    Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
     for (const value of [
       Number.NaN,
       undefined,
@@ -239,6 +242,8 @@ describe("message validation", () => {
       1n,
       cyclic,
       new Date(),
+      new JsonArraySubclass("value"),
+      customPrototypeArray,
     ]) {
       expect(isJsonValue(value)).toBe(false);
     }

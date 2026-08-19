@@ -1,5 +1,6 @@
 import type { JsonObject } from "../completion";
 import { throwIfAborted } from "../internal/abort";
+import { assertJsonObject } from "../internal/json-object";
 import type { ModelCallOptions } from "../model-call-options";
 import {
   type ResolvedRetryOptions,
@@ -46,7 +47,10 @@ export async function transcribe<Model extends TranscriptionModel>(
   if (options.language !== undefined) request.language = options.language;
   if (options.prompt !== undefined) request.prompt = options.prompt;
   if (options.temperature !== undefined) request.temperature = options.temperature;
-  if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
+  if (options.providerOptions !== undefined) {
+    assertJsonObject(options.providerOptions, "providerOptions");
+    request.providerOptions = options.providerOptions;
+  }
 
   return await runWithRetries(
     () => {

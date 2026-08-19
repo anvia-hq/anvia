@@ -2,15 +2,21 @@ import { abortError, throwIfAborted } from "../internal/abort";
 import { createCompletionRequest } from "../internal/completion-request";
 import type { ModelCallOptions } from "../model-call-options";
 import {
+  completionProviderOutputErrorUsage,
   type ResolvedRetryOptions,
   type RetrySetting,
   resolveRetryOptions,
   retryDelayMs,
   retryOptionsForFailure,
-  runWithRetries,
   waitForRetry,
 } from "../retry";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
+import { isJsonValue } from "./json";
+import {
+  assertCompletionResponseIntegrity,
+  CompletionProviderOutputError,
+} from "./provider-output-error";
+import { CompletionStreamAccumulator } from "./stream-accumulator";
 import type {
   CompletionModel,
   CompletionModelStreamEvent,
@@ -27,7 +33,7 @@ import type {
 } from "./types";
 import { assertCompletionRequestSupported, textFromAssistantContent, Usage } from "./types";
 
-export type CompletionStructuredOutputPhase = "truncated" | "parse" | "schema";
+export type CompletionStructuredOutputPhase = "truncated" | "content-filter" | "parse" | "schema";
 
 export class CompletionStructuredOutputError extends Error {
   readonly phase: CompletionStructuredOutputPhase;
@@ -47,9 +53,11 @@ export class CompletionStructuredOutputError extends Error {
     const failure =
       options.phase === "truncated"
         ? "because the provider reached its output limit"
-        : options.phase === "parse"
-          ? "during JSON parsing"
-          : "during schema validation";
+        : options.phase === "content-filter"
+          ? "because the provider filtered the response"
+          : options.phase === "parse"
+            ? "during JSON parsing"
+            : "during schema validation";
     super(`Structured completion output failed ${failure}.`, { cause: options.cause });
     this.name = "CompletionStructuredOutputError";
     this.phase = options.phase;
@@ -147,16 +155,33 @@ async function sendCompletion<Model extends CompletionModel>(
   abortSignal: AbortSignal | undefined,
 ): Promise<CompletionResponse<RawResponseOf<Model>>> {
   const callOptions = modelCallOptions(abortSignal);
-  return runWithRetries(
-    () => {
+  let attempt = 1;
+  let failedUsage = Usage.empty();
+  while (true) {
+    try {
       throwIfAborted(abortSignal);
-      return model.completion(request, callOptions) as Promise<
-        CompletionResponse<RawResponseOf<Model>>
+      const response = (await model.completion(request, callOptions)) as CompletionResponse<
+        RawResponseOf<Model>
       >;
-    },
-    retries,
-    { streaming: false, abortSignal },
-  );
+      assertCompletionResponseIntegrity({ response });
+      return Usage.isEmpty(failedUsage)
+        ? response
+        : { ...response, usage: Usage.add(failedUsage, response.usage) };
+    } catch (error) {
+      const normalizedError =
+        abortSignal?.aborted === true ? abortError(abortSignal.reason) : error;
+      const attemptUsage = completionProviderOutputErrorUsage(normalizedError);
+      if (attemptUsage !== undefined) failedUsage = Usage.add(failedUsage, attemptUsage);
+      const retryOptions = retryOptionsForFailure(retries, {
+        error: normalizedError,
+        attempt,
+        streaming: false,
+      });
+      if (retryOptions === undefined) throw normalizedError;
+      await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
+      attempt += 1;
+    }
+  }
 }
 
 function resolveOptionalRetries(
@@ -176,9 +201,10 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
   let swallowedUsage = Usage.empty();
   const callOptions = modelCallOptions(abortSignal);
 
-  while (true) {
+  attemptLoop: while (true) {
     let exposedProgress = false;
     let retryDelay: number | undefined;
+    const accumulator = new CompletionStreamAccumulator<RawResponseOf<Model>>();
     try {
       throwIfAborted(abortSignal);
       const events = model.streamCompletion(request, callOptions) as AsyncIterable<
@@ -186,46 +212,68 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
       >;
       for await (const event of events) {
         if (event.type === "error" && !exposedProgress) {
+          const eventError =
+            abortSignal?.aborted === true ? abortError(abortSignal.reason) : event.error;
+          const eventUsage =
+            event.usage ?? completionProviderOutputErrorUsage(eventError) ?? Usage.empty();
           const retryOptions = retryOptionsForFailure(retries, {
-            error: event.error,
+            error: eventError,
             attempt,
             streaming: true,
           });
           if (retryOptions !== undefined) {
-            swallowedUsage = Usage.add(swallowedUsage, event.usage ?? Usage.empty());
+            swallowedUsage = Usage.add(swallowedUsage, eventUsage);
             retryDelay = retryDelayMs(retryOptions, attempt);
             break;
           }
         }
 
         if (event.type === "error") {
+          const eventError =
+            abortSignal?.aborted === true ? abortError(abortSignal.reason) : event.error;
+          const eventUsage =
+            event.usage ?? completionProviderOutputErrorUsage(eventError) ?? Usage.empty();
           yield {
             type: "error",
-            error: event.error,
-            usage: Usage.add(swallowedUsage, event.usage ?? Usage.empty()),
+            error: eventError,
+            usage: Usage.add(swallowedUsage, eventUsage),
           };
           return;
         }
 
         if (event.type === "final") {
-          const response =
-            swallowedUsage.totalTokens === 0
-              ? event.response
-              : {
-                  ...event.response,
-                  usage: Usage.add(swallowedUsage, event.response.usage),
-                };
+          const cumulativeUsage = Usage.add(swallowedUsage, event.response.usage);
           try {
+            accumulator.accept(event);
+            const accumulatedResponse = accumulator.response();
+            const response = Usage.isEmpty(swallowedUsage)
+              ? accumulatedResponse
+              : { ...accumulatedResponse, usage: cumulativeUsage };
+            assertCompletionResponseIntegrity({ response });
             yield {
               type: "final",
               result: resultFromResponse(response, outputSchema),
             };
           } catch (error) {
-            yield { type: "error", error, usage: response.usage };
+            const retryOptions = exposedProgress
+              ? undefined
+              : retryOptionsForFailure(retries, {
+                  error,
+                  attempt,
+                  streaming: true,
+                });
+            if (retryOptions !== undefined) {
+              swallowedUsage = cumulativeUsage;
+              await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
+              attempt += 1;
+              continue attemptLoop;
+            }
+            yield { type: "error", error, usage: cumulativeUsage };
           }
           return;
         }
 
+        accumulator.accept(event);
         exposedProgress = true;
         yield event;
       }
@@ -236,15 +284,33 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
         continue;
       }
 
-      yield {
-        type: "error",
-        error: new Error("The completion model stream ended without a final event."),
-        usage: swallowedUsage,
-      };
+      let incomplete: unknown;
+      try {
+        accumulator.response();
+        incomplete = new CompletionProviderOutputError({ kind: "incomplete-stream" });
+      } catch (error) {
+        incomplete = error;
+      }
+      if (!exposedProgress) {
+        const retryOptions = retryOptionsForFailure(retries, {
+          error: incomplete,
+          attempt,
+          streaming: true,
+        });
+        if (retryOptions !== undefined) {
+          await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
+          attempt += 1;
+          continue;
+        }
+      }
+      yield { type: "error", error: incomplete, usage: swallowedUsage };
       return;
     } catch (error) {
       const normalizedError =
         abortSignal?.aborted === true ? abortError(abortSignal.reason) : error;
+      const attemptUsage = completionProviderOutputErrorUsage(normalizedError);
+      const cumulativeUsage =
+        attemptUsage === undefined ? swallowedUsage : Usage.add(swallowedUsage, attemptUsage);
       if (!exposedProgress) {
         const retryOptions = retryOptionsForFailure(retries, {
           error: normalizedError,
@@ -253,16 +319,17 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
         });
         if (retryOptions !== undefined) {
           try {
+            swallowedUsage = cumulativeUsage;
             await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
             attempt += 1;
             continue;
           } catch (waitError) {
-            yield { type: "error", error: waitError, usage: swallowedUsage };
+            yield { type: "error", error: waitError, usage: cumulativeUsage };
             return;
           }
         }
       }
-      yield { type: "error", error: normalizedError, usage: swallowedUsage };
+      yield { type: "error", error: normalizedError, usage: cumulativeUsage };
       return;
     }
   }
@@ -343,6 +410,15 @@ function parseCompletionOutput<Output, RawResponse>(
   schema: ZodSchema<Output>,
   response: CompletionResponse<RawResponse>,
 ): Output {
+  if (response.finishReason === "content-filter") {
+    throw new CompletionStructuredOutputError({
+      phase: "content-filter",
+      outputLength: text.length,
+      usage: response.usage,
+      finishReason: response.finishReason,
+      providerFinishReason: response.providerFinishReason,
+    });
+  }
   if (response.finishReason === "length") {
     throw new CompletionStructuredOutputError({
       phase: "truncated",
@@ -355,6 +431,9 @@ function parseCompletionOutput<Output, RawResponse>(
   let json: unknown;
   try {
     json = JSON.parse(text);
+    if (!isJsonValue(json)) {
+      throw new TypeError("Structured completion output is not a JSON value.");
+    }
   } catch (error) {
     throw new CompletionStructuredOutputError({
       phase: "parse",

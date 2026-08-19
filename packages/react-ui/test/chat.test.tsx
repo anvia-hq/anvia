@@ -340,6 +340,40 @@ describe("Chat primitives", () => {
     );
   });
 
+  it("rejects non-JSON entity data injected through composer state", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const customPrototypeArray = ["user"];
+    Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
+    const entity: ComposerEntity = {
+      id: "user_ada",
+      triggerId: "people",
+      trigger: "@",
+      label: "Ada",
+      text: "@Ada",
+      range: { from: 0, to: 4 },
+      data: customPrototypeArray as never,
+    };
+    let submission: Promise<void> | undefined;
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root defaultEntities={[entity]} defaultInput="@Ada">
+          <ComposerSubmitInvoker
+            onSubmit={(value) => {
+              submission = value;
+            }}
+          />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Submit directly"));
+
+    if (submission === undefined) throw new Error("Expected a composer submission promise");
+    await expect(submission).rejects.toThrow("Composer entity data must be a JSON value.");
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it("keeps a rejected default submission cleared without overwriting a new draft", async () => {
     const sendCompletion = createDeferred();
     const sendMessage = vi.fn(() => sendCompletion.promise);
@@ -750,6 +784,53 @@ describe("Chat primitives", () => {
                 text: "@Ada",
                 range: { from: 0, to: 4 },
                 data: { kind: "user" },
+              },
+            ],
+          },
+        },
+      });
+    });
+  });
+
+  it("preserves explicit null trigger data in submitted entity metadata", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const trigger: ComposerTriggerDefinition = {
+      id: "people",
+      char: "@",
+      items: [{ id: "user_ada", label: "Ada", data: null }],
+    };
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root triggers={[trigger]}>
+          <Composer.Input />
+          <Composer.TriggerMenu />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    act(() => {
+      composerTiptapEditor().commands.insertContent("@");
+    });
+    await waitFor(() => expect(screen.getByText("Ada")).toBeTruthy());
+    fireEvent.click(screen.getByText("Ada"));
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "@Ada ",
+        metadata: {
+          composer: {
+            entities: [
+              {
+                id: "user_ada",
+                triggerId: "people",
+                trigger: "@",
+                label: "Ada",
+                text: "@Ada",
+                range: { from: 0, to: 4 },
+                data: null,
               },
             ],
           },
@@ -1186,6 +1267,38 @@ describe("Chat primitives", () => {
       attachments: [],
       metadata: { source: "custom" },
     });
+  });
+
+  it("rejects non-JSON entity data before custom composer submit", async () => {
+    const submitMessage = vi.fn<ComposerSubmitMessage>(async () => {});
+    const entity: ComposerEntity = {
+      id: "user_ada",
+      triggerId: "people",
+      trigger: "@",
+      label: "Ada",
+      text: "@Ada",
+      range: { from: 0, to: 4 },
+      data: new Date() as never,
+    };
+    let submission: Promise<void> | undefined;
+
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root defaultEntities={[entity]} defaultInput="@Ada" submitMessage={submitMessage}>
+          <ComposerSubmitInvoker
+            onSubmit={(value) => {
+              submission = value;
+            }}
+          />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Submit directly"));
+
+    if (submission === undefined) throw new Error("Expected a composer submission promise");
+    await expect(submission).rejects.toThrow("Composer entity data must be a JSON value.");
+    expect(submitMessage).not.toHaveBeenCalled();
   });
 
   it("lets custom composer submit control when state is cleared", async () => {

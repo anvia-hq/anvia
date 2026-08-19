@@ -463,9 +463,139 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model });
 
     await expect(agent.generate({ prompt: "run a command" })).rejects.toThrow(
-      'Completion returned tool call "tool_0" with an empty tool name; this indicates invalid provider output or provider mapping.',
+      'Completion provider returned an invalid tool call "tool_0".',
     );
     expect(model.requests).toHaveLength(1);
+  });
+
+  it("retries truncated tool calls without executing them", async () => {
+    let executions = 0;
+    const truncated = response([
+      AssistantContent.toolCall("tool_0", "add", { x: 1, y: 2 }, "call_0"),
+    ]);
+    truncated.finishReason = "length";
+    const model = new QueueModel([truncated, truncated, truncated]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [
+        createTool({
+          name: "add",
+          description: "Add numbers",
+          inputSchema: z.object({ x: z.number(), y: z.number() }),
+          execute: ({ x, y }) => {
+            executions += 1;
+            return x + y;
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      agent.generate({
+        prompt: "add",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      code: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+      kind: "truncated-tool-call",
+    });
+    expect(model.requests).toHaveLength(3);
+    expect(executions).toBe(0);
+  });
+
+  it("does not retry or execute content-filtered tool calls", async () => {
+    let executions = 0;
+    const filtered = response([
+      AssistantContent.toolCall("tool_0", "add", { x: 1, y: 2 }, "call_0"),
+    ]);
+    filtered.finishReason = "content-filter";
+    const model = new QueueModel([filtered]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [
+        createTool({
+          name: "add",
+          description: "Add numbers",
+          inputSchema: z.object({ x: z.number(), y: z.number() }),
+          execute: () => {
+            executions += 1;
+            return 3;
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      agent.generate({
+        prompt: "add",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "filtered-tool-call",
+    });
+    expect(model.requests).toHaveLength(1);
+    expect(executions).toBe(0);
+  });
+
+  it("retries unknown provider finish reasons without executing tool calls", async () => {
+    let executions = 0;
+    const invalid = response([
+      AssistantContent.toolCall("tool_0", "add", { x: 1, y: 2 }, "call_0"),
+    ]);
+    invalid.finishReason = "future" as never;
+    const model = new QueueModel([invalid, invalid, invalid]);
+    const tool = createTool({
+      name: "add",
+      description: "Add numbers",
+      inputSchema: z.object({ x: z.number(), y: z.number() }),
+      execute: () => {
+        executions += 1;
+        return 3;
+      },
+    });
+
+    await expect(
+      new Agent({ id: "test-agent", model, tools: [tool] }).generate({
+        prompt: "add",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+    });
+    expect(model.requests).toHaveLength(3);
+    expect(executions).toBe(0);
+  });
+
+  it("rejects duplicate tool call identities before any tool executes", async () => {
+    let executions = 0;
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("tool_0", "add", { x: 1, y: 2 }, "call_0"),
+        AssistantContent.toolCall("tool_0", "add", { x: 3, y: 4 }, "call_1"),
+      ]),
+    ]);
+    const tool = createTool({
+      name: "add",
+      description: "Add numbers",
+      inputSchema: z.object({ x: z.number(), y: z.number() }),
+      execute: () => {
+        executions += 1;
+        return 0;
+      },
+    });
+
+    await expect(
+      new Agent({ id: "test-agent", model, tools: [tool] }).generate({ prompt: "add" }),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+    });
+    expect(executions).toBe(0);
   });
 
   it("executes multiple tool calls in one turn", async () => {
@@ -857,6 +987,31 @@ describe("Agent execution", () => {
     expect(events).toEqual(["request:1:1", "response:original:original", "hook:changed"]);
   });
 
+  it("rejects non-JSON provider options injected by completion middleware", async () => {
+    const model = new QueueModel([response([AssistantContent.text("unreachable")])]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      middlewares: [
+        createMiddleware({
+          onCompletionRequest({ request }) {
+            return {
+              request: {
+                ...request,
+                providerOptions: { generatedAt: new Date() } as never,
+              },
+            };
+          },
+        }),
+      ],
+    });
+
+    await expect(agent.generate({ prompt: "hello" })).rejects.toThrow(
+      "providerOptions must be a JSON object.",
+    );
+    expect(model.requests).toHaveLength(0);
+  });
+
   it("runs tool input and output middleware through the new API", async () => {
     const model = new QueueModel([
       response([AssistantContent.toolCall("call_1", "add", { x: 1, y: 1 })]),
@@ -894,6 +1049,73 @@ describe("Agent execution", () => {
         },
       ]),
     );
+  });
+
+  it("rejects non-JSON tool input middleware replacements before execution", async () => {
+    for (const replacement of [
+      { amount: Number.NaN },
+      { amount: 1, missing: undefined },
+      new Date(),
+    ]) {
+      let executed = false;
+      const tool = createTool({
+        name: "record",
+        description: "Record an amount",
+        inputSchema: z.object({ amount: z.number() }),
+        execute() {
+          executed = true;
+          return "recorded";
+        },
+      });
+      const model = new QueueModel([
+        response([AssistantContent.toolCall("call_1", "record", { amount: 1 })]),
+      ]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        tools: [tool],
+        middlewares: [
+          createMiddleware({
+            onToolInput() {
+              return { args: replacement as never };
+            },
+          }),
+        ],
+      });
+
+      await expect(agent.generate({ prompt: "record" })).rejects.toThrow(
+        "Tool input middleware args must be a strict JSON value.",
+      );
+      expect(executed).toBe(false);
+    }
+  });
+
+  it("rejects malformed tool output middleware replacements before another model call", async () => {
+    for (const replacement of [
+      { result: 123 },
+      { structuredResult: [{ type: "text", text: 123 }] },
+      { result: "text", structuredResult: [{ type: "text", text: "duplicate" }] },
+    ]) {
+      const model = new QueueModel([
+        response([AssistantContent.toolCall("call_1", "add", { x: 1, y: 1 })]),
+        response([AssistantContent.text("must not be requested")]),
+      ]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        tools: [addTool],
+        middlewares: [
+          createMiddleware({
+            onToolOutput() {
+              return replacement as never;
+            },
+          }),
+        ],
+      });
+
+      await expect(agent.generate({ prompt: "add" })).rejects.toBeInstanceOf(TypeError);
+      expect(model.requests).toHaveLength(1);
+    }
   });
 
   it("composes agent and run middleware registrations in order", async () => {

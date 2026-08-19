@@ -92,6 +92,38 @@ type UIDataPart<Data extends ClientDataMap> = {
   };
 }[keyof Data & string];
 
+type UIToolMessagePartBase = {
+  id: string;
+  type: "tool";
+  toolName: string;
+  toolCallId: string;
+  callId?: string;
+  internalCallId?: string;
+  turn?: number;
+  signature?: string;
+};
+
+export type UIToolMessagePart =
+  | (UIToolMessagePartBase & {
+      state: "input-streaming";
+      input: string;
+    })
+  | (UIToolMessagePartBase & {
+      state: "input-available";
+      input: JsonValue;
+    })
+  | (UIToolMessagePartBase & {
+      state: "output-available";
+      input: JsonValue;
+      output: JsonValue;
+      resultContent?: readonly ToolResultContentPart[];
+    })
+  | (UIToolMessagePartBase & {
+      state: "error";
+      input: JsonValue;
+      error: UIError;
+    });
+
 export type UIMessagePart<Data extends ClientDataMap = ClientDataMap> =
   | {
       id: string;
@@ -106,21 +138,7 @@ export type UIMessagePart<Data extends ClientDataMap = ClientDataMap> =
       reasoningId?: string;
       content?: readonly ReasoningDetail[];
     }
-  | {
-      id: string;
-      type: "tool";
-      toolName: string;
-      toolCallId: string;
-      callId?: string;
-      internalCallId?: string;
-      turn?: number;
-      state: "input-streaming" | "input-available" | "output-available" | "error";
-      input?: JsonValue;
-      output?: JsonValue;
-      resultContent?: readonly ToolResultContentPart[];
-      signature?: string;
-      error?: UIError;
-    }
+  | UIToolMessagePart
   | {
       id: string;
       type: "source";
@@ -137,8 +155,6 @@ export type UIMessagePart<Data extends ClientDataMap = ClientDataMap> =
       type: "error";
       error: UIError;
     };
-
-export type UIToolMessagePart = Extract<UIMessagePart, { type: "tool" }>;
 
 export type ClientStreamCursor = {
   streamId: string;
@@ -288,7 +304,7 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
       callId?: string;
       internalCallId?: string;
       toolName: string;
-      input?: JsonValue;
+      input: JsonValue;
       result:
         | { status: "success"; output: JsonValue; content?: readonly ToolResultContentPart[] }
         | { status: "error"; error: ClientStreamError };

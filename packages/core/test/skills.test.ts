@@ -404,8 +404,19 @@ describe("skills", () => {
           name: "get_skill_instructions",
           argumentsDelta: '{"skillName":"review"}',
         },
+        {
+          type: "final",
+          response: {
+            ...response([
+              AssistantContent.toolCall("call_1", "get_skill_instructions", {
+                skillName: "review",
+              }),
+            ]),
+            finishReason: "tool-calls",
+          },
+        },
       ],
-      [{ type: "text_delta", delta: "loaded" }],
+      successfulTextStream("loaded"),
     ]);
     const agent = new Agent({
       id: "test-agent",
@@ -434,6 +445,19 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
     usage: Usage.empty(),
     rawResponse: {},
   };
+}
+
+function successfulTextStream(text: string): CompletionModelStreamEvent[] {
+  return [
+    { type: "text_delta", delta: text },
+    {
+      type: "final",
+      response: {
+        ...response([AssistantContent.text(text)]),
+        finishReason: "stop",
+      },
+    },
+  ];
 }
 
 async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {

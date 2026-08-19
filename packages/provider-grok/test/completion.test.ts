@@ -160,6 +160,23 @@ describe("Grok completion models", () => {
                 name: "write_file",
                 arguments: '{"path":"README.md"}',
               },
+              {
+                type: "response.completed",
+                response: {
+                  id: "response_1",
+                  status: "completed",
+                  output: [
+                    {
+                      type: "function_call",
+                      id: "tool_1",
+                      call_id: "call_1",
+                      name: "write_file",
+                      arguments: '{"path":"README.md"}',
+                    },
+                  ],
+                  usage: {},
+                },
+              },
             ]),
         },
       } as never,

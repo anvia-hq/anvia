@@ -5,6 +5,7 @@ import {
   type CompletionModel,
   type CompletionModelCapabilities,
   type CompletionModelStreamEvent,
+  CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
   CompletionStructuredOutputError,
@@ -48,6 +49,24 @@ describe("direct completion retries", () => {
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
     expect(contexts).toEqual([{ error, attempt: 1, maxAttempts: 2, streaming: false }]);
+  });
+
+  it("preserves failed-attempt usage even when totalTokens is zero", async () => {
+    const failedUsage = { ...Usage.empty(), inputTokens: 2, details: { billed: 2 } };
+    const error = new CompletionProviderOutputError({
+      kind: "invalid-tool-call",
+      usage: failedUsage,
+    });
+    const model = new CompletionQueueModel([error, response("recovered", usage(0, 1))]);
+
+    const result = await generateCompletion({
+      model,
+      prompt: "hello",
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    expect(result.usage).toMatchObject({ inputTokens: 2, outputTokens: 1, totalTokens: 1 });
+    expect(model.requests).toHaveLength(2);
   });
 
   it("ignores invalid HTTP status values when classifying retryable error codes", async () => {
@@ -100,6 +119,21 @@ describe("direct completion retries", () => {
     expect(model.requests).toHaveLength(1);
   });
 
+  it("rejects syntactically valid values outside the JSON contract", async () => {
+    const model = new CompletionQueueModel([response('{"value":1e400}')]);
+
+    await expect(
+      generateCompletion({
+        model,
+        prompt: "hello",
+        outputSchema: z.object({ value: z.any() }),
+      }),
+    ).rejects.toMatchObject({
+      name: "CompletionStructuredOutputError",
+      phase: "parse",
+    });
+  });
+
   it("reports truncated structured output distinctly and preserves ordinary partial text", async () => {
     const partial = response('{"ok":');
     partial.finishReason = "length";
@@ -131,6 +165,28 @@ describe("direct completion retries", () => {
     });
   });
 
+  it("rejects content-filtered structured output without retrying or parsing it", async () => {
+    const filtered = response('{"ok":true}');
+    filtered.finishReason = "content-filter";
+    filtered.providerFinishReason = "content_filter";
+    const model = new CompletionQueueModel([filtered, response('{"ok":true}')]);
+
+    await expect(
+      generateCompletion({
+        model,
+        prompt: "hello",
+        outputSchema: z.object({ ok: z.boolean() }),
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    ).rejects.toMatchObject({
+      name: "CompletionStructuredOutputError",
+      phase: "content-filter",
+      finishReason: "content-filter",
+      providerFinishReason: "content_filter",
+    });
+    expect(model.requests).toHaveLength(1);
+  });
+
   it("retries a stream error before exposing events and aggregates usage", async () => {
     const error = Object.assign(new Error("unavailable"), { statusCode: 503 });
     const failedUsage = usage(4, 1);
@@ -157,6 +213,34 @@ describe("direct completion retries", () => {
     expect(model.requests[1]).toBe(model.requests[0]);
   });
 
+  it("preserves zero-total failed usage across a stream retry", async () => {
+    const failedUsage = { ...Usage.empty(), cachedInputTokens: 3 };
+    const error = new CompletionProviderOutputError({
+      kind: "incomplete-stream",
+      usage: failedUsage,
+    });
+    const finalUsage = usage(0, 1);
+    const model = new StreamQueueModel([
+      [{ type: "error", error }],
+      [{ type: "final", response: response("ready", finalUsage) }],
+    ]);
+
+    const events = await collect(
+      streamCompletion({
+        model,
+        prompt: "hello",
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: {
+        usage: expect.objectContaining({ cachedInputTokens: 3, outputTokens: 1, totalTokens: 1 }),
+      },
+    });
+  });
+
   it("emits a dedicated error for a length-terminated structured stream", async () => {
     const partial = response('{"ok":');
     partial.finishReason = "length";
@@ -179,6 +263,70 @@ describe("direct completion retries", () => {
         phase: "truncated",
         finishReason: "length",
       },
+    });
+  });
+
+  it("merges streamed tool-call deltas into an empty terminal snapshot", async () => {
+    const terminal: CompletionResponse = {
+      choice: [],
+      usage: usage(3, 2),
+      rawResponse: { id: "response_1" },
+      finishReason: "tool-calls",
+    };
+    const model = new StreamQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "tool_0",
+          callId: "call_0",
+          name: "lookup",
+          argumentsDelta: '{"query":"anvia"}',
+        },
+        { type: "final", response: terminal },
+      ],
+    ]);
+
+    const events = await collect(streamCompletion({ model, prompt: "look up Anvia" }));
+
+    expect(events).toEqual([
+      {
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "call_0",
+        name: "lookup",
+        argumentsDelta: '{"query":"anvia"}',
+      },
+      {
+        type: "final",
+        result: {
+          output: "",
+          text: "",
+          content: [AssistantContent.toolCall("tool_0", "lookup", { query: "anvia" }, "call_0")],
+          usage: usage(3, 2),
+          rawResponse: { id: "response_1" },
+          finishReason: "tool-calls",
+        },
+      },
+    ]);
+  });
+
+  it("classifies a tool-call stream without a terminal response", async () => {
+    const model = new StreamQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "tool_0",
+          name: "lookup",
+          argumentsDelta: '{"query":"anvia"}',
+        },
+      ],
+    ]);
+
+    const events = await collect(streamCompletion({ model, prompt: "look up Anvia" }));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: { kind: "incomplete-tool-call", toolCallId: "tool_0" },
     });
   });
 

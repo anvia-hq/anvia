@@ -1,5 +1,6 @@
 import type { JsonObject } from "../completion/types";
 import { throwIfAborted } from "../internal/abort";
+import { assertJsonObject } from "../internal/json-object";
 import type { ModelCallOptions } from "../model-call-options";
 import {
   type ResolvedRetryOptions,
@@ -33,7 +34,10 @@ export async function generateImage<Model extends ImageGenerationModel>(
   assertPositiveInteger(height, "Image height");
 
   const request: ImageGenerationRequest = { prompt: options.prompt, width, height };
-  if (options.providerOptions !== undefined) request.providerOptions = options.providerOptions;
+  if (options.providerOptions !== undefined) {
+    assertJsonObject(options.providerOptions, "providerOptions");
+    request.providerOptions = options.providerOptions;
+  }
   const result = await runWithRetries(
     () => {
       throwIfAborted(options.abortSignal);

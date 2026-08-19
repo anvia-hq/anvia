@@ -93,12 +93,7 @@ describe("Agent streaming", () => {
   });
 
   it("streams text deltas and final response", async () => {
-    const model = new StreamingQueueModel([
-      [
-        { type: "text_delta", delta: "hel" },
-        { type: "text_delta", delta: "lo" },
-      ],
-    ]);
+    const model = new StreamingQueueModel([successfulTextStream("hel", "lo")]);
     const agent = new Agent({ id: "test-agent", model, instructions: "system" });
 
     const events = await collect(agent.stream({ prompt: "hi" }));
@@ -176,7 +171,7 @@ describe("Agent streaming", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
     try {
-      const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
+      const model = new StreamingQueueModel([successfulTextStream("hello")]);
       const agent = new Agent({ id: "test-agent", model });
       const iterator = agent.stream({ prompt: "hi" })[Symbol.asyncIterator]();
 
@@ -198,7 +193,7 @@ describe("Agent streaming", () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new StreamingQueueModel([
       streamThenThrow([], error),
-      [{ type: "text_delta", delta: "recovered" }],
+      successfulTextStream("recovered"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
@@ -222,7 +217,7 @@ describe("Agent streaming", () => {
     const error = Object.assign(new Error("temporarily unavailable"), { statusCode: 503 });
     const model = new StreamingQueueModel([
       [{ type: "error", error }],
-      [{ type: "text_delta", delta: "ready" }],
+      successfulTextStream("ready"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
@@ -233,6 +228,105 @@ describe("Agent streaming", () => {
     expect(events.some((event) => event.type === "error")).toBe(false);
     expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "ready" } });
     expect(model.requests).toHaveLength(2);
+  });
+
+  it("retries when the first provider event is invalid before anything is exposed", async () => {
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        },
+      ],
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("recovered")], Usage.empty()),
+        },
+      ],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
+
+    const events = await collect(
+      agent.stream({
+        prompt: "hi",
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    );
+
+    expect(events.some((event) => event.type === "tool_call_delta")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "recovered" } });
+    expect(model.requests).toHaveLength(2);
+  });
+
+  it("does not execute a tool call when its stream ends without a terminal event", async () => {
+    let executions = 0;
+    const tool = createTool({
+      name: "record",
+      description: "Record execution",
+      inputSchema: z.object({ value: z.string() }),
+      execute() {
+        executions += 1;
+        return "unexpected";
+      },
+    });
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "tool_0",
+          name: "record",
+          argumentsDelta: '{"value":"complete-looking"}',
+        },
+      ],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [tool] });
+
+    const events = await collect(agent.stream({ prompt: "hi" }));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: { kind: "incomplete-tool-call", toolCallId: "tool_0" },
+    });
+    expect(executions).toBe(0);
+  });
+
+  it("closes the provider iterator at the first final event", async () => {
+    let trailingEventRead = false;
+    let executions = 0;
+    const tool = createTool({
+      name: "record",
+      description: "Record execution",
+      inputSchema: z.object({}),
+      execute() {
+        executions += 1;
+        return "unexpected";
+      },
+    });
+    const providerEvents = (async function* (): AsyncIterable<CompletionModelStreamEvent> {
+      yield {
+        type: "final",
+        response: completionResponse([AssistantContent.text("done")], Usage.empty()),
+      };
+      trailingEventRead = true;
+      yield {
+        type: "tool_call",
+        toolCall: AssistantContent.toolCall("tool_0", "record", {}),
+      };
+    })();
+    const agent = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([providerEvents]),
+      tools: [tool],
+    });
+
+    const events = await collect(agent.stream({ prompt: "hi" }));
+
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
+    expect(trailingEventRead).toBe(false);
+    expect(executions).toBe(0);
   });
 
   it("includes authoritative failed-attempt usage exactly once after a retry succeeds", async () => {
@@ -282,6 +376,115 @@ describe("Agent streaming", () => {
       type: "final",
       result: { output: "done", usage: finalUsage },
     });
+  });
+
+  it("retries invalid final-only provider output before exposing progress", async () => {
+    let executions = 0;
+    const tool = createTool({
+      name: "permissive",
+      description: "Accept any JSON value",
+      inputSchema: z.any(),
+      execute: () => {
+        executions += 1;
+        return "unexpected";
+      },
+    });
+    const invalidUsage = usage(3, 2);
+    const finalUsage = usage(4, 1);
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "final",
+          response: completionResponse(
+            [
+              AssistantContent.toolCall("tool_0", "permissive", {
+                value: Number.POSITIVE_INFINITY,
+              }),
+            ],
+            invalidUsage,
+          ),
+        },
+      ],
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("recovered")], finalUsage),
+        },
+      ],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [tool] });
+
+    const events = await collect(
+      agent.stream({
+        prompt: "hi",
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    );
+
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: { output: "recovered", usage: Usage.add(invalidUsage, finalUsage) },
+    });
+    expect(model.requests).toHaveLength(2);
+    expect(executions).toBe(0);
+  });
+
+  it("does not retry malformed tool arguments after a delta was exposed", async () => {
+    let executions = 0;
+    const tool = createTool({
+      name: "permissive",
+      description: "Accept any JSON value",
+      inputSchema: z.any(),
+      execute: () => {
+        executions += 1;
+        return "unexpected";
+      },
+    });
+    const model = new StreamingQueueModel([
+      [
+        {
+          type: "tool_call_delta",
+          id: "tool_0",
+          name: "permissive",
+          argumentsDelta: '{"value":',
+        },
+        {
+          type: "final",
+          response: {
+            choice: [],
+            usage: usage(3, 2),
+            finishReason: "tool-calls",
+            rawResponse: {},
+          },
+        },
+      ],
+      [
+        {
+          type: "final",
+          response: completionResponse([AssistantContent.text("unexpected")], Usage.empty()),
+        },
+      ],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [tool] });
+
+    const events = await collect(
+      agent.stream({
+        prompt: "hi",
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "tool_call_delta", id: "tool_0" }),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: { kind: "malformed-tool-arguments" },
+      usage: { totalTokens: 5 },
+    });
+    expect(model.requests).toHaveLength(1);
+    expect(executions).toBe(0);
   });
 
   it("includes authoritative provider failure usage exactly once", async () => {
@@ -392,7 +595,7 @@ describe("Agent streaming", () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new StreamingQueueModel([
       streamThenThrow([], error),
-      [{ type: "text_delta", delta: "ready" }],
+      successfulTextStream("ready"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
 
@@ -421,8 +624,9 @@ describe("Agent streaming", () => {
           argumentsDelta: '{"x":2,"y":5}',
           argumentsMode: "replace",
         },
+        streamFinal([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
@@ -469,26 +673,24 @@ describe("Agent streaming", () => {
     expect(model.requests).toHaveLength(1);
   });
 
-  it("does not retry after a non-emitted provider event has been observed", async () => {
+  it("retries after provider bookkeeping that was not exposed", async () => {
     const error = Object.assign(new Error("stream interrupted"), { status: 503 });
     const model = new StreamingQueueModel([
       streamThenThrow([{ type: "message_id", id: "msg_1" }], error),
-      [{ type: "text_delta", delta: "duplicate" }],
+      successfulTextStream("recovered"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
-    const iterator = agent
-      .stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } })
-      [Symbol.asyncIterator]();
+    const events = await collect(
+      agent.stream({ prompt: "hi", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
+    );
 
-    expect(await nextEvent(iterator)).toMatchObject({ type: "turn_start" });
-    expect(await nextEvent(iterator)).toMatchObject({ type: "generation_start" });
-    expect(await nextEvent(iterator)).toEqual({ type: "error", error, usage: Usage.empty() });
-    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
-    expect(model.requests).toHaveLength(1);
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "recovered" } });
+    expect(model.requests).toHaveLength(2);
   });
 
   it("streams post-middleware response content when response middleware is registered", async () => {
-    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "secret" }]]);
+    const model = new StreamingQueueModel([successfulTextStream("secret")]);
     const agent = new Agent({
       id: "test-agent",
       model,
@@ -616,7 +818,7 @@ describe("Agent streaming", () => {
   });
 
   it("rejects concurrent consumption of the same agent stream", async () => {
-    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const model = new StreamingQueueModel([successfulTextStream("done")]);
     const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream({ prompt: "hi" });
     const iterator = stream[Symbol.asyncIterator]();
@@ -630,8 +832,8 @@ describe("Agent streaming", () => {
 
   it("accepts steering before consumption and rejects it after completion", async () => {
     const model = new StreamingQueueModel([
-      [{ type: "text_delta", delta: "first" }],
-      [{ type: "text_delta", delta: "second" }],
+      successfulTextStream("first"),
+      successfulTextStream("second"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream({ prompt: "hi" });
@@ -650,7 +852,7 @@ describe("Agent streaming", () => {
     const finishRelease = deferred<void>();
     const stream = new Agent({
       id: "test-agent",
-      model: new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]),
+      model: new StreamingQueueModel([successfulTextStream("done")]),
     }).stream({
       prompt: "hi",
       lifecycle: {
@@ -704,8 +906,8 @@ describe("Agent streaming", () => {
 
   it("continues when steering arrives before a no-tool response finalizes", async () => {
     const model = new StreamingQueueModel([
-      [{ type: "text_delta", delta: "first" }],
-      [{ type: "text_delta", delta: "second" }],
+      successfulTextStream("first"),
+      successfulTextStream("second"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream({ prompt: "hi" });
@@ -780,8 +982,8 @@ describe("Agent streaming", () => {
     });
     const toolCall = AssistantContent.toolCall("call_1", "slow_add", { x: 2, y: 5 });
     const model = new StreamingQueueModel([
-      [{ type: "tool_call", toolCall }],
-      [{ type: "text_delta", delta: "done" }],
+      [{ type: "tool_call", toolCall }, streamFinal([toolCall], "tool-calls")],
+      successfulTextStream("done"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [slowAddTool] });
     const stream = agent.stream({ prompt: "add" });
@@ -810,8 +1012,8 @@ describe("Agent streaming", () => {
 
   it("consumes multiple steering calls in FIFO order", async () => {
     const model = new StreamingQueueModel([
-      [{ type: "text_delta", delta: "base" }],
-      [{ type: "text_delta", delta: "done" }],
+      successfulTextStream("base"),
+      successfulTextStream("done"),
     ]);
     const agent = new Agent({ id: "test-agent", model });
     const stream = agent.stream({ prompt: "start" });
@@ -922,8 +1124,9 @@ describe("Agent streaming", () => {
           name: "add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        streamFinal([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
@@ -978,8 +1181,9 @@ describe("Agent streaming", () => {
           name: "guarded",
           argumentsDelta: '{"value":7}',
         },
+        streamFinal([AssistantContent.toolCall("call_1", "guarded", { value: 7 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "done" }],
+      successfulTextStream("done"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
@@ -1030,8 +1234,9 @@ describe("Agent streaming", () => {
           name: "guarded",
           argumentsDelta: "{}",
         },
+        streamFinal([AssistantContent.toolCall("call_1", "guarded", {})], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "prioritized" }],
+      successfulTextStream("prioritized"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const stream = agent.stream({ prompt: "run guarded" });
@@ -1072,8 +1277,9 @@ describe("Agent streaming", () => {
           name: "add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        streamFinal([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
@@ -1108,10 +1314,19 @@ describe("Agent streaming", () => {
         signature: "signed",
       };
       providerFinished = true;
+      yield streamFinal(
+        [
+          {
+            ...AssistantContent.toolCall("tool_1", "add", { x: 2, y: 5 }, "call_1"),
+            signature: "signed",
+          },
+        ],
+        "tool-calls",
+      );
     })();
     const middlewareStarted = deferred<void>();
     const releaseMiddleware = deferred<void>();
-    const model = new StreamingQueueModel([firstTurn, [{ type: "text_delta", delta: "7" }]]);
+    const model = new StreamingQueueModel([firstTurn, successfulTextStream("7")]);
     const agent = new Agent({
       id: "test-agent",
       model,
@@ -1177,8 +1392,9 @@ describe("Agent streaming", () => {
           name: "add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        streamFinal([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "done" }],
+      successfulTextStream("done"),
     ]);
     const agent = new Agent({
       id: "test-agent",
@@ -1230,14 +1446,16 @@ describe("Agent streaming", () => {
       inputSchema: z.object({}),
       execute: () => structuredContent,
     });
+    const screenshotCall = AssistantContent.toolCall("call_1", "computer_screenshot", {});
     const model = new StreamingQueueModel([
       [
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_1", "computer_screenshot", {}),
+          toolCall: screenshotCall,
         },
+        streamFinal([screenshotCall], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "done" }],
+      successfulTextStream("done"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [screenshotTool] });
 
@@ -1291,18 +1509,21 @@ describe("Agent streaming", () => {
         return "fast";
       },
     });
+    const slowCall = AssistantContent.toolCall("call_slow", "slow_tool", {});
+    const fastCall = AssistantContent.toolCall("call_fast", "fast_tool", {});
     const model = new StreamingQueueModel([
       [
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_slow", "slow_tool", {}),
+          toolCall: slowCall,
         },
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_fast", "fast_tool", {}),
+          toolCall: fastCall,
         },
+        streamFinal([slowCall, fastCall], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "done" }],
+      successfulTextStream("done"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [slowTool, fastTool] });
     const iterator = agent
@@ -1367,21 +1588,20 @@ describe("Agent streaming", () => {
   });
 
   it("streams child agent events from streaming agent tools", async () => {
+    const parentCall = AssistantContent.toolCall("call_child", "ask_child", {
+      prompt: "inspect",
+    });
     const parentModel = new StreamingQueueModel([
       [
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "inspect" }),
+          toolCall: parentCall,
         },
+        streamFinal([parentCall], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "parent done" }],
+      successfulTextStream("parent done"),
     ]);
-    const childModel = new StreamingQueueModel([
-      [
-        { type: "text_delta", delta: "child " },
-        { type: "text_delta", delta: "done" },
-      ],
-    ]);
+    const childModel = new StreamingQueueModel([successfulTextStream("child ", "done")]);
     const childAgent = new Agent({ id: "child", model: childModel, name: "Child Agent" });
     const parentAgent = new Agent({
       id: "parent",
@@ -1422,14 +1642,16 @@ describe("Agent streaming", () => {
   });
 
   it("forwards child tool call deltas automatically", async () => {
+    const parentCall = AssistantContent.toolCall("call_child", "ask_child", { prompt: "add" });
     const parentModel = new StreamingQueueModel([
       [
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "add" }),
+          toolCall: parentCall,
         },
+        streamFinal([parentCall], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "parent done" }],
+      successfulTextStream("parent done"),
     ]);
     const childModel = new StreamingQueueModel([
       [
@@ -1439,8 +1661,9 @@ describe("Agent streaming", () => {
           name: "add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        streamFinal([AssistantContent.toolCall("call_add", "add", { x: 2, y: 5 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const childAgent = new Agent({ id: "child", model: childModel, tools: [addTool], maxTurns: 2 });
     const parentAgent = new Agent({
@@ -1482,14 +1705,16 @@ describe("Agent streaming", () => {
   });
 
   it("propagates tool call deltas through streaming agent tools by default", async () => {
+    const parentCall = AssistantContent.toolCall("call_child", "ask_child", { prompt: "add" });
     const parentModel = new StreamingQueueModel([
       [
         {
           type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_child", "ask_child", { prompt: "add" }),
+          toolCall: parentCall,
         },
+        streamFinal([parentCall], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "parent done" }],
+      successfulTextStream("parent done"),
     ]);
     const childModel = new StreamingQueueModel([
       [
@@ -1499,8 +1724,9 @@ describe("Agent streaming", () => {
           name: "add",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        streamFinal([AssistantContent.toolCall("call_add", "add", { x: 2, y: 5 })], "tool-calls"),
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const childAgent = new Agent({ id: "child", model: childModel, tools: [addTool], maxTurns: 2 });
     const parentAgent = new Agent({
@@ -1541,6 +1767,7 @@ describe("Agent streaming", () => {
         { type: "reasoning_delta", delta: "Think" },
         { type: "reasoning_delta", delta: " once." },
         { type: "text_delta", delta: "done" },
+        streamFinal([], "stop"),
       ],
     ]);
     const agent = new Agent({ id: "test-agent", model });
@@ -1576,6 +1803,7 @@ describe("Agent streaming", () => {
         },
         { type: "reasoning_delta", id: "rs_3", delta: "opaque", contentType: "encrypted" },
         { type: "text_delta", delta: "done" },
+        streamFinal([], "stop"),
       ],
     ]);
     const agent = new Agent({ id: "test-agent", model });
@@ -1634,8 +1862,12 @@ describe("Agent streaming", () => {
           id: "tool_0",
           argumentsDelta: '{"x":2,"y":5}',
         },
+        streamFinal(
+          [AssistantContent.toolCall("tool_0", "add", { x: 2, y: 5 }, "call_1")],
+          "tool-calls",
+        ),
       ],
-      [{ type: "text_delta", delta: "7" }],
+      successfulTextStream("7"),
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
 
@@ -1767,6 +1999,26 @@ function completionResponse(
     usage: responseUsage,
     rawResponse: {},
   };
+}
+
+function streamFinal(
+  choice: CompletionResponse["choice"],
+  finishReason: NonNullable<CompletionResponse["finishReason"]>,
+): CompletionModelStreamEvent {
+  return {
+    type: "final",
+    response: {
+      ...completionResponse(choice, Usage.empty()),
+      finishReason,
+    },
+  };
+}
+
+function successfulTextStream(...deltas: string[]): CompletionModelStreamEvent[] {
+  return [
+    ...deltas.map((delta): CompletionModelStreamEvent => ({ type: "text_delta", delta })),
+    streamFinal([AssistantContent.text(deltas.join(""))], "stop"),
+  ];
 }
 
 function deferred<T>(): {

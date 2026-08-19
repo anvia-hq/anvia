@@ -65,17 +65,18 @@ async function main(): Promise<void> {
     id: string;
     input: string;
     expected: string;
-    metadata?: { traceId: string; observationId: string | undefined };
+    metadata?: Record<string, string>;
   } = {
     id: "q-1",
     input: "How long do refunds stay available?",
     expected: "30 days",
   };
   if (response.trace?.traceId !== undefined) {
-    evalCase.metadata = {
-      traceId: response.trace.traceId,
-      observationId: response.trace.observationId,
-    };
+    const metadata: Record<string, string> = { traceId: response.trace.traceId };
+    if (response.trace.observationId !== undefined) {
+      metadata.observationId = response.trace.observationId;
+    }
+    evalCase.metadata = metadata;
   }
   const evalAgent = new Agent({
     id: "eval-target",

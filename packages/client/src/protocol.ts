@@ -296,6 +296,7 @@ export function parseClientStreamEvent<
       ]);
       requireStrings(event, ["messageId", "partId", "toolCallId", "toolName"], value);
       requireOptionalStrings(event, ["callId", "internalCallId"], value);
+      if (!isJsonValue(event.input)) invalid("tool_result.input", value);
       if (!isRecord(event.result)) invalid("tool_result.result", value);
       if (event.result.status === "success") {
         if (
@@ -718,9 +719,9 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
   if (value.type === "error") {
     return hasOnlyKeys(value, ["id", "type", "error"]) && isClientStreamError(value.error);
   }
-  return (
-    value.type === "tool" &&
-    hasOnlyKeys(value, [
+  if (
+    value.type !== "tool" ||
+    !hasOnlyKeys(value, [
       "id",
       "type",
       "toolName",
@@ -734,21 +735,47 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
       "resultContent",
       "signature",
       "error",
-    ]) &&
-    typeof value.toolName === "string" &&
-    typeof value.toolCallId === "string" &&
-    (value.callId === undefined || typeof value.callId === "string") &&
-    (value.internalCallId === undefined || typeof value.internalCallId === "string") &&
-    (value.turn === undefined || isPositiveEventId(value.turn)) &&
-    (value.signature === undefined || typeof value.signature === "string") &&
-    (value.input === undefined || isJsonValue(value.input)) &&
-    (value.output === undefined || isJsonValue(value.output)) &&
-    (value.resultContent === undefined ||
-      (Array.isArray(value.resultContent) && value.resultContent.every(isToolResultContent))) &&
-    (value.error === undefined || isClientStreamError(value.error)) &&
-    ["input-streaming", "input-available", "output-available", "error"].includes(
-      value.state as string,
-    )
+    ]) ||
+    typeof value.toolName !== "string" ||
+    typeof value.toolCallId !== "string" ||
+    (value.callId !== undefined && typeof value.callId !== "string") ||
+    (value.internalCallId !== undefined && typeof value.internalCallId !== "string") ||
+    (value.turn !== undefined && !isPositiveEventId(value.turn)) ||
+    (value.signature !== undefined && typeof value.signature !== "string")
+  ) {
+    return false;
+  }
+  if (value.state === "input-streaming") {
+    return (
+      typeof value.input === "string" &&
+      value.output === undefined &&
+      value.resultContent === undefined &&
+      value.error === undefined
+    );
+  }
+  if (value.state === "input-available") {
+    return (
+      isJsonValue(value.input) &&
+      value.output === undefined &&
+      value.resultContent === undefined &&
+      value.error === undefined
+    );
+  }
+  if (value.state === "output-available") {
+    return (
+      isJsonValue(value.input) &&
+      isJsonValue(value.output) &&
+      (value.resultContent === undefined ||
+        (Array.isArray(value.resultContent) && value.resultContent.every(isToolResultContent))) &&
+      value.error === undefined
+    );
+  }
+  return (
+    value.state === "error" &&
+    isJsonValue(value.input) &&
+    value.output === undefined &&
+    value.resultContent === undefined &&
+    isClientStreamError(value.error)
   );
 }
 

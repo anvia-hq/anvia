@@ -131,12 +131,13 @@ metadata. First-party adapters normalize provider termination into `finishReason
 `content-filter`, `tool-calls`, or `other`) while preserving the provider value separately as
 `providerFinishReason`.
 
-Schema-backed completion detects `finishReason: "length"` before JSON parsing and throws
-`CompletionStructuredOutputError` with `phase: "truncated"`. Ordinary text completion remains
-intentional: partial text is returned unchanged with its finish reason so the application decides
-whether to display, continue, or discard it. A direct structured stream can similarly end with one
-typed error event after any already-emitted deltas; it does not silently retract public stream
-progress.
+Schema-backed completion checks termination before JSON parsing. `finishReason: "length"` throws
+`CompletionStructuredOutputError` with `phase: "truncated"`; `finishReason: "content-filter"`
+throws it with `phase: "content-filter"` and is not retried by the default policy. Ordinary text
+completion remains intentional: partial text is returned unchanged with its finish reason so the
+application decides whether to display, continue, or discard it. A direct structured stream can
+similarly end with one typed error event after any already-emitted deltas; it does not silently
+retract public stream progress.
 
 Use `streamCompletion` for the streaming form:
 
@@ -193,9 +194,11 @@ const result = await generateCompletion({
 });
 ```
 
-`providerOptions` contains strict JSON passed to an adapter. Canonical Anvia fields such as model,
-input, temperature, tools, dimensions, text, and voice take precedence over conflicting provider
-keys. Cancellation is forwarded to provider SDK calls and is never retried.
+`providerOptions` contains a strict JSON object passed to an adapter. Runtime values such as
+`undefined`, non-finite numbers, cycles, a top-level array, and class instances are rejected rather
+than coerced. Nested arrays are valid JSON. Canonical Anvia fields such as model, input,
+temperature, tools, dimensions, text, and voice take precedence over conflicting provider keys.
+Cancellation is forwarded to provider SDK calls and is never retried.
 
 ## Agents
 
@@ -229,15 +232,29 @@ Transport failures and structured-output failures therefore cannot exceed `maxAt
 Completed Agent results expose the last generation's `finishReason` and `providerFinishReason`, and
 the same fields remain attached to each assistant message's Anvia generation metadata.
 
+Malformed, incomplete, or non-JSON provider tool arguments fail with
+`CompletionProviderOutputError`. The default policy retries only explicitly retry-safe provider
+output failures when retries are enabled; it does not make arbitrary `SyntaxError` instances
+retryable. Tool calls are validated as a complete set before any tool executes, and filtered tool
+calls are never retried by default. Raw provider arguments are not retained in the error or retry
+metadata. A no-argument tool call must still contain the JSON value `{}`; blank argument text is
+malformed provider output and is never replaced with invented input.
+
+Streaming attempts are retried only before any provider event has been exposed. Once progress has
+been emitted, Anvia returns the failure without starting another provider attempt, because replaying
+the stream could duplicate text, tool-call deltas, or other observable events. Applications that
+want post-progress recovery must buffer attempts and define their own reset or resume protocol.
+
 Structured output remains strict: Core trims surrounding whitespace, parses JSON, and validates the
 result with the configured Zod schema. As a compatibility fallback for OpenAI-compatible providers
 that violate strict JSON mode, Core also accepts a response consisting entirely of one lowercase
 `json` Markdown fence or one unlabeled Markdown fence. It does not search prose for JSON, accept
 content before or after a fence, or bypass schema validation. `AgentStructuredOutputError` reports
-the `truncated`, `parse`, or `schema` phase, attempt counts, output length/format metadata, per-attempt
-and cumulative usage, finish reasons, and the original `cause` when one exists; its message never
-contains the rejected model response. The `completion.retry` observer event records the same safe
-diagnostics and whether failed output was omitted or previewed, never the model output itself.
+the `truncated`, `content-filter`, `parse`, or `schema` phase, attempt counts, output length/format
+metadata, per-attempt and cumulative usage, finish reasons, and the original `cause` when one
+exists; its message never contains the rejected model response. The `completion.retry` observer
+event records the same safe diagnostics and whether failed output was omitted or previewed, never
+the model output itself.
 
 Agent results are discriminated by `status`. Completed results include typed `output` and `text`;
 guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approvals and first-class

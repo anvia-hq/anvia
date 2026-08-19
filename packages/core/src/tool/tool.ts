@@ -125,9 +125,9 @@ function isRichToolOutput(value: unknown): value is RichToolOutput {
 }
 
 export function parseToolArgs(args: string): JsonValue {
-  if (args.trim() === "") {
-    return {};
+  const value: unknown = JSON.parse(args);
+  if (!isJsonValue(value)) {
+    throw new TypeError("Tool arguments must be a JSON value.");
   }
-
-  return JSON.parse(args) as JsonValue;
+  return value;
 }

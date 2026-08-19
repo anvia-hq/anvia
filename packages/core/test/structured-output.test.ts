@@ -128,6 +128,43 @@ describe("Agent structured output", () => {
     expect(error.cause).toBeUndefined();
   });
 
+  it("rejects content-filtered structured output without retrying it", async () => {
+    const filtered = response(rawJson);
+    filtered.finishReason = "content-filter";
+    filtered.providerFinishReason = "content_filter";
+    const model = new QueueModel([filtered, rawJson]);
+    const agent = new Agent({
+      id: "structured",
+      model,
+      outputSchema: structuredSchema,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await expect(agent.generate({ prompt: "Create hypotheses." })).rejects.toMatchObject({
+      name: "AgentStructuredOutputError",
+      phase: "content-filter",
+      finishReason: "content-filter",
+      providerFinishReason: "content_filter",
+    });
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("retries syntactically valid values outside the JSON contract", async () => {
+    const invalid = response('{"phase":"hypotheses","hypotheses":[1e400]}');
+    const model = new QueueModel([invalid, rawJson]);
+    const agent = new Agent({
+      id: "structured",
+      model,
+      outputSchema: structuredSchema,
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    await expect(agent.generate({ prompt: "Create hypotheses." })).resolves.toMatchObject({
+      output: { phase: "hypotheses", hypotheses: [] },
+    });
+    expect(model.requests).toHaveLength(2);
+  });
+
   it("retries truncation from the original request without replaying partial output", async () => {
     const partial = '{"phase":"hypotheses","hypotheses":["private partial';
     const truncated = response(partial);
@@ -421,6 +458,14 @@ describe("Agent structured output", () => {
         { type: "reasoning_delta", delta: "checking" },
         { type: "text_delta", delta: "working" },
         { type: "tool_call", toolCall },
+        {
+          type: "final",
+          response: {
+            ...response(""),
+            choice: [],
+            finishReason: "tool-calls",
+          },
+        },
       ],
       rawJson,
     ]);

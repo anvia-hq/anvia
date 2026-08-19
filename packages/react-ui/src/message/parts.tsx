@@ -509,7 +509,7 @@ const MessageToolStatus = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
 const MessageToolInput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
   function MessageToolInput(props, ref) {
     const { part } = useMessagePart();
-    if (part.type !== "tool" || part.input === undefined) {
+    if (part.type !== "tool") {
       return null;
     }
 
@@ -528,7 +528,7 @@ const MessageToolInput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
 const MessageToolOutput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
   function MessageToolOutput(props, ref) {
     const { part } = useMessagePart();
-    if (part.type !== "tool" || part.output === undefined) {
+    if (part.type !== "tool" || part.state !== "output-available") {
       return null;
     }
 
@@ -547,7 +547,7 @@ const MessageToolOutput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
 const MessageToolError = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function MessageToolError(props, ref) {
     const { part } = useMessagePart();
-    if (part.type !== "tool" || part.error === undefined) {
+    if (part.type !== "tool" || part.state !== "error") {
       return null;
     }
 

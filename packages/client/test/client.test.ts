@@ -18,6 +18,7 @@ import {
   parseClientStreamFrame,
   parseClientStreamRequest,
   parseUIMessage,
+  type UIToolMessagePart,
   uiMessagesToMessages,
 } from "../src";
 
@@ -32,6 +33,45 @@ function CompileClientBoundary() {
   transport.send({ messages: [] });
 }
 void CompileClientBoundary;
+
+function CompileToolPartBoundary() {
+  const streaming: UIToolMessagePart = {
+    id: "part_1",
+    type: "tool",
+    toolName: "search",
+    toolCallId: "call_1",
+    state: "input-streaming",
+    input: '{"query":',
+  };
+  // @ts-expect-error Completed tool calls require their parsed input.
+  const missingInput: UIToolMessagePart = {
+    id: "part_2",
+    type: "tool",
+    toolName: "search",
+    toolCallId: "call_2",
+    state: "input-available",
+  };
+  // @ts-expect-error Successful tool results require an output.
+  const missingOutput: UIToolMessagePart = {
+    id: "part_3",
+    type: "tool",
+    toolName: "search",
+    toolCallId: "call_3",
+    state: "output-available",
+    input: {},
+  };
+  // @ts-expect-error Failed tool results require a structured error.
+  const missingError: UIToolMessagePart = {
+    id: "part_4",
+    type: "tool",
+    toolName: "search",
+    toolCallId: "call_4",
+    state: "error",
+    input: {},
+  };
+  return [streaming, missingInput, missingOutput, missingError];
+}
+void CompileToolPartBoundary;
 
 describe("message boundary", () => {
   it("round-trips model IDs, metadata, reasoning, attachments, and tool results", () => {
@@ -81,6 +121,81 @@ describe("message boundary", () => {
     expect(ui[1]?.parts.find((part) => part.type === "tool")).toMatchObject({
       state: "output-available",
       output: "Sunny",
+    });
+    expect(uiMessagesToMessages(ui)).toEqual(messages);
+  });
+
+  it("refuses to replay partial streamed tool input", () => {
+    expect(() =>
+      uiMessagesToMessages([
+        {
+          id: "assistant_1",
+          role: "assistant",
+          parts: [
+            {
+              id: "tool_1",
+              type: "tool",
+              toolName: "search",
+              toolCallId: "call_1",
+              state: "input-streaming",
+              input: '{"query":',
+            },
+          ],
+        },
+      ]),
+    ).toThrow("still streaming");
+  });
+
+  it("requires tool results to retain their matching tool-call input", () => {
+    expect(() =>
+      messagesToUIMessages([
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_1",
+              toolName: "search",
+              output: { type: "text", value: "done" },
+            },
+          ],
+        },
+      ]),
+    ).toThrow("matching completed tool call");
+  });
+
+  it("retains tool-call input when result metadata keeps the result in its own UI message", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "search",
+            input: { query: "Anvia" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call_1",
+            toolName: "search",
+            output: { type: "text", value: "done" },
+          },
+        ],
+        metadata: { source: "worker" },
+      },
+    ] satisfies CoreMessage[];
+
+    const ui = messagesToUIMessages(messages);
+    expect(ui[1]?.parts[0]).toMatchObject({
+      state: "output-available",
+      input: { query: "Anvia" },
+      output: "done",
     });
     expect(uiMessagesToMessages(ui)).toEqual(messages);
   });
@@ -1111,6 +1226,58 @@ describe("protocol and transport", () => {
         parts: [{ id: "text_1", type: "text", text: "hello", signature: undefined }],
       }),
     ).toThrow("strict JSON");
+  });
+
+  it("rejects impossible UI tool-part state combinations", () => {
+    const message = (part: Record<string, unknown>) => ({
+      id: "message_1",
+      role: "assistant",
+      parts: [
+        {
+          id: "tool_1",
+          type: "tool",
+          toolName: "search",
+          toolCallId: "call_1",
+          ...part,
+        },
+      ],
+    });
+
+    expect(() => parseUIMessage(message({ state: "input-streaming", input: {} }))).toThrow(
+      "invalid part",
+    );
+    expect(() => parseUIMessage(message({ state: "input-available" }))).toThrow("invalid part");
+    expect(() =>
+      parseUIMessage(message({ state: "input-available", input: {}, output: "unexpected" })),
+    ).toThrow("invalid part");
+    expect(() => parseUIMessage(message({ state: "output-available", input: {} }))).toThrow(
+      "invalid part",
+    );
+    expect(() =>
+      parseUIMessage(
+        message({ state: "output-available", input: {}, output: "done", error: { message: "x" } }),
+      ),
+    ).toThrow("invalid part");
+    expect(() => parseUIMessage(message({ state: "error", input: {} }))).toThrow("invalid part");
+    expect(() =>
+      parseUIMessage(
+        message({ state: "error", input: {}, output: null, error: { message: "failed" } }),
+      ),
+    ).toThrow("invalid part");
+  });
+
+  it("requires tool-result stream events to carry the original input", () => {
+    expect(() =>
+      parseClientStreamEvent({
+        type: "tool_result",
+        runId: "run_1",
+        messageId: "message_1",
+        partId: "tool_1",
+        toolCallId: "call_1",
+        toolName: "search",
+        result: { status: "success", output: "done" },
+      }),
+    ).toThrow("tool_result.input");
   });
 
   it("validates and transforms authoritative message data parts", () => {

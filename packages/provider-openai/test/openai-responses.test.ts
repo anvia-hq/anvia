@@ -55,6 +55,25 @@ describe("OpenAI Responses mapping", () => {
     expect(unknown.contextLimits).toBeUndefined();
   });
 
+  it("maps incomplete max-output responses to the normalized length reason", () => {
+    const response = fromOpenAIResponse({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: '{"answer":"partial' }],
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "max_output_tokens",
+    });
+  });
+
   it("attaches context usage to completed and streamed responses", async () => {
     const rawResponse = {
       output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],

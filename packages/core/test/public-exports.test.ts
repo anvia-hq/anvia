@@ -274,6 +274,8 @@ describe("public exports", () => {
     expect(completion).not.toHaveProperty("CompletionRequestBuilder");
     expect(completion).toHaveProperty("generateCompletion");
     expect(completion).toHaveProperty("streamCompletion");
+    expect(completion).toHaveProperty("CompletionStructuredOutputError");
+    expect(publicCore).toHaveProperty("CompletionStructuredOutputError");
     expect(completion).not.toHaveProperty("createCompletion");
     expect(completion).not.toHaveProperty("createParsedCompletion");
     expect(completion).not.toHaveProperty("createCompletionStream");

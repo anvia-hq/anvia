@@ -185,6 +185,12 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
         usage: finalResponse.usage,
         rawResponse: finalResponse.rawResponse,
       };
+      if (finalResponse.finishReason !== undefined) {
+        mergedResponse.finishReason = finalResponse.finishReason;
+      }
+      if (finalResponse.providerFinishReason !== undefined) {
+        mergedResponse.providerFinishReason = finalResponse.providerFinishReason;
+      }
       if (finalResponse.messageId !== undefined) {
         mergedResponse.messageId = finalResponse.messageId;
       }

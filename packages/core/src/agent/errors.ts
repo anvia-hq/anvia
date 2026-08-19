@@ -1,7 +1,7 @@
-import type { Message, Usage } from "../completion/index";
+import type { CompletionFinishReason, Message, Usage } from "../completion/index";
 import type { AgentBlockedResult, AgentSuspendedResult } from "./run-types";
 
-export type AgentStructuredOutputPhase = "parse" | "schema";
+export type AgentStructuredOutputPhase = "truncated" | "parse" | "schema";
 
 export type AgentStructuredOutputFormat = "raw" | "json-fence" | "unlabeled-fence";
 
@@ -12,7 +12,10 @@ export class AgentStructuredOutputError extends Error {
   readonly outputLength: number;
   readonly normalizedLength: number;
   readonly outputFormat: AgentStructuredOutputFormat;
+  readonly attemptUsage: Usage;
   readonly usage: Usage;
+  readonly finishReason: CompletionFinishReason | undefined;
+  readonly providerFinishReason: string | undefined;
 
   constructor(options: {
     phase: AgentStructuredOutputPhase;
@@ -21,13 +24,22 @@ export class AgentStructuredOutputError extends Error {
     outputLength: number;
     normalizedLength: number;
     outputFormat: AgentStructuredOutputFormat;
+    attemptUsage: Usage;
     usage: Usage;
-    cause: unknown;
+    finishReason?: CompletionFinishReason | undefined;
+    providerFinishReason?: string | undefined;
+    cause?: unknown;
   }) {
-    const failure = options.phase === "parse" ? "JSON parsing" : "schema validation";
+    const failure =
+      options.phase === "truncated"
+        ? "because the provider reached its output limit"
+        : options.phase === "parse"
+          ? "during JSON parsing"
+          : "during schema validation";
+    const errorOptions = options.cause === undefined ? undefined : { cause: options.cause };
     super(
       `Agent structured output failed ${failure} on attempt ${options.attempt} of ${options.maxAttempts}.`,
-      { cause: options.cause },
+      errorOptions,
     );
     this.name = "AgentStructuredOutputError";
     this.phase = options.phase;
@@ -36,7 +48,10 @@ export class AgentStructuredOutputError extends Error {
     this.outputLength = options.outputLength;
     this.normalizedLength = options.normalizedLength;
     this.outputFormat = options.outputFormat;
+    this.attemptUsage = options.attemptUsage;
     this.usage = options.usage;
+    this.finishReason = options.finishReason;
+    this.providerFinishReason = options.providerFinishReason;
   }
 }
 

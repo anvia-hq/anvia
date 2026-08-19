@@ -362,6 +362,77 @@ describe("Gemini completion mapping", () => {
     });
   });
 
+  it("maps Gemini token limits to the normalized length reason", () => {
+    const response = fromGeminiGenerateContentResponse({
+      candidates: [
+        {
+          index: 0,
+          finishReason: "MAX_TOKENS",
+          content: { parts: [{ text: '{"answer":"partial' }] },
+        },
+      ],
+      usageMetadata: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "MAX_TOKENS",
+    });
+  });
+
+  it("gives Gemini terminal failures precedence over inferred tool-call completion", () => {
+    const truncated = fromGeminiGenerateContentResponse({
+      candidates: [
+        {
+          finishReason: "MAX_TOKENS",
+          content: {
+            parts: [{ functionCall: { id: "call-1", name: "lookup", args: { id: "A1" } } }],
+          },
+        },
+      ],
+      usageMetadata: {},
+    });
+    const filtered = fromGeminiGenerateContentResponse({
+      candidates: [
+        {
+          finishReason: "IMAGE_PROHIBITED_CONTENT",
+          content: {
+            parts: [{ functionCall: { id: "call-2", name: "lookup", args: { id: "A2" } } }],
+          },
+        },
+      ],
+      usageMetadata: {},
+    });
+
+    expect(truncated).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "MAX_TOKENS",
+    });
+    expect(filtered).toMatchObject({
+      finishReason: "content-filter",
+      providerFinishReason: "IMAGE_PROHIBITED_CONTENT",
+    });
+  });
+
+  it("infers Gemini tool-call completion only from a normal stop", () => {
+    const response = fromGeminiGenerateContentResponse({
+      candidates: [
+        {
+          finishReason: "STOP",
+          content: {
+            parts: [{ functionCall: { id: "call-1", name: "lookup", args: { id: "A1" } } }],
+          },
+        },
+      ],
+      usageMetadata: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "tool-calls",
+      providerFinishReason: "STOP",
+    });
+  });
+
   it("maps Gemini streaming chunks", () => {
     expect(
       fromGeminiGenerateContentStreamChunk({

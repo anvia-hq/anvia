@@ -6,6 +6,7 @@ import type {
   AgentObserver,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,
@@ -82,6 +83,24 @@ class LoggerRunObserver implements AgentRunObserver {
     return new LoggerToolObserver(toolLogger, this.options);
   }
 
+  event(args: AgentRunEventArgs): void {
+    const context: LogContext = {
+      eventName: args.name,
+      eventLevel: args.level ?? "DEFAULT",
+    };
+    if (args.timestamp !== undefined) context.eventTimestamp = args.timestamp;
+    if (args.name === "completion.retry" && args.attributes !== undefined) {
+      Object.assign(context, completionRetryContext(args.attributes));
+    }
+    if (args.level === "ERROR") {
+      this.logger.error("agent event", context);
+    } else if (args.level === "WARNING") {
+      this.logger.warn("agent event", context);
+    } else {
+      this.logger.info("agent event", context);
+    }
+  }
+
   end(args: AgentRunEndArgs): void {
     const context: LogContext = {
       runId: args.runId,
@@ -105,6 +124,40 @@ class LoggerRunObserver implements AgentRunObserver {
       messageCount: args.messages.length,
     });
   }
+}
+
+const COMPLETION_RETRY_SCALAR_ATTRIBUTES = [
+  "turn",
+  "attempt",
+  "nextAttempt",
+  "maxAttempts",
+  "delayMs",
+  "streaming",
+  "errorName",
+  "statusCode",
+  "errorCode",
+  "failurePhase",
+  "outputLength",
+  "normalizedLength",
+  "finishReason",
+  "providerFinishReason",
+  "previousResponse",
+  "includedOutputLength",
+] as const;
+
+function completionRetryContext(attributes: Readonly<Record<string, unknown>>): LogContext {
+  const context: LogContext = {};
+  for (const name of COMPLETION_RETRY_SCALAR_ATTRIBUTES) {
+    const value = attributes[name];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      context[name] = value;
+    }
+  }
+  for (const name of ["attemptUsage", "cumulativeUsage"] as const) {
+    const value = attributes[name];
+    if (isUsageMetadata(value)) context[name] = { ...value };
+  }
+  return context;
 }
 
 class LoggerGenerationObserver implements AgentGenerationObserver {
@@ -203,11 +256,11 @@ function serializeError(error: unknown, seen = new Set<object>(), depth = 0): un
       message: error.message,
       stack: error.stack,
     };
-    if (error.name === "AgentStructuredOutputError") {
+    if (isStructuredOutputError(error)) {
       addStructuredOutputMetadata(serialized, error);
     }
     if (error.cause !== undefined) {
-      if (error.name === "AgentStructuredOutputError") {
+      if (isStructuredOutputError(error)) {
         serialized.cause = structuredOutputCauseMetadata(error.cause);
       } else {
         serialized.cause = serializeError(error.cause, seen, depth + 1);
@@ -221,7 +274,7 @@ function serializeError(error: unknown, seen = new Set<object>(), depth = 0): un
 
 function addStructuredOutputMetadata(serialized: Record<string, unknown>, error: Error): void {
   const details = error as unknown as Record<string, unknown>;
-  if (details.phase === "parse" || details.phase === "schema") {
+  if (details.phase === "truncated" || details.phase === "parse" || details.phase === "schema") {
     serialized.phase = details.phase;
   }
   for (const name of ["attempt", "maxAttempts", "outputLength", "normalizedLength"] as const) {
@@ -237,6 +290,37 @@ function addStructuredOutputMetadata(serialized: Record<string, unknown>, error:
   ) {
     serialized.outputFormat = details.outputFormat;
   }
+  if (
+    details.finishReason === "stop" ||
+    details.finishReason === "length" ||
+    details.finishReason === "content-filter" ||
+    details.finishReason === "tool-calls" ||
+    details.finishReason === "other"
+  ) {
+    serialized.finishReason = details.finishReason;
+  }
+  if (typeof details.providerFinishReason === "string") {
+    serialized.providerFinishReason = details.providerFinishReason;
+  }
+  for (const name of ["attemptUsage", "usage"] as const) {
+    if (isUsageMetadata(details[name])) serialized[name] = { ...details[name] };
+  }
+}
+
+function isStructuredOutputError(error: Error): boolean {
+  return (
+    error.name === "AgentStructuredOutputError" || error.name === "CompletionStructuredOutputError"
+  );
+}
+
+function isUsageMetadata(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const usage = value as Record<string, unknown>;
+  return (
+    typeof usage.inputTokens === "number" &&
+    typeof usage.outputTokens === "number" &&
+    typeof usage.totalTokens === "number"
+  );
 }
 
 function structuredOutputCauseMetadata(cause: unknown): Record<string, unknown> {

@@ -27,6 +27,39 @@ import type {
 } from "./types";
 import { assertCompletionRequestSupported, textFromAssistantContent, Usage } from "./types";
 
+export type CompletionStructuredOutputPhase = "truncated" | "parse" | "schema";
+
+export class CompletionStructuredOutputError extends Error {
+  readonly phase: CompletionStructuredOutputPhase;
+  readonly outputLength: number;
+  readonly usage: Usage;
+  readonly finishReason: CompletionResponse["finishReason"];
+  readonly providerFinishReason: string | undefined;
+
+  constructor(options: {
+    phase: CompletionStructuredOutputPhase;
+    outputLength: number;
+    usage: Usage;
+    finishReason?: CompletionResponse["finishReason"];
+    providerFinishReason?: string | undefined;
+    cause?: unknown;
+  }) {
+    const failure =
+      options.phase === "truncated"
+        ? "because the provider reached its output limit"
+        : options.phase === "parse"
+          ? "during JSON parsing"
+          : "during schema validation";
+    super(`Structured completion output failed ${failure}.`, { cause: options.cause });
+    this.name = "CompletionStructuredOutputError";
+    this.phase = options.phase;
+    this.outputLength = options.outputLength;
+    this.usage = options.usage;
+    this.finishReason = options.finishReason;
+    this.providerFinishReason = options.providerFinishReason;
+  }
+}
+
 export type CompletionInput =
   | { prompt: string; messages?: never }
   | { messages: readonly MessageType[]; prompt?: never };
@@ -286,12 +319,16 @@ function resultFromResponse<Output, RawResponse>(
 ): CompletionResult<Output | string, RawResponse> {
   const text = textFromAssistantContent(response.choice);
   const result: CompletionResult<Output | string, RawResponse> = {
-    output: outputSchema === undefined ? text : parseCompletionOutput(text, outputSchema),
+    output: outputSchema === undefined ? text : parseCompletionOutput(text, outputSchema, response),
     text,
     content: [...response.choice],
     usage: response.usage,
     rawResponse: response.rawResponse,
   };
+  if (response.finishReason !== undefined) result.finishReason = response.finishReason;
+  if (response.providerFinishReason !== undefined) {
+    result.providerFinishReason = response.providerFinishReason;
+  }
   if (response.contextUsage !== undefined) result.contextUsage = response.contextUsage;
   if (response.messageId !== undefined) result.messageId = response.messageId;
   if (response.sources !== undefined) result.sources = [...response.sources];
@@ -301,16 +338,45 @@ function resultFromResponse<Output, RawResponse>(
   return result;
 }
 
-function parseCompletionOutput<Output>(text: string, schema: ZodSchema<Output>): Output {
+function parseCompletionOutput<Output, RawResponse>(
+  text: string,
+  schema: ZodSchema<Output>,
+  response: CompletionResponse<RawResponse>,
+): Output {
+  if (response.finishReason === "length") {
+    throw new CompletionStructuredOutputError({
+      phase: "truncated",
+      outputLength: text.length,
+      usage: response.usage,
+      finishReason: response.finishReason,
+      providerFinishReason: response.providerFinishReason,
+    });
+  }
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch (error) {
-    throw new Error("generateCompletion expected the model response to be valid JSON.", {
+    throw new CompletionStructuredOutputError({
+      phase: "parse",
+      outputLength: text.length,
+      usage: response.usage,
+      finishReason: response.finishReason,
+      providerFinishReason: response.providerFinishReason,
       cause: error,
     });
   }
-  return schema.parse(json);
+  try {
+    return schema.parse(json);
+  } catch (error) {
+    throw new CompletionStructuredOutputError({
+      phase: "schema",
+      outputLength: text.length,
+      usage: response.usage,
+      finishReason: response.finishReason,
+      providerFinishReason: response.providerFinishReason,
+      cause: error,
+    });
+  }
 }
 
 function modelCallOptions(abortSignal: AbortSignal | undefined): ModelCallOptions | undefined {

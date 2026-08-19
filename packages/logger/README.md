@@ -47,13 +47,19 @@ const result = await agent.generate({ prompt: "How do I reset my password?" });
 if (result.status === "completed") console.log(result.output);
 ```
 
-The logger observer omits final outputs, full model requests, model responses, and tool results by default. Pass `LoggerObserverOptions` to opt in when your data policy allows those payloads in logs.
+The logger observer omits final outputs, full model requests, model responses, and tool results by
+default. It records named Core observer events at their requested log level without copying their
+free-form attributes. In particular,
+`completion.retry` includes attempts, failure phase, finish reason, output lengths, per-attempt and
+cumulative usage, and whether rejected output was omitted or represented by a bounded preview; it
+never logs that output. Pass `LoggerObserverOptions` to opt in when your data policy allows the
+other payloads in logs.
 
 Agent errors are serialized before reaching the configured logger. Nested `Error.cause` chains keep
 their `name`, `message`, and `stack`, including when the destination is Pino. Cause traversal is
 bounded. Structured-output causes are reduced to safe type metadata because parser and schema error
 messages can contain rejected model content; the outer error still records its phase, attempts,
-lengths, and detected format.
+lengths, usage, finish reasons, and detected format.
 
 For local development without Pino output, use the console logger:
 

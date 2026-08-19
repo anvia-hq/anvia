@@ -255,6 +255,8 @@ describe("generation metadata", () => {
           generation: {
             provider: "test",
             modelId: "test-model",
+            finishReason: "length",
+            providerFinishReason: "max_output_tokens",
             usage: {
               inputTokens: 7,
               outputTokens: 2,
@@ -269,6 +271,8 @@ describe("generation metadata", () => {
     expect(getAssistantGenerationMetadata(valid)).toMatchObject({
       provider: "test",
       modelId: "test-model",
+      finishReason: "length",
+      providerFinishReason: "max_output_tokens",
       usage: { totalTokens: 9 },
     });
 

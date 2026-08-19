@@ -1,6 +1,6 @@
 {
   "name": "@anvia/otel",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.6",
   "description": "OpenTelemetry tracing and eval reporting adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

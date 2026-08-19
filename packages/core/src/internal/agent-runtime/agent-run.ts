@@ -34,6 +34,7 @@ import { getAgentToolState } from "../../agent/tool-state";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
 import {
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
@@ -109,7 +110,12 @@ import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
-import { normalizeStructuredOutput, STRUCTURED_OUTPUT_RETRY_PROMPT } from "./structured-output";
+import {
+  normalizeStructuredOutput,
+  STRUCTURED_OUTPUT_RETRY_PROMPT,
+  STRUCTURED_OUTPUT_TRUNCATED_RETRY_PROMPT,
+  structuredOutputRepairPreview,
+} from "./structured-output";
 import {
   type AgentToolEventPayload,
   ToolCallExecutor,
@@ -132,6 +138,12 @@ type StreamingCompletionState = {
   emittedToolCallIds: Set<string>;
   providerErrorUsage: Usage;
 };
+
+type StructuredOutputRetryRequest = Readonly<{
+  request: CompletionRequest;
+  previousResponse: "omitted" | "preview";
+  includedOutputLength: number;
+}>;
 
 async function settleFailureCleanup(
   operations: Array<() => void | Promise<void> | undefined>,
@@ -1017,7 +1029,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           }
           structuredRetryUsage = cumulativeUsage;
           this.failedCompletionUsage = structuredRetryUsage;
-          currentRequest = structuredOutputRetryRequest(currentRequest, response);
+          const retryRequest = structuredOutputRetryRequest(request, response, error);
+          currentRequest = retryRequest.request;
           await this.scheduleCompletionRetry(
             error,
             attempt,
@@ -1025,6 +1038,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             false,
             retryOptions,
             runObservers,
+            structuredOutputRetryEventAttributes(error, retryRequest),
           );
           continue;
         }
@@ -1130,7 +1144,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, response.usage);
           args.state.firstDeltaMs = undefined;
           args.state.emittedToolCallIds.clear();
-          currentRequest = structuredOutputRetryRequest(currentRequest, response);
+          const retryRequest = structuredOutputRetryRequest(args.request, response, error);
+          currentRequest = retryRequest.request;
           await this.scheduleCompletionRetry(
             error,
             attempt,
@@ -1138,6 +1153,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             true,
             retryOptions,
             args.runObservers,
+            structuredOutputRetryEventAttributes(error, retryRequest),
           );
           continue;
         }
@@ -1321,6 +1337,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       modelId: this.agent.model.modelId,
       usage: { ...response.usage },
     };
+    if (response.finishReason !== undefined) generation.finishReason = response.finishReason;
+    if (response.providerFinishReason !== undefined) {
+      generation.providerFinishReason = response.providerFinishReason;
+    }
     if (response.contextUsage !== undefined) generation.contextUsage = response.contextUsage;
     if (response.sources !== undefined) generation.sources = response.sources;
     if (response.providerToolCalls !== undefined) {
@@ -1389,20 +1409,25 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     streaming: boolean,
     options: ResolvedRetryOptions,
     runObservers: ActiveAgentRunObservers,
+    additionalAttributes?: JsonObject | undefined,
   ): Promise<void> {
     const delayMs = retryDelayMs(options, attempt);
+    const attributes: JsonObject = {
+      turn,
+      attempt,
+      nextAttempt: attempt + 1,
+      maxAttempts: options.maxAttempts,
+      delayMs,
+      streaming,
+      ...retryErrorAttributes(error),
+    };
+    if (additionalAttributes !== undefined) {
+      Object.assign(attributes, additionalAttributes);
+    }
     await runObservers.event({
       name: "completion.retry",
       level: "WARNING",
-      attributes: {
-        turn,
-        attempt,
-        nextAttempt: attempt + 1,
-        maxAttempts: options.maxAttempts,
-        delayMs,
-        streaming,
-        ...retryErrorAttributes(error),
-      },
+      attributes,
     });
     await waitForRetry(delayMs, this.abortController.signal);
   }
@@ -1730,7 +1755,27 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (this.agent.outputSchema === undefined) return;
     if (response.choice.some((item) => item.type === "tool-call")) return;
     const text = textFromAssistantContent(response.choice);
-    const output = this.parseOutput(text, attempt, usage, { useValidatedOutput: false });
+    const normalized = normalizeStructuredOutput(text);
+    if (response.finishReason === "length") {
+      throw new AgentStructuredOutputError({
+        phase: "truncated",
+        attempt,
+        maxAttempts: this.completionRetryOptions?.maxAttempts ?? 1,
+        outputLength: text.length,
+        normalizedLength: normalized.text.length,
+        outputFormat: normalized.format,
+        attemptUsage: response.usage,
+        usage,
+        finishReason: response.finishReason,
+        providerFinishReason: response.providerFinishReason,
+      });
+    }
+    const output = this.parseOutput(text, attempt, usage, {
+      useValidatedOutput: false,
+      attemptUsage: response.usage,
+      finishReason: response.finishReason,
+      providerFinishReason: response.providerFinishReason,
+    });
     this.validatedStructuredOutput = { text, output };
   }
 
@@ -1744,7 +1789,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     text: string,
     attempt = 1,
     usage = Usage.empty(),
-    options: { useValidatedOutput?: boolean } = {},
+    options: {
+      useValidatedOutput?: boolean;
+      attemptUsage?: Usage;
+      finishReason?: CompletionFinishReason | undefined;
+      providerFinishReason?: string | undefined;
+    } = {},
   ): Output {
     const schema = this.agent.outputSchema;
     if (schema === undefined) return text as Output;
@@ -1764,7 +1814,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         outputLength: text.length,
         normalizedLength: normalized.text.length,
         outputFormat: normalized.format,
+        attemptUsage: options.attemptUsage ?? usage,
         usage,
+        finishReason: options.finishReason,
+        providerFinishReason: options.providerFinishReason,
         cause: error,
       });
     }
@@ -1778,7 +1831,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         outputLength: text.length,
         normalizedLength: normalized.text.length,
         outputFormat: normalized.format,
+        attemptUsage: options.attemptUsage ?? usage,
         usage,
+        finishReason: options.finishReason,
+        providerFinishReason: options.providerFinishReason,
         cause: error,
       });
     }
@@ -2365,14 +2421,20 @@ function responseStreamEvents(
 function generationArtifacts(messages: MessageType[]): {
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
   contextUsage?: import("../../completion/index").ContextUsage;
 } {
   const sources = new Map<string, CompletionSource>();
   const providerToolCalls = new Map<string, ProviderToolCall>();
+  let finishReason: CompletionFinishReason | undefined;
+  let providerFinishReason: string | undefined;
   let contextUsage: import("../../completion/index").ContextUsage | undefined;
   for (const message of messages) {
     const metadata = getAssistantGenerationMetadata(message);
     if (metadata !== undefined) {
+      finishReason = metadata.finishReason;
+      providerFinishReason = metadata.providerFinishReason;
       contextUsage = metadata.contextUsage;
     }
     for (const source of metadata?.sources ?? []) {
@@ -2386,11 +2448,17 @@ function generationArtifacts(messages: MessageType[]): {
   const artifacts: {
     sources?: CompletionSource[];
     providerToolCalls?: ProviderToolCall[];
+    finishReason?: CompletionFinishReason;
+    providerFinishReason?: string;
     contextUsage?: import("../../completion/index").ContextUsage;
   } = {};
   if (sources.size > 0) artifacts.sources = [...sources.values()];
   if (providerToolCalls.size > 0) {
     artifacts.providerToolCalls = [...providerToolCalls.values()];
+  }
+  if (finishReason !== undefined) artifacts.finishReason = finishReason;
+  if (providerFinishReason !== undefined) {
+    artifacts.providerFinishReason = providerFinishReason;
   }
   if (contextUsage !== undefined) artifacts.contextUsage = contextUsage;
   return artifacts;
@@ -2459,19 +2527,81 @@ function latestAssistantText(messages: readonly MessageType[]): string {
 function structuredOutputRetryRequest(
   request: CompletionRequest,
   response: CompletionResponse,
-): CompletionRequest {
-  const invalidResponse: MessageType = {
-    role: "assistant",
-    content: [...response.choice],
-  };
+  error: unknown,
+): StructuredOutputRetryRequest {
+  const truncated = error instanceof AgentStructuredOutputError && error.phase === "truncated";
   const correction: MessageType = {
     role: "user",
-    content: STRUCTURED_OUTPUT_RETRY_PROMPT,
+    content: truncated ? STRUCTURED_OUTPUT_TRUNCATED_RETRY_PROMPT : STRUCTURED_OUTPUT_RETRY_PROMPT,
+  };
+  if (truncated) {
+    return {
+      request: {
+        ...request,
+        chatHistory: [...request.chatHistory, correction],
+      },
+      previousResponse: "omitted",
+      includedOutputLength: 0,
+    };
+  }
+  const preview = structuredOutputRepairPreview(textFromAssistantContent(response.choice));
+  if (preview.includedOutputLength === 0) {
+    return {
+      request: {
+        ...request,
+        chatHistory: [...request.chatHistory, correction],
+      },
+      previousResponse: "omitted",
+      includedOutputLength: 0,
+    };
+  }
+  const invalidResponse: MessageType = {
+    role: "assistant",
+    content: [{ type: "text", text: preview.text }],
   };
   return {
-    ...request,
-    chatHistory: [...request.chatHistory, invalidResponse, correction],
+    request: {
+      ...request,
+      chatHistory: [...request.chatHistory, invalidResponse, correction],
+    },
+    previousResponse: "preview",
+    includedOutputLength: preview.includedOutputLength,
   };
+}
+
+function structuredOutputRetryEventAttributes(
+  error: unknown,
+  retryRequest: StructuredOutputRetryRequest,
+): JsonObject {
+  const attributes: JsonObject = {
+    previousResponse: retryRequest.previousResponse,
+    includedOutputLength: retryRequest.includedOutputLength,
+  };
+  if (!(error instanceof AgentStructuredOutputError)) return attributes;
+  Object.assign(attributes, {
+    failurePhase: error.phase,
+    outputLength: error.outputLength,
+    normalizedLength: error.normalizedLength,
+    attemptUsage: usageEventValue(error.attemptUsage),
+    cumulativeUsage: usageEventValue(error.usage),
+  });
+  if (error.finishReason !== undefined) attributes.finishReason = error.finishReason;
+  if (error.providerFinishReason !== undefined) {
+    attributes.providerFinishReason = error.providerFinishReason;
+  }
+  return attributes;
+}
+
+function usageEventValue(usage: Usage): JsonObject {
+  const value: JsonObject = {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+  };
+  if (usage.details !== undefined) value.details = { ...usage.details };
+  return value;
 }
 
 function providerMessages(messages: readonly MessageType[]): MessageType[] {

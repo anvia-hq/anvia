@@ -347,12 +347,31 @@ describe("Mistral completion mapping", () => {
     });
   });
 
+  it("maps Mistral token limits to the normalized length reason", () => {
+    const response = fromMistralChatResponse({
+      choices: [
+        {
+          index: 0,
+          finishReason: "length",
+          message: { content: '{"answer":"partial' },
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "length",
+    });
+  });
+
   it("maps Mistral streaming chunks", () => {
     expect(
       fromMistralChatStreamChunk({
         id: "cmpl_1",
         choices: [
           {
+            finishReason: "length",
             delta: {
               content: "Hello",
               toolCalls: [
@@ -384,6 +403,8 @@ describe("Mistral completion mapping", () => {
         type: "final",
         response: expect.objectContaining({
           messageId: "cmpl_1",
+          finishReason: "length",
+          providerFinishReason: "length",
           usage: {
             ...Usage.empty(),
             inputTokens: 1,

@@ -317,6 +317,8 @@ export type AssistantGenerationMetadata = {
   provider: string;
   modelId: string;
   usage: Usage;
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
   contextUsage?: ContextUsage;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
@@ -403,6 +405,12 @@ export function getAssistantGenerationMetadata(
     modelId: generation.modelId,
     usage,
   };
+  if (isCompletionFinishReason(generation.finishReason)) {
+    metadata.finishReason = generation.finishReason;
+  }
+  if (typeof generation.providerFinishReason === "string") {
+    metadata.providerFinishReason = generation.providerFinishReason;
+  }
   if (isContextUsageValue(generation.contextUsage)) {
     metadata.contextUsage = {
       ...generation.contextUsage,
@@ -560,9 +568,13 @@ export type CompletionRequest = {
   outputSchema?: JsonObject;
 };
 
+export type CompletionFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "other";
+
 export type CompletionResponse<RawResponse = unknown> = {
   choice: AssistantContentPart[];
   usage: Usage;
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
   contextUsage?: ContextUsage;
   rawResponse: RawResponse;
   messageId?: string;
@@ -575,12 +587,24 @@ export type CompletionResult<Output = string, RawResponse = unknown> = {
   text: string;
   content: readonly AssistantContentPart[];
   usage: Usage;
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
   contextUsage?: ContextUsage;
   rawResponse: RawResponse;
   messageId?: string;
   sources?: readonly CompletionSource[];
   providerToolCalls?: readonly ProviderToolCall[];
 };
+
+function isCompletionFinishReason(value: JsonValue | undefined): value is CompletionFinishReason {
+  return (
+    value === "stop" ||
+    value === "length" ||
+    value === "content-filter" ||
+    value === "tool-calls" ||
+    value === "other"
+  );
+}
 
 export type CompletionModelCapabilities = {
   streaming: boolean;

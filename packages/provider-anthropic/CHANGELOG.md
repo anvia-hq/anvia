@@ -1,5 +1,16 @@
 # @anvia/anthropic
 
+## 1.0.0-rc.6
+
+### Patch Changes
+
+- 706b321: Preserve normalized and provider-native completion finish reasons across first-party adapters,
+  identify output-limit truncation before structured parsing, rebuild Agent repairs from the original
+  request with omitted or bounded text-only output, and log safe per-attempt retry diagnostics through
+  named observer events.
+- Updated dependencies [706b321]
+  - @anvia/core@1.0.0-rc.6
+
 ## 1.0.0-rc.5
 
 ### Patch Changes

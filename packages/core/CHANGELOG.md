@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.0.0-rc.9
+
+### Patch Changes
+
+- c0c6cb8: Install workspace dependencies in the OIDC publish job before packing the synchronized release train.
+
 ## 1.0.0-rc.8
 
 ### Patch Changes

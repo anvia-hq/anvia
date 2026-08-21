@@ -47,6 +47,7 @@
     "explicit-client-stream-boundary",
     "fix-browser-interaction-boundary",
     "fix-lancedb-metadata-filters",
+    "fix-oidc-publish-workspace-install",
     "fix-provider-tool-output-integrity",
     "fix-structured-output-truncation",
     "migrate-npm-trusted-publishing",

@@ -150,6 +150,10 @@ Root scripts in `scripts/` are release automation:
 - `scripts/notify-discord-release.mjs`: sends stable or preview release notes to
   Discord when `DISCORD_WEBHOOK_URL` is set.
 
+Package publication runs only through `.github/workflows/release.yml` using npm
+Trusted Publishing. Its publish job must use the `npm-publish` GitHub environment
+and OIDC; do not add npm write tokens or local publish scripts.
+
 Do not run publish, preview release, GitHub release, deploy, or Discord
 notification commands unless explicitly requested.
 

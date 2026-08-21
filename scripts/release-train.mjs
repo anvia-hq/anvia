@@ -77,6 +77,29 @@ export function assertSynchronizedVersions(packages, expectedVersion) {
   }
 }
 
+export function assertStableReleaseState(root, packages = findPublicPackages(root)) {
+  const versions = new Set(packages.map(({ packageJson }) => packageJson.version));
+  if (versions.size !== 1) {
+    const details = packages
+      .map(({ packageJson }) => `${packageJson.name}@${packageJson.version}`)
+      .join(", ");
+    throw new Error(`Stable releases require synchronized package versions; received ${details}.`);
+  }
+
+  const [version] = versions;
+  if (typeof version !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+    throw new Error(
+      `Stable releases require a non-prerelease semantic version; received ${version}.`,
+    );
+  }
+  if (readPrereleaseState(root) !== undefined) {
+    throw new Error("Stable releases require Changesets prerelease mode to be exited.");
+  }
+
+  assertNoPendingChangesets(root);
+  return version;
+}
+
 export function readPrereleaseState(root = process.cwd()) {
   const filePath = path.join(root, ".changeset", "pre.json");
   return existsSync(filePath) ? readJson(filePath) : undefined;

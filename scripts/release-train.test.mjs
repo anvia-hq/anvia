@@ -23,6 +23,7 @@ import {
   assertPatchOnlyChangesets,
   assertPreviewAllowed,
   assertRcPrereleaseState,
+  assertStableReleaseState,
   assertSynchronizedVersions,
   assertWorkspaceInternalDependencies,
   createPreviewVersion,
@@ -193,6 +194,10 @@ test("Changesets drives rc.0 through rc.2 and exits to stable 1.0.0", () => {
     writeChangeset(fixture, "rc-fix", "patch", "Fix a release-candidate issue.", ["b"]);
     runRcScript(fixture, "next");
     assertFixtureVersion(fixture, "1.0.0-rc.2");
+    assert.throws(() => assertStableReleaseState(fixture), /non-prerelease semantic version/);
+    const prereleaseStable = spawnStableValidator(fixture);
+    assert.notEqual(prereleaseStable.status, 0);
+    assert.match(prereleaseStable.stderr, /non-prerelease semantic version/);
 
     runRcScript(fixture, "exit");
     assertFixtureVersion(fixture, "1.0.0");
@@ -204,6 +209,15 @@ test("Changesets drives rc.0 through rc.2 and exits to stable 1.0.0", () => {
       "0.1.0",
     );
     assert.throws(() => assertRcPrereleaseState(fixture, "1.0.0"), /prerelease mode/);
+    assert.equal(assertStableReleaseState(fixture), "1.0.0");
+    assert.equal(spawnStableValidator(fixture).status, 0);
+
+    writeChangeset(fixture, "unversioned-fix", "patch", "A pending stable fix.", ["a"]);
+    assert.throws(() => assertStableReleaseState(fixture), /Pending changesets/);
+    const pendingStable = spawnStableValidator(fixture);
+    assert.notEqual(pendingStable.status, 0);
+    assert.match(pendingStable.stderr, /Pending changesets/);
+    rmSync(path.join(fixture, ".changeset", "unversioned-fix.md"));
 
     const changelog = readFileSync(path.join(fixture, "packages", "a", "CHANGELOG.md"), "utf8");
     assert.match(changelog, /1\.0\.0-rc\.1/);
@@ -279,6 +293,14 @@ function spawnRcScript(root, action) {
 
 function spawnValidator(root, tag) {
   return spawnSync(process.execPath, [validatorScript, "--tag", tag], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, CI: "true" },
+  });
+}
+
+function spawnStableValidator(root) {
+  return spawnSync(process.execPath, [validatorScript, "--stable"], {
     cwd: root,
     encoding: "utf8",
     env: { ...process.env, CI: "true" },

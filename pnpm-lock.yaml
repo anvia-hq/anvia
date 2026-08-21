@@ -38,129 +38,81 @@ importers:
         specifier: ^4.0.8
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.1.0(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
-  examples/cli-agent:
-    dependencies:
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@anvia/openai':
-        specifier: workspace:*
-        version: link:../../packages/provider-openai
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
-      ink:
-        specifier: ^7.0.1
-        version: 7.0.1(@types/react@19.2.14)(react@19.2.5)
-      ink-markdown:
-        specifier: ^1.0.4
-        version: 1.0.4(ink@7.0.1(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
-      marked:
-        specifier: ^15.0.12
-        version: 15.0.12
-      marked-terminal:
-        specifier: ^7.3.0
-        version: 7.3.0(marked@15.0.12)
-      react:
-        specifier: ^19.2.5
-        version: 19.2.5
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@biomejs/biome':
-        specifier: ^2.4.13
-        version: 2.4.14
-      '@types/node':
-        specifier: ^24.9.1
-        version: 24.12.2
-      '@types/react':
-        specifier: ^19.2.14
-        version: 19.2.14
-      tsup:
-        specifier: ^8.5.0
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.15)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0)
-      tsx:
-        specifier: ^4.20.6
-        version: 4.21.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
-  examples/cookbook:
+  cookbook:
     dependencies:
       '@anvia/anthropic':
         specifier: workspace:*
-        version: link:../../packages/provider-anthropic
+        version: link:../packages/provider-anthropic
       '@anvia/browser':
         specifier: workspace:*
-        version: link:../../packages/tool-browser
+        version: link:../packages/tool-browser
       '@anvia/chroma':
         specifier: workspace:*
-        version: link:../../packages/vector-chroma
+        version: link:../packages/vector-chroma
       '@anvia/client':
         specifier: workspace:*
-        version: link:../../packages/client
+        version: link:../packages/client
       '@anvia/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../packages/core
       '@anvia/fastembed':
         specifier: workspace:*
-        version: link:../../packages/embedding-fastembed
+        version: link:../packages/embedding-fastembed
       '@anvia/gemini':
         specifier: workspace:*
-        version: link:../../packages/provider-gemini
+        version: link:../packages/provider-gemini
       '@anvia/grok':
         specifier: workspace:*
-        version: link:../../packages/provider-grok
+        version: link:../packages/provider-grok
       '@anvia/langfuse':
         specifier: workspace:*
-        version: link:../../packages/observability-langfuse
+        version: link:../packages/observability-langfuse
       '@anvia/lens':
         specifier: workspace:*
-        version: link:../../packages/observability-lens
+        version: link:../packages/observability-lens
       '@anvia/logger':
         specifier: workspace:*
-        version: link:../../packages/logger
+        version: link:../packages/logger
       '@anvia/milvus':
         specifier: workspace:*
-        version: link:../../packages/vector-milvus
+        version: link:../packages/vector-milvus
       '@anvia/mistral':
         specifier: workspace:*
-        version: link:../../packages/provider-mistral
+        version: link:../packages/provider-mistral
       '@anvia/neo4j':
         specifier: workspace:*
-        version: link:../../packages/graph-neo4j
+        version: link:../packages/graph-neo4j
       '@anvia/openai':
         specifier: workspace:*
-        version: link:../../packages/provider-openai
+        version: link:../packages/provider-openai
       '@anvia/otel':
         specifier: workspace:*
-        version: link:../../packages/observability-otel
+        version: link:../packages/observability-otel
       '@anvia/pgvector':
         specifier: workspace:*
-        version: link:../../packages/vector-pgvector
+        version: link:../packages/vector-pgvector
       '@anvia/pinecone':
         specifier: workspace:*
-        version: link:../../packages/vector-pinecone
+        version: link:../packages/vector-pinecone
       '@anvia/qdrant':
         specifier: workspace:*
-        version: link:../../packages/vector-qdrant
+        version: link:../packages/vector-qdrant
       '@anvia/react':
         specifier: workspace:*
-        version: link:../../packages/react
+        version: link:../packages/react
       '@anvia/sandbox':
         specifier: workspace:*
-        version: link:../../packages/tool-sandbox
+        version: link:../packages/tool-sandbox
       '@anvia/server':
         specifier: workspace:*
-        version: link:../../packages/server
+        version: link:../packages/server
       '@anvia/studio':
         specifier: workspace:*
-        version: link:../../packages/tool-studio
+        version: link:../packages/tool-studio
       '@anvia/transformers':
         specifier: workspace:*
-        version: link:../../packages/embedding-transformers
+        version: link:../packages/embedding-transformers
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -193,84 +145,18 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  examples/fullstack-agent:
-    dependencies:
-      '@anvia/client':
-        specifier: workspace:*
-        version: link:../../packages/client
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@anvia/openai':
-        specifier: workspace:*
-        version: link:../../packages/provider-openai
-      '@anvia/react':
-        specifier: workspace:*
-        version: link:../../packages/react
-      '@anvia/react-ui':
-        specifier: workspace:*
-        version: link:../../packages/react-ui
-      '@anvia/server':
-        specifier: workspace:*
-        version: link:../../packages/server
-      '@hono/node-server':
-        specifier: ^2.0.8
-        version: 2.0.8(hono@4.12.27)
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
-      hono:
-        specifier: ^4.12.27
-        version: 4.12.27
-      lucide-react:
-        specifier: ^0.561.0
-        version: 0.561.0(react@19.2.6)
-      react:
-        specifier: 19.2.6
-        version: 19.2.6
-      react-dom:
-        specifier: 19.2.6
-        version: 19.2.6(react@19.2.6)
-    devDependencies:
-      '@tailwindcss/vite':
-        specifier: ^4.3.1
-        version: 4.3.1(vite@8.1.0(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
-      '@types/node':
-        specifier: ^24.9.1
-        version: 24.12.2
-      '@types/react':
-        specifier: ^19.2.14
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19.2.3
-        version: 19.2.3(@types/react@19.2.14)
-      '@vitejs/plugin-react':
-        specifier: ^6.0.1
-        version: 6.0.1(vite@8.1.0(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
-      tailwindcss:
-        specifier: ^4.3.1
-        version: 4.3.1
-      tsx:
-        specifier: ^4.20.6
-        version: 4.21.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vite:
-        specifier: ^8.0.10
-        version: 8.1.0(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
 
-  examples/langfuse-ops:
+  tests/integration/langfuse:
     dependencies:
       '@anvia/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../../packages/core
       '@anvia/langfuse':
         specifier: workspace:*
-        version: link:../../packages/observability-langfuse
+        version: link:../../../packages/observability-langfuse
       '@anvia/openai':
         specifier: workspace:*
-        version: link:../../packages/provider-openai
+        version: link:../../../packages/provider-openai
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -288,17 +174,17 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  examples/peer-core-compat:
+  tests/compat/peer-core:
     dependencies:
       '@anvia/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../../packages/core
       '@anvia/openai':
         specifier: workspace:*
-        version: link:../../packages/provider-openai
+        version: link:../../../packages/provider-openai
       '@anvia/studio':
         specifier: workspace:*
-        version: link:../../packages/tool-studio
+        version: link:../../../packages/tool-studio
     devDependencies:
       '@types/node':
         specifier: ^24.9.1

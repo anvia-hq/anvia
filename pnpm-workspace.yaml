@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
-  - "examples/*"
+  - "cookbook"
+  - "tests/*/*"
 allowBuilds:
   '@google/genai': true
   esbuild: true

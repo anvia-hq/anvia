@@ -62,7 +62,7 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 - Chroma, Qdrant, pgvector, Milvus, and Neo4j examples use `compose.cookbook.yml` from the cookbook directory:
 
   ```sh
-  docker compose -f examples/cookbook/compose.cookbook.yml up -d
+  docker compose -f cookbook/compose.cookbook.yml up -d
   pnpm cookbook:retrieval:05
   pnpm cookbook:retrieval:06
   pnpm cookbook:retrieval:07

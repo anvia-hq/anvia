@@ -1,5 +1,12 @@
 # @anvia/gemini
 
+## 1.0.0-rc.8
+
+### Patch Changes
+
+- Updated dependencies [8dc2dfb]
+  - @anvia/core@1.0.0-rc.8
+
 ## 1.0.0-rc.7
 
 ### Patch Changes

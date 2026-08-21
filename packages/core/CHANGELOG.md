@@ -1,5 +1,12 @@
 # @anvia/core
 
+## 1.0.0-rc.8
+
+### Patch Changes
+
+- 8dc2dfb: Publish the synchronized Anvia package train through npm Trusted Publishing with GitHub OIDC and
+  provenance instead of a long-lived npm access token.
+
 ## 1.0.0-rc.7
 
 ### Patch Changes

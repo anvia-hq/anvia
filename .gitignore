@@ -11,10 +11,9 @@ LAUNCH.md
 .env
 .env.*
 !.env.example
+cookbook/.anvia-studio
 cookbook/.memory
-examples/cookbook/.anvia-studio
-examples/cookbook/.memory
-examples/cookbook/local_cache
+cookbook/local_cache
 packages/embeddings/fastembed/local_cache
 .aion-studio
 .anvia-studio

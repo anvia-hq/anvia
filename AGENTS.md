@@ -5,19 +5,21 @@ Guidance for coding agents working in this repository.
 ## Project Shape
 
 Anvia is a TypeScript pnpm workspace for provider-agnostic AI runtime primitives,
-provider adapters, vector stores, observability integrations, Studio, and examples.
+provider adapters, vector stores, observability integrations, Studio, a cookbook,
+and internal verification workspaces.
 
 Workspace packages are declared in `pnpm-workspace.yaml`:
 
 - `packages/*`
-- `examples/*`
+- `cookbook`
+- `tests/*/*`
 
 Use `pnpm` from the repository root. The repo declares `pnpm@11.0.4`.
 
 ## Before Editing
 
 - Check `git status --short --branch` before making changes.
-- Read the package or example files you are about to change; follow local patterns.
+- Read the package, cookbook, or test workspace files you are about to change; follow local patterns.
 - Do not edit `dist/`, coverage output, `node_modules/`, or other build artifacts by hand.
 - Keep changes scoped. Avoid mixing dependency updates, generated artifact churn,
   formatting-only changes, and feature work unless they are required for the same
@@ -162,7 +164,7 @@ Other maintenance:
 - `bin/check-upstream-deps.sh`: reports npm updates for external runtime
   dependencies declared by `packages/*`. It supports `--filter`, `--json`,
   `--all`/`--dev`, and `--fail-on-update`.
-- `examples/cookbook/skills/release-notes/scripts/draft.sh`: demo skill script
+- `cookbook/skills/release-notes/scripts/draft.sh`: demo skill script
   used by cookbook content.
 
 ## Generated Files

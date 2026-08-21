@@ -103,7 +103,7 @@ new Studio([agent]).start({ port: 4021 });
 
 ## Cookbook
 
-The [cookbook](examples/cookbook/README.md) is the fastest way to see Anvia in motion. It walks from a first text call through tools, structured output, providers, multimodal inputs, pipelines, retrieval, multi-agent workflows, evals, Studio, and integrations.
+The [cookbook](cookbook/README.md) is the fastest way to see Anvia in motion. It walks from a first text call through tools, structured output, providers, multimodal inputs, pipelines, retrieval, multi-agent workflows, evals, Studio, and integrations.
 
 Run the first example from the repository root:
 

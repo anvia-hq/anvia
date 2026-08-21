@@ -1,5 +1,5 @@
 // Centralized env loading. The actual dotenv loading happens via
-// `tsx -r dotenv/config ... dotenv_config_path=../../.env` in the script
+// `tsx -r dotenv/config ... dotenv_config_path=../../../.env` in the script
 // line, but every demo imports this module for typed accessors.
 
 export function loadEnv(): void {
@@ -11,7 +11,7 @@ export function requireEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined || value.length === 0) {
     throw new Error(
-      `Missing required env var ${name}. Set it in the .env at the repo root (../../.env).`,
+      `Missing required env var ${name}. Set it in the .env at the repo root (../../../.env).`,
     );
   }
   return value;

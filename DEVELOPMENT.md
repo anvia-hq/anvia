@@ -18,9 +18,7 @@ pnpm install
 
 ```txt
 .
-├── examples/
-│   ├── cli-agent/                # Example CLI agent
-│   └── cookbook/                 # Runnable learning path
+├── cookbook/                         # Runnable learning path
 ├── packages/
 │   ├── core/                     # @anvia/core
 │   ├── embedding-*/              # Embedding adapters
@@ -31,13 +29,17 @@ pnpm install
 │   ├── server/                   # @anvia/server
 │   ├── tool-*/                   # Tool packages
 │   └── vector-*/                 # Vector store adapters
+├── tests/
+│   ├── compat/peer-core/         # Cross-package type compatibility
+│   └── integration/langfuse/     # Manual Langfuse verification
 └── bin/                          # Local maintenance scripts
 ```
 
 The workspace is declared in `pnpm-workspace.yaml` and includes:
 
 - `packages/*`
-- `examples/*`
+- `cookbook`
+- `tests/*/*`
 
 ## Common Commands
 
@@ -84,7 +86,7 @@ Use `.env.example` as the public template. Never commit real secrets.
 
 ## Cookbook
 
-The cookbook lives in `examples/cookbook` and is exposed through root scripts.
+The cookbook lives in `cookbook` and is exposed through root scripts.
 
 Run the first basic example:
 
@@ -110,7 +112,7 @@ pnpm cookbook:integrations
 Some retrieval examples need local services. Start ChromaDB before running Chroma-backed examples:
 
 ```sh
-docker compose -f examples/cookbook/compose.cookbook.yml up -d
+docker compose -f cookbook/compose.cookbook.yml up -d
 ```
 
 ## Package Development

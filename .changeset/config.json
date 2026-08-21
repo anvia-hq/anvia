@@ -49,5 +49,5 @@
   "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
     "onlyUpdatePeerDependentsWhenOutOfRange": true
   },
-  "ignore": ["cookbook", "anvia-cli-agent"]
+  "ignore": ["cookbook"]
 }

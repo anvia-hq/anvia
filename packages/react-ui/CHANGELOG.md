@@ -1,5 +1,12 @@
 # @anvia/react-ui
 
+## 1.0.0-rc.8
+
+### Patch Changes
+
+- @anvia/client@1.0.0-rc.8
+- @anvia/react@1.0.0-rc.8
+
 ## 1.0.0-rc.7
 
 ### Patch Changes

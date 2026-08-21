@@ -49,6 +49,7 @@
     "fix-lancedb-metadata-filters",
     "fix-provider-tool-output-integrity",
     "fix-structured-output-truncation",
+    "migrate-npm-trusted-publishing",
     "public-rc-ready",
     "redesign-agent-interactions",
     "redesign-agent-memory-compaction",

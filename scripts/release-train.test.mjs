@@ -145,6 +145,21 @@ test("RC notifications use the dedicated npm channel and presentation", () => {
   });
 });
 
+test("OIDC publishing installs workspace dependencies before packing", () => {
+  const workflow = readFileSync(
+    path.join(repositoryRoot, ".github", "workflows", "release.yml"),
+    "utf8",
+  );
+  const publishJob = workflow.slice(workflow.indexOf("\n  publish:"));
+  const installDependencies = publishJob.indexOf("- name: Install dependencies");
+  const publishPackages = publishJob.indexOf("- name: Publish packages");
+
+  assert.notEqual(installDependencies, -1);
+  assert.notEqual(publishPackages, -1);
+  assert.ok(installDependencies < publishPackages);
+  assert.match(publishJob, /- name: Install dependencies\n\s+run: pnpm install --frozen-lockfile/);
+});
+
 test("Changesets drives rc.0 through rc.2 and exits to stable 1.0.0", () => {
   const fixture = createReleaseFixture();
   try {

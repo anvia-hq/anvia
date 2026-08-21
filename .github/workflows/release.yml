@@ -233,6 +233,9 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Install OIDC-capable npm
         run: npm install --global npm@12.0.2
 

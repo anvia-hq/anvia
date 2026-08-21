@@ -4,19 +4,31 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v1.0.0-rc.*"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Package release channel
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - preview
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.event_name == 'push' && github.ref_type == 'branch' && 'package-release-version' || 'package-publish' }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
+
 jobs:
   version:
     name: Create release pull request
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref_type == 'branch'
     runs-on: ubuntu-latest
-    concurrency:
-      group: package-release-version
-      cancel-in-progress: true
     permissions:
       contents: write
       pull-requests: write
@@ -62,29 +74,81 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
-    name: Publish packages to npm
-    if: github.event_name == 'workflow_dispatch'
+  prepare:
+    name: Validate and build packages
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    concurrency:
-      group: package-release-publish
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      id-token: write
+    outputs:
+      channel: ${{ steps.release.outputs.channel }}
+      npm_tag: ${{ steps.release.outputs.npm_tag }}
+      create_tags: ${{ steps.release.outputs.create_tags }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release commit
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Require main branch
+      - name: Resolve release channel
+        id: release
+        env:
+          REQUESTED_CHANNEL: ${{ inputs.channel }}
         run: |
-          if [ "${GITHUB_REF_NAME}" != "main" ]; then
-            echo "Manual package publishing must run from the main branch."
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            {
+              echo "channel=rc"
+              echo "npm_tag=rc"
+              echo "create_tags=true"
+            } >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+            echo "Manual publishing must run from a branch."
+            exit 1
+          elif [ "${REQUESTED_CHANNEL}" = "preview" ]; then
+            if [ "${GITHUB_REF_NAME}" != "staging" ]; then
+              echo "Preview publishing must run from staging."
+              exit 1
+            fi
+            {
+              echo "channel=preview"
+              echo "npm_tag=preview"
+              echo "create_tags=false"
+            } >> "$GITHUB_OUTPUT"
+          else
+            if [ "${GITHUB_REF_NAME}" != "main" ]; then
+              echo "Stable publishing must run from main."
+              exit 1
+            fi
+            {
+              echo "channel=stable"
+              echo "npm_tag=latest"
+              echo "create_tags=true"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require current release branch
+        if: steps.release.outputs.channel != 'rc'
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}"
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${GITHUB_REF_NAME}")" ]; then
+            echo "Release branch ${GITHUB_REF_NAME} has advanced; dispatch a fresh run."
             exit 1
           fi
+
+      - name: Fetch staging
+        if: steps.release.outputs.channel == 'rc'
+        run: git fetch origin staging:refs/remotes/origin/staging
+
+      - name: Validate release candidate
+        if: steps.release.outputs.channel == 'rc'
+        run: node scripts/validate-release-train.mjs --tag "${GITHUB_REF_NAME}" --require-staging-ancestor
+
+      - name: Validate preview release train
+        if: steps.release.outputs.channel == 'preview'
+        run: node scripts/validate-release-train.mjs
+
+      - name: Validate stable release train
+        if: steps.release.outputs.channel == 'stable'
+        run: node scripts/validate-release-train.mjs --stable
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -98,29 +162,125 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Publish packages
-        run: pnpm release
-        env:
-          NPM_CONFIG_PROVENANCE: true
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          PUBLISHED_PACKAGES_FILE: .published-packages.json
+      - name: Prepare synchronized preview versions
+        if: steps.release.outputs.channel == 'preview'
+        run: pnpm preview:version
 
-      - name: Push release tags
+      - name: Test release infrastructure
+        run: pnpm test:release-scripts
+
+      - name: Check formatting and linting
+        run: pnpm check
+
+      - name: Build Core
+        run: pnpm --filter @anvia/core build
+
+      - name: Build remaining packages
+        run: pnpm --filter './packages/**' --filter '!@anvia/core' build
+
+      - name: Verify packed internal versions
+        run: pnpm release-train:verify-packs
+
+      - name: Typecheck packages
+        run: pnpm --filter './packages/**' typecheck
+
+      - name: Typecheck examples
+        run: pnpm --filter './examples/**' typecheck
+
+      - name: Test packages
+        run: pnpm --filter './packages/**' test
+
+      - name: Archive package release files
+        run: tar -cf package-release-files.tar packages/*/dist packages/*/package.json
+
+      - name: Upload package release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-release-files
+          path: package-release-files.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish packages to npm
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.4
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install OIDC-capable npm
+        run: npm install --global npm@12.0.2
+
+      - name: Download package release files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-release-files
+
+      - name: Extract package release files
+        run: tar -xf package-release-files.tar
+
+      - name: Publish packages
+        env:
+          NPM_TAG: ${{ needs.prepare.outputs.npm_tag }}
+          PUBLISHED_PACKAGES_FILE: .published-packages.json
+          SKIP_GIT_TAGS: ${{ needs.prepare.outputs.create_tags != 'true' }}
+        run: node scripts/publish-packages.mjs
+
+      - name: Push package release tags
+        if: needs.prepare.outputs.create_tags == 'true'
         run: git push origin --tags
 
       - name: Create GitHub Releases
+        if: needs.prepare.outputs.channel != 'preview'
         run: pnpm github-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Notify Discord
+      - name: Notify RC Discord channel
+        if: needs.prepare.outputs.channel == 'rc'
+        continue-on-error: true
+        run: node scripts/notify-discord-release.mjs rc
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RC_RELEASE_WEBHOOK_URL }}
+          PUBLISHED_PACKAGES_FILE: .published-packages.json
+
+      - name: Notify stable Discord channel
+        if: needs.prepare.outputs.channel == 'stable'
         continue-on-error: true
         run: node scripts/notify-discord-release.mjs stable
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_STABLE_RELEASE_WEBHOOK_URL }}
+          PUBLISHED_PACKAGES_FILE: .published-packages.json
+
+      - name: Notify preview Discord channel
+        if: needs.prepare.outputs.channel == 'preview'
+        continue-on-error: true
+        run: node scripts/notify-discord-release.mjs preview
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PREVIEW_RELEASE_WEBHOOK_URL }}
           PUBLISHED_PACKAGES_FILE: .published-packages.json

@@ -4,6 +4,7 @@ import {
   assertInitialMajorChangeset,
   assertNoPendingChangesets,
   assertRcPrereleaseState,
+  assertStableReleaseState,
   assertSynchronizedVersions,
   assertWorkspaceInternalDependencies,
   findPublicPackages,
@@ -14,15 +15,25 @@ import {
 const root = process.cwd();
 const packages = findPublicPackages(root);
 const tag = readOption("--tag");
+const stable = process.argv.includes("--stable");
+
+if (tag !== undefined && stable) {
+  throw new Error("--tag and --stable cannot be used together.");
+}
 
 assertFixedReleaseTrain(root, packages);
 assertWorkspaceInternalDependencies(packages);
 
-if (packages.some(({ packageJson }) => packageJson.version.startsWith("0."))) {
+if (!stable && packages.some(({ packageJson }) => packageJson.version.startsWith("0."))) {
   assertInitialMajorChangeset(
     readPendingChangesets(root),
     new Set(packages.map(({ packageJson }) => packageJson.name)),
   );
+}
+
+let stableVersion;
+if (stable) {
+  stableVersion = assertStableReleaseState(root, packages);
 }
 
 if (tag !== undefined) {
@@ -37,9 +48,11 @@ if (tag !== undefined) {
 }
 
 console.info(
-  tag === undefined
-    ? `Validated the ${packages.length}-package Anvia release train.`
-    : `Validated ${tag} for all ${packages.length} public packages.`,
+  tag !== undefined
+    ? `Validated ${tag} for all ${packages.length} public packages.`
+    : stableVersion !== undefined
+      ? `Validated stable ${stableVersion} for all ${packages.length} public packages.`
+      : `Validated the ${packages.length}-package Anvia release train.`,
 );
 
 function readOption(name) {

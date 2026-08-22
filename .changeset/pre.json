@@ -13,6 +13,7 @@
     "@anvia/fastembed": "0.3.0",
     "@anvia/transformers": "0.2.11",
     "@anvia/logger": "0.3.11",
+    "@anvia/mcp": "1.0.0-rc.9",
     "@anvia/memory-drizzle": "0.4.0",
     "@anvia/memory-postgres": "0.3.0",
     "@anvia/memory-prisma": "0.3.1",

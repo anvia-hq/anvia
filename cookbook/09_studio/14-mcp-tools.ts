@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { McpClient } from "@anvia/core/mcp";
+import { McpClient } from "@anvia/mcp";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 

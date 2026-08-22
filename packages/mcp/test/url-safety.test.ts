@@ -6,7 +6,7 @@ import {
   createSafeMcpLookup,
   parseAndValidateMcpUrl,
   resolveAndValidateMcpHostname,
-} from "../../src/mcp/url-safety.js";
+} from "../src/url-safety.js";
 
 const undici = vi.hoisted(() => ({
   fetch: vi.fn(),

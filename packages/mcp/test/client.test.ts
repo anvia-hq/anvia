@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
+import { ToolOutput } from "@anvia/core/tool";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { McpClient, McpClientGroup } from "../src/mcp";
-import { ToolOutput } from "../src/tool";
+import { McpClient, McpClientGroup } from "../src";
 
-const corePackageVersion = JSON.parse(
+const mcpPackageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ) as { version: string };
 
@@ -142,8 +142,8 @@ describe("McpClient", () => {
     await client.connect();
 
     expect(sdk.clients[0]?.metadata).toEqual({
-      name: "@anvia/core",
-      version: corePackageVersion.version,
+      name: "@anvia/mcp",
+      version: mcpPackageVersion.version,
     });
     expect(sdk.stdioTransports[0]?.server).toEqual({
       command: "node",

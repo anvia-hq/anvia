@@ -1,16 +1,15 @@
 import { readFileSync } from "node:fs";
+import type { JsonObject } from "@anvia/core/completion";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { JsonObject } from "../completion/index";
-import { abortError, throwIfAborted } from "../internal/abort";
-import { linkAbortSignal } from "./abort";
+import { abortError, linkAbortSignal, throwIfAborted } from "./abort";
 import { createMcpTool } from "./tool";
 import type { McpClientOptions, McpConnectOptions, McpServer, McpServerInfo } from "./types";
 import { createSafeMcpFetch, parseAndValidateMcpUrl, parseMcpHttpUrl } from "./url-safety";
 
-let coreClientVersion: string | undefined;
+let mcpClientVersion: string | undefined;
 
 type ClientResource = {
   readonly client: Client;
@@ -289,16 +288,16 @@ function assertUniqueToolNames(tools: readonly { name: string }[], serverName: s
 
 function createSdkClient(): Client {
   return new Client({
-    name: "@anvia/core",
-    version: getCoreClientVersion(),
+    name: "@anvia/mcp",
+    version: getMcpClientVersion(),
   });
 }
 
-function getCoreClientVersion(): string {
-  if (coreClientVersion === undefined) {
-    coreClientVersion = readCorePackageVersion();
+function getMcpClientVersion(): string {
+  if (mcpClientVersion === undefined) {
+    mcpClientVersion = readMcpPackageVersion();
   }
-  return coreClientVersion;
+  return mcpClientVersion;
 }
 
 function requestOptions(signal?: AbortSignal | undefined): { signal?: AbortSignal } {
@@ -314,10 +313,10 @@ function closeResource(resource: ClientResource): Promise<void> {
   return resource.closePromise;
 }
 
-function readCorePackageVersion(): string {
+function readMcpPackageVersion(): string {
   try {
     const packageJson = JSON.parse(
-      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
     ) as { version?: unknown };
     return typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
   } catch {

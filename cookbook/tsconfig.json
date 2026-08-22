@@ -16,6 +16,7 @@
       "@anvia/gemini": ["../packages/provider-gemini/src/index.ts"],
       "@anvia/langfuse": ["../packages/observability-langfuse/src/index.ts"],
       "@anvia/logger": ["../packages/logger/src/index.ts"],
+      "@anvia/mcp": ["../packages/mcp/src/index.ts"],
       "@anvia/milvus": ["../packages/vector-milvus/src/index.ts"],
       "@anvia/mistral": ["../packages/provider-mistral/src/index.ts"],
       "@anvia/neo4j": ["../packages/graph-neo4j/src/index.ts"],

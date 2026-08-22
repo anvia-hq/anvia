@@ -1,4 +1,4 @@
-import { isJsonValue, type JsonObject, type ToolResultContentPart } from "../completion/index";
+import { isJsonValue, type JsonObject, type ToolResultContentPart } from "@anvia/core/completion";
 
 type McpResultContent =
   | { type: "text"; text: string }

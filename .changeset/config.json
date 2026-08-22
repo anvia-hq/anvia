@@ -16,6 +16,7 @@
       "@anvia/langfuse",
       "@anvia/lens",
       "@anvia/logger",
+      "@anvia/mcp",
       "@anvia/memory-drizzle",
       "@anvia/memory-postgres",
       "@anvia/memory-prisma",

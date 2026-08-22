@@ -104,6 +104,7 @@ behavior belongs in `packages/tool-studio`.
   runtime, streaming, UI messages, extractors, pipelines, evals, embeddings,
   loaders, MCP, memory, model listing, observability, skills, transcription,
   audio/image generation, and vector-store contracts.
+- `packages/mcp`: MCP clients, transports, tool discovery, result mapping, and URL safety.
 - `packages/provider-openai`, `packages/provider-anthropic`,
   `packages/provider-gemini`, `packages/provider-mistral`: provider adapters
   mapping Anvia completion/embedding/media contracts to vendor SDKs.

@@ -451,6 +451,13 @@ const { runId, output } = await pipeline.run({
 Applications own file discovery, file reads, source metadata, and per-file error policy. Core only
 provides deterministic in-memory chunking and scoped PDF text extraction:
 
+PDF extraction uses the optional `pdfjs-dist` peer dependency. Install it in applications that call
+`extractPdfText`:
+
+```sh
+pnpm add pdfjs-dist
+```
+
 ```ts
 import { readFile } from "node:fs/promises";
 import { chunkText, extractPdfText } from "@anvia/core/documents";

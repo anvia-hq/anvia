@@ -1,5 +1,20 @@
 # @anvia/client
 
+## 1.0.0-rc.11
+
+### Patch Changes
+
+- 995add8: Replace Agent status results with explicit `response`, `interaction`, and `blocked` outcomes. Add
+  `Agent.resume()` and a stream handle exposing events, text deltas, final text and outcome promises,
+  steering, and cancellation. Flatten terminal Agent stream outcomes instead of wrapping them in a
+  `final` event, and migrate Studio, client adapters, and observability integrations to the new API.
+- 9e6df68: Replace message-count memory compaction thresholds with token-aware trigger and retention budgets.
+  Add a customizable token counter, token counts to compaction results and stream events, and
+  `Agent.compactMemory()` for explicit manual compaction.
+- Updated dependencies [995add8]
+- Updated dependencies [9e6df68]
+  - @anvia/core@1.0.0-rc.11
+
 ## 1.0.0-rc.10
 
 ### Patch Changes

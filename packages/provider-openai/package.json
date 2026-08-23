@@ -1,6 +1,6 @@
 {
   "name": "@anvia/openai",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "description": "OpenAI provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

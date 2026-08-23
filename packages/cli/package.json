@@ -1,6 +1,6 @@
 {
   "name": "@anvia/cli",
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "description": "Install editable Anvia UI components into React applications.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

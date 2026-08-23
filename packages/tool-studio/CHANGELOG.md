@@ -1,5 +1,21 @@
 # @anvia/studio
 
+## 1.0.0-rc.10
+
+### Patch Changes
+
+- 928315b: Make React UI a strictly headless behavior layer with explicit `*Primitive` namespaces and a small
+  ARIA, `data-state`, and `data-role` DOM contract. Add `@anvia/cli` to install editable Tailwind and
+  shadcn-based chat components into applications, and move Studio's stream reveal styling into Studio.
+- Updated dependencies [928315b]
+- Updated dependencies [ef7ad39]
+- Updated dependencies [9b9fe04]
+  - @anvia/react-ui@1.0.0-rc.10
+  - @anvia/core@1.0.0-rc.10
+  - @anvia/client@1.0.0-rc.10
+  - @anvia/react@1.0.0-rc.10
+  - @anvia/server@1.0.0-rc.10
+
 ## 1.0.0-rc.9
 
 ### Patch Changes

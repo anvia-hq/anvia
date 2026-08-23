@@ -1,5 +1,91 @@
 # @anvia/gemini
 
+## 1.0.0
+
+### Major Changes
+
+- 4564d2f: Prepare the synchronized Anvia 1.0 release train.
+
+### Patch Changes
+
+- a90416c: Classify malformed provider tool arguments as typed retryable output failures, validate all tool
+  calls before execution, preserve failed-attempt usage without exposing raw arguments, and reject
+  truncated, filtered, incomplete, ambiguous, or non-JSON tool-call responses across first-party
+  providers. Reject blank tool arguments and non-JSON provider options instead of inventing or
+  coercing values. Align `JsonObject` with runtime validation by excluding explicit `undefined`
+  properties while accepting immutable JSON arrays. Apply the same strict provider-options boundary
+  to completion, image, speech, and transcription calls. Require finite strict JSON for eval inputs
+  and parsed results instead of coercing them. Keep streaming retries disabled after observable
+  provider progress.
+  Validate React composer entity data as finite strict JSON at trigger, submission, and message
+  rendering boundaries.
+  Require MCP tool arguments to be strict JSON objects; only an explicit `undefined` direct call
+  omits the remote arguments field.
+  Make client tool-part states exact: completed results retain their original input, impossible state
+  combinations are rejected, and partial streamed arguments can never be replayed as model input.
+- 1dfb4f3: Preserve normalized and provider-native completion finish reasons across first-party adapters,
+  identify output-limit truncation before structured parsing, rebuild Agent repairs from the original
+  request with omitted or bounded text-only output, and log safe per-attempt retry diagnostics through
+  named observer events.
+- 475ae22: Replace process-local approval continuations and Studio-only questions with JSON-safe Agent
+  interactions resumed through `generate()` or `stream()`. Add first-class question tools, explicit
+  interaction response message parts, linked phase-local runs, suspension-aware nested composition,
+  queued steering receipts, and eval responders. Upgrade the Client protocol to v3, unify React and
+  Studio interaction handling, preserve suspensions through memory, traces, and resumable streams,
+  and reject unresolved interaction parts at provider boundaries.
+- a4bf9d2: Bind provider and local-model handles to explicit model IDs, make remote provider factories
+  object-only, and introduce honest local loading and ownership boundaries.
+- 3d2fd23: Replace message factories with strict JSON-safe structural messages, add canonical Core and UI
+  parsers, move custom data validation to typed transports, and adopt the `anvia.client.v2` framed
+  protocol. Make Client and Server calls object-only, make React transport-only with standalone
+  completion state, and require canonical structural message requests in Studio.
+- 927f81b: Replace model-bound vector indexes and positional embedding helpers with explicit vector clients,
+  raw-vector stores, object-argument embedding helpers, retrieval composition, vector search tools,
+  and agent vector contexts. Add lazy provider clients for all vector adapters, explicit resource
+  lifecycle methods, replacement upserts, dense and hybrid retrieval, abort propagation, and opt-in
+  retries. Normalize provider scores so larger values are consistently better, return `topK` logical
+  documents even when documents have multiple chunks, and require explicit Redis metadata indexing
+  for filtered search.
+- 45882ab: Refresh the built-in provider model IDs and context metadata for current OpenAI, Anthropic,
+  Gemini, Grok, and Mistral models.
+- 809d3b0: Finalize the 1.0 generation API around `generateCompletion`, `streamCompletion`, `generateImage`,
+  `generateSpeech`, and `transcribe`, with one options object, `prompt` or `messages` completion
+  input, schema-backed typed output, normalized result shapes, `providerOptions`, shared retries, and
+  end-to-end cancellation. Move Agent retry defaults to Agent construction with explicit per-run
+  inherit, disable, and replace behavior; make tool-call deltas automatic; nest stream terminal data
+  under `final.result`; expose blocked and typed Agent results consistently through tools, pipelines,
+  observers, React, and Studio; and rename audio-generation contracts to speech-generation.
+- b363c93: Update upstream runtime dependencies and preserve compatibility with the latest Anthropic SDKs.
+- Updated dependencies [4564d2f]
+- Updated dependencies [9ae0893]
+- Updated dependencies [07a1e6c]
+- Updated dependencies [0292ede]
+- Updated dependencies [007b132]
+- Updated dependencies [c0c6cb8]
+- Updated dependencies [a90416c]
+- Updated dependencies [1dfb4f3]
+- Updated dependencies [07a1e6c]
+- Updated dependencies [8dc2dfb]
+- Updated dependencies [6354116]
+- Updated dependencies [475ae22]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [45882ab]
+- Updated dependencies [9cb661c]
+- Updated dependencies [1f6db5c]
+- Updated dependencies [5ec61e3]
+- Updated dependencies [5476f98]
+- Updated dependencies [45882ab]
+- Updated dependencies [640dd3c]
+- Updated dependencies [593c725]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+- Updated dependencies [927f81b]
+- Updated dependencies [0292ede]
+- Updated dependencies [4ab25bb]
+- Updated dependencies [809d3b0]
+- Updated dependencies [b363c93]
+  - @anvia/core@1.0.0
+
 ## 1.0.0-rc.11
 
 ### Patch Changes

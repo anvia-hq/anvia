@@ -1,6 +1,6 @@
 {
   "name": "@anvia/server",
-  "version": "1.0.0-rc.11",
+  "version": "1.0.0",
   "description": "Server-side client protocol and generic event stream responses for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

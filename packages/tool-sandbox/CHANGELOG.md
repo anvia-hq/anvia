@@ -1,5 +1,75 @@
 # @anvia/sandbox
 
+## 1.0.0
+
+### Major Changes
+
+- 4564d2f: Prepare the synchronized Anvia 1.0 release train.
+
+### Patch Changes
+
+- f0ffa43: Add the explicit Docker-backed Chromium browser runtime, semantic browser tools, noVNC desktop,
+  Studio's clean resizable Playground viewer, and a human-control lease. Add the shared-memory and seccomp
+  options required to keep Chromium's process sandbox enabled, including explicit capability additions
+  for its namespace sandbox.
+- eaecb75: Replace stateful sandbox sessions with an explicit Docker client, owned sandbox handles, resumable
+  containers, object-only byte-oriented runtime operations, structured opt-in tools, and explicit
+  read-only Studio inspector registrations.
+- 4ab25bb: Expose `new Agent(options)` with direct `generate()` and steerable `stream()` execution, add run IDs
+  to agent responses and observer starts, remove the prompt-request API and request subpath, remove
+  singular builder registrations, and remove agent event stores in favor of observability integrations.
+  Unify direct model calls around input-first completion, image, speech, and transcription functions,
+  share retry options across agents and model calls, internalize request builders, and rename the
+  pipeline agent stage to `agent()`. Rename `createTool()` schema options from `input` and `output` to
+  `inputSchema` and `outputSchema`. Remove `ToolSet`, `AgentBuilder.useToolSet()`, and dynamic/provider
+  tool registration methods in favor of a single `tools` option that accepts executable tools,
+  provider-native tools, and tool indexes. Move dynamic tool selection settings onto
+  `createToolIndex()` and expose each agent's executable inventory through readonly `agent.tools`.
+  Unify static documents and searchable context indexes under the `context` option, move retrieval
+  settings onto `createContextIndex()`, and expose the declaration inventory through readonly
+  `agent.context`. Replace controlling hooks on `new Agent()` with observational `lifecycle`
+  callbacks, rename tool approval configuration to `requiresApproval`, and add resumable
+  `approval_required` results and stream events through `agent.resume()`. Remove `AgentBuilder`, its
+  legacy approval handlers, and the controlling hooks entrypoint; Studio keeps its question workflow
+  through an internal runtime hook while bridging resumable approvals to its existing routes and events.
+  Replace `PipelineBuilder` and its `build()` phase with an immutable, directly executable
+  `new Pipeline({ id, inputSchema })` API while preserving typed fluent composition and graph
+  inspection.
+  Replace `ExtractorBuilder` with a focused `new Extractor({ model, outputSchema })` API that accepts
+  text directly, uses call-level generation and retry options, and returns either parsed data or a
+  detailed extraction result without exposing Agent, context, history, or builder configuration.
+  Internalize the eval suite's metric factory type and consolidate direct completion and Agent request
+  normalization behind one internal request factory, removing the final Core builder abstractions.
+- Updated dependencies [4564d2f]
+- Updated dependencies [9ae0893]
+- Updated dependencies [07a1e6c]
+- Updated dependencies [0292ede]
+- Updated dependencies [007b132]
+- Updated dependencies [c0c6cb8]
+- Updated dependencies [a90416c]
+- Updated dependencies [1dfb4f3]
+- Updated dependencies [07a1e6c]
+- Updated dependencies [8dc2dfb]
+- Updated dependencies [6354116]
+- Updated dependencies [475ae22]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [45882ab]
+- Updated dependencies [9cb661c]
+- Updated dependencies [1f6db5c]
+- Updated dependencies [5ec61e3]
+- Updated dependencies [5476f98]
+- Updated dependencies [45882ab]
+- Updated dependencies [640dd3c]
+- Updated dependencies [593c725]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+- Updated dependencies [927f81b]
+- Updated dependencies [0292ede]
+- Updated dependencies [4ab25bb]
+- Updated dependencies [809d3b0]
+- Updated dependencies [b363c93]
+  - @anvia/core@1.0.0
+
 ## 1.0.0-rc.11
 
 ### Patch Changes

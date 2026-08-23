@@ -342,9 +342,9 @@ describe("public exports", () => {
     expect(documents).not.toHaveProperty("PdfFileLoader");
     expect(publicCore).not.toHaveProperty("chunkText");
     expect(publicCore).not.toHaveProperty("extractPdfText");
-    expect(mcp).toHaveProperty("McpClient");
-    expect(mcp).toHaveProperty("McpClientGroup");
     expect(mcp).toHaveProperty("isMcpTool");
+    expect(mcp).not.toHaveProperty("McpClient");
+    expect(mcp).not.toHaveProperty("McpClientGroup");
     expect(mcp).not.toHaveProperty("connectMcp");
     expect(mcp).not.toHaveProperty("mcp");
     expect(modelListing).toHaveProperty("ModelListingError");
@@ -365,41 +365,6 @@ describe("public exports", () => {
     expectTypeOf<RemovedPdfFileLoader>().toBeAny();
 
     if (Date.now() === Number.NEGATIVE_INFINITY) {
-      new mcp.McpClient({
-        name: "http",
-        transport: {
-          type: "streamableHttp",
-          url: "https://example.com/mcp",
-          // @ts-expect-error Built-in HTTP intentionally forbids custom fetch.
-          fetch: globalThis.fetch,
-        },
-      });
-      new mcp.McpClient({
-        name: "local-http",
-        transport: {
-          type: "streamableHttp",
-          url: "http://localhost:3000/mcp",
-          ssrfProtection: "disabled",
-        },
-      });
-      new mcp.McpClient({
-        name: "legacy-request-init",
-        transport: {
-          type: "streamableHttp",
-          url: "https://example.com/mcp",
-          // @ts-expect-error Built-in HTTP exposes explicit headers, not arbitrary Fetch options.
-          requestInit: {},
-        },
-      });
-      new mcp.McpClient({
-        name: "invalid-policy",
-        transport: {
-          type: "streamableHttp",
-          url: "https://example.com/mcp",
-          // @ts-expect-error SSRF protection accepts only the explicit public-safe or opt-out mode.
-          ssrfProtection: "unknown",
-        },
-      });
       const server = null as unknown as mcp.McpServer;
       // @ts-expect-error McpServer is a registration snapshot and does not own lifecycle.
       server.close();

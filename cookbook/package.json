@@ -174,6 +174,7 @@
     "@anvia/langfuse": "workspace:*",
     "@anvia/lens": "workspace:*",
     "@anvia/logger": "workspace:*",
+    "@anvia/mcp": "workspace:*",
     "@anvia/milvus": "workspace:*",
     "@anvia/mistral": "workspace:*",
     "@anvia/neo4j": "workspace:*",

@@ -1,0 +1,49 @@
+{
+  "name": "@anvia/cli",
+  "version": "1.0.0-rc.10",
+  "description": "Install editable Anvia UI components into React applications.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/cli"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "anvia": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --clean && node scripts/copy-registry.mjs && chmod +x dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --project registry/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "shadcn": "^4.19.0"
+  },
+  "devDependencies": {
+    "@anvia/react-ui": "workspace:*",
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.14",
+    "react": "19.2.6",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  }
+}

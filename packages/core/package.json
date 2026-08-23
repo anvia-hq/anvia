@@ -1,6 +1,6 @@
 {
   "name": "@anvia/core",
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "description": "Core runtime primitives for context-aware Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -116,16 +116,22 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "pdfjs-dist": "^6.2.108",
-    "undici": "^8.10.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",
+    "pdfjs-dist": "^6.2.108",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "pdfjs-dist": "^6.2.108"
+  },
+  "peerDependenciesMeta": {
+    "pdfjs-dist": {
+      "optional": true
+    }
   }
 }

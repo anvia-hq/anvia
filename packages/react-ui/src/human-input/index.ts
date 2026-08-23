@@ -16,7 +16,7 @@ import {
   HumanInputQuestionTextAnswer,
 } from "./questions";
 
-export const HumanInput = {
+export const HumanInputPrimitive = {
   Panel: HumanInputPanel,
   Status: HumanInputStatus,
   Approvals: HumanInputApprovals,

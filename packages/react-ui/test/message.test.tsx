@@ -3,7 +3,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { type ComponentProps, type ReactElement, StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ChatProvider, type ComposerEntity, Message, Thread } from "../src";
+import {
+  ChatProvider,
+  type ComposerEntity,
+  MessagePrimitive as Message,
+  ThreadPrimitive as Thread,
+} from "../src";
 import { createChatController, textMessage } from "./helpers";
 
 const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -83,9 +88,9 @@ describe("Message primitives", () => {
 
     rerender(textView("Hello world"));
 
-    const text = container.querySelector("[data-anvia-text]");
+    const text = container.querySelectorAll('[data-role="text"]').item(1);
     expect(text?.textContent).toBe("Hello world");
-    expect(text?.hasAttribute("data-streaming")).toBe(false);
+    expect(text?.getAttribute("data-state")).toBeNull();
     expect(raf.request).not.toHaveBeenCalled();
   });
 
@@ -96,9 +101,9 @@ describe("Message primitives", () => {
 
     rerender(textView("Hello world", props));
 
-    const text = container.querySelector("[data-anvia-text]");
+    const text = container.querySelectorAll('[data-role="text"]').item(1);
     expect(text?.textContent).toBe("Hello");
-    expect(text?.hasAttribute("data-streaming")).toBe(true);
+    expect(text?.getAttribute("data-state")).toBe("streaming");
 
     act(() => raf.advance(230));
 
@@ -119,7 +124,7 @@ describe("Message primitives", () => {
 
     rerender(textView("Hello world", props));
 
-    expect(container.querySelector("[data-anvia-text]")?.textContent).toBe("Custom content");
+    expect(container.querySelector('[data-role="text"]')?.textContent).toBe("Custom content");
     expect(raf.request).not.toHaveBeenCalled();
   });
 
@@ -144,16 +149,16 @@ describe("Message primitives", () => {
     const { container, rerender } = render(partsStreamView(initial, stream));
 
     rerender(partsStreamView(next, stream));
-    expect(container.querySelector("[data-anvia-tool]")).toBeNull();
+    expect(container.querySelector('[data-role="tool"]')).toBeNull();
 
     act(() => raf.advance(230));
-    expect(container.querySelector("[data-anvia-tool]")).toBeNull();
+    expect(container.querySelector('[data-role="tool"]')).toBeNull();
 
     drainAnimationFrames(raf);
-    expect(container.querySelector("[data-anvia-tool]")).not.toBeNull();
-    expect(
-      container.querySelector("[data-anvia-message-parts]")?.hasAttribute("data-streaming"),
-    ).toBe(true);
+    expect(container.querySelector('[data-role="tool"]')).not.toBeNull();
+    expect(container.querySelector('[data-role="parts"]')?.getAttribute("data-state")).toBe(
+      "streaming",
+    );
   });
 
   it("does not let a filtered reasoning part delay a visible tool", () => {
@@ -183,7 +188,7 @@ describe("Message primitives", () => {
 
     rerender(partsStreamView(next, stream, filter));
 
-    expect(container.querySelector("[data-anvia-tool]")).not.toBeNull();
+    expect(container.querySelector('[data-role="tool"]')).not.toBeNull();
   });
 
   it("supports custom tool rendering with input and output in one component", () => {
@@ -283,7 +288,7 @@ describe("Message primitives", () => {
       </ChatProvider>,
     );
 
-    const tool = container.querySelector("[data-anvia-tool]");
+    const tool = container.querySelectorAll('[data-role="tool"]').item(1);
     expect(tool?.getAttribute("data-state")).toBe("input-streaming");
     expect(screen.getByText("write_file")).toBeTruthy();
     expect(screen.getByText("Running")).toBeTruthy();
@@ -433,12 +438,11 @@ describe("Message primitives", () => {
     const entity = composerEntity(text, "@Guide.pdf", "document-1");
     const { container } = render(<StrictMode>{markdownEntityView(text, [entity])}</StrictMode>);
 
-    const element = container.querySelector("[data-anvia-message-entity]");
+    const element = container.querySelector('[data-role="entity"]');
     expect(element?.textContent).toBe("@Guide.pdf");
-    expect(element?.getAttribute("data-entity-id")).toBe("document-1");
-    expect(element?.getAttribute("data-trigger-id")).toBe("documents");
+    expect(element?.getAttribute("data-role")).toBe("entity");
     expect(element?.hasAttribute("data-anvia-entity-index")).toBe(false);
-    expect(container.querySelectorAll("[data-anvia-message-entity]")).toHaveLength(1);
+    expect(container.querySelectorAll('[data-role="entity"]')).toHaveLength(1);
   });
 
   it("renders multiple and adjacent entities without changing normal Markdown links", () => {
@@ -452,9 +456,7 @@ describe("Message primitives", () => {
     const { container } = render(markdownEntityView(text, entities));
 
     expect(
-      [...container.querySelectorAll("[data-anvia-message-entity]")].map(
-        (element) => element.textContent,
-      ),
+      [...container.querySelectorAll('[data-role="entity"]')].map((element) => element.textContent),
     ).toEqual(["@One.pdf", "@Two.pdf", "@Three.pdf"]);
     expect(container.querySelector("a")?.getAttribute("href")).toBe("https://example.test/guide");
     expect(container.querySelector("a")?.textContent).toBe("the guide");
@@ -467,10 +469,10 @@ describe("Message primitives", () => {
       markdownEntityView(text, [composerEntity(text, entityText, "document-1")]),
     );
 
-    const element = container.querySelector("[data-anvia-message-entity]");
+    const element = container.querySelector('[data-role="entity"]');
     expect(element?.textContent).toBe(entityText);
     expect(element?.querySelector("em, code, a")).toBeNull();
-    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+    expect(container.querySelector('[data-role="markdown"]')?.textContent).toBe(text);
   });
 
   it("keeps escaped and Unicode text aligned with UTF-16 entity offsets", () => {
@@ -478,8 +480,8 @@ describe("Message primitives", () => {
     const entity = composerEntity(text, "@文档.pdf", "document-unicode");
     const { container } = render(markdownEntityView(text, [entity]));
 
-    expect(container.querySelector("[data-anvia-message-entity]")?.textContent).toBe("@文档.pdf");
-    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(
+    expect(container.querySelector('[data-role="entity"]')?.textContent).toBe("@文档.pdf");
+    expect(container.querySelector('[data-role="markdown"]')?.textContent).toBe(
       "Escaped *literal* 👋 before @文档.pdf.",
     );
     expect(() => JSON.stringify(entity.data)).not.toThrow();
@@ -525,7 +527,7 @@ describe("Message primitives", () => {
     );
     const { container } = render(markdownEntityView(text, entities));
 
-    const rendered = [...container.querySelectorAll("[data-anvia-message-entity]")].map(
+    const rendered = [...container.querySelectorAll('[data-role="entity"]')].map(
       (element) => element.textContent,
     );
     expect(rendered).toEqual([
@@ -536,10 +538,8 @@ describe("Message primitives", () => {
       "@Quote.pdf",
       "@Table.pdf",
     ]);
-    expect(container.querySelector("strong [data-anvia-message-entity]")).toBeTruthy();
-    expect(container.querySelector("a [data-anvia-message-entity]")?.textContent).toBe(
-      "@Label.pdf",
-    );
+    expect(container.querySelector('strong [data-role="entity"]')).toBeTruthy();
+    expect(container.querySelector('a [data-role="entity"]')?.textContent).toBe("@Label.pdf");
     expect(container.querySelector("code")?.textContent).toBe("@Inline.pdf");
     expect(container.querySelector('a[href="@Destination.pdf"]')?.textContent).toBe("destination");
   });
@@ -558,8 +558,8 @@ describe("Message primitives", () => {
     ];
     const { container } = render(markdownEntityView(text, malformed));
 
-    expect(container.querySelector("[data-anvia-message-entity]")).toBeNull();
-    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+    expect(container.querySelector('[data-role="entity"]')).toBeNull();
+    expect(container.querySelector('[data-role="markdown"]')?.textContent).toBe(text);
   });
 
   it("falls back to ordinary text for entities with non-JSON data", () => {
@@ -577,8 +577,8 @@ describe("Message primitives", () => {
     for (const data of [sparse, customPrototypeArray, symbolObject, accessorObject]) {
       const entity = { ...composerEntity(text, "@Guide.pdf", "document-1"), data } as never;
       const { container, unmount } = render(markdownEntityView(text, [entity]));
-      expect(container.querySelector("[data-anvia-message-entity]")).toBeNull();
-      expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+      expect(container.querySelector('[data-role="entity"]')).toBeNull();
+      expect(container.querySelector('[data-role="markdown"]')?.textContent).toBe(text);
       unmount();
     }
   });
@@ -594,7 +594,7 @@ describe("Message primitives", () => {
       }),
     );
     expect(screen.getByTestId("custom-entity").textContent).toBe("Guide.pdf");
-    expect(custom.container.querySelector("[data-anvia-message-entity]")).toBeNull();
+    expect(custom.container.querySelector('[data-role="entity"]')).toBeNull();
     custom.unmount();
 
     const span = render(
@@ -607,7 +607,7 @@ describe("Message primitives", () => {
       }),
     );
     const element = screen.getByTestId("custom-span");
-    expect(element.getAttribute("data-entity-id")).toBe("document-1");
+    expect(element.getAttribute("data-role")).toBe("entity");
     expect(element.textContent).toBe("@Guide.pdf");
     span.unmount();
   });
@@ -639,7 +639,7 @@ describe("Message primitives", () => {
     );
 
     expect(container.querySelectorAll("p")).toHaveLength(2);
-    expect(container.querySelector("[data-anvia-message-entity]")?.textContent).toBe("@Guide.pdf");
+    expect(container.querySelector('[data-role="entity"]')?.textContent).toBe("@Guide.pdf");
   });
 
   it("runs the entity transform before consumer remark plugins", () => {
@@ -668,8 +668,8 @@ describe("Message primitives", () => {
         remarkPlugins: [literalizePlugin],
       }),
     );
-    expect(container.querySelector("[data-anvia-message-entity]")).toBeNull();
-    expect(container.querySelector("[data-anvia-markdown]")?.textContent).toBe(text);
+    expect(container.querySelector('[data-role="entity"]')).toBeNull();
+    expect(container.querySelector('[data-role="markdown"]')?.textContent).toBe(text);
   });
 
   it("keeps copy and regenerate disabled for standalone tool messages", () => {
@@ -712,10 +712,10 @@ describe("Message primitives", () => {
 
     rerender(markdownView("Hello **world**"));
 
-    const markdown = container.querySelector("[data-anvia-markdown]");
+    const markdown = container.querySelector('[data-role="markdown"]');
     expect(markdown?.textContent).toBe("Hello world");
     expect(markdown?.querySelector("strong")?.textContent).toBe("world");
-    expect(markdown?.hasAttribute("data-streaming")).toBe(false);
+    expect(markdown?.getAttribute("data-state")).toBe("idle");
     expect(raf.request).not.toHaveBeenCalled();
   });
 
@@ -728,13 +728,13 @@ describe("Message primitives", () => {
 
     rerender(markdownView("Hello **world**", props));
 
-    const markdown = container.querySelector("[data-anvia-markdown]");
+    const markdown = container.querySelector('[data-role="markdown"]');
     expect(markdown?.textContent).toBe("Hello");
-    expect(markdown?.hasAttribute("data-streaming")).toBe(true);
+    expect(markdown?.getAttribute("data-state")).toBe("streaming");
 
     act(() => raf.advance(250));
     expect(markdown?.textContent).not.toBe("Hello world");
-    expect(markdown?.querySelector("[data-anvia-stream-reveal]")).not.toBeNull();
+    expect(markdown?.querySelector('[data-state="revealing"]')).not.toBeNull();
 
     drainAnimationFrames(raf);
     expect(markdown?.textContent).toBe("Hello world");
@@ -749,8 +749,8 @@ describe("Message primitives", () => {
     rerender(markdownView("Code:\n\n```ts\nconst ok = true;\n```", props));
     drainAnimationFrames(raf);
 
-    expect(container.querySelectorAll("[data-anvia-code-block]")).toHaveLength(1);
-    expect(container.querySelector("[data-anvia-code-block] pre")).toBeNull();
+    expect(container.querySelectorAll('[data-role="code-block"]')).toHaveLength(1);
+    expect(container.querySelector('[data-role="code-block"] pre')).toBeNull();
     expect(screen.getByText("const ok = true;")).toBeTruthy();
   });
 
@@ -769,8 +769,8 @@ describe("Message primitives", () => {
       </ChatProvider>,
     );
 
-    expect(container.querySelectorAll("[data-anvia-code-block]")).toHaveLength(1);
-    expect(container.querySelector("[data-anvia-code-block] pre")).toBeNull();
+    expect(container.querySelectorAll('[data-role="code-block"]')).toHaveLength(1);
+    expect(container.querySelector('[data-role="code-block"] pre')).toBeNull();
     expect(screen.getByText("const ok = true;")).toBeTruthy();
   });
 

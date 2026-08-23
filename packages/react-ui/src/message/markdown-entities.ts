@@ -48,8 +48,7 @@ export function messageEntityRehypeOptions(): ReactMarkdownOptions["remarkRehype
           type: "element",
           tagName: "span",
           properties: {
-            dataAnviaMessageEntity: "",
-            dataAnviaEntityIndex: entityIndex === undefined ? "" : String(entityIndex),
+            dataEntityIndex: entityIndex === undefined ? "" : String(entityIndex),
           },
           children: [{ type: "text", value: node.value ?? "" }],
         };

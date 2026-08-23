@@ -1,5 +1,16 @@
 # @anvia/core
 
+## 1.0.0-rc.10
+
+### Patch Changes
+
+- ef7ad39: Move MCP clients, transports, tool discovery, result mapping, and URL safety into the dedicated
+  `@anvia/mcp` package. Core keeps only the lightweight MCP registration contracts consumed by Agent;
+  applications now import `McpClient` and `McpClientGroup` from `@anvia/mcp`.
+- 9b9fe04: Make `pdfjs-dist` an optional peer dependency so applications that do not use PDF text extraction
+  avoid installing PDF.js and its native canvas dependency. Applications using `extractPdfText` must
+  install `pdfjs-dist` directly.
+
 ## 1.0.0-rc.9
 
 ### Patch Changes

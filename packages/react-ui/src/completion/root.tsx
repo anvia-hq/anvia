@@ -12,7 +12,6 @@ const CompletionRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       "div",
       {
         ...props,
-        "data-anvia-completion": "",
         "data-state": completion.status,
       } as PrimitiveProps<"div">,
       ref,
@@ -35,7 +34,6 @@ const CompletionOutput = forwardRef<HTMLDivElement, CompletionOutputProps>(
       {
         ...props,
         children: renderedChildren ?? completion.completion,
-        "data-anvia-completion-output": "",
       } as PrimitiveProps<"div">,
       ref,
     );

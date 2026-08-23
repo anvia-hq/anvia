@@ -28,8 +28,6 @@ const HumanInputStatus = forwardRef<HTMLDivElement, HumanInputStatusProps>(
       {
         ...props,
         children: renderedChildren ?? `${pendingCount} pending`,
-        "data-anvia-human-input-status": "",
-        "data-pending": String(pendingCount),
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -65,8 +63,7 @@ const HumanInputApprovals = forwardRef<HTMLDivElement, HumanInputApprovalsProps>
               : (children ?? <HumanInputApproval />)}
           </InternalApprovalProvider>
         )),
-        "data-anvia-approvals": "",
-        "data-empty": empty ? "" : undefined,
+        "data-state": empty ? "empty" : "populated",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -90,7 +87,6 @@ const HumanInputApproval = forwardRef<HTMLDivElement, HumanInputApprovalProps>(
       {
         ...props,
         children: renderedChildren,
-        "data-anvia-approval": "",
         "data-state": approval.status,
       } as PrimitiveProps<"div">,
       ref,
@@ -131,7 +127,6 @@ const HumanInputApprove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-approve": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -172,7 +167,6 @@ const HumanInputReject = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-reject": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -201,7 +195,6 @@ const HumanInputApprovalReason = forwardRef<HTMLTextAreaElement, PrimitiveProps<
         "aria-label": props["aria-label"] ?? "Approval reason",
         onChange: handleChange,
         value: approval.reason,
-        "data-anvia-approval-reason": "",
       } as PrimitiveProps<"textarea">,
       ref,
     );
@@ -211,9 +204,9 @@ const HumanInputApprovalReason = forwardRef<HTMLTextAreaElement, PrimitiveProps<
 function defaultApprovalContent(approval: ApprovalInteraction): ReactNode {
   return (
     <>
-      <div data-anvia-approval-tool="">{approval.request.toolName}</div>
+      <div>{approval.request.toolName}</div>
       {approval.request.input !== undefined ? (
-        <pre data-anvia-approval-args="">{stringifyValue(approval.request.input)}</pre>
+        <pre>{stringifyValue(approval.request.input)}</pre>
       ) : null}
       <HumanInputApprovalReason />
       <HumanInputApprove />

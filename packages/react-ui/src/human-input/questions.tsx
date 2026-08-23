@@ -53,8 +53,7 @@ const HumanInputQuestions = forwardRef<HTMLDivElement, HumanInputQuestionsProps>
               : (children ?? <HumanInputQuestion />)}
           </QuestionProvider>
         )),
-        "data-anvia-questions": "",
-        "data-empty": empty ? "" : undefined,
+        "data-state": empty ? "empty" : "populated",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -78,7 +77,6 @@ const HumanInputQuestion = forwardRef<HTMLDivElement, HumanInputQuestionProps>(
       {
         ...props,
         children: renderedChildren,
-        "data-anvia-question": "",
         "data-state": question.status,
       } as PrimitiveProps<"div">,
       ref,
@@ -107,7 +105,6 @@ const HumanInputQuestionPrompt = forwardRef<HTMLDivElement, HumanInputQuestionPr
           {
             ...props,
             children: props.children ?? defaultQuestionPrompt(prompt),
-            "data-anvia-question-prompt": "",
           } as PrimitiveProps<"div">,
           ref,
         )}
@@ -152,7 +149,6 @@ const HumanInputQuestionChoice = forwardRef<HTMLButtonElement, HumanInputQuestio
         children: props.children ?? choice?.label ?? choiceValue,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-question-choice": "",
         "data-state": selected ? "selected" : "idle",
       } as PrimitiveProps<"button">,
       ref,
@@ -188,7 +184,6 @@ const HumanInputQuestionTextAnswer = forwardRef<HTMLTextAreaElement, PrimitivePr
         "aria-label": props["aria-label"] ?? prompt.text,
         onChange: handleChange,
         value,
-        "data-anvia-question-text-answer": "",
       } as PrimitiveProps<"textarea">,
       ref,
     );
@@ -235,7 +230,6 @@ const HumanInputQuestionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"b
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-question-submit": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -265,7 +259,7 @@ function QuestionProvider({
 function defaultQuestionContent(question: QuestionInteraction): ReactNode {
   return (
     <>
-      <div data-anvia-question-tool="">{question.request.toolName}</div>
+      <div>{question.request.toolName}</div>
       {question.request.questions.map((prompt) => (
         <HumanInputQuestionPrompt key={prompt.id} promptId={prompt.id} />
       ))}
@@ -277,9 +271,9 @@ function defaultQuestionContent(question: QuestionInteraction): ReactNode {
 function defaultQuestionPrompt(prompt: AgentQuestionPrompt): ReactNode {
   return (
     <>
-      <div data-anvia-question-text="">{prompt.text}</div>
+      <div>{prompt.text}</div>
       {(prompt.choices?.length ?? 0) > 0 ? (
-        <div data-anvia-question-choices="">
+        <div>
           {prompt.choices?.map((choice) => (
             <HumanInputQuestionChoice key={choice.value} value={choice.value}>
               {choice.label}

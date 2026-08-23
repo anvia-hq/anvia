@@ -60,7 +60,9 @@ export type {
 } from "./thread-list";
 export {
   InternalThreadListItemProvider,
+  InternalThreadListRootProvider,
   ThreadListProvider,
+  useInternalThreadListRoot,
   useThreadList,
   useThreadListItem,
 } from "./thread-list";

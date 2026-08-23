@@ -28,7 +28,7 @@ export async function extractPdfText(
   const { abortSignal } = options;
   abortSignal?.throwIfAborted();
   const data = new Uint8Array(options.data);
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdfjs = await loadPdfjs();
   abortSignal?.throwIfAborted();
 
   const loadingTask = pdfjs.getDocument({ data });
@@ -56,6 +56,37 @@ export async function extractPdfText(
       await destroy();
     },
   );
+}
+
+async function loadPdfjs(): Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> {
+  try {
+    return await import("pdfjs-dist/legacy/build/pdf.mjs");
+  } catch (cause) {
+    if (!isMissingPdfjsDependency(cause)) {
+      throw cause;
+    }
+    throw new Error(
+      'PDF extraction requires the optional "pdfjs-dist" package. Install it in your application to use extractPdfText().',
+      { cause },
+    );
+  }
+}
+
+function isMissingPdfjsDependency(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    if (
+      current.message.includes("pdfjs-dist") &&
+      "code" in current &&
+      current.code === "ERR_MODULE_NOT_FOUND"
+    ) {
+      return true;
+    }
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return false;
 }
 
 async function runWithCleanup<Result>(

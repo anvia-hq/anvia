@@ -4,15 +4,19 @@ import {
   type MouseEvent,
   type ReactNode,
   useCallback,
+  useMemo,
+  useRef,
 } from "react";
 
 import {
   InternalThreadListItemProvider,
+  InternalThreadListRootProvider,
   type ThreadListRecord,
+  useInternalThreadListRoot,
   useThreadList,
   useThreadListItem,
 } from "../contexts";
-import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type ThreadListRootProps = PrimitiveProps<"div">;
 
@@ -21,6 +25,36 @@ const ThreadListRoot = forwardRef<HTMLDivElement, ThreadListRootProps>(function 
   ref,
 ) {
   const threadList = useThreadList();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const newButtonRef = useRef<HTMLButtonElement | null>(null);
+  const itemElements = useRef(new Map<string, HTMLDivElement>());
+  const triggerElements = useRef(new Map<string, HTMLButtonElement>());
+  const registerItem = useCallback((threadId: string, element: HTMLDivElement | null) => {
+    if (element === null) itemElements.current.delete(threadId);
+    else itemElements.current.set(threadId, element);
+  }, []);
+  const registerTrigger = useCallback((threadId: string, element: HTMLButtonElement | null) => {
+    if (element === null) triggerElements.current.delete(threadId);
+    else triggerElements.current.set(threadId, element);
+  }, []);
+  const rootContext = useMemo(
+    () => ({
+      rootRef,
+      newButtonRef,
+      itemElements,
+      triggerElements,
+      registerItem,
+      registerTrigger,
+    }),
+    [registerItem, registerTrigger],
+  );
+  const composedRef = useMemo(
+    () =>
+      composeRefs<HTMLDivElement>(ref, (node) => {
+        rootRef.current = node;
+      }),
+    [ref],
+  );
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
@@ -28,11 +62,7 @@ const ThreadListRoot = forwardRef<HTMLDivElement, ThreadListRootProps>(function 
       if (event.defaultPrevented || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
       }
-      const triggers = Array.from(
-        event.currentTarget.querySelectorAll<HTMLButtonElement>(
-          "[data-anvia-thread-list-trigger]:not(:disabled)",
-        ),
-      );
+      const triggers = orderedEnabledTriggers(rootContext);
       if (triggers.length === 0) {
         return;
       }
@@ -43,24 +73,35 @@ const ThreadListRoot = forwardRef<HTMLDivElement, ThreadListRootProps>(function 
       const nextIndex = nextTriggerIndex(event.key, currentIndex, triggers.length);
       triggers[nextIndex]?.focus();
     },
-    [onKeyDown],
+    [onKeyDown, rootContext],
   );
 
-  return renderPrimitive(
-    "div",
-    {
-      ...props,
-      onKeyDown: handleKeyDown,
-      "data-anvia-thread-list": "",
-      "data-state": threadList.status ?? "idle",
-    } as PrimitiveProps<"div">,
-    ref,
+  return (
+    <InternalThreadListRootProvider value={rootContext}>
+      {renderPrimitive(
+        "div",
+        {
+          ...props,
+          onKeyDown: handleKeyDown,
+          "data-state": threadList.status ?? "idle",
+        } as PrimitiveProps<"div">,
+        composedRef,
+      )}
+    </InternalThreadListRootProvider>
   );
 });
 
 const ThreadListNew = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
   function ThreadListNew({ onClick, ...props }, ref) {
     const threadList = useThreadList();
+    const root = useInternalThreadListRoot();
+    const composedRef = useMemo(
+      () =>
+        composeRefs<HTMLButtonElement>(ref, (node) => {
+          root.newButtonRef.current = node;
+        }),
+      [ref, root.newButtonRef],
+    );
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -80,10 +121,9 @@ const ThreadListNew = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
         children: props.children ?? "New chat",
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-thread-list-new": "",
         "data-state": props.disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
-      ref,
+      composedRef,
     );
   },
 );
@@ -119,9 +159,7 @@ const ThreadListItems = forwardRef<HTMLDivElement, ThreadListItemsProps>(functio
           {typeof children === "function" ? children(thread) : (children ?? <DefaultThreadItem />)}
         </InternalThreadListItemProvider>
       )),
-      "data-anvia-thread-list-items": "",
-      "data-archived": archived ? "" : undefined,
-      "data-empty": empty ? "" : undefined,
+      "data-state": empty ? "empty" : "populated",
     } as PrimitiveProps<"div">,
     ref,
   );
@@ -148,7 +186,6 @@ const ThreadListEmpty = forwardRef<HTMLDivElement, ThreadListEmptyProps>(functio
     {
       ...props,
       children: props.children ?? "No conversations.",
-      "data-anvia-thread-list-empty": "",
     } as PrimitiveProps<"div">,
     ref,
   );
@@ -157,16 +194,19 @@ const ThreadListEmpty = forwardRef<HTMLDivElement, ThreadListEmptyProps>(functio
 const ThreadListItemRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadListItemRoot(props, ref) {
     const item = useThreadListItem();
+    const root = useInternalThreadListRoot();
+    const composedRef = useMemo(
+      () => composeRefs<HTMLDivElement>(ref, (node) => root.registerItem(item.thread.id, node)),
+      [item.thread.id, ref, root],
+    );
 
     return renderPrimitive(
       "div",
       {
         ...props,
-        "data-anvia-thread-list-item": "",
-        "data-active": item.active ? "" : undefined,
-        "data-thread-id": item.thread.id,
+        "data-state": item.active ? "active" : "inactive",
       } as PrimitiveProps<"div">,
-      ref,
+      composedRef,
     );
   },
 );
@@ -175,7 +215,13 @@ const ThreadListItemTrigger = forwardRef<HTMLButtonElement, PrimitiveProps<"butt
   function ThreadListItemTrigger({ onClick, ...props }, ref) {
     const threadList = useThreadList();
     const item = useThreadListItem();
+    const root = useInternalThreadListRoot();
     const disabled = props.disabled ?? false;
+    const composedRef = useMemo(
+      () =>
+        composeRefs<HTMLButtonElement>(ref, (node) => root.registerTrigger(item.thread.id, node)),
+      [item.thread.id, ref, root],
+    );
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -197,10 +243,9 @@ const ThreadListItemTrigger = forwardRef<HTMLButtonElement, PrimitiveProps<"butt
         onClick: handleClick,
         type: props.type ?? "button",
         "aria-current": item.active ? "true" : undefined,
-        "data-anvia-thread-list-trigger": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
-      ref,
+      composedRef,
     );
   },
 );
@@ -218,7 +263,6 @@ const ThreadListItemTitle = forwardRef<HTMLSpanElement, ThreadListItemTitleProps
       {
         ...props,
         children: props.children ?? thread.title ?? fallback,
-        "data-anvia-thread-list-title": "",
       } as PrimitiveProps<"span">,
       ref,
     );
@@ -226,22 +270,14 @@ const ThreadListItemTitle = forwardRef<HTMLSpanElement, ThreadListItemTitleProps
 );
 
 type ThreadListItemActionKey = "archiveThread" | "unarchiveThread" | "deleteThread";
-type ThreadListItemActionDataAttribute =
-  | "data-anvia-thread-list-archive"
-  | "data-anvia-thread-list-unarchive"
-  | "data-anvia-thread-list-delete";
-
-function createThreadListItemAction(
-  action: ThreadListItemActionKey,
-  defaultLabel: string,
-  dataAttribute: ThreadListItemActionDataAttribute,
-) {
+function createThreadListItemAction(action: ThreadListItemActionKey, defaultLabel: string) {
   return forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(function ThreadListItemAction(
     { onClick, ...props },
     ref,
   ) {
     const threadList = useThreadList();
     const { thread } = useThreadListItem();
+    const root = useInternalThreadListRoot();
     const actionHandler = threadList[action];
     const disabled = props.disabled ?? actionHandler === undefined;
 
@@ -251,10 +287,10 @@ function createThreadListItemAction(
         if (event.defaultPrevented || disabled) {
           return;
         }
-        focusAfterThreadItemRemoval(event.currentTarget);
+        focusAfterThreadItemRemoval(thread.id, root);
         void actionHandler?.(thread.id);
       },
-      [actionHandler, disabled, onClick, thread.id],
+      [actionHandler, disabled, onClick, root, thread.id],
     );
 
     return renderPrimitive(
@@ -265,7 +301,6 @@ function createThreadListItemAction(
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        [dataAttribute]: "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -273,21 +308,9 @@ function createThreadListItemAction(
   });
 }
 
-const ThreadListItemArchive = createThreadListItemAction(
-  "archiveThread",
-  "Archive",
-  "data-anvia-thread-list-archive",
-);
-const ThreadListItemUnarchive = createThreadListItemAction(
-  "unarchiveThread",
-  "Unarchive",
-  "data-anvia-thread-list-unarchive",
-);
-const ThreadListItemDelete = createThreadListItemAction(
-  "deleteThread",
-  "Delete",
-  "data-anvia-thread-list-delete",
-);
+const ThreadListItemArchive = createThreadListItemAction("archiveThread", "Archive");
+const ThreadListItemUnarchive = createThreadListItemAction("unarchiveThread", "Unarchive");
+const ThreadListItemDelete = createThreadListItemAction("deleteThread", "Delete");
 
 function DefaultThreadItem(): ReactNode {
   return (
@@ -313,28 +336,25 @@ function nextTriggerIndex(key: string, currentIndex: number, triggerCount: numbe
   return (currentIndex + 1) % triggerCount;
 }
 
-function focusAfterThreadItemRemoval(actionButton: HTMLButtonElement): void {
-  const root = actionButton.closest<HTMLElement>("[data-anvia-thread-list]");
-  const currentItem = actionButton.closest<HTMLElement>("[data-anvia-thread-list-item]");
+function focusAfterThreadItemRemoval(
+  threadId: string,
+  rootContext: ReturnType<typeof useInternalThreadListRoot>,
+): void {
+  const root = rootContext.rootRef.current;
+  const currentItem = rootContext.itemElements.current.get(threadId);
   if (
     root === null ||
-    currentItem === null ||
+    currentItem === undefined ||
     !currentItem.contains(root.ownerDocument.activeElement)
   ) {
     return;
   }
 
-  const triggers = Array.from(
-    root.querySelectorAll<HTMLButtonElement>("[data-anvia-thread-list-trigger]:not(:disabled)"),
-  );
-  const currentTrigger = currentItem.querySelector<HTMLButtonElement>(
-    "[data-anvia-thread-list-trigger]",
-  );
-  const currentIndex = currentTrigger === null ? -1 : triggers.indexOf(currentTrigger);
+  const triggers = orderedEnabledTriggers(rootContext);
+  const currentTrigger = rootContext.triggerElements.current.get(threadId);
+  const currentIndex = currentTrigger === undefined ? -1 : triggers.indexOf(currentTrigger);
   const remainingTriggers = triggers.filter((trigger) => !currentItem.contains(trigger));
-  const fallback = root.querySelector<HTMLButtonElement>(
-    "[data-anvia-thread-list-new]:not(:disabled)",
-  );
+  const fallback = rootContext.newButtonRef.current;
   const focusTarget =
     remainingTriggers[Math.min(Math.max(currentIndex, 0), remainingTriggers.length - 1)] ??
     fallback ??
@@ -344,6 +364,16 @@ function focusAfterThreadItemRemoval(actionButton: HTMLButtonElement): void {
     root.tabIndex = -1;
   }
   focusTarget.focus();
+}
+
+function orderedEnabledTriggers(
+  rootContext: ReturnType<typeof useInternalThreadListRoot>,
+): HTMLButtonElement[] {
+  return [...rootContext.triggerElements.current.values()]
+    .filter((trigger) => trigger.isConnected && !trigger.disabled)
+    .sort((left, right) =>
+      left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
 }
 
 export {

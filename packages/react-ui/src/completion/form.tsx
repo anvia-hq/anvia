@@ -72,7 +72,6 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
         {
           ...props,
           onSubmit: handleSubmit,
-          "data-anvia-completion-form": "",
           "data-state": completion.status,
         } as PrimitiveProps<"form">,
         ref,
@@ -121,7 +120,6 @@ const CompletionInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea
         onChange: handleChange,
         onKeyDown: handleKeyDown,
         value: input.input,
-        "data-anvia-completion-input": "",
       } as PrimitiveProps<"textarea">,
       ref,
     );
@@ -140,7 +138,6 @@ const CompletionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
         children: props.children ?? "Complete",
         disabled,
         type: props.type ?? "submit",
-        "data-anvia-completion-submit": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -172,7 +169,6 @@ const CompletionStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-completion-stop": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,

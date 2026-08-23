@@ -19,7 +19,7 @@ import {
 } from "./parts";
 import { MessageContent, MessageRoot } from "./root";
 
-export const Message = {
+export const MessagePrimitive = {
   Root: MessageRoot,
   Content: MessageContent,
   Parts: MessageParts,

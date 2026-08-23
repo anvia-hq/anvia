@@ -1,4 +1,4 @@
-import { isJsonValue, type JsonObject, type ToolResultContentPart } from "../completion/index";
+import { isJsonValue, type JsonObject, type ToolResultContentPart } from "@anvia/core/completion";
 
 type McpResultContent =
   | { type: "text"; text: string }
@@ -20,7 +20,7 @@ type McpResultContent =
 export type McpToolCallResult =
   | {
       content: McpResultContent[];
-      structuredContent?: Record<string, unknown> | undefined;
+      structuredContent?: unknown;
       isError?: boolean | undefined;
     }
   | {

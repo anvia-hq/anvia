@@ -451,6 +451,13 @@ const { runId, output } = await pipeline.run({
 Applications own file discovery, file reads, source metadata, and per-file error policy. Core only
 provides deterministic in-memory chunking and scoped PDF text extraction:
 
+PDF extraction uses the optional `pdfjs-dist` peer dependency. Install it in applications that call
+`extractPdfText`:
+
+```sh
+pnpm add pdfjs-dist
+```
+
 ```ts
 import { readFile } from "node:fs/promises";
 import { chunkText, extractPdfText } from "@anvia/core/documents";
@@ -512,54 +519,17 @@ console.log(transcript.text);
 
 ## MCP
 
-MCP clients own connections. Agents receive immutable server registrations and never own or close
-the underlying transport:
+MCP clients live in the optional `@anvia/mcp` package. Core retains the lightweight registration
+contracts that let agents receive immutable MCP server snapshots without owning or closing their
+underlying transports:
 
-```ts
-import { Agent } from "@anvia/core/agent";
-import { McpClient, McpClientGroup } from "@anvia/core/mcp";
-
-const filesystem = new McpClient({
-  name: "filesystem",
-  transport: {
-    type: "stdio",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
-  },
-});
-const github = new McpClient({
-  name: "github",
-  transport: {
-    type: "streamableHttp",
-    url: "https://mcp.example.com/mcp",
-    headers: { authorization: `Bearer ${process.env.MCP_TOKEN}` },
-  },
-  tools: { prefix: "github_" },
-});
-
-const mcp = await McpClientGroup.connect({ clients: [filesystem, github] });
-const agent = new Agent({ id: "assistant", model, mcpServers: mcp.servers });
-
-try {
-  await agent.generate({ prompt: "Find the issue and update it." });
-} finally {
-  await mcp.close();
-}
+```sh
+pnpm add @anvia/mcp
 ```
 
-Construction performs no I/O. `connect()` discovers every tool page once and returns a frozen
-registration snapshot. Reconnect and rebuild the Agent to adopt changed remote tools. Built-in
-Streamable HTTP connections enforce Anvia URL safety by default and do not accept a custom `fetch`.
-Static request headers are explicit transport configuration; arbitrary Fetch `RequestInit` fields
-are not exposed because the MCP transport owns its HTTP method, body, abort signal, session, and
-protocol headers. Configured headers are sent only to the exact MCP endpoint, are not attached to
-OAuth requests, and cause endpoint redirects to fail instead of forwarding credentials. A static
-`authorization` header cannot be combined with `authProvider`.
-For an intentionally local or private-network server, set `ssrfProtection: "disabled"` on that
-transport. This disables hostname and DNS restrictions for the complete transport, including
-redirects and OAuth discovery, while still requiring HTTP(S). Use it only when the application owns
-and trusts that network boundary. MCP server instructions remain inspectable metadata and are not
-added to Agent instructions.
+Import `McpClient` and `McpClientGroup` from `@anvia/mcp`, connect them, and pass the resulting
+`servers` to `new Agent({ mcpServers })`. See the `@anvia/mcp` README for transport configuration,
+connection ownership, URL safety, and cleanup.
 
 ## Public Areas
 
@@ -573,7 +543,7 @@ added to Agent instructions.
 - `embeddings`: embedding helpers and document embedding utilities
 - `vector-store`: in-memory vector search and vector search tools
 - `streaming`: normalized stream helpers
-- `mcp`: lifecycle-owning MCP clients, groups, and immutable Agent registrations
+- `mcp`: lightweight MCP tool and server registration contracts used by Agent
 - `skills`: local skill loading
 - `observability`: observer interfaces for runs, generations, and tool calls
 - `evals`: evaluation helpers and reporters

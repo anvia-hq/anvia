@@ -1,0 +1,52 @@
+{
+  "name": "@anvia/mcp",
+  "version": "1.0.0-rc.10",
+  "description": "Model Context Protocol client integration for Anvia.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/mcp"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "test": "vitest run",
+    "pretypecheck": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "undici": "^8.10.0"
+  },
+  "devDependencies": {
+    "@anvia/core": "workspace:*",
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,28 +1,28 @@
-export { Attachment, useAttachment } from "./attachment/index";
+export { AttachmentPrimitive, useAttachment } from "./attachment/index";
 export type { ComposerSubmitMessage, ComposerSubmitMessageArgs } from "./chat/index";
 export {
   ChatProvider,
-  Composer,
-  Thread,
+  ComposerPrimitive,
+  ThreadPrimitive,
   useChatContext,
   useComposer,
   useThread,
 } from "./chat/index";
 export {
-  Completion,
+  CompletionPrimitive,
   CompletionProvider,
   useCompletionContext,
   useCompletionInput,
 } from "./completion/index";
-export { ContextMeter, type ContextMeterProps } from "./context-meter";
+export { ContextMeterPrimitive, type ContextMeterProps } from "./context-meter";
 export {
-  HumanInput,
+  HumanInputPrimitive,
   useApproval,
   useHumanInput,
   useQuestion,
   useQuestionPrompt,
 } from "./human-input/index";
-export { Image, useImage } from "./image/index";
+export { ImagePrimitive, useImage } from "./image/index";
 export type {
   MessageAttachmentPart,
   MessageEntityProps,
@@ -31,9 +31,9 @@ export type {
   MessageToolPart,
   MessageToolRenderWhen,
 } from "./message/index";
-export { Message, useMessage, useMessagePart } from "./message/index";
+export { MessagePrimitive, useMessage, useMessagePart } from "./message/index";
 export type { SelectionToolbarSelection } from "./selection-toolbar/index";
-export { SelectionToolbar, useSelectionToolbar } from "./selection-toolbar/index";
+export { SelectionToolbarPrimitive, useSelectionToolbar } from "./selection-toolbar/index";
 export type {
   ApprovalContextValue,
   AttachmentContextValue,
@@ -75,8 +75,8 @@ export type {
   ThreadListRecord,
 } from "./thread-list/index";
 export {
-  ThreadList,
-  ThreadListItem,
+  ThreadListItemPrimitive,
+  ThreadListPrimitive,
   ThreadListProvider,
   useThreadList,
   useThreadListItem,

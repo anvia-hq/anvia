@@ -9,11 +9,11 @@ describe("Studio MarkdownText", () => {
     );
     const settled = renderToStaticMarkup(<MarkdownText text="Settled response" />);
 
-    expect(live).toContain("data-anvia-stream-markdown");
-    expect(live).toContain("data-anvia-stream-reveal");
+    expect(live).toContain('data-role="markdown"');
+    expect(live).toContain('data-state="revealing"');
     expect(live).toContain("First paragraph.");
     expect(live.replace(/<[^>]+>/g, "")).toContain("Live tail");
-    expect(settled).toContain("data-anvia-stream-markdown");
-    expect(settled).not.toContain("data-anvia-stream-reveal");
+    expect(settled).toContain('data-role="markdown"');
+    expect(settled).not.toContain('data-state="revealing"');
   });
 });

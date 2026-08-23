@@ -77,7 +77,7 @@ export function InternalQuestionPromptProvider({
 export function useApproval(): ApprovalContextValue {
   const value = useContext(ApprovalContext);
   if (value === undefined) {
-    throw new Error("Approval primitives must be used inside HumanInput.Approval.");
+    throw new Error("Approval primitives must be used inside HumanInputPrimitive.Approval.");
   }
   return value;
 }
@@ -85,7 +85,7 @@ export function useApproval(): ApprovalContextValue {
 export function useQuestion(): QuestionContextValue {
   const value = useContext(QuestionContext);
   if (value === undefined) {
-    throw new Error("Question primitives must be used inside HumanInput.Question.");
+    throw new Error("Question primitives must be used inside HumanInputPrimitive.Question.");
   }
   return value;
 }
@@ -93,7 +93,9 @@ export function useQuestion(): QuestionContextValue {
 export function useQuestionPrompt(): QuestionPromptContextValue {
   const value = useContext(QuestionPromptContext);
   if (value === undefined) {
-    throw new Error("Question choice primitives must be used inside HumanInput.QuestionPrompt.");
+    throw new Error(
+      "Question choice primitives must be used inside HumanInputPrimitive.QuestionPrompt.",
+    );
   }
   return value;
 }

@@ -10,6 +10,15 @@ allowBuilds:
   sharp: true
   workerd: true
 overrides:
+  '@modelcontextprotocol/sdk>@hono/node-server': 1.19.17
   '@anvia/core': "workspace:*"
+  'ajv>fast-uri': 3.1.5
   apache-arrow: 18.1.0
+  'body-parser>qs': 6.15.3
+  'cosmiconfig>js-yaml': 4.3.1
+  'express-rate-limit>ip-address': 10.5.0
+  'express>body-parser': 2.3.0
+  'express>qs': 6.15.3
+  'postcss>nanoid': 3.3.18
+  postcss: 8.5.26
   prosemirror-model: 1.25.11

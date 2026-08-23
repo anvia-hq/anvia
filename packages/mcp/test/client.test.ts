@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
+import { ToolOutput } from "@anvia/core/tool";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { McpClient, McpClientGroup } from "../src/mcp";
-import { ToolOutput } from "../src/tool";
+import { McpClient, McpClientGroup } from "../src";
 
-const corePackageVersion = JSON.parse(
+const mcpPackageVersion = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ) as { version: string };
 
@@ -33,6 +33,7 @@ const sdk = vi.hoisted(() => {
 
   class SdkClient {
     readonly metadata: unknown;
+    readonly options: unknown;
     readonly behavior: Behavior;
     readonly connectCalls: Array<{ transport: unknown; options: unknown }> = [];
     readonly listToolsCalls: Array<{ params: unknown; options: unknown }> = [];
@@ -40,8 +41,9 @@ const sdk = vi.hoisted(() => {
     closeCalls = 0;
     page = 0;
 
-    constructor(metadata: unknown) {
+    constructor(metadata: unknown, options?: unknown) {
       this.metadata = metadata;
+      this.options = options;
       this.behavior = behaviors.shift() ?? {};
       clients.push(this);
     }
@@ -55,10 +57,15 @@ const sdk = vi.hoisted(() => {
     async listTools(params: unknown, options: unknown) {
       this.listToolsCalls.push({ params, options });
       if (this.behavior.listError !== undefined) throw this.behavior.listError;
+      if (params === undefined && this.behavior.pages !== undefined) {
+        return {
+          tools: this.behavior.pages.flatMap((page) => page.tools),
+        };
+      }
       return this.behavior.pages?.[this.page++] ?? { tools: [] };
     }
 
-    async callTool(params: unknown, _schema: unknown, options: unknown) {
+    async callTool(params: unknown, options: unknown) {
       this.callToolCalls.push({ params, options });
       return this.behavior.result ?? { content: [{ type: "text", text: "ok" }] };
     }
@@ -107,12 +114,12 @@ const sdk = vi.hoisted(() => {
   };
 });
 
-vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({ Client: sdk.SdkClient }));
-vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
-  StdioClientTransport: sdk.StdioClientTransport,
-}));
-vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
+vi.mock("@modelcontextprotocol/client", () => ({
+  Client: sdk.SdkClient,
   StreamableHTTPClientTransport: sdk.StreamableHTTPClientTransport,
+}));
+vi.mock("@modelcontextprotocol/client/stdio", () => ({
+  StdioClientTransport: sdk.StdioClientTransport,
 }));
 
 describe("McpClient", () => {
@@ -142,8 +149,8 @@ describe("McpClient", () => {
     await client.connect();
 
     expect(sdk.clients[0]?.metadata).toEqual({
-      name: "@anvia/core",
-      version: corePackageVersion.version,
+      name: "@anvia/mcp",
+      version: mcpPackageVersion.version,
     });
     expect(sdk.stdioTransports[0]?.server).toEqual({
       command: "node",
@@ -152,6 +159,19 @@ describe("McpClient", () => {
       cwd: "/workspace",
       stderr: "pipe",
       maxBufferSize: 1024,
+    });
+  });
+
+  it("requires the latest modern MCP protocol", async () => {
+    const client = new McpClient({
+      name: "modern",
+      transport: { type: "stdio", command: "node", args: ["server.js"] },
+    });
+
+    await client.connect();
+
+    expect(sdk.clients[0]?.options).toEqual({
+      versionNegotiation: { mode: { pin: "2026-07-28" } },
     });
   });
 
@@ -253,6 +273,9 @@ describe("McpClient", () => {
     "accept",
     "Content-Type",
     "last-event-id",
+    "Mcp-Method",
+    "mcp-name",
+    "Mcp-Param-region",
     "MCP-Protocol-Version",
     "mcp-session-id",
   ])("rejects transport-owned Streamable HTTP header %s", async (header) => {
@@ -386,7 +409,6 @@ describe("McpClient", () => {
     )?.signal;
     expect(sdk.clients[0]?.listToolsCalls).toEqual([
       { params: undefined, options: { signal: discoverySignal } },
-      { params: { cursor: "next" }, options: { signal: discoverySignal } },
     ]);
     expect(sdk.clients[0]?.callToolCalls[0]).toEqual({
       params: { name: "read", arguments: {} },
@@ -576,15 +598,7 @@ describe("McpClient", () => {
     await expect(error.tools[0]?.call({})).rejects.toThrow("remote failed");
   });
 
-  it("rejects repeated pagination cursors and duplicate exposed tool names", async () => {
-    sdk.behaviors.push({
-      pages: [
-        { tools: [], nextCursor: "loop" },
-        { tools: [], nextCursor: "loop" },
-      ],
-    });
-    await expect(stdioClient("loop").connect()).rejects.toThrow("repeated tools cursor");
-
+  it("rejects duplicate exposed tool names", async () => {
     sdk.behaviors.push({
       pages: [{ tools: [toolDefinition("same"), toolDefinition("same")] }],
     });

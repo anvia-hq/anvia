@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { fireEvent, render } from "@testing-library/react";
 import type { ComponentPropsWithoutRef } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -37,10 +36,10 @@ describe("StreamMarkdown", () => {
       />,
     );
 
-    const revealNodes = container.querySelectorAll("[data-anvia-stream-reveal]");
+    const revealNodes = container.querySelectorAll('[data-state="revealing"]');
     expect(revealNodes.length).toBeGreaterThan(0);
-    expect(container.querySelector("pre [data-anvia-stream-reveal]")).toBeNull();
-    expect(container.querySelector("strong [data-anvia-stream-reveal]")).not.toBeNull();
+    expect(container.querySelector('pre [data-state="revealing"]')).toBeNull();
+    expect(container.querySelector('strong [data-state="revealing"]')).not.toBeNull();
   });
 
   it("does not wrap whitespace-only nodes between list items", () => {
@@ -74,10 +73,10 @@ describe("StreamMarkdown", () => {
 
   it("renders without reveal wrappers after the live state settles", () => {
     const { container, rerender } = render(<StreamMarkdown content="Settled text" live />);
-    expect(container.querySelector("[data-anvia-stream-reveal]")).not.toBeNull();
+    expect(container.querySelector('[data-state="revealing"]')).not.toBeNull();
 
     rerender(<StreamMarkdown content="Settled text" live={false} />);
-    expect(container.querySelector("[data-anvia-stream-reveal]")).toBeNull();
+    expect(container.querySelector('[data-state="revealing"]')).toBeNull();
   });
 
   it("applies reveal treatment to the initial live tail", () => {
@@ -92,14 +91,14 @@ describe("StreamMarkdown", () => {
         (element) => Number(element.style.getPropertyValue("--anvia-stream-reveal-opacity")) <= 1,
       ),
     ).toBe(true);
-    expect(reveals.every((element) => revealId(element) !== null)).toBe(true);
+    expect(reveals.every((element) => element.dataset.state === "revealing")).toBe(true);
   });
 
   it("does not reanimate settled text when content resumes", () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
     const content = "abcdefghijklmnopqrstuvwxyz0123456789";
     const { container, rerender } = render(<StreamMarkdown content={content} live />);
-    const settledIds = new Set(revealElements(container).map(requiredRevealId));
+    const settledNodes = new Set(revealElements(container));
 
     clock.mockReturnValue(1_200);
     rerender(<StreamMarkdown content={`${content}XYZ`} live />);
@@ -107,21 +106,23 @@ describe("StreamMarkdown", () => {
 
     const reveals = revealElements(container);
     expect(reveals.map((element) => element.textContent).join("")).toBe("XYZ");
-    expect(reveals.every((element) => !settledIds.has(requiredRevealId(element)))).toBe(true);
+    expect(reveals.every((element) => !settledNodes.has(element))).toBe(true);
   });
 
   it("preserves active reveal progress and creates lifecycles only for a multi-grapheme suffix", () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
     const content = "abcdefghijklmnopqrstuvwxyz0123456789";
     const { container, rerender } = render(<StreamMarkdown content={content} live />);
-    const previousIds = new Set(revealElements(container).map(requiredRevealId));
-
     clock.mockReturnValue(1_060);
     rerender(<StreamMarkdown content={`${content}XYZ`} live />);
 
     const nextNodes = revealElements(container);
-    const retained = nextNodes.filter((element) => previousIds.has(requiredRevealId(element)));
-    const fresh = nextNodes.filter((element) => !previousIds.has(requiredRevealId(element)));
+    const retained = nextNodes.filter(
+      (element) => element.style.getPropertyValue("--anvia-stream-reveal-duration") === "120ms",
+    );
+    const fresh = nextNodes.filter(
+      (element) => element.style.getPropertyValue("--anvia-stream-reveal-duration") === "180ms",
+    );
     const retainedDurations = retained.map((element) =>
       element.style.getPropertyValue("--anvia-stream-reveal-duration"),
     );
@@ -131,7 +132,6 @@ describe("StreamMarkdown", () => {
     clock.mockRestore();
 
     expect(retained.length).toBeGreaterThan(0);
-    expect(retained.every((element) => previousIds.has(requiredRevealId(element)))).toBe(true);
     expect(retainedDurations.every((duration) => duration === "120ms")).toBe(true);
     expect(fresh.map((element) => element.textContent).join("")).toBe("XYZ");
     expect(freshDurations.every((duration) => duration === "180ms")).toBe(true);
@@ -175,22 +175,21 @@ describe("StreamMarkdown", () => {
     expect(container.querySelector("a")?.getAttribute("href")).toBe("https://example.com/docs");
     expect(container.querySelector("a")?.textContent).toBe("the guide");
     expect(container.querySelector("strong")?.textContent).toBe("Tom & Jerry");
-    expect(container.querySelector("strong [data-anvia-stream-reveal]")).not.toBeNull();
+    expect(container.querySelector('strong [data-state="revealing"]')).not.toBeNull();
   });
 
   it("resets reveal lifecycle state for non-append replacement", () => {
     const initial = "abcdefghijklmnopqrstuvwxyz0123456789";
     const replacement = "ZYXWVUTSRQPONMLKJIHGFEDCBA9876543210";
     const { container, rerender } = render(<StreamMarkdown content={initial} live />);
-    const initialIds = new Set(revealElements(container).map(requiredRevealId));
     settleReveals(container);
 
     rerender(<StreamMarkdown content={replacement} live />);
 
     const replacementReveals = revealElements(container);
     expect(replacementReveals).toHaveLength(24);
-    expect(replacementReveals.every((element) => !initialIds.has(requiredRevealId(element)))).toBe(
-      true,
+    expect(replacementReveals.map((element) => element.textContent).join("")).toBe(
+      replacement.slice(-24),
     );
   });
 
@@ -214,32 +213,10 @@ describe("StreamMarkdown", () => {
     expect(reveals).toHaveLength(1);
     expect(reveals[0]?.textContent).toBe("Z");
   });
-
-  it("forces full opacity when reduced motion is requested", () => {
-    for (const stylesheet of ["src/stream/styles.css", "src/styles.css"]) {
-      const styles = readFileSync(stylesheet, "utf8");
-      const reducedMotionRule = styles.match(
-        /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/u,
-      )?.[1];
-
-      expect(reducedMotionRule).toContain("animation: none");
-      expect(reducedMotionRule).toContain("opacity: 1");
-    }
-  });
 });
 
 function revealElements(container: HTMLElement): HTMLSpanElement[] {
-  return Array.from(container.querySelectorAll<HTMLSpanElement>("[data-anvia-stream-reveal]"));
-}
-
-function revealId(element: HTMLElement): string | null {
-  return element.getAttribute("data-anvia-stream-reveal-id");
-}
-
-function requiredRevealId(element: HTMLElement): string {
-  const id = revealId(element);
-  if (id === null) throw new Error("Expected reveal lifecycle ID.");
-  return id;
+  return Array.from(container.querySelectorAll<HTMLSpanElement>('[data-state="revealing"]'));
 }
 
 function settleReveals(container: HTMLElement): void {

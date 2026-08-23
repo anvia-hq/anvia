@@ -1,6 +1,6 @@
 {
   "name": "@anvia/react-ui",
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "description": "Composable React UI primitives for Anvia chat and completion experiences.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -56,7 +56,6 @@
       "types": "./dist/stream/index.d.ts",
       "import": "./dist/stream/index.js"
     },
-    "./stream/styles.css": "./dist/stream/styles.css",
     "./shared": {
       "types": "./dist/shared.d.ts",
       "import": "./dist/shared.js"
@@ -64,11 +63,10 @@
     "./thread-list": {
       "types": "./dist/thread-list/index.d.ts",
       "import": "./dist/thread-list/index.js"
-    },
-    "./styles.css": "./dist/styles.css"
+    }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom && cp src/styles.css dist/styles.css && cp src/stream/styles.css dist/stream/styles.css",
+    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

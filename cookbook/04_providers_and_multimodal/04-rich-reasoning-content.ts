@@ -63,8 +63,8 @@ for await (const event of agent.stream({ prompt })) {
     process.stdout.write(event.delta);
   }
 
-  if (event.type === "final") {
-    const reasoning = event.result.messages
+  if (event.type === "response") {
+    const reasoning = event.messages
       .flatMap((message) =>
         message.role === "assistant" && typeof message.content !== "string" ? message.content : [],
       )

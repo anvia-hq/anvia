@@ -7,7 +7,7 @@ import type OpenAI from "openai";
 import { describe, expect, it } from "vitest";
 import { Message } from "../../core/test/helpers/imports";
 import { GrokCompletionModel } from "../src/grok/completion";
-import { tools } from "../src/index";
+import { GrokClient, tools } from "../src/index";
 
 class GrokResponsesCompletionModel extends GrokCompletionModel {
   constructor(client: OpenAI, modelId: string, contextLimits?: ModelContextLimits) {
@@ -40,11 +40,12 @@ describe("Grok completion models", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new GrokResponsesCompletionModel({} as never, "grok-4.5", {
-      contextWindow: 500_000,
+    const model = new GrokClient({ apiKey: "test" }).completionModel({
+      modelId: "grok-4.6",
+      api: "responses",
     });
 
-    expect(model.modelId).toBe("grok-4.5");
+    expect(model.modelId).toBe("grok-4.6");
     expect(model.contextLimits).toEqual({ contextWindow: 500_000 });
   });
 

@@ -23,7 +23,7 @@ import { Agent } from "@anvia/core";
 import { MistralClient } from "@anvia/mistral";
 
 const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
-const model = client.completionModel({ modelId: "mistral-large-latest" });
+const model = client.completionModel({ modelId: "mistral-medium-3-5" });
 
 const agent = new Agent({
   id: "support",
@@ -32,7 +32,7 @@ const agent = new Agent({
 });
 
 const result = await agent.generate({ prompt: "What should I check before launch?" });
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Embeddings

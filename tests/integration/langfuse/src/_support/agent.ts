@@ -1,5 +1,5 @@
 import type { CompletionModel } from "@anvia/core";
-import { Agent, type AgentOptions, type AgentResponse, type AgentResult } from "@anvia/core/agent";
+import { Agent, type AgentOptions, type AgentOutcome, type AgentResponse } from "@anvia/core/agent";
 import { type AnyTool, createTool } from "@anvia/core/tool";
 import type { LangfuseClient, LangfuseObserverOptions } from "@anvia/langfuse";
 import { z } from "zod";
@@ -34,9 +34,9 @@ export type BuildSupportAgentOptions = {
   instructions?: string;
 };
 
-export function assertCompleted(result: AgentResult): asserts result is AgentResponse {
-  if (result.status !== "completed") {
-    throw new Error(`Expected a completed Agent result, received ${result.status}.`);
+export function assertCompleted(result: AgentOutcome): asserts result is AgentResponse {
+  if (result.type !== "response") {
+    throw new Error(`Expected an Agent response, received ${result.type}.`);
   }
 }
 

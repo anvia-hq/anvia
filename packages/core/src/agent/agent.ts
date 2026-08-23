@@ -15,10 +15,11 @@ import type { AnyTool, NormalizedToolOutput, Tool, ToolCallContext } from "../to
 import { createAgentStream } from "./agent-stream";
 import { createAgentTool } from "./agent-tool";
 import { normalizeAgentId } from "./ids";
+import type { AgentContinuation, AgentInteractionResponse } from "./interactions";
 import type { AgentLifecycle } from "./lifecycle";
 import { registerAgentProviderOutputSchema } from "./output-schema";
 import { resolveAgentOptions } from "./resolve-options";
-import type { AgentResult, AgentRunOptions, AgentStream, AgentStreamEvent } from "./run-types";
+import type { AgentOutcome, AgentRunOptions, AgentRunSettings, AgentStream } from "./run-types";
 import {
   cloneFrozenPlainData,
   snapshotAgentContext,
@@ -96,13 +97,21 @@ export class Agent<
     this.memory = snapshotAgentMemory(resolved.memory);
   }
 
-  generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentResult<Output>> {
+  generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentOutcome<Output>> {
     return AgentRun.fromAgent(this, options).generate();
+  }
+
+  resume(
+    continuation: AgentContinuation,
+    response: AgentInteractionResponse,
+    settings: AgentRunSettings<Output, RawResponseOf<M>> = {},
+  ): Promise<AgentOutcome<Output>> {
+    return this.generate({ continuation, response, ...settings });
   }
 
   stream(
     options: AgentRunOptions<Output, RawResponseOf<M>>,
-  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
+  ): AgentStream<Output, RawResponseOf<M>> {
     const run = AgentRun.fromAgent(this, options);
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
       throw new Error("This completion model does not support streaming");

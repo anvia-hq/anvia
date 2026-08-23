@@ -88,8 +88,41 @@ describe("Agent streaming", () => {
     const model = new StreamingQueueModel([]);
     const agent = new Agent({ id: "test-agent", model });
 
-    expectTypeOf(agent.stream({ prompt: "hi" })).toEqualTypeOf<AgentStream<AgentStreamEvent>>();
+    expectTypeOf(agent.stream({ prompt: "hi" })).toEqualTypeOf<AgentStream>();
     expectTypeOf<Extract<AgentStreamEvent, { type: "tool_call_delta" }>>().not.toBeNever();
+  });
+
+  it("exposes events and final values from the stream handle", async () => {
+    const model = new StreamingQueueModel([successfulTextStream("hel", "lo")]);
+    const agent = new Agent({ id: "test-agent", model });
+    const stream = agent.stream({ prompt: "hi" });
+
+    expect(stream.events).toBe(stream);
+    const resultPromise = stream.result;
+    const events = await collect(stream.events);
+
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "hello" });
+    await expect(resultPromise).resolves.toMatchObject({ type: "response", output: "hello" });
+    await expect(stream.text).resolves.toBe("hello");
+  });
+
+  it("supports text-only streaming and result-only consumption", async () => {
+    const textAgent = new Agent({
+      id: "text-agent",
+      model: new StreamingQueueModel([successfulTextStream("hel", "lo")]),
+    });
+    const textStream = textAgent.stream({ prompt: "hi" });
+
+    await expect(collect(textStream.textStream)).resolves.toEqual(["hel", "lo"]);
+    await expect(textStream.result).resolves.toMatchObject({ type: "response", output: "hello" });
+
+    const resultAgent = new Agent({
+      id: "result-agent",
+      model: new StreamingQueueModel([successfulTextStream("done")]),
+    });
+    const resultStream = resultAgent.stream({ prompt: "hi" });
+
+    await expect(resultStream.result).resolves.toMatchObject({ type: "response", output: "done" });
   });
 
   it("streams text deltas and final response", async () => {
@@ -104,9 +137,9 @@ describe("Agent streaming", () => {
       "text_delta",
       "text_delta",
       "turn_end",
-      "final",
+      "response",
     ]);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "hello" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "hello" });
     expect(model.requests[0]?.instructions).toBe("system");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hi"));
   });
@@ -183,7 +216,7 @@ describe("Agent streaming", () => {
         type: "turn_end",
         firstDeltaMs: 50,
       });
-      expect((await iterator.next()).value).toMatchObject({ type: "final" });
+      expect((await iterator.next()).value).toMatchObject({ type: "response" });
     } finally {
       vi.useRealTimers();
     }
@@ -206,9 +239,9 @@ describe("Agent streaming", () => {
       "generation_start",
       "text_delta",
       "turn_end",
-      "final",
+      "response",
     ]);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "recovered" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "recovered" });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]).toBe(model.requests[0]);
   });
@@ -226,7 +259,7 @@ describe("Agent streaming", () => {
     );
 
     expect(events.some((event) => event.type === "error")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "ready" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "ready" });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -257,7 +290,7 @@ describe("Agent streaming", () => {
     );
 
     expect(events.some((event) => event.type === "tool_call_delta")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "recovered" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "recovered" });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -324,7 +357,7 @@ describe("Agent streaming", () => {
 
     const events = await collect(agent.stream({ prompt: "hi" }));
 
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "done" });
     expect(trailingEventRead).toBe(false);
     expect(executions).toBe(0);
   });
@@ -349,11 +382,9 @@ describe("Agent streaming", () => {
     );
 
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        output: "ready",
-        usage: Usage.add(failedUsage, successfulUsage),
-      },
+      type: "response",
+      output: "ready",
+      usage: Usage.add(failedUsage, successfulUsage),
     });
     expect(model.requests).toHaveLength(2);
   });
@@ -372,10 +403,7 @@ describe("Agent streaming", () => {
 
     const events = await collect(agent.stream({ prompt: "hi" }));
 
-    expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: { output: "done", usage: finalUsage },
-    });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "done", usage: finalUsage });
   });
 
   it("retries invalid final-only provider output before exposing progress", async () => {
@@ -423,8 +451,9 @@ describe("Agent streaming", () => {
 
     expect(events.some((event) => event.type === "error")).toBe(false);
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: { output: "recovered", usage: Usage.add(invalidUsage, finalUsage) },
+      type: "response",
+      output: "recovered",
+      usage: Usage.add(invalidUsage, finalUsage),
     });
     expect(model.requests).toHaveLength(2);
     expect(executions).toBe(0);
@@ -610,7 +639,7 @@ describe("Agent streaming", () => {
       .map((line) => JSON.parse(line));
 
     expect(events.some((event) => event.type === "error")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "ready" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "ready" });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -647,7 +676,7 @@ describe("Agent streaming", () => {
     expect(events.findIndex((event) => event.type === "tool_call_delta")).toBeLessThan(
       events.findIndex((event) => event.type === "tool_call"),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "7" });
   });
 
   it("does not retry after a provider delta has been observed", async () => {
@@ -685,7 +714,7 @@ describe("Agent streaming", () => {
     );
 
     expect(events.some((event) => event.type === "error")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "recovered" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "recovered" });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -716,7 +745,7 @@ describe("Agent streaming", () => {
       .map((event) => event.delta);
 
     expect(textDeltas).toEqual(["safe"]);
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "safe" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "safe" });
   });
 
   it("retains completed usage when the run end hook cancels before final", async () => {
@@ -827,7 +856,7 @@ describe("Agent streaming", () => {
     await expect(collect(stream)).rejects.toThrow("Agent stream is already running.");
 
     const rest = await collectIterator(iterator);
-    expect(rest.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
+    expect(rest.at(-1)).toMatchObject({ type: "response", output: "done" });
   });
 
   it("accepts steering before consumption and rejects it after completion", async () => {
@@ -842,7 +871,7 @@ describe("Agent streaming", () => {
     expect(receipt).toMatchObject({ status: "queued" });
     const events = await collect(stream);
 
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "second" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "second" });
     expect(() => stream.steer({ prompt: "late" })).toThrow(AgentStreamClosedError);
     await expect(collect(stream)).rejects.toThrow("Agent stream has already been consumed.");
   });
@@ -868,10 +897,7 @@ describe("Agent streaming", () => {
     expect(() => stream.steer({ prompt: "too late" })).toThrow(AgentStreamClosedError);
     finishRelease.resolve();
     await expect(completion).resolves.toContainEqual(
-      expect.objectContaining({
-        type: "final",
-        result: expect.objectContaining({ output: "done" }),
-      }),
+      expect.objectContaining({ type: "response", output: "done" }),
     );
   });
 
@@ -880,11 +906,13 @@ describe("Agent streaming", () => {
       id: "test-agent",
       model: new StreamingQueueModel([]),
     }).stream({ prompt: "hi" });
+    const errorResult = errorStream.result;
     const errorEvents = await collect(errorStream);
     expect(errorEvents.at(-1)).toMatchObject({
       type: "error",
       error: { message: "No queued response" },
     });
+    await expect(errorResult).rejects.toThrow("No queued response");
     expect(() => errorStream.steer({ prompt: "late" })).toThrow(AgentStreamClosedError);
 
     const hook = createHook({
@@ -902,6 +930,24 @@ describe("Agent streaming", () => {
       error: expect.any(AgentRunCancelledError),
     });
     expect(() => cancelledStream.steer({ prompt: "late" })).toThrow(AgentStreamClosedError);
+  });
+
+  it("cancels through the stream handle and rejects its final promises", async () => {
+    const stream = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([successfulTextStream("unused")]),
+    }).stream({ prompt: "hi" });
+
+    stream.cancel("stopped by caller");
+
+    await expect(stream.result).rejects.toMatchObject({
+      name: "AgentRunCancelledError",
+      reason: "stopped by caller",
+    });
+    await expect(stream.text).rejects.toMatchObject({
+      name: "AgentRunCancelledError",
+      reason: "stopped by caller",
+    });
   });
 
   it("continues when steering arrives before a no-tool response finalizes", async () => {
@@ -939,7 +985,7 @@ describe("Agent streaming", () => {
       "generation_start",
       "text_delta",
       "turn_end",
-      "final",
+      "response",
     ]);
     expect(rest[0]).toMatchObject({ type: "steering_applied", id: receipt.id, turn: 1 });
     expect(rest[1]).toMatchObject({
@@ -950,16 +996,14 @@ describe("Agent streaming", () => {
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(Message.user("revise"));
     expect(rest.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        output: "second",
-        messages: [
-          Message.user("hi"),
-          Message.assistant("first"),
-          Message.user("revise"),
-          Message.assistant("second"),
-        ],
-      },
+      type: "response",
+      output: "second",
+      messages: [
+        Message.user("hi"),
+        Message.assistant("first"),
+        Message.user("revise"),
+        Message.assistant("second"),
+      ],
     });
   });
 
@@ -994,7 +1038,7 @@ describe("Agent streaming", () => {
     toolRelease.resolve(7);
 
     const events = await eventsPromise;
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "done" });
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]?.chatHistory.slice(-3)).toEqual([
       expect.objectContaining(Message.assistant([toolCall])),
@@ -1047,16 +1091,14 @@ describe("Agent streaming", () => {
       secondSteer,
     ]);
     expect(rest.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        messages: [
-          Message.user("start"),
-          Message.assistant("base"),
-          firstSteer,
-          secondSteer,
-          Message.assistant("done"),
-        ],
-      },
+      type: "response",
+      messages: [
+        Message.user("start"),
+        Message.assistant("base"),
+        firstSteer,
+        secondSteer,
+        Message.assistant("done"),
+      ],
     });
   });
 
@@ -1086,22 +1128,20 @@ describe("Agent streaming", () => {
     const events = await collect(agent.stream({ prompt: "hi" }));
 
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        output: "hello",
-        usage: {
-          inputTokens: 2,
-          outputTokens: 1,
-          totalTokens: 3,
-        },
+      type: "response",
+      output: "hello",
+      usage: {
+        inputTokens: 2,
+        outputTokens: 1,
+        totalTokens: 3,
       },
     });
     const finalEvent = events.at(-1);
-    expect(finalEvent?.type).toBe("final");
-    if (finalEvent?.type !== "final") {
-      throw new Error("Expected a final event");
+    expect(finalEvent?.type).toBe("response");
+    if (finalEvent?.type !== "response") {
+      throw new Error("Expected a response event");
     }
-    const assistantMessage = finalEvent.result.messages.at(-1);
+    const assistantMessage = finalEvent.messages.at(-1);
     expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
       modelId: "test",
@@ -1156,7 +1196,7 @@ describe("Agent streaming", () => {
     expect(events.findIndex((event) => event.type === "tool_call_delta")).toBeLessThan(
       events.findIndex((event) => event.type === "tool_call"),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "7" });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -1190,20 +1230,17 @@ describe("Agent streaming", () => {
     const firstSegment = await collect(agent.stream({ prompt: "run guarded" }));
     const pending = firstSegment.at(-1);
     expect(pending).toMatchObject({
-      type: "final",
-      result: {
-        status: "suspended",
-        interaction: { type: "tool-approval", toolName: "guarded", input: { value: 7 } },
-      },
+      type: "interaction",
+      interaction: { type: "tool-approval", toolName: "guarded", input: { value: 7 } },
     });
     expect(executed).toBe(false);
-    if (pending?.type !== "final" || pending.result.status !== "suspended") {
-      throw new Error("Expected suspended final event");
+    if (pending?.type !== "interaction") {
+      throw new Error("Expected interaction event");
     }
 
     const resumed = await collect(
       agent.stream({
-        continuation: pending.result.continuation,
+        continuation: pending.continuation,
         response: { type: "tool-approval", approved: true },
       }),
     );
@@ -1211,10 +1248,10 @@ describe("Agent streaming", () => {
     expect(resumed).toContainEqual(
       expect.objectContaining({ type: "tool_result", toolName: "guarded", result: "approved 7" }),
     );
-    expect(resumed.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
+    expect(resumed.at(-1)).toMatchObject({ type: "response", output: "done" });
     expect(resumed.at(-1)).toMatchObject({
-      type: "final",
-      result: { resumedFrom: { runId: pending.result.runId } },
+      type: "response",
+      resumedFrom: { runId: pending.runId },
     });
   });
 
@@ -1248,24 +1285,21 @@ describe("Agent streaming", () => {
     const receipt = stream.steer({ prompt: "Prioritize this." });
     const rest = await collectIterator(iterator);
     const pending = rest.at(-1);
-    if (pending?.type !== "final" || pending.result.status !== "suspended") {
-      throw new Error("Expected suspended final event");
+    if (pending?.type !== "interaction") {
+      throw new Error("Expected interaction event");
     }
     expect(() => stream.steer({ prompt: "too late" })).toThrow(AgentStreamClosedError);
 
     const resumed = await collect(
       agent.stream({
-        continuation: pending.result.continuation,
+        continuation: pending.continuation,
         response: { type: "tool-approval", approved: true },
       }),
     );
 
     expect(resumed).toContainEqual({ type: "steering_applied", id: receipt.id, turn: 1 });
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(Message.user("Prioritize this."));
-    expect(resumed.at(-1)).toMatchObject({
-      type: "final",
-      result: { status: "completed", output: "prioritized" },
-    });
+    expect(resumed.at(-1)).toMatchObject({ type: "response", output: "prioritized" });
   });
 
   it("always emits provider tool call deltas", async () => {
@@ -1299,7 +1333,7 @@ describe("Agent streaming", () => {
         result: "7",
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "7" });
   });
 
   it("emits tool call deltas by default before response middleware completes", async () => {
@@ -1380,7 +1414,7 @@ describe("Agent streaming", () => {
     expect(remaining).toContainEqual(
       expect.objectContaining({ type: "tool_result", toolName: "add", result: "7" }),
     );
-    expect(remaining.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
+    expect(remaining.at(-1)).toMatchObject({ type: "response", output: "7" });
   });
 
   it("streams transformed tool results from middleware", async () => {
@@ -1568,7 +1602,7 @@ describe("Agent streaming", () => {
     });
 
     const remainingEvents = await collectIterator(iterator);
-    expect(remainingEvents.at(-1)).toMatchObject({ type: "final", result: { output: "done" } });
+    expect(remainingEvents.at(-1)).toMatchObject({ type: "response", output: "done" });
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -1618,7 +1652,7 @@ describe("Agent streaming", () => {
       "text_delta",
       "text_delta",
       "turn_end",
-      "final",
+      "response",
     ]);
     expect(childEvents).toContainEqual(
       expect.objectContaining({
@@ -1638,7 +1672,7 @@ describe("Agent streaming", () => {
         result: "child done",
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "parent done" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "parent done" });
   });
 
   it("forwards child tool call deltas automatically", async () => {
@@ -1775,16 +1809,14 @@ describe("Agent streaming", () => {
     const events = await collect(agent.stream({ prompt: "reason" }));
 
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        messages: [
-          Message.user("reason"),
-          Message.assistant([
-            AssistantContent.reasoning("Think once."),
-            AssistantContent.text("done"),
-          ]),
-        ],
-      },
+      type: "response",
+      messages: [
+        Message.user("reason"),
+        Message.assistant([
+          AssistantContent.reasoning("Think once."),
+          AssistantContent.text("done"),
+        ]),
+      ],
     });
   });
 
@@ -1818,33 +1850,31 @@ describe("Agent streaming", () => {
       contentType: "summary",
     });
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        messages: [
-          Message.user("reason"),
-          Message.assistant([
-            {
-              type: "reasoning",
-              id: "rs_1",
-              text: "Review complete.",
-              details: [{ type: "summary", text: "Review complete." }],
-            },
-            {
-              type: "reasoning",
-              id: "rs_2",
-              text: "Step",
-              details: [{ type: "text", text: "Step", signature: "sig_1" }],
-            },
-            {
-              type: "reasoning",
-              id: "rs_3",
-              text: "",
-              details: [{ type: "encrypted", data: "opaque" }],
-            },
-            AssistantContent.text("done"),
-          ]),
-        ],
-      },
+      type: "response",
+      messages: [
+        Message.user("reason"),
+        Message.assistant([
+          {
+            type: "reasoning",
+            id: "rs_1",
+            text: "Review complete.",
+            details: [{ type: "summary", text: "Review complete." }],
+          },
+          {
+            type: "reasoning",
+            id: "rs_2",
+            text: "Step",
+            details: [{ type: "text", text: "Step", signature: "sig_1" }],
+          },
+          {
+            type: "reasoning",
+            id: "rs_3",
+            text: "",
+            details: [{ type: "encrypted", data: "opaque" }],
+          },
+          AssistantContent.text("done"),
+        ]),
+      ],
     });
   });
 
@@ -1908,7 +1938,7 @@ describe("Agent streaming", () => {
   it("converts stream events to JSONL readable streams", async () => {
     async function* events() {
       yield { type: "text_delta", delta: "a" };
-      yield { type: "final", result: { output: "a" } };
+      yield { type: "response", output: "a" };
     }
 
     const readable = toReadableStream(events());
@@ -1921,7 +1951,7 @@ describe("Agent streaming", () => {
         .map((line) => JSON.parse(line)),
     ).toEqual([
       { type: "text_delta", delta: "a" },
-      { type: "final", result: { output: "a" } },
+      { type: "response", output: "a" },
     ]);
   });
 

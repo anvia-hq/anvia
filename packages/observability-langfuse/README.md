@@ -51,7 +51,7 @@ const result = await agent.generate({
   },
 });
 
-if (result.status === "completed") {
+if (result.type === "response") {
   console.log(result.output);
   console.log(result.trace); // { observer: "langfuse", traceId, observationId }
 }

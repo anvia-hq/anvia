@@ -1,4 +1,4 @@
-import type { AgentResult, AgentRunSettings, AgentStream } from "@anvia/core/agent";
+import type { AgentOutcome, AgentRunSettings, AgentStream } from "@anvia/core/agent";
 import type { Message as CoreMessage, JsonObject, UserMessage } from "@anvia/core/completion";
 import {
   type Agent,
@@ -58,7 +58,7 @@ type AgentRunRouteProps = {
 
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
 type RunExecution = {
-  generate(options: AgentRunSettings): Promise<AgentResult>;
+  generate(options: AgentRunSettings): Promise<AgentOutcome>;
   stream(options: AgentRunSettings): AgentStream;
 };
 
@@ -474,7 +474,7 @@ async function handleBufferedAgentRun(
   try {
     const runtimeOptions = await startBufferedSessionRun(run);
     const result = await run.execution.generate(runtimeOptions);
-    if (result.status === "suspended") {
+    if (result.type === "interaction") {
       props.continuationRegistry.register({ continuation: result.continuation, context: run });
     }
     await completeBufferedSessionRun(run, result);
@@ -485,8 +485,8 @@ async function handleBufferedAgentRun(
   }
 }
 
-function agentRunResponse(result: AgentResult): AgentRunResponse {
-  if (result.status !== "suspended") return result;
+function agentRunResponse(result: AgentOutcome): AgentRunResponse {
+  if (result.type !== "interaction") return result;
   const { continuation: _continuation, messages: _messages, ...response } = result;
   return response;
 }
@@ -526,8 +526,8 @@ async function* registerStreamingContinuation(
   run: PreparedAgentRun,
 ): AsyncIterable<AgentRunStreamEvent> {
   for await (const event of stream) {
-    if (event.type === "final" && event.result.status === "suspended") {
-      registry.register({ continuation: event.result.continuation, context: run });
+    if (event.type === "interaction") {
+      registry.register({ continuation: event.continuation, context: run });
     }
     yield event;
   }
@@ -535,7 +535,7 @@ async function* registerStreamingContinuation(
 
 async function completeBufferedSessionRun(
   run: PreparedAgentRun,
-  response: AgentResult,
+  response: AgentOutcome,
 ): Promise<void> {
   if (run.session === undefined || run.sessionStore === undefined) {
     return;
@@ -559,7 +559,7 @@ async function completeBufferedSessionRun(
     runId: run.runId,
     ...optionalTitle(run.body.messages.at(-1) as UserMessage),
     transcript,
-    status: response.status === "suspended" ? "suspended" : "success",
+    status: response.type === "interaction" ? "suspended" : "success",
   });
   if (response.memoryCompaction !== undefined && !run.memoryCompactionLogged) {
     await appendSessionLog(
@@ -574,7 +574,7 @@ async function completeBufferedSessionRun(
   }
   await appendSessionLog(
     run.sessionStore,
-    response.status === "suspended"
+    response.type === "interaction"
       ? {
           sessionId: run.session.id,
           runId: run.runId,

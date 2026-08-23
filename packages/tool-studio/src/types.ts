@@ -1,4 +1,9 @@
-import type { Agent, AgentResult, AgentStreamEvent, AgentSuspendedResult } from "@anvia/core/agent";
+import type {
+  Agent,
+  AgentInteractionOutcome,
+  AgentOutcome,
+  AgentStreamEvent,
+} from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type {
   CompletionModel,
@@ -1247,8 +1252,8 @@ export type AgentRunRequest =
     });
 
 export type AgentRunResponse =
-  | Exclude<AgentResult, AgentSuspendedResult>
-  | Omit<AgentSuspendedResult, "continuation" | "messages">;
+  | Exclude<AgentOutcome, AgentInteractionOutcome>
+  | Omit<AgentInteractionOutcome, "continuation" | "messages">;
 
 export type AgentRunStreamEvent =
   | AgentStreamEvent

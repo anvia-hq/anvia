@@ -228,11 +228,9 @@ describe("provider-executed tools", () => {
       toolCall: { id: "search_1", name: "web_search", status: "completed" },
     });
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        sources: [{ type: "url", url: "https://example.com" }],
-        providerToolCalls: [{ id: "search_1", name: "web_search", status: "completed" }],
-      },
+      type: "response",
+      sources: [{ type: "url", url: "https://example.com" }],
+      providerToolCalls: [{ id: "search_1", name: "web_search", status: "completed" }],
     });
   });
 });

@@ -62,5 +62,5 @@ const response = await agent.generate({
   },
 });
 
-if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
+if (response.type !== "response") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

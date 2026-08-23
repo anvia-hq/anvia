@@ -67,8 +67,8 @@ const response = await supportAgent.generate({
   prompt: "A customer cannot reset their password. What should I check first?",
 });
 
-if (response.status !== "completed") {
-  throw new Error(`Agent did not complete: ${response.status}`);
+if (response.type !== "response") {
+  throw new Error(`Agent returned ${response.type}`);
 }
 console.log(response.output);
 ```

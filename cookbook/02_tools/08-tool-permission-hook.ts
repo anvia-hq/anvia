@@ -67,18 +67,15 @@ let result = await agent.generate({
     "Check the status for billing, read payroll for employee E-1024, then delete account ACC-9001.",
 });
 
-while (result.status === "suspended") {
+while (result.type === "interaction") {
   if (result.interaction.type !== "tool-approval") {
     throw new Error("This example only handles tool approvals.");
   }
   console.log("approval required:", result.interaction.toolName, result.interaction.reason);
-  result = await agent.generate({
-    continuation: result.continuation,
-    response: {
-      type: "tool-approval",
-      approved: false,
-      reason: "This example rejects sensitive operations.",
-    },
+  result = await agent.resume(result.continuation, {
+    type: "tool-approval",
+    approved: false,
+    reason: "This example rejects sensitive operations.",
   });
 }
 

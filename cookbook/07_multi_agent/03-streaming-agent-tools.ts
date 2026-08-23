@@ -68,7 +68,7 @@ function renderEvent(event: AgentStreamEvent): void {
     process.stdout.write(event.delta);
   }
 
-  if (event.type === "final") {
+  if (event.type === "response") {
     process.stdout.write("\n");
   }
 }

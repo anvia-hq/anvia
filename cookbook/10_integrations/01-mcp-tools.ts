@@ -38,8 +38,8 @@ try {
       console.log("tool result:", event.toolName, event.result);
     }
 
-    if (event.type === "final") {
-      console.log("final:", event.result.text);
+    if (event.type === "response") {
+      console.log("final:", event.text);
     }
   }
 } finally {

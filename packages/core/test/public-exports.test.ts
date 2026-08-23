@@ -1,8 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
+  AgentBlockedOutcome,
   AgentContextInput,
+  AgentInteractionOutcome,
   AgentOptions,
+  AgentOutcome,
+  AgentResponse,
+  AgentStream,
   AgentToolInput,
   AgentToolOptions,
   CreateVectorContextOptions,
@@ -39,6 +44,7 @@ import * as guardrails from "../src/guardrails";
 import * as imageGeneration from "../src/image-generation";
 import type {
   AgentErrorStreamEvent as RootAgentErrorStreamEvent,
+  AgentOutcome as RootAgentOutcome,
   AgentRunOptions as RootAgentRunOptions,
   AgentStreamEvent as RootAgentStreamEvent,
   AgentToolCallDeltaEvent as RootAgentToolCallDeltaEvent,
@@ -101,7 +107,7 @@ type RemovedMcpFactory = typeof import("../src/mcp").mcp;
 type RemovedFileLoader = import("../src/documents").FileLoader;
 // @ts-expect-error PdfFileLoader was removed with the legacy loader API.
 type RemovedPdfFileLoader = import("../src/documents").PdfFileLoader;
-// @ts-expect-error Approval-required results were replaced by AgentSuspendedResult.
+// @ts-expect-error Approval-required results were replaced by AgentInteractionOutcome.
 type RemovedApprovalRequiredResult = import("../src/agent").AgentApprovalRequiredResult;
 // @ts-expect-error Approval decisions were replaced by AgentInteractionResponse.
 type RemovedApprovalDecision = import("../src/agent").AgentApprovalDecision;
@@ -109,6 +115,12 @@ type RemovedApprovalDecision = import("../src/agent").AgentApprovalDecision;
 type RemovedAgentInteractionResponse = import("../src/agent").AgentInteractionResponse;
 // @ts-expect-error Agent interaction contracts are not exported from the root server barrel.
 type RemovedRootAgentInteractionResponse = import("../src/index").AgentInteractionResponse;
+// @ts-expect-error AgentResult was replaced by AgentOutcome.
+type RemovedAgentResult = import("../src/agent").AgentResult;
+// @ts-expect-error AgentBlockedResult was replaced by AgentBlockedOutcome.
+type RemovedAgentBlockedResult = import("../src/agent").AgentBlockedResult;
+// @ts-expect-error AgentSuspendedResult was replaced by AgentInteractionOutcome.
+type RemovedAgentSuspendedResult = import("../src/agent").AgentSuspendedResult;
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
@@ -128,9 +140,19 @@ describe("public exports", () => {
     expectTypeOf<PublicAgentContinuation>().not.toBeNever();
     expectTypeOf<PublicAgentInteractionRequest>().not.toBeNever();
     expectTypeOf<PublicAgentInteractionResponse>().not.toBeNever();
+    expectTypeOf<AgentOutcome>().not.toBeNever();
+    expectTypeOf<AgentResponse>().not.toBeNever();
+    expectTypeOf<AgentBlockedOutcome>().not.toBeNever();
+    expectTypeOf<AgentInteractionOutcome>().not.toBeNever();
+    expectTypeOf<RootAgentOutcome>().toEqualTypeOf<AgentOutcome>();
+    expectTypeOf<RemovedAgentResult>().toBeAny();
+    expectTypeOf<RemovedAgentBlockedResult>().toBeAny();
+    expectTypeOf<RemovedAgentSuspendedResult>().toBeAny();
     expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
     expectTypeOf<Parameters<PublicAgentType["generate"]>["length"]>().toEqualTypeOf<1>();
     expectTypeOf<Parameters<PublicAgentType["stream"]>["length"]>().toEqualTypeOf<1>();
+    expectTypeOf<Awaited<ReturnType<PublicAgentType["generate"]>>>().toEqualTypeOf<AgentOutcome>();
+    expectTypeOf<ReturnType<PublicAgentType["stream"]>>().toEqualTypeOf<AgentStream>();
     const agent = null as unknown as PublicAgentType;
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       // @ts-expect-error Agent.generate no longer accepts a positional prompt.
@@ -177,7 +199,7 @@ describe("public exports", () => {
     expect("Agent" in publicAgent).toBe(true);
     expect("AgentSession" in publicAgent).toBe(false);
     expect(publicAgent.Agent.prototype).not.toHaveProperty("session");
-    expect(publicAgent.Agent.prototype).not.toHaveProperty("resume");
+    expect(publicAgent.Agent.prototype).toHaveProperty("resume");
     expect(publicAgent).not.toHaveProperty("parseAgentContinuation");
     expect(publicAgent).not.toHaveProperty("parseAgentInteractionResponse");
     expect(publicCore).not.toHaveProperty("parseAgentContinuation");

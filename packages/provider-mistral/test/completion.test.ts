@@ -39,13 +39,12 @@ describe("Mistral completion mapping", () => {
 
   it("exposes model-specific context limits", () => {
     const model = new MistralClient({ client: {} as never }).completionModel({
-      modelId: "mistral-large-latest",
+      modelId: "mistral-medium-3-5",
     });
 
-    expect(model.modelId).toBe("mistral-large-latest");
+    expect(model.modelId).toBe("mistral-medium-3-5");
     expect(model.contextLimits).toEqual({
-      contextWindow: 262_144,
-      maxOutputTokens: 262_144,
+      contextWindow: 256_000,
     });
   });
 

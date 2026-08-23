@@ -608,15 +608,13 @@ describe("memory compaction", () => {
     expect(events[1]?.type).toBe("turn_start");
     const final = events.at(-1);
     expect(final).toMatchObject({
-      type: "final",
-      result: {
-        memoryCompaction: {
-          originalMessageCount: 4,
-          compactedMessageCount: 2,
-          retainedMessageCount: 2,
-          attempts: 1,
-          usage: Usage.empty(),
-        },
+      type: "response",
+      memoryCompaction: {
+        originalMessageCount: 4,
+        compactedMessageCount: 2,
+        retainedMessageCount: 2,
+        attempts: 1,
+        usage: Usage.empty(),
       },
     });
   });

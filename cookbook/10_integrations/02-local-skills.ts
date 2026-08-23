@@ -36,7 +36,7 @@ for await (const event of agent.stream({ prompt })) {
     process.stdout.write(event.delta);
   }
 
-  if (event.type === "final") {
+  if (event.type === "response") {
     process.stdout.write("\n");
   }
 }

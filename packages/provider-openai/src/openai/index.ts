@@ -30,5 +30,11 @@ export type {
   OpenAISpeechGenerationModelId,
   OpenAITranscriptionModelId,
 } from "./models";
-export { TTS_1, TTS_1_HD } from "./speech-generation";
-export { WHISPER_1 } from "./transcription";
+export { GPT_4O_MINI_TTS, TTS_1, TTS_1_HD } from "./speech-generation";
+export {
+  GPT_4O_MINI_TRANSCRIBE,
+  GPT_4O_TRANSCRIBE,
+  GPT_4O_TRANSCRIBE_DIARIZE,
+  GPT_TRANSCRIBE,
+  WHISPER_1,
+} from "./transcription";

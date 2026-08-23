@@ -155,7 +155,7 @@ function withAgentRunCancellation(
               }
               return next;
             }
-            if (next.value.type === "final" || next.value.type === "error") {
+            if (isTerminalAgentEvent(next.value)) {
               terminal = true;
             }
             return next;
@@ -255,12 +255,12 @@ export function createPersistedStreamingSessionTranscript(props: {
           return;
         }
         acceptTranscriptStreamEvent(transcript, event);
-        if (event.type === "final" || event.type === "error") {
+        if (isTerminalAgentEvent(event)) {
           assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
         }
         const eventStatus =
-          event.type === "final"
-            ? event.result.status === "suspended"
+          event.type === "response" || event.type === "interaction" || event.type === "blocked"
+            ? event.type === "interaction"
               ? "suspended"
               : "success"
             : event.type === "error"
@@ -277,8 +277,8 @@ export function createPersistedStreamingSessionTranscript(props: {
         if (event.type === "error") saveInput.error = serializeError(event.error);
         await saveTranscript(saveInput);
         const generatedMessages =
-          event.type === "final"
-            ? event.result.messages.slice(props.generatedMessagesStartIndex ?? 1)
+          event.type === "response" || event.type === "interaction" || event.type === "blocked"
+            ? event.messages.slice(props.generatedMessagesStartIndex ?? 1)
             : [];
         if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
           await props.store.append({
@@ -441,8 +441,8 @@ function acceptTranscriptStreamEvent(
     }
     appendChildAgentTranscriptEvent(matched, event);
   }
-  if (event.type === "final" && event.result.status === "suspended") {
-    const interaction = event.result.interaction;
+  if (event.type === "interaction") {
+    const interaction = event.interaction;
     const matched = findTranscriptToolEntry(
       transcript,
       interaction.toolName,
@@ -500,8 +500,11 @@ function acceptTranscriptStreamEvent(
       };
     }
   }
-  if (event.type === "final" && event.result.trace?.traceId !== undefined) {
-    assignTranscriptTraceId(transcript, event.result.trace.traceId);
+  if (
+    (event.type === "response" || event.type === "interaction" || event.type === "blocked") &&
+    event.trace?.traceId !== undefined
+  ) {
+    assignTranscriptTraceId(transcript, event.trace.traceId);
   }
   if (event.type === "error") {
     appendTranscriptAssistantError(transcript, errorText(event.error));
@@ -999,4 +1002,13 @@ function toolResultOutputText(output: ToolResultOutput): string {
         : `[file:${part.mediaType}${part.filename === undefined ? "" : `:${part.filename}`}]`,
     )
     .join("\n");
+}
+
+function isTerminalAgentEvent(event: AgentRunStreamEvent): boolean {
+  return (
+    event.type === "response" ||
+    event.type === "interaction" ||
+    event.type === "blocked" ||
+    event.type === "error"
+  );
 }

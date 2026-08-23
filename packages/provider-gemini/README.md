@@ -26,7 +26,7 @@ const client = new GeminiClient({
   apiKey,
 });
 
-const model = client.completionModel({ modelId: "gemini-2.5-flash" });
+const model = client.completionModel({ modelId: "gemini-3.7-flash" });
 
 const agent = new Agent({
   id: "assistant",
@@ -35,7 +35,7 @@ const agent = new Agent({
 });
 
 const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Vertex AI
@@ -52,7 +52,7 @@ const client = new GeminiClient({
   },
 });
 
-const model = client.completionModel({ modelId: "gemini-2.5-flash" });
+const model = client.completionModel({ modelId: "gemini-3.7-flash" });
 ```
 
 The Google SDK uses Application Default Credentials. For a service-account JSON file, set
@@ -82,7 +82,7 @@ JSON or service-account keys.
 ## Embeddings
 
 ```ts
-const embeddings = client.embeddingModel({ modelId: "gemini-embedding-001" });
+const embeddings = client.embeddingModel({ modelId: "gemini-embedding-2" });
 const vectors = await embeddings.embedTexts(["Anvia is a TypeScript AI runtime."]);
 ```
 
@@ -112,7 +112,9 @@ const imagenModel = client.imageGenerationModel({
 - structural completion, embedding, image, and transcription handle types
 - Gemini model-ID types
 - `GEMINI_2_5_FLASH_IMAGE`
-- `GEMINI_3_PRO_IMAGE_PREVIEW`
+- `GEMINI_3_1_FLASH_IMAGE`
+- `GEMINI_3_1_FLASH_LITE_IMAGE`
+- `GEMINI_3_PRO_IMAGE`
 - `IMAGEN_4_GENERATE`
 - `gemini`
 

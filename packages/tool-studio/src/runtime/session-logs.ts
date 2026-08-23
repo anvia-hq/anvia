@@ -326,10 +326,10 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
-  if (event.type === "final") {
-    const result = event.result;
+  if (event.type === "response" || event.type === "interaction" || event.type === "blocked") {
+    const result = event;
     const logs: StudioSessionLogAppendInput[] = [];
-    if (result.status === "suspended") {
+    if (result.type === "interaction") {
       logs.push({
         sessionId,
         runId,
@@ -494,15 +494,15 @@ function childAgentLog(
       },
     ];
   }
-  if (child.type === "final") {
-    const result = child.result;
+  if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
+    const result = child;
     const metadata: JsonObject = {
       parentToolName: event.toolName,
       agentId: event.agentId,
       hasAgentName: event.agentName !== undefined,
       outputBytes: byteLength(result.text),
       messageCount: result.messages.length,
-      status: result.status,
+      status: result.type,
     };
     const usage = usageSummary(result.usage);
     if (usage !== undefined) metadata.usage = usage;

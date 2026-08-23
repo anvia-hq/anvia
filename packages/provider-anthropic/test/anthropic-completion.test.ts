@@ -21,6 +21,7 @@ import {
   fromAnthropicStreamEvent,
   toAnthropicMessagesParams,
 } from "../src/anthropic/completion";
+import { AnthropicClient } from "../src/index";
 
 describe("Anthropic Messages mapping", () => {
   it("exposes Anthropic capability metadata", () => {
@@ -40,12 +41,11 @@ describe("Anthropic Messages mapping", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new AnthropicCompletionModel({} as never, "claude-sonnet-4-20250514", {
-      contextWindow: 200_000,
-      maxOutputTokens: 64_000,
+    const model = new AnthropicClient({ client: {} as never }).completionModel({
+      modelId: "claude-opus-5",
     });
 
-    expect(model.contextLimits).toEqual({ contextWindow: 200_000, maxOutputTokens: 64_000 });
+    expect(model.contextLimits).toEqual({ contextWindow: 1_000_000, maxOutputTokens: 128_000 });
   });
 
   it("rejects unsupported output schemas before provider calls", async () => {
@@ -587,15 +587,13 @@ describe("Anthropic Messages mapping", () => {
       delta: "Hello",
     });
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: {
-        output: "Hello",
-        usage: {
-          inputTokens: 13,
-          outputTokens: 4,
-          totalTokens: 17,
-          cachedInputTokens: 3,
-        },
+      type: "response",
+      output: "Hello",
+      usage: {
+        inputTokens: 13,
+        outputTokens: 4,
+        totalTokens: 17,
+        cachedInputTokens: 3,
       },
     });
     expect(events.find((event) => event.type === "turn_end")).toMatchObject({

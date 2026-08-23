@@ -26,7 +26,7 @@ const client = new AnthropicClient({
   apiKey,
 });
 
-const model = client.completionModel({ modelId: "claude-sonnet-4-20250514" });
+const model = client.completionModel({ modelId: "claude-opus-5" });
 
 const agent = new Agent({
   id: "assistant",
@@ -35,7 +35,7 @@ const agent = new Agent({
 });
 
 const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Anthropic-Compatible APIs

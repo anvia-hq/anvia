@@ -267,10 +267,10 @@ function numericJsonOutput(
 
 export type ToolCall = Extract<AssistantContentPart, { type: "tool-call" }>;
 
-import type { AgentResponse, AgentResult } from "../../src/agent";
+import type { AgentOutcome, AgentResponse } from "../../src/agent";
 
-export function assertCompleted(result: AgentResult): asserts result is AgentResponse {
-  if (result.status !== "completed") {
-    throw new Error(`Expected completed agent result, received ${result.status}`);
+export function assertCompleted(result: AgentOutcome): asserts result is AgentResponse {
+  if (result.type !== "response") {
+    throw new Error(`Expected an agent response, received ${result.type}`);
   }
 }

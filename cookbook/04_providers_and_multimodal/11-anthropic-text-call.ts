@@ -18,5 +18,5 @@ const agent = new Agent({
 
 const response = await agent.generate({ prompt: "Explain what a provider adapter does." });
 
-if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
+if (response.type !== "response") throw new Error("Unexpected tool approval request.");
 console.log(response.output);

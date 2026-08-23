@@ -96,7 +96,7 @@ describe("Agent structured output", () => {
     });
 
     await expect(agent.generate({ prompt: "Create hypotheses." })).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: { phase: "hypotheses", hypotheses: [] },
       text: output,
     });
@@ -414,14 +414,12 @@ describe("Agent structured output", () => {
     );
     const final = events.at(-1);
     expect(final).toMatchObject({
-      type: "final",
-      result: {
-        output: { phase: "hypotheses", hypotheses: [] },
-        usage: { totalTokens: 2 },
-      },
+      type: "response",
+      output: { phase: "hypotheses", hypotheses: [] },
+      usage: { totalTokens: 2 },
     });
-    if (final?.type !== "final") throw new Error("Expected final Agent event.");
-    expect(final.result.messages.at(-1)?.metadata).toMatchObject({
+    if (final?.type !== "response") throw new Error("Expected Agent response event.");
+    expect(final.messages.at(-1)?.metadata).toMatchObject({
       anvia: { generation: { usage: { totalTokens: 2 } } },
     });
   });
@@ -446,8 +444,8 @@ describe("Agent structured output", () => {
     expect(JSON.stringify(events)).not.toContain("stream-private");
     expect(JSON.stringify(model.requests[1])).not.toContain("stream-private");
     expect(events.at(-1)).toMatchObject({
-      type: "final",
-      result: { output: { phase: "hypotheses", hypotheses: [] } },
+      type: "response",
+      output: { phase: "hypotheses", hypotheses: [] },
     });
   });
 
@@ -499,7 +497,7 @@ describe("Agent structured output", () => {
       "generation_start",
       "text_delta",
       "turn_end",
-      "final",
+      "response",
     ]);
     expect(events).toContainEqual({ type: "reasoning_delta", turn: 1, delta: "checking" });
     expect(events).toContainEqual({ type: "text_delta", turn: 1, delta: "working" });

@@ -912,15 +912,12 @@ describe("otel", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "final",
-          result: {
-            status: "completed",
-            runId: "child-run",
-            output: "7",
-            text: "7",
-            usage: usage(2, 1),
-            messages: [Message.assistant("7")],
-          },
+          type: "response",
+          runId: "child-run",
+          output: "7",
+          text: "7",
+          usage: usage(2, 1),
+          messages: [Message.assistant("7")],
         },
       },
     });
@@ -1071,15 +1068,12 @@ describe("otel", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "final",
-          result: {
-            status: "completed",
-            runId: "child-run",
-            output: "private child output",
-            text: "private child output",
-            usage: usage(2, 1),
-            messages: [Message.assistant("private child message")],
-          },
+          type: "response",
+          runId: "child-run",
+          output: "private child output",
+          text: "private child output",
+          usage: usage(2, 1),
+          messages: [Message.assistant("private child message")],
         },
       },
     });

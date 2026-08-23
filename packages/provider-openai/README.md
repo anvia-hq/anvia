@@ -27,7 +27,7 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const model = client.completionModel({ modelId: "gpt-5", api: "responses" });
+const model = client.completionModel({ modelId: "gpt-5.6", api: "responses" });
 
 const agent = new Agent({
   id: "assistant",
@@ -36,7 +36,7 @@ const agent = new Agent({
 });
 
 const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 ```
 
 ## OpenAI-Compatible APIs
@@ -97,7 +97,7 @@ enabled. Let the model choose tools naturally when using Kimi thinking mode.
 
 ```ts
 const embeddingModel = client.embeddingModel({ modelId: "text-embedding-3-small" });
-const imageModel = client.imageGenerationModel({ modelId: "gpt-image-1" });
+const imageModel = client.imageGenerationModel({ modelId: "gpt-image-2" });
 const speechModel = client.speechGenerationModel({ modelId: "gpt-4o-mini-tts" });
 const transcriptionModel = client.transcriptionModel({ modelId: "gpt-4o-mini-transcribe" });
 ```
@@ -124,7 +124,7 @@ const transcript = await transcribe({
 - `OpenAIClient`
 - structural completion, embedding, image, speech, and transcription handle types
 - `OpenAICompletionModelId` and media model-ID types
-- model constants such as `GPT_IMAGE_1`, `DALL_E_3`, `TTS_1`, and `WHISPER_1`
+- model constants such as `GPT_IMAGE_2`, `GPT_4O_MINI_TTS`, and `GPT_TRANSCRIBE`
 - `openai`
 
 ## Development

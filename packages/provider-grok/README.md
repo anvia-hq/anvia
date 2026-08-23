@@ -27,7 +27,7 @@ const client = new GrokClient({
   apiKey,
 });
 
-const model = client.completionModel({ modelId: "grok-4.5", api: "responses" });
+const model = client.completionModel({ modelId: "grok-4.6", api: "responses" });
 
 const agent = new Agent({
   id: "assistant",
@@ -36,7 +36,7 @@ const agent = new Agent({
 });
 
 const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Completion APIs
@@ -52,7 +52,7 @@ const client = new GrokClient({
 Use the Chat Completions adapter when a workflow specifically needs that surface:
 
 ```ts
-const chatModel = client.completionModel({ modelId: "grok-4.5", api: "chat" });
+const chatModel = client.completionModel({ modelId: "grok-4.6", api: "chat" });
 ```
 
 Provider-specific xAI parameters can be passed through completion `providerOptions`.
@@ -82,7 +82,7 @@ const grok = new GrokClient({ apiKey: process.env.XAI_API_KEY });
 
 const researcher = new Agent({
   id: "researcher",
-  model: grok.completionModel({ modelId: "grok-4.5", api: "responses" }),
+  model: grok.completionModel({ modelId: "grok-4.6", api: "responses" }),
   providerOptions: { max_turns: 5 },
   tools: [
     localDatabaseTool,
@@ -94,7 +94,7 @@ const researcher = new Agent({
 
 const result = await researcher.generate({ prompt: "Summarize the latest xAI updates." });
 
-if (result.status === "completed") {
+if (result.type === "response") {
   console.log(result.output);
   console.log(result.sources);
   console.log(result.providerToolCalls);
@@ -182,7 +182,7 @@ speech, file or collection management, batches, stored completions, compaction, 
 - structural completion, image, speech, and transcription handle types
 - Grok completion and image model-ID types
 - typed `tools` factories for xAI server-executed tools
-- model constants such as `GROK_4_5`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
+- model constants such as `GROK_4_6`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
 - `grok`
 
 ## Development

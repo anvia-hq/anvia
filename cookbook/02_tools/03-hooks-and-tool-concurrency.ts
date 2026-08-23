@@ -56,6 +56,6 @@ const response = await agent.generate({
   toolConcurrency: 2,
 });
 
-if (response.status === "completed") {
+if (response.type === "response") {
   console.log(response.output);
 }

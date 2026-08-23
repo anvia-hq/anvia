@@ -1,6 +1,9 @@
 export * as gemini from "./gemini/index";
 export {
   GEMINI_2_5_FLASH_IMAGE,
+  GEMINI_3_1_FLASH_IMAGE,
+  GEMINI_3_1_FLASH_LITE_IMAGE,
+  GEMINI_3_PRO_IMAGE,
   GEMINI_3_PRO_IMAGE_PREVIEW,
   GeminiClient,
   type GeminiClientOptions,

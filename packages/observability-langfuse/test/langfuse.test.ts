@@ -1179,15 +1179,12 @@ describe("langfuse", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "final",
-          result: {
-            status: "completed",
-            runId: "child-run",
-            output: "7",
-            text: "7",
-            usage: usage(2, 1),
-            messages: [],
-          },
+          type: "response",
+          runId: "child-run",
+          output: "7",
+          text: "7",
+          usage: usage(2, 1),
+          messages: [],
         },
       },
     });

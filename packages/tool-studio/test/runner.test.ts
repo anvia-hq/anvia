@@ -3061,8 +3061,8 @@ describe("Anvia studio", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: async () => ({ summary: "Earlier discussion." }),
         },
       },
@@ -3169,8 +3169,8 @@ describe("Anvia studio", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: async () => ({ summary: "Earlier discussion." }),
         },
       },

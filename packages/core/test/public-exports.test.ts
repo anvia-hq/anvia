@@ -151,6 +151,7 @@ describe("public exports", () => {
     expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
     expectTypeOf<Parameters<PublicAgentType["generate"]>["length"]>().toEqualTypeOf<1>();
     expectTypeOf<Parameters<PublicAgentType["stream"]>["length"]>().toEqualTypeOf<1>();
+    expectTypeOf<Parameters<PublicAgentType["compactMemory"]>["length"]>().toEqualTypeOf<1>();
     expectTypeOf<Awaited<ReturnType<PublicAgentType["generate"]>>>().toEqualTypeOf<AgentOutcome>();
     expectTypeOf<ReturnType<PublicAgentType["stream"]>>().toEqualTypeOf<AgentStream>();
     const agent = null as unknown as PublicAgentType;
@@ -444,11 +445,13 @@ describe("public exports", () => {
   it("exposes canonical memory helpers from root and memory entrypoints", () => {
     expect(publicCore).toHaveProperty("createMemoryScopeKey");
     expect(publicCore).toHaveProperty("createSummaryMemoryCompactor");
+    expect(publicCore).toHaveProperty("estimateMemoryTokens");
     expect(publicCore).toHaveProperty("isMemoryCompactionMessage");
     expect(publicCore).toHaveProperty("MemoryCompactionError");
     expect(publicCore).toHaveProperty("MemoryCompactionConflictError");
     expect(memory).toHaveProperty("createMemoryScopeKey");
     expect(memory).toHaveProperty("createSummaryMemoryCompactor");
+    expect(memory).toHaveProperty("estimateMemoryTokens");
     expect(memory).toHaveProperty("isMemoryCompactionMessage");
     expectTypeOf<RemovedMemoryContext>().toBeAny();
     expectTypeOf<RemovedMemoryAppendInput>().toBeAny();

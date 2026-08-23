@@ -100,6 +100,10 @@ describe("useChat", () => {
             originalMessageCount: 12,
             compactedMessageCount: 8,
             retainedMessageCount: 4,
+            originalTokenCount: 1_200,
+            compactedTokenCount: 800,
+            retainedTokenCount: 400,
+            resultTokenCount: 500,
             attempts: 1,
             usage: {
               inputTokens: 20,

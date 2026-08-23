@@ -394,6 +394,10 @@ export function parseClientStreamEvent<
         "originalMessageCount",
         "compactedMessageCount",
         "retainedMessageCount",
+        "originalTokenCount",
+        "compactedTokenCount",
+        "retainedTokenCount",
+        "resultTokenCount",
         "attempts",
         "usage",
       ]);
@@ -427,6 +431,10 @@ export function parseClientStreamEvent<
             "originalMessageCount",
             "compactedMessageCount",
             "retainedMessageCount",
+            "originalTokenCount",
+            "compactedTokenCount",
+            "retainedTokenCount",
+            "resultTokenCount",
             "attempts",
             "usage",
           ],
@@ -614,6 +622,10 @@ function validateMemoryCompactionForGuard(value: Record<string, unknown>): boole
         "originalMessageCount",
         "compactedMessageCount",
         "retainedMessageCount",
+        "originalTokenCount",
+        "compactedTokenCount",
+        "retainedTokenCount",
+        "resultTokenCount",
         "attempts",
         "usage",
       ],
@@ -942,7 +954,15 @@ function validateUsageAndContext(event: Record<string, unknown>, original: unkno
 }
 
 function validateMemoryCompactionInfo(value: Record<string, unknown>, original: unknown): void {
-  for (const field of ["originalMessageCount", "compactedMessageCount", "retainedMessageCount"]) {
+  for (const field of [
+    "originalMessageCount",
+    "compactedMessageCount",
+    "retainedMessageCount",
+    "originalTokenCount",
+    "compactedTokenCount",
+    "retainedTokenCount",
+    "resultTokenCount",
+  ]) {
     if (!isEventId(value[field])) invalid(`memory_compaction.${field}`, original);
   }
   if (!isPositiveEventId(value.attempts)) invalid("memory_compaction.attempts", original);

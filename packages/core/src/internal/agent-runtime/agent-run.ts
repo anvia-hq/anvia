@@ -110,6 +110,7 @@ import {
   ToolExecutionSuspension,
 } from "./interaction-suspension";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
+import { normalizeMemoryScope } from "./memory-scope";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
 import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
@@ -318,7 +319,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.continuationState === undefined
           ? await this.memoryRecorder.prepareHistory(
               runId,
-              newMessages.length,
+              newMessages,
               this.abortController.signal,
             )
           : undefined;
@@ -628,7 +629,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.continuationState === undefined
           ? await this.memoryRecorder.prepareHistory(
               runId,
-              newMessages.length,
+              newMessages,
               this.abortController.signal,
             )
           : undefined;
@@ -1958,6 +1959,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         originalMessageCount: compaction.originalMessageCount,
         compactedMessageCount: compaction.compactedMessageCount,
         retainedMessageCount: compaction.retainedMessageCount,
+        originalTokenCount: compaction.originalTokenCount,
+        compactedTokenCount: compaction.compactedTokenCount,
+        retainedTokenCount: compaction.retainedTokenCount,
+        resultTokenCount: compaction.resultTokenCount,
         attempts: compaction.attempts,
         inputTokens: compaction.usage.inputTokens,
         outputTokens: compaction.usage.outputTokens,
@@ -2427,21 +2432,6 @@ function normalizeSteeringInput(input: AgentSteerInput): MessageType[] {
     throw new TypeError("Agent steering messages must all be user messages.");
   }
   return parsedMessages;
-}
-
-function normalizeMemoryScope(scope: MemoryScope): MemoryScope {
-  if (typeof scope !== "object" || scope === null) {
-    throw new TypeError("Agent session must be an object.");
-  }
-  if (typeof scope.sessionId !== "string" || scope.sessionId.trim().length === 0) {
-    throw new TypeError("Agent sessionId must be a non-empty string.");
-  }
-  const normalized: MemoryScope = {
-    sessionId: scope.sessionId.trim(),
-  };
-  if (scope.userId !== undefined) normalized.userId = scope.userId;
-  if (scope.metadata !== undefined) normalized.metadata = scope.metadata;
-  return lifecycleSnapshot(normalized);
 }
 
 function normalizeRequestedRunId(runId: string | undefined): string | undefined {

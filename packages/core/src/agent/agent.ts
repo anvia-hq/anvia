@@ -2,10 +2,13 @@ import { isStreamingCompletionModel } from "../completion/generate-completion";
 import type { CompletionModel, JsonObject, ToolChoice } from "../completion/index";
 import type { GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
+import { AgentRunMemory } from "../internal/agent-runtime/memory";
+import { normalizeMemoryScope } from "../internal/agent-runtime/memory-scope";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
 import { assertJsonObject } from "../internal/json-object";
 import type { McpServer } from "../mcp";
+import type { MemoryCompactionResult } from "../memory";
 import type { AgentObservabilityOptions } from "../observability";
 import type { RetrySetting } from "../retry";
 import type { ZodSchema } from "../schema/zod-schema";
@@ -19,7 +22,13 @@ import type { AgentContinuation, AgentInteractionResponse } from "./interactions
 import type { AgentLifecycle } from "./lifecycle";
 import { registerAgentProviderOutputSchema } from "./output-schema";
 import { resolveAgentOptions } from "./resolve-options";
-import type { AgentOutcome, AgentRunOptions, AgentRunSettings, AgentStream } from "./run-types";
+import type {
+  AgentMemoryCompactionOptions,
+  AgentOutcome,
+  AgentRunOptions,
+  AgentRunSettings,
+  AgentStream,
+} from "./run-types";
 import {
   cloneFrozenPlainData,
   snapshotAgentContext,
@@ -117,6 +126,18 @@ export class Agent<
       throw new Error("This completion model does not support streaming");
     }
     return createAgentStream(run);
+  }
+
+  compactMemory(options: AgentMemoryCompactionOptions): Promise<MemoryCompactionResult> {
+    if (typeof options !== "object" || options === null || Array.isArray(options)) {
+      throw new TypeError("Manual memory compaction requires an options object.");
+    }
+    const scope = normalizeMemoryScope(options.session, "Manual memory compaction");
+    const memory = new AgentRunMemory(this, scope, []);
+    return memory.compact(
+      `manual-memory-compaction:${globalThis.crypto.randomUUID()}`,
+      options.abortSignal,
+    );
   }
 
   asTool(options: AgentToolOptions): Tool<{ prompt: string }, Output> {

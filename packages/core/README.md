@@ -398,8 +398,8 @@ const agent = new Agent({
     store: memory,
     savePolicy: "message",
     compaction: {
-      trigger: { afterMessages: 50 },
-      retention: { recentUserTurns: 4 },
+      trigger: { afterTokens: 32_000 },
+      retention: { recentTokens: 8_000 },
       compactor,
       conflictRetries: false,
     },
@@ -408,13 +408,50 @@ const agent = new Agent({
 
 for await (const event of agent.stream({ prompt: "What did we decide?", session })) {
   if (event.type === "memory_compaction") {
-    console.log(event.compactedMessageCount, event.usage);
+    console.log({
+      messages: event.compactedMessageCount,
+      beforeTokens: event.originalTokenCount,
+      afterTokens: event.resultTokenCount,
+      usage: event.usage,
+    });
   }
 }
 ```
 
-The trigger is a threshold, not a hard storage limit. Summary-provider retries belong to the
-compactor; full snapshot-to-replacement conflict retries are separately opt-in.
+The trigger includes the stored transcript and the incoming user message. Retention keeps as many
+recent complete user-led turns as fit the configured budget; the newest complete turn is always
+kept and never split, even when it exceeds that budget. When `retention` is omitted, it defaults to
+25% of `afterTokens`.
+
+The built-in token counter is a lightweight provider-neutral estimate. Pass `tokenCounter` when you
+have a model-specific tokenizer or counting service. A custom counter may be async, can be called
+multiple times, and must return deterministic, monotonic, nonnegative safe integers:
+
+```ts
+compaction: {
+  trigger: { afterTokens: 32_000 },
+  retention: { recentTokens: 8_000 },
+  tokenCounter: (messages) => tokenizer.count(messages),
+  compactor,
+}
+```
+
+You can force the configured policy without starting an Agent run. The result makes a no-op
+explicit rather than throwing:
+
+```ts
+const result = await agent.compactMemory({ session });
+
+if (result.type === "compacted") {
+  console.log(result.originalTokenCount, result.resultTokenCount);
+} else {
+  console.log(result.reason); // "nothing_to_compact"
+}
+```
+
+The automatic trigger is a threshold, not a hard storage limit. Summary-provider retries belong to
+the compactor; full snapshot-to-replacement conflict retries are separately opt-in. A streamed
+`memory_compaction` event is emitted only after the store atomically commits the replacement.
 
 ## Structured Extraction
 

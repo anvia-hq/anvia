@@ -196,6 +196,10 @@ export function memoryCompactedLog(props: {
   originalMessageCount: number;
   compactedMessageCount: number;
   retainedMessageCount: number;
+  originalTokenCount: number;
+  compactedTokenCount: number;
+  retainedTokenCount: number;
+  resultTokenCount: number;
   attempts: number;
   usage: unknown;
 }): StudioSessionLogAppendInput {
@@ -203,6 +207,10 @@ export function memoryCompactedLog(props: {
     originalMessageCount: props.originalMessageCount,
     compactedMessageCount: props.compactedMessageCount,
     retainedMessageCount: props.retainedMessageCount,
+    originalTokenCount: props.originalTokenCount,
+    compactedTokenCount: props.compactedTokenCount,
+    retainedTokenCount: props.retainedTokenCount,
+    resultTokenCount: props.resultTokenCount,
     attempts: props.attempts,
   };
   const usage = usageSummary(props.usage);

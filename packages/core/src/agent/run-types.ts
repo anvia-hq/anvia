@@ -74,6 +74,11 @@ export type AgentRunSettings<Output = string, RawResponse = unknown> = {
 export type AgentRunOptions<Output = string, RawResponse = unknown> = AgentInput &
   AgentRunSettings<Output, RawResponse>;
 
+export type AgentMemoryCompactionOptions = {
+  session: MemoryScope;
+  abortSignal?: AbortSignal | undefined;
+};
+
 export type AgentRunLink = Readonly<{
   runId: string;
   interactionId: string;

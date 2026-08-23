@@ -25,6 +25,7 @@ export type {
   AgentInput,
   AgentInteractionOutcome,
   AgentMemoryCompactionEvent,
+  AgentMemoryCompactionOptions,
   AgentOutcome,
   AgentPrompt,
   AgentResponse,
@@ -166,6 +167,7 @@ export type {
   MemoryCompactionOptions,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
+  MemoryCompactionResult,
   MemoryCompactionSnapshot,
   MemoryCompactionSnapshotOptions,
   MemoryCompactor,
@@ -185,10 +187,12 @@ export type {
   MemoryScopeKeyOptions,
   MemoryScopeKeyResolver,
   MemoryStore,
+  MemoryTokenCounter,
 } from "./memory";
 export {
   createMemoryScopeKey,
   createSummaryMemoryCompactor,
+  estimateMemoryTokens,
   isMemoryCompactionMessage,
   MemoryCompactionConflictError,
   MemoryCompactionError,

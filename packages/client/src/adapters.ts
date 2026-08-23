@@ -321,6 +321,10 @@ async function* translateAgentEvent(
         originalMessageCount: event.originalMessageCount,
         compactedMessageCount: event.compactedMessageCount,
         retainedMessageCount: event.retainedMessageCount,
+        originalTokenCount: event.originalTokenCount,
+        compactedTokenCount: event.compactedTokenCount,
+        retainedTokenCount: event.retainedTokenCount,
+        resultTokenCount: event.resultTokenCount,
         attempts: event.attempts,
         usage: event.usage,
       });

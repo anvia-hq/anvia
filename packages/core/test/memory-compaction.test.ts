@@ -202,8 +202,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 6 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
       },
@@ -219,13 +219,16 @@ describe("memory compaction", () => {
       Message.user("next"),
     ]);
     expect(result.usage).toEqual(Usage.add(summaryUsage, mainUsage));
-    expect(result.memoryCompaction).toEqual({
+    expect(result.memoryCompaction).toMatchObject({
       originalMessageCount: 6,
       compactedMessageCount: 4,
       retainedMessageCount: 2,
       attempts: 1,
       usage: summaryUsage,
     });
+    expect(result.memoryCompaction?.originalTokenCount).toBeGreaterThan(
+      result.memoryCompaction?.resultTokenCount ?? Number.POSITIVE_INFINITY,
+    );
     expect(events).toContain("memory.compaction");
     expect(store.replaceCalls[0]).toMatchObject({ messageCount: 4 });
     expect(store.snapshot().filter(isMemoryCompactionMessage)).toHaveLength(1);
@@ -241,7 +244,7 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 10 },
+          trigger: { afterTokens: 10 },
           compactor,
         },
       },
@@ -250,6 +253,104 @@ describe("memory compaction", () => {
     await agent.generate({ prompt: "next", session: scope });
 
     expect(compactor).not.toHaveBeenCalled();
+    expect(store.replaceCalls).toHaveLength(0);
+  });
+
+  it("triggers from token pressure rather than message count", async () => {
+    const tokenCounter = (messages: readonly MessageType[]) =>
+      messages.reduce((total, message) => total + JSON.stringify(message).length, 0);
+    const compactor = vi.fn(async () => ({ summary: "earlier context" }));
+    const store = new CompactingMemoryStore([
+      Message.user("A".repeat(200)),
+      Message.assistant("old answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const agent = new Agent({
+      id: "test",
+      model: new QueueModel([response("done")]),
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 200 },
+          retention: { recentTokens: 150 },
+          tokenCounter,
+          compactor,
+        },
+      },
+    });
+
+    await agent.generate({ prompt: "next", session: scope });
+
+    expect(compactor).toHaveBeenCalledOnce();
+    expect(store.replaceCalls[0]?.messageCount).toBe(2);
+  });
+
+  it("manually compacts configured memory regardless of the automatic threshold", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("second"),
+      Message.assistant("second answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const agent = new Agent({
+      id: "test",
+      model: new QueueModel([]),
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 100 },
+          retention: { recentTokens: 4 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+
+    const result = await agent.compactMemory({ session: scope });
+
+    expect(result).toEqual({
+      type: "compacted",
+      originalMessageCount: 6,
+      compactedMessageCount: 2,
+      retainedMessageCount: 4,
+      originalTokenCount: 6,
+      compactedTokenCount: 2,
+      retainedTokenCount: 4,
+      resultTokenCount: 5,
+      attempts: 1,
+      usage: Usage.empty(),
+    });
+    expect(store.snapshot()[0]).toSatisfy(isMemoryCompactionMessage);
+  });
+
+  it("returns an explicit skipped result when manual compaction cannot preserve a newer turn", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("only turn"),
+      Message.assistant("answer"),
+    ]);
+    const agent = new Agent({
+      id: "test",
+      model: new QueueModel([]),
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 100 },
+          retention: { recentTokens: 10 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: "unused" }),
+        },
+      },
+    });
+
+    await expect(agent.compactMemory({ session: scope })).resolves.toEqual({
+      type: "skipped",
+      reason: "nothing_to_compact",
+      originalMessageCount: 2,
+      originalTokenCount: 2,
+    });
     expect(store.replaceCalls).toHaveLength(0);
   });
 
@@ -263,7 +364,7 @@ describe("memory compaction", () => {
         new Agent({
           id: "test",
           model,
-          memory: { store, compaction: { trigger: { afterMessages: 0 }, compactor } },
+          memory: { store, compaction: { trigger: { afterTokens: 0 }, compactor } },
         }),
     ).toThrow(RangeError);
     expect(
@@ -274,8 +375,38 @@ describe("memory compaction", () => {
           memory: {
             store,
             compaction: {
-              trigger: { afterMessages: 4 },
-              retention: { recentUserTurns: 0 },
+              trigger: { afterTokens: 4 },
+              retention: { recentTokens: 4 },
+              compactor,
+            },
+          },
+        }),
+    ).toThrow("must be less than afterTokens");
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              tokenCounter: "nope" as unknown as (messages: readonly MessageType[]) => number,
+              compactor,
+            },
+          },
+        }),
+    ).toThrow("tokenCounter");
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              retention: { recentTokens: 0 },
               compactor,
             },
           },
@@ -289,7 +420,7 @@ describe("memory compaction", () => {
           memory: {
             store,
             compaction: {
-              trigger: { afterMessages: 4 },
+              trigger: { afterTokens: 4 },
               conflictRetries: { maxAttempts: 0 },
               compactor,
             },
@@ -304,7 +435,7 @@ describe("memory compaction", () => {
           memory: {
             store,
             compaction: {
-              trigger: { afterMessages: 4 },
+              trigger: { afterTokens: 4 },
               compactor: "nope" as unknown as () => Promise<{ summary: string }>,
             },
           },
@@ -317,14 +448,14 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 8 },
+          trigger: { afterTokens: 8 },
           compactor,
         },
       },
     });
     expect(agent.memory?.compaction).toMatchObject({
-      trigger: { afterMessages: 8 },
-      retention: { recentUserTurns: 4 },
+      trigger: { afterTokens: 8 },
+      retention: { recentTokens: 2 },
       conflictRetries: false,
     });
   });
@@ -347,8 +478,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 2 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 2 },
           compactor,
         },
       },
@@ -387,8 +518,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 6 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
       },
@@ -435,8 +566,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
           conflictRetries: { maxAttempts: 2 },
         },
@@ -472,8 +603,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
           conflictRetries: { maxAttempts: 2 },
         },
@@ -514,8 +645,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
           conflictRetries: { maxAttempts: 2 },
         },
@@ -558,8 +689,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
       },
@@ -569,6 +700,35 @@ describe("memory compaction", () => {
       MemoryCompactionError,
     );
     expect(mainModel.requests).toHaveLength(0);
+  });
+
+  it("rejects malformed custom compactor results at the runtime boundary", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const mainModel = new QueueModel([]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: 42 }) as unknown as { summary: string },
+        },
+      },
+    });
+
+    await expect(agent.generate({ prompt: "next", session: scope })).rejects.toThrow(
+      "must return a summary string",
+    );
+    expect(mainModel.requests).toHaveLength(0);
+    expect(store.replaceCalls).toHaveLength(0);
   });
 
   it("emits compaction before the first turn and mirrors it on the final result", async () => {
@@ -585,8 +745,9 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          tokenCounter: (messages) => messages.length,
           compactor: async () => ({ summary: "Earlier discussion." }),
         },
       },
@@ -602,6 +763,10 @@ describe("memory compaction", () => {
       originalMessageCount: 4,
       compactedMessageCount: 2,
       retainedMessageCount: 2,
+      originalTokenCount: 4,
+      compactedTokenCount: 2,
+      retainedTokenCount: 2,
+      resultTokenCount: 3,
       attempts: 1,
       usage: Usage.empty(),
     });
@@ -644,8 +809,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 5 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 5 },
+          retention: { recentTokens: 1 },
           compactor: async () => ({ summary: "Updated summary." }),
         },
       },
@@ -700,8 +865,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({
             model: summaryModel,
             retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
@@ -737,8 +902,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: ({ abortSignal }) => {
             receivedSignal = abortSignal;
             enterCompactor();
@@ -794,8 +959,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: async () => ({ summary: "Earlier discussion." }),
         },
       },
@@ -856,8 +1021,8 @@ describe("memory compaction", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 6 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
           compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
       },
@@ -910,7 +1075,7 @@ describe("memory compaction", () => {
           memory: {
             store,
             compaction: {
-              trigger: { afterMessages: 4 },
+              trigger: { afterTokens: 4 },
               compactor: async () => ({ summary: "summary" }),
             },
           },

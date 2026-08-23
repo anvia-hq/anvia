@@ -27,6 +27,7 @@ export type {
   AgentInput,
   AgentInteractionOutcome,
   AgentMemoryCompactionEvent,
+  AgentMemoryCompactionOptions,
   AgentOutcome,
   AgentPrompt,
   AgentResponse,

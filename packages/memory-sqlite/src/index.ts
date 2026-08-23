@@ -1,8 +1,5 @@
 export { SqliteMemoryClient } from "./client.js";
-export {
-  createSqliteMemorySchemaSql,
-  SqliteMemoryStore,
-} from "./store.js";
+export { createSqliteMemorySchemaSql, SqliteMemoryStore } from "./store.js";
 export type {
   SqliteMemoryClientOptions,
   SqliteMemoryDatabaseLike,

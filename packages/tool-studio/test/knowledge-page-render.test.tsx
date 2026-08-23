@@ -14,49 +14,53 @@ describe("KnowledgePage empty states", () => {
     ["dynamic-context", "No dynamic context"],
     ["dynamic-tools", "No dynamic tools"],
     ["retrieval-log", "No retrieval evidence"],
-  ] satisfies Array<
-    [KnowledgeTab, string]
-  >)("replaces the inner %s panel with one empty state", (activeTab, emptyTitle) => {
-    const html = renderToStaticMarkup(
-      <KnowledgePage
-        activeTab={activeTab}
-        enabled
-        loading={false}
-        summary={{ agents: [], evidence: [] }}
-        onOpenTrace={vi.fn()}
-        onRefresh={vi.fn()}
-      />,
-    );
+  ] satisfies Array<[KnowledgeTab, string]>)(
+    "replaces the inner %s panel with one empty state",
+    (activeTab, emptyTitle) => {
+      const html = renderToStaticMarkup(
+        <KnowledgePage
+          activeTab={activeTab}
+          enabled
+          loading={false}
+          summary={{ agents: [], evidence: [] }}
+          onOpenTrace={vi.fn()}
+          onRefresh={vi.fn()}
+        />,
+      );
 
-    expect(html).toContain(emptyTitle);
-    expect(html.match(/data-slot="studio-empty-state"/g)).toHaveLength(1);
-    expect(html).toContain('data-size="default"');
-    expect(emptyStateClasses(html)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
-    expect(html).not.toContain("No knowledge sources");
-    expect(html).not.toContain("traces / retrieval-evidence");
-    expect(html).not.toContain("min-h-11 min-w-max");
-  });
+      expect(html).toContain(emptyTitle);
+      expect(html.match(/data-slot="studio-empty-state"/g)).toHaveLength(1);
+      expect(html).toContain('data-size="default"');
+      expect(emptyStateClasses(html)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
+      expect(html).not.toContain("No knowledge sources");
+      expect(html).not.toContain("traces / retrieval-evidence");
+      expect(html).not.toContain("min-h-11 min-w-max");
+    },
+  );
 
   it.each([
     [false, false, "Static Context unavailable"],
     [true, true, "Loading static context"],
-  ])("keeps unavailable and loading states free of the inner source header", (enabled, loading, title) => {
-    const html = renderToStaticMarkup(
-      <KnowledgePage
-        activeTab="static-context"
-        enabled={enabled}
-        loading={loading}
-        summary={{ agents: [], evidence: [] }}
-        onOpenTrace={vi.fn()}
-        onRefresh={vi.fn()}
-      />,
-    );
+  ])(
+    "keeps unavailable and loading states free of the inner source header",
+    (enabled, loading, title) => {
+      const html = renderToStaticMarkup(
+        <KnowledgePage
+          activeTab="static-context"
+          enabled={enabled}
+          loading={loading}
+          summary={{ agents: [], evidence: [] }}
+          onOpenTrace={vi.fn()}
+          onRefresh={vi.fn()}
+        />,
+      );
 
-    expect(html).toContain(title);
-    expect(html.match(/data-slot="studio-empty-state"/g)).toHaveLength(1);
-    expect(html).not.toContain("No knowledge sources");
-    expect(html).not.toContain("min-h-11 min-w-max");
-  });
+      expect(html).toContain(title);
+      expect(html.match(/data-slot="studio-empty-state"/g)).toHaveLength(1);
+      expect(html).not.toContain("No knowledge sources");
+      expect(html).not.toContain("min-h-11 min-w-max");
+    },
+  );
 
   it("does not render items or errors from the previously selected source", () => {
     const source: KnowledgeSourceRef = {

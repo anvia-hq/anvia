@@ -6,13 +6,7 @@ services:
     volumes:
       - chroma-data:/data
     healthcheck:
-      test:
-        [
-          "CMD",
-          "bash",
-          "-lc",
-          "echo > /dev/tcp/127.0.0.1/8000",
-        ]
+      test: ["CMD", "bash", "-lc", "echo > /dev/tcp/127.0.0.1/8000"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -24,13 +18,7 @@ services:
     volumes:
       - qdrant-data:/qdrant/storage
     healthcheck:
-      test:
-        [
-          "CMD",
-          "bash",
-          "-lc",
-          "echo > /dev/tcp/127.0.0.1/6333",
-        ]
+      test: ["CMD", "bash", "-lc", "echo > /dev/tcp/127.0.0.1/6333"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -46,11 +34,7 @@ services:
     volumes:
       - pgvector-data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U anvia -d anvia",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U anvia -d anvia"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -70,13 +54,7 @@ services:
     volumes:
       - milvus-data:/var/lib/milvus
     healthcheck:
-      test:
-        [
-          "CMD",
-          "bash",
-          "-lc",
-          "curl -sf http://127.0.0.1:9091/healthz",
-        ]
+      test: ["CMD", "bash", "-lc", "curl -sf http://127.0.0.1:9091/healthz"]
       interval: 5s
       timeout: 3s
       retries: 30

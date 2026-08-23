@@ -17,9 +17,10 @@ import {
 } from "./helpers.js";
 import type { PgVectorDistance, PgVectorStoreOptions } from "./types.js";
 
-export class PgVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class PgVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   private readonly tableName: string;
   private readonly distance: PgVectorDistance;
   constructor(

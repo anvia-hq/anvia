@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check formatting and linting
+        run: pnpm check
+
       - name: Validate release train
         run: pnpm release-train:validate
 

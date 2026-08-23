@@ -138,7 +138,7 @@ export type StudioAgent = {
 };
 
 // Studio accepts arbitrary pipelines and validates run inputs at the HTTP boundary.
-// biome-ignore lint/suspicious/noExplicitAny: input/output types remain user-defined outside Studio.
+// oxlint-disable-next-line typescript/no-explicit-any -- Input/output types remain user-defined outside Studio.
 export type StudioTarget = Agent | Pipeline<any, any>;
 
 export type StudioAgentConfig = {
@@ -171,7 +171,7 @@ export type StudioAgentRuntimeSummary = {
 
 export type StudioPipeline = {
   id: string;
-  // biome-ignore lint/suspicious/noExplicitAny: Studio stores heterogeneous user pipelines.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio stores heterogeneous user pipelines.
   pipeline: Pipeline<any, any>;
   name?: string;
   description?: string;
@@ -195,21 +195,21 @@ export type StudioPipelineDetail = StudioPipelineConfig & {
 };
 
 export type StudioEvalSuite<
-  // biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous eval suites.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts heterogeneous eval suites.
   Input = any,
-  // biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous eval suites.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts heterogeneous eval suites.
   _Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous eval suites.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts heterogeneous eval suites.
   _Expected = any,
 > = {
   name: string;
   cases: Array<Input>;
-  // biome-ignore lint/suspicious/noExplicitAny: Studio passes eval targets through to core.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio passes eval targets through to core.
   target: any;
-  // biome-ignore lint/suspicious/noExplicitAny: Studio only reads metric names and passes metrics through.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio only reads metric names and passes metrics through.
   metrics: any[];
   concurrency?: number;
-  // biome-ignore lint/suspicious/noExplicitAny: Studio passes reporters through to core.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio passes reporters through to core.
   reporters?: any[];
   reporterErrorPolicy?: "collect" | "throw";
   id?: string;
@@ -1023,7 +1023,7 @@ export type StudioUiOptions = {
 };
 
 export type StudioOptions = {
-  // biome-ignore lint/suspicious/noExplicitAny: Studio accepts eval suites with arbitrary user-defined case and output types.
+  // oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts eval suites with arbitrary user-defined case and output types.
   evals?: Array<StudioEvalSuite<any, any, any>>;
   quickPrompts?: Record<string, string[]>;
   stores?: StudioStores;

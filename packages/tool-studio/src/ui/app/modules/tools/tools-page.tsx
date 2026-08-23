@@ -43,7 +43,7 @@ export function ToolsPage(props: {
 }) {
   const selectedAgent =
     props.agents.find((agent) => agent.id === props.selectedAgentId) ?? props.agents[0];
-  const tools = props.summary?.tools ?? [];
+  const tools = useMemo(() => props.summary?.tools ?? [], [props.summary]);
   const [selectedToolName, setSelectedToolName] = useState("");
   const [argsText, setArgsText] = useState("{}");
   const [runState, setRunState] = useState<"idle" | "running">("idle");

@@ -3,22 +3,30 @@ packages:
   - "cookbook"
   - "tests/*/*"
 allowBuilds:
-  '@google/genai': true
+  "@google/genai": true
   esbuild: true
   onnxruntime-node: true
   protobufjs: true
   sharp: true
   workerd: true
 overrides:
-  '@modelcontextprotocol/sdk>@hono/node-server': 1.19.17
-  '@anvia/core': "workspace:*"
-  'ajv>fast-uri': 3.1.5
+  "@anvia/core": "workspace:*"
+  "@grpc/grpc-js": 1.14.4
+  "@modelcontextprotocol/sdk>@hono/node-server": 1.19.17
+  adm-zip: 0.6.0
+  "ajv>fast-uri": 3.1.5
   apache-arrow: 18.1.0
-  'body-parser>qs': 6.15.3
-  'cosmiconfig>js-yaml': 4.3.1
-  'express-rate-limit>ip-address': 10.5.0
-  'express>body-parser': 2.3.0
-  'express>qs': 6.15.3
-  'postcss>nanoid': 3.3.18
+  "body-parser>qs": 6.15.3
+  "cosmiconfig>js-yaml": 4.3.1
+  "express-rate-limit>ip-address": 10.5.0
+  "express>body-parser": 2.3.0
+  "express>qs": 6.15.3
+  esbuild: 0.28.2
+  "js-yaml@^3.0.0": 3.15.1
+  "js-yaml@^4.0.0": 4.3.1
   postcss: 8.5.26
+  "postcss>nanoid": 3.3.18
   prosemirror-model: 1.25.11
+  protobufjs: 7.6.5
+  sharp: 0.35.0
+  tar: 7.5.21

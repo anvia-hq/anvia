@@ -22,12 +22,12 @@ vi.mock("undici", async (importOriginal) => {
 
 describe("MCP connection SSRF protection", () => {
   describe("URL validation", () => {
-    it.each([
-      "https://api.example.com/mcp",
-      "http://93.184.216.34/mcp",
-    ])("allows public HTTP(S) URL %s", (url) => {
-      expect(parseAndValidateMcpUrl(url).href).toBe(url);
-    });
+    it.each(["https://api.example.com/mcp", "http://93.184.216.34/mcp"])(
+      "allows public HTTP(S) URL %s",
+      (url) => {
+        expect(parseAndValidateMcpUrl(url).href).toBe(url);
+      },
+    );
 
     it.each([
       ["http://localhost:3000/mcp", "localhost not allowed"],
@@ -48,13 +48,12 @@ describe("MCP connection SSRF protection", () => {
       expect(() => parseAndValidateMcpUrl(url)).toThrow(message);
     });
 
-    it.each([
-      "file:///etc/passwd",
-      "ftp://api.example.com/mcp",
-      "not-a-url",
-    ])("rejects unsupported or malformed URL %s", (url) => {
-      expect(() => parseAndValidateMcpUrl(url)).toThrow();
-    });
+    it.each(["file:///etc/passwd", "ftp://api.example.com/mcp", "not-a-url"])(
+      "rejects unsupported or malformed URL %s",
+      (url) => {
+        expect(() => parseAndValidateMcpUrl(url)).toThrow();
+      },
+    );
   });
 
   describe("DNS validation", () => {

@@ -3,10 +3,7 @@ export type {
   CreateClientStreamResponseOptions,
   ResumeClientStreamResponseOptions,
 } from "./client-response";
-export {
-  createClientStreamResponse,
-  resumeClientStreamResponse,
-} from "./client-response";
+export { createClientStreamResponse, resumeClientStreamResponse } from "./client-response";
 export { createJsonlStream } from "./jsonl";
 export { createEventStreamResponse, resumeEventStreamResponse } from "./response";
 export {

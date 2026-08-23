@@ -971,37 +971,37 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
-  it.each([
-    "   ",
-    "",
-  ])("rejects an explicit %j tool argument fragment instead of treating it as absent", async (partialJson) => {
-    await expect(
-      collectStreamEvents([
-        {
-          type: "content_block_start",
-          index: 0,
-          content_block: {
-            type: "tool_use",
-            id: "toolu_1",
-            name: "Write",
-            input: {},
+  it.each(["   ", ""])(
+    "rejects an explicit %j tool argument fragment instead of treating it as absent",
+    async (partialJson) => {
+      await expect(
+        collectStreamEvents([
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "Write",
+              input: {},
+            },
           },
-        },
-        {
-          type: "content_block_delta",
-          index: 0,
-          delta: { type: "input_json_delta", partial_json: partialJson },
-        },
-        { type: "content_block_stop", index: 0 },
-        { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
-        { type: "message_stop" },
-      ]),
-    ).rejects.toMatchObject({
-      name: "CompletionProviderOutputError",
-      kind: "malformed-tool-arguments",
-      toolCallId: "toolu_1",
-    });
-  });
+          {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: partialJson },
+          },
+          { type: "content_block_stop", index: 0 },
+          { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
+          { type: "message_stop" },
+        ]),
+      ).rejects.toMatchObject({
+        name: "CompletionProviderOutputError",
+        kind: "malformed-tool-arguments",
+        toolCallId: "toolu_1",
+      });
+    },
+  );
 
   it("emits explicit empty-object arguments for a legitimate no-argument tool", async () => {
     const events = await collectStreamEvents([

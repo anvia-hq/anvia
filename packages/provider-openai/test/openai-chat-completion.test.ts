@@ -640,127 +640,136 @@ describe("OpenAI chat-completions client path", () => {
   it.each([
     ["length", "truncated-tool-call", "length"],
     ["content_filter", "filtered-tool-call", "content-filter"],
-  ])("prioritizes an unsafe %s finish over malformed Chat tool arguments", (providerFinishReason, kind, finishReason) => {
-    const error = thrownBy(() =>
-      fromOpenAIChatCompletionResponse({
-        choices: [
-          {
-            finish_reason: providerFinishReason,
-            message: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: "tool_0",
-                  type: "function",
-                  function: { name: "Echo", arguments: '{"query":' },
-                },
-              ],
-            },
-          },
-        ],
-        usage: { prompt_tokens: 5, completion_tokens: 2 },
-      }),
-    );
-
-    expect(error).toMatchObject(
-      providerOutputError(kind, {
-        finishReason,
-        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
-      }),
-    );
-  });
-
-  it.each([
-    ["length", "truncated-tool-call", "length"],
-    ["content_filter", "filtered-tool-call", "content-filter"],
-  ])("prioritizes an unsafe streamed %s finish over malformed native tool fields", async (providerFinishReason, kind, finishReason) => {
-    const model = openAIChatModelWithStreams([
-      [
-        {
+  ])(
+    "prioritizes an unsafe %s finish over malformed Chat tool arguments",
+    (providerFinishReason, kind, finishReason) => {
+      const error = thrownBy(() =>
+        fromOpenAIChatCompletionResponse({
           choices: [
             {
-              index: 0,
               finish_reason: providerFinishReason,
-              delta: {
+              message: {
+                role: "assistant",
                 tool_calls: [
                   {
-                    index: "invalid",
-                    id: "call_exec",
-                    function: { name: 42, arguments: { command: "pwd" } },
+                    id: "tool_0",
+                    type: "function",
+                    function: { name: "Echo", arguments: '{"query":' },
                   },
                 ],
               },
             },
           ],
-        },
-        {
-          choices: [],
-          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
-        },
-      ],
-    ]);
+          usage: { prompt_tokens: 5, completion_tokens: 2 },
+        }),
+      );
 
-    await expect(collectStreamEvents(model)).rejects.toMatchObject(
-      providerOutputError(kind, {
-        finishReason,
-        usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
-      }),
-    );
-  });
+      expect(error).toMatchObject(
+        providerOutputError(kind, {
+          finishReason,
+          usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+        }),
+      );
+    },
+  );
+
+  it.each([
+    ["length", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+  ])(
+    "prioritizes an unsafe streamed %s finish over malformed native tool fields",
+    async (providerFinishReason, kind, finishReason) => {
+      const model = openAIChatModelWithStreams([
+        [
+          {
+            choices: [
+              {
+                index: 0,
+                finish_reason: providerFinishReason,
+                delta: {
+                  tool_calls: [
+                    {
+                      index: "invalid",
+                      id: "call_exec",
+                      function: { name: 42, arguments: { command: "pwd" } },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          },
+        ],
+      ]);
+
+      await expect(collectStreamEvents(model)).rejects.toMatchObject(
+        providerOutputError(kind, {
+          finishReason,
+          usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+        }),
+      );
+    },
+  );
 
   it.each([
     ["length", "truncated-tool-call", 3],
     ["content_filter", "filtered-tool-call", 1],
-  ])("does not execute a valid tool call ending with %s", async (finishReason, kind, expectedRequests) => {
-    const completionRequests: unknown[] = [];
-    const toolExecutions: unknown[] = [];
-    const client = new OpenAIClient({
-      client: {
-        chat: {
-          completions: {
-            create: async (request: unknown) => {
-              completionRequests.push(request);
-              return {
-                choices: [
-                  {
-                    index: 0,
-                    finish_reason: finishReason,
-                    message: {
-                      role: "assistant",
-                      tool_calls: [
-                        {
-                          id: "tool_0",
-                          type: "function",
-                          function: { name: "test_tool", arguments: '{"query":"safe"}' },
-                        },
-                      ],
+  ])(
+    "does not execute a valid tool call ending with %s",
+    async (finishReason, kind, expectedRequests) => {
+      const completionRequests: unknown[] = [];
+      const toolExecutions: unknown[] = [];
+      const client = new OpenAIClient({
+        client: {
+          chat: {
+            completions: {
+              create: async (request: unknown) => {
+                completionRequests.push(request);
+                return {
+                  choices: [
+                    {
+                      index: 0,
+                      finish_reason: finishReason,
+                      message: {
+                        role: "assistant",
+                        tool_calls: [
+                          {
+                            id: "tool_0",
+                            type: "function",
+                            function: { name: "test_tool", arguments: '{"query":"safe"}' },
+                          },
+                        ],
+                      },
                     },
-                  },
-                ],
-                usage: { prompt_tokens: 2, completion_tokens: 1 },
-              };
+                  ],
+                  usage: { prompt_tokens: 2, completion_tokens: 1 },
+                };
+              },
             },
           },
-        },
-      } as never,
-    });
-    const agent = new Agent({
-      id: `unsafe-finish-${finishReason}`,
-      model: client.completionModel({ modelId: "chat-test", api: "chat" }),
-      tools: [recordingTool("test_tool", toolExecutions)],
-    });
+        } as never,
+      });
+      const agent = new Agent({
+        id: `unsafe-finish-${finishReason}`,
+        model: client.completionModel({ modelId: "chat-test", api: "chat" }),
+        tools: [recordingTool("test_tool", toolExecutions)],
+      });
 
-    const error = await agent
-      .generate({
-        prompt: "Call test_tool.",
-        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
-      })
-      .catch((value: unknown) => value);
+      const error = await agent
+        .generate({
+          prompt: "Call test_tool.",
+          retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+        })
+        .catch((value: unknown) => value);
 
-    expect(error).toMatchObject(providerOutputError(kind));
-    expect(completionRequests).toHaveLength(expectedRequests);
-    expect(toolExecutions).toHaveLength(0);
-  });
+      expect(error).toMatchObject(providerOutputError(kind));
+      expect(completionRequests).toHaveLength(expectedRequests);
+      expect(toolExecutions).toHaveLength(0);
+    },
+  );
 
   it("maps scalar non-streaming tool arguments", () => {
     const response = fromOpenAIChatCompletionResponse({
@@ -1013,27 +1022,30 @@ describe("OpenAI chat-completions client path", () => {
   it.each([
     ["length", "truncated-tool-call", "length"],
     ["content_filter", "filtered-tool-call", "content-filter"],
-  ] as const)("gives %s precedence over a malformed non-streaming tool-call container", (providerFinishReason, kind, finishReason) => {
-    expect(
-      thrownBy(() =>
-        fromOpenAIChatCompletionResponse({
-          choices: [
-            {
-              index: 0,
-              finish_reason: providerFinishReason,
-              message: { tool_calls: { invalid: true } },
-            },
-          ],
-          usage: { prompt_tokens: 2, completion_tokens: 3 },
+  ] as const)(
+    "gives %s precedence over a malformed non-streaming tool-call container",
+    (providerFinishReason, kind, finishReason) => {
+      expect(
+        thrownBy(() =>
+          fromOpenAIChatCompletionResponse({
+            choices: [
+              {
+                index: 0,
+                finish_reason: providerFinishReason,
+                message: { tool_calls: { invalid: true } },
+              },
+            ],
+            usage: { prompt_tokens: 2, completion_tokens: 3 },
+          }),
+        ),
+      ).toMatchObject(
+        providerOutputError(kind, {
+          finishReason,
+          usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5 },
         }),
-      ),
-    ).toMatchObject(
-      providerOutputError(kind, {
-        finishReason,
-        usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5 },
-      }),
-    );
-  });
+      );
+    },
+  );
 
   it.each([
     ["string", "0"],
@@ -1115,27 +1127,28 @@ describe("OpenAI chat-completions client path", () => {
     ).resolves.toEqual([{ type: "text_delta", delta: "partial" }]);
   });
 
-  it.each([
-    "tool_calls",
-    "stop",
-    "function_call",
-  ])("accepts a completed tool-call stream ending with %s", async (finishReason) => {
-    const model = openAIChatModelWithStreams([
-      [
-        chatChunk([
-          chatChoice(
-            [toolCallDelta(0, "call_exec", "ExecCommand", '{"command":"pwd"}')],
-            0,
-            finishReason,
-          ),
-        ]),
-      ],
-    ]);
+  it.each(["tool_calls", "stop", "function_call"])(
+    "accepts a completed tool-call stream ending with %s",
+    async (finishReason) => {
+      const model = openAIChatModelWithStreams([
+        [
+          chatChunk([
+            chatChoice(
+              [toolCallDelta(0, "call_exec", "ExecCommand", '{"command":"pwd"}')],
+              0,
+              finishReason,
+            ),
+          ]),
+        ],
+      ]);
 
-    await expect(collectStreamEvents(model)).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "tool_call_delta", id: "tool_0" })]),
-    );
-  });
+      await expect(collectStreamEvents(model)).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "tool_call_delta", id: "tool_0" }),
+        ]),
+      );
+    },
+  );
 
   it.each([
     ["length", "truncated-tool-call", "length"],

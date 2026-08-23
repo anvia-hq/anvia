@@ -17,9 +17,10 @@ export function createAgentStream<Output, M extends CompletionModel>(
   return new DefaultAgentStream(run);
 }
 
-class DefaultAgentStream<Output, M extends CompletionModel>
-  implements AgentStream<Output, RawResponseOf<M>>
-{
+class DefaultAgentStream<Output, M extends CompletionModel> implements AgentStream<
+  Output,
+  RawResponseOf<M>
+> {
   private consuming = false;
   private completed = false;
   private settled = false;

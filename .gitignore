@@ -14,7 +14,6 @@ LAUNCH.md
 cookbook/.anvia-studio
 cookbook/.memory
 cookbook/local_cache
-packages/embeddings/fastembed/local_cache
 .aion-studio
 .anvia-studio
 docs/.astro

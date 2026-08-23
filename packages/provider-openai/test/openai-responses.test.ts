@@ -510,76 +510,77 @@ describe("OpenAI Responses mapping", () => {
     ["failed", "failed"],
     ["cancelled", "cancelled"],
     ["missing", undefined],
-  ])("rejects and retries a valid Responses tool call with a %s status without executing it", async (_label, status) => {
-    const completionRequests: unknown[] = [];
-    const toolExecutions: unknown[] = [];
-    const client = new OpenAIClient({
-      client: {
-        responses: {
-          create: async (request: unknown) => {
-            completionRequests.push(request);
-            return {
-              id: "resp_unsafe_status",
-              status,
-              output: [
-                {
-                  type: "function_call",
-                  id: "tool_0",
-                  call_id: "call_abc",
-                  name: "test_tool",
-                  arguments: '{"query":"safe"}',
-                },
-              ],
-              usage: { input_tokens: 2, output_tokens: 1 },
-            };
+  ])(
+    "rejects and retries a valid Responses tool call with a %s status without executing it",
+    async (_label, status) => {
+      const completionRequests: unknown[] = [];
+      const toolExecutions: unknown[] = [];
+      const client = new OpenAIClient({
+        client: {
+          responses: {
+            create: async (request: unknown) => {
+              completionRequests.push(request);
+              return {
+                id: "resp_unsafe_status",
+                status,
+                output: [
+                  {
+                    type: "function_call",
+                    id: "tool_0",
+                    call_id: "call_abc",
+                    name: "test_tool",
+                    arguments: '{"query":"safe"}',
+                  },
+                ],
+                usage: { input_tokens: 2, output_tokens: 1 },
+              };
+            },
           },
-        },
-      } as never,
-    });
-    const agent = new Agent({
-      id: `unsafe-responses-status-${status ?? "missing"}`,
-      model: client.completionModel({ modelId: "responses-test", api: "responses" }),
-      tools: [recordingTool("test_tool", toolExecutions)],
-    });
+        } as never,
+      });
+      const agent = new Agent({
+        id: `unsafe-responses-status-${status ?? "missing"}`,
+        model: client.completionModel({ modelId: "responses-test", api: "responses" }),
+        tools: [recordingTool("test_tool", toolExecutions)],
+      });
 
-    const error = await agent
-      .generate({
-        prompt: "Call test_tool.",
-        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
-      })
-      .catch((value: unknown) => value);
+      const error = await agent
+        .generate({
+          prompt: "Call test_tool.",
+          retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+        })
+        .catch((value: unknown) => value);
 
-    expect(error).toMatchObject(
-      providerOutputError("invalid-tool-call", {
-        finishReason: "other",
-        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
-      }),
-    );
-    expect(completionRequests).toHaveLength(3);
-    expect(toolExecutions).toHaveLength(0);
-  });
-
-  it.each([
-    "failed",
-    "cancelled",
-    "queued",
-    "in_progress",
-  ])("rejects a %s Responses status without treating an empty response as success", (status) => {
-    expect(
-      thrownBy(() =>
-        fromOpenAIResponse({
-          id: "resp_invalid_status",
-          status,
-          output: [],
-          usage: { input_tokens: 2, output_tokens: 1 },
+      expect(error).toMatchObject(
+        providerOutputError("invalid-tool-call", {
+          finishReason: "other",
+          usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
         }),
-      ),
-    ).toMatchObject(
-      providerOutputError("invalid-response", {
-        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
-      }),
-    );
-  });
+      );
+      expect(completionRequests).toHaveLength(3);
+      expect(toolExecutions).toHaveLength(0);
+    },
+  );
+
+  it.each(["failed", "cancelled", "queued", "in_progress"])(
+    "rejects a %s Responses status without treating an empty response as success",
+    (status) => {
+      expect(
+        thrownBy(() =>
+          fromOpenAIResponse({
+            id: "resp_invalid_status",
+            status,
+            output: [],
+            usage: { input_tokens: 2, output_tokens: 1 },
+          }),
+        ),
+      ).toMatchObject(
+        providerOutputError("invalid-response", {
+          usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+        }),
+      );
+    },
+  );
 
   it("uses the Responses call id when a non-streaming function call omits its item id", () => {
     expect(
@@ -623,29 +624,29 @@ describe("OpenAI Responses mapping", () => {
     expect(error).toMatchObject(providerOutputError(kind, { toolCallId: "tool_0" }));
   });
 
-  it.each([
-    "in_progress",
-    "incomplete",
-  ])("rejects a terminal Responses tool item whose status is %s", (status) => {
-    expect(
-      thrownBy(() =>
-        fromOpenAIResponse({
-          status: "completed",
-          output: [
-            {
-              type: "function_call",
-              id: "tool_0",
-              call_id: "call_abc",
-              name: "Echo",
-              arguments: "{}",
-              status,
-            },
-          ],
-          usage: {},
-        }),
-      ),
-    ).toMatchObject(providerOutputError("incomplete-tool-call", { toolCallId: "tool_0" }));
-  });
+  it.each(["in_progress", "incomplete"])(
+    "rejects a terminal Responses tool item whose status is %s",
+    (status) => {
+      expect(
+        thrownBy(() =>
+          fromOpenAIResponse({
+            status: "completed",
+            output: [
+              {
+                type: "function_call",
+                id: "tool_0",
+                call_id: "call_abc",
+                name: "Echo",
+                arguments: "{}",
+                status,
+              },
+            ],
+            usage: {},
+          }),
+        ),
+      ).toMatchObject(providerOutputError("incomplete-tool-call", { toolCallId: "tool_0" }));
+    },
+  );
 
   it("rejects an incomplete Responses output_item.done tool call", () => {
     expect(
@@ -697,50 +698,53 @@ describe("OpenAI Responses mapping", () => {
   it.each([
     ["max_output_tokens", "truncated-tool-call", 3],
     ["content_filter", "filtered-tool-call", 1],
-  ])("does not execute a valid Responses tool call ending with %s", async (incompleteReason, kind, expectedRequests) => {
-    const completionRequests: unknown[] = [];
-    const toolExecutions: unknown[] = [];
-    const client = new OpenAIClient({
-      client: {
-        responses: {
-          create: async (request: unknown) => {
-            completionRequests.push(request);
-            return {
-              id: "resp_unsafe_tool",
-              status: "incomplete",
-              incomplete_details: { reason: incompleteReason },
-              output: [
-                {
-                  type: "function_call",
-                  id: "tool_0",
-                  call_id: "call_abc",
-                  name: "test_tool",
-                  arguments: '{"query":"safe"}',
-                },
-              ],
-              usage: { input_tokens: 2, output_tokens: 1 },
-            };
+  ])(
+    "does not execute a valid Responses tool call ending with %s",
+    async (incompleteReason, kind, expectedRequests) => {
+      const completionRequests: unknown[] = [];
+      const toolExecutions: unknown[] = [];
+      const client = new OpenAIClient({
+        client: {
+          responses: {
+            create: async (request: unknown) => {
+              completionRequests.push(request);
+              return {
+                id: "resp_unsafe_tool",
+                status: "incomplete",
+                incomplete_details: { reason: incompleteReason },
+                output: [
+                  {
+                    type: "function_call",
+                    id: "tool_0",
+                    call_id: "call_abc",
+                    name: "test_tool",
+                    arguments: '{"query":"safe"}',
+                  },
+                ],
+                usage: { input_tokens: 2, output_tokens: 1 },
+              };
+            },
           },
-        },
-      } as never,
-    });
-    const agent = new Agent({
-      id: `unsafe-responses-finish-${incompleteReason}`,
-      model: client.completionModel({ modelId: "responses-test", api: "responses" }),
-      tools: [recordingTool("test_tool", toolExecutions)],
-    });
+        } as never,
+      });
+      const agent = new Agent({
+        id: `unsafe-responses-finish-${incompleteReason}`,
+        model: client.completionModel({ modelId: "responses-test", api: "responses" }),
+        tools: [recordingTool("test_tool", toolExecutions)],
+      });
 
-    const error = await agent
-      .generate({
-        prompt: "Call test_tool.",
-        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
-      })
-      .catch((value: unknown) => value);
+      const error = await agent
+        .generate({
+          prompt: "Call test_tool.",
+          retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+        })
+        .catch((value: unknown) => value);
 
-    expect(error).toMatchObject(providerOutputError(kind));
-    expect(completionRequests).toHaveLength(expectedRequests);
-    expect(toolExecutions).toHaveLength(0);
-  });
+      expect(error).toMatchObject(providerOutputError(kind));
+      expect(completionRequests).toHaveLength(expectedRequests);
+      expect(toolExecutions).toHaveLength(0);
+    },
+  );
 
   it("maps scalar non-streaming Responses tool arguments", () => {
     const response = fromOpenAIResponse({
@@ -1031,79 +1035,85 @@ describe("OpenAI Responses mapping", () => {
   it.each([
     ["max_output_tokens", "truncated-tool-call", "length"],
     ["content_filter", "filtered-tool-call", "content-filter"],
-  ])("prioritizes an unsafe %s Responses stream finish over malformed arguments", async (incompleteReason, kind, finishReason) => {
-    const malformedToolCall = {
-      type: "function_call",
-      id: "tool_0",
-      call_id: "call_abc",
-      name: "lookup",
-      arguments: '{"query":',
-    };
-    const model = openAIResponsesModelWithStream([
-      {
-        type: "response.output_item.added",
-        item: { ...malformedToolCall, arguments: "" },
-      },
-      {
-        type: "response.function_call_arguments.done",
-        item_id: "tool_0",
+  ])(
+    "prioritizes an unsafe %s Responses stream finish over malformed arguments",
+    async (incompleteReason, kind, finishReason) => {
+      const malformedToolCall = {
+        type: "function_call",
+        id: "tool_0",
+        call_id: "call_abc",
         name: "lookup",
-        arguments: malformedToolCall.arguments,
-      },
-      {
-        type: "response.incomplete",
-        response: {
-          id: "resp_incomplete_tool",
-          status: "incomplete",
-          incomplete_details: { reason: incompleteReason },
-          output: [malformedToolCall],
-          usage: { input_tokens: 5, output_tokens: 2 },
+        arguments: '{"query":',
+      };
+      const model = openAIResponsesModelWithStream([
+        {
+          type: "response.output_item.added",
+          item: { ...malformedToolCall, arguments: "" },
         },
-      },
-    ]);
+        {
+          type: "response.function_call_arguments.done",
+          item_id: "tool_0",
+          name: "lookup",
+          arguments: malformedToolCall.arguments,
+        },
+        {
+          type: "response.incomplete",
+          response: {
+            id: "resp_incomplete_tool",
+            status: "incomplete",
+            incomplete_details: { reason: incompleteReason },
+            output: [malformedToolCall],
+            usage: { input_tokens: 5, output_tokens: 2 },
+          },
+        },
+      ]);
 
-    await expect(collectResponsesStream(model)).rejects.toMatchObject(
-      providerOutputError(kind, {
-        finishReason,
-        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
-      }),
-    );
-  });
+      await expect(collectResponsesStream(model)).rejects.toMatchObject(
+        providerOutputError(kind, {
+          finishReason,
+          usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+        }),
+      );
+    },
+  );
 
   it.each([
     ["max_output_tokens", "truncated-tool-call", "length"],
     ["content_filter", "filtered-tool-call", "content-filter"],
-  ])("preserves an unsafe %s finish when the terminal Responses snapshot omits the streamed tool call", async (incompleteReason, kind, finishReason) => {
-    const model = openAIResponsesModelWithStream([
-      {
-        type: "response.output_item.added",
-        item: {
-          type: "function_call",
-          id: "tool_0",
-          call_id: "call_abc",
-          name: "lookup",
-          arguments: "",
+  ])(
+    "preserves an unsafe %s finish when the terminal Responses snapshot omits the streamed tool call",
+    async (incompleteReason, kind, finishReason) => {
+      const model = openAIResponsesModelWithStream([
+        {
+          type: "response.output_item.added",
+          item: {
+            type: "function_call",
+            id: "tool_0",
+            call_id: "call_abc",
+            name: "lookup",
+            arguments: "",
+          },
         },
-      },
-      {
-        type: "response.incomplete",
-        response: {
-          id: "resp_incomplete_without_snapshot",
-          status: "incomplete",
-          incomplete_details: { reason: incompleteReason },
-          output: [],
-          usage: { input_tokens: 5, output_tokens: 2 },
+        {
+          type: "response.incomplete",
+          response: {
+            id: "resp_incomplete_without_snapshot",
+            status: "incomplete",
+            incomplete_details: { reason: incompleteReason },
+            output: [],
+            usage: { input_tokens: 5, output_tokens: 2 },
+          },
         },
-      },
-    ]);
+      ]);
 
-    await expect(collectResponsesStream(model)).rejects.toMatchObject(
-      providerOutputError(kind, {
-        finishReason,
-        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
-      }),
-    );
-  });
+      await expect(collectResponsesStream(model)).rejects.toMatchObject(
+        providerOutputError(kind, {
+          finishReason,
+          usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+        }),
+      );
+    },
+  );
 
   it("uses the Responses call id when the optional item id is missing", () => {
     expect(

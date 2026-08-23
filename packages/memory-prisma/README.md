@@ -110,14 +110,15 @@ const memory = new PrismaMemoryStore({
             sessions: tx.customMemorySession,
             messages: tx.customMemoryMessage,
             errors: tx.customMemoryError,
-            transaction: async (nested) => nested({
-              sessions: tx.customMemorySession,
-              messages: tx.customMemoryMessage,
-              errors: tx.customMemoryError,
-              transaction: async () => {
-                throw new Error("Nested transactions are not supported.");
-              },
-            }),
+            transaction: async (nested) =>
+              nested({
+                sessions: tx.customMemorySession,
+                messages: tx.customMemoryMessage,
+                errors: tx.customMemoryError,
+                transaction: async () => {
+                  throw new Error("Nested transactions are not supported.");
+                },
+              }),
           }),
         options,
       ),

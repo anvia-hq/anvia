@@ -263,8 +263,9 @@ export type AgentStreamEvent<Output = string, RawResponse = unknown> =
   | AgentChildStreamEvent<Output, RawResponse>
   | AgentToolStreamEvent;
 
-export interface AgentStream<Output = string, RawResponse = unknown>
-  extends AsyncIterable<AgentStreamEvent<Output, RawResponse>> {
+export interface AgentStream<Output = string, RawResponse = unknown> extends AsyncIterable<
+  AgentStreamEvent<Output, RawResponse>
+> {
   readonly events: AsyncIterable<AgentStreamEvent<Output, RawResponse>>;
   readonly textStream: AsyncIterable<string>;
   readonly text: Promise<string>;

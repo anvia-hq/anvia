@@ -32,7 +32,7 @@ export function chromaRecords<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => ({
     id: document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`,
     document: serializeDocument(document.document),
-    metadata: { ...(document.metadata ?? {}), __anvia_document_id: document.id },
+    metadata: { ...document.metadata, __anvia_document_id: document.id },
     embedding: embedding.vector,
   }));
 }

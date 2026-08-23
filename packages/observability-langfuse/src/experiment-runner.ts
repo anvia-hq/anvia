@@ -66,7 +66,7 @@ export async function runLangfuseEvalExperiment<Input, Output, Expected = unknow
       item.expected = testCase.expected;
     }
     const metadata: Record<string, JsonValue | undefined> = {
-      ...(testCase.metadata ?? {}),
+      ...testCase.metadata,
     };
     if (experimentOptions.includeContexts === true && testCase.context !== undefined) {
       metadata.context = [...testCase.context];

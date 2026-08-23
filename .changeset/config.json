@@ -10,7 +10,6 @@
       "@anvia/cli",
       "@anvia/client",
       "@anvia/core",
-      "@anvia/fastembed",
       "@anvia/gemini",
       "@anvia/grok",
       "@anvia/lancedb",

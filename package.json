@@ -164,13 +164,13 @@
     "rc:version": "node scripts/version-release-candidate.mjs next",
     "rc:exit": "node scripts/version-release-candidate.mjs exit",
     "preview:version": "node scripts/prepare-preview-release.mjs",
-    "check": "biome check .",
-    "check:staged": "biome check --staged --vcs-enabled=true --vcs-client-kind=git --vcs-use-ignore-file=true --no-errors-on-unmatched",
-    "check:fix": "biome check --write .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "lint": "biome lint .",
-    "lint:fix": "biome lint --write .",
+    "check": "pnpm format:check && pnpm lint",
+    "check:staged": "node scripts/check-staged.mjs",
+    "check:fix": "pnpm lint:fix && pnpm format",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "test": "pnpm -r test",
     "test:release-scripts": "node --test scripts/release-train.test.mjs",
     "test:lens-integration": "node scripts/test-lens-integration.mjs",
@@ -179,14 +179,15 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.13",
     "@changesets/cli": "^2.31.0",
     "@types/node": "^24.9.1",
     "husky": "^9.1.7",
+    "oxfmt": "0.64.0",
+    "oxlint": "^1.79.0",
     "tsup": "^8.5.0",
-    "tsx": "^4.20.6",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.8"
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@11.0.4"
 }

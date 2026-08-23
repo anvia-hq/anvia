@@ -145,7 +145,6 @@ export function SandboxesPage(props: {
     }
   }, [props.initialSandboxRef, props.onSelectSandbox, sandboxes]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: changing the route selection must reset sandbox-local view state.
   useEffect(() => {
     setCurrentPath(".");
     setFiles([]);

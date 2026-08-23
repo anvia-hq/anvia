@@ -126,7 +126,6 @@ export function StudioBrowserView(props: {
     [base],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Incrementing the retry counter intentionally reconnects the noVNC client.
   useEffect(() => {
     const target = targetRef.current;
     if (target === null) return;

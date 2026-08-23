@@ -9,10 +9,7 @@ export {
   type GeminiTranscriptionModelHandle,
   type GeminiTranscriptionModelOptions,
 } from "./client";
-export type {
-  GeminiEmbeddingModelOptions,
-  GeminiEmbeddingTaskType,
-} from "./embedding";
+export type { GeminiEmbeddingModelOptions, GeminiEmbeddingTaskType } from "./embedding";
 export {
   GEMINI_2_5_FLASH_IMAGE,
   GEMINI_3_1_FLASH_IMAGE,

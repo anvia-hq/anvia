@@ -507,56 +507,55 @@ describe("agent memory", () => {
     ]);
   });
 
-  it.each<MemorySavePolicy>([
-    "message",
-    "turn",
-    "run",
-  ])("persists per-generation usage and the effective model with the %s save policy", async (savePolicy) => {
-    const store = new RecordingMemoryStore();
-    const firstUsage = {
-      inputTokens: 12,
-      outputTokens: 3,
-      totalTokens: 15,
-      cachedInputTokens: 2,
-      cacheCreationInputTokens: 0,
-    };
-    const secondUsage = {
-      inputTokens: 20,
-      outputTokens: 1,
-      totalTokens: 21,
-      cachedInputTokens: 5,
-      cacheCreationInputTokens: 4,
-    };
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], firstUsage),
-      response([AssistantContent.text("7")], secondUsage),
-    ]);
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      memory: { store, savePolicy },
-      tools: [addTool],
-    });
+  it.each<MemorySavePolicy>(["message", "turn", "run"])(
+    "persists per-generation usage and the effective model with the %s save policy",
+    async (savePolicy) => {
+      const store = new RecordingMemoryStore();
+      const firstUsage = {
+        inputTokens: 12,
+        outputTokens: 3,
+        totalTokens: 15,
+        cachedInputTokens: 2,
+        cacheCreationInputTokens: 0,
+      };
+      const secondUsage = {
+        inputTokens: 20,
+        outputTokens: 1,
+        totalTokens: 21,
+        cachedInputTokens: 5,
+        cacheCreationInputTokens: 4,
+      };
+      const model = new QueueModel([
+        response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], firstUsage),
+        response([AssistantContent.text("7")], secondUsage),
+      ]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        memory: { store, savePolicy },
+        tools: [addTool],
+      });
 
-    const result = await agent.generate({
-      prompt: "add",
-      session: { sessionId: "session-generation-metadata" },
-    });
-    const resultMetadata = result.messages
-      .filter((message) => message.role === "assistant")
-      .map(getAssistantGenerationMetadata);
-    const persistedMetadata = store.appendCalls
-      .flatMap((call) => call.messages)
-      .filter((message) => message.role === "assistant")
-      .map(getAssistantGenerationMetadata);
-    const expected = [
-      { provider: "test", modelId: "test", usage: firstUsage },
-      { provider: "test", modelId: "test", usage: secondUsage },
-    ];
+      const result = await agent.generate({
+        prompt: "add",
+        session: { sessionId: "session-generation-metadata" },
+      });
+      const resultMetadata = result.messages
+        .filter((message) => message.role === "assistant")
+        .map(getAssistantGenerationMetadata);
+      const persistedMetadata = store.appendCalls
+        .flatMap((call) => call.messages)
+        .filter((message) => message.role === "assistant")
+        .map(getAssistantGenerationMetadata);
+      const expected = [
+        { provider: "test", modelId: "test", usage: firstUsage },
+        { provider: "test", modelId: "test", usage: secondUsage },
+      ];
 
-    expect(resultMetadata).toEqual(expected);
-    expect(persistedMetadata).toEqual(expected);
-  });
+      expect(resultMetadata).toEqual(expected);
+      expect(persistedMetadata).toEqual(expected);
+    },
+  );
 
   it("persists and returns the latest context usage for a session", async () => {
     const store = new RecordingMemoryStore();
@@ -769,72 +768,77 @@ describe("agent memory", () => {
     ]);
   });
 
-  it.each([
-    "buffered",
-    "streaming",
-  ] as const)("commits %s run memory before reporting success", async (mode) => {
-    const events: string[] = [];
-    const persistenceError = new Error("memory append failed");
-    const store: MemoryStore = {
-      async load() {
-        return [];
-      },
-      async append() {
-        events.push("memory:append");
-        throw persistenceError;
-      },
-      async clear() {},
-      async recordError() {
-        events.push("memory:error");
-      },
-    };
-    const model: CompletionModel =
-      mode === "buffered"
-        ? new QueueModel([response([AssistantContent.text("done")])])
-        : new StreamingQueueModel([successfulTextStream("done")]);
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      memory: { store, savePolicy: "run" },
-      lifecycle: {
-        onFinish() {
-          events.push("lifecycle:finish");
+  it.each(["buffered", "streaming"] as const)(
+    "commits %s run memory before reporting success",
+    async (mode) => {
+      const events: string[] = [];
+      const persistenceError = new Error("memory append failed");
+      const store: MemoryStore = {
+        async load() {
+          return [];
         },
-        onError() {
-          events.push("lifecycle:error");
+        async append() {
+          events.push("memory:append");
+          throw persistenceError;
         },
-      },
-      observability: {
-        observers: {
-          test: createObserver({
-            startRun() {
-              return {
-                end() {
-                  events.push("observer:end");
-                },
-                error() {
-                  events.push("observer:error");
-                },
-              };
-            },
-          }),
+        async clear() {},
+        async recordError() {
+          events.push("memory:error");
         },
-      },
-    });
-    const scope = { sessionId: `session-${mode}` };
-    if (mode === "buffered") {
-      await expect(agent.generate({ prompt: "hello", session: scope })).rejects.toBe(
-        persistenceError,
-      );
-    } else {
-      const streamEvents: AgentStreamEvent[] = [];
-      for await (const event of agent.stream({ prompt: "hello", session: scope })) {
-        streamEvents.push(event);
+      };
+      const model: CompletionModel =
+        mode === "buffered"
+          ? new QueueModel([response([AssistantContent.text("done")])])
+          : new StreamingQueueModel([successfulTextStream("done")]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        memory: { store, savePolicy: "run" },
+        lifecycle: {
+          onFinish() {
+            events.push("lifecycle:finish");
+          },
+          onError() {
+            events.push("lifecycle:error");
+          },
+        },
+        observability: {
+          observers: {
+            test: createObserver({
+              startRun() {
+                return {
+                  end() {
+                    events.push("observer:end");
+                  },
+                  error() {
+                    events.push("observer:error");
+                  },
+                };
+              },
+            }),
+          },
+        },
+      });
+      const scope = { sessionId: `session-${mode}` };
+      if (mode === "buffered") {
+        await expect(agent.generate({ prompt: "hello", session: scope })).rejects.toBe(
+          persistenceError,
+        );
+      } else {
+        const streamEvents: AgentStreamEvent[] = [];
+        for await (const event of agent.stream({ prompt: "hello", session: scope })) {
+          streamEvents.push(event);
+        }
+        expect(streamEvents.at(-1)).toMatchObject({ type: "error", error: persistenceError });
       }
-      expect(streamEvents.at(-1)).toMatchObject({ type: "error", error: persistenceError });
-    }
-    expect(events).toEqual(["memory:append", "lifecycle:error", "observer:error", "memory:error"]);
-  });
+      expect(events).toEqual([
+        "memory:append",
+        "lifecycle:error",
+        "observer:error",
+        "memory:error",
+      ]);
+    },
+  );
 
   it("does not commit run memory when the run end hook cancels", async () => {
     const store = new RecordingMemoryStore();

@@ -12,7 +12,6 @@
       "@anvia/core": ["../packages/core/src/index.ts"],
       "@anvia/core/internal/agent": ["../packages/core/src/internal/agent.ts"],
       "@anvia/core/*": ["../packages/core/src/*/index.ts"],
-      "@anvia/fastembed": ["../packages/embedding-fastembed/src/index.ts"],
       "@anvia/gemini": ["../packages/provider-gemini/src/index.ts"],
       "@anvia/langfuse": ["../packages/observability-langfuse/src/index.ts"],
       "@anvia/logger": ["../packages/logger/src/index.ts"],

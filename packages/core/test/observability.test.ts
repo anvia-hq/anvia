@@ -848,29 +848,29 @@ describe("agent observability", () => {
       }),
       middlewares: undefined,
     },
-  ])("terminalizes a started tool exactly once when the $boundary fails", async ({
-    hook,
-    middlewares,
-  }) => {
-    const observer = new RecordingObserver();
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-    ]);
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      observability: { observers: { test: observer }, primaryTrace: "test" },
-      tools: [addTool],
-      middlewares: middlewares ?? [],
-    });
-    const runOptions = hook === undefined ? {} : withInternalAgentRunOptions({}, { hook });
+  ])(
+    "terminalizes a started tool exactly once when the $boundary fails",
+    async ({ hook, middlewares }) => {
+      const observer = new RecordingObserver();
+      const model = new QueueModel([
+        response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
+      ]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        observability: { observers: { test: observer }, primaryTrace: "test" },
+        tools: [addTool],
+        middlewares: middlewares ?? [],
+      });
+      const runOptions = hook === undefined ? {} : withInternalAgentRunOptions({}, { hook });
 
-    await expect(agent.generate({ prompt: "add", ...runOptions })).rejects.toThrow("failed");
+      await expect(agent.generate({ prompt: "add", ...runOptions })).rejects.toThrow("failed");
 
-    expect(
-      eventTypes(observer).filter((type) => type === "tool_end" || type === "tool_error"),
-    ).toEqual(["tool_error"]);
-  });
+      expect(
+        eventTypes(observer).filter((type) => type === "tool_end" || type === "tool_error"),
+      ).toEqual(["tool_error"]);
+    },
+  );
 
   it("preserves the model failure while every run-error cleanup callback fails", async () => {
     const primaryError = new Error("primary model failure");

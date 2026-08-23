@@ -72,7 +72,7 @@ Before requesting review, make sure:
 - Prefer typed schemas and runtime validation at tool and extraction boundaries.
 - Keep provider-specific behavior inside provider packages.
 - Keep `@anvia/core` free of optional provider SDK dependencies.
-- Use Biome through the existing scripts rather than ad hoc formatting.
+- Use Oxlint and Oxfmt through the existing scripts rather than invoking them ad hoc.
 - Avoid unrelated refactors in bug-fix pull requests.
 
 ## Tests

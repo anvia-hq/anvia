@@ -143,11 +143,7 @@ class BrowserHumanControlLeaseImpl implements BrowserHumanControlLease {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private released = false;
 
-  constructor(options: {
-    owner: BrowserControlState;
-    ownerId: string;
-    leaseTimeoutMs: number;
-  }) {
+  constructor(options: { owner: BrowserControlState; ownerId: string; leaseTimeoutMs: number }) {
     this.owner = options.owner;
     this.ownerId = options.ownerId;
     this.resetExpiration(options.leaseTimeoutMs);

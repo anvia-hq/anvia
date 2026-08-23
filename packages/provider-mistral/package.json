@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mistralai/mistralai": "^2.6.3"
+    "@mistralai/mistralai": "^2.6.4"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

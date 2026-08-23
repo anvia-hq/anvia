@@ -13,9 +13,10 @@ import {
   type WeaviateDistance,
   type WeaviateVectorStoreOptions,
 } from "./types.js";
-export class WeaviateVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class WeaviateVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   constructor(
     private readonly owner: WeaviateVectorClient,
     readonly options: WeaviateVectorStoreOptions,
@@ -90,7 +91,7 @@ export class WeaviateVectorStore<T, Metadata extends VectorMetadata = VectorMeta
       const response = await collection.query.nearVector(
         request.vector,
         {
-          ...(request.providerOptions ?? {}),
+          ...request.providerOptions,
           limit: candidateLimit,
           filters: filterToWeaviateWhere(request.filter),
           returnMetadata: ["distance"],

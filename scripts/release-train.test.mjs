@@ -40,7 +40,7 @@ const validatorScript = path.join(repositoryRoot, "scripts", "validate-release-t
 
 test("repository fixed group exactly matches public packages", () => {
   const packages = findPublicPackages(repositoryRoot);
-  assert.equal(packages.length, 34);
+  assert.equal(packages.length, 33);
   assert.doesNotThrow(() => assertFixedReleaseTrain(repositoryRoot, packages));
   assert.doesNotThrow(() => assertWorkspaceInternalDependencies(packages));
 });

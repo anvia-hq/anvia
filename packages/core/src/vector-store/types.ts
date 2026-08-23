@@ -82,8 +82,10 @@ export interface VectorStore<T = unknown, Metadata extends VectorMetadata = Vect
   inspect?(request: VectorInspectRequest): Promise<VectorInspectPage<T, Metadata>>;
 }
 
-export interface HybridVectorStore<T = unknown, Metadata extends VectorMetadata = VectorMetadata>
-  extends VectorStore<T, Metadata> {
+export interface HybridVectorStore<
+  T = unknown,
+  Metadata extends VectorMetadata = VectorMetadata,
+> extends VectorStore<T, Metadata> {
   searchHybrid(request: HybridVectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
 }
 
@@ -143,6 +145,7 @@ export type HybridVectorSearchToolOptions<
   fusion?: VectorFusion | undefined;
 };
 
-export type VectorSearchToolOptions<T = unknown, Metadata extends VectorMetadata = VectorMetadata> =
-  | DenseVectorSearchToolOptions<T, Metadata>
-  | HybridVectorSearchToolOptions<T, Metadata>;
+export type VectorSearchToolOptions<
+  T = unknown,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = DenseVectorSearchToolOptions<T, Metadata> | HybridVectorSearchToolOptions<T, Metadata>;

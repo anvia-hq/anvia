@@ -38,7 +38,7 @@ describe("sandbox image builder", () => {
 
     expect(dockerfile).toContain("FROM node:24.18.0-bookworm-slim AS node-runtime");
     expect(dockerfile).toContain("FROM python:3.13.14-slim-bookworm AS python-runtime");
-    expect(dockerfile).toContain("mcr.microsoft.com/playwright:v1.61.0-noble");
+    expect(dockerfile).toContain("mcr.microsoft.com/playwright:v1.62.1-noble");
     expect(dockerfile).toContain("COPY --from=uv-runtime /uv /uvx /usr/local/bin/");
     expect(dockerfile).toContain("uv sync --no-dev --no-cache --no-install-project");
     expect(dockerfile).toContain("ENV VIRTUAL_ENV=/opt/anvia-python/.venv");
@@ -48,7 +48,7 @@ describe("sandbox image builder", () => {
     for (const requirement of artifactPythonPackages) {
       expect(pythonProject).toContain(JSON.stringify(requirement));
     }
-    expect(packageJson.dependencies).toEqual({ playwright: "1.61.0" });
+    expect(packageJson.dependencies).toEqual({ playwright: "1.62.1" });
     expect(context.manifest).toMatchObject({
       schemaVersion: 1,
       generatedBy: { package: "@anvia/sandbox", version: "0.5.0" },
